@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.23.0"
+version = "0.23.1"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -46,7 +46,7 @@ dependencies = [
     "groq==0.9.0",
     "grpcio-status==1.67.1",
     "html-text==0.6.2",
-    "infinity-sdk==0.6.15",
+    "infinity-sdk==0.7.0-dev1",
     "infinity-emb>=0.0.66,<0.0.67",
     "jira==3.10.5",
     "json-repair==0.35.0",
@@ -75,7 +75,7 @@ dependencies = [
     "psycopg2-binary>=2.9.11,<3.0.0",
     "pyclipper>=1.4.0,<2.0.0",
     "pycryptodomex==3.20.0",
-    "pyobvector==0.2.18",
+    "pyobvector==0.2.22",
     "pyodbc>=5.2.0,<6.0.0",
     "pypandoc>=1.16",
     "pypdf==6.4.0",
@@ -149,8 +149,10 @@ dependencies = [
     #    "cryptography==46.0.3",
     #    "jinja2>=3.1.0",
     "pyairtable>=3.3.0",
+    "pygithub>=2.8.1",
     "asana>=5.2.2",
     "python-gitlab>=7.0.0",
+    "quart-schema==0.23.0",
 ]
 
 [dependency-groups]
@@ -167,6 +169,7 @@ test = [
     "reportlab>=4.4.1",
     "requests>=2.32.2",
     "requests-toolbelt>=1.0.0",
+    "pycryptodomex==3.20.0",
 ]
 
 [[tool.uv.index]]
@@ -175,7 +178,6 @@ url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 [tool.setuptools]
 packages = [
     'agent',
-    'agentic_reasoning',
     'api',
     'deepdoc',
     'graphrag',

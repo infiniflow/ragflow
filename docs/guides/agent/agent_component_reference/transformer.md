@@ -1,8 +1,10 @@
 ---
 sidebar_position: 37
 slug: /transformer_component
+sidebar_custom_props: {
+  categoryIcon: LucideFileStack
+}
 ---
-
 # Transformer component
 
 A component that uses an LLM to extract insights from the chunks.

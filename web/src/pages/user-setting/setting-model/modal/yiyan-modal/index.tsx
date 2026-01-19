@@ -1,17 +1,15 @@
-import { useTranslate } from '@/hooks/common-hooks';
+import {
+  DynamicForm,
+  FormFieldConfig,
+  FormFieldType,
+} from '@/components/dynamic-form';
+import { Modal } from '@/components/ui/modal/modal';
+import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
+import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Form, Input, InputNumber, Modal, Select } from 'antd';
-import omit from 'lodash/omit';
+import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
-
-type FieldType = IAddLlmRequestBody & {
-  vision: boolean;
-  yiyan_ak: string;
-  yiyan_sk: string;
-};
-
-const { Option } = Select;
 
 const YiyanModal = ({
   visible,
@@ -20,111 +18,112 @@ const YiyanModal = ({
   loading,
   llmFactory,
 }: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
-  const [form] = Form.useForm<FieldType>();
-
   const { t } = useTranslate('setting');
+  const { t: tc } = useCommonTranslation();
+  const { buildModelTypeOptions } = useBuildModelTypeOptions();
 
-  const handleOk = async () => {
-    const values = await form.validateFields();
+  const fields: FormFieldConfig[] = [
+    {
+      name: 'model_type',
+      label: t('modelType'),
+      type: FormFieldType.Select,
+      required: true,
+      options: buildModelTypeOptions(['chat', 'embedding', 'rerank']),
+      defaultValue: 'chat',
+    },
+    {
+      name: 'llm_name',
+      label: t('modelName'),
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: t('yiyanModelNameMessage'),
+    },
+    {
+      name: 'yiyan_ak',
+      label: t('addyiyanAK'),
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: t('yiyanAKMessage'),
+    },
+    {
+      name: 'yiyan_sk',
+      label: t('addyiyanSK'),
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: t('yiyanSKMessage'),
+    },
+    {
+      name: 'max_tokens',
+      label: t('maxTokens'),
+      type: FormFieldType.Number,
+      required: true,
+      placeholder: t('maxTokensTip'),
+      validation: {
+        min: 0,
+      },
+    },
+  ];
+
+  const handleOk = async (values?: FieldValues) => {
+    if (!values) return;
+
     const modelType =
       values.model_type === 'chat' && values.vision
         ? 'image2text'
         : values.model_type;
 
-    const data = {
-      ...omit(values, ['vision']),
-      model_type: modelType,
+    const data: IAddLlmRequestBody = {
       llm_factory: llmFactory,
-      max_tokens: values.max_tokens,
+      llm_name: values.llm_name as string,
+      model_type: modelType,
+      api_key: {
+        yiyan_ak: values.yiyan_ak,
+        yiyan_sk: values.yiyan_sk,
+      },
+      max_tokens: values.max_tokens as number,
     };
+
     console.info(data);
 
-    onOk?.(data);
-  };
-
-  const handleKeyDown = async (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      await handleOk();
-    }
+    await onOk?.(data);
   };
 
   return (
     <Modal
       title={<LLMHeader name={llmFactory} />}
-      open={visible}
-      onOk={handleOk}
-      onCancel={hideModal}
-      okButtonProps={{ loading }}
-      confirmLoading={loading}
+      open={visible || false}
+      onOpenChange={(open) => !open && hideModal?.()}
+      maskClosable={false}
+      footer={<div className="p-4"></div>}
     >
-      <Form
-        name="basic"
-        style={{ maxWidth: 600 }}
-        autoComplete="off"
-        layout={'vertical'}
-        form={form}
+      <DynamicForm.Root
+        fields={fields}
+        onSubmit={(data) => {
+          console.log(data);
+        }}
+        defaultValues={
+          {
+            model_type: 'chat',
+            vision: false,
+          } as FieldValues
+        }
+        labelClassName="font-normal"
       >
-        <Form.Item<FieldType>
-          label={t('modelType')}
-          name="model_type"
-          initialValue={'chat'}
-          rules={[{ required: true, message: t('modelTypeMessage') }]}
-        >
-          <Select placeholder={t('modelTypeMessage')}>
-            <Option value="chat">chat</Option>
-            <Option value="embedding">embedding</Option>
-            <Option value="rerank">rerank</Option>
-          </Select>
-        </Form.Item>
-        <Form.Item<FieldType>
-          label={t('modelName')}
-          name="llm_name"
-          rules={[{ required: true, message: t('yiyanModelNameMessage') }]}
-        >
-          <Input
-            placeholder={t('yiyanModelNameMessage')}
-            onKeyDown={handleKeyDown}
+        <div className="absolute bottom-0 right-0 left-0 flex items-center justify-end w-full gap-2 py-6 px-6">
+          <DynamicForm.CancelButton
+            handleCancel={() => {
+              hideModal?.();
+            }}
           />
-        </Form.Item>
-        <Form.Item<FieldType>
-          label={t('addyiyanAK')}
-          name="yiyan_ak"
-          rules={[{ required: true, message: t('yiyanAKMessage') }]}
-        >
-          <Input placeholder={t('yiyanAKMessage')} onKeyDown={handleKeyDown} />
-        </Form.Item>
-        <Form.Item<FieldType>
-          label={t('addyiyanSK')}
-          name="yiyan_sk"
-          rules={[{ required: true, message: t('yiyanSKMessage') }]}
-        >
-          <Input placeholder={t('yiyanSKMessage')} onKeyDown={handleKeyDown} />
-        </Form.Item>
-        <Form.Item<FieldType>
-          label={t('maxTokens')}
-          name="max_tokens"
-          rules={[
-            { required: true, message: t('maxTokensMessage') },
-            {
-              type: 'number',
-              message: t('maxTokensInvalidMessage'),
-            },
-            ({}) => ({
-              validator(_, value) {
-                if (value < 0) {
-                  return Promise.reject(new Error(t('maxTokensMinMessage')));
-                }
-                return Promise.resolve();
-              },
-            }),
-          ]}
-        >
-          <InputNumber
-            placeholder={t('maxTokensTip')}
-            style={{ width: '100%' }}
+          <DynamicForm.SavingButton
+            submitLoading={loading || false}
+            buttonText={tc('ok')}
+            submitFunc={(values: FieldValues) => {
+              handleOk(values);
+            }}
           />
-        </Form.Item>
-      </Form>
+        </div>
+      </DynamicForm.Root>
     </Modal>
   );
 };

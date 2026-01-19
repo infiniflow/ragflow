@@ -100,6 +100,12 @@ class Base(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
+        model_name_lower = (self.model_name or "").lower()
+        # gpt-5 and gpt-5.1 endpoints have inconsistent parameter support, clear custom generation params to prevent unexpected issues
+        if "gpt-5" in model_name_lower:
+            gen_conf = {}
+            return gen_conf
+        
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
 
@@ -127,12 +133,6 @@ class Base(ABC):
         }
 
         gen_conf = {k: v for k, v in gen_conf.items() if k in allowed_conf}
-
-        model_name_lower = (self.model_name or "").lower()
-        # gpt-5 and gpt-5.1 endpoints have inconsistent parameter support, clear custom generation params to prevent unexpected issues
-        if "gpt-5" in model_name_lower:
-            gen_conf = {}
-
         return gen_conf
 
     async def _async_chat_streamly(self, history, gen_conf, **kwargs):
@@ -1165,6 +1165,15 @@ class TokenPonyChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class N1nChat(Base):
+    _FACTORY_NAME = "n1n"
+
+    def __init__(self, key, model_name, base_url="https://api.n1n.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.n1n.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1263,7 +1272,7 @@ class LiteLLMBase(ABC):
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
 
-        completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **gen_conf)
+        completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **{**gen_conf, **kwargs})
 
         for attempt in range(self.max_retries + 1):
             try:
@@ -1632,25 +1641,22 @@ class LiteLLMBase(ABC):
                 raise ValueError("Bedrock auth_mode must be provided in the key")
 
             bedrock_region = bedrock_key.get("bedrock_region")
-            bedrock_credentials = {"bedrock_region": bedrock_region}
 
             if mode == "access_key_secret":
-                bedrock_credentials["aws_access_key_id"] = bedrock_key.get("bedrock_ak")
-                bedrock_credentials["aws_secret_access_key"] = bedrock_key.get("bedrock_sk")
+                completion_args.update({"aws_region_name": bedrock_region})
+                completion_args.update({"aws_access_key_id": bedrock_key.get("bedrock_ak")})
+                completion_args.update({"aws_secret_access_key": bedrock_key.get("bedrock_sk")})
             elif mode == "iam_role":
                 aws_role_arn = bedrock_key.get("aws_role_arn")
                 sts_client = boto3.client("sts", region_name=bedrock_region)
                 resp = sts_client.assume_role(RoleArn=aws_role_arn, RoleSessionName="BedrockSession")
                 creds = resp["Credentials"]
-                bedrock_credentials["aws_access_key_id"] = creds["AccessKeyId"]
-                bedrock_credentials["aws_secret_access_key"] = creds["SecretAccessKey"]
-                bedrock_credentials["aws_session_token"] = creds["SessionToken"]
-
-            completion_args.update(
-                {
-                    "bedrock_credentials": bedrock_credentials,
-                }
-            )
+                completion_args.update({"aws_region_name": bedrock_region})
+                completion_args.update({"aws_access_key_id": creds["AccessKeyId"]})
+                completion_args.update({"aws_secret_access_key": creds["SecretAccessKey"]})
+                completion_args.update({"aws_session_token": creds["SessionToken"]})
+            else:  # assume_role - use default credential chain (IRSA, instance profile, etc.)
+                completion_args.update({"aws_region_name": bedrock_region})
 
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:
             if self.provider_order:

@@ -1,4 +1,4 @@
-import { Outlet } from 'umi';
+import { Outlet } from 'react-router';
 import { Header } from './next-header';
 
 export default function NextLayout() {

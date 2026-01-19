@@ -11,21 +11,21 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { FieldPath, useForm } from 'react-hook-form';
-import { z } from 'zod';
+import { useForm } from 'react-hook-form';
+import { z, ZodArray, ZodString } from 'zod';
 
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
-import {
-  Form,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { t } from 'i18next';
 import { FilterField } from './filter-field';
-import { FilterChange, FilterCollection, FilterValue } from './interface';
+import {
+  FilterChange,
+  FilterCollection,
+  FilterType,
+  FilterValue,
+} from './interface';
 
 export type CheckboxFormMultipleProps = {
   filters?: FilterCollection[];
@@ -36,6 +36,41 @@ export type CheckboxFormMultipleProps = {
   filterGroup?: Record<string, string[]>;
 };
 
+const filterNestedList = (
+  list: FilterType[],
+  searchTerm: string,
+): FilterType[] => {
+  if (!searchTerm) return list;
+
+  const term = searchTerm.toLowerCase();
+
+  return list
+    .filter((item) => {
+      if (
+        item.label.toString().toLowerCase().includes(term) ||
+        item.id.toLowerCase().includes(term)
+      ) {
+        return true;
+      }
+
+      if (item.list && item.list.length > 0) {
+        const filteredSubList = filterNestedList(item.list, searchTerm);
+        return filteredSubList.length > 0;
+      }
+
+      return false;
+    })
+    .map((item) => {
+      if (item.list && item.list.length > 0) {
+        return {
+          ...item,
+          list: filterNestedList(item.list, searchTerm),
+        };
+      }
+      return item;
+    });
+};
+
 function CheckboxFormMultiple({
   filters = [],
   value,
@@ -43,21 +78,22 @@ function CheckboxFormMultiple({
   setOpen,
   filterGroup,
 }: CheckboxFormMultipleProps) {
-  const [resolvedFilters, setResolvedFilters] =
-    useState<FilterCollection[]>(filters);
+  // const [resolvedFilters, setResolvedFilters] =
+  //   useState<FilterCollection[]>(filters);
+  const [searchTerms, setSearchTerms] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    if (filters && filters.length > 0) {
-      setResolvedFilters(filters);
-    }
-  }, [filters]);
+  // useEffect(() => {
+  //   if (filters && filters.length > 0) {
+  //     setResolvedFilters(filters);
+  //   }
+  // }, [filters]);
 
   const fieldsDict = useMemo(() => {
-    if (resolvedFilters.length === 0) {
+    if (filters.length === 0) {
       return {};
     }
 
-    return resolvedFilters.reduce<Record<string, any>>((pre, cur) => {
+    return filters.reduce<Record<string, any>>((pre, cur) => {
       const hasNested = cur.list?.some(
         (item) => item.list && item.list.length > 0,
       );
@@ -69,42 +105,37 @@ function CheckboxFormMultiple({
       }
       return pre;
     }, {});
-  }, [resolvedFilters]);
+  }, [filters]);
 
-  // const FormSchema = useMemo(() => {
-  //   if (resolvedFilters.length === 0) {
-  //     return z.object({});
-  //   }
-
-  //   return z.object(
-  //     resolvedFilters.reduce<
-  //       Record<
-  //         string,
-  //         ZodArray<ZodString, 'many'> | z.ZodObject<any> | z.ZodOptional<any>
-  //       >
-  //     >((pre, cur) => {
-  //       const hasNested = cur.list?.some(
-  //         (item) => item.list && item.list.length > 0,
-  //       );
-
-  //       if (hasNested) {
-  //         pre[cur.field] = z
-  //           .record(z.string(), z.array(z.string().optional()).optional())
-  //           .optional();
-  //       } else {
-  //         pre[cur.field] = z.array(z.string().optional()).optional();
-  //       }
-
-  //       return pre;
-  //     }, {}),
-  //   );
-  // }, [resolvedFilters]);
   const FormSchema = useMemo(() => {
-    return z.object({});
-  }, []);
+    if (filters.length === 0) {
+      return z.object({});
+    }
+    return z.object(
+      filters.reduce<
+        Record<
+          string,
+          ZodArray<ZodString, 'many'> | z.ZodObject<any> | z.ZodOptional<any>
+        >
+      >((pre, cur) => {
+        const hasNested = cur.list?.some(
+          (item) => item.list && item.list.length > 0,
+        );
+        if (hasNested) {
+          pre[cur.field] = z
+            .record(z.string(), z.array(z.string().optional()).optional())
+            .optional();
+        } else {
+          pre[cur.field] = z.array(z.string().optional()).optional();
+        }
+
+        return pre;
+      }, {}),
+    );
+  }, [filters]);
 
   const form = useForm<z.infer<typeof FormSchema>>({
-    resolver: resolvedFilters.length > 0 ? zodResolver(FormSchema) : undefined,
+    resolver: filters.length > 0 ? zodResolver(FormSchema) : undefined,
     defaultValues: fieldsDict,
   });
 
@@ -120,10 +151,10 @@ function CheckboxFormMultiple({
   }, [fieldsDict, onChange, setOpen]);
 
   useEffect(() => {
-    if (resolvedFilters.length > 0) {
+    if (filters.length > 0) {
       form.reset(value || fieldsDict);
     }
-  }, [form, value, resolvedFilters, fieldsDict]);
+  }, [form, value, filters, fieldsDict]);
 
   const filterList = useMemo(() => {
     const filterSet = filterGroup
@@ -139,20 +170,42 @@ function CheckboxFormMultiple({
     return filters.filter((x) => !filterList.includes(x.field));
   }, [filterList, filters]);
 
+  const handleSearchChange = (field: string, value: string) => {
+    setSearchTerms((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const getFilteredFilters = (originalFilters: FilterCollection[]) => {
+    return originalFilters.map((filter) => {
+      if (filter.canSearch && searchTerms[filter.field]) {
+        const filteredList = filterNestedList(
+          filter.list,
+          searchTerms[filter.field],
+        );
+        return { ...filter, list: filteredList };
+      }
+      return filter;
+    });
+  };
+
   return (
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="space-y-8 px-5 py-2.5"
+        className="space-y-8 px-5 py-2.5 max-h-[80vh] overflow-auto"
         onReset={() => form.reset()}
       >
         <div className="space-y-4">
           {filterGroup &&
             Object.keys(filterGroup).map((key) => {
               const filterKeys = filterGroup[key];
-              const thisFilters = filters.filter((x) =>
+              const originalFilters = filters.filter((x) =>
                 filterKeys.includes(x.field),
               );
+              const thisFilters = getFilteredFilters(originalFilters);
+
               return (
                 <div
                   key={key}
@@ -161,15 +214,29 @@ function CheckboxFormMultiple({
                   <div className="text-text-primary text-sm">{key}</div>
                   <div className="flex flex-col space-y-4">
                     {thisFilters.map((x) => (
-                      <FilterField
-                        key={x.field}
-                        item={{ ...x, id: x.field }}
-                        parent={{
-                          ...x,
-                          id: x.field,
-                          field: ``,
-                        }}
-                      />
+                      <div key={x.field}>
+                        {x.canSearch && (
+                          <div className="mb-2">
+                            <Input
+                              placeholder={t('common.search') + '...'}
+                              value={searchTerms[x.field] || ''}
+                              onChange={(e) =>
+                                handleSearchChange(x.field, e.target.value)
+                              }
+                              className="h-8"
+                            />
+                          </div>
+                        )}
+                        <FilterField
+                          key={x.field}
+                          item={{ ...x, id: x.field }}
+                          parent={{
+                            ...x,
+                            id: x.field,
+                            field: ``,
+                          }}
+                        />
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -177,38 +244,45 @@ function CheckboxFormMultiple({
             })}
           {notInfilterGroup &&
             notInfilterGroup.map((x) => {
+              const filteredItem = getFilteredFilters([x])[0];
+
               return (
-                <FormField
-                  key={x.field}
-                  control={form.control}
-                  name={
-                    x.field.toString() as FieldPath<z.infer<typeof FormSchema>>
-                  }
-                  render={() => (
-                    <FormItem className="space-y-4">
-                      <div>
-                        <FormLabel className="text-text-primary text-sm">
-                          {x.label}
-                        </FormLabel>
-                      </div>
-                      {x.list?.length &&
-                        x.list.map((item) => {
-                          return (
-                            <FilterField
-                              key={item.id}
-                              item={{ ...item }}
-                              parent={{
-                                ...x,
-                                id: x.field,
-                                // field: `${x.field}${item.field ? '.' + item.field : ''}`,
-                              }}
-                            />
-                          );
-                        })}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <FormItem className="space-y-4" key={x.field}>
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <FormLabel className="text-text-primary text-sm">
+                        {x.label}
+                      </FormLabel>
+                      {x.canSearch && (
+                        <Input
+                          placeholder={t('common.search') + '...'}
+                          value={searchTerms[x.field] || ''}
+                          onChange={(e) =>
+                            handleSearchChange(x.field, e.target.value)
+                          }
+                          className="h-8 w-32 ml-2"
+                        />
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-4 max-h-[300px] overflow-auto scrollbar-thin">
+                    {!!filteredItem.list?.length &&
+                      filteredItem.list.map((item) => {
+                        return (
+                          <FilterField
+                            key={item.id}
+                            item={{ ...item }}
+                            parent={{
+                              ...x,
+                              id: x.field,
+                              // field: `${x.field}${item.field ? '.' + item.field : ''}`,
+                            }}
+                          />
+                        );
+                      })}
+                  </div>
+                  <FormMessage />
+                </FormItem>
               );
             })}
         </div>

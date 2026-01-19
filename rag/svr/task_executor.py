@@ -12,6 +12,10 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+
+import time
+start_ts = time.time()
+
 import asyncio
 import socket
 import concurrent
@@ -21,11 +25,11 @@ import concurrent
 import random
 import sys
 import threading
-import time
 
 from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
+from api.db.joint_services.memory_message_service import handle_save_to_memory_task
 from common.connection_utils import timeout
 from common.metadata_utils import update_metadata_to, metadata_schema
 from rag.utils.base64_image import image2id
@@ -96,6 +100,7 @@ TASK_TYPE_TO_PIPELINE_TASK_TYPE = {
     "raptor": PipelineTaskType.RAPTOR,
     "graphrag": PipelineTaskType.GRAPH_RAG,
     "mindmap": PipelineTaskType.MINDMAP,
+    "memory": PipelineTaskType.MEMORY,
 }
 
 UNACKED_ITERATOR = None
@@ -157,8 +162,8 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
         logging.info(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}")
     except DoesNotExist:
         logging.warning(f"set_progress({task_id}) got exception DoesNotExist")
-    except Exception:
-        logging.exception(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}, got exception")
+    except Exception as e:
+        logging.exception(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}, got exception: {e}")
 
 
 async def collect():
@@ -166,6 +171,7 @@ async def collect():
     global UNACKED_ITERATOR
 
     svr_queue_names = settings.get_svr_queue_names()
+    redis_msg = None
     try:
         if not UNACKED_ITERATOR:
             UNACKED_ITERATOR = REDIS_CONN.get_unacked_iterator(svr_queue_names, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
@@ -176,8 +182,8 @@ async def collect():
                 redis_msg = REDIS_CONN.queue_consumer(svr_queue_name, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
                 if redis_msg:
                     break
-    except Exception:
-        logging.exception("collect got exception")
+    except Exception as e:
+        logging.exception(f"collect got exception: {e}")
         return None, None
 
     if not redis_msg:
@@ -196,6 +202,9 @@ async def collect():
             if task:
                 task["doc_id"] = msg["doc_id"]
                 task["doc_ids"] = msg.get("doc_ids", []) or []
+    elif msg.get("task_type") == PipelineTaskType.MEMORY.lower():
+        _, task_obj = TaskService.get_by_id(msg["id"])
+        task = task_obj.to_dict()
     else:
         task = TaskService.get_task(msg["id"])
 
@@ -214,6 +223,10 @@ async def collect():
         task["tenant_id"] = msg["tenant_id"]
         task["dataflow_id"] = msg["dataflow_id"]
         task["kb_id"] = msg.get("kb_id", "")
+    if task_type[:6] == "memory":
+        task["memory_id"] = msg["memory_id"]
+        task["source_id"] = msg["source_id"]
+        task["message_dict"] = msg["message_dict"]
     return redis_msg, task
 
 
@@ -287,6 +300,11 @@ async def build_chunks(task, progress_callback):
                 (chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
+
+            if d.get("img_id"):
+                docs.append(d)
+                return
+
             if not d.get("image"):
                 _ = d.pop("image", None)
                 d["img_id"] = ""
@@ -322,6 +340,9 @@ async def build_chunks(task, progress_callback):
         async def doc_keyword_extraction(chat_mdl, d, topn):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "keywords", {"topn": topn})
             if not cached:
+                if has_canceled(task["id"]):
+                    progress_callback(-1, msg="Task has been canceled.")
+                    return
                 async with chat_limiter:
                     cached = await keyword_extraction(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
@@ -352,6 +373,9 @@ async def build_chunks(task, progress_callback):
         async def doc_question_proposal(chat_mdl, d, topn):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "question", {"topn": topn})
             if not cached:
+                if has_canceled(task["id"]):
+                    progress_callback(-1, msg="Task has been canceled.")
+                    return
                 async with chat_limiter:
                     cached = await question_proposal(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "question", {"topn": topn})
@@ -382,6 +406,9 @@ async def build_chunks(task, progress_callback):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata",
                                    task["parser_config"]["metadata"])
             if not cached:
+                if has_canceled(task["id"]):
+                    progress_callback(-1, msg="Task has been canceled.")
+                    return
                 async with chat_limiter:
                     cached = await gen_metadata(chat_mdl,
                                                 metadata_schema(task["parser_config"]["metadata"]),
@@ -447,6 +474,9 @@ async def build_chunks(task, progress_callback):
         async def doc_content_tagging(chat_mdl, d, topn_tags):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], all_tags, {"topn": topn_tags})
             if not cached:
+                if has_canceled(task["id"]):
+                    progress_callback(-1, msg="Task has been canceled.")
+                    return
                 picked_examples = random.choices(examples, k=2) if len(examples) > 2 else examples
                 if not picked_examples:
                     picked_examples.append({"content": "This is an example", TAG_FLD: {'example': 1}})
@@ -490,19 +520,29 @@ def build_TOC(task, docs, progress_callback):
     toc: list[dict] = asyncio.run(
         run_toc_from_text([d["content_with_weight"] for d in docs], chat_mdl, progress_callback))
     logging.info("------------ T O C -------------\n" + json.dumps(toc, ensure_ascii=False, indent='  '))
-    ii = 0
-    while ii < len(toc):
+    for ii, item in enumerate(toc):
         try:
-            idx = int(toc[ii]["chunk_id"])
-            del toc[ii]["chunk_id"]
-            toc[ii]["ids"] = [docs[idx]["id"]]
-            if ii == len(toc) - 1:
-                break
-            for jj in range(idx + 1, int(toc[ii + 1]["chunk_id"]) + 1):
-                toc[ii]["ids"].append(docs[jj]["id"])
+            chunk_val = item.pop("chunk_id", None)
+            if chunk_val is None or str(chunk_val).strip() == "":
+                logging.warning(f"Index {ii}: chunk_id is missing or empty. Skipping.")
+                continue
+            curr_idx = int(chunk_val)
+            if curr_idx >= len(docs):
+                logging.error(f"Index {ii}: chunk_id {curr_idx} exceeds docs length {len(docs)}.")
+                continue
+            item["ids"] = [docs[curr_idx]["id"]]
+            if ii + 1 < len(toc):
+                next_chunk_val = toc[ii + 1].get("chunk_id", "")
+                if str(next_chunk_val).strip() != "":
+                    next_idx = int(next_chunk_val)
+                    for jj in range(curr_idx + 1, min(next_idx + 1, len(docs))):
+                        item["ids"].append(docs[jj]["id"])
+                else:
+                    logging.warning(f"Index {ii + 1}: next chunk_id is empty, range fill skipped.")
+        except (ValueError, TypeError) as e:
+            logging.error(f"Index {ii}: Data conversion error - {e}")
         except Exception as e:
-            logging.exception(e)
-        ii += 1
+            logging.exception(f"Index {ii}: Unexpected error - {e}")
 
     if toc:
         d = copy.deepcopy(docs[-1])
@@ -865,6 +905,10 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
 async def do_handle_task(task):
     task_type = task.get("task_type", "")
 
+    if task_type == "memory":
+        await handle_save_to_memory_task(task)
+        return
+
     if task_type == "dataflow" and task.get("doc_id", "") == CANVAS_DEBUG_DOC_ID:
         await run_dataflow(task)
         return
@@ -876,6 +920,7 @@ async def do_handle_task(task):
     task_embedding_id = task["embd_id"]
     task_language = task["language"]
     task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
+    task["llm_id"] = task_llm_id
     task_dataset_id = task["kb_id"]
     task_doc_id = task["doc_id"]
     task_document_name = task["name"]
@@ -1050,8 +1095,8 @@ async def do_handle_task(task):
     async def _maybe_insert_es(_chunks):
         if has_canceled(task_id):
             return True
-        e = await insert_es(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
-        return bool(e)
+        insert_result = await insert_es(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
+        return bool(insert_result)
 
     try:
         if not await _maybe_insert_es(chunks):
@@ -1090,7 +1135,7 @@ async def do_handle_task(task):
         if has_canceled(task_id):
             try:
                 exists = await asyncio.to_thread(
-                    settings.docStoreConn.indexExist,
+                    settings.docStoreConn.index_exist,
                     search.index_name(task_tenant_id),
                     task_dataset_id,
                 )
@@ -1101,10 +1146,9 @@ async def do_handle_task(task):
                         search.index_name(task_tenant_id),
                         task_dataset_id,
                     )
-            except Exception:
+            except Exception as e:
                 logging.exception(
-                    f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled."
-                )
+                    f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled, exception: {e}")
 
 
 async def handle_task():
@@ -1117,24 +1161,25 @@ async def handle_task():
     task_type = task["task_type"]
     pipeline_task_type = TASK_TYPE_TO_PIPELINE_TASK_TYPE.get(task_type,
                                                              PipelineTaskType.PARSE) or PipelineTaskType.PARSE
-
+    task_id = task["id"]
     try:
         logging.info(f"handle_task begin for task {json.dumps(task)}")
         CURRENT_TASKS[task["id"]] = copy.deepcopy(task)
         await do_handle_task(task)
         DONE_TASKS += 1
-        CURRENT_TASKS.pop(task["id"], None)
+        CURRENT_TASKS.pop(task_id, None)
         logging.info(f"handle_task done for task {json.dumps(task)}")
     except Exception as e:
         FAILED_TASKS += 1
-        CURRENT_TASKS.pop(task["id"], None)
+        CURRENT_TASKS.pop(task_id, None)
         try:
             err_msg = str(e)
             while isinstance(e, exceptiongroup.ExceptionGroup):
                 e = e.exceptions[0]
                 err_msg += ' -- ' + str(e)
-            set_progress(task["id"], prog=-1, msg=f"[Exception]: {err_msg}")
-        except Exception:
+            set_progress(task_id, prog=-1, msg=f"[Exception]: {err_msg}")
+        except Exception as e:
+            logging.exception(f"[Exception]: {str(e)}")
             pass
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
     finally:
@@ -1161,56 +1206,80 @@ async def get_server_ip() -> str:
 
 
 async def report_status():
-    global CONSUMER_NAME, BOOT_AT, PENDING_TASKS, LAG_TASKS, DONE_TASKS, FAILED_TASKS
+    """
+    Periodically reports the executor's heartbeat
+    """
+    global PENDING_TASKS, LAG_TASKS, DONE_TASKS, FAILED_TASKS
+
+    ip_address = await get_server_ip()
+    pid = os.getpid()
+
+    # Register the executor in Redis
     REDIS_CONN.sadd("TASKEXE", CONSUMER_NAME)
     redis_lock = RedisDistributedLock("clean_task_executor", lock_value=CONSUMER_NAME, timeout=60)
-    while True:
-        try:
-            now = datetime.now()
-            group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(0), SVR_CONSUMER_GROUP_NAME)
-            if group_info is not None:
-                PENDING_TASKS = int(group_info.get("pending", 0))
-                LAG_TASKS = int(group_info.get("lag", 0))
 
-            pid = os.getpid()
-            ip_address = await get_server_ip()
-            current = copy.deepcopy(CURRENT_TASKS)
-            heartbeat = json.dumps({
-                "ip_address": ip_address,
-                "pid": pid,
-                "name": CONSUMER_NAME,
-                "now": now.astimezone().isoformat(timespec="milliseconds"),
-                "boot_at": BOOT_AT,
-                "pending": PENDING_TASKS,
-                "lag": LAG_TASKS,
-                "done": DONE_TASKS,
-                "failed": FAILED_TASKS,
-                "current": current,
-            })
-            REDIS_CONN.zadd(CONSUMER_NAME, heartbeat, now.timestamp())
+    while True:
+        now = datetime.now()
+        now_ts = now.timestamp()
+
+        group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(0), SVR_CONSUMER_GROUP_NAME) or {}
+        PENDING_TASKS = int(group_info.get("pending", 0))
+        LAG_TASKS = int(group_info.get("lag", 0))
+
+        current = copy.deepcopy(CURRENT_TASKS)
+        heartbeat = json.dumps({
+            "ip_address": ip_address,
+            "pid": pid,
+            "name": CONSUMER_NAME,
+            "now": now.astimezone().isoformat(timespec="milliseconds"),
+            "boot_at": BOOT_AT,
+            "pending": PENDING_TASKS,
+            "lag": LAG_TASKS,
+            "done": DONE_TASKS,
+            "failed": FAILED_TASKS,
+            "current": current,
+        })
+
+        # Report heartbeat to Redis
+        try:
+            REDIS_CONN.zadd(CONSUMER_NAME, heartbeat, now_ts)
+        except Exception as e:
+            logging.warning(f"Failed to report heartbeat: {e}")
+        else:
             logging.info(f"{CONSUMER_NAME} reported heartbeat: {heartbeat}")
 
-            expired = REDIS_CONN.zcount(CONSUMER_NAME, 0, now.timestamp() - 60 * 30)
-            if expired > 0:
-                REDIS_CONN.zpopmin(CONSUMER_NAME, expired)
+        # Clean up own expired heartbeat
+        try:
+            REDIS_CONN.zremrangebyscore(CONSUMER_NAME, 0, now_ts - 60 * 30)
+        except Exception as e:
+            logging.warning(f"Failed to clean heartbeat: {e}")
 
-            # clean task executor
-            if redis_lock.acquire():
-                task_executors = REDIS_CONN.smembers("TASKEXE")
-                for consumer_name in task_executors:
-                    if consumer_name == CONSUMER_NAME:
+        # Clean other executors
+        lock_acquired = False
+        try:
+            lock_acquired = redis_lock.acquire()
+        except Exception as e:
+            logging.warning(f"Failed to acquire Redis lock: {e}")
+        if lock_acquired:
+            try:
+                task_executors = REDIS_CONN.smembers("TASKEXE") or set()
+                for worker_name in task_executors:
+                    if worker_name == CONSUMER_NAME:
                         continue
-                    expired = REDIS_CONN.zcount(
-                        consumer_name, now.timestamp() - WORKER_HEARTBEAT_TIMEOUT, now.timestamp() + 10
-                    )
-                    if expired == 0:
-                        logging.info(f"{consumer_name} expired, removed")
-                        REDIS_CONN.srem("TASKEXE", consumer_name)
-                        REDIS_CONN.delete(consumer_name)
-        except Exception:
-            logging.exception("report_status got exception")
-        finally:
-            redis_lock.release()
+                    try:
+                        last_heartbeat = REDIS_CONN.REDIS.zrevrange(worker_name, 0, 0, withscores=True)
+                    except Exception as e:
+                        logging.warning(f"Failed to read zset for {worker_name}: {e}")
+                        continue
+
+                    if not last_heartbeat or now_ts - last_heartbeat[0][1] > WORKER_HEARTBEAT_TIMEOUT:
+                        logging.info(f"{worker_name} expired, removed")
+                        REDIS_CONN.srem("TASKEXE", worker_name)
+                        REDIS_CONN.delete(worker_name)
+            except Exception as e:
+                logging.warning(f"Failed to clean other executors: {e}")
+            finally:
+                redis_lock.release()
         await asyncio.sleep(30)
 
 
@@ -1261,6 +1330,8 @@ async def main():
 
     report_task = asyncio.create_task(report_status())
     tasks = []
+
+    logging.info(f"RAGFlow ingestion is ready after {time.time() - start_ts}s initialization.")
     try:
         while not stop_event.is_set():
             await task_limiter.acquire()

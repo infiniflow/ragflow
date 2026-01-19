@@ -1,11 +1,38 @@
 ---
 sidebar_position: 2
 slug: /release_notes
+sidebar_custom_props: {
+  sidebarIcon: LucideClipboardPenLine
+}
 ---
-
 # Releases
 
 Key features, improvements and bug fixes in the latest releases.
+
+
+## v0.23.1
+
+Released on December 31, 2025.
+
+### Improvements
+
+- Memory: Enhances the stability of memory extraction when all memory types are selected.
+- RAG: Refines the context window extraction strategy for images and tables.
+
+
+### Fixed issues
+
+- Memory: 
+  - The RAGFlow server failed to start if an empty memory object existed.
+  - Unable to delete a newly created empty Memory.
+- RAG: MDX file parsing was not supported.
+
+### Data sources
+
+- GitHub
+- Gitlab
+- Asana
+- IMAP
 
 ## v0.23.0
 
@@ -32,6 +59,7 @@ Released on December 27, 2025.
 
 ### Improvements
 
+- RAG: Accelerates GraphRAG generation significantly.
 - Bumps RAGFlow's document engine, [Infinity](https://github.com/infiniflow/infinity) to v0.6.15 (backward compatible).
 
 ### Data sources

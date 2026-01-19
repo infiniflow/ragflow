@@ -1,8 +1,10 @@
 ---
 sidebar_position: -10
 slug: /configure_knowledge_base
+sidebar_custom_props: {
+  categoryIcon: LucideCog
+}
 ---
-
 # Configure dataset
 
 Most of RAGFlow's chat assistants and Agents are based on datasets. Each of RAGFlow's datasets serves as a knowledge source, *parsing* files uploaded from your local machine and file references generated in RAGFlow's File system into the real 'knowledge' for future AI chats. This guide demonstrates some basic usages of the dataset feature, covering the following topics:
@@ -133,7 +135,7 @@ See [Run retrieval test](./run_retrieval_test.md) for details.
 
 ## Search for dataset
 
-As of RAGFlow v0.23.0, the search feature is still in a rudimentary form, supporting only dataset search by name.
+As of RAGFlow v0.23.1, the search feature is still in a rudimentary form, supporting only dataset search by name.
 
 ![search dataset](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/search_datasets.jpg)
 

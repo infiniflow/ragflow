@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import json
 import logging
 from collections import defaultdict
@@ -32,21 +33,21 @@ from common.doc_store.doc_store_base import OrderByExpr
 
 
 class KGSearch(Dealer):
-    def _chat(self, llm_bdl, system, history, gen_conf):
+    async def _chat(self, llm_bdl, system, history, gen_conf):
         response = get_llm_cache(llm_bdl.llm_name, system, history, gen_conf)
         if response:
             return response
-        response = llm_bdl.chat(system, history, gen_conf)
+        response = await llm_bdl.async_chat(system, history, gen_conf)
         if response.find("**ERROR**") >= 0:
             raise Exception(response)
         set_llm_cache(llm_bdl.llm_name, system, response, history, gen_conf)
         return response
 
-    def query_rewrite(self, llm, question, idxnms, kb_ids):
-        ty2ents = get_entity_type2samples(idxnms, kb_ids)
+    async def query_rewrite(self, llm, question, idxnms, kb_ids):
+        ty2ents = await get_entity_type2samples(idxnms, kb_ids)
         hint_prompt = PROMPTS["minirag_query2kwd"].format(query=question,
                                                           TYPE_POOL=json.dumps(ty2ents, ensure_ascii=False, indent=2))
-        result = self._chat(llm, hint_prompt, [{"role": "user", "content": "Output:"}], {})
+        result = await self._chat(llm, hint_prompt, [{"role": "user", "content": "Output:"}], {})
         try:
             keywords_data = json_repair.loads(result)
             type_keywords = keywords_data.get("answer_type_keywords", [])
@@ -138,7 +139,7 @@ class KGSearch(Dealer):
                                        idxnms, kb_ids)
         return self._ent_info_from_(es_res, 0)
 
-    def retrieval(self, question: str,
+    async def retrieval(self, question: str,
                tenant_ids: str | list[str],
                kb_ids: list[str],
                emb_mdl,
@@ -158,7 +159,7 @@ class KGSearch(Dealer):
         idxnms = [index_name(tid) for tid in tenant_ids]
         ty_kwds = []
         try:
-            ty_kwds, ents = self.query_rewrite(llm, qst, [index_name(tid) for tid in tenant_ids], kb_ids)
+            ty_kwds, ents = await self.query_rewrite(llm, qst, [index_name(tid) for tid in tenant_ids], kb_ids)
             logging.info(f"Q: {qst}, Types: {ty_kwds}, Entities: {ents}")
         except Exception as e:
             logging.exception(e)
@@ -241,7 +242,7 @@ class KGSearch(Dealer):
         for (f, t), rel in rels_from_txt:
             if not rel.get("description"):
                 for tid in tenant_ids:
-                    rela = get_relation(tid, kb_ids, f, t)
+                    rela = await get_relation(tid, kb_ids, f, t)
                     if rela:
                         break
                 else:
@@ -334,5 +335,5 @@ if __name__ == "__main__":
     embed_bdl = LLMBundle(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
 
     kg = KGSearch(settings.docStoreConn)
-    print(kg.retrieval({"question": args.question, "kb_ids": [kb_id]},
-                    search.index_name(kb.tenant_id), [kb_id], embed_bdl, llm_bdl))
+    print(asyncio.run(kg.retrieval({"question": args.question, "kb_ids": [kb_id]},
+                    search.index_name(kb.tenant_id), [kb_id], embed_bdl, llm_bdl)))

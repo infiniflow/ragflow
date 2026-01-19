@@ -17,7 +17,7 @@ import {
   useGetChunkHighlights,
   useGetDocumentUrl,
 } from '@/hooks/use-document-request';
-import styles from './index.less';
+import styles from './index.module.less';
 
 interface IProps {
   chunk: IChunk | IReferenceChunk;

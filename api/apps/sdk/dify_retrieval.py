@@ -135,7 +135,7 @@ async def retrieval(tenant_id):
             doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         if not doc_ids and metadata_condition:
             doc_ids = ["-999"]
-        ranks = settings.retriever.retrieval(
+        ranks = await settings.retriever.retrieval(
             question,
             embd_mdl,
             kb.tenant_id,
@@ -150,7 +150,7 @@ async def retrieval(tenant_id):
         )
 
         if use_kg:
-            ck = settings.kg_retriever.retrieval(question,
+            ck = await settings.kg_retriever.retrieval(question,
                                                  [tenant_id],
                                                  [kb_id],
                                                  embd_mdl,

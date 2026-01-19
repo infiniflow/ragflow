@@ -1,8 +1,10 @@
 ---
 sidebar_position: 4
 slug: /enable_table_of_contents
+sidebar_custom_props: {
+  categoryIcon: LucideTableOfContents
+}
 ---
-
 # Extract table of contents
 
 Extract table of contents (TOC) from documents to provide long context RAG and improve retrieval.

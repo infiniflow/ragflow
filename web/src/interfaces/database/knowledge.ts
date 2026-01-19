@@ -67,6 +67,9 @@ export interface ParserConfig {
   tag_kb_ids?: string[];
   topn_tags?: number;
   graphrag?: { use_graphrag?: boolean };
+  enable_metadata?: boolean;
+  metadata?: any;
+  built_in_metadata?: Array<{ key: string; type: string }>;
 }
 
 export interface IKnowledgeFileParserConfig {
@@ -116,7 +119,7 @@ export interface ITenantInfo {
   tts_id: string;
 }
 
-export type ChunkDocType = 'image' | 'table';
+export type ChunkDocType = 'image' | 'table' | 'text';
 
 export interface IChunk {
   available_int: number; // Whether to enable, 0: not enabled, 1: enabled

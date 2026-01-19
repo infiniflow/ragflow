@@ -109,6 +109,19 @@ export const SelectWithSearch = forwardRef<
       }
     }, [options, value]);
 
+    const showSearch = useMemo(() => {
+      if (Array.isArray(options) && options.length > 5) {
+        return true;
+      }
+      if (Array.isArray(options)) {
+        const optionsNum = options.reduce((acc, option) => {
+          return acc + (option?.options?.length || 0);
+        }, 0);
+        return optionsNum > 5;
+      }
+      return false;
+    }, [options]);
+
     const handleSelect = useCallback(
       (val: string) => {
         setValue(val);
@@ -179,7 +192,7 @@ export const SelectWithSearch = forwardRef<
           align="start"
         >
           <Command className="p-5">
-            {options && options.length > 5 && (
+            {showSearch && (
               <CommandInput
                 placeholder={t('common.search') + '...'}
                 className=" placeholder:text-text-disabled"

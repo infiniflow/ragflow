@@ -23,20 +23,26 @@ import { LlmModelType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
+import { history } from '@/utils/simple-history-util';
 import { t } from 'i18next';
 import { Settings } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ControllerRenderProps,
   FieldValues,
   useFormContext,
 } from 'react-hook-form';
+import { useLocation } from 'react-router';
+import { DataSetContext } from '..';
 import {
   MetadataType,
   useManageMetadata,
   util,
 } from '../../components/metedata/hooks/use-manage-modal';
-import { IMetaDataReturnJSONSettings } from '../../components/metedata/interface';
+import {
+  IBuiltInMetadataItem,
+  IMetaDataReturnJSONSettings,
+} from '../../components/metedata/interface';
 import { ManageMetadataModal } from '../../components/metedata/manage-modal';
 import {
   useHandleKbEmbedding,
@@ -368,7 +374,9 @@ export function AutoMetadata({
   otherData?: Record<string, any>;
 }) {
   // get metadata field
+  const location = useLocation();
   const form = useFormContext();
+  const datasetContext = useContext(DataSetContext);
   const {
     manageMetadataVisible,
     showManageMetadataModal,
@@ -376,6 +384,32 @@ export function AutoMetadata({
     tableData,
     config: metadataConfig,
   } = useManageMetadata();
+
+  const handleClickOpenMetadata = useCallback(() => {
+    const metadata = form.getValues('parser_config.metadata');
+    const builtInMetadata = form.getValues('parser_config.built_in_metadata');
+    const tableMetaData = util.metaDataSettingJSONToMetaDataTableData(metadata);
+    showManageMetadataModal({
+      metadata: tableMetaData,
+      isCanAdd: true,
+      type: type,
+      record: otherData,
+      builtInMetadata,
+    });
+  }, [form, otherData, showManageMetadataModal, type]);
+
+  useEffect(() => {
+    const locationState = location.state as
+      | { openMetadata?: boolean }
+      | undefined;
+    if (locationState?.openMetadata && !datasetContext?.loading) {
+      setTimeout(() => {
+        handleClickOpenMetadata();
+      }, 0);
+      locationState.openMetadata = false;
+      history.replace({ ...location }, locationState);
+    }
+  }, [location, handleClickOpenMetadata, datasetContext]);
 
   const autoMetadataField: FormFieldConfig = {
     name: 'parser_config.enable_metadata',
@@ -386,21 +420,7 @@ export function AutoMetadata({
     tooltip: t('knowledgeConfiguration.autoMetadataTip'),
     render: (fieldProps: ControllerRenderProps) => (
       <div className="flex items-center justify-between">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => {
-            const metadata = form.getValues('parser_config.metadata');
-            const tableMetaData =
-              util.metaDataSettingJSONToMetaDataTableData(metadata);
-            showManageMetadataModal({
-              metadata: tableMetaData,
-              isCanAdd: true,
-              type: type,
-              record: otherData,
-            });
-          }}
-        >
+        <Button type="button" variant="ghost" onClick={handleClickOpenMetadata}>
           <div className="flex items-center gap-2">
             <Settings />
             {t('knowledgeConfiguration.settings')}
@@ -414,8 +434,16 @@ export function AutoMetadata({
     ),
   };
 
-  const handleSaveMetadata = (data?: IMetaDataReturnJSONSettings) => {
-    form.setValue('parser_config.metadata', data || []);
+  const handleSaveMetadata = (data?: {
+    metadata?: IMetaDataReturnJSONSettings;
+    builtInMetadata?: IBuiltInMetadataItem[];
+  }) => {
+    form.setValue('parser_config.metadata', data?.metadata || []);
+    form.setValue(
+      'parser_config.built_in_metadata',
+      data?.builtInMetadata || [],
+    );
+    form.setValue('parser_config.enable_metadata', true);
   };
   return (
     <>
@@ -445,7 +473,11 @@ export function AutoMetadata({
           isShowDescription={true}
           isShowValueSwitch={true}
           isVerticalShowValue={false}
-          success={(data?: IMetaDataReturnJSONSettings) => {
+          builtInMetadata={metadataConfig.builtInMetadata}
+          success={(data?: {
+            metadata?: IMetaDataReturnJSONSettings;
+            builtInMetadata?: IBuiltInMetadataItem[];
+          }) => {
             handleSaveMetadata(data);
           }}
         />
@@ -500,7 +532,6 @@ export function LLMModelItem({ line = 1, isEdit, label, name }: IProps) {
               })}
             >
               <FormLabel
-                required
                 tooltip={t('globalIndexModelTip')}
                 className={cn('text-sm  whitespace-wrap ', {
                   'w-1/4': line === 1,

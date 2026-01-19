@@ -1,8 +1,10 @@
 ---
 sidebar_position: 3
 slug: /implement_deep_research
+sidebar_custom_props: {
+  categoryIcon: LucideScanSearch
+}
 ---
-
 # Implement deep research
 
 Implements deep research for agentic reasoning.

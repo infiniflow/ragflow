@@ -8,7 +8,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { IChunk } from '@/interfaces/database/knowledge';
+import type { ChunkDocType, IChunk } from '@/interfaces/database/knowledge';
 import { cn } from '@/lib/utils';
 import { CheckedState } from '@radix-ui/react-checkbox';
 import classNames from 'classnames';
@@ -16,7 +16,7 @@ import DOMPurify from 'dompurify';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChunkTextMode } from '../../constant';
-import styles from './index.less';
+import styles from './index.module.less';
 
 interface IProps {
   item: IChunk;
@@ -67,6 +67,10 @@ const ChunkCard = ({
     setEnabled(available === 1);
   }, [available]);
 
+  const chunkType =
+    ((item.doc_type_kwd &&
+      String(item.doc_type_kwd)?.toLowerCase()) as ChunkDocType) || 'text';
+
   return (
     <Card
       className={classNames('relative flex-none', styles.chunkCard, {
@@ -81,9 +85,7 @@ const ChunkCard = ({
         bg-bg-card rounded-bl-2xl rounded-tr-lg
         border-l-0.5 border-b-0.5 border-border-button"
       >
-        {t(
-          `chunk.docType.${item.doc_type_kwd ? String(item.doc_type_kwd).toLowerCase() : 'text'}`,
-        )}
+        {t(`chunk.docType.${chunkType}`)}
       </span>
 
       <div className="flex items-start justify-between gap-2">
@@ -102,7 +104,7 @@ const ChunkCard = ({
             <TooltipContent
               className="p-0"
               align={'start'}
-              side={'right'}
+              side={'left'}
               sideOffset={-20}
               tabIndex={-1}
             >

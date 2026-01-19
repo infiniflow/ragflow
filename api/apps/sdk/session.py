@@ -60,7 +60,7 @@ async def create(tenant_id, chat_id):
         "name": req.get("name", "New session"),
         "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}],
         "user_id": req.get("user_id", ""),
-        "reference": [{}],
+        "reference": [],
     }
     if not conv.get("name"):
         return get_error_data_result(message="`name` can not be empty.")
@@ -304,9 +304,12 @@ async def chat_completion_openai_like(tenant_id, chat_id):
         # The choices field on the last chunk will always be an empty array [].
         async def streamed_response_generator(chat_id, dia, msg):
             token_used = 0
-            answer_cache = ""
-            reasoning_cache = ""
             last_ans = {}
+            full_content = ""
+            full_reasoning = ""
+            final_answer = None
+            final_reference = None
+            in_think = False
             response = {
                 "id": f"chatcmpl-{chat_id}",
                 "choices": [
@@ -336,47 +339,30 @@ async def chat_completion_openai_like(tenant_id, chat_id):
                     chat_kwargs["doc_ids"] = doc_ids_str
                 async for ans in async_chat(dia, msg, True, **chat_kwargs):
                     last_ans = ans
-                    answer = ans["answer"]
-
-                    reasoning_match = re.search(r"<think>(.*?)</think>", answer, flags=re.DOTALL)
-                    if reasoning_match:
-                        reasoning_part = reasoning_match.group(1)
-                        content_part = answer[reasoning_match.end() :]
-                    else:
-                        reasoning_part = ""
-                        content_part = answer
-
-                    reasoning_incremental = ""
-                    if reasoning_part:
-                        if reasoning_part.startswith(reasoning_cache):
-                            reasoning_incremental = reasoning_part.replace(reasoning_cache, "", 1)
-                        else:
-                            reasoning_incremental = reasoning_part
-                        reasoning_cache = reasoning_part
-
-                    content_incremental = ""
-                    if content_part:
-                        if content_part.startswith(answer_cache):
-                            content_incremental = content_part.replace(answer_cache, "", 1)
-                    else:
-                        content_incremental = content_part
-                    answer_cache = content_part
-
-                    token_used += len(reasoning_incremental) + len(content_incremental)
-
-                    if not any([reasoning_incremental, content_incremental]):
+                    if ans.get("final"):
+                        if ans.get("answer"):
+                            full_content = ans["answer"]
+                        final_answer = ans.get("answer") or full_content
+                        final_reference = ans.get("reference", {})
                         continue
-
-                    if reasoning_incremental:
-                        response["choices"][0]["delta"]["reasoning_content"] = reasoning_incremental
-                    else:
-                        response["choices"][0]["delta"]["reasoning_content"] = None
-
-                    if content_incremental:
-                        response["choices"][0]["delta"]["content"] = content_incremental
-                    else:
+                    if ans.get("start_to_think"):
+                        in_think = True
+                        continue
+                    if ans.get("end_to_think"):
+                        in_think = False
+                        continue
+                    delta = ans.get("answer") or ""
+                    if not delta:
+                        continue
+                    token_used += len(delta)
+                    if in_think:
+                        full_reasoning += delta
+                        response["choices"][0]["delta"]["reasoning_content"] = delta
                         response["choices"][0]["delta"]["content"] = None
-
+                    else:
+                        full_content += delta
+                        response["choices"][0]["delta"]["content"] = delta
+                        response["choices"][0]["delta"]["reasoning_content"] = None
                     yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
             except Exception as e:
                 response["choices"][0]["delta"]["content"] = "**ERROR**: " + str(e)
@@ -388,8 +374,9 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             response["choices"][0]["finish_reason"] = "stop"
             response["usage"] = {"prompt_tokens": len(prompt), "completion_tokens": token_used, "total_tokens": len(prompt) + token_used}
             if need_reference:
-                response["choices"][0]["delta"]["reference"] = chunks_format(last_ans.get("reference", []))
-                response["choices"][0]["delta"]["final_content"] = last_ans.get("answer", "")
+                reference_payload = final_reference if final_reference is not None else last_ans.get("reference", [])
+                response["choices"][0]["delta"]["reference"] = chunks_format(reference_payload)
+                response["choices"][0]["delta"]["final_content"] = final_answer if final_answer is not None else full_content
             yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
             yield "data:[DONE]\n\n"
 
@@ -438,7 +425,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             ],
         }
         if need_reference:
-            response["choices"][0]["message"]["reference"] = chunks_format(answer.get("reference", []))
+            response["choices"][0]["message"]["reference"] = chunks_format(answer.get("reference", {}))
 
         return jsonify(response)
 
@@ -1111,12 +1098,12 @@ async def retrieval_test_embedded():
             _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
-        ranks = settings.retriever.retrieval(
+        ranks = await settings.retriever.retrieval(
             _question, embd_mdl, tenant_ids, kb_ids, page, size, similarity_threshold, vector_similarity_weight, top,
             local_doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"), rank_feature=labels
         )
         if use_kg:
-            ck = settings.kg_retriever.retrieval(_question, tenant_ids, kb_ids, embd_mdl,
+            ck = await settings.kg_retriever.retrieval(_question, tenant_ids, kb_ids, embd_mdl,
                                                  LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)

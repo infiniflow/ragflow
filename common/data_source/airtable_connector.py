@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import logging
-from typing import Any
+from typing import Any, Generator
 
 import requests
 
@@ -8,8 +8,8 @@ from pyairtable import Api as AirtableApi
 
 from common.data_source.config import AIRTABLE_CONNECTOR_SIZE_THRESHOLD, INDEX_BATCH_SIZE, DocumentSource
 from common.data_source.exceptions import ConnectorMissingCredentialError
-from common.data_source.interfaces import LoadConnector
-from common.data_source.models import Document, GenerateDocumentsOutput
+from common.data_source.interfaces import LoadConnector, PollConnector
+from common.data_source.models import Document, GenerateDocumentsOutput, SecondsSinceUnixEpoch
 from common.data_source.utils import extract_size_bytes, get_file_ext
 
 class AirtableClientNotSetUpError(PermissionError):
@@ -19,7 +19,7 @@ class AirtableClientNotSetUpError(PermissionError):
         )
 
 
-class AirtableConnector(LoadConnector):
+class AirtableConnector(LoadConnector, PollConnector):
     """
     Lightweight Airtable connector.
 
@@ -75,7 +75,6 @@ class AirtableConnector(LoadConnector):
         batch: list[Document] = []
 
         for record in records:
-            print(record)
             record_id = record.get("id")
             fields = record.get("fields", {})
             created_time = record.get("createdTime")
@@ -131,6 +130,26 @@ class AirtableConnector(LoadConnector):
 
         if batch:
             yield batch
+
+    def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> Generator[list[Document], None, None]:
+        """Poll source to get documents"""
+        start_dt = datetime.fromtimestamp(start, tz=timezone.utc)
+        end_dt = datetime.fromtimestamp(end, tz=timezone.utc)
+
+        for batch in self.load_from_state():
+            filtered: list[Document] = []
+
+            for doc in batch:
+                if not doc.doc_updated_at:
+                    continue
+
+                doc_dt = doc.doc_updated_at.astimezone(timezone.utc)
+
+                if start_dt <= doc_dt < end_dt:
+                    filtered.append(doc)
+
+            if filtered:
+                yield filtered
 
 if __name__ == "__main__":
     import os

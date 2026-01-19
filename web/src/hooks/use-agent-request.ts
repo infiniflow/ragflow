@@ -1,7 +1,7 @@
 import { FileUploadProps } from '@/components/file-upload';
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
-import { AgentGlobals } from '@/constants/agent';
+import { AgentGlobals, initialBeginValues } from '@/constants/agent';
 import {
   IAgentLogsRequest,
   IAgentLogsResponse,
@@ -31,7 +31,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { get, set } from 'lodash';
 import { useCallback, useState } from 'react';
-import { useParams, useSearchParams } from 'umi';
+import { useParams, useSearchParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -76,6 +76,7 @@ export const EmptyDsl = {
         data: {
           label: 'Begin',
           name: 'begin',
+          form: initialBeginValues,
         },
         sourcePosition: 'left',
         targetPosition: 'right',
@@ -96,6 +97,7 @@ export const EmptyDsl = {
   retrieval: [], // reference
   history: [],
   path: [],
+  variables: [],
   globals: {
     [AgentGlobals.SysQuery]: '',
     [AgentGlobals.SysUserId]: '',
@@ -621,10 +623,10 @@ export const useFetchExternalAgentInputs = () => {
     isFetching: loading,
     refetch,
   } = useQuery<IInputs>({
-    queryKey: [AgentApiAction.FetchExternalAgentInputs],
+    queryKey: [AgentApiAction.FetchExternalAgentInputs, sharedId],
     initialData: {} as IInputs,
     refetchOnReconnect: false,
-    refetchOnMount: false,
+    // refetchOnMount: false,
     refetchOnWindowFocus: false,
     gcTime: 0,
     enabled: !!sharedId,

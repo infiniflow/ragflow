@@ -274,10 +274,32 @@ export const useSendMessageWithSse = (
                 const val = JSON.parse(value?.data || '');
                 const d = val?.data;
                 if (typeof d !== 'boolean') {
-                  setAnswer({
-                    ...d,
-                    conversationId: body?.conversation_id,
-                    chatBoxId: body.chatBoxId,
+
+                  setAnswer((prev) => {
+                    const prevAnswer = prev.answer || '';
+                    const currentAnswer = d.answer || '';
+
+                    let newAnswer: string;
+                    if (prevAnswer && currentAnswer.startsWith(prevAnswer)) {
+                      newAnswer = currentAnswer;
+                    } else {
+                      newAnswer = prevAnswer + currentAnswer;
+                    }
+
+                    if (d.start_to_think === true) {
+                      newAnswer = newAnswer + '<think>';
+                    }
+
+                    if (d.end_to_think === true) {
+                      newAnswer = newAnswer + '</think>';
+                    }
+
+                    return {
+                      ...d,
+                      answer: newAnswer,
+                      conversationId: body?.conversation_id,
+                      chatBoxId: body.chatBoxId,
+                    };
                   });
                 }
               } catch (e) {
@@ -523,6 +545,30 @@ export const useSelectDerivedMessages = () => {
     });
   }, []);
 
+  const addPrologue = useCallback((prologue: string) => {
+    setDerivedMessages((pre) => {
+      if (pre.length > 0) {
+        return [
+          {
+            ...pre[0],
+            content: prologue,
+          },
+          ...pre.slice(1),
+        ];
+      }
+
+      return [
+        {
+          role: MessageType.Assistant,
+          content: prologue,
+          id: buildMessageUuid({
+            role: MessageType.Assistant,
+          }),
+        },
+      ];
+    });
+  }, []);
+
   const removeLatestMessage = useCallback(() => {
     setDerivedMessages((pre) => {
       const nextMessages = pre?.slice(0, -2) ?? [];
@@ -594,6 +640,7 @@ export const useSelectDerivedMessages = () => {
     removeAllMessages,
     scrollToBottom,
     removeAllMessagesExceptFirst,
+    addPrologue,
   };
 };
 

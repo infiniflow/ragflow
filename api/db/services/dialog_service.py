@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import binascii
 import logging
 import re
@@ -23,7 +24,6 @@ from functools import partial
 from timeit import default_timer as timer
 from langfuse import Langfuse
 from peewee import fn
-from agentic_reasoning import DeepResearcher
 from api.db.services.file_service import FileService
 from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
@@ -36,6 +36,7 @@ from common.metadata_utils import apply_meta_data_filter
 from api.db.services.tenant_llm_service import TenantLLMService
 from common.time_utils import current_timestamp, datetime_format
 from graphrag.general.mind_map_extractor import MindMapExtractor
+from rag.advanced_rag import DeepResearcher
 from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
@@ -196,19 +197,13 @@ async def async_chat_solo(dialog, messages, stream=True):
     if attachments and msg:
         msg[-1]["content"] += attachments
     if stream:
-        last_ans = ""
-        delta_ans = ""
-        answer = ""
-        async for ans in chat_mdl.async_chat_streamly(prompt_config.get("system", ""), msg, dialog.llm_setting):
-            answer = ans
-            delta_ans = ans[len(last_ans):]
-            if num_tokens_from_string(delta_ans) < 16:
+        stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
+        async for kind, value, state in _stream_with_think_delta(stream_iter):
+            if kind == "marker":
+                flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
+                yield {"answer": "", "reference": {}, "audio_binary": None, "prompt": "", "created_at": time.time(), "final": False, **flags}
                 continue
-            last_ans = answer
-            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt": "", "created_at": time.time()}
-            delta_ans = ""
-        if delta_ans:
-            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt": "", "created_at": time.time()}
+            yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
     else:
         answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
         user_content = msg[-1].get("content", "[content not available]")
@@ -301,10 +296,14 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=dialog.tenant_id)
     if langfuse_keys:
         langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
-        if langfuse.auth_check():
-            langfuse_tracer = langfuse
-            trace_id = langfuse_tracer.create_trace_id()
-            trace_context = {"trace_id": trace_id}
+        try:
+            if langfuse.auth_check():
+                langfuse_tracer = langfuse
+                trace_id = langfuse_tracer.create_trace_id()
+                trace_context = {"trace_id": trace_id}
+        except Exception:
+            # Skip langfuse tracing if connection fails
+            pass
 
     check_langfuse_tracer_ts = timer()
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
@@ -386,16 +385,28 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     doc_ids=attachments,
                 ),
             )
+            queue = asyncio.Queue()
+            async def callback(msg:str):
+                nonlocal queue
+                await queue.put(msg + "<br/>")
 
-            async for think in reasoner.thinking(kbinfos, attachments_ + " ".join(questions)):
-                if isinstance(think, str):
-                    thought = think
-                    knowledges = [t for t in think.split("\n") if t]
-                elif stream:
-                    yield think
+            await callback("<START_DEEP_RESEARCH>")
+            task = asyncio.create_task(reasoner.research(kbinfos, questions[-1], questions[-1], callback=callback))
+            while True:
+                msg = await queue.get()
+                if msg.find("<START_DEEP_RESEARCH>") == 0:
+                    yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "start_to_think": True}
+                elif msg.find("<END_DEEP_RESEARCH>") == 0:
+                    yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "end_to_think": True}
+                    break
+                else:
+                    yield {"answer": msg, "reference": {}, "audio_binary": None, "final": False}
+
+            await task
+
         else:
             if embd_mdl:
-                kbinfos = retriever.retrieval(
+                kbinfos = await retriever.retrieval(
                     " ".join(questions),
                     embd_mdl,
                     tenant_ids,
@@ -411,7 +422,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     rank_feature=label_question(" ".join(questions), kbs),
                 )
                 if prompt_config.get("toc_enhance"):
-                    cks = retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
+                    cks = await retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
                     if cks:
                         kbinfos["chunks"] = cks
                 kbinfos["chunks"] = retriever.retrieval_by_children(kbinfos["chunks"], tenant_ids)
@@ -421,21 +432,19 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 kbinfos["chunks"].extend(tav_res["chunks"])
                 kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
             if prompt_config.get("use_kg"):
-                ck = settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
+                ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
                                                        LLMBundle(dialog.tenant_id, LLMType.CHAT))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
-            knowledges = kb_prompt(kbinfos, max_tokens)
-
+    knowledges = kb_prompt(kbinfos, max_tokens)
     logging.debug("{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
 
     retrieval_ts = timer()
     if not knowledges and prompt_config.get("empty_response"):
         empty_res = prompt_config["empty_response"]
         yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions),
-               "audio_binary": tts(tts_mdl, empty_res)}
-        yield {"answer": prompt_config["empty_response"], "reference": kbinfos}
+               "audio_binary": tts(tts_mdl, empty_res), "final": True}
         return
 
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
@@ -538,21 +547,22 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         )
 
     if stream:
-        last_ans = ""
-        answer = ""
-        async for ans in chat_mdl.async_chat_streamly(prompt + prompt4citation, msg[1:], gen_conf):
-            if thought:
-                ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-            answer = ans
-            delta_ans = ans[len(last_ans):]
-            if num_tokens_from_string(delta_ans) < 16:
+        stream_iter = chat_mdl.async_chat_streamly_delta(prompt + prompt4citation, msg[1:], gen_conf)
+        last_state = None
+        async for kind, value, state in _stream_with_think_delta(stream_iter):
+            last_state = state
+            if kind == "marker":
+                flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
+                yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, **flags}
                 continue
-            last_ans = answer
-            yield {"answer": thought + answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
-        delta_ans = answer[len(last_ans):]
-        if delta_ans:
-            yield {"answer": thought + answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
-        yield decorate_answer(thought + answer)
+            yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
+        full_answer = last_state.full_text if last_state else ""
+        if full_answer:
+            final = decorate_answer(thought + full_answer)
+            final["final"] = True
+            final["audio_binary"] = None
+            final["answer"] = ""
+            yield final
     else:
         answer = await chat_mdl.async_chat(prompt + prompt4citation, msg[1:], gen_conf)
         user_content = msg[-1].get("content", "[content not available]")
@@ -733,6 +743,84 @@ def tts(tts_mdl, text):
         return None
     return binascii.hexlify(bin).decode("utf-8")
 
+
+class _ThinkStreamState:
+    def __init__(self) -> None:
+        self.full_text = ""
+        self.last_idx = 0
+        self.endswith_think = False
+        self.last_full = ""
+        self.last_model_full = ""
+        self.in_think = False
+        self.buffer = ""
+
+
+def _next_think_delta(state: _ThinkStreamState) -> str:
+    full_text = state.full_text
+    if full_text == state.last_full:
+        return ""
+    state.last_full = full_text
+    delta_ans = full_text[state.last_idx:]
+
+    if delta_ans.find("<think>") == 0:
+        state.last_idx += len("<think>")
+        return "<think>"
+    if delta_ans.find("<think>") > 0:
+        delta_text = full_text[state.last_idx:state.last_idx + delta_ans.find("<think>")]
+        state.last_idx += delta_ans.find("<think>")
+        return delta_text
+    if delta_ans.endswith("</think>"):
+        state.endswith_think = True
+    elif state.endswith_think:
+        state.endswith_think = False
+        return "</think>"
+
+    state.last_idx = len(full_text)
+    if full_text.endswith("</think>"):
+        state.last_idx -= len("</think>")
+    return re.sub(r"(<think>|</think>)", "", delta_ans)
+
+
+async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
+    state = _ThinkStreamState()
+    async for chunk in stream_iter:
+        if not chunk:
+            continue
+        if chunk.startswith(state.last_model_full):
+            new_part = chunk[len(state.last_model_full):]
+            state.last_model_full = chunk
+        else:
+            new_part = chunk
+            state.last_model_full += chunk
+        if not new_part:
+            continue
+        state.full_text += new_part
+        delta = _next_think_delta(state)
+        if not delta:
+            continue
+        if delta in ("<think>", "</think>"):
+            if delta == "<think>" and state.in_think:
+                continue
+            if delta == "</think>" and not state.in_think:
+                continue
+            if state.buffer:
+                yield ("text", state.buffer, state)
+                state.buffer = ""
+            state.in_think = delta == "<think>"
+            yield ("marker", delta, state)
+            continue
+        state.buffer += delta
+        if num_tokens_from_string(state.buffer) < min_tokens:
+            continue
+        yield ("text", state.buffer, state)
+        state.buffer = ""
+
+    if state.buffer:
+        yield ("text", state.buffer, state)
+        state.buffer = ""
+    if state.endswith_think:
+        yield ("marker", "</think>", state)
+
 async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
     doc_ids = search_config.get("doc_ids", [])
     rerank_mdl = None
@@ -758,7 +846,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
-    kbinfos = retriever.retrieval(
+    kbinfos = await retriever.retrieval(
         question=question,
         embd_mdl=embd_mdl,
         tenant_ids=tenant_ids,
@@ -798,11 +886,20 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         refs["chunks"] = chunks_format(refs)
         return {"answer": answer, "reference": refs}
 
-    answer = ""
-    async for ans in chat_mdl.async_chat_streamly(sys_prompt, msg, {"temperature": 0.1}):
-        answer = ans
-        yield {"answer": answer, "reference": {}}
-    yield decorate_answer(answer)
+    stream_iter = chat_mdl.async_chat_streamly_delta(sys_prompt, msg, {"temperature": 0.1})
+    last_state = None
+    async for kind, value, state in _stream_with_think_delta(stream_iter):
+        last_state = state
+        if kind == "marker":
+            flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
+            yield {"answer": "", "reference": {}, "final": False, **flags}
+            continue
+        yield {"answer": value, "reference": {}, "final": False}
+    full_answer = last_state.full_text if last_state else ""
+    final = decorate_answer(full_answer)
+    final["final"] = True
+    final["answer"] = ""
+    yield final
 
 
 async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
@@ -825,7 +922,7 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
-    ranks = settings.retriever.retrieval(
+    ranks = await settings.retriever.retrieval(
         question=question,
         embd_mdl=embd_mdl,
         tenant_ids=tenant_ids,

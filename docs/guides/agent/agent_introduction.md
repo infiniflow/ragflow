@@ -1,8 +1,10 @@
 ---
 sidebar_position: 1
 slug: /agent_introduction
+sidebar_custom_props: {
+  categoryIcon: LucideBookOpenText
+}
 ---
-
 # Introduction to agents
 
 Key concepts, basic operations, a quick view of the agent editor.

@@ -62,10 +62,21 @@ async def upload():
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
 
     file_objs = files.getlist("file")
+    def _close_file_objs(objs):
+        for obj in objs:
+            try:
+                obj.close()
+            except Exception:
+                try:
+                    obj.stream.close()
+                except Exception:
+                    pass
     for file_obj in file_objs:
         if file_obj.filename == "":
+            _close_file_objs(file_objs)
             return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
         if len(file_obj.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+            _close_file_objs(file_objs)
             return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=RetCode.ARGUMENT_ERROR)
 
     e, kb = KnowledgebaseService.get_by_id(kb_id)
@@ -615,6 +626,7 @@ async def run():
                         e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
                         if not e:
                             raise LookupError("Can't find this dataset!")
+                        doc.parser_config["llm_id"] = kb.parser_config.get("llm_id")
                         doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
                         doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
                         DocumentService.update_parser_config(doc.id, doc.parser_config)

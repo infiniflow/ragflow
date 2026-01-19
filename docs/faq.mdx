@@ -1,8 +1,10 @@
 ---
 sidebar_position: 10
 slug: /faq
+sidebar_custom_props: {
+  sidebarIcon: LucideCircleQuestionMark
+}
 ---
-
 # FAQs
 
 Answers to questions about general features, troubleshooting, usage, and more.
@@ -564,3 +566,82 @@ RAGFlow supports MinerU's `vlm-http-client` backend, enabling you to delegate do
 :::tip NOTE
 When using the `vlm-http-client` backend, the RAGFlow server requires no GPU, only network connectivity. This enables cost-effective distributed deployment with multiple RAGFlow instances sharing one remote vLLM server.
 :::
+
+### How to use PaddleOCR for document parsing?
+
+From v0.24.0 onwards, RAGFlow includes PaddleOCR as an optional PDF parser. Please note that RAGFlow acts only as a *remote client* for PaddleOCR, calling the PaddleOCR API to parse PDFs and reading the returned files.
+
+There are two main ways to configure and use PaddleOCR in RAGFlow:
+
+#### 1. Using PaddleOCR Official API
+
+This method uses PaddleOCR's official API service with an access token.
+
+**Step 1: Configure RAGFlow**
+- **Via Environment Variables:**
+   ```bash
+   # In your docker/.env file:
+   PADDLEOCR_API_URL=https://your-paddleocr-api-endpoint
+   PADDLEOCR_ALGORITHM=PaddleOCR-VL
+   PADDLEOCR_ACCESS_TOKEN=your-access-token-here
+   ```
+
+- **Via UI:**
+   - Navigate to **Model providers** page
+   - Add a new OCR model with factory type "PaddleOCR"
+   - Configure the following fields:
+      - **PaddleOCR API URL**: Your PaddleOCR API endpoint
+      - **PaddleOCR Algorithm**: Select the algorithm corresponding to the API endpoint
+      - **AI Studio Access Token**: Your access token for the PaddleOCR API
+
+**Step 2: Usage in Dataset Configuration**
+- In your dataset's **Configuration** page, find the **Ingestion pipeline** section
+- If using built-in chunking methods that support PDF parsing, select **PaddleOCR** from the **PDF parser** dropdown
+- If using custom ingestion pipeline, select **PaddleOCR** in the **Parser** component
+
+**Notes:**
+- To obtain the API URL, visit the [PaddleOCR official website](https://aistudio.baidu.com/paddleocr/task), click the **API** button in the upper-left corner, choose the example code for the specific algorithm you want to use (e.g., PaddleOCR-VL), and copy the `API_URL`.
+- Access tokens can be obtained from the [AI Studio platform](https://aistudio.baidu.com/account/accessToken).
+- This method requires internet connectivity to reach the official PaddleOCR API.
+
+#### 2. Using Self-Hosted PaddleOCR Service
+
+This method allows you to deploy your own PaddleOCR service and use it without an access token.
+
+**Step 1: Deploy PaddleOCR Service**
+Follow the [PaddleOCR serving documentation](https://www.paddleocr.ai/latest/en/version3.x/deployment/serving.html) to deploy your own service. For layout parsing, you can use an endpoint like:
+
+```bash
+http://localhost:8080/layout-parsing
+```
+
+**Step 2: Configure RAGFlow**
+- **Via Environment Variables:**
+  ```bash
+  PADDLEOCR_API_URL=http://localhost:8080/layout-parsing
+  PADDLEOCR_ALGORITHM=PaddleOCR-VL
+  # No access token required for self-hosted service
+  ```
+
+- **Via UI:**
+   - Navigate to **Model providers** page
+   - Add a new OCR model with factory type "PaddleOCR"
+   - Configure the following fields:
+      - **PaddleOCR API URL**: The endpoint of your deployed service
+      - **PaddleOCR Algorithm**: Select the algorithm corresponding to the deployed service
+      - **AI Studio Access Token**: Leave empty
+
+**Step 3: Usage in Dataset Configuration**
+- In your dataset's **Configuration** page, find the **Ingestion pipeline** section
+- If using built-in chunking methods that support PDF parsing, select **PaddleOCR** from the **PDF parser** dropdown
+- If using custom ingestion pipeline, select **PaddleOCR** in the **Parser** component
+
+#### Environment Variables Summary
+
+| Environment Variable | Description | Default | Required |
+|---------------------|-------------|---------|----------|
+| `PADDLEOCR_API_URL` | PaddleOCR API endpoint URL | `""` | Yes, when using environment variables |
+| `PADDLEOCR_ALGORITHM` | Algorithm to use for parsing | `"PaddleOCR-VL"` | No |
+| `PADDLEOCR_ACCESS_TOKEN` | Access token for official API | `None` | Only when using official API |
+
+Environment variables can be used for auto-provisioning, but are not required if configuring via UI. When environment variables are set, these values are used to auto-provision a PaddleOCR model for the tenant on first use.
