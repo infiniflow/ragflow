@@ -806,19 +806,48 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
     if raptor_config.get("scope", "file") == "file":
         for x, doc_id in enumerate(doc_ids):
             chunks = []
+            skipped_chunks = 0
             for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
                                                    fields=["content_with_weight", vctr_nm],
                                                    sort_by_position=True):
+                # Skip chunks that don't have the required vector field (may have been indexed with different embedding model)
+                if vctr_nm not in d or d[vctr_nm] is None:
+                    skipped_chunks += 1
+                    logging.warning(f"RAPTOR: Chunk missing vector field '{vctr_nm}' in doc {doc_id}, skipping")
+                    continue
                 chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+            
+            if skipped_chunks > 0:
+                callback(msg=f"[WARN] Skipped {skipped_chunks} chunks without vector field '{vctr_nm}' for doc {doc_id}. Consider re-parsing the document with the current embedding model.")
+            
+            if not chunks:
+                logging.warning(f"RAPTOR: No valid chunks with vectors found for doc {doc_id}")
+                callback(msg=f"[WARN] No valid chunks with vectors found for doc {doc_id}, skipping")
+                continue
+                
             await generate(chunks, doc_id)
             callback(prog=(x + 1.) / len(doc_ids))
     else:
         chunks = []
+        skipped_chunks = 0
         for doc_id in doc_ids:
             for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
                                                    fields=["content_with_weight", vctr_nm],
                                                    sort_by_position=True):
+                # Skip chunks that don't have the required vector field
+                if vctr_nm not in d or d[vctr_nm] is None:
+                    skipped_chunks += 1
+                    logging.warning(f"RAPTOR: Chunk missing vector field '{vctr_nm}' in doc {doc_id}, skipping")
+                    continue
                 chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+
+        if skipped_chunks > 0:
+            callback(msg=f"[WARN] Skipped {skipped_chunks} chunks without vector field '{vctr_nm}'. Consider re-parsing documents with the current embedding model.")
+
+        if not chunks:
+            logging.error(f"RAPTOR: No valid chunks with vectors found in any document for kb {row['kb_id']}")
+            callback(msg=f"[ERROR] No valid chunks with vectors found. Please ensure documents are parsed with the current embedding model (vector size: {vector_size}).")
+            return res, tk_count
 
         await generate(chunks, fake_doc_id)
 
