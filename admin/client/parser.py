@@ -56,6 +56,7 @@ sql_command: list_services
            | list_keys
            | drop_key
            | list_user_datasets
+           | list_user_dataset_files
            | list_user_agents
            | list_user_chats
            | list_user_model_providers
@@ -343,7 +344,7 @@ class RAGFlowCLITransformer(Transformer):
         return {"type": "list_user_datasets"}
 
     def list_user_dataset_files(self, items):
-        dataset_name = items[2]
+        dataset_name = items[4].children[0].strip("'\"")
         return {"type": "list_user_dataset_files", "dataset_name": dataset_name}
 
     def list_user_agents(self, items):

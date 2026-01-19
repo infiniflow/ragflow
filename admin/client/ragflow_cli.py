@@ -463,6 +463,8 @@ class RAGFlowCLI(Cmd):
                 self.ragflow_client.list_environments(command_dict)
             case "list_user_datasets":
                 self.ragflow_client.list_user_datasets(command_dict)
+            case "list_user_dataset_files":
+                self.ragflow_client.list_user_dataset_files(command_dict)
             case "list_user_agents":
                 self.ragflow_client.list_user_agents(command_dict)
             case "list_user_chats":

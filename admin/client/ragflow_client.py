@@ -582,6 +582,29 @@ class RAGFlowClient:
         else:
             print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
 
+    def list_user_dataset_files(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+
+        response = self.http_client.request("POST", "/kb/list", use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        dataset_list = res_json["data"]["kbs"]
+        dataset_id: str = ""
+        for dataset in dataset_list:
+            if dataset["name"] == command_dict["dataset_name"]:
+                dataset_id = dataset["id"]
+
+        if dataset_id == "":
+            print(f"Dataset {command_dict['dataset_name']} not found")
+            return
+
+        response = self.http_client.request("POST", f"/document/list?kb_id={dataset_id}", use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"]["docs"])
+        else:
+            print(f"Fail to list files from dataset {dataset_id}, code: {res_json['code']}, message: {res_json['message']}")
+
     def list_user_agents(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
