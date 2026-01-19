@@ -21,6 +21,7 @@ from functools import partial
 from quart import request, Response, make_response
 from agent.component import LLM
 from api.db import CanvasCategory
+from api.db.db_models import API4Conversation
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
@@ -132,6 +133,7 @@ async def run():
     files = req.get("files", [])
     inputs = req.get("inputs", {})
     user_id = req.get("user_id", current_user.id)
+    session_id = req.get("session_id")
     if not await asyncio.to_thread(UserCanvasService.accessible, req["id"], current_user.id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
@@ -152,19 +154,52 @@ async def run():
             return get_data_error_result(message=error_message)
         return get_json_result(data={"message_id": task_id})
 
-    try:
-        canvas = Canvas(cvs.dsl, current_user.id, canvas_id=cvs.id)
-    except Exception as e:
-        return server_error_response(e)
+    # Session isolation: use session-specific DSL if session_id is provided
+    conv = None
+    if session_id:
+        e_conv, conv = await asyncio.to_thread(API4ConversationService.get_by_id, session_id)
+        if not e_conv:
+            return get_data_error_result(message="Session not found.")
+        if not conv.message:
+            conv.message = []
+        if not isinstance(conv.dsl, str):
+            conv.dsl = json.dumps(conv.dsl, ensure_ascii=False)
+        try:
+            canvas = Canvas(conv.dsl, current_user.id, req["id"])
+        except Exception as e:
+            return server_error_response(e)
+    else:
+        # Create a new session for isolation
+        session_id = get_uuid()
+        try:
+            canvas = Canvas(cvs.dsl, current_user.id, canvas_id=cvs.id)
+            canvas.reset()
+        except Exception as e:
+            return server_error_response(e)
+        conv = {
+            "id": session_id,
+            "dialog_id": cvs.id,
+            "user_id": user_id,
+            "message": [],
+            "source": "agent",
+            "dsl": cvs.dsl,
+            "reference": []
+        }
+        await asyncio.to_thread(API4ConversationService.save, **conv)
+        conv = API4Conversation(**conv)
 
     async def sse():
-        nonlocal canvas, user_id
+        nonlocal canvas, user_id, conv, session_id
         try:
             async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+                ans["session_id"] = session_id
                 yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
-            cvs.dsl = json.loads(str(canvas))
-            UserCanvasService.update_by_id(req["id"], cvs.to_dict())
+            # Update session-specific DSL instead of shared agent DSL
+            conv_dict = conv.to_dict() if hasattr(conv, 'to_dict') else conv
+            conv_dict["dsl"] = json.loads(str(canvas))
+            conv_dict["reference"] = canvas.get_reference()
+            API4ConversationService.update_by_id(session_id, conv_dict)
 
         except Exception as e:
             logging.exception(e)
