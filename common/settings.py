@@ -257,6 +257,9 @@ def init_settings():
     elif lower_case_doc_engine == "oceanbase":
         OB = get_base_config("oceanbase", {})
         docStoreConn = rag.utils.ob_conn.OBConnection()
+    elif lower_case_doc_engine == "seekdb":
+        OB = get_base_config("seekdb", {})
+        docStoreConn = rag.utils.ob_conn.OBConnection()
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 

@@ -56,6 +56,9 @@ docker/data
 docker/oceanbase/conf
 docker/oceanbase/data
 
+# SeekDB data and conf
+docker/seekdb
+
 
 #--------------------------------------------------#
 # The following was generated with gitignore.nvim: #
