@@ -369,7 +369,7 @@ class RAGFlowClient:
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
 
-        response = self.http_client.request("GET", "/dialog/next", use_api_base=False, auth_kind="web")
+        response = self.http_client.request("POST", "/dialog/next", use_api_base=False, auth_kind="web")
         res_json = response.json()
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
@@ -417,7 +417,7 @@ class RAGFlowClient:
         if self.server_type == "admin":
             response = self.http_client.request("GET", "/admin/version", use_api_base=True, auth_kind="admin")
         else:
-            response = self.http_client.request("GET", "/admin/version", use_api_base=False, auth_kind="admin")
+            response = self.http_client.request("GET", "/system/version", use_api_base=False, auth_kind="admin")
 
         res_json = response.json()
         if response.status_code == 200:

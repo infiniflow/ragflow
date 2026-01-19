@@ -452,15 +452,15 @@ class RAGFlowCLI(Cmd):
             case "list_environments":
                 self.ragflow_client.list_environments(command_dict)
             case "list_user_datasets":
-                self._list_user_datasets(command_dict)
+                self.ragflow_client.list_user_datasets(command_dict)
             case "list_user_agents":
-                self._list_user_agents(command_dict)
+                self.ragflow_client.list_user_agents(command_dict)
             case "list_user_chats":
-                self._list_user_chats(command_dict)
+                self.ragflow_client.list_user_chats(command_dict)
             case "list_user_model_providers":
-                self._list_user_model_providers(command_dict)
+                self.ragflow_client.list_user_model_providers(command_dict)
             case "list_user_default_models":
-                self._list_user_default_models(command_dict)
+                self.ragflow_client.list_user_default_models(command_dict)
             case "meta":
                 self._handle_meta_command(command_dict)
             case _:
