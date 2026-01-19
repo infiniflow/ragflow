@@ -409,7 +409,7 @@ export const useScrollToBottom = (
       const container = containerRef.current;
       container.scrollTo({
         top: container.scrollHeight - container.clientHeight,
-        behavior: 'smooth',
+        behavior: 'auto',
       });
     }
   }, [containerRef]);
