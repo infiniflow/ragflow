@@ -144,9 +144,12 @@ class RAGFlowCLI(Cmd):
         except Exception as e:
             return {"type": "error", "message": f"Parse error: {str(e)}"}
 
-    def verify_auth(self, arguments: dict, single_command: bool):
+    def verify_auth(self, arguments: dict, single_command: bool, auth: bool):
         server_type = arguments.get("type", "admin")
         http_client = HttpClient(arguments["host"], arguments["port"])
+        if not auth:
+            self.ragflow_client = RAGFlowClient(http_client, server_type)
+            return True
 
         user_name = arguments["username"]
         attempt_count = 3
@@ -299,7 +302,7 @@ class RAGFlowCLI(Cmd):
 
     def run_interactive(self, args):
         self.is_interactive = True
-        if self.verify_auth(args, single_command=False):
+        if self.verify_auth(args, single_command=False, auth=args["auth"]):
             print(r"""
                 ____  ___   ______________                 ________    ____
                / __ \/   | / ____/ ____/ /___ _      __   / ____/ /   /  _/
@@ -311,9 +314,13 @@ class RAGFlowCLI(Cmd):
 
         print("RAGFlow command line interface - Type '\\?' for help, '\\q' to quit")
 
-    def run_single_command(self, command: str):
-        result = self.parse_command(command)
-        self.execute_command(result)
+    def run_single_command(self, args):
+        self.is_interactive = False
+        if self.verify_auth(args, single_command=True, auth=args["auth"]):
+            command = args["command"]
+            result = self.parse_command(command)
+            self.execute_command(result)
+
 
     def parse_connection_args(self, args: List[str]) -> Dict[str, Any]:
         parser = argparse.ArgumentParser(description="RAGFlow CLI Client", add_help=False)
@@ -331,17 +338,17 @@ class RAGFlowCLI(Cmd):
             if parsed_args.type == "admin":
                 if username is None:
                     username = "admin@ragflow.io"
-            else:  # user mode
-                if username is None:
-                    print("Error: username (-u) is required in user mode")
-                    return {"error": "Username required"}
 
             if remaining_args:
                 if remaining_args[0] == "command":
                     command_str = ' '.join(remaining_args[1:]) + ';'
-                    no_auth = False
-                    if remaining_args[1] == "register_user":
-                        no_auth = True
+                    auth = True
+                    if remaining_args[1] == "register":
+                        auth = False
+                    else:
+                        if username is None:
+                            print("Error: username (-u) is required in user mode")
+                            return {"error": "Username required"}
                     return {
                         "host": parsed_args.host,
                         "port": parsed_args.port,
@@ -349,16 +356,20 @@ class RAGFlowCLI(Cmd):
                         "type": parsed_args.type,
                         "username": username,
                         "command": command_str,
-                        "no_auth": no_auth
+                        "auth": auth
                     }
                 else:
                     return {"error": "Invalid command"}
             else:
+                if username is None:
+                    print("Error: username (-u) is required in user mode")
+                    return {"error": "Username required"}
                 return {
                     "host": parsed_args.host,
                     "port": parsed_args.port,
                     "type": parsed_args.type,
                     "username": username,
+                    "auth": True
                 }
         except SystemExit:
             return {"error": "Invalid connection arguments"}
@@ -494,10 +505,7 @@ def main():
             print("Error: password is missing")
             return
 
-        command: str = args["command"]
-        if args["no_auth"] is True or cli.verify_auth(args, single_command=True):
-            # print(f"Run single command: {command}")
-            cli.run_single_command(command)
+        cli.run_single_command(args)
     else:
         cli.run_interactive(args)
 

@@ -39,9 +39,24 @@ class RAGFlowClient:
         self.server_type = server_type
 
     def register_user(self, command):
-        if self.server_type != "admin":
-            print("This command is only allowed in ADMIN mode")
-        print("Not implemented")
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        username: str = command["user_name"]
+        nickname: str = command["nickname"]
+        password: str = command["password"]
+        enc_password = encrypt_password(password)
+        print(f"Register user: {nickname}, email: {username}, password: ******")
+        payload = {"email": username, "nickname": nickname, "password": enc_password}
+        response = self.http_client.request(method="POST", path="/user/register",
+                                            json_body=payload, use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to register user {username}, code: {res_json['code']}, message: {res_json['message']}")
+        else:
+            print(f"Fail to register user {username}, code: {res_json['code']}, message: {res_json['message']}")
 
     def list_services(self):
         if self.server_type != "admin":

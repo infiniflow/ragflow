@@ -16,7 +16,6 @@
 
 from lark import Transformer
 
-
 GRAMMAR = r"""
 start: command
 
@@ -119,6 +118,7 @@ PROVIDERS: "PROVIDERS"i
 DEFAULT: "DEFAULT"i
 CHATS: "CHATS"i
 FILES: "FILES"i
+AS: "AS"i
 
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
@@ -126,7 +126,7 @@ startup_service: STARTUP SERVICE NUMBER ";"
 shutdown_service: SHUTDOWN SERVICE NUMBER ";"
 restart_service: RESTART SERVICE NUMBER ";"
 
-register_user: REGISTER USER quoted_string PASSWORD quoted_string ";"
+register_user: REGISTER USER quoted_string AS quoted_string PASSWORD quoted_string ";"
 list_users: LIST USERS ";"
 drop_user: DROP USER quoted_string ";"
 alter_user: ALTER USER PASSWORD quoted_string quoted_string ";"
@@ -214,8 +214,9 @@ class RAGFlowCLITransformer(Transformer):
 
     def register_user(self, items):
         user_name: str = items[2].children[0].strip("'\"")
-        password: str = items[4].children[0].strip("'\"")
-        return {"type": "register_user", "user_name": user_name, "password": password}
+        nickname: str = items[4].children[0].strip("'\"")
+        password: str = items[6].children[0].strip("'\"")
+        return {"type": "register_user", "user_name": user_name, "nickname": nickname, "password": password}
 
     def list_users(self, items):
         return {"type": "list_users"}
