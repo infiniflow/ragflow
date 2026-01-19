@@ -62,6 +62,7 @@ export enum LLMFactory {
   Builtin = 'Builtin',
   MinerU = 'MinerU',
   PaddleOCR = 'PaddleOCR',
+  N1n = 'n1n',
 }
 
 // Please lowercase the file name
@@ -129,6 +130,7 @@ export const IconMap = {
   [LLMFactory.Builtin]: 'builtin',
   [LLMFactory.MinerU]: 'mineru',
   [LLMFactory.PaddleOCR]: 'paddleocr',
+  [LLMFactory.N1n]: 'n1n',
 };
 
 export const APIMapUrl = {
@@ -181,4 +183,5 @@ export const APIMapUrl = {
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
   [LLMFactory.PaddleOCR]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.N1n]: 'https://docs.n1n.ai',
 };
