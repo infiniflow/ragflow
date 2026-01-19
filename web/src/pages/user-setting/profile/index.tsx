@@ -104,8 +104,11 @@ const ProfilePage: FC = () => {
     // shouldUnregister: true,
   });
   useEffect(() => {
-    form.reset({ ...editForm, currPasswd: undefined });
-  }, [editForm, form]);
+    if (editForm && Object.keys(editForm).length > 0) {
+      form.reset({ ...editForm, currPasswd: undefined });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editForm]); // Only reset when editForm changes, do not depend on form
 
   //   const ModalContent: FC = () => {
   //     // let content = null;
@@ -281,7 +284,7 @@ const ProfilePage: FC = () => {
                             return { value: timeStr, label: timeStr };
                           })}
                           placeholder="Select a timeZone"
-                          onValueChange={field.onChange}
+                          onChange={field.onChange}
                           value={field.value}
                         />
                       </div>
