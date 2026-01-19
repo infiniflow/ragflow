@@ -22,7 +22,7 @@ const storage = {
     localStorage.setItem(Token, value);
   },
   setUserInfo: (value: string | Record<string, unknown>) => {
-    let valueStr = typeof value !== 'string' ? JSON.stringify(value) : value;
+    const valueStr = typeof value !== 'string' ? JSON.stringify(value) : value;
     localStorage.setItem(UserInfo, valueStr);
   },
   setItems: (pairs: Record<string, string>) => {
