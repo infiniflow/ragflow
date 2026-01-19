@@ -1096,7 +1096,7 @@ class Gitlab(SyncBase):
         self.connector.load_credentials(
             {
                 "gitlab_access_token": self.conf.get("credentials", {}).get("gitlab_access_token"),
-                "gitlab_url": self.conf.get("credentials", {}).get("gitlab_url"),
+                "gitlab_url": self.conf.get("gitlab_url"),
             }
         )
 
