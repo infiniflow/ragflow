@@ -28,6 +28,9 @@ from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from Cryptodome.PublicKey import RSA
 from lark import Lark, Tree
 from parser import GRAMMAR, RAGFlowCLITransformer
+from http_client import HttpClient
+from ragflow_client import RAGFlowClient
+from user import login_user
 
 warnings.filterwarnings("ignore", category=getpass.GetPassWarning)
 
@@ -96,6 +99,7 @@ class RAGFlowCLI(Cmd):
         self.host: str = ""
         self.port: int = 0
         self.mode: str = "admin"
+        self.ragflow_client = None
 
     intro = r"""Type "\h" for help."""
     prompt = "ragflow> "
@@ -142,21 +146,10 @@ class RAGFlowCLI(Cmd):
             return {"type": "error", "message": f"Parse error: {str(e)}"}
 
     def verify_auth(self, arguments: dict, single_command: bool):
-        self.host = arguments["host"]
-        self.port = arguments["port"]
-        # Determine mode and username
-        self.mode = arguments.get("type", "admin")
-        username = arguments.get("username", "admin@ragflow.io")
-        self.account = username
+        server_type = arguments.get("type", "admin")
+        http_client = HttpClient(arguments["host"], arguments["port"])
 
-        # Set login endpoint based on mode
-        if self.mode == "admin":
-            url = f"http://{self.host}:{self.port}/api/v1/admin/login"
-            print("Attempt to access server for admin login")
-        else:  # user mode
-            url = f"http://{self.host}:{self.port}/v1/user/login"
-            print("Attempt to access server for user login")
-
+        user_name = arguments["username"]
         attempt_count = 3
         if single_command:
             attempt_count = 1
@@ -168,30 +161,70 @@ class RAGFlowCLI(Cmd):
                 return False
 
             if single_command:
-                account_passwd = arguments["password"]
+                user_password = arguments["password"]
             else:
-                account_passwd = getpass.getpass(f"password for {self.account}: ").strip()
+                user_password = getpass.getpass(f"password for {user_name}: ").strip()
+
             try:
-                self.account_password = encrypt(account_passwd)
-                response = self.session.post(url, json={"email": self.account, "password": self.account_password})
-                if response.status_code == 200:
-                    res_json = response.json()
-                    error_code = res_json.get("code", -1)
-                    if error_code == 0:
-                        self.session.headers.update(
-                            {"Content-Type": "application/json", "Authorization": response.headers["Authorization"],
-                             "User-Agent": "RAGFlow-CLI/0.23.1"})
-                        print("Authentication successful.")
-                        return True
-                    else:
-                        error_message = res_json.get("message", "Unknown error")
-                        print(f"Authentication failed: {error_message}, try again")
-                        continue
-                else:
-                    print(f"Bad response，status: {response.status_code}, password is wrong")
+                token = login_user(http_client, server_type, user_name, user_password)
+                http_client.login_token = token
+                self.ragflow_client = RAGFlowClient(http_client, server_type)
+                return True
             except Exception as e:
                 print(str(e))
                 print("Can't access server for login (connection failed)")
+
+
+        # self.host = arguments["host"]
+        # self.port = arguments["port"]
+        # # Determine mode and username
+        # self.mode = arguments.get("type", "admin")
+        # username = arguments.get("username", "admin@ragflow.io")
+        # self.account = username
+        #
+        # # Set login endpoint based on mode
+        # if self.mode == "admin":
+        #     url = f"http://{self.host}:{self.port}/api/v1/admin/login"
+        #     print("Attempt to access server for admin login")
+        # else:  # user mode
+        #     url = f"http://{self.host}:{self.port}/v1/user/login"
+        #     print("Attempt to access server for user login")
+        #
+        # attempt_count = 3
+        # if single_command:
+        #     attempt_count = 1
+        #
+        # try_count = 0
+        # while True:
+        #     try_count += 1
+        #     if try_count > attempt_count:
+        #         return False
+        #
+        #     if single_command:
+        #         account_passwd = arguments["password"]
+        #     else:
+        #         account_passwd = getpass.getpass(f"password for {self.account}: ").strip()
+        #     try:
+        #         self.account_password = encrypt(account_passwd)
+        #         response = self.session.post(url, json={"email": self.account, "password": self.account_password})
+        #         if response.status_code == 200:
+        #             res_json = response.json()
+        #             error_code = res_json.get("code", -1)
+        #             if error_code == 0:
+        #                 self.session.headers.update(
+        #                     {"Content-Type": "application/json", "Authorization": response.headers["Authorization"],
+        #                      "User-Agent": "RAGFlow-CLI/0.23.1"})
+        #                 print("Authentication successful.")
+        #                 return True
+        #             else:
+        #                 error_message = res_json.get("message", "Unknown error")
+        #                 print(f"Authentication failed: {error_message}, try again")
+        #                 continue
+        #         else:
+        #             print(f"Bad response，status: {response.status_code}, password is wrong")
+        #     except Exception as e:
+        #         print(str(e))
+        #         print("Can't access server for login (connection failed)")
 
     def _format_service_detail_table(self, data):
         if isinstance(data, list):
@@ -297,7 +330,7 @@ class RAGFlowCLI(Cmd):
 
     def parse_connection_args(self, args: List[str]) -> Dict[str, Any]:
         parser = argparse.ArgumentParser(description="RAGFlow CLI Client", add_help=False)
-        parser.add_argument("-h", "--host", default="localhost", help="Admin or RAGFlow service host")
+        parser.add_argument("-h", "--host", default="127.0.0.1", help="Admin or RAGFlow service host")
         parser.add_argument("-p", "--port", type=int, default=9381, help="Admin or RAGFlow service port")
         parser.add_argument("-w", "--password", default="admin", type=str, help="Superuser password")
         parser.add_argument("-t", "--type", default="admin", type=str, help="CLI mode, admin or user")
@@ -353,27 +386,27 @@ class RAGFlowCLI(Cmd):
 
         match command_type:
             case "list_services":
-                self._handle_list_services(command_dict)
+                self.ragflow_client.list_services()
             case "show_service":
-                self._handle_show_service(command_dict)
+                self.ragflow_client.show_service(command_dict)
             case "restart_service":
-                self._handle_restart_service(command_dict)
+                self.ragflow_client.restart_service(command_dict)
             case "shutdown_service":
-                self._handle_shutdown_service(command_dict)
+                self.ragflow_client.shutdown_service(command_dict)
             case "startup_service":
-                self._handle_startup_service(command_dict)
+                self.ragflow_client.startup_service(command_dict)
             case "list_users":
-                self._handle_list_users(command_dict)
+                self.ragflow_client.list_users(command_dict)
             case "show_user":
-                self._handle_show_user(command_dict)
+                self.ragflow_client.show_user(command_dict)
             case "drop_user":
-                self._handle_drop_user(command_dict)
+                self.ragflow_client.drop_user(command_dict)
             case "alter_user":
-                self._handle_alter_user(command_dict)
+                self.ragflow_client.alter_user(command_dict)
             case "create_user":
-                self._handle_create_user(command_dict)
+                self.ragflow_client.create_user(command_dict)
             case "activate_user":
-                self._handle_activate_user(command_dict)
+                self.ragflow_client.activate_user(command_dict)
             case "list_datasets":
                 self._handle_list_datasets(command_dict)
             case "list_agents":
@@ -397,27 +430,27 @@ class RAGFlowCLI(Cmd):
             case "show_user_permission":
                 self._show_user_permission(command_dict)
             case "show_version":
-                self._show_version(command_dict)
+                self.ragflow_client.show_version(command_dict)
             case "grant_admin":
-                self._grant_admin(command_dict)
+                self.ragflow_client.grant_admin(command_dict)
             case "revoke_admin":
-                self._revoke_admin(command_dict)
+                self.ragflow_client.revoke_admin(command_dict)
             case "generate_key":
-                self._generate_key(command_dict)
+                self.ragflow_client.generate_key(command_dict)
             case "list_keys":
-                self._list_keys(command_dict)
+                self.ragflow_client.list_keys(command_dict)
             case "drop_key":
-                self._drop_key(command_dict)
+                self.ragflow_client.drop_key(command_dict)
             case "set_variable":
-                self._set_variable(command_dict)
+                self.ragflow_client.set_variable(command_dict)
             case "show_variable":
-                self._show_variable(command_dict)
+                self.ragflow_client.show_variable(command_dict)
             case "list_variables":
-                self._list_variables(command_dict)
+                self.ragflow_client.list_variables(command_dict)
             case "list_configs":
-                self._list_configs(command_dict)
+                self.ragflow_client.list_configs(command_dict)
             case "list_environments":
-                self._list_environments(command_dict)
+                self.ragflow_client.list_environments(command_dict)
             case "list_user_datasets":
                 self._list_user_datasets(command_dict)
             case "list_user_agents":
@@ -1048,6 +1081,13 @@ def main():
             # print(f"Run single command: {command}")
             cli.run_single_command(command)
     else:
+
+        # login with user and password
+
+        # login_user(http_client, args["user"], args["password"])
+        # cli.ragflow_client = RAGFlowClient(http_client, args["user"], args["password"])
+        # cli.ragflow_client.login()
+
         if cli.verify_auth(args, single_command=False):
             print(r"""
                 ____  ___   ______________                 ________    ____

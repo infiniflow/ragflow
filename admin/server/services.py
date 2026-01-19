@@ -305,6 +305,13 @@ class ServiceMgr:
             raise AdminException(f"invalid service_index: {service_idx}")
 
         service_config = configs[service_idx]
+
+        # exclude retrieval service if retrieval_type is not matched
+        doc_engine = os.getenv("DOC_ENGINE", "elasticsearch")
+        if service_config.service_type == "retrieval":
+            if service_config.retrieval_type != doc_engine:
+                raise AdminException(f"invalid service_index: {service_idx}")
+
         service_info = {"name": service_config.name, "detail_func_name": service_config.detail_func_name}
 
         detail_func = getattr(health_utils, service_info.get("detail_func_name"))
