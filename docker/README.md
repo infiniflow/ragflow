@@ -72,6 +72,15 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `REDIS_PASSWORD`  
   The password for Redis.
 
+### Embedding Model
+
+- `EMBEDDING_API_KEY`  
+  The API key for the embedding model. Defaults to a generated secret in `.env`. **You must change this to a strong secret for production.**
+- `EMBEDDING_BASE_URL`  
+  The base URL for the embedding service.
+  - **Docker Desktop (Mac/Windows)**: Use `http://host.docker.internal:80`.
+  - **Linux/Production**: Use `http://172.17.0.1:80` (docker gateway) or the service name/alias (e.g. `http://tei:80`).
+
 ### RAGFlow
 
 - `SVR_HTTP_PORT`  
