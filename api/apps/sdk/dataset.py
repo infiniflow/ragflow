@@ -233,6 +233,15 @@ async def delete(tenant_id):
                 File2DocumentService.delete_by_document_id(doc.id)
             FileService.filter_delete(
                 [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kb.name])
+
+            # Drop index for this dataset
+            try:
+                from rag.nlp import search
+                idxnm = search.index_name(kb.tenant_id)
+                settings.docStoreConn.delete_idx(idxnm, kb_id)
+            except Exception as e:
+                logging.warning(f"Failed to drop index for dataset {kb_id}: {e}")
+
             if not KnowledgebaseService.delete_by_id(kb_id):
                 errors.append(f"Delete dataset error for {kb_id}")
                 continue

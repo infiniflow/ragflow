@@ -29,6 +29,7 @@ os:
   password: '${OPENSEARCH_PASSWORD:-infini_rag_flow_OS_01}'
 infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
+  postgres_port: 5432
   db_name: 'default_db'
 oceanbase:
   scheme: 'oceanbase' # set 'mysql' to create connection using mysql config

@@ -53,7 +53,8 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y ghostscript && \
     apt install -y pandoc && \
     apt install -y texlive && \
-    apt install -y fonts-freefont-ttf fonts-noto-cjk
+    apt install -y fonts-freefont-ttf fonts-noto-cjk && \
+    apt install -y postgresql-client
 
 # Install uv
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
