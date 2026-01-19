@@ -143,6 +143,9 @@ USER root
 
 WORKDIR /ragflow
 
+# Set Node.js memory limit for building
+ARG NODE_OPTIONS=--max-old-space-size=4096
+
 # install dependencies from uv.lock file
 COPY pyproject.toml uv.lock ./
 
@@ -159,6 +162,7 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
 COPY web web
 COPY docs docs
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
+    export NODE_OPTIONS="--max-old-space-size=4096" && \
     cd web && npm install && npm run build
 
 COPY .git /ragflow/.git
