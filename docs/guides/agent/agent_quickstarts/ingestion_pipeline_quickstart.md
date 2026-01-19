@@ -36,7 +36,7 @@ This flexible pipeline adapts to your data, improving answer quality in RAG.
 2. Click **Create agent** and start from a blank canvas or a pre-built template (recommended for beginners).
 3. On the canvas, drag and connect components from the right-side panel to design your flow (e.g., Parser → Chunker → Transformer → Indexer).
 
-*Now let's get our hands dirty by building a typical ingestion pipeline!*
+*Now let's build a typical ingestion pipeline!*
 
 ## 3. Configure Parser component
 
