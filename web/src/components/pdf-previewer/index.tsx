@@ -44,6 +44,7 @@ const DocumentPreviewer = ({ chunk, documentId, visible }: IProps) => {
   const { highlights: state, setWidthAndHeight } = useGetChunkHighlights(chunk);
   const ref = useRef<(highlight: IHighlight) => void>(() => {});
   const [loaded, setLoaded] = useState(false);
+  const [isReady, setIsReady] = useState(false);
   const url = getDocumentUrl();
   const error = useCatchDocumentError(url);
 
@@ -54,16 +55,20 @@ const DocumentPreviewer = ({ chunk, documentId, visible }: IProps) => {
   }, [visible]);
 
   useEffect(() => {
-    if (state.length > 0 && loaded) {
+    if (state.length > 0 && loaded && isReady) {
       setLoaded(false);
       ref.current(state[0]);
     }
-  }, [state, loaded]);
+  }, [state, loaded, isReady]);
+
+  const isUrlValid =
+    !!url && !url.endsWith('undefined') && !url.endsWith('/get/');
 
   return (
     <div className={styles.documentContainer}>
-      <PdfLoader
-        url={url}
+      {isUrlValid && (
+        <PdfLoader
+          url={url}
         beforeLoad={<Skeleton active />}
         errorMessage={<FileError>{error}</FileError>}
       >
@@ -82,7 +87,7 @@ const DocumentPreviewer = ({ chunk, documentId, visible }: IProps) => {
               onScrollChange={resetHash}
               scrollRef={(scrollTo) => {
                 ref.current = scrollTo;
-                setLoaded(true);
+                setIsReady(true);
               }}
               onSelectionFinished={() => null}
               highlightTransform={(
@@ -94,8 +99,8 @@ const DocumentPreviewer = ({ chunk, documentId, visible }: IProps) => {
                 screenshot,
                 isScrolledTo,
               ) => {
-                const isTextHighlight = !Boolean(
-                  highlight.content && highlight.content.image,
+                const isTextHighlight = !(
+                  highlight.content && highlight.content.image
                 );
 
                 const component = isTextHighlight ? (
@@ -125,13 +130,13 @@ const DocumentPreviewer = ({ chunk, documentId, visible }: IProps) => {
                   </Popup>
                 );
               }}
-              highlights={state}
+              highlights={isReady ? state : []}
             />
           );
         }}
-      </PdfLoader>
-    </div>
-  );
-};
-
+              </PdfLoader>
+            )}
+          </div>
+        );
+      };
 export default DocumentPreviewer;
