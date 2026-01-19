@@ -297,31 +297,19 @@ class RAGFlowCLI(Cmd):
 
         print(separator)
 
-    def run_interactive(self):
+    def run_interactive(self, args):
         self.is_interactive = True
+        if self.verify_auth(args, single_command=False):
+            print(r"""
+                ____  ___   ______________                 ________    ____
+               / __ \/   | / ____/ ____/ /___ _      __   / ____/ /   /  _/
+              / /_/ / /| |/ / __/ /_  / / __ \ | /| / /  / /   / /    / /  
+             / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / /___/ /____/ /   
+            /_/ |_/_/  |_\____/_/   /_/\____/|__/|__/   \____/_____/___/   
+            """)
+            self.cmdloop()
+
         print("RAGFlow command line interface - Type '\\?' for help, '\\q' to quit")
-
-        while True:
-            try:
-                command = input("ragflow> ").strip()
-                if not command:
-                    continue
-
-                print(f"command: {command}")
-                result = self.parse_command(command)
-                self.execute_command(result)
-
-                if isinstance(result, Tree):
-                    continue
-
-                if result.get("type") == "meta" and result.get("command") in ["q", "quit", "exit"]:
-                    break
-
-            except KeyboardInterrupt:
-                print("\nUse '\\q' to quit")
-            except EOFError:
-                print("\nGoodbye!")
-                break
 
     def run_single_command(self, command: str):
         result = self.parse_command(command)
@@ -349,15 +337,22 @@ class RAGFlowCLI(Cmd):
                     return {"error": "Username required"}
 
             if remaining_args:
-                command = remaining_args[0]
-                return {
-                    "host": parsed_args.host,
-                    "port": parsed_args.port,
-                    "password": parsed_args.password,
-                    "type": parsed_args.type,
-                    "username": username,
-                    "command": command
-                }
+                if remaining_args[0] == "command":
+                    command_str = ' '.join(remaining_args[1:]) + ';'
+                    no_auth = False
+                    if remaining_args[1] == "register_user":
+                        no_auth = True
+                    return {
+                        "host": parsed_args.host,
+                        "port": parsed_args.port,
+                        "password": parsed_args.password,
+                        "type": parsed_args.type,
+                        "username": username,
+                        "command": command_str,
+                        "no_auth": no_auth
+                    }
+                else:
+                    return {"error": "Invalid command"}
             else:
                 return {
                     "host": parsed_args.host,
@@ -384,6 +379,11 @@ class RAGFlowCLI(Cmd):
         command_type = command_dict["type"]
 
         match command_type:
+            case "register_user":
+                if self.is_interactive:
+                    print("Register user command is not supported in interactive mode")
+                    return
+                self.ragflow_client.register_user(command_dict)
             case "list_services":
                 self.ragflow_client.list_services()
             case "show_service":
@@ -487,30 +487,19 @@ def main():
         return
 
     if "command" in args:
+        # single command mode
+        # for user mode, api key or password is ok
+        # for admin mode, only password
         if "password" not in args:
             print("Error: password is missing")
             return
-        if cli.verify_auth(args, single_command=True):
-            command: str = args["command"]
+
+        command: str = args["command"]
+        if args["no_auth"] is True or cli.verify_auth(args, single_command=True):
             # print(f"Run single command: {command}")
             cli.run_single_command(command)
     else:
-
-        # login with user and password
-
-        # login_user(http_client, args["user"], args["password"])
-        # cli.ragflow_client = RAGFlowClient(http_client, args["user"], args["password"])
-        # cli.ragflow_client.login()
-
-        if cli.verify_auth(args, single_command=False):
-            print(r"""
-                ____  ___   ______________                 ________    ____
-               / __ \/   | / ____/ ____/ /___ _      __   / ____/ /   /  _/
-              / /_/ / /| |/ / __/ /_  / / __ \ | /| / /  / /   / /    / /  
-             / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / /___/ /____/ /   
-            /_/ |_/_/  |_\____/_/   /_/\____/|__/|__/   \____/_____/___/   
-            """)
-            cli.cmdloop()
+        cli.run_interactive(args)
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ sql_command: list_services
            | startup_service
            | shutdown_service
            | restart_service
+           | register_user
            | list_users
            | show_user
            | drop_user
@@ -71,6 +72,7 @@ meta_arg: /[^\\s"']+/ | quoted_string
 
 // command definition
 
+REGISTER: "REGISTER"i
 LIST: "LIST"i
 SERVICES: "SERVICES"i
 SHOW: "SHOW"i
@@ -86,6 +88,7 @@ ALTER: "ALTER"i
 ACTIVE: "ACTIVE"i
 ADMIN: "ADMIN"i
 PASSWORD: "PASSWORD"i
+DATASET: "DATASET"i
 DATASETS: "DATASETS"i
 OF: "OF"i
 AGENTS: "AGENTS"i
@@ -115,6 +118,7 @@ MODELS: "MODELS"i
 PROVIDERS: "PROVIDERS"i
 DEFAULT: "DEFAULT"i
 CHATS: "CHATS"i
+FILES: "FILES"i
 
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
@@ -122,6 +126,7 @@ startup_service: STARTUP SERVICE NUMBER ";"
 shutdown_service: SHUTDOWN SERVICE NUMBER ";"
 restart_service: RESTART SERVICE NUMBER ";"
 
+register_user: REGISTER USER quoted_string PASSWORD quoted_string ";"
 list_users: LIST USERS ";"
 drop_user: DROP USER quoted_string ";"
 alter_user: ALTER USER PASSWORD quoted_string quoted_string ";"
@@ -206,6 +211,11 @@ class RAGFlowCLITransformer(Transformer):
     def restart_service(self, items):
         service_id = int(items[2])
         return {"type": "restart_service", "number": service_id}
+
+    def register_user(self, items):
+        user_name: str = items[2].children[0].strip("'\"")
+        password: str = items[4].children[0].strip("'\"")
+        return {"type": "register_user", "user_name": user_name, "password": password}
 
     def list_users(self, items):
         return {"type": "list_users"}
@@ -330,6 +340,10 @@ class RAGFlowCLITransformer(Transformer):
 
     def list_user_datasets(self, items):
         return {"type": "list_user_datasets"}
+
+    def list_user_dataset_files(self, items):
+        dataset_name = items[2]
+        return {"type": "list_user_dataset_files", "dataset_name": dataset_name}
 
     def list_user_agents(self, items):
         return {"type": "list_user_agents"}

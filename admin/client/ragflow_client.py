@@ -38,6 +38,11 @@ class RAGFlowClient:
         self.http_client = http_client
         self.server_type = server_type
 
+    def register_user(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+        print("Not implemented")
+
     def list_services(self):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
