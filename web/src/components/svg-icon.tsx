@@ -83,6 +83,7 @@ const svgIcons = [
   LLMFactory.StepFun,
   LLMFactory.MinerU,
   LLMFactory.PaddleOCR,
+  LLMFactory.N1n,
   // LLMFactory.DeerAPI,
 ];
 

@@ -1165,6 +1165,15 @@ class TokenPonyChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class N1nChat(Base):
+    _FACTORY_NAME = "n1n"
+
+    def __init__(self, key, model_name, base_url="https://api.n1n.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.n1n.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
