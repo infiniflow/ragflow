@@ -220,18 +220,16 @@ export function Sessions({
             <CardContent className="px-3 py-2 flex justify-between items-center group gap-1">
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 {selectionMode && (
-                  <div
+                  <span
                     className="flex-shrink-0"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleSelection(x.id);
-                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
                   >
                     <Checkbox
                       checked={selectedIds.has(x.id)}
                       onCheckedChange={() => toggleSelection(x.id)}
                     />
-                  </div>
+                  </span>
                 )}
                 <div className="truncate">{x.name}</div>
               </div>
