@@ -104,8 +104,8 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: all
-              capabilities: [gpu]
+              device_ids: ["GPU-520d7302-856d-27eb-b0ba-8dabd9dbcc5d"]  # 精确指定T10
+              capabilities: [compute]
 
 
   # executor:
