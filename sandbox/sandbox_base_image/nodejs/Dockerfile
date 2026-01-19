@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim
+FROM node:24.13-bookworm-slim
 
 RUN npm config set registry https://registry.npmmirror.com
 
