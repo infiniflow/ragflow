@@ -18,7 +18,6 @@ import sys
 import argparse
 import base64
 import getpass
-import urllib.parse
 from cmd import Cmd
 from typing import Any, Dict, List
 

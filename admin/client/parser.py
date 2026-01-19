@@ -159,6 +159,7 @@ list_configs: LIST CONFIGS ";"
 list_environments: LIST ENVS ";"
 
 list_user_datasets: LIST DATASETS ";"
+list_user_dataset_files: LIST FILES OF DATASET quoted_string ";"
 list_user_agents: LIST AGENTS ";"
 list_user_chats: LIST CHATS ";"
 list_user_model_providers: LIST MODEL PROVIDERS ";"

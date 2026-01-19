@@ -80,22 +80,22 @@ class RAGFlowClient:
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
 
-        service_id: int = command["number"]
-        print(f"Restart service isn't implemented")
+        # service_id: int = command["number"]
+        print("Restart service isn't implemented")
 
     def shutdown_service(self, command):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
 
         # service_id: int = command["number"]
-        print(f"Shutdown service isn't implemented")
+        print("Shutdown service isn't implemented")
 
     def startup_service(self, command):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
 
         # service_id: int = command["number"]
-        print(f"Startup service isn't implemented")
+        print("Startup service isn't implemented")
 
     def list_users(self, command):
         if self.server_type != "admin":
@@ -168,7 +168,7 @@ class RAGFlowClient:
         print(f"Create user: {user_name}, password: ******, role: {role}")
         # enpass1 = encrypt(password)
         enc_password = encrypt_password(password)
-        response = self.http_client.request(method="POST", path=f"/admin/users",
+        response = self.http_client.request(method="POST", path="/admin/users",
                                             json_body={"username": user_name, "password": enc_password, "role": role},
                                             use_api_base=True, auth_kind="admin")
         res_json = response.json()
@@ -240,7 +240,7 @@ class RAGFlowClient:
             desc_str = desc_tree.children[0].strip("'\"")
 
         print(f"create role name: {role_name}, description: {desc_str}")
-        response = self.http_client.request("POST", f"/admin/roles",
+        response = self.http_client.request("POST", "/admin/roles",
                                             json_body={"role_name": role_name, "description": desc_str},
                                             use_api_base=True,
                                             auth_kind="admin")
@@ -291,7 +291,7 @@ class RAGFlowClient:
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
 
-        response = self.http_client.request("GET", f"/admin/roles",
+        response = self.http_client.request("GET", "/admin/roles",
                                             use_api_base=True,
                                             auth_kind="admin")
         res_json = response.json()
@@ -514,7 +514,6 @@ class RAGFlowClient:
         else:
             print(f"Fail to list variables, code: {res_json['code']}, message: {res_json['message']}")
 
-
     def handle_list_datasets(self, command):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
@@ -523,7 +522,8 @@ class RAGFlowClient:
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Listing all datasets of user: {user_name}")
 
-        response = self.http_client.request("GET", f"/admin/users/{user_name}/datasets", use_api_base=True, auth_kind="admin")
+        response = self.http_client.request("GET", f"/admin/users/{user_name}/datasets", use_api_base=True,
+                                            auth_kind="admin")
         res_json = response.json()
         if response.status_code == 200:
             table_data = res_json["data"]
@@ -550,7 +550,6 @@ class RAGFlowClient:
             self._print_table_simple(table_data)
         else:
             print(f"Fail to get all agents of {user_name}, code: {res_json['code']}, message: {res_json['message']}")
-
 
     def list_user_datasets(self, command):
         if self.server_type != "user":
