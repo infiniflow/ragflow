@@ -18,8 +18,15 @@ Service for adjusting chunk recall weights based on user feedback.
 
 When users upvote or downvote responses, this service updates the pagerank_fea
 field of the referenced chunks to improve future retrieval quality.
+
+This feature is disabled by default. Enable it by setting the environment
+variable CHUNK_FEEDBACK_ENABLED=true.
+
+Weight adjustments are intentionally small (0.1) to prevent individual votes
+from having outsized impact on retrieval rankings.
 """
 import logging
+import os
 from typing import List
 
 from common.constants import PAGERANK_FLD
@@ -27,9 +34,12 @@ from common import settings
 from rag.nlp.search import index_name
 
 
-# Weight adjustment constants
-UPVOTE_WEIGHT_INCREMENT = 1
-DOWNVOTE_WEIGHT_DECREMENT = 1
+# Feature flag - disabled by default to prevent unintended side effects
+CHUNK_FEEDBACK_ENABLED = os.getenv("CHUNK_FEEDBACK_ENABLED", "false").lower() == "true"
+
+# Weight adjustment constants - intentionally small to require many votes for significant impact
+UPVOTE_WEIGHT_INCREMENT = 0.1
+DOWNVOTE_WEIGHT_DECREMENT = 0.1
 MIN_PAGERANK_WEIGHT = 0
 MAX_PAGERANK_WEIGHT = 100
 
@@ -97,7 +107,7 @@ class ChunkFeedbackService:
         tenant_id: str,
         chunk_id: str,
         kb_id: str,
-        delta: int
+        delta: float
     ) -> bool:
         """
         Update the pagerank weight of a single chunk.
@@ -106,7 +116,7 @@ class ChunkFeedbackService:
             tenant_id: The tenant ID for index naming
             chunk_id: The chunk ID to update
             kb_id: The knowledgebase ID
-            delta: Weight change (+1 for upvote, -1 for downvote)
+            delta: Weight change (+0.1 for upvote, -0.1 for downvote)
 
         Returns:
             True if update succeeded, False otherwise
@@ -165,6 +175,11 @@ class ChunkFeedbackService:
         Returns:
             Dict with 'success_count', 'fail_count', and 'chunk_ids' processed
         """
+        # Check if feature is enabled
+        if not CHUNK_FEEDBACK_ENABLED:
+            logging.debug("Chunk feedback feature is disabled")
+            return {"success_count": 0, "fail_count": 0, "chunk_ids": [], "disabled": True}
+
         chunk_ids = cls.extract_chunk_ids_from_reference(reference)
         kb_mapping = cls.get_chunk_kb_mapping(reference)
 

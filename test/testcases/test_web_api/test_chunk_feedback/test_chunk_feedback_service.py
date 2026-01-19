@@ -186,6 +186,20 @@ class TestUpdateChunkWeight:
 class TestApplyFeedback:
     """Tests for apply_feedback method."""
 
+    @patch("api.db.services.chunk_feedback_service.CHUNK_FEEDBACK_ENABLED", False)
+    def test_apply_feedback_disabled(self):
+        """Should return early when feature is disabled."""
+        result = ChunkFeedbackService.apply_feedback(
+            tenant_id="tenant1",
+            reference={"chunks": [{"id": "chunk1", "dataset_id": "kb1"}]},
+            is_positive=True
+        )
+
+        assert result["success_count"] == 0
+        assert result["fail_count"] == 0
+        assert result.get("disabled") is True
+
+    @patch("api.db.services.chunk_feedback_service.CHUNK_FEEDBACK_ENABLED", True)
     @patch.object(ChunkFeedbackService, "update_chunk_weight")
     @patch.object(ChunkFeedbackService, "get_chunk_kb_mapping")
     @patch.object(ChunkFeedbackService, "extract_chunk_ids_from_reference")
@@ -207,6 +221,7 @@ class TestApplyFeedback:
         # Verify positive delta
         mock_update.assert_any_call("tenant1", "chunk1", "kb1", UPVOTE_WEIGHT_INCREMENT)
 
+    @patch("api.db.services.chunk_feedback_service.CHUNK_FEEDBACK_ENABLED", True)
     @patch.object(ChunkFeedbackService, "update_chunk_weight")
     @patch.object(ChunkFeedbackService, "get_chunk_kb_mapping")
     @patch.object(ChunkFeedbackService, "extract_chunk_ids_from_reference")
@@ -226,6 +241,7 @@ class TestApplyFeedback:
         # Verify negative delta
         mock_update.assert_called_with("tenant1", "chunk1", "kb1", -DOWNVOTE_WEIGHT_DECREMENT)
 
+    @patch("api.db.services.chunk_feedback_service.CHUNK_FEEDBACK_ENABLED", True)
     @patch.object(ChunkFeedbackService, "extract_chunk_ids_from_reference")
     def test_apply_feedback_no_chunks(self, mock_extract):
         """Should handle empty chunk list gracefully."""
@@ -241,6 +257,7 @@ class TestApplyFeedback:
         assert result["fail_count"] == 0
         assert result["chunk_ids"] == []
 
+    @patch("api.db.services.chunk_feedback_service.CHUNK_FEEDBACK_ENABLED", True)
     @patch.object(ChunkFeedbackService, "update_chunk_weight")
     @patch.object(ChunkFeedbackService, "get_chunk_kb_mapping")
     @patch.object(ChunkFeedbackService, "extract_chunk_ids_from_reference")
