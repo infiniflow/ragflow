@@ -23,6 +23,44 @@ When creating a Memory, users can precisely define which types of information to
 
 ![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/memory_interface.PNG)
 
+## Configure memory
+
+On the **Memory** page, click the intended memory **>** **Configuration** to view and update its settings.
+
+### Name
+
+The unique name of the memory created.
+
+### Embedding model
+
+The embedding model for converting the memory into embeddings.
+
+### LLM
+
+The chat model for extracting knowledge from the memory.
+
+### Memory type
+
+What is stored in the memory:
+
+`Raw`: The raw dialogue between the user and the Agent (Required by default).
+`Semantic Memory`: General knowledge and facts about the user and world.
+`Episodic Memory`: Time-stamped records of specific events and experiences.
+`Procedural Memory`: Learned skills, habits, and automated procedures.
+
+### Memory size
+
+The default capacity allocated to the memory and the corresponding embeddings in bytes. Defaults to `5242880` (5MB). 
+
+:::tip NOTE
+A 1KB message with a 1024-dimension embedding occupies approximately 9KB of memory (1KB + 1024 x 8Bytes = 9KB). With a default limit of 5 MB, the system can store roughly 500 such messages.
+:::
+
+### Permission
+
+- **Only me**: Exclusive to the user.
+- **Team**: Share this memory with the team members.
+
 
 ## Manage memory
 
@@ -38,7 +76,7 @@ When the Memory reaches its storage limit and the automatic forgetting policy is
 
 ## Enhance Agent context 
 
-Under **Retrieval** and **Message** component settings, a new Memory invocation capability is available. In the Message component, users can configure the Agent to write selected data into a designated Memory, while the Retrieval component can be set to read from that same Memory to answer future queries.  This enables a simple Q&A bot Agent to accumulate context over time and respond with richer, memory-aware answers.
+Under [Retrieval](../agent/agent_component_reference/retrieval.mdx) and [Message](../agent/agent_component_reference/message.mdx) component settings, a new Memory invocation capability is available. In the Message component, users can configure the Agent to write selected data into a designated Memory, while the Retrieval component can be set to read from that same Memory to answer future queries.  This enables a simple Q&A bot Agent to accumulate context over time and respond with richer, memory-aware answers.
 
 ### Retrieve from memory
 
@@ -52,6 +90,18 @@ At the same time you have finished **Retrieval** component settings, select the 
 
 
 ![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/save_to_memory.png)
+
+
+## Frequently asked questions
+
+### Can I share my memory?
+
+Yes, you can. Your memory can be shared between Agents. See these topics:
+
+- [Create memory](#create-memory)
+- [Enhance Agent context](#enhance-agent-context)
+
+If you wish to share your memory with your team members, please ensure you have configured its team permissions. See [Share memory](../team/share_memory.md) for details.
 
 
 

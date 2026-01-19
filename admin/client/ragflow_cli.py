@@ -17,6 +17,7 @@
 import argparse
 import base64
 import getpass
+import urllib.parse
 from cmd import Cmd
 from typing import Any, Dict, List
 
@@ -60,6 +61,14 @@ sql_command: list_services
            | list_variables
            | list_configs
            | list_environments
+           | generate_key
+           | list_keys
+           | drop_key
+           | list_user_datasets
+           | list_user_agents
+           | list_user_chats
+           | list_user_model_providers
+           | list_user_default_models
 
 // meta command definition
 meta_command: "\\" meta_command_name [meta_args]
@@ -107,6 +116,14 @@ VAR: "VAR"i
 VARS: "VARS"i
 CONFIGS: "CONFIGS"i
 ENVS: "ENVS"i
+KEY: "KEY"i
+KEYS: "KEYS"i
+GENERATE: "GENERATE"i
+MODEL: "MODEL"i
+MODELS: "MODELS"i
+PROVIDERS: "PROVIDERS"i
+DEFAULT: "DEFAULT"i
+CHATS: "CHATS"i
 
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
@@ -135,8 +152,14 @@ revoke_permission: REVOKE action_list ON identifier FROM ROLE identifier ";"
 alter_user_role: ALTER USER quoted_string SET ROLE identifier ";"
 show_user_permission: SHOW USER PERMISSION quoted_string ";"
 
+show_version: SHOW VERSION ";"
+
 grant_admin: GRANT ADMIN quoted_string ";"
 revoke_admin: REVOKE ADMIN quoted_string ";"
+
+generate_key: GENERATE KEY FOR USER quoted_string ";"
+list_keys: LIST KEYS OF quoted_string ";"
+drop_key: DROP KEY quoted_string OF quoted_string ";"
 
 set_variable: SET VAR identifier identifier ";"
 show_variable: SHOW VAR identifier ";"
@@ -144,7 +167,11 @@ list_variables: LIST VARS ";"
 list_configs: LIST CONFIGS ";"
 list_environments: LIST ENVS ";"
 
-show_version: SHOW VERSION ";"
+list_user_datasets: LIST DATASETS ";"
+list_user_agents: LIST AGENTS ";"
+list_user_chats: LIST CHATS ";"
+list_user_model_providers: LIST MODEL PROVIDERS ";"
+list_user_default_models: LIST DEFAULT MODELS ";"
 
 action_list: identifier ("," identifier)*
 
@@ -161,7 +188,7 @@ NUMBER: /[0-9]+/
 """
 
 
-class AdminTransformer(Transformer):
+class RAGFlowCLITransformer(Transformer):
     def start(self, items):
         return items[0]
 
@@ -278,6 +305,19 @@ class AdminTransformer(Transformer):
         user_name = items[2]
         return {"type": "revoke_admin", "user_name": user_name}
 
+    def generate_key(self, items):
+        user_name = items[4]
+        return {"type": "generate_key", "user_name": user_name}
+
+    def list_keys(self, items):
+        user_name = items[3]
+        return {"type": "list_keys", "user_name": user_name}
+
+    def drop_key(self, items):
+        key = items[2]
+        user_name = items[4]
+        return {"type": "drop_key", "key": key, "user_name": user_name}
+
     def set_variable(self, items):
         var_name = items[2]
         var_value = items[3]
@@ -295,6 +335,21 @@ class AdminTransformer(Transformer):
 
     def list_environments(self, items):
         return {"type": "list_environments"}
+
+    def list_user_datasets(self, items):
+        return {"type": "list_user_datasets"}
+
+    def list_user_agents(self, items):
+        return {"type": "list_user_agents"}
+
+    def list_user_chats(self, items):
+        return {"type": "list_user_chats"}
+
+    def list_user_model_providers(self, items):
+        return {"type": "list_user_model_providers"}
+
+    def list_user_default_models(self, items):
+        return {"type": "list_user_default_models"}
 
     def action_list(self, items):
         return items
@@ -362,6 +417,9 @@ SHOW USER PERMISSION <user>
 SHOW VERSION
 GRANT ADMIN <user>
 REVOKE ADMIN <user>
+GENERATE KEY FOR USER <user>
+LIST KEYS OF <user>
+DROP KEY <key> OF <user>
 
 Meta Commands:
 \\?, \\h, \\help     Show this help
@@ -370,21 +428,22 @@ Meta Commands:
     print(help_text)
 
 
-class AdminCLI(Cmd):
+class RAGFlowCLI(Cmd):
     def __init__(self):
         super().__init__()
-        self.parser = Lark(GRAMMAR, start="start", parser="lalr", transformer=AdminTransformer())
+        self.parser = Lark(GRAMMAR, start="start", parser="lalr", transformer=RAGFlowCLITransformer())
         self.command_history = []
         self.is_interactive = False
-        self.admin_account = "admin@ragflow.io"
-        self.admin_password: str = "admin"
+        self.account = "admin@ragflow.io"
+        self.account_password: str = "admin"
         self.session = requests.Session()
         self.access_token: str = ""
         self.host: str = ""
         self.port: int = 0
+        self.mode: str = "admin"
 
     intro = r"""Type "\h" for help."""
-    prompt = "admin> "
+    prompt = "ragflow> "
 
     def onecmd(self, command: str) -> bool:
         try:
@@ -427,11 +486,21 @@ class AdminCLI(Cmd):
         except Exception as e:
             return {"type": "error", "message": f"Parse error: {str(e)}"}
 
-    def verify_admin(self, arguments: dict, single_command: bool):
+    def verify_auth(self, arguments: dict, single_command: bool):
         self.host = arguments["host"]
         self.port = arguments["port"]
-        print("Attempt to access server for admin login")
-        url = f"http://{self.host}:{self.port}/api/v1/admin/login"
+        # Determine mode and username
+        self.mode = arguments.get("type", "admin")
+        username = arguments.get("username", "admin@ragflow.io")
+        self.account = username
+
+        # Set login endpoint based on mode
+        if self.mode == "admin":
+            url = f"http://{self.host}:{self.port}/api/v1/admin/login"
+            print("Attempt to access server for admin login")
+        else:  # user mode
+            url = f"http://{self.host}:{self.port}/v1/user/login"
+            print("Attempt to access server for user login")
 
         attempt_count = 3
         if single_command:
@@ -444,17 +513,19 @@ class AdminCLI(Cmd):
                 return False
 
             if single_command:
-                admin_passwd = arguments["password"]
+                account_passwd = arguments["password"]
             else:
-                admin_passwd = getpass.getpass(f"password for {self.admin_account}: ").strip()
+                account_passwd = getpass.getpass(f"password for {self.account}: ").strip()
             try:
-                self.admin_password = encrypt(admin_passwd)
-                response = self.session.post(url, json={"email": self.admin_account, "password": self.admin_password})
+                self.account_password = encrypt(account_passwd)
+                response = self.session.post(url, json={"email": self.account, "password": self.account_password})
                 if response.status_code == 200:
                     res_json = response.json()
                     error_code = res_json.get("code", -1)
                     if error_code == 0:
-                        self.session.headers.update({"Content-Type": "application/json", "Authorization": response.headers["Authorization"], "User-Agent": "RAGFlow-CLI/0.23.1"})
+                        self.session.headers.update(
+                            {"Content-Type": "application/json", "Authorization": response.headers["Authorization"],
+                             "User-Agent": "RAGFlow-CLI/0.23.1"})
                         print("Authentication successful.")
                         return True
                     else:
@@ -465,7 +536,7 @@ class AdminCLI(Cmd):
                     print(f"Bad response，status: {response.status_code}, password is wrong")
             except Exception as e:
                 print(str(e))
-                print("Can't access server for admin login (connection failed)")
+                print("Can't access server for login (connection failed)")
 
     def _format_service_detail_table(self, data):
         if isinstance(data, list):
@@ -541,11 +612,11 @@ class AdminCLI(Cmd):
 
     def run_interactive(self):
         self.is_interactive = True
-        print("RAGFlow Admin command line interface - Type '\\?' for help, '\\q' to quit")
+        print("RAGFlow command line interface - Type '\\?' for help, '\\q' to quit")
 
         while True:
             try:
-                command = input("admin> ").strip()
+                command = input("ragflow> ").strip()
                 if not command:
                     continue
 
@@ -570,20 +641,42 @@ class AdminCLI(Cmd):
         self.execute_command(result)
 
     def parse_connection_args(self, args: List[str]) -> Dict[str, Any]:
-        parser = argparse.ArgumentParser(description="Admin CLI Client", add_help=False)
-        parser.add_argument("-h", "--host", default="localhost", help="Admin service host")
-        parser.add_argument("-p", "--port", type=int, default=9381, help="Admin service port")
+        parser = argparse.ArgumentParser(description="RAGFlow CLI Client", add_help=False)
+        parser.add_argument("-h", "--host", default="localhost", help="Admin or RAGFlow service host")
+        parser.add_argument("-p", "--port", type=int, default=9381, help="Admin or RAGFlow service port")
         parser.add_argument("-w", "--password", default="admin", type=str, help="Superuser password")
+        parser.add_argument("-t", "--type", default="admin", type=str, help="CLI mode, admin or user")
+        parser.add_argument("-u", "--username", default=None,
+                            help="Username (email). In admin mode defaults to admin@ragflow.io, in user mode required.")
         parser.add_argument("command", nargs="?", help="Single command")
         try:
             parsed_args, remaining_args = parser.parse_known_args(args)
+            # Determine username based on mode
+            username = parsed_args.username
+            if parsed_args.type == "admin":
+                if username is None:
+                    username = "admin@ragflow.io"
+            else:  # user mode
+                if username is None:
+                    print("Error: username (-u) is required in user mode")
+                    return {"error": "Username required"}
+
             if remaining_args:
                 command = remaining_args[0]
-                return {"host": parsed_args.host, "port": parsed_args.port, "password": parsed_args.password, "command": command}
+                return {
+                    "host": parsed_args.host,
+                    "port": parsed_args.port,
+                    "password": parsed_args.password,
+                    "type": parsed_args.type,
+                    "username": username,
+                    "command": command
+                }
             else:
                 return {
                     "host": parsed_args.host,
                     "port": parsed_args.port,
+                    "type": parsed_args.type,
+                    "username": username,
                 }
         except SystemExit:
             return {"error": "Invalid connection arguments"}
@@ -654,6 +747,12 @@ class AdminCLI(Cmd):
                 self._grant_admin(command_dict)
             case "revoke_admin":
                 self._revoke_admin(command_dict)
+            case "generate_key":
+                self._generate_key(command_dict)
+            case "list_keys":
+                self._list_keys(command_dict)
+            case "drop_key":
+                self._drop_key(command_dict)
             case "set_variable":
                 self._set_variable(command_dict)
             case "show_variable":
@@ -664,13 +763,24 @@ class AdminCLI(Cmd):
                 self._list_configs(command_dict)
             case "list_environments":
                 self._list_environments(command_dict)
+            case "list_user_datasets":
+                self._list_user_datasets(command_dict)
+            case "list_user_agents":
+                self._list_user_agents(command_dict)
+            case "list_user_chats":
+                self._list_user_chats(command_dict)
+            case "list_user_model_providers":
+                self._list_user_model_providers(command_dict)
+            case "list_user_default_models":
+                self._list_user_default_models(command_dict)
             case "meta":
                 self._handle_meta_command(command_dict)
             case _:
                 print(f"Command '{command_type}' would be executed with API")
 
     def _handle_list_services(self, command):
-        print("Listing all services")
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
 
         url = f"http://{self.host}:{self.port}/api/v1/admin/services"
         response = self.session.get(url)
@@ -681,8 +791,10 @@ class AdminCLI(Cmd):
             print(f"Fail to get all services, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_show_service(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         service_id: int = command["number"]
-        print(f"Showing service: {service_id}")
 
         url = f"http://{self.host}:{self.port}/api/v1/admin/services/{service_id}"
         response = self.session.get(url)
@@ -702,19 +814,29 @@ class AdminCLI(Cmd):
             print(f"Fail to show service, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_restart_service(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         service_id: int = command["number"]
         print(f"Restart service {service_id}")
 
     def _handle_shutdown_service(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         service_id: int = command["number"]
         print(f"Shutdown service {service_id}")
 
     def _handle_startup_service(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         service_id: int = command["number"]
         print(f"Startup service {service_id}")
 
     def _handle_list_users(self, command):
-        print("Listing all users")
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
 
         url = f"http://{self.host}:{self.port}/api/v1/admin/users"
         response = self.session.get(url)
@@ -725,6 +847,9 @@ class AdminCLI(Cmd):
             print(f"Fail to get all users, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_show_user(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Showing user: {user_name}")
@@ -732,13 +857,16 @@ class AdminCLI(Cmd):
         response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
-            table_data = res_json["data"]
+            table_data = res_json["data"][0]
             table_data.pop("avatar")
             self._print_table_simple(table_data)
         else:
             print(f"Fail to get user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_drop_user(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Drop user: {user_name}")
@@ -751,6 +879,9 @@ class AdminCLI(Cmd):
             print(f"Fail to drop user, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_alter_user(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
         password_tree: Tree = command["password"]
@@ -765,6 +896,9 @@ class AdminCLI(Cmd):
             print(f"Fail to alter password, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_create_user(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
         password_tree: Tree = command["password"]
@@ -780,6 +914,9 @@ class AdminCLI(Cmd):
             print(f"Fail to create user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_activate_user(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
         activate_tree: Tree = command["activate_status"]
@@ -796,8 +933,10 @@ class AdminCLI(Cmd):
         else:
             print(f"Unknown activate status: {activate_status}.")
 
-
     def _grant_admin(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
         url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/admin"
@@ -808,9 +947,13 @@ class AdminCLI(Cmd):
         if response.status_code == 200:
             print(res_json["message"])
         else:
-            print(f"Fail to grant {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to grant {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
 
     def _revoke_admin(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
         url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/admin"
@@ -821,9 +964,54 @@ class AdminCLI(Cmd):
         if response.status_code == 200:
             print(res_json["message"])
         else:
-            print(f"Fail to revoke {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to revoke {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _generate_key(self, command: dict[str, Any]) -> None:
+        username_tree: Tree = command["user_name"]
+        user_name: str = username_tree.children[0].strip("'\"")
+        print(f"Generating API key for user: {user_name}")
+        url: str = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/new_token"
+        response: requests.Response = self.session.post(url)
+        res_json: dict[str, Any] = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(
+                f"Failed to generate key for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _list_keys(self, command: dict[str, Any]) -> None:
+        username_tree: Tree = command["user_name"]
+        user_name: str = username_tree.children[0].strip("'\"")
+        print(f"Listing API keys for user: {user_name}")
+        url: str = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/token_list"
+        response: requests.Response = self.session.get(url)
+        res_json: dict[str, Any] = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(f"Failed to list keys for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _drop_key(self, command: dict[str, Any]) -> None:
+        key_tree: Tree = command["key"]
+        key: str = key_tree.children[0].strip("'\"")
+        username_tree: Tree = command["user_name"]
+        user_name: str = username_tree.children[0].strip("'\"")
+        print(f"Dropping API key for user: {user_name}")
+        # URL encode the key to handle special characters
+        encoded_key: str = urllib.parse.quote(key, safe="")
+        url: str = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/token/{encoded_key}"
+        response: requests.Response = self.session.delete(url)
+        res_json: dict[str, Any] = response.json()
+        if response.status_code == 200:
+            print(res_json["message"])
+        else:
+            print(f"Failed to drop key for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _set_variable(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         var_name_tree: Tree = command["var_name"]
         var_name = var_name_tree.children[0].strip("'\"")
         var_value_tree: Tree = command["var_value"]
@@ -834,9 +1022,13 @@ class AdminCLI(Cmd):
         if response.status_code == 200:
             print(res_json["message"])
         else:
-            print(f"Fail to set variable {var_name} to {var_value}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to set variable {var_name} to {var_value}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _show_variable(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         var_name_tree: Tree = command["var_name"]
         var_name = var_name_tree.children[0].strip("'\"")
         url = f"http://{self.host}:{self.port}/api/v1/admin/variables"
@@ -848,6 +1040,9 @@ class AdminCLI(Cmd):
             print(f"Fail to get variable {var_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _list_variables(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         url = f"http://{self.host}:{self.port}/api/v1/admin/variables"
         response = self.session.get(url)
         res_json = response.json()
@@ -857,6 +1052,9 @@ class AdminCLI(Cmd):
             print(f"Fail to list variables, code: {res_json['code']}, message: {res_json['message']}")
 
     def _list_configs(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         url = f"http://{self.host}:{self.port}/api/v1/admin/configs"
         response = self.session.get(url)
         res_json = response.json()
@@ -866,6 +1064,9 @@ class AdminCLI(Cmd):
             print(f"Fail to list variables, code: {res_json['code']}, message: {res_json['message']}")
 
     def _list_environments(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         url = f"http://{self.host}:{self.port}/api/v1/admin/environments"
         response = self.session.get(url)
         res_json = response.json()
@@ -875,6 +1076,9 @@ class AdminCLI(Cmd):
             print(f"Fail to list variables, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_list_datasets(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Listing all datasets of user: {user_name}")
@@ -890,6 +1094,9 @@ class AdminCLI(Cmd):
             print(f"Fail to get all datasets of {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_list_agents(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Listing all agents of user: {user_name}")
@@ -905,6 +1112,9 @@ class AdminCLI(Cmd):
             print(f"Fail to get all agents of {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _create_role(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         role_name_tree: Tree = command["role_name"]
         role_name: str = role_name_tree.children[0].strip("'\"")
         desc_str: str = ""
@@ -922,6 +1132,9 @@ class AdminCLI(Cmd):
             print(f"Fail to create role {role_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _drop_role(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         role_name_tree: Tree = command["role_name"]
         role_name: str = role_name_tree.children[0].strip("'\"")
         print(f"drop role name: {role_name}")
@@ -934,6 +1147,9 @@ class AdminCLI(Cmd):
             print(f"Fail to drop role {role_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _alter_role(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         role_name_tree: Tree = command["role_name"]
         role_name: str = role_name_tree.children[0].strip("'\"")
         desc_tree: Tree = command["description"]
@@ -946,10 +1162,13 @@ class AdminCLI(Cmd):
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Fail to update role {role_name} with description: {desc_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to update role {role_name} with description: {desc_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _list_roles(self, command):
-        print("Listing all roles")
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         url = f"http://{self.host}:{self.port}/api/v1/admin/roles"
         response = self.session.get(url)
         res_json = response.json()
@@ -959,6 +1178,9 @@ class AdminCLI(Cmd):
             print(f"Fail to list roles, code: {res_json['code']}, message: {res_json['message']}")
 
     def _show_role(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         role_name_tree: Tree = command["role_name"]
         role_name: str = role_name_tree.children[0].strip("'\"")
         print(f"show role: {role_name}")
@@ -971,6 +1193,9 @@ class AdminCLI(Cmd):
             print(f"Fail to list roles, code: {res_json['code']}, message: {res_json['message']}")
 
     def _grant_permission(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         role_name_tree: Tree = command["role_name"]
         role_name_str: str = role_name_tree.children[0].strip("'\"")
         resource_tree: Tree = command["resource"]
@@ -987,9 +1212,13 @@ class AdminCLI(Cmd):
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Fail to grant role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to grant role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _revoke_permission(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         role_name_tree: Tree = command["role_name"]
         role_name_str: str = role_name_tree.children[0].strip("'\"")
         resource_tree: Tree = command["resource"]
@@ -1006,9 +1235,13 @@ class AdminCLI(Cmd):
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Fail to revoke role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to revoke role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _alter_user_role(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         role_name_tree: Tree = command["role_name"]
         role_name_str: str = role_name_tree.children[0].strip("'\"")
         user_name_tree: Tree = command["user_name"]
@@ -1020,9 +1253,13 @@ class AdminCLI(Cmd):
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Fail to alter user: {user_name_str} to role {role_name_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to alter user: {user_name_str} to role {role_name_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _show_user_permission(self, command):
+        if self.mode != "admin":
+            print("This command is only allowed in ADMIN mode")
+
         user_name_tree: Tree = command["user_name"]
         user_name_str: str = user_name_tree.children[0].strip("'\"")
         print(f"show_user_permission user_name: {user_name_str}")
@@ -1032,17 +1269,99 @@ class AdminCLI(Cmd):
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Fail to show user: {user_name_str} permission, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to show user: {user_name_str} permission, code: {res_json['code']}, message: {res_json['message']}")
 
     def _show_version(self, command):
-        print("show_version")
-        url = f"http://{self.host}:{self.port}/api/v1/admin/version"
+        if self.mode == "admin":
+            url = f"http://{self.host}:{self.port}/api/v1/admin/version"
+        else:
+            url = f"http://{self.host}:{self.port}/v1/system/version"
+
+        response = self.session.get(url)
+        res_json = response.json()
+        if response.status_code == 200:
+            if self.mode == "admin":
+                self._print_table_simple(res_json["data"])
+            else:
+                self._print_table_simple({"version": res_json["data"]})
+        else:
+            print(f"Fail to show version, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _list_user_datasets(self, command):
+        if self.mode != "user":
+            print("This command is only allowed in USER mode")
+
+        url = f"http://{self.host}:{self.port}/v1/kb/list"
+        response = self.session.post(url)
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _list_user_agents(self, command):
+        if self.mode != "user":
+            print("This command is only allowed in USER mode")
+
+        url = f"http://{self.host}:{self.port}/v1/canvas/list"
         response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Fail to show version, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _list_user_chats(self, command):
+        if self.mode != "user":
+            print("This command is only allowed in USER mode")
+
+        url = f"http://{self.host}:{self.port}/v1/dialog/next"
+        response = self.session.get(url)
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _list_user_model_providers(self, command):
+        if self.mode != "user":
+            print("This command is only allowed in USER mode")
+
+        url = f"http://{self.host}:{self.port}/v1/llm/my_llms"
+        response = self.session.get(url)
+        res_json = response.json()
+        if response.status_code == 200:
+            new_input = []
+            for key, value in res_json["data"].items():
+                new_input.append({"model provider": key, "models": value})
+            self._print_table_simple(new_input)
+
+    def _list_user_default_models(self, command):
+        if self.mode != "user":
+            print("This command is only allowed in USER mode")
+
+        url = f"http://{self.host}:{self.port}/v1/user/tenant_info"
+        response = self.session.get(url)
+        res_json = response.json()
+        if response.status_code == 200:
+            new_input = []
+            for key, value in res_json["data"].items():
+                if key == "asr_id" and value != "":
+                    new_input.append({"model_category": "ASR", "model_name": value})
+                elif key == "embd_id" and value != "":
+                    new_input.append({"model_category": "Embedding", "model_name": value})
+                elif key == "llm_id" and value != "":
+                    new_input.append({"model_category": "LLM", "model_name": value})
+                elif key == "rerank_id" and value != "":
+                    new_input.append({"model_category": "Reranker", "model_name": value})
+                elif key == "tts_id" and value != "":
+                    new_input.append({"model_category": "TTS", "model_name": value})
+                elif key == "img2txt_id" and value != "":
+                    new_input.append({"model_category": "VLM", "model_name": value})
+                else:
+                    continue
+            self._print_table_simple(new_input)
 
     def _handle_meta_command(self, command):
         meta_command = command["command"]
@@ -1059,7 +1378,7 @@ class AdminCLI(Cmd):
 def main():
     import sys
 
-    cli = AdminCLI()
+    cli = RAGFlowCLI()
 
     args = cli.parse_connection_args(sys.argv)
     if "error" in args:
@@ -1070,18 +1389,18 @@ def main():
         if "password" not in args:
             print("Error: password is missing")
             return
-        if cli.verify_admin(args, single_command=True):
+        if cli.verify_auth(args, single_command=True):
             command: str = args["command"]
             # print(f"Run single command: {command}")
             cli.run_single_command(command)
     else:
-        if cli.verify_admin(args, single_command=False):
+        if cli.verify_auth(args, single_command=False):
             print(r"""
-                ____  ___   ______________                 ___       __          _     
-               / __ \/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___ 
-              / /_/ / /| |/ / __/ /_  / / __ \ | /| / /  / /| |/ __  / __ `__ \/ / __ \
-             / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / /
-            /_/ |_/_/  |_\____/_/   /_/\____/|__/|__/  /_/  |_\__,_/_/ /_/ /_/_/_/ /_/ 
+                ____  ___   ______________                 ________    ____
+               / __ \/   | / ____/ ____/ /___ _      __   / ____/ /   /  _/
+              / /_/ / /| |/ / __/ /_  / / __ \ | /| / /  / /   / /    / /  
+             / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / /___/ /____/ /   
+            /_/ |_/_/  |_\____/_/   /_/\____/|__/|__/   \____/_____/___/   
             """)
             cli.cmdloop()
 

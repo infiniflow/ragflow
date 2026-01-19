@@ -367,7 +367,10 @@ class InfinityConnectionBase(DocStoreConnection):
         num_rows = len(res)
         column_id = res["id"]
         if field_name not in res:
-            return {}
+            if field_name == "content_with_weight" and "content" in res:
+                field_name = "content"
+            else:
+                return {}
         for i in range(num_rows):
             id = column_id[i]
             txt = res[field_name][i]
