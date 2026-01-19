@@ -228,6 +228,177 @@ class RAGFlowClient:
             print(
                 f"Fail to revoke {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
 
+    def create_role(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+
+        role_name_tree: Tree = command["role_name"]
+        role_name: str = role_name_tree.children[0].strip("'\"")
+        desc_str: str = ""
+        if "description" in command and command["description"] is not None:
+            desc_tree: Tree = command["description"]
+            desc_str = desc_tree.children[0].strip("'\"")
+
+        print(f"create role name: {role_name}, description: {desc_str}")
+        response = self.http_client.request("POST", f"/admin/roles",
+                                            json_body={"role_name": role_name, "description": desc_str},
+                                            use_api_base=True,
+                                            auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(f"Fail to create role {role_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def drop_role(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+
+        role_name_tree: Tree = command["role_name"]
+        role_name: str = role_name_tree.children[0].strip("'\"")
+        print(f"drop role name: {role_name}")
+        response = self.http_client.request("DELETE", f"/admin/roles/{role_name}",
+                                            use_api_base=True,
+                                            auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(f"Fail to drop role {role_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def alter_role(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+
+        role_name_tree: Tree = command["role_name"]
+        role_name: str = role_name_tree.children[0].strip("'\"")
+        desc_tree: Tree = command["description"]
+        desc_str: str = desc_tree.children[0].strip("'\"")
+
+        print(f"alter role name: {role_name}, description: {desc_str}")
+        response = self.http_client.request("PUT", f"/admin/roles/{role_name}",
+                                            json_body={"description": desc_str},
+                                            use_api_base=True,
+                                            auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(
+                f"Fail to update role {role_name} with description: {desc_str}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def list_roles(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+
+        response = self.http_client.request("GET", f"/admin/roles",
+                                            use_api_base=True,
+                                            auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(f"Fail to list roles, code: {res_json['code']}, message: {res_json['message']}")
+
+    def show_role(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+
+        role_name_tree: Tree = command["role_name"]
+        role_name: str = role_name_tree.children[0].strip("'\"")
+        print(f"show role: {role_name}")
+        response = self.http_client.request("GET", f"/admin/roles/{role_name}/permission",
+                                            use_api_base=True,
+                                            auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(f"Fail to list roles, code: {res_json['code']}, message: {res_json['message']}")
+
+    def grant_permission(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+
+        role_name_tree: Tree = command["role_name"]
+        role_name_str: str = role_name_tree.children[0].strip("'\"")
+        resource_tree: Tree = command["resource"]
+        resource_str: str = resource_tree.children[0].strip("'\"")
+        action_tree_list: list = command["actions"]
+        actions: list = []
+        for action_tree in action_tree_list:
+            action_str: str = action_tree.children[0].strip("'\"")
+            actions.append(action_str)
+        print(f"grant role_name: {role_name_str}, resource: {resource_str}, actions: {actions}")
+        response = self.http_client.request("POST", f"/admin/roles/{role_name_str}/permission",
+                                            json_body={"actions": actions, "resource": resource_str}, use_api_base=True,
+                                            auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(
+                f"Fail to grant role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def revoke_permission(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+
+        role_name_tree: Tree = command["role_name"]
+        role_name_str: str = role_name_tree.children[0].strip("'\"")
+        resource_tree: Tree = command["resource"]
+        resource_str: str = resource_tree.children[0].strip("'\"")
+        action_tree_list: list = command["actions"]
+        actions: list = []
+        for action_tree in action_tree_list:
+            action_str: str = action_tree.children[0].strip("'\"")
+            actions.append(action_str)
+        print(f"revoke role_name: {role_name_str}, resource: {resource_str}, actions: {actions}")
+        response = self.http_client.request("DELETE", f"/admin/roles/{role_name_str}/permission",
+                                            json_body={"actions": actions, "resource": resource_str}, use_api_base=True,
+                                            auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(
+                f"Fail to revoke role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def alter_user_role(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+
+        role_name_tree: Tree = command["role_name"]
+        role_name_str: str = role_name_tree.children[0].strip("'\"")
+        user_name_tree: Tree = command["user_name"]
+        user_name_str: str = user_name_tree.children[0].strip("'\"")
+        print(f"alter_user_role user_name: {user_name_str}, role_name: {role_name_str}")
+        response = self.http_client.request("PUT", f"/admin/users/{user_name_str}/role",
+                                            json_body={"role_name": role_name_str}, use_api_base=True,
+                                            auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(
+                f"Fail to alter user: {user_name_str} to role {role_name_str}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def show_user_permission(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+
+        user_name_tree: Tree = command["user_name"]
+        user_name_str: str = user_name_tree.children[0].strip("'\"")
+        print(f"show_user_permission user_name: {user_name_str}")
+        response = self.http_client.request("GET", f"/admin/users/{user_name_str}/permission", use_api_base=True,
+                                            auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(
+                f"Fail to show user: {user_name_str} permission, code: {res_json['code']}, message: {res_json['message']}")
+
     def generate_key(self, command: dict[str, Any]) -> None:
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
@@ -342,6 +513,44 @@ class RAGFlowClient:
             self._print_table_simple(res_json["data"])
         else:
             print(f"Fail to list variables, code: {res_json['code']}, message: {res_json['message']}")
+
+
+    def handle_list_datasets(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+
+        username_tree: Tree = command["user_name"]
+        user_name: str = username_tree.children[0].strip("'\"")
+        print(f"Listing all datasets of user: {user_name}")
+
+        response = self.http_client.request("GET", f"/admin/users/{user_name}/datasets", use_api_base=True, auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            table_data = res_json["data"]
+            for t in table_data:
+                t.pop("avatar")
+            self._print_table_simple(table_data)
+        else:
+            print(f"Fail to get all datasets of {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def handle_list_agents(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+
+        username_tree: Tree = command["user_name"]
+        user_name: str = username_tree.children[0].strip("'\"")
+        print(f"Listing all agents of user: {user_name}")
+        response = self.http_client.request("GET", f"/admin/users/{user_name}/agents", use_api_base=True,
+                                            auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            table_data = res_json["data"]
+            for t in table_data:
+                t.pop("avatar")
+            self._print_table_simple(table_data)
+        else:
+            print(f"Fail to get all agents of {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+
 
     def list_user_datasets(self, command):
         if self.server_type != "user":
