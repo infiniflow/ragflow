@@ -77,9 +77,10 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `EMBEDDING_API_KEY`  
   The API key for the embedding model. Defaults to a generated secret in `.env`. **You must change this to a strong secret for production.**
 - `EMBEDDING_BASE_URL`  
-  The base URL for the embedding service.
-  - **Docker Desktop (Mac/Windows)**: Use `http://host.docker.internal:80`.
-  - **Linux/Production**: Use `http://172.17.0.1:80` (docker gateway) or the service name/alias (e.g. `http://tei:80`).
+  The base URL for the embedding service. Defaults to `http://host.docker.internal:80` in `.env`.
+  - **Docker Desktop (Mac/Windows)**: Use the default `http://host.docker.internal:80`.
+  - **Linux/Production**: You **must** override this to `http://172.17.0.1:80` (docker gateway) or the service name (e.g., `http://tei:80`).
+  If unset or incorrect, the RAGFlow service will fail to connect to the embedding model.
 
 ### RAGFlow
 
