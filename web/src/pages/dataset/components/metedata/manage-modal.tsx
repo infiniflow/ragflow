@@ -7,6 +7,7 @@ import Empty from '@/components/empty/empty';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
+import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -15,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { Routes } from '@/routes';
 import {
@@ -39,10 +41,18 @@ import { useHandleMenuClick } from '../../sidebar/hooks';
 import {
   MetadataDeleteMap,
   MetadataType,
+  getMetadataValueTypeLabel,
+  isMetadataValueTypeWithEnum,
   useManageMetaDataModal,
 } from './hooks/use-manage-modal';
-import { IManageModalProps, IMetaDataTableData } from './interface';
+import {
+  IBuiltInMetadataItem,
+  IManageModalProps,
+  IMetaDataTableData,
+} from './interface';
 import { ManageValuesModal } from './manage-values-modal';
+
+type MetadataSettingsTab = 'generation' | 'built-in';
 
 export const ManageMetadataModal = (props: IManageModalProps) => {
   const {
@@ -59,6 +69,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     isShowDescription = false,
     isShowValueSwitch = false,
     isVerticalShowValue = true,
+    builtInMetadata,
     success,
   } = props;
   const { t } = useTranslation();
@@ -66,10 +77,15 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     field: '',
     description: '',
     values: [],
+    valueType: 'string',
   });
 
   const [expanded, setExpanded] = useState(true);
+  const [activeTab, setActiveTab] = useState<MetadataSettingsTab>('generation');
   const [currentValueIndex, setCurrentValueIndex] = useState<number>(0);
+  const [builtInSelection, setBuiltInSelection] = useState<
+    IBuiltInMetadataItem[]
+  >([]);
   const [deleteDialogContent, setDeleteDialogContent] = useState({
     visible: false,
     title: '',
@@ -111,6 +127,62 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     });
   };
 
+  const isSettingsMode =
+    metadataType === MetadataType.Setting ||
+    metadataType === MetadataType.SingleFileSetting;
+  const showTypeColumn = isSettingsMode;
+  const builtInRows = useMemo(
+    () => [
+      {
+        field: 'update_time',
+        valueType: 'time',
+        description: t('knowledgeConfiguration.builtIn'),
+      },
+      {
+        field: 'file_name',
+        valueType: 'string',
+        description: t('knowledgeConfiguration.builtIn'),
+      },
+    ],
+    [t],
+  );
+  const builtInTypeByKey = useMemo(
+    () =>
+      new Map(
+        builtInRows.map((row) => [
+          row.field,
+          row.valueType as IBuiltInMetadataItem['type'],
+        ]),
+      ),
+    [builtInRows],
+  );
+
+  useEffect(() => {
+    if (!visible) return;
+    setBuiltInSelection(
+      (builtInMetadata || []).map((item) => {
+        if (typeof item === 'string') {
+          return {
+            key: item,
+            type: builtInTypeByKey.get(item) || 'string',
+          };
+        }
+        return {
+          key: item.key,
+          type: (item.type ||
+            builtInTypeByKey.get(item.key) ||
+            'string') as IBuiltInMetadataItem['type'],
+        };
+      }),
+    );
+    setActiveTab('generation');
+  }, [builtInMetadata, builtInTypeByKey, visible]);
+
+  const builtInSelectionKeys = useMemo(
+    () => new Set(builtInSelection.map((item) => item.key)),
+    [builtInSelection],
+  );
+
   const handleEditValue = (field: string, value: string) => {
     setEditingValue({ field, value, newValue: value });
   };
@@ -141,6 +213,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       field: '',
       description: '',
       values: [],
+      valueType: 'string',
     });
     setCurrentValueIndex(tableData.length || 0);
     showManageValuesModal();
@@ -165,6 +238,21 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
           </div>
         ),
       },
+      ...(showTypeColumn
+        ? ([
+            {
+              accessorKey: 'valueType',
+              header: () => <span>Type</span>,
+              cell: ({ row }) => (
+                <div className="text-sm">
+                  {getMetadataValueTypeLabel(
+                    row.original.valueType as IMetaDataTableData['valueType'],
+                  )}
+                </div>
+              ),
+            },
+          ] as ColumnDef<IMetaDataTableData>[])
+        : []),
       {
         accessorKey: 'description',
         header: () => <span>{t('knowledgeDetails.metadata.description')}</span>,
@@ -196,8 +284,11 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
         ),
         cell: ({ row }) => {
           const values = row.getValue('values') as Array<string>;
+          const supportsEnum = isMetadataValueTypeWithEnum(
+            row.original.valueType,
+          );
 
-          if (!Array.isArray(values) || values.length === 0) {
+          if (!supportsEnum || !Array.isArray(values) || values.length === 0) {
             return <div></div>;
           }
 
@@ -342,7 +433,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       },
     ];
     if (!isShowDescription) {
-      cols.splice(1, 1);
+      return cols.filter((col) => col.accessorKey !== 'description');
     }
     return cols;
   }, [
@@ -356,6 +447,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     expanded,
     editingValue,
     saveEditedValue,
+    showTypeColumn,
   ]);
 
   const table = useReactTable({
@@ -393,7 +485,11 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
           const mergedValues = [
             ...new Set([...existingItem.values, ...item.values]),
           ];
-          fieldMap.set(item.field, { ...existingItem, values: mergedValues });
+          fieldMap.set(item.field, {
+            ...existingItem,
+            ...item,
+            values: mergedValues,
+          });
         } else {
           fieldMap.set(item.field, item);
         }
@@ -407,13 +503,13 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
   useEffect(() => {
     if (shouldSave) {
       const timer = setTimeout(() => {
-        handleSave({ callback: () => {} });
+        handleSave({ callback: () => {}, builtInMetadata: builtInSelection });
         setShouldSave(false);
       }, 0);
 
       return () => clearTimeout(timer);
     }
-  }, [tableData, shouldSave, handleSave]);
+  }, [tableData, shouldSave, handleSave, builtInSelection]);
 
   const existsKeys = useMemo(() => {
     return tableData.map((item) => item.field);
@@ -428,7 +524,10 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
         maskClosable={false}
         okText={t('common.save')}
         onOk={async () => {
-          const res = await handleSave({ callback: hideModal });
+          const res = await handleSave({
+            callback: hideModal,
+            builtInMetadata: builtInSelection,
+          });
           console.log('data', res);
           success?.(res);
         }}
@@ -449,7 +548,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                   {t('knowledgeDetails.metadata.toMetadataSetting')}
                 </Button>
               )}
-              {isCanAdd && (
+              {isCanAdd && activeTab !== 'built-in' && (
                 <Button
                   variant={'ghost'}
                   className="border border-border-button"
@@ -460,53 +559,188 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                 </Button>
               )}
             </div>
-            <Table rootClassName="max-h-[800px]">
-              <TableHeader>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <TableHead key={header.id}>
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody className="relative">
-                {table.getRowModel().rows?.length ? (
-                  table.getRowModel().rows.map((row) => (
-                    <TableRow
-                      key={row.id}
-                      data-state={row.getIsSelected() && 'selected'}
-                      className="group"
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext(),
-                          )}
-                        </TableCell>
+            {metadataType === MetadataType.Setting ? (
+              <Tabs
+                value={activeTab}
+                onValueChange={(v) => setActiveTab(v as MetadataSettingsTab)}
+              >
+                <TabsList className="w-fit">
+                  <TabsTrigger value="generation">Generation</TabsTrigger>
+                  <TabsTrigger value="built-in">
+                    {t('knowledgeConfiguration.builtIn')}
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="generation">
+                  <Table rootClassName="max-h-[800px]">
+                    <TableHeader>
+                      {table.getHeaderGroups().map((headerGroup) => (
+                        <TableRow key={headerGroup.id}>
+                          {headerGroup.headers.map((header) => (
+                            <TableHead key={header.id}>
+                              {header.isPlaceholder
+                                ? null
+                                : flexRender(
+                                    header.column.columnDef.header,
+                                    header.getContext(),
+                                  )}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableHeader>
+                    <TableBody className="relative">
+                      {table.getRowModel().rows?.length ? (
+                        table.getRowModel().rows.map((row) => (
+                          <TableRow
+                            key={row.id}
+                            data-state={row.getIsSelected() && 'selected'}
+                            className="group"
+                          >
+                            {row.getVisibleCells().map((cell) => (
+                              <TableCell key={cell.id}>
+                                {flexRender(
+                                  cell.column.columnDef.cell,
+                                  cell.getContext(),
+                                )}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell
+                            colSpan={columns.length}
+                            className="h-24 text-center"
+                          >
+                            <Empty type={EmptyType.Data} />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </TabsContent>
+                <TabsContent value="built-in">
+                  <Table rootClassName="max-h-[800px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>
+                          {t('knowledgeDetails.metadata.field')}
+                        </TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>
+                          {t('knowledgeDetails.metadata.description')}
+                        </TableHead>
+                        <TableHead className="text-right">
+                          {t('knowledgeDetails.metadata.action')}
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="relative">
+                      {builtInRows.map((row) => (
+                        <TableRow key={row.field}>
+                          <TableCell>
+                            <div className="text-sm text-accent-primary">
+                              {row.field}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">
+                              {getMetadataValueTypeLabel(
+                                row.valueType as IMetaDataTableData['valueType'],
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm truncate max-w-32">
+                              {row.description}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Switch
+                              checked={builtInSelectionKeys.has(row.field)}
+                              onCheckedChange={(checked) => {
+                                setBuiltInSelection((prev) => {
+                                  if (checked) {
+                                    const nextType =
+                                      row.valueType as IBuiltInMetadataItem['type'];
+                                    if (
+                                      prev.some(
+                                        (item) => item.key === row.field,
+                                      )
+                                    ) {
+                                      return prev.map((item) =>
+                                        item.key === row.field
+                                          ? { ...item, type: nextType }
+                                          : item,
+                                      );
+                                    }
+                                    return [
+                                      ...prev,
+                                      { key: row.field, type: nextType },
+                                    ];
+                                  }
+                                  return prev.filter(
+                                    (item) => item.key !== row.field,
+                                  );
+                                });
+                              }}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TabsContent>
+              </Tabs>
+            ) : (
+              <Table rootClassName="max-h-[800px]">
+                <TableHeader>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => (
+                        <TableHead key={header.id}>
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext(),
+                              )}
+                        </TableHead>
                       ))}
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={columns.length}
-                      className="h-24 text-center"
-                    >
-                      <Empty type={EmptyType.Data} />
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                  ))}
+                </TableHeader>
+                <TableBody className="relative">
+                  {table.getRowModel().rows?.length ? (
+                    table.getRowModel().rows.map((row) => (
+                      <TableRow
+                        key={row.id}
+                        data-state={row.getIsSelected() && 'selected'}
+                        className="group"
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id}>
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext(),
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={columns.length}
+                        className="h-24 text-center"
+                      >
+                        <Empty type={EmptyType.Data} />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            )}
           </div>
           {metadataType === MetadataType.Manage && (
             <div className=" absolute bottom-6 left-5 text-text-secondary text-sm">
@@ -537,6 +771,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
           isAddValue={isAddValue || isCanAdd}
           isShowDescription={isShowDescription}
           isShowValueSwitch={isShowValueSwitch}
+          isShowType={isSettingsMode}
           isVerticalShowValue={isVerticalShowValue}
           //   handleDeleteSingleValue={handleDeleteSingleValue}
           //   handleDeleteSingleRow={handleDeleteSingleRow}

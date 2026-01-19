@@ -340,14 +340,35 @@ class DocumentService(CommonService):
     def remove_document(cls, doc, tenant_id):
         from api.db.services.task_service import TaskService
         cls.clear_chunk_num(doc.id)
+
+        # Delete tasks first
         try:
             TaskService.filter_delete([Task.doc_id == doc.id])
+        except Exception as e:
+            logging.warning(f"Failed to delete tasks for document {doc.id}: {e}")
+
+        # Delete chunk images (non-critical, log and continue)
+        try:
             cls.delete_chunk_images(doc, tenant_id)
+        except Exception as e:
+            logging.warning(f"Failed to delete chunk images for document {doc.id}: {e}")
+
+        # Delete thumbnail (non-critical, log and continue)
+        try:
             if doc.thumbnail and not doc.thumbnail.startswith(IMG_BASE64_PREFIX):
                 if settings.STORAGE_IMPL.obj_exist(doc.kb_id, doc.thumbnail):
                     settings.STORAGE_IMPL.rm(doc.kb_id, doc.thumbnail)
-            settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+        except Exception as e:
+            logging.warning(f"Failed to delete thumbnail for document {doc.id}: {e}")
 
+        # Delete chunks from doc store - this is critical, log errors
+        try:
+            settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+        except Exception as e:
+            logging.error(f"Failed to delete chunks from doc store for document {doc.id}: {e}")
+
+        # Cleanup knowledge graph references (non-critical, log and continue)
+        try:
             graph_source = settings.docStoreConn.get_fields(
                 settings.docStoreConn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [doc.kb_id]), ["source_id"]
             )
@@ -360,8 +381,9 @@ class DocumentService(CommonService):
                                              search.index_name(tenant_id), doc.kb_id)
                 settings.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
                                              search.index_name(tenant_id), doc.kb_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"Failed to cleanup knowledge graph for document {doc.id}: {e}")
+
         return cls.delete_by_id(doc.id)
 
     @classmethod
@@ -423,6 +445,7 @@ class DocumentService(CommonService):
             .where(
             cls.model.status == StatusEnum.VALID.value,
             ~(cls.model.type == FileType.VIRTUAL.value),
+            ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value)),
             (((cls.model.progress < 1) & (cls.model.progress > 0)) |
              (cls.model.id.in_(unfinished_task_query)))) # including unfinished tasks like GraphRAG, RAPTOR and Mindmap
         return list(docs.dicts())
@@ -914,6 +937,8 @@ class DocumentService(CommonService):
                 bad = 0
                 e, doc = DocumentService.get_by_id(d["id"])
                 status = doc.run  # TaskStatus.RUNNING.value
+                if status == TaskStatus.CANCEL.value:
+                    continue
                 doc_progress = doc.progress if doc and doc.progress else 0.0
                 special_task_running = False
                 priority = 0
@@ -957,7 +982,16 @@ class DocumentService(CommonService):
                         info["progress_msg"] += "\n%d tasks are ahead in the queue..."%get_queue_length(priority)
                 else:
                     info["progress_msg"] = "%d tasks are ahead in the queue..."%get_queue_length(priority)
-                cls.update_by_id(d["id"], info)
+                info["update_time"] = current_timestamp()
+                info["update_date"] = get_format_time()
+                (
+                    cls.model.update(info)
+                    .where(
+                        (cls.model.id == d["id"])
+                        & ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value))
+                    )
+                    .execute()
+                )
             except Exception as e:
                 if str(e).find("'0'") < 0:
                     logging.exception("fetch task exception")
@@ -990,7 +1024,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def knowledgebase_basic_info(cls, kb_id: str) -> dict[str, int]:
-        # cancelled: run == "2" but progress can vary
+        # cancelled: run == "2"
         cancelled = (
             cls.model.select(fn.COUNT(1))
             .where((cls.model.kb_id == kb_id) & (cls.model.run == TaskStatus.CANCEL))

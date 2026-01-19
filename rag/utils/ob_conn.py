@@ -329,6 +329,14 @@ def _try_with_lock(lock_name: str, process_func, check_func, timeout: int = None
             try:
                 process_func()
                 return
+            except Exception as e:
+                if "Duplicate" in str(e):
+                    # In some cases, the schema may change after the lock is acquired, so if the error message
+                    # indicates that the column or index is duplicated, it should be assumed that 'process_func'
+                    # has been executed correctly.
+                    logger.warning(f"Skip processing {lock_name} due to duplication: {str(e)}")
+                    return
+                raise
             finally:
                 lock.release()
 
