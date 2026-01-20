@@ -164,7 +164,7 @@ jobs:
           INFINITY_THRIFT_PORT=$((23817 + RUNNER_NUM * 10))
           INFINITY_HTTP_PORT=$((23820 + RUNNER_NUM * 10))
           INFINITY_PSQL_PORT=$((5432 + RUNNER_NUM * 10))
-          MYSQL_PORT=$((5455 + RUNNER_NUM * 10))
+          EXPOSE_MYSQL_PORT=$((5455 + RUNNER_NUM * 10))
           MINIO_PORT=$((9000 + RUNNER_NUM * 10))
           MINIO_CONSOLE_PORT=$((9001 + RUNNER_NUM * 10))
           REDIS_PORT=$((6379 + RUNNER_NUM * 10))
@@ -184,7 +184,7 @@ jobs:
           echo -e "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}" >> docker/.env
           echo -e "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}" >> docker/.env
           echo -e "INFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}" >> docker/.env
-          echo -e "MYSQL_PORT=${MYSQL_PORT}" >> docker/.env
+          echo -e "EXPOSE_MYSQL_PORT=${EXPOSE_MYSQL_PORT}" >> docker/.env
           echo -e "MINIO_PORT=${MINIO_PORT}" >> docker/.env
           echo -e "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}" >> docker/.env
           echo -e "REDIS_PORT=${REDIS_PORT}" >> docker/.env
