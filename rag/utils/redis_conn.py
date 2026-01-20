@@ -126,7 +126,7 @@ class RedisDB:
         try:
             conn_params = {
                 "host": self.config["host"],
-                "port": int(self.config.get("port", "6379")),
+                "port": int(self.config.get("port", 6379)),
                 "db": int(self.config.get("db", 1)),
                 "decode_responses": True,
             }

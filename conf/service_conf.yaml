@@ -43,7 +43,7 @@ redis:
   db: 1
   username: ''
   password: 'infini_rag_flow'
-  host: 'localhost
+  host: 'localhost'
   port: 6379
 task_executor:
   message_queue_type: 'redis'
