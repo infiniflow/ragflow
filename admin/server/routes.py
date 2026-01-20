@@ -484,7 +484,7 @@ def get_environments():
         return error_response(str(e), 500)
 
 
-@admin_bp.route("/users/<username>/new_token", methods=["POST"])
+@admin_bp.route("/users/<username>/keys", methods=["POST"])
 @login_required
 @check_admin_auth
 def generate_user_api_key(username: str) -> tuple[Response, int]:
@@ -496,10 +496,10 @@ def generate_user_api_key(username: str) -> tuple[Response, int]:
         if not tenants:
             return error_response("Tenant not found!", 404)
         tenant_id: str = tenants[0]["tenant_id"]
-        token: str = generate_confirmation_token()
+        key: str = generate_confirmation_token()
         obj: dict[str, Any] = {
             "tenant_id": tenant_id,
-            "token": token,
+            "token": key,
             "beta": generate_confirmation_token().replace("ragflow-", "")[:32],
             "create_time": current_timestamp(),
             "create_date": datetime_format(datetime.now()),
@@ -507,7 +507,7 @@ def generate_user_api_key(username: str) -> tuple[Response, int]:
             "update_date": None,
         }
 
-        if not UserMgr.save_api_token(obj):
+        if not UserMgr.save_api_key(obj):
             return error_response("Failed to generate API key!", 500)
         return success_response(obj, "API key generated successfully")
     except AdminException as e:
@@ -516,7 +516,7 @@ def generate_user_api_key(username: str) -> tuple[Response, int]:
         return error_response(str(e), 500)
 
 
-@admin_bp.route("/users/<username>/token_list", methods=["GET"])
+@admin_bp.route("/users/<username>/keys", methods=["GET"])
 @login_required
 @check_admin_auth
 def get_user_api_keys(username: str) -> tuple[Response, int]:
@@ -529,12 +529,12 @@ def get_user_api_keys(username: str) -> tuple[Response, int]:
         return error_response(str(e), 500)
 
 
-@admin_bp.route("/users/<username>/token/<token>", methods=["DELETE"])
+@admin_bp.route("/users/<username>/keys/<key>", methods=["DELETE"])
 @login_required
 @check_admin_auth
-def delete_user_api_key(username: str, token: str) -> tuple[Response, int]:
+def delete_user_api_key(username: str, key: str) -> tuple[Response, int]:
     try:
-        deleted = UserMgr.delete_api_token(username, token)
+        deleted = UserMgr.delete_api_key(username, key)
         if deleted:
             return success_response(None, "API key deleted successfully")
         else:
