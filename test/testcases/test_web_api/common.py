@@ -509,11 +509,21 @@ def batch_create_dialogs(auth, num, kb_ids=None):
 
     dialog_ids = []
     for i in range(num):
+        if kb_ids:
+            prompt_config = {
+                "system": "You are a helpful assistant. Use the following knowledge to answer questions: {knowledge}",
+                "parameters": [{"key": "knowledge", "optional": False}],
+            }
+        else:
+            prompt_config = {
+                "system": "You are a helpful assistant.",
+                "parameters": [],
+            }
         payload = {
             "name": f"dialog_{i}",
             "description": f"Test dialog {i}",
             "kb_ids": kb_ids,
-            "prompt_config": {"system": "You are a helpful assistant. Use the following knowledge to answer questions: {knowledge}", "parameters": [{"key": "knowledge", "optional": False}]},
+            "prompt_config": prompt_config,
             "top_n": 6,
             "top_k": 1024,
             "similarity_threshold": 0.1,
@@ -521,6 +531,12 @@ def batch_create_dialogs(auth, num, kb_ids=None):
             "llm_setting": {"model": "gpt-3.5-turbo", "temperature": 0.7},
         }
         res = create_dialog(auth, payload)
+        if res is None or res.get("code") != 0:
+            uses_knowledge = "{knowledge}" in payload["prompt_config"]["system"]
+            raise AssertionError(
+                "batch_create_dialogs failed: "
+                f"res={res} kb_ids_len={len(kb_ids)} uses_knowledge={uses_knowledge}"
+            )
         if res["code"] == 0:
             dialog_ids.append(res["data"]["id"])
     return dialog_ids
