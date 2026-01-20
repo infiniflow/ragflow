@@ -66,6 +66,7 @@ sql_command: list_services
            | list_user_default_models
            | parse_dataset_docs
            | import_docs_into_dataset
+           | search_on_datasets
 
 // meta command definition
 meta_command: "\\" meta_command_name [meta_args]
@@ -132,6 +133,7 @@ WITH: "WITH"i
 EMBEDDING: "EMBEDDING"i
 PARSER: "PARSER"i
 PIPELINE: "PIPELINE"i
+SEARCH: "SEARCH"i
 
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
@@ -187,6 +189,7 @@ list_user_model_providers: LIST MODEL PROVIDERS ";"
 list_user_default_models: LIST DEFAULT MODELS ";"
 parse_dataset_docs: PARSE quoted_string OF DATASET quoted_string ";"
 import_docs_into_dataset: IMPORT quoted_string INTO DATASET quoted_string ";"
+search_on_datasets: SEARCH quoted_string ON DATASETS quoted_string ";"
 
 identifier_list: identifier ("," identifier)*
 
@@ -411,6 +414,15 @@ class RAGFlowCLITransformer(Transformer):
             document_paths = document_paths.split(" ")
         dataset_name = items[4].children[0].strip("'\"")
         return {"type": "import_docs_into_dataset", "dataset_name": dataset_name, "document_paths": document_paths}
+
+    def search_on_datasets(self, items):
+        question = items[1].children[0].strip("'\"")
+        datasets_str = items[4].children[0].strip("'\"")
+        datasets = datasets_str.split(",")
+        if len(datasets) == 1:
+            datasets = datasets[0]
+            datasets = datasets.split(" ")
+        return {"type": "search_on_datasets", "datasets": datasets, "question": question}
 
     def action_list(self, items):
         return items

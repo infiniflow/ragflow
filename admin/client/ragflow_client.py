@@ -786,7 +786,37 @@ class RAGFlowClient:
         finally:
             for fh in file_handles:
                 fh.close()
-        pass
+
+    def search_on_datasets(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+
+        dataset_names = command_dict["datasets"]
+        dataset_ids = []
+        for dataset_name in dataset_names:
+            dataset_id = self._get_dataset_id(dataset_name)
+            if dataset_id is None:
+                return
+            dataset_ids.append(dataset_id)
+
+        payload = {
+            "question": command_dict["question"],
+            "kb_id": dataset_ids,
+            "similarity_threshold": 0.2,
+            "vector_similarity_weight": 0.3,
+            # "top_k": 1024,
+            # "kb_id": command_dict["datasets"][0],
+        }
+        response = self.http_client.request("POST", "/chunk/retrieval_test", json_body=payload, use_api_base=False,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to search datasets: {dataset_names}, code: {res_json['code']}, message: {res_json['message']}")
+        else:
+            print(f"Fail to search datasets: {dataset_names}, code: {res_json['code']}, message: {res_json['message']}")
 
     def show_version(self, command):
         if self.server_type == "admin":

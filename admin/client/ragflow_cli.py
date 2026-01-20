@@ -481,6 +481,8 @@ class RAGFlowCLI(Cmd):
                 self.ragflow_client.parse_dataset_docs(command_dict)
             case "import_docs_into_dataset":
                 self.ragflow_client.import_docs_into_dataset(command_dict)
+            case "search_on_datasets":
+                self.ragflow_client.search_on_datasets(command_dict)
             case "meta":
                 self._handle_meta_command(command_dict)
             case _:
