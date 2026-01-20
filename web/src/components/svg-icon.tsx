@@ -1,11 +1,10 @@
 import { IconMap, LLMFactory } from '@/constants/llm';
 import { cn } from '@/lib/utils';
-import Icon, { UserOutlined } from '@ant-design/icons';
+import Icon from '@ant-design/icons';
 import { IconComponentProps } from '@ant-design/icons/lib/components/Icon';
-import { Avatar } from 'antd';
-import { AvatarSize } from 'antd/es/avatar/AvatarContext';
 import { memo, useMemo } from 'react';
 import { IconFontFill } from './icon-font';
+import { RAGFlowAvatar } from './ragflow-avatar';
 import { useIsDarkTheme } from './theme-provider';
 
 // const importAll = (requireContext: __WebpackModuleApi.RequireContext) => {
@@ -91,13 +90,11 @@ export const LlmIcon = ({
   name,
   height = 48,
   width = 48,
-  size = 'large',
   imgClass,
 }: {
   name: string;
   height?: number;
   width?: number;
-  size?: AvatarSize;
   imgClass?: string;
 }) => {
   const isDark = useIsDarkTheme();
@@ -134,7 +131,6 @@ export const LlmIcon = ({
       name={'moxing-default'}
       className={cn('size-8 flex items-center justify-center', imgClass)}
     />
-    // <Avatar shape="square" size={size} icon={<UserOutlined />} />
   );
 };
 
@@ -142,13 +138,11 @@ export const HomeIcon = ({
   name,
   height = '32',
   width = '32',
-  size = 'large',
   imgClass,
 }: {
   name: string;
   height?: string;
   width?: string;
-  size?: AvatarSize;
   imgClass?: string;
 }) => {
   const isDark = useIsDarkTheme();
@@ -162,7 +156,7 @@ export const HomeIcon = ({
       imgClass={imgClass}
     ></SvgIcon>
   ) : (
-    <Avatar shape="square" size={size} icon={<UserOutlined />} />
+    <RAGFlowAvatar avatar={'user'}></RAGFlowAvatar>
   );
 };
 
