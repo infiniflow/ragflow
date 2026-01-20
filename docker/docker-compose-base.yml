@@ -72,7 +72,7 @@ services:
   infinity:
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.6.15
+    image: infiniflow/infinity:v0.7.0-dev1
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -121,6 +121,30 @@ services:
       - ragflow
     restart: unless-stopped
 
+  seekdb:
+    profiles:
+      - seekdb
+    image: oceanbase/seekdb:latest
+    container_name: seekdb
+    volumes:
+      - ./seekdb:/var/lib/oceanbase
+    ports:
+      - ${SEEKDB_PORT:-2881}:2881
+    env_file: .env
+    environment:
+      - ROOT_PASSWORD=${SEEKDB_PASSWORD:-infini_rag_flow}
+      - MEMORY_LIMIT=${SEEKDB_MEMORY_LIMIT:-2G}
+      - REPORTER=ragflow-seekdb
+    mem_limit: ${MEM_LIMIT}
+    healthcheck:
+      test: ['CMD-SHELL', 'mysql -h127.0.0.1 -P2881 -uroot -p${SEEKDB_PASSWORD:-infini_rag_flow} -e "CREATE DATABASE IF NOT EXISTS ${SEEKDB_DOC_DBNAME:-ragflow_doc};"']
+      interval: 5s
+      retries: 60
+      timeout: 5s
+    networks:
+      - ragflow
+    restart: unless-stopped
+
   sandbox-executor-manager:
     profiles:
       - sandbox
@@ -164,7 +188,7 @@ services:
       --init-file /data/application/init.sql
       --binlog_expire_logs_seconds=604800
     ports:
-      - ${MYSQL_PORT}:3306
+      - ${EXPOSE_MYSQL_PORT}:3306
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/data/application/init.sql
@@ -282,6 +306,8 @@ volumes:
   infinity_data:
     driver: local
   ob_data:
+    driver: local
+  seekdb_data:
     driver: local
   mysql_data:
     driver: local

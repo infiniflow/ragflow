@@ -34,8 +34,9 @@ from common.token_utils import num_tokens_from_string, total_token_count_from_re
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
 
-
 # Error message constants
+
+from common.misc_utils import thread_pool_exec
 class LLMErrorCode(StrEnum):
     ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
     ERROR_AUTHENTICATION = "AUTH_ERROR"
@@ -309,7 +310,7 @@ class Base(ABC):
                         name = tool_call.function.name
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
-                            tool_response = await asyncio.to_thread(self.toolcall_session.tool_call, name, args)
+                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
                             history = self._append_history(history, tool_call, tool_response)
                             ans += self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
@@ -402,7 +403,7 @@ class Base(ABC):
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
                             yield self._verbose_tool_use(name, args, "Begin to call...")
-                            tool_response = await asyncio.to_thread(self.toolcall_session.tool_call, name, args)
+                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
                             history = self._append_history(history, tool_call, tool_response)
                             yield self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
@@ -1165,6 +1166,15 @@ class TokenPonyChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class N1nChat(Base):
+    _FACTORY_NAME = "n1n"
+
+    def __init__(self, key, model_name, base_url="https://api.n1n.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.n1n.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1453,7 +1463,7 @@ class LiteLLMBase(ABC):
                         name = tool_call.function.name
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
-                            tool_response = await asyncio.to_thread(self.toolcall_session.tool_call, name, args)
+                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
                             history = self._append_history(history, tool_call, tool_response)
                             ans += self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
@@ -1553,7 +1563,7 @@ class LiteLLMBase(ABC):
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
                             yield self._verbose_tool_use(name, args, "Begin to call...")
-                            tool_response = await asyncio.to_thread(self.toolcall_session.tool_call, name, args)
+                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
                             history = self._append_history(history, tool_call, tool_response)
                             yield self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:

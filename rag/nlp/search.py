@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
 import json
 import logging
 import re
@@ -30,6 +29,7 @@ from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common import settings
 
+from common.misc_utils import thread_pool_exec
 
 def index_name(uid): return f"ragflow_{uid}"
 
@@ -51,7 +51,7 @@ class Dealer:
         group_docs: list[list] | None = None
 
     async def get_vector(self, txt, emb_mdl, topk=10, similarity=0.1):
-        qv, _ = await asyncio.to_thread(emb_mdl.encode_queries, txt)
+        qv, _ = await thread_pool_exec(emb_mdl.encode_queries, txt)
         shape = np.array(qv).shape
         if len(shape) > 1:
             raise Exception(
@@ -115,7 +115,7 @@ class Dealer:
             matchText, keywords = self.qryr.question(qst, min_match=0.3)
             if emb_mdl is None:
                 matchExprs = [matchText]
-                res = await asyncio.to_thread(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit,
+                res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit,
                                             idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
@@ -128,7 +128,7 @@ class Dealer:
                 fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
                 matchExprs = [matchText, matchDense, fusionExpr]
 
-                res = await asyncio.to_thread(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit,
+                res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit,
                                             idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
@@ -136,12 +136,12 @@ class Dealer:
                 # If result is empty, try again with lower min_match
                 if total == 0:
                     if filters.get("doc_id"):
-                        res = await asyncio.to_thread(self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
+                        res = await thread_pool_exec(self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
                         total = self.dataStore.get_total(res)
                     else:
                         matchText, _ = self.qryr.question(qst, min_match=0.1)
                         matchDense.extra_options["similarity"] = 0.17
-                        res = await asyncio.to_thread(self.dataStore.search, src, highlightFields, filters, [matchText, matchDense, fusionExpr],
+                        res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, [matchText, matchDense, fusionExpr],
                                                     orderBy, offset, limit, idx_names, kb_ids,
                                                     rank_feature=rank_feature)
                         total = self.dataStore.get_total(res)
