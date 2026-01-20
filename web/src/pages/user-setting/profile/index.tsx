@@ -1,6 +1,7 @@
 // src/components/ProfilePage.tsx
 import { AvatarUpload } from '@/components/avatar-upload';
 import PasswordInput from '@/components/originui/password-input';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import Spotlight from '@/components/spotlight';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,7 +14,6 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { useTranslate } from '@/hooks/common-hooks';
 import { TimezoneList } from '@/pages/user-setting/constants';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -276,12 +276,12 @@ const ProfilePage: FC = () => {
                         <FormLabel className="text-sm text-text-secondary whitespace-nowrap">
                           {t('timezone')}
                         </FormLabel>
-                        <RAGFlowSelect
+                        <SelectWithSearch
                           options={TimezoneList.map((timeStr) => {
                             return { value: timeStr, label: timeStr };
                           })}
                           placeholder="Select a timeZone"
-                          onValueChange={field.onChange}
+                          onChange={field.onChange}
                           value={field.value}
                         />
                       </div>
