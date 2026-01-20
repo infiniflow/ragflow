@@ -834,6 +834,7 @@ const DynamicForm = {
       useImperativeHandle(
         ref,
         () => ({
+          form: form,
           submit: () => {
             form.handleSubmit((values) => {
               const filteredValues = filterActiveValues(values);
