@@ -31,10 +31,6 @@ from graphrag.general.extractor import Extractor
 from graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
 from graphrag.light.graph_extractor import GraphExtractor as LightKGExt
 from graphrag.utils import (
-
-
-from common.misc_utils import thread_pool_exec
-
     GraphChange,
     chunk_id,
     does_graph_contains,
@@ -43,6 +39,7 @@ from common.misc_utils import thread_pool_exec
     set_graph,
     tidy_graph,
 )
+from common.misc_utils import thread_pool_exec
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import RedisDistributedLock
 from common import settings

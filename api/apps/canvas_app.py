@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
 import inspect
 import json
 import logging
@@ -29,13 +28,14 @@ from api.db.services.task_service import queue_dataflow, CANVAS_DEBUG_DOC_ID, Ta
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.constants import RetCode
-from common.misc_utils import get_uuid
-from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result, \
-
-
-from common.misc_utils import thread_pool_exec
-
-    get_request_json
+from common.misc_utils import get_uuid, thread_pool_exec
+from api.utils.api_utils import (
+    get_json_result,
+    server_error_response,
+    validate_request,
+    get_data_error_result,
+    get_request_json,
+)
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken, Task

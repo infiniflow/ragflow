@@ -14,7 +14,6 @@
 #  limitations under the License
 #
 import logging
-import asyncio
 import os
 import pathlib
 import re
@@ -25,7 +24,7 @@ from api.common.check_team_permission import check_file_team_permission
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from common.misc_utils import get_uuid
+from common.misc_utils import get_uuid, thread_pool_exec
 from common.constants import RetCode, FileSource
 from api.db import FileType
 from api.db.services import duplicate_name
@@ -34,8 +33,6 @@ from api.utils.api_utils import get_json_result, get_request_json
 from api.utils.file_utils import filename_type
 from api.utils.web_utils import CONTENT_TYPE_MAP
 from common import settings
-
-from common.misc_utils import thread_pool_exec
 
 @manager.route('/upload', methods=['POST'])  # noqa: F821
 @login_required

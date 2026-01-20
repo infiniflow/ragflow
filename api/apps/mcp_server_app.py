@@ -13,8 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
-
 from quart import Response, request
 from api.apps import current_user, login_required
 
@@ -23,12 +21,10 @@ from api.db.services.mcp_server_service import MCPServerService
 from api.db.services.user_service import TenantService
 from common.constants import RetCode, VALID_MCP_SERVER_TYPES
 
-from common.misc_utils import get_uuid
+from common.misc_utils import get_uuid, thread_pool_exec
 from api.utils.api_utils import get_data_error_result, get_json_result, get_mcp_tools, get_request_json, server_error_response, validate_request
 from api.utils.web_utils import get_float, safe_json_parse
 from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
-
-from common.misc_utils import thread_pool_exec
 
 @manager.route("/list", methods=["POST"])  # noqa: F821
 @login_required

@@ -26,15 +26,13 @@ from common.connection_utils import timeout
 from common.exceptions import TaskCanceledException
 from common.token_utils import truncate
 from graphrag.utils import (
-
-from common.misc_utils import thread_pool_exec
-
     chat_limiter,
     get_embed_cache,
     get_llm_cache,
     set_embed_cache,
     set_llm_cache,
 )
+from common.misc_utils import thread_pool_exec
 
 
 class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:

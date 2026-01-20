@@ -27,13 +27,9 @@ from typing import Any
 
 import requests
 from quart import (
-
-
-from common.misc_utils import thread_pool_exec
-
     Response,
     jsonify,
-    request
+    request,
 )
 from werkzeug.exceptions import BadRequest as WerkzeugBadRequest
 
@@ -52,6 +48,7 @@ from api.db.services.tenant_llm_service import LLMFactoriesService
 from common.connection_utils import timeout
 from common.constants import RetCode
 from common import settings
+from common.misc_utils import thread_pool_exec
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
 

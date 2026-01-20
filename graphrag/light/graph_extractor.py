@@ -8,7 +8,6 @@ Reference:
  - [graphrag](https://github.com/microsoft/graphrag)
 """
 
-import asyncio
 import logging
 import re
 from dataclasses import dataclass

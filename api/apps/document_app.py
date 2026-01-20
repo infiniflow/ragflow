@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
-import asyncio
 import json
 import os.path
 import pathlib
@@ -33,16 +32,13 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.db.services.user_service import UserTenantService
-from common.misc_utils import get_uuid
+from common.misc_utils import get_uuid, thread_pool_exec
 from api.utils.api_utils import (
-
-
-from common.misc_utils import thread_pool_exec
-
     get_data_error_result,
     get_json_result,
     server_error_response,
-    validate_request, get_request_json,
+    validate_request,
+    get_request_json,
 )
 from api.utils.file_utils import filename_type, thumbnail
 from common.file_utils import get_project_base_directory

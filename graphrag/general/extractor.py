@@ -28,10 +28,6 @@ from common.connection_utils import timeout
 from common.token_utils import truncate
 from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from graphrag.utils import (
-
-
-from common.misc_utils import thread_pool_exec
-
     GraphChange,
     chat_limiter,
     flat_uniq_list,
@@ -42,6 +38,7 @@ from common.misc_utils import thread_pool_exec
     set_llm_cache,
     split_string_by_multi_markers,
 )
+from common.misc_utils import thread_pool_exec
 from rag.llm.chat_model import Base as CompletionLLM
 from rag.prompts.generator import message_fit_in
 from common.exceptions import TaskCanceledException

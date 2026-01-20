@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 
-import asyncio
 import base64
 import logging
 from functools import partial
