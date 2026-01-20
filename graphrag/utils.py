@@ -1,5 +1,8 @@
 # Copyright (c) 2024 Microsoft Corporation.
 # Licensed under the MIT License
+
+from common.misc_utils import thread_pool_exec
+
 """
 Reference:
  - [graphrag](https://github.com/microsoft/graphrag)
@@ -316,7 +319,7 @@ async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks):
         async with chat_limiter:
             timeout = 3 if enable_timeout_assertion else 30000000
             ebd, _ = await asyncio.wait_for(
-                asyncio.to_thread(embd_mdl.encode, [ent_name]),
+                thread_pool_exec(embd_mdl.encode, [ent_name]),
                 timeout=timeout
             )
         ebd = ebd[0]
@@ -370,7 +373,7 @@ async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta,
         async with chat_limiter:
             timeout = 3 if enable_timeout_assertion else 300000000
             ebd, _ = await asyncio.wait_for(
-                asyncio.to_thread(
+                thread_pool_exec(
                     embd_mdl.encode,
                     [txt + f": {meta['description']}"]
                 ),
@@ -390,7 +393,7 @@ async def does_graph_contains(tenant_id, kb_id, doc_id):
         "knowledge_graph_kwd": ["graph"],
         "removed_kwd": "N",
     }
-    res = await asyncio.to_thread(
+    res = await thread_pool_exec(
         settings.docStoreConn.search,
         fields, [], condition, [], OrderByExpr(),
         0, 1, search.index_name(tenant_id), [kb_id]
@@ -436,7 +439,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     global chat_limiter
     start = asyncio.get_running_loop().time()
 
-    await asyncio.to_thread(
+    await thread_pool_exec(
         settings.docStoreConn.delete,
         {"knowledge_graph_kwd": ["graph", "subgraph"]},
         search.index_name(tenant_id),
@@ -444,7 +447,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     )
 
     if change.removed_nodes:
-        await asyncio.to_thread(
+        await thread_pool_exec(
             settings.docStoreConn.delete,
             {"knowledge_graph_kwd": ["entity"], "entity_kwd": sorted(change.removed_nodes)},
             search.index_name(tenant_id),
@@ -455,7 +458,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
 
         async def del_edges(from_node, to_node):
             async with chat_limiter:
-                await asyncio.to_thread(
+                await thread_pool_exec(
                     settings.docStoreConn.delete,
                     {"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node},
                     search.index_name(tenant_id),
@@ -556,7 +559,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     for b in range(0, len(chunks), es_bulk_size):
         timeout = 3 if enable_timeout_assertion else 30000000
         doc_store_result = await asyncio.wait_for(
-            asyncio.to_thread(
+            thread_pool_exec(
                 settings.docStoreConn.insert,
                 chunks[b : b + es_bulk_size],
                 search.index_name(tenant_id),
@@ -650,7 +653,7 @@ async def rebuild_graph(tenant_id, kb_id, exclude_rebuild=None):
     flds = ["knowledge_graph_kwd", "content_with_weight", "source_id"]
     bs = 256
     for i in range(0, 1024 * bs, bs):
-        es_res = await asyncio.to_thread(
+        es_res = await thread_pool_exec(
             settings.docStoreConn.search,
             flds, [], {"kb_id": kb_id, "knowledge_graph_kwd": ["subgraph"]},
             [], OrderByExpr(), i, bs, search.index_name(tenant_id), [kb_id]

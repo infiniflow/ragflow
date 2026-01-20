@@ -38,6 +38,7 @@ from graphrag.utils import (
     set_llm_cache,
     split_string_by_multi_markers,
 )
+from common.misc_utils import thread_pool_exec
 from rag.llm.chat_model import Base as CompletionLLM
 from rag.prompts.generator import message_fit_in
 from common.exceptions import TaskCanceledException
@@ -339,5 +340,5 @@ class Extractor:
             raise TaskCanceledException(f"Task {task_id} was cancelled during summary handling")
 
         async with chat_limiter:
-            summary = await asyncio.to_thread(self._chat, "", [{"role": "user", "content": use_prompt}], {}, task_id)
+            summary = await thread_pool_exec(self._chat, "", [{"role": "user", "content": use_prompt}], {}, task_id)
         return summary
