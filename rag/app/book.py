@@ -78,8 +78,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         sections = []
         tbls = []
         for text, image, html in main_sections:
-            sections.append((text, image))
-            tbls.append(((None, html), ""))
+            if html:
+                tbls.append(((None, html), ""))
+            elif text or image:
+                sections.append((text, image))
 
         remove_contents_table(sections, eng=is_english(random_choices([t for t, _ in sections], k=200)))
 
