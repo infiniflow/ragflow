@@ -13,10 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import base64
 import datetime
 import json
+import logging
 import re
-import base64
 import xxhash
 from quart import request
 
@@ -269,6 +270,7 @@ async def rm():
 @validate_request("doc_id", "content_with_weight")
 async def create():
     req = await get_request_json()
+    req_id = request.headers.get("X-Request-ID")
     chunck_id = xxhash.xxh64((req["content_with_weight"] + req["doc_id"]).encode("utf-8")).hexdigest()
     d = {"id": chunck_id, "content_ltks": rag_tokenizer.tokenize(req["content_with_weight"]),
          "content_with_weight": req["content_with_weight"]}
@@ -287,10 +289,21 @@ async def create():
         d["tag_feas"] = req["tag_feas"]
 
     try:
+        def _log_response(resp, code, message):
+            logging.info(
+                "chunk_create response req_id=%s status=%s code=%s message=%s",
+                req_id,
+                getattr(resp, "status_code", None),
+                code,
+                message,
+            )
+
         def _create_sync():
             e, doc = DocumentService.get_by_id(req["doc_id"])
             if not e:
-                return get_data_error_result(message="Document not found!")
+                resp = get_data_error_result(message="Document not found!")
+                _log_response(resp, RetCode.DATA_ERROR, "Document not found!")
+                return resp
             d["kb_id"] = [doc.kb_id]
             d["docnm_kwd"] = doc.name
             d["title_tks"] = rag_tokenizer.tokenize(doc.name)
@@ -298,11 +311,15 @@ async def create():
 
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])
             if not tenant_id:
-                return get_data_error_result(message="Tenant not found!")
+                resp = get_data_error_result(message="Tenant not found!")
+                _log_response(resp, RetCode.DATA_ERROR, "Tenant not found!")
+                return resp
 
             e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
             if not e:
-                return get_data_error_result(message="Knowledgebase not found!")
+                resp = get_data_error_result(message="Knowledgebase not found!")
+                _log_response(resp, RetCode.DATA_ERROR, "Knowledgebase not found!")
+                return resp
             if kb.pagerank:
                 d[PAGERANK_FLD] = kb.pagerank
 
@@ -316,10 +333,13 @@ async def create():
 
             DocumentService.increment_chunk_num(
                 doc.id, doc.kb_id, c, 1, 0)
-            return get_json_result(data={"chunk_id": chunck_id})
+            resp = get_json_result(data={"chunk_id": chunck_id})
+            _log_response(resp, RetCode.SUCCESS, "success")
+            return resp
 
         return await thread_pool_exec(_create_sync)
     except Exception as e:
+        logging.info("chunk_create exception req_id=%s error=%r", req_id, e)
         return server_error_response(e)
 
 
