@@ -35,6 +35,10 @@ from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.db.services.user_service import UserTenantService
 from common.misc_utils import get_uuid
 from api.utils.api_utils import (
+
+
+from common.misc_utils import thread_pool_exec
+
     get_data_error_result,
     get_json_result,
     server_error_response,
@@ -85,7 +89,7 @@ async def upload():
     if not check_kb_team_permission(kb, current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
-    err, files = await asyncio.to_thread(FileService.upload_document, kb, file_objs, current_user.id)
+    err, files = await thread_pool_exec(FileService.upload_document, kb, file_objs, current_user.id)
     if err:
         return get_json_result(data=files, message="\n".join(err), code=RetCode.SERVER_ERROR)
 
@@ -573,7 +577,7 @@ async def rm():
         if not DocumentService.accessible4deletion(doc_id, current_user.id):
             return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
-    errors = await asyncio.to_thread(FileService.delete_docs, doc_ids, current_user.id)
+    errors = await thread_pool_exec(FileService.delete_docs, doc_ids, current_user.id)
 
     if errors:
         return get_json_result(data=False, message=errors, code=RetCode.SERVER_ERROR)
@@ -635,7 +639,7 @@ async def run():
 
             return get_json_result(data=True)
 
-        return await asyncio.to_thread(_run_sync)
+        return await thread_pool_exec(_run_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -686,7 +690,7 @@ async def rename():
                 )
             return get_json_result(data=True)
 
-        return await asyncio.to_thread(_rename_sync)
+        return await thread_pool_exec(_rename_sync)
 
     except Exception as e:
         return server_error_response(e)
@@ -701,7 +705,7 @@ async def get(doc_id):
             return get_data_error_result(message="Document not found!")
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
-        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, b, n)
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
         response = await make_response(data)
 
         ext = re.search(r"\.([^.]+)$", doc.name.lower())
@@ -723,7 +727,7 @@ async def get(doc_id):
 async def download_attachment(attachment_id):
     try:
         ext = request.args.get("ext", "markdown")
-        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, current_user.id, attachment_id)
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, current_user.id, attachment_id)
         response = await make_response(data)
         response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
 
@@ -796,7 +800,7 @@ async def get_image(image_id):
         if len(arr) != 2:
             return get_data_error_result(message="Image not found.")
         bkt, nm = image_id.split("-")
-        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, bkt, nm)
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         response = await make_response(data)
         response.headers.set("Content-Type", "image/JPEG")
         return response

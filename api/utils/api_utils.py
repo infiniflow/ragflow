@@ -27,6 +27,10 @@ from typing import Any
 
 import requests
 from quart import (
+
+
+from common.misc_utils import thread_pool_exec
+
     Response,
     jsonify,
     request
@@ -693,7 +697,7 @@ async def is_strong_enough(chat_model, embedding_model):
         nonlocal chat_model, embedding_model
         if embedding_model:
             await asyncio.wait_for(
-                asyncio.to_thread(embedding_model.encode, ["Are you strong enough!?"]),
+                thread_pool_exec(embedding_model.encode, ["Are you strong enough!?"]),
                 timeout=10
             )
 

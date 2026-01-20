@@ -28,6 +28,10 @@ from common.connection_utils import timeout
 from common.token_utils import truncate
 from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from graphrag.utils import (
+
+
+from common.misc_utils import thread_pool_exec
+
     GraphChange,
     chat_limiter,
     flat_uniq_list,
@@ -339,5 +343,5 @@ class Extractor:
             raise TaskCanceledException(f"Task {task_id} was cancelled during summary handling")
 
         async with chat_limiter:
-            summary = await asyncio.to_thread(self._chat, "", [{"role": "user", "content": use_prompt}], {}, task_id)
+            summary = await thread_pool_exec(self._chat, "", [{"role": "user", "content": use_prompt}], {}, task_id)
         return summary

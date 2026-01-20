@@ -31,6 +31,7 @@ from common import settings
 from rag.svr.task_executor import embed_limiter
 from common.token_utils import truncate
 
+from common.misc_utils import thread_pool_exec
 
 class TokenizerParam(ProcessParamBase):
     def __init__(self):
@@ -84,7 +85,7 @@ class Tokenizer(ProcessBase):
         cnts_ = np.array([])
         for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
             async with embed_limiter:
-                vts, c = await asyncio.to_thread(batch_encode,texts[i : i + settings.EMBEDDING_BATCH_SIZE],)
+                vts, c = await thread_pool_exec(batch_encode,texts[i : i + settings.EMBEDDING_BATCH_SIZE],)
             if len(cnts_) == 0:
                 cnts_ = vts
             else:

@@ -31,6 +31,10 @@ from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.constants import RetCode
 from common.misc_utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result, \
+
+
+from common.misc_utils import thread_pool_exec
+
     get_request_json
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
@@ -132,12 +136,12 @@ async def run():
     files = req.get("files", [])
     inputs = req.get("inputs", {})
     user_id = req.get("user_id", current_user.id)
-    if not await asyncio.to_thread(UserCanvasService.accessible, req["id"], current_user.id):
+    if not await thread_pool_exec(UserCanvasService.accessible, req["id"], current_user.id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
 
-    e, cvs = await asyncio.to_thread(UserCanvasService.get_by_id, req["id"])
+    e, cvs = await thread_pool_exec(UserCanvasService.get_by_id, req["id"])
     if not e:
         return get_data_error_result(message="canvas not found.")
 
@@ -147,7 +151,7 @@ async def run():
     if cvs.canvas_category == CanvasCategory.DataFlow:
         task_id = get_uuid()
         Pipeline(cvs.dsl, tenant_id=current_user.id, doc_id=CANVAS_DEBUG_DOC_ID, task_id=task_id, flow_id=req["id"])
-        ok, error_message = await asyncio.to_thread(queue_dataflow, user_id, req["id"], task_id, CANVAS_DEBUG_DOC_ID, files[0], 0)
+        ok, error_message = await thread_pool_exec(queue_dataflow, user_id, req["id"], task_id, CANVAS_DEBUG_DOC_ID, files[0], 0)
         if not ok:
             return get_data_error_result(message=error_message)
         return get_json_result(data={"message_id": task_id})
@@ -540,6 +544,7 @@ def sessions(canvas_id):
 @login_required
 def prompts():
     from rag.prompts.generator import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
+
     return get_json_result(data={
         "task_analysis": ANALYZE_TASK_SYSTEM +"\n\n"+ ANALYZE_TASK_USER,
         "plan_generation": NEXT_STEP,

@@ -28,6 +28,10 @@ from common.metadata_utils import apply_meta_data_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request, \
+
+
+from common.misc_utils import thread_pool_exec
+
     get_request_json
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
@@ -37,7 +41,6 @@ from common.string_utils import remove_redundant_spaces
 from common.constants import RetCode, LLMType, ParserType, PAGERANK_FLD
 from common import settings
 from api.apps import login_required, current_user
-
 
 @manager.route('/list', methods=['POST'])  # noqa: F821
 @login_required
@@ -190,7 +193,7 @@ async def set():
                 settings.STORAGE_IMPL.put(bkt, name, image_binary)
             return get_json_result(data=True)
 
-        return await asyncio.to_thread(_set_sync)
+        return await thread_pool_exec(_set_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -213,7 +216,7 @@ async def switch():
                     return get_data_error_result(message="Index updating failure")
             return get_json_result(data=True)
 
-        return await asyncio.to_thread(_switch_sync)
+        return await thread_pool_exec(_switch_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -255,7 +258,7 @@ async def rm():
                     settings.STORAGE_IMPL.rm(doc.kb_id, cid)
             return get_json_result(data=True)
 
-        return await asyncio.to_thread(_rm_sync)
+        return await thread_pool_exec(_rm_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -314,7 +317,7 @@ async def create():
                 doc.id, doc.kb_id, c, 1, 0)
             return get_json_result(data={"chunk_id": chunck_id})
 
-        return await asyncio.to_thread(_create_sync)
+        return await thread_pool_exec(_create_sync)
     except Exception as e:
         return server_error_response(e)
 

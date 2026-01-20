@@ -33,6 +33,7 @@ from api.utils.web_utils import CONTENT_TYPE_MAP
 from common import settings
 from common.constants import RetCode
 
+from common.misc_utils import thread_pool_exec
 
 @manager.route('/file/upload', methods=['POST'])  # noqa: F821
 @token_required
@@ -640,7 +641,7 @@ async def get(tenant_id, file_id):
 async def download_attachment(tenant_id, attachment_id):
     try:
         ext = request.args.get("ext", "markdown")
-        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
         response = await make_response(data)
         response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
 

@@ -43,6 +43,10 @@ from rag.nlp import rag_tokenizer
 from rag.prompts.generator import vision_llm_describe_prompt
 from common import settings
 
+
+
+from common.misc_utils import thread_pool_exec
+
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
@@ -1114,7 +1118,7 @@ class RAGFlowPdfParser:
 
             if limiter:
                 async with limiter:
-                    await asyncio.to_thread(self.__ocr, i + 1, img, chars, zoomin, id)
+                    await thread_pool_exec(self.__ocr, i + 1, img, chars, zoomin, id)
             else:
                 self.__ocr(i + 1, img, chars, zoomin, id)
 
