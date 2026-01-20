@@ -33,6 +33,7 @@ from deepdoc.parser.figure_parser import vision_figure_parser_figure_xlsx_wrappe
 from deepdoc.parser.utils import get_text
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table
 from deepdoc.parser import ExcelParser
+from common import settings
 
 
 class Excel(ExcelParser):
@@ -431,7 +432,9 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
 
     res = []
     PY = Pinyin()
-    fieds_map = {"text": "_tks", "int": "_long", "keyword": "_kwd", "float": "_flt", "datetime": "_dt", "bool": "_kwd"}
+    # Field type suffixes for database columns
+    # Maps data types to their database field suffixes
+    fields_map = {"text": "_tks", "int": "_long", "keyword": "_kwd", "float": "_flt", "datetime": "_dt", "bool": "_kwd"}
     for df in dfs:
         for n in ["id", "_id", "index", "idx"]:
             if n in df.columns:
@@ -452,13 +455,24 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
             df[clmns[j]] = cln
             if ty == "text":
                 txts.extend([str(c) for c in cln if c])
-        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in
+        clmns_map = [(py_clmns[i].lower() + fields_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in
                      range(len(clmns))]
+        # For Infinity: Use original column names as keys since they're stored in chunk_data JSON
+        # For ES/OS: Use full field names with type suffixes (e.g., url_kwd, body_tks)
+        if settings.DOC_ENGINE_INFINITY:
+            # For Infinity: key = original column name, value = display name
+            field_map = {py_clmns[i].lower(): str(clmns[i]).replace("_", " ") for i in range(len(clmns))}
+        else:
+            # For ES/OS: key = typed field name, value = display name
+            field_map = {k: v for k, v in clmns_map}
+        logging.debug(f"Field map: {field_map}")
+        KnowledgebaseService.update_parser_config(kwargs["kb_id"], {"field_map": field_map})
 
         eng = lang.lower() == "english"  # is_english(txts)
         for ii, row in df.iterrows():
             d = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
-            row_txt = []
+            row_fields = []
+            data_json = {}  # For Infinity: Store all columns in a JSON object
             for j in range(len(clmns)):
                 if row[clmns[j]] is None:
                     continue
@@ -466,17 +480,27 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                     continue
                 if not isinstance(row[clmns[j]], pd.Series) and pd.isna(row[clmns[j]]):
                     continue
-                fld = clmns_map[j][0]
-                d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else rag_tokenizer.tokenize(row[clmns[j]])
-                row_txt.append("{}:{}".format(clmns[j], row[clmns[j]]))
-            if not row_txt:
+                # For Infinity: Store in chunk_data JSON column
+                # For Elasticsearch/OpenSearch: Store as individual fields with type suffixes
+                if settings.DOC_ENGINE_INFINITY:
+                    data_json[str(clmns[j])] = row[clmns[j]]
+                else:
+                    fld = clmns_map[j][0]
+                    d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else rag_tokenizer.tokenize(row[clmns[j]])
+                row_fields.append((clmns[j], row[clmns[j]]))
+            if not row_fields:
                 continue
-            tokenize(d, "; ".join(row_txt), eng)
+            # Add the data JSON field to the document (for Infinity only)
+            if settings.DOC_ENGINE_INFINITY:
+                d["chunk_data"] = data_json
+            # Format as a structured text for better LLM comprehension
+            # Format each field as "- Field Name: Value" on separate lines
+            formatted_text = "\n".join([f"- {field}: {value}" for field, value in row_fields])
+            tokenize(d, formatted_text, eng)
             res.append(d)
         if tbls:
             doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
             res.extend(tokenize_table(tbls, doc, is_english))
-        KnowledgebaseService.update_parser_config(kwargs["kb_id"], {"field_map": {k: v for k, v in clmns_map}})
     callback(0.35, "")
 
     return res
