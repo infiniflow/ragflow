@@ -176,58 +176,6 @@ class RAGFlowCLI(Cmd):
                 print(str(e))
                 print("Can't access server for login (connection failed)")
 
-
-        # self.host = arguments["host"]
-        # self.port = arguments["port"]
-        # # Determine mode and username
-        # self.mode = arguments.get("type", "admin")
-        # username = arguments.get("username", "admin@ragflow.io")
-        # self.account = username
-        #
-        # # Set login endpoint based on mode
-        # if self.mode == "admin":
-        #     url = f"http://{self.host}:{self.port}/api/v1/admin/login"
-        #     print("Attempt to access server for admin login")
-        # else:  # user mode
-        #     url = f"http://{self.host}:{self.port}/v1/user/login"
-        #     print("Attempt to access server for user login")
-        #
-        # attempt_count = 3
-        # if single_command:
-        #     attempt_count = 1
-        #
-        # try_count = 0
-        # while True:
-        #     try_count += 1
-        #     if try_count > attempt_count:
-        #         return False
-        #
-        #     if single_command:
-        #         account_passwd = arguments["password"]
-        #     else:
-        #         account_passwd = getpass.getpass(f"password for {self.account}: ").strip()
-        #     try:
-        #         self.account_password = encrypt(account_passwd)
-        #         response = self.session.post(url, json={"email": self.account, "password": self.account_password})
-        #         if response.status_code == 200:
-        #             res_json = response.json()
-        #             error_code = res_json.get("code", -1)
-        #             if error_code == 0:
-        #                 self.session.headers.update(
-        #                     {"Content-Type": "application/json", "Authorization": response.headers["Authorization"],
-        #                      "User-Agent": "RAGFlow-CLI/0.23.1"})
-        #                 print("Authentication successful.")
-        #                 return True
-        #             else:
-        #                 error_message = res_json.get("message", "Unknown error")
-        #                 print(f"Authentication failed: {error_message}, try again")
-        #                 continue
-        #         else:
-        #             print(f"Bad response，status: {response.status_code}, password is wrong")
-        #     except Exception as e:
-        #         print(str(e))
-        #         print("Can't access server for login (connection failed)")
-
     def _format_service_detail_table(self, data):
         if isinstance(data, list):
             return data
@@ -461,6 +409,24 @@ class RAGFlowCLI(Cmd):
                 self.ragflow_client.list_configs(command_dict)
             case "list_environments":
                 self.ragflow_client.list_environments(command_dict)
+            case "create_model_provider":
+                self.ragflow_client.create_model_provider(command_dict)
+            case "drop_model_provider":
+                self.ragflow_client.drop_model_provider(command_dict)
+            case "show_current_user":
+                self.ragflow_client.show_current_user(command_dict)
+            case "set_default_llm":
+                self.ragflow_client.set_default_llm(command_dict)
+            case "set_default_vlm":
+                self.ragflow_client.set_default_vlm(command_dict)
+            case "set_default_embedding":
+                self.ragflow_client.set_default_embedding(command_dict)
+            case "set_default_reranker":
+                self.ragflow_client.set_default_reranker(command_dict)
+            case "set_default_asr":
+                self.ragflow_client.set_default_asr(command_dict)
+            case "set_default_tts":
+                self.ragflow_client.set_default_tts(command_dict)
             case "list_user_datasets":
                 self.ragflow_client.list_user_datasets(command_dict)
             case "create_user_dataset":

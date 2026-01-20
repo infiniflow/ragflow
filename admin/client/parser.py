@@ -55,6 +55,15 @@ sql_command: list_services
            | generate_key
            | list_keys
            | drop_key
+           | show_current_user
+           | set_default_llm
+           | set_default_vlm
+           | set_default_embedding
+           | set_default_reranker
+           | set_default_asr
+           | set_default_tts
+           | create_model_provider
+           | drop_model_provider
            | create_user_dataset_with_parser
            | create_user_dataset_with_pipeline
            | drop_user_dataset
@@ -121,6 +130,7 @@ KEYS: "KEYS"i
 GENERATE: "GENERATE"i
 MODEL: "MODEL"i
 MODELS: "MODELS"i
+PROVIDER: "PROVIDER"i
 PROVIDERS: "PROVIDERS"i
 DEFAULT: "DEFAULT"i
 CHATS: "CHATS"i
@@ -130,10 +140,16 @@ PARSE: "PARSE"i
 IMPORT: "IMPORT"i
 INTO: "INTO"i
 WITH: "WITH"i
-EMBEDDING: "EMBEDDING"i
 PARSER: "PARSER"i
 PIPELINE: "PIPELINE"i
 SEARCH: "SEARCH"i
+CURRENT: "CURRENT"i
+LLM: "LLM"i
+VLM: "VLM"i
+EMBEDDING: "EMBEDDING"i
+RERANKER: "RERANKER"i
+ASR: "ASR"i
+TTS: "TTS"i
 
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
@@ -177,6 +193,16 @@ show_variable: SHOW VAR identifier ";"
 list_variables: LIST VARS ";"
 list_configs: LIST CONFIGS ";"
 list_environments: LIST ENVS ";"
+
+show_current_user: SHOW CURRENT USER ";"
+create_model_provider: CREATE MODEL PROVIDER quoted_string quoted_string ";"
+drop_model_provider: DROP MODEL PROVIDER quoted_string ";"
+set_default_llm: SET DEFAULT LLM quoted_string ";"
+set_default_vlm: SET DEFAULT VLM quoted_string ";"
+set_default_embedding: SET DEFAULT EMBEDDING quoted_string ";"
+set_default_reranker: SET DEFAULT RERANKER quoted_string ";"
+set_default_asr: SET DEFAULT ASR quoted_string ";"
+set_default_tts: SET DEFAULT TTS quoted_string ";"
 
 list_user_datasets: LIST DATASETS ";"
 create_user_dataset_with_parser: CREATE DATASET quoted_string WITH EMBEDDING quoted_string PARSER quoted_string ";" 
@@ -359,6 +385,42 @@ class RAGFlowCLITransformer(Transformer):
 
     def list_environments(self, items):
         return {"type": "list_environments"}
+
+    def create_model_provider(self, items):
+        provider_name = items[3].children[0].strip("'\"")
+        provider_key = items[4].children[0].strip("'\"")
+        return {"type": "create_model_provider", "provider_name": provider_name, "provider_key": provider_key}
+
+    def drop_model_provider(self, items):
+        provider_name = items[3].children[0].strip("'\"")
+        return {"type": "drop_model_provider", "provider_name": provider_name}
+
+    def show_current_user(self, items):
+        return {"type": "show_current_user"}
+
+    def set_default_llm(self, items):
+        llm_id = items[3].children[0].strip("'\"")
+        return {"type": "set_default_llm", "llm_id": llm_id}
+
+    def set_default_vlm(self, items):
+        vlm_id = items[3].children[0].strip("'\"")
+        return {"type": "set_default_vlm", "vlm_id": vlm_id}
+
+    def set_default_embedding(self, items):
+        embedding_id = items[3].children[0].strip("'\"")
+        return {"type": "set_default_embedding", "embedding_id": embedding_id}
+
+    def set_default_reranker(self, items):
+        reranker_id = items[3].children[0].strip("'\"")
+        return {"type": "set_default_reranker", "reranker_id": reranker_id}
+
+    def set_default_asr(self, items):
+        asr_id = items[3].children[0].strip("'\"")
+        return {"type": "set_default_asr", "asr_id": asr_id}
+
+    def set_default_tts(self, items):
+        tts_id = items[3].children[0].strip("'\"")
+        return {"type": "set_default_tts", "tts_id": tts_id}
 
     def list_user_datasets(self, items):
         return {"type": "list_user_datasets"}

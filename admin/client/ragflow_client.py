@@ -578,6 +578,60 @@ class RAGFlowClient:
         else:
             print(f"Fail to get all agents of {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
+    def show_current_user(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        print("show current user")
+
+    def create_model_provider(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        provider_name: str = command["provider_name"]
+        provider_key: str = command["provider_key"]
+        print(f"Creating model provider {provider_name} with key {provider_key}")
+
+    def drop_model_provider(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        provider_name: str = command["provider_name"]
+        print(f"Dropping model provider {provider_name}")
+
+    def set_default_llm(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        llm_id: str = command["llm_id"]
+        print(f"Setting default LLM to {llm_id}")
+
+    def set_default_vlm(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        vlm_id: str = command["vlm_id"]
+        print(f"Setting default VLM to {vlm_id}")
+
+    def set_default_embedding(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        embedding_id: str = command["embedding_id"]
+        print(f"Setting default Embedding to {embedding_id}")
+
+    def set_default_reranker(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        reranker_id: str = command["reranker_id"]
+        print(f"Setting default Reranker to {reranker_id}")
+
+    def set_default_asr(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        asr_id: str = command["asr_id"]
+        print(f"Setting default ASR to {asr_id}")
+
+    def set_default_tts(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        tts_id: str = command["tts_id"]
+        print(f"Setting default TTS to {tts_id}")
+
     def list_user_datasets(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
@@ -814,7 +868,8 @@ class RAGFlowClient:
             if res_json["code"] == 0:
                 self._print_table_simple(res_json["data"])
             else:
-                print(f"Fail to search datasets: {dataset_names}, code: {res_json['code']}, message: {res_json['message']}")
+                print(
+                    f"Fail to search datasets: {dataset_names}, code: {res_json['code']}, message: {res_json['message']}")
         else:
             print(f"Fail to search datasets: {dataset_names}, code: {res_json['code']}, message: {res_json['message']}")
 
