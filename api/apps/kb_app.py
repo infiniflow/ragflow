@@ -93,7 +93,7 @@ async def update():
                 message="The chunking method Tag has not been supported by Infinity yet.",
                 data=False,
             )
-        if "pagerank" in req:
+        if "pagerank" in req and req["pagerank"] > 0:
             return get_json_result(
                 code=RetCode.DATA_ERROR,
                 message="'pagerank' can only be set when doc_engine is elasticsearch",
