@@ -499,9 +499,15 @@ class Parser(ProcessBase):
         docx_parser = Docx()
 
         if conf.get("output_format") == "json":
-            sections, tbls = docx_parser(name, binary=blob)
-            sections = [{"text": section[0], "image": section[1]} for section in sections if section]
-            sections.extend([{"text": tb, "image": None, "doc_type_kwd": "table"} for ((_, tb), _) in tbls])
+            main_sections = docx_parser(name, binary=blob)
+            sections = []
+            tbls = []
+            for text, image, table_html in main_sections:
+                if table_html:
+                    tbls.append({"text":table_html, "image":None, "doc_type_kwd": "table"})
+                elif text or image:
+                    sections.append({"text": text, "image": image})
+            sections.extend(tbls)
 
             self.set_output("json", sections)
         elif conf.get("output_format") == "markdown":
