@@ -541,6 +541,9 @@ async def setting_user():
     """
     update_dict = {}
     request_data = await get_request_json()
+
+    print("\n", request_data, "\n")
+
     if request_data.get("password"):
         new_password = request_data.get("new_password")
         if not check_password_hash(current_user.password, decrypt(request_data["password"])):

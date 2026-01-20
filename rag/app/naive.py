@@ -33,7 +33,7 @@ from common.token_utils import num_tokens_from_string
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
-from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
+from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser,PdfParser, TxtParser ,MarkdownParser, MarkdownElementExtractor
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
@@ -600,52 +600,72 @@ class Markdown(MarkdownParser):
         if soup:
             return set([a.get("href") for a in soup.find_all("a") if a.get("href")])
         return []
+    
 
-    def extract_image_urls_with_lines(self, text):
-        md_img_re = re.compile(r"!\[[^\]]*\]\(([^)\s]+)")
-        html_img_re = re.compile(r'src=["\\\']([^"\\\'>\\s]+)', re.IGNORECASE)
-        urls = []
-        seen = set()
-        lines = text.splitlines()
-        for idx, line in enumerate(lines):
-            for url in md_img_re.findall(line):
-                if (url, idx) not in seen:
-                    urls.append({"url": url, "line": idx})
-                    seen.add((url, idx))
-            for url in html_img_re.findall(line):
-                if (url, idx) not in seen:
-                    urls.append({"url": url, "line": idx})
-                    seen.add((url, idx))
+    def extract_image_urls_with_lines(self, segments):
+        """
+        Input: segments: List[Tuple[str, Any]]  (expected mostly "text"/"table", but we do NOT ignore anything)
+        Output: List[Tuple[str, Any]]
+        - Iterate original segments in order.
+        - For non-text: append as-is.
+        - For ("text", content): split by markdown/html image syntaxes, emitting:
+                ("text", before), ("image", matched_raw), ("text", after) ...
+            preserving the exact order.
+        - Image segment payload is the matched raw string (NOT url dict).
+        """
+        md_img_re = re.compile(r"!\[[^\]]*\]\(([^)\s]+)\)")  # whole match is the image markup
+        html_img_tag_re = re.compile(
+            r"<img\b[^>]*\bsrc\s*=\s*(['\"])([^'\"\s>]+)\1[^>]*>",
+            re.IGNORECASE | re.DOTALL,
+        )  # whole match is the <img ...> tag (supports cross-line)
 
-        # cross-line
-        try:
-            from bs4 import BeautifulSoup
+        out = []
 
-            soup = BeautifulSoup(text, "html.parser")
-            newline_offsets = [m.start() for m in re.finditer(r"\n", text)] + [len(text)]
-            for img_tag in soup.find_all("img"):
-                src = img_tag.get("src")
-                if not src:
+        def split_text_keep_raw(text: str):
+            if text is None:
+                text = ""
+
+            # collect spans with raw matched text
+            matches = []
+            for m in md_img_re.finditer(text):
+                matches.append((m.start(), m.end(), m.group(0)))  # raw markdown image string
+            for m in html_img_tag_re.finditer(text):
+                matches.append((m.start(), m.end(), m.group(0)))  # raw <img ...> tag string
+
+            if not matches:
+                return [("text", text)]
+
+            matches.sort(key=lambda x: x[0])
+
+            res = []
+            cursor = 0
+            for s, e, raw in matches:
+                # skip overlaps to avoid duplicated insertion
+                if s < cursor:
                     continue
 
-                tag_str = str(img_tag)
-                pos = text.find(tag_str)
-                if pos == -1:
-                    # fallback
-                    pos = max(text.find(src), 0)
-                line_no = 0
-                for i, off in enumerate(newline_offsets):
-                    if pos <= off:
-                        line_no = i
-                        break
-                if (src, line_no) not in seen:
-                    urls.append({"url": src, "line": line_no})
-                    seen.add((src, line_no))
-        except Exception as e:
-            logging.error("Failed to extract image urls: {}".format(e))
-            pass
+                if s > cursor:
+                    res.append(("text", text[cursor:s]))
 
-        return urls
+                res.append(("image", raw))
+                cursor = e
+
+            if cursor < len(text):
+                res.append(("text", text[cursor:]))
+
+            return res
+
+        for seg_type, seg_content in segments:
+            if seg_type != "text":
+                out.append((seg_type, seg_content))
+                continue
+
+            # text segment: split, then append in-place order
+            out.extend(split_text_keep_raw(seg_content))
+
+        return out
+
+
 
     def load_images_from_urls(self, urls, cache=None):
         import requests
@@ -677,6 +697,7 @@ class Markdown(MarkdownParser):
                 images.append(img_obj)
         return images, cache
 
+
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
         if binary:
             encoding = find_codec(binary)
@@ -685,12 +706,20 @@ class Markdown(MarkdownParser):
             with open(filename, "r") as f:
                 txt = f.read()
 
-        remainder, tables = self.extract_tables_and_remainder(f"{txt}\n", separate_tables=separate_tables)
-        # To eliminate duplicate tables in chunking result, uncomment code below and set separate_tables to True in line 410.
-        # extractor = MarkdownElementExtractor(remainder)
-        extractor = MarkdownElementExtractor(txt)
-        image_refs = self.extract_image_urls_with_lines(txt)
+        # 1) Raw markdown → segments (text / table)
+        segments = self.extract_table_segments(f"{txt}\n")
+
+        # 2) Split images from text → segments (text / image / table)
+        segments = self.extract_image_urls_with_lines(segments)
+
+        # 3) Split text into markdown blocks (text only; others passthrough)
+        extractor = MarkdownElementExtractor(segments)
         element_sections = extractor.extract_elements(delimiter, include_meta=True)
+        print("-" * 100)
+        for e in element_sections:
+            print(e)
+            print()
+        print("-" * 100)
 
         sections = []
         section_images = []
@@ -714,6 +743,17 @@ class Markdown(MarkdownParser):
             tbls.append(((None, markdown(table, extensions=["markdown.extensions.tables"])), ""))
         if return_section_images:
             return sections, tbls, section_images
+        
+        for section in sections:
+            print(section)
+            print("")
+        print("-" * 50, "END SECTIONS", "-"*50)
+
+        for table in tbls:
+            print(table)
+            print("")
+        
+
         return sections, tbls
 
 
