@@ -29,6 +29,7 @@ import markdown_to_json
 from functools import reduce
 from common.token_utils import num_tokens_from_string
 
+from common.misc_utils import thread_pool_exec
 
 @dataclass
 class MindMapResult:
@@ -185,7 +186,7 @@ class MindMapExtractor(Extractor):
         }
         text = perform_variable_replacements(self._mind_map_prompt, variables=variables)
         async with chat_limiter:
-            response = await asyncio.to_thread(self._chat,text,[{"role": "user", "content": "Output:"}],{})
+            response = await thread_pool_exec(self._chat,text,[{"role": "user", "content": "Output:"}],{})
         response = re.sub(r"```[^\n]*", "", response)
         logging.debug(response)
         logging.debug(self._todict(markdown_to_json.dictify(response)))
