@@ -24,6 +24,16 @@ from common.decorator import singleton
 from common import settings
 from valkey.lock import Lock
 
+REDIS = {}
+try:
+    REDIS = settings.decrypt_database_config(name="redis")
+except Exception:
+    try:
+        REDIS = settings.get_base_config("redis", {})
+    except Exception:
+        REDIS = {}
+
+
 class RedisMsg:
     def __init__(self, consumer, queue_name, group_name, msg_id, message):
         self.__consumer = consumer
@@ -103,14 +113,7 @@ class RedisDB:
 
     def __init__(self):
         self.REDIS = None
-        # 动态加载配置，确保在settings.init_settings()调用后获取最新配置
-        try:
-            self.config = settings.decrypt_database_config(name="redis")
-        except Exception:
-            try:
-                self.config = settings.get_base_config("redis", {})
-            except Exception:
-                self.config = {}
+        self.config = REDIS
         self.__open__()
 
     def register_scripts(self) -> None:
