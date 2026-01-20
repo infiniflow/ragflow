@@ -588,6 +588,9 @@ class RAGFlowClient:
 
         response = self.http_client.request("POST", "/kb/list", use_api_base=False, auth_kind="web")
         res_json = response.json()
+        if response.status_code != 200:
+            print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+            return
         dataset_list = res_json["data"]["kbs"]
         dataset_id: str = ""
         for dataset in dataset_list:
@@ -663,6 +666,58 @@ class RAGFlowClient:
                 else:
                     continue
             self._print_table_simple(new_input)
+
+    def parse_dataset_docs(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+
+        dataset_name = command_dict["dataset_name"]
+        document_names = command_dict["document_names"]
+
+        response = self.http_client.request("POST", "/kb/list", use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code != 200:
+            print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+            return
+
+        dataset_list = res_json["data"]["kbs"]
+        dataset_id: str = ""
+        for dataset in dataset_list:
+            if dataset["name"] == dataset_name:
+                dataset_id = dataset["id"]
+
+        if dataset_id == "":
+            print(f"Dataset {dataset_name} not found")
+            return
+
+        response = self.http_client.request("POST", f"/document/list?kb_id={dataset_id}", use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code != 200:
+            print(f"Fail to list files from dataset {dataset_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+        document_ids = []
+        to_parse_doc_names = []
+        for doc in res_json["data"]["docs"]:
+            doc_name = doc["name"]
+            if doc_name in document_names:
+                document_ids.append(doc["id"])
+                document_names.remove(doc_name)
+                to_parse_doc_names.append(doc_name)
+
+        if len(document_ids) == 0:
+            print(f"No documents found in {dataset_name}")
+            return
+
+        if len(document_names) != 0:
+            print(f"Documents {document_names} not found in {dataset_name}")
+
+        payload = {"doc_ids": document_ids, "run": 1}
+        response = self.http_client.request("POST", f"/document/run", json_body=payload, use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200 and res_json["code"] == 0:
+            print(f"Success to parse {to_parse_doc_names} of {dataset_name}")
+        else:
+            print(f"Fail to list documents {res_json["data"]["docs"]}, code: {res_json['code']}, message: {res_json['message']}")
 
     def show_version(self, command):
         if self.server_type == "admin":

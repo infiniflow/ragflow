@@ -61,6 +61,7 @@ sql_command: list_services
            | list_user_chats
            | list_user_model_providers
            | list_user_default_models
+           | parse_dataset_docs
 
 // meta command definition
 meta_command: "\\" meta_command_name [meta_args]
@@ -120,6 +121,7 @@ DEFAULT: "DEFAULT"i
 CHATS: "CHATS"i
 FILES: "FILES"i
 AS: "AS"i
+PARSE: "PARSE"i
 
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
@@ -144,8 +146,8 @@ alter_role: ALTER ROLE identifier SET DESCRIPTION quoted_string ";"
 list_roles: LIST ROLES ";"
 show_role: SHOW ROLE identifier ";"
 
-grant_permission: GRANT action_list ON identifier TO ROLE identifier ";"
-revoke_permission: REVOKE action_list ON identifier FROM ROLE identifier ";"
+grant_permission: GRANT identifier_list ON identifier TO ROLE identifier ";"
+revoke_permission: REVOKE identifier_list ON identifier FROM ROLE identifier ";"
 alter_user_role: ALTER USER quoted_string SET ROLE identifier ";"
 show_user_permission: SHOW USER PERMISSION quoted_string ";"
 
@@ -170,8 +172,9 @@ list_user_agents: LIST AGENTS ";"
 list_user_chats: LIST CHATS ";"
 list_user_model_providers: LIST MODEL PROVIDERS ";"
 list_user_default_models: LIST DEFAULT MODELS ";"
+parse_dataset_docs: PARSE quoted_string OF DATASET quoted_string ";"
 
-action_list: identifier ("," identifier)*
+identifier_list: identifier ("," identifier)*
 
 identifier: WORD
 quoted_string: QUOTED_STRING
@@ -358,6 +361,15 @@ class RAGFlowCLITransformer(Transformer):
 
     def list_user_default_models(self, items):
         return {"type": "list_user_default_models"}
+
+    def parse_dataset_docs(self, items):
+        document_list_str = items[1].children[0].strip("'\"")
+        document_names = document_list_str.split(",")
+        if len(document_names) == 1:
+            document_names = document_names[0]
+            document_names = document_names.split(" ")
+        dataset_name = items[4].children[0].strip("'\"")
+        return {"type": "parse_dataset_docs", "dataset_name": dataset_name, "document_names": document_names}
 
     def action_list(self, items):
         return items
