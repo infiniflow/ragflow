@@ -183,7 +183,7 @@ class CheckEmbeddingResponse(BaseModel):
 @login_required
 @kb_tag
 @validate_request("name")
-@qs_validate_request(CreateKnowledgeBaseRequest, create_model=False)
+@qs_validate_request(CreateKnowledgeBaseRequest)
 @validate_response(200, CreateKnowledgeBaseResponse)
 async def create():
     """
@@ -216,7 +216,7 @@ async def create():
 @kb_tag
 @validate_request("kb_id", "name", "description", "parser_id")
 @not_allowed_parameters("id", "tenant_id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
-@qs_validate_request(UpdateKnowledgeBaseRequest, create_model=False)
+@qs_validate_request(UpdateKnowledgeBaseRequest)
 @validate_response(200, APIResponse)
 async def update():
     req = await get_request_json()
@@ -327,7 +327,7 @@ async def update():
 @login_required
 @kb_tag
 @validate_request("kb_id", "metadata")
-@qs_validate_request(UpdateMetadataSettingRequest, create_model=False)
+@qs_validate_request(UpdateMetadataSettingRequest)
 @validate_response(200, APIResponse)
 async def update_metadata_setting():
     """
@@ -388,7 +388,7 @@ def detail():
 @manager.route('/list', methods=['POST'])  # noqa: F821
 @login_required
 @kb_tag
-@qs_validate_request(ListKnowledgeBasesRequest, create_model=False)
+@qs_validate_request(ListKnowledgeBasesRequest)
 @validate_response(200, ListKnowledgeBasesResponse)
 async def list_kbs():
     """
@@ -435,7 +435,7 @@ async def list_kbs():
 @login_required
 @kb_tag
 @validate_request("kb_id")
-@qs_validate_request(DeleteKnowledgeBaseRequest, create_model=False)
+@qs_validate_request(DeleteKnowledgeBaseRequest)
 @validate_response(200, DeleteKnowledgeBaseResponse)
 async def rm():
     """
@@ -551,7 +551,7 @@ def list_tags_from_kbs():
 @manager.route('/<kb_id>/rm_tags', methods=['POST'])  # noqa: F821
 @login_required
 @kb_tag
-@qs_validate_request(RemoveTagsRequest, create_model=False)
+@qs_validate_request(RemoveTagsRequest)
 @validate_response(200, DeleteKnowledgeBaseResponse)
 async def rm_tags(kb_id):
     """
@@ -579,7 +579,7 @@ async def rm_tags(kb_id):
 @manager.route('/<kb_id>/rename_tag', methods=['POST'])  # noqa: F821
 @login_required
 @kb_tag
-@qs_validate_request(RenameTagRequest, create_model=False)
+@qs_validate_request(RenameTagRequest)
 @validate_response(200, DeleteKnowledgeBaseResponse)
 async def rename_tags(kb_id):
     """
@@ -811,7 +811,7 @@ async def list_pipeline_dataset_logs():
 @manager.route("/delete_pipeline_logs", methods=["POST"])  # noqa: F821
 @login_required
 @kb_tag
-@qs_validate_request(DeletePipelineLogsRequest, create_model=False)
+@qs_validate_request(DeletePipelineLogsRequest)
 @validate_response(200, DeleteKnowledgeBaseResponse)
 async def delete_pipeline_logs():
     """
@@ -855,7 +855,7 @@ def pipeline_log_detail():
 @manager.route("/run_graphrag", methods=["POST"])  # noqa: F821
 @login_required
 @kb_tag
-@qs_validate_request(RunGraphRagRequest, create_model=False)
+@qs_validate_request(RunGraphRagRequest)
 @validate_response(200, APIResponse)
 async def run_graphrag():
     """
@@ -939,7 +939,7 @@ def trace_graphrag():
 @manager.route("/run_raptor", methods=["POST"])  # noqa: F821
 @login_required
 @kb_tag
-@qs_validate_request(RunRaptorRequest, create_model=False)
+@qs_validate_request(RunRaptorRequest)
 @validate_response(200, APIResponse)
 async def run_raptor():
     """
@@ -1023,7 +1023,7 @@ def trace_raptor():
 @manager.route("/run_mindmap", methods=["POST"])  # noqa: F821
 @login_required
 @kb_tag
-@qs_validate_request(RunMindmapRequest, create_model=False)
+@qs_validate_request(RunMindmapRequest)
 @validate_response(200, APIResponse)
 async def run_mindmap():
     """
@@ -1161,7 +1161,7 @@ def delete_kb_task():
 @manager.route("/check_embedding", methods=["POST"])  # noqa: F821
 @login_required
 @kb_tag
-@qs_validate_request(CheckEmbeddingRequest, create_model=False)
+@qs_validate_request(CheckEmbeddingRequest)
 @validate_response(200, CheckEmbeddingResponse)
 async def check_embedding():
     """

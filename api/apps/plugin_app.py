@@ -64,7 +64,7 @@ class LLMToolsResponse(BaseModel):
 @manager.route('/llm_tools', methods=['GET'])  # noqa: F821
 @login_required
 @validate_response(200, LLMToolsResponse)
-@tag(["Plugins"], "Operations for managing and querying plugins")
+@tag(["Plugins"])
 def llm_tools() -> Response:
     """
     Get all available LLM tools.
