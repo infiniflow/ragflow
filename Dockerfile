@@ -53,7 +53,8 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y ghostscript && \
     apt install -y pandoc && \
     apt install -y texlive && \
-    apt install -y fonts-freefont-ttf fonts-noto-cjk
+    apt install -y fonts-freefont-ttf fonts-noto-cjk && \
+    apt install -y postgresql-client
 
 # Install uv
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
@@ -64,9 +65,11 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
         echo 'url = "https://pypi.tuna.tsinghua.edu.cn/simple"' >> /etc/uv/uv.toml && \
         echo 'default = true' >> /etc/uv/uv.toml; \
     fi; \
-    tar xzf /deps/uv-x86_64-unknown-linux-gnu.tar.gz \
-    && cp uv-x86_64-unknown-linux-gnu/* /usr/local/bin/ \
-    && rm -rf uv-x86_64-unknown-linux-gnu \
+    arch="$(uname -m)"; \
+    if [ "$arch" = "x86_64" ]; then uv_arch="x86_64"; else uv_arch="aarch64"; fi; \
+    tar xzf "/deps/uv-${uv_arch}-unknown-linux-gnu.tar.gz" \
+    && cp "uv-${uv_arch}-unknown-linux-gnu/"* /usr/local/bin/ \
+    && rm -rf "uv-${uv_arch}-unknown-linux-gnu" \
     && uv python install 3.12
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
@@ -152,11 +155,14 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     else \
         sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
     fi; \
-    uv sync --python 3.12 --frozen
+    uv sync --python 3.12 --frozen && \
+    # Ensure pip is available in the venv for runtime package installation (fixes #12651)
+    .venv/bin/python3 -m ensurepip --upgrade
 
 COPY web web
 COPY docs docs
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
+    export NODE_OPTIONS="--max-old-space-size=4096" && \
     cd web && npm install && npm run build
 
 COPY .git /ragflow/.git

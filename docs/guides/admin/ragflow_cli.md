@@ -5,11 +5,11 @@ sidebar_custom_props: {
   categoryIcon: LucideSquareTerminal
 }
 ---
-# Admin CLI
+# RAGFlow CLI
 
-The RAGFlow Admin CLI is a command-line-based system administration tool that offers administrators an efficient and flexible method for system interaction and control. Operating on a client-server architecture, it communicates in real-time with the Admin Service, receiving administrator commands and dynamically returning execution results.
+The RAGFlow CLI is a command-line-based system administration tool that offers administrators an efficient and flexible method for system interaction and control. Operating on a client-server architecture, it communicates in real-time with the Admin Service, receiving administrator commands and dynamically returning execution results.
 
-## Using the Admin CLI
+## Using the RAGFlow CLI
 
 1. Ensure the Admin Service is running.
 
@@ -93,6 +93,21 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 - Changes the user to active or inactive.
 - [Example](#example-alter-user-active)
 
+`GENERATE KEY FOR USER <username>;`
+
+- Generates a new API key for the specified user.
+- [Example](#example-generate-key)
+
+`LIST KEYS OF <username>;`
+
+- Lists all API keys associated with the specified user.
+- [Example](#example-list-keys)
+
+`DROP KEY <key> OF <username>;`
+
+- Deletes a specific API key for the specified user.
+- [Example](#example-drop-key)
+
 ### Data and Agent Commands
 
 `LIST DATASETS OF <username>;`
@@ -154,7 +169,7 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 - List all available services.
 
 ```
-admin> list services;
+ragflow> list services;
 command: list services;
 Listing all services
 +-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+---------+
@@ -175,7 +190,7 @@ Listing all services
 - Show ragflow_server.
 
 ```
-admin> show service 0;
+ragflow> show service 0;
 command: show service 0;
 Showing service: 0
 Service ragflow_0 is alive. Detail:
@@ -185,7 +200,7 @@ Confirm elapsed: 26.0 ms.
 - Show mysql.
 
 ```
-admin> show service 1;
+ragflow> show service 1;
 command: show service 1;
 Showing service: 1
 Service mysql is alive. Detail:
@@ -201,7 +216,7 @@ Service mysql is alive. Detail:
 - Show minio.
 
 ```
-admin> show service 2;
+ragflow> show service 2;
 command: show service 2;
 Showing service: 2
 Service minio is alive. Detail:
@@ -211,7 +226,7 @@ Confirm elapsed: 2.1 ms.
 - Show elasticsearch.
 
 ```
-admin> show service 3;
+ragflow> show service 3;
 command: show service 3;
 Showing service: 3
 Service elasticsearch is alive. Detail:
@@ -225,7 +240,7 @@ Service elasticsearch is alive. Detail:
 - Show infinity.
 
 ```
-admin> show service 4;
+ragflow> show service 4;
 command: show service 4;
 Showing service: 4
 Fail to show service, code: 500, message: Infinity is not in use.
@@ -234,7 +249,7 @@ Fail to show service, code: 500, message: Infinity is not in use.
 - Show redis.
 
 ```
-admin> show service 5;
+ragflow> show service 5;
 command: show service 5;
 Showing service: 5
 Service redis is alive. Detail:
@@ -249,7 +264,7 @@ Service redis is alive. Detail:
 - Show RAGFlow version
 
 ```
-admin> show version;
+ragflow> show version;
 +-----------------------+
 | version               |
 +-----------------------+
@@ -262,7 +277,7 @@ admin> show version;
 - List all user.
 
 ```
-admin> list users;
+ragflow> list users;
 command: list users;
 Listing all users
 +-------------------------------+----------------------+-----------+----------+
@@ -278,7 +293,7 @@ Listing all users
 - Show specified user.
 
 ```
-admin> show user "admin@ragflow.io";
+ragflow> show user "admin@ragflow.io";
 command: show user "admin@ragflow.io";
 Showing user: admin@ragflow.io
 +-------------------------------+------------------+-----------+--------------+------------------+--------------+----------+-----------------+---------------+--------+-------------------------------+
@@ -293,7 +308,7 @@ Showing user: admin@ragflow.io
 - Create new user.
 
 ```
-admin> create user "example@ragflow.io" "psw";
+ragflow> create user "example@ragflow.io" "psw";
 command: create user "example@ragflow.io" "psw";
 Create user: example@ragflow.io, password: psw, role: user
 +----------------------------------+--------------------+----------------------------------+--------------+---------------+----------+
@@ -308,7 +323,7 @@ Create user: example@ragflow.io, password: psw, role: user
 - Alter user password.
 
 ```
-admin> alter user password "example@ragflow.io" "newpsw";
+ragflow> alter user password "example@ragflow.io" "newpsw";
 command: alter user password "example@ragflow.io" "newpsw";
 Alter user: example@ragflow.io, password: newpsw
 Password updated successfully!
@@ -319,7 +334,7 @@ Password updated successfully!
 - Alter user active, turn off.
 
 ```
-admin> alter user active "example@ragflow.io" off;
+ragflow> alter user active "example@ragflow.io" off;
 command: alter user active "example@ragflow.io" off;
 Alter user example@ragflow.io activate status, turn off.
 Turn off user activate status successfully!
@@ -330,7 +345,7 @@ Turn off user activate status successfully!
 - Drop user.
 
 ```
-admin> Drop user "example@ragflow.io";
+ragflow> Drop user "example@ragflow.io";
 command: Drop user "example@ragflow.io";
 Drop user: example@ragflow.io
 Successfully deleted user. Details:
@@ -345,12 +360,50 @@ Delete done!
 
 Delete user's data at the same time.
 
+<span id="example-generate-key"></span>
+
+- Generate API key for user.
+
+```
+admin> generate key for user "example@ragflow.io";
+Generating API key for user: example@ragflow.io
++----------------------------------+-------------------------------+---------------+----------------------------------+-----------------------------------------------------+-------------+-------------+
+| beta                             | create_date                   | create_time   | tenant_id                        | token                                               | update_date | update_time |
++----------------------------------+-------------------------------+---------------+----------------------------------+-----------------------------------------------------+-------------+-------------+
+| Es9OpZ6hrnPGeYA3VU1xKUkj6NCb7cp- | Mon, 12 Jan 2026 15:19:11 GMT | 1768227551361 | 5d5ea8a3efc111f0a79b80fa5b90e659 | ragflow-piwVJHEk09M5UN3LS_Xx9HA7yehs3yNOc9GGsD4jzus | None        | None        |
++----------------------------------+-------------------------------+---------------+----------------------------------+-----------------------------------------------------+-------------+-------------+
+```
+
+<span id="example-list-keys"></span>
+
+- List all API keys for user.
+
+```
+admin> list keys of "example@ragflow.io";
+Listing API keys for user: example@ragflow.io
++----------------------------------+-------------------------------+---------------+-----------+--------+----------------------------------+-----------------------------------------------------+-------------------------------+---------------+
+| beta                             | create_date                   | create_time   | dialog_id | source | tenant_id                        | token                                               | update_date                   | update_time   |
++----------------------------------+-------------------------------+---------------+-----------+--------+----------------------------------+-----------------------------------------------------+-------------------------------+---------------+
+| Es9OpZ6hrnPGeYA3VU1xKUkj6NCb7cp- | Mon, 12 Jan 2026 15:19:11 GMT | 1768227551361 | None      | None   | 5d5ea8a3efc111f0a79b80fa5b90e659 | ragflow-piwVJHEk09M5UN3LS_Xx9HA7yehs3yNOc9GGsD4jzus | Mon, 12 Jan 2026 15:19:11 GMT | 1768227551361 |
++----------------------------------+-------------------------------+---------------+-----------+--------+----------------------------------+-----------------------------------------------------+-------------------------------+---------------+
+```
+
+<span id="example-drop-key"></span>
+
+- Drop API key for user.
+
+```
+admin> drop key "ragflow-piwVJHEk09M5UN3LS_Xx9HA7yehs3yNOc9GGsD4jzus" of "example@ragflow.io";
+Dropping API key for user: example@ragflow.io
+API key deleted successfully
+```
+
 <span id="example-list-datasets-of-user"></span>
 
 - List the specified user's dataset.
 
 ```
-admin> list datasets of "lynn_inf@hotmail.com";
+ragflow> list datasets of "lynn_inf@hotmail.com";
 command: list datasets of "lynn_inf@hotmail.com";
 Listing all datasets of user: lynn_inf@hotmail.com
 +-----------+-------------------------------+---------+----------+---------------+------------+--------+-----------+-------------------------------+
@@ -366,7 +419,7 @@ Listing all datasets of user: lynn_inf@hotmail.com
 - List the specified user's agents.
 
 ```
-admin> list agents of "lynn_inf@hotmail.com";
+ragflow> list agents of "lynn_inf@hotmail.com";
 command: list agents of "lynn_inf@hotmail.com";
 Listing all agents of user: lynn_inf@hotmail.com
 +-----------------+-------------+------------+-----------------+
@@ -381,7 +434,7 @@ Listing all agents of user: lynn_inf@hotmail.com
 - Display the current RAGFlow version.
 
 ```
-admin> show version;
+ragflow> show version;
 show_version
 +-----------------------+
 | version               |
@@ -395,7 +448,7 @@ show_version
 - Grant administrator privileges to the specified user.
 
 ```
-admin> grant admin "anakin.skywalker@ragflow.io";
+ragflow> grant admin "anakin.skywalker@ragflow.io";
 Grant successfully!
 ```
 
@@ -404,7 +457,7 @@ Grant successfully!
 - Revoke administrator privileges from the specified user.
 
 ```
-admin> revoke admin "anakin.skywalker@ragflow.io";
+ragflow> revoke admin "anakin.skywalker@ragflow.io";
 Revoke successfully!
 ```
 
@@ -413,7 +466,7 @@ Revoke successfully!
 - List all system settings.
 
 ```
-admin> list vars;
+ragflow> list vars;
 +-----------+---------------------+--------------+-----------+
 | data_type | name                | source       | value     |
 +-----------+---------------------+--------------+-----------+
@@ -435,7 +488,7 @@ admin> list vars;
 - Display the content of a specific system configuration/setting by its name or name prefix.
 
 ```
-admin> show var mail.server;
+ragflow> show var mail.server;
 +-----------+-------------+--------------+-----------+
 | data_type | name        | source       | value     |
 +-----------+-------------+--------------+-----------+
@@ -448,7 +501,7 @@ admin> show var mail.server;
 - Set the value for a specified configuration item.
 
 ```
-admin> set var mail.server 127.0.0.1;
+ragflow> set var mail.server 127.0.0.1;
 Set variable successfully
 ```
 
@@ -458,7 +511,7 @@ Set variable successfully
 - List all system configurations.
 
 ```
-admin> list configs;
+ragflow> list configs;
 +-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+
 | extra                                                                                     | host      | id | name          | port  | service_type   |
 +-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+
@@ -477,7 +530,7 @@ admin> list configs;
 - List all system environments which can accessed by Admin service.
 
 ```
-admin> list envs;
+ragflow> list envs;
 +-------------------------+------------------+
 | env                     | value            |
 +-------------------------+------------------+
@@ -495,23 +548,38 @@ admin> list envs;
 - Show help information.
 
 ```
-admin> \help
+ragflow> \help
 command: \help
 
 Commands:
-  LIST SERVICES
-  SHOW SERVICE <service>
-  STARTUP SERVICE <service>
-  SHUTDOWN SERVICE <service>
-  RESTART SERVICE <service>
-  LIST USERS
-  SHOW USER <user>
-  DROP USER <user>
-  CREATE USER <user> <password>
-  ALTER USER PASSWORD <user> <new_password>
-  ALTER USER ACTIVE <user> <on/off>
-  LIST DATASETS OF <user>
-  LIST AGENTS OF <user>
+LIST SERVICES
+SHOW SERVICE <service>
+STARTUP SERVICE <service>
+SHUTDOWN SERVICE <service>
+RESTART SERVICE <service>
+LIST USERS
+SHOW USER <user>
+DROP USER <user>
+CREATE USER <user> <password>
+ALTER USER PASSWORD <user> <new_password>
+ALTER USER ACTIVE <user> <on/off>
+LIST DATASETS OF <user>
+LIST AGENTS OF <user>
+CREATE ROLE <role>
+DROP ROLE <role>
+ALTER ROLE <role> SET DESCRIPTION <description>
+LIST ROLES
+SHOW ROLE <role>
+GRANT <action_list> ON <function> TO ROLE <role>
+REVOKE <action_list> ON <function> TO ROLE <role>
+ALTER USER <user> SET ROLE <role>
+SHOW USER PERMISSION <user>
+SHOW VERSION
+GRANT ADMIN <user>
+REVOKE ADMIN <user>
+GENERATE KEY FOR USER <user>
+LIST KEYS OF <user>
+DROP KEY <key> OF <user>
 
 Meta Commands:
   \?, \h, \help     Show this help
@@ -521,8 +589,7 @@ Meta Commands:
 - Exit
 
 ```
-admin> \q
+ragflow> \q
 command: \q
 Goodbye!
 ```
-

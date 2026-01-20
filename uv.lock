@@ -2956,7 +2956,7 @@ wheels = [
 
 [[package]]
 name = "infinity-sdk"
-version = "0.6.15"
+version = "0.7.0.dev1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "datrie" },
@@ -2973,9 +2973,9 @@ dependencies = [
     { name = "sqlglot", extra = ["rs"] },
     { name = "thrift" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f9/e3/c7433ce0017fba9cd833bc2f2d0208acfdfaf4e635594f7257976bb7230e/infinity_sdk-0.6.15.tar.gz", hash = "sha256:b3159acb1b026e1868ac90a480d8259748655df82a32acdd838279b867b5f587", size = 29518841, upload-time = "2025-12-27T10:39:09.676Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/de/d8/7d3cc5cd15eadbb4500f927566cbae0db2db9bf291800d73134f4333c6b7/infinity_sdk-0.7.0.dev1.tar.gz", hash = "sha256:fa1f9be4cb2a4b1043960e0fae0c93bc9d4c544a5679ac6979a0c498d69123b5", size = 29590153, upload-time = "2026-01-19T06:35:00.531Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/0f/2c/427702ff4231f8965053b8c585b32cfd7571e0515e05fe5e95ddf2c56030/infinity_sdk-0.6.15-py3-none-any.whl", hash = "sha256:06f8a7f50c9817f17aac9d3cafe08f3478423b02b233bd608d17317e23588dc7", size = 29737429, upload-time = "2025-12-27T10:41:58.352Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/21/d6/8e68c287d08af3a8c0511eadb81b8f9f1511be7437a369ec51ccd82b862e/infinity_sdk-0.7.0.dev1-py3-none-any.whl", hash = "sha256:5d4600b79bcff3a19c9963eddb37552749ea52358a8ab85090ee3e74b4c5a0c1", size = 29818804, upload-time = "2026-01-19T06:35:13.886Z" },
 ]
 
 [[package]]
@@ -4244,12 +4244,12 @@ name = "onnxruntime-gpu"
 version = "1.23.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "coloredlogs" },
-    { name = "flatbuffers" },
-    { name = "numpy" },
-    { name = "packaging" },
-    { name = "protobuf" },
-    { name = "sympy" },
+    { name = "coloredlogs", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "flatbuffers", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "numpy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "packaging", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "protobuf", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "sympy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/6c/d9/b7140a4f1615195938c7e358c0804bb84271f0d6886b5cbf105c6cb58aae/onnxruntime_gpu-1.23.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:4f2d1f720685d729b5258ec1b36dee1de381b8898189908c98cbeecdb2f2b5c2", size = 300509596, upload-time = "2025-10-22T16:56:31.728Z" },
@@ -5478,7 +5478,7 @@ wheels = [
 
 [[package]]
 name = "pyobvector"
-version = "0.2.18"
+version = "0.2.22"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "aiomysql" },
@@ -5488,9 +5488,9 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "sqlglot" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/82/33/adf722744a88eb75b4422129cbc4fe9b05738064ee79762348e285d93520/pyobvector-0.2.18.tar.gz", hash = "sha256:58ca2765ab99de188e99c815aab914ab9efd003cfa1ce9c5f2e41d0e2b4878be", size = 43035, upload-time = "2025-11-05T06:18:36.747Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/30/b9/443d65757cdfb47d31ef4b9ed0609628ae468e52e57033051e1fad256c59/pyobvector-0.2.22.tar.gz", hash = "sha256:0bd4af46cfdfbc67e691d5b49f3b0662f702a7a42a7f7a240f1021af378e793c", size = 72706, upload-time = "2026-01-15T03:19:57.4Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5c/1f/73fa42b215722ec36172ac155626db5d2b95ea9f884cf9fb0624492e303b/pyobvector-0.2.18-py3-none-any.whl", hash = "sha256:93e34b7796e4cbc6ad139118d655eb127d1e7a0f5df76df66e25520533a15488", size = 58129, upload-time = "2025-11-05T06:18:35.326Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e0/88/1583888a4ce85202d93fa03f2817681637465668e8b260ef1b9d5a39c3ca/pyobvector-0.2.22-py3-none-any.whl", hash = "sha256:4a0f5c094af7ca8242fdf9e5111e75544de0a9615491e9ec2f9d218dc909b509", size = 60627, upload-time = "2026-01-15T03:19:55.918Z" },
 ]
 
 [[package]]
@@ -6174,6 +6174,7 @@ test = [
     { name = "hypothesis" },
     { name = "openpyxl" },
     { name = "pillow" },
+    { name = "pycryptodomex" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -6228,7 +6229,7 @@ requires-dist = [
     { name = "grpcio-status", specifier = "==1.67.1" },
     { name = "html-text", specifier = "==0.6.2" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
-    { name = "infinity-sdk", specifier = "==0.6.15" },
+    { name = "infinity-sdk", specifier = "==0.7.0.dev1" },
     { name = "jira", specifier = "==3.10.5" },
     { name = "json-repair", specifier = "==0.35.0" },
     { name = "langfuse", specifier = ">=2.60.0" },
@@ -6258,7 +6259,7 @@ requires-dist = [
     { name = "pyclipper", specifier = ">=1.4.0,<2.0.0" },
     { name = "pycryptodomex", specifier = "==3.20.0" },
     { name = "pygithub", specifier = ">=2.8.1" },
-    { name = "pyobvector", specifier = "==0.2.18" },
+    { name = "pyobvector", specifier = "==0.2.22" },
     { name = "pyodbc", specifier = ">=5.2.0,<6.0.0" },
     { name = "pypandoc", specifier = ">=1.16" },
     { name = "pypdf", specifier = "==6.4.0" },
@@ -6307,6 +6308,7 @@ test = [
     { name = "hypothesis", specifier = ">=6.132.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pillow", specifier = ">=10.4.0,<13.0.0" },
+    { name = "pycryptodomex", specifier = "==3.20.0" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },

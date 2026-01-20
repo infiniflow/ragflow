@@ -392,7 +392,11 @@ class LLM4Tenant:
         self.langfuse = None
         if langfuse_keys:
             langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
-            if langfuse.auth_check():
-                self.langfuse = langfuse
-                trace_id = self.langfuse.create_trace_id()
-                self.trace_context = {"trace_id": trace_id}
+            try:
+                if langfuse.auth_check():
+                    self.langfuse = langfuse
+                    trace_id = self.langfuse.create_trace_id()
+                    self.trace_context = {"trace_id": trace_id}
+            except Exception:
+                # Skip langfuse tracing if connection fails
+                pass

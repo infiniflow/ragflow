@@ -17,11 +17,9 @@ import string
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-import requests
-from common import DOCUMENT_APP_URL, list_kbs, upload_documents
-from configs import DOCUMENT_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN
+from common import list_kbs, upload_documents
+from configs import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
-from requests_toolbelt import MultipartEncoder
 from utils.file_utils import create_txt_file
 
 
@@ -111,17 +109,9 @@ class TestDocumentsUpload:
         kb_id = add_dataset_func
 
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
-        url = f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/upload"
-        fields = [("file", ("", fp.open("rb"))), ("kb_id", kb_id)]
-        m = MultipartEncoder(fields=fields)
-        res = requests.post(
-            url=url,
-            headers={"Content-Type": m.content_type},
-            auth=WebApiAuth,
-            data=m,
-        )
-        assert res.json()["code"] == 101, res
-        assert res.json()["message"] == "No file selected!", res
+        res = upload_documents(WebApiAuth, {"kb_id": kb_id}, [fp], filename_override="")
+        assert res["code"] == 101, res
+        assert res["message"] == "No file selected!", res
 
     @pytest.mark.p2
     def test_filename_exceeds_max_length(self, WebApiAuth, add_dataset_func, tmp_path):

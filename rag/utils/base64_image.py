@@ -14,13 +14,16 @@
 #  limitations under the License.
 #
 
-import asyncio
 import base64
 import logging
 from functools import partial
 from io import BytesIO
 
 from PIL import Image
+
+
+
+from common.misc_utils import thread_pool_exec
 
 test_image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAIAAAD/gAIDAAAA6ElEQVR4nO3QwQ3AIBDAsIP9d25XIC+EZE8QZc18w5l9O+AlZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBT+IYAHHLHkdEgAAAABJRU5ErkJggg=="
 test_image = base64.b64decode(test_image_base64)
@@ -58,13 +61,13 @@ async def image2id(d: dict, storage_put_func: partial, objname: str, bucket: str
             buf.seek(0)
             return buf.getvalue()
 
-    jpeg_binary = await asyncio.to_thread(encode_image)
+    jpeg_binary = await thread_pool_exec(encode_image)
     if jpeg_binary is None:
         del d["image"]
         return
 
     async with minio_limiter:
-        await asyncio.to_thread(
+        await thread_pool_exec(
             lambda: storage_put_func(bucket=bucket, fnm=objname, binary=jpeg_binary)
         )
 

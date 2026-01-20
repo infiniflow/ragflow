@@ -43,6 +43,10 @@ from rag.nlp import rag_tokenizer
 from rag.prompts.generator import vision_llm_describe_prompt
 from common import settings
 
+
+
+from common.misc_utils import thread_pool_exec
+
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
@@ -476,7 +480,7 @@ class RAGFlowPdfParser:
         self.boxes = bxs
 
     def _naive_vertical_merge(self, zoomin=3):
-        #bxs = self._assign_column(self.boxes, zoomin)
+        # bxs = self._assign_column(self.boxes, zoomin)
         bxs = self.boxes
 
         grouped = defaultdict(list)
@@ -553,7 +557,8 @@ class RAGFlowPdfParser:
 
             merged_boxes.extend(bxs)
 
-        #self.boxes = sorted(merged_boxes, key=lambda x: (x["page_number"], x.get("col_id", 0), x["top"]))
+        # self.boxes = sorted(merged_boxes, key=lambda x: (x["page_number"], x.get("col_id", 0), x["top"]))
+        self.boxes = merged_boxes
 
     def _final_reading_order_merge(self, zoomin=3):
         if not self.boxes:
@@ -1113,7 +1118,7 @@ class RAGFlowPdfParser:
 
             if limiter:
                 async with limiter:
-                    await asyncio.to_thread(self.__ocr, i + 1, img, chars, zoomin, id)
+                    await thread_pool_exec(self.__ocr, i + 1, img, chars, zoomin, id)
             else:
                 self.__ocr(i + 1, img, chars, zoomin, id)
 
