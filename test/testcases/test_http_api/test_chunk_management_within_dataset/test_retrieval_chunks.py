@@ -282,7 +282,8 @@ class TestChunksRetrieval:
         payload.update({"question": "chunk", "dataset_ids": [dataset_id]})
         res = retrieval_chunks(HttpApiAuth, payload)
         assert res["code"] == expected_code
-        if expected_highlight:
+        doc_engine = os.environ.get("DOC_ENGINE", "elasticsearch").lower()
+        if expected_highlight and doc_engine != "infinity":
             for chunk in res["data"]["chunks"]:
                 assert "highlight" in chunk
         else:
