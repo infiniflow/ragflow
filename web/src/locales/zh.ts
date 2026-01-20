@@ -826,7 +826,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       avatarHidden: '隐藏头像',
       locale: '地区',
       tocEnhance: '目录增强',
-      tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
+      tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
+      batchDeleteSessions: '批量删除',
+      deleteSelectedConfirm: '删除选中的 {count} 个会话？',
     },
     setting: {
       deleteModel: '删除模型',
