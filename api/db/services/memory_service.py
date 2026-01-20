@@ -167,4 +167,4 @@ class MemoryService(CommonService):
     @classmethod
     @DB.connection_context()
     def delete_memory(cls, memory_id: str):
-        return cls.model.delete().where(cls.model.id == memory_id).execute()
+        return cls.delete_by_id(memory_id)
