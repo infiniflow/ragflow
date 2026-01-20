@@ -579,46 +579,46 @@ class Parser(ProcessBase):
             if conf.get("output_format") == "json":
                 self.set_output("json", sections)
 
-    def _markdown(self, name, blob):
-        from functools import reduce
 
+    def _markdown(self, name, blob):
         from rag.app.naive import Markdown as naive_markdown_parser
-        from rag.nlp import concat_img
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a markdown.")
         conf = self._param.setups["text&markdown"]
         self.set_output("output_format", conf["output_format"])
 
         markdown_parser = naive_markdown_parser()
-        sections, tables, section_images = markdown_parser(
+        sections = markdown_parser(
             name,
             blob,
-            separate_tables=False,
             delimiter=conf.get("delimiter"),
-            return_section_images=True,
         )
 
         if conf.get("output_format") == "json":
             json_results = []
 
-            for idx, (section_text, _) in enumerate(sections):
-                json_result = {
-                    "text": section_text,
-                }
+            for text, image, table_html in sections:
+                if not text and table_html:
+                    text = table_html
 
-                images = []
-                if section_images and len(section_images) > idx and section_images[idx] is not None:
-                    images.append(section_images[idx])
-                if images:
-                    # If multiple images found, combine them using concat_img
-                    combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
-                    json_result["image"] = combined_image
+                json_result = {"text": text}
+
+                if image is not None:
+                    json_result["image"] = image
 
                 json_results.append(json_result)
 
             self.set_output("json", json_results)
+
         else:
-            self.set_output("text", "\n".join([section_text for section_text, _ in sections]))
+            texts = []
+            for text, _, table_html in sections:
+                if not text and table_html:
+                    text = table_html
+                texts.append(text)
+
+            self.set_output("text", "\n".join(texts))
+
 
     def _image(self, name, blob):
         from deepdoc.vision import OCR
