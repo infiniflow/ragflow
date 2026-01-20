@@ -397,6 +397,10 @@ const routeConfig = [
         Component: lazy(() => import('@/pages/admin/login')),
       },
       {
+        path: `${Routes.AdminUserManagement}/:id`,
+        Component: lazy(() => import('@/pages/admin/user-detail')),
+      },
+      {
         path: Routes.Admin,
         Component: lazy(
           () => import('@/pages/admin/layouts/navigation-layout'),
