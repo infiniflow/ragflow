@@ -19,7 +19,7 @@ import { TimezoneList } from '@/pages/user-setting/constants';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { Loader2Icon, PenLine } from 'lucide-react';
-import { FC, useEffect } from 'react';
+import { FC, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import {
@@ -39,7 +39,23 @@ const baseSchema = z.object({
     .min(1, { message: t('setting.timezonePlaceholder') }),
 });
 
-const nameSchema = baseSchema.extend({
+const nameSchema = z.object({
+  userName: z
+    .string()
+    .min(1, { message: t('setting.usernameMessage') })
+    .trim(),
+  timeZone: z.string().optional(),
+  currPasswd: z.string().optional(),
+  newPasswd: z.string().optional(),
+  confirmPasswd: z.string().optional(),
+});
+
+const timezoneSchema = z.object({
+  userName: z.string().optional(),
+  timeZone: z
+    .string()
+    .trim()
+    .min(1, { message: t('setting.timezonePlaceholder') }),
   currPasswd: z.string().optional(),
   newPasswd: z.string().optional(),
   confirmPasswd: z.string().optional(),
@@ -93,16 +109,26 @@ const ProfilePage: FC = () => {
     handleAvatarUpload,
   } = useProfile();
 
+  const schema = useMemo(() => {
+    switch (editType) {
+      case EditType.editPassword:
+        return passwordSchema;
+      case EditType.editTimeZone:
+        return timezoneSchema;
+      default:
+        return nameSchema;
+    }
+  }, [editType]);
+
   const form = useForm<z.infer<typeof baseSchema | typeof passwordSchema>>({
-    resolver: zodResolver(
-      editType === EditType.editPassword ? passwordSchema : nameSchema,
-    ),
+    resolver: zodResolver(schema),
     defaultValues: {
       userName: '',
       timeZone: '',
     },
     // shouldUnregister: true,
   });
+
   useEffect(() => {
     if (editForm && Object.keys(editForm).length > 0) {
       form.reset({ ...editForm, currPasswd: undefined });
