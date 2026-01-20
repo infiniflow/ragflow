@@ -16,6 +16,7 @@
 
 from typing import Any
 import urllib.parse
+from pathlib import Path
 from http_client import HttpClient
 from lark import Tree
 from user import encrypt_password
@@ -24,6 +25,11 @@ import base64
 from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from Cryptodome.PublicKey import RSA
 
+try:
+    from requests_toolbelt import MultipartEncoder
+except Exception as e:  # pragma: no cover - fallback without toolbelt
+    print(f"Fallback without belt: {e}")
+    MultipartEncoder = None
 
 def encrypt(input_string):
     pub = "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArq9XTUSeYr2+N1h3Afl/z8Dse/2yD0ZGrKwx+EEEcdsBLca9Ynmx3nIB5obmLlSfmskLpBo0UACBmB5rEjBp2Q2f3AG3Hjd4B+gNCG6BDaawuDlgANIhGnaTLrIqWrrcm4EMzJOnAOI1fgzJRsOOUEfaS318Eq9OVO3apEyCCt0lOQK6PuksduOjVxtltDav+guVAA068NrPYmRNabVKRNLJpL8w4D44sfth5RvZ3q9t+6RTArpEtc5sh5ChzvqPOzKGMXW83C95TxmXqpbK6olN4RevSfVjEAgCydH6HN6OhtOQEcnrU97r9H0iZOWwbw3pVrZiUkuRD1R56Wzs2wIDAQAB\n-----END PUBLIC KEY-----"
@@ -590,12 +596,14 @@ class RAGFlowClient:
         if dataset_id is None:
             return
 
-        response = self.http_client.request("POST", f"/document/list?kb_id={dataset_id}", use_api_base=False, auth_kind="web")
+        response = self.http_client.request("POST", f"/document/list?kb_id={dataset_id}", use_api_base=False,
+                                            auth_kind="web")
         res_json = response.json()
         if response.status_code == 200:
             self._print_table_simple(res_json["data"]["docs"])
         else:
-            print(f"Fail to list files from dataset {dataset_id}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to list files from dataset {dataset_id}, code: {res_json['code']}, message: {res_json['message']}")
 
     def list_user_agents(self, command):
         if self.server_type != "user":
@@ -665,10 +673,12 @@ class RAGFlowClient:
         if dataset_id is None:
             return
 
-        response = self.http_client.request("POST", f"/document/list?kb_id={dataset_id}", use_api_base=False, auth_kind="web")
+        response = self.http_client.request("POST", f"/document/list?kb_id={dataset_id}", use_api_base=False,
+                                            auth_kind="web")
         res_json = response.json()
         if response.status_code != 200:
-            print(f"Fail to list files from dataset {dataset_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to list files from dataset {dataset_name}, code: {res_json['code']}, message: {res_json['message']}")
 
         document_names = command_dict["document_names"]
         document_ids = []
@@ -688,14 +698,58 @@ class RAGFlowClient:
             print(f"Documents {document_names} not found in {dataset_name}")
 
         payload = {"doc_ids": document_ids, "run": 1}
-        response = self.http_client.request("POST", f"/document/run", json_body=payload, use_api_base=False, auth_kind="web")
+        response = self.http_client.request("POST", f"/document/run", json_body=payload, use_api_base=False,
+                                            auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
             print(f"Success to parse {to_parse_doc_names} of {dataset_name}")
         else:
-            print(f"Fail to list documents {res_json["data"]["docs"]}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to list documents {res_json["data"]["docs"]}, code: {res_json['code']}, message: {res_json['message']}")
 
     def import_docs_into_dataset(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+
+        dataset_name = command_dict["dataset_name"]
+        dataset_id = self._get_dataset_id(dataset_name)
+        if dataset_id is None:
+            return
+
+        document_paths = command_dict["document_paths"]
+        paths = [Path(p) for p in document_paths]
+
+        fields = []
+        file_handles = []
+        try:
+            for path in paths:
+                fh = path.open("rb")
+                fields.append(("file", (path.name, fh)))
+                file_handles.append(fh)
+            fields.append(("kb_id", dataset_id))
+            encoder = MultipartEncoder(fields=fields)
+            headers = {"Content-Type": encoder.content_type}
+            response = self.http_client.request(
+                "POST",
+                f"/document/upload",
+                headers=headers,
+                data=encoder,
+                json_body=None,
+                params=None,
+                stream=False,
+                auth_kind="web",
+                use_api_base=False
+            )
+            res = response.json()
+            if res.get("code") == 0:
+                print(f"Success to import documents into dataset {dataset_name}")
+            else:
+                print(f"Fail to import documents: code: {res['code']}, message: {res['message']}")
+        except Exception as exc:
+            print(f"Fail to import document into dataset: {dataset_name}, error: {exc}")
+        finally:
+            for fh in file_handles:
+                fh.close()
         pass
 
     def show_version(self, command):
