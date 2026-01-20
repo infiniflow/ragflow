@@ -87,6 +87,7 @@ async def upload():
 
     err, files = await asyncio.to_thread(FileService.upload_document, kb, file_objs, current_user.id)
     if err:
+        files = [f[0] for f in files] if files else []
         return get_json_result(data=files, message="\n".join(err), code=RetCode.SERVER_ERROR)
 
     if not files:
