@@ -269,7 +269,8 @@ async def list_kbs():
 @validate_request("kb_id")
 async def rm():
     req = await get_request_json()
-    if not KnowledgebaseService.accessible4deletion(req["kb_id"], current_user.id):
+    uid = current_user.id
+    if not KnowledgebaseService.accessible4deletion(req["kb_id"], uid):
         return get_json_result(
             data=False,
             message='No authorization.',
@@ -277,7 +278,7 @@ async def rm():
         )
     try:
         kbs = KnowledgebaseService.query(
-            created_by=current_user.id, id=req["kb_id"])
+            created_by=uid, id=req["kb_id"])
         if not kbs:
             return get_json_result(
                 data=False, message='Only owner of dataset authorized for this operation.',

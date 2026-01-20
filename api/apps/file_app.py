@@ -247,6 +247,7 @@ def get_all_parent_folders():
 async def rm():
     req = await get_request_json()
     file_ids = req["file_ids"]
+    uid = current_user.id
 
     try:
         def _delete_single_file(file):
@@ -285,14 +286,14 @@ async def rm():
                     return get_data_error_result(message="File or Folder not found!")
                 if not file.tenant_id:
                     return get_data_error_result(message="Tenant not found!")
-                if not check_file_team_permission(file, current_user.id):
+                if not check_file_team_permission(file, uid):
                     return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
                 if file.source_type == FileSource.KNOWLEDGEBASE:
                     continue
 
                 if file.type == FileType.FOLDER.value:
-                    _delete_folder_recursive(file, current_user.id)
+                    _delete_folder_recursive(file, uid)
                     continue
 
                 _delete_single_file(file)
