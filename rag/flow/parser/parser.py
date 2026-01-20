@@ -224,83 +224,7 @@ class ParserParam(ProcessParamBase):
 class Parser(ProcessBase):
     component_name = "Parser"
 
-    @staticmethod
-    def _extract_word_title_lines(doc, to_page=100000):
-        lines = []
-        if not doc or not getattr(doc, "paragraphs", None):
-            return lines
-
-        pn = 0
-        bull = bullets_category([p.text for p in doc.paragraphs])
-        for p in doc.paragraphs:
-            if pn > to_page:
-                break
-            question_level, p_text = docx_question_level(p, bull)
-            lines.append((question_level, p_text))
-            for run in p.runs:
-                if "lastRenderedPageBreak" in run._element.xml:
-                    pn += 1
-                    continue
-                if "w:br" in run._element.xml and 'type="page"' in run._element.xml:
-                    pn += 1
-        return lines
-
-    @staticmethod
-    def _extract_markdown_title_lines(sections):
-        lines = []
-        if not sections:
-            return lines
-
-        section_texts = []
-        for section in sections:
-            text = section[0] if isinstance(section, tuple) else section
-            if not isinstance(text, str):
-                continue
-            text = text.strip()
-            if text:
-                section_texts.append(text)
-
-        if not section_texts:
-            return lines
-
-        bull = bullets_category(section_texts)
-        if bull < 0:
-            return lines
-
-        bullet_patterns = BULLET_PATTERN[bull]
-        default_level = len(bullet_patterns) + 1
-        for text in section_texts:
-            level = default_level
-            for idx, pattern in enumerate(bullet_patterns, start=1):
-                if re.match(pattern, text) and not not_bullet(text):
-                    level = idx
-                    break
-            lines.append((level, text))
-        return lines
-
-    @staticmethod
-    def _extract_title_texts(lines):
-        normalized_lines = []
-        level_set = set()
-        for level, txt in lines or []:
-            if not isinstance(txt, str):
-                continue
-            txt = txt.strip()
-            if not txt:
-                continue
-            normalized_lines.append((level, txt))
-            level_set.add(level)
-
-        if not normalized_lines or not level_set:
-            return set()
-
-        sorted_levels = sorted(level_set)
-        h2_level = sorted_levels[1] if len(sorted_levels) > 1 else 1
-        h2_level = sorted_levels[-2] if h2_level == sorted_levels[-1] and len(sorted_levels) > 2 else h2_level
-
-        return {txt for level, txt in normalized_lines if level <= h2_level}
-
-    def _pdf(self, name, blob, **kwargs):
+    def _pdf(self, name, blob):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
@@ -733,51 +657,46 @@ class Parser(ProcessBase):
             if conf.get("output_format") == "json":
                 self.set_output("json", sections)
 
-    def _markdown(self, name, blob, **kwargs):
-        from functools import reduce
 
+    def _markdown(self, name, blob):
         from rag.app.naive import Markdown as naive_markdown_parser
-        from rag.nlp import concat_img
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a markdown.")
         conf = self._param.setups["text&markdown"]
         self.set_output("output_format", conf["output_format"])
 
         markdown_parser = naive_markdown_parser()
-        sections, tables, section_images = markdown_parser(
+        sections = markdown_parser(
             name,
             blob,
-            separate_tables=False,
             delimiter=conf.get("delimiter"),
-            return_section_images=True,
         )
 
         if conf.get("output_format") == "json":
             json_results = []
-            title_lines = self._extract_markdown_title_lines(sections)
-            title_texts = self._extract_title_texts(title_lines)
 
-            for idx, (section_text, _) in enumerate(sections):
-                json_result = {
-                    "text": section_text,
-                }
-                text_key = section_text.strip() if isinstance(section_text, str) else ""
-                if text_key and text_key in title_texts and "title" in self._param.setups["text&markdown"].get("preprocess", []):
-                    json_result["title"] = True
+            for text, image, table_html in sections:
+                if not text and table_html:
+                    text = table_html
 
-                images = []
-                if section_images and len(section_images) > idx and section_images[idx] is not None:
-                    images.append(section_images[idx])
-                if images:
-                    # If multiple images found, combine them using concat_img
-                    combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
-                    json_result["image"] = combined_image
+                json_result = {"text": text}
+
+                if image is not None:
+                    json_result["image"] = image
 
                 json_results.append(json_result)
 
             self.set_output("json", json_results)
+
         else:
-            self.set_output("text", "\n".join([section_text for section_text, _ in sections]))
+            texts = []
+            for text, _, table_html in sections:
+                if not text and table_html:
+                    text = table_html
+                texts.append(text)
+
+            self.set_output("text", "\n".join(texts))
+
 
     def _image(self, name, blob, **kwargs):
         from deepdoc.vision import OCR

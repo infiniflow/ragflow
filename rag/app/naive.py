@@ -721,7 +721,7 @@ class Markdown(MarkdownParser):
         return img_obj, cache
 
 
-    def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
+    def __call__(self, filename, binary=None, delimiter=None):
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
@@ -954,9 +954,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         sections = markdown_parser(
             filename,
             binary,
-            separate_tables=False,
             delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
-            return_section_images=True,
         )
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
 
