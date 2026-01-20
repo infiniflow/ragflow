@@ -298,12 +298,19 @@ async def rm():
                     File.name == kbs[0].name,
                 ]
             )
+            # Delete the table BEFORE deleting the database record
+            for kb in kbs:
+                try:
+                    settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
+                    settings.docStoreConn.delete_idx(search.index_name(kb.tenant_id), kb.id)
+                    logging.info(f"Dropped index for dataset {kb.id}")
+                except Exception as e:
+                    logging.error(f"Failed to drop index for dataset {kb.id}: {e}")
+
             if not KnowledgebaseService.delete_by_id(req["kb_id"]):
                 return get_data_error_result(
                     message="Database error (Knowledgebase removal)!")
             for kb in kbs:
-                settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
-                settings.docStoreConn.delete_idx(search.index_name(kb.tenant_id), kb.id)
                 if hasattr(settings.STORAGE_IMPL, 'remove_bucket'):
                     settings.STORAGE_IMPL.remove_bucket(kb.id)
             return get_json_result(data=True)
