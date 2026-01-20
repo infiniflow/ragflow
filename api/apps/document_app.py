@@ -587,10 +587,11 @@ async def rm():
 @validate_request("doc_ids", "run")
 async def run():
     req = await get_request_json()
+    uid = current_user.id
     try:
         def _run_sync():
             for doc_id in req["doc_ids"]:
-                if not DocumentService.accessible(doc_id, current_user.id):
+                if not DocumentService.accessible(doc_id, uid):
                     return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
             kb_table_num_map = {}
@@ -646,9 +647,10 @@ async def run():
 @validate_request("doc_id", "name")
 async def rename():
     req = await get_request_json()
+    uid = current_user.id
     try:
         def _rename_sync():
-            if not DocumentService.accessible(req["doc_id"], current_user.id):
+            if not DocumentService.accessible(req["doc_id"], uid):
                 return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
             e, doc = DocumentService.get_by_id(req["doc_id"])
