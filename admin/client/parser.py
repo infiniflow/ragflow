@@ -62,6 +62,7 @@ sql_command: list_services
            | list_user_model_providers
            | list_user_default_models
            | parse_dataset_docs
+           | import_docs_into_dataset
 
 // meta command definition
 meta_command: "\\" meta_command_name [meta_args]
@@ -122,6 +123,8 @@ CHATS: "CHATS"i
 FILES: "FILES"i
 AS: "AS"i
 PARSE: "PARSE"i
+IMPORT: "IMPORT"i
+INTO: "INTO"i
 
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
@@ -173,6 +176,7 @@ list_user_chats: LIST CHATS ";"
 list_user_model_providers: LIST MODEL PROVIDERS ";"
 list_user_default_models: LIST DEFAULT MODELS ";"
 parse_dataset_docs: PARSE quoted_string OF DATASET quoted_string ";"
+import_docs_into_dataset: IMPORT quoted_string INTO DATASET quoted_string ";"
 
 identifier_list: identifier ("," identifier)*
 
@@ -370,6 +374,15 @@ class RAGFlowCLITransformer(Transformer):
             document_names = document_names.split(" ")
         dataset_name = items[4].children[0].strip("'\"")
         return {"type": "parse_dataset_docs", "dataset_name": dataset_name, "document_names": document_names}
+
+    def import_docs_into_dataset(self, items):
+        document_list_str = items[1].children[0].strip("'\"")
+        document_paths = document_list_str.split(",")
+        if len(document_paths) == 1:
+            document_paths = document_paths[0]
+            document_paths = document_paths.split(" ")
+        dataset_name = items[4].children[0].strip("'\"")
+        return {"type": "import_docs_into_dataset", "dataset_name": dataset_name, "document_paths": document_paths}
 
     def action_list(self, items):
         return items

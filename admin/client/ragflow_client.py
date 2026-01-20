@@ -586,19 +586,8 @@ class RAGFlowClient:
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
 
-        response = self.http_client.request("POST", "/kb/list", use_api_base=False, auth_kind="web")
-        res_json = response.json()
-        if response.status_code != 200:
-            print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
-            return
-        dataset_list = res_json["data"]["kbs"]
-        dataset_id: str = ""
-        for dataset in dataset_list:
-            if dataset["name"] == command_dict["dataset_name"]:
-                dataset_id = dataset["id"]
-
-        if dataset_id == "":
-            print(f"Dataset {command_dict['dataset_name']} not found")
+        dataset_id = self._get_dataset_id(command_dict["dataset_name"])
+        if dataset_id is None:
             return
 
         response = self.http_client.request("POST", f"/document/list?kb_id={dataset_id}", use_api_base=False, auth_kind="web")
@@ -672,22 +661,8 @@ class RAGFlowClient:
             print("This command is only allowed in USER mode")
 
         dataset_name = command_dict["dataset_name"]
-        document_names = command_dict["document_names"]
-
-        response = self.http_client.request("POST", "/kb/list", use_api_base=False, auth_kind="web")
-        res_json = response.json()
-        if response.status_code != 200:
-            print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
-            return
-
-        dataset_list = res_json["data"]["kbs"]
-        dataset_id: str = ""
-        for dataset in dataset_list:
-            if dataset["name"] == dataset_name:
-                dataset_id = dataset["id"]
-
-        if dataset_id == "":
-            print(f"Dataset {dataset_name} not found")
+        dataset_id = self._get_dataset_id(dataset_name)
+        if dataset_id is None:
             return
 
         response = self.http_client.request("POST", f"/document/list?kb_id={dataset_id}", use_api_base=False, auth_kind="web")
@@ -695,6 +670,7 @@ class RAGFlowClient:
         if response.status_code != 200:
             print(f"Fail to list files from dataset {dataset_name}, code: {res_json['code']}, message: {res_json['message']}")
 
+        document_names = command_dict["document_names"]
         document_ids = []
         to_parse_doc_names = []
         for doc in res_json["data"]["docs"]:
@@ -719,6 +695,9 @@ class RAGFlowClient:
         else:
             print(f"Fail to list documents {res_json["data"]["docs"]}, code: {res_json['code']}, message: {res_json['message']}")
 
+    def import_docs_into_dataset(self, command_dict):
+        pass
+
     def show_version(self, command):
         if self.server_type == "admin":
             response = self.http_client.request("GET", "/admin/version", use_api_base=True, auth_kind="admin")
@@ -733,6 +712,24 @@ class RAGFlowClient:
                 self._print_table_simple({"version": res_json["data"]})
         else:
             print(f"Fail to show version, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _get_dataset_id(self, dataset_name: str):
+        response = self.http_client.request("POST", "/kb/list", use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code != 200:
+            print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+            return None
+
+        dataset_list = res_json["data"]["kbs"]
+        dataset_id: str = ""
+        for dataset in dataset_list:
+            if dataset["name"] == dataset_name:
+                dataset_id = dataset["id"]
+
+        if dataset_id == "":
+            print(f"Dataset {dataset_name} not found")
+            return None
+        return dataset_id
 
     def _format_service_detail_table(self, data):
         if isinstance(data, list):

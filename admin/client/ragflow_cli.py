@@ -475,6 +475,8 @@ class RAGFlowCLI(Cmd):
                 self.ragflow_client.list_user_default_models(command_dict)
             case "parse_dataset_docs":
                 self.ragflow_client.parse_dataset_docs(command_dict)
+            case "import_docs_into_dataset":
+                self.ragflow_client.import_docs_into_dataset(command_dict)
             case "meta":
                 self._handle_meta_command(command_dict)
             case _:
