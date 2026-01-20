@@ -134,7 +134,7 @@ class ErrorResponse(BaseModel):
 
 # ==================== Dataset Management ====================
 
-evaluation_tag = tag("evaluation", "RAG Evaluation Management APIs")
+evaluation_tag = tag(["evaluation"])
 
 
 @manager.route('/dataset/create', methods=['POST'])  # noqa: F821

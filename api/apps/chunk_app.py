@@ -198,7 +198,7 @@ class KnowledgeGraphResponse(BaseModel):
 
 
 # Tag for chunk endpoints
-chunk_tag = tag("chunk", "Chunk Management APIs")
+chunk_tag = tag(["chunk"])
 
 @manager.route('/list', methods=['POST'])  # noqa: F821
 @login_required

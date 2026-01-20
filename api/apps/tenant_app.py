@@ -91,7 +91,7 @@ class AgreeTenantResponse(BaseModel):
 
 
 # API Tag for grouping
-tenant_tag = tag("tenant", "Tenant and User Management APIs")
+tenant_tag = tag(["tenant"])
 
 
 @manager.route("/<tenant_id>/user/list", methods=["GET"])  # noqa: F821

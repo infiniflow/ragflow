@@ -59,7 +59,7 @@ from api.apps import login_required, current_user
 # =============================================================================
 
 # Knowledge Base API Tag
-kb_tag = tag("kb", "Knowledge Base Management APIs")
+kb_tag = tag(["kb"])
 
 class BaseSchema(BaseModel):
     """Base schema with common configuration."""

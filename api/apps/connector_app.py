@@ -141,7 +141,7 @@ class StartBoxOAuthResponse(BaseResponse):
 
 
 # Tag for connector endpoints
-connector_tag = tag("connector", "Connector Management APIs")
+connector_tag = tag(["connector"])
 
 
 @manager.route("/set", methods=["POST"])  # noqa: F821

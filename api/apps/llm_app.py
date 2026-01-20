@@ -164,7 +164,7 @@ class ListLLMsResponse(BaseModel):
 
 
 # Create tag for LLM management endpoints
-llm_tag = tag("llm", description="LLM factory and model management endpoints")
+llm_tag = tag(["llm"])
 
 
 @manager.route("/factories", methods=["GET"])  # noqa: F821

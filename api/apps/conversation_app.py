@@ -176,7 +176,7 @@ class RelatedQuestionsResponse(BaseModel):
 
 # Conversation API Endpoints
 
-conversation_tag = tag("conversation", "Conversation Management APIs")
+conversation_tag = tag(["conversation"])
 
 
 @manager.route("/set", methods=["POST"])  # noqa: F821

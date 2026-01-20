@@ -300,7 +300,7 @@ class SetMetaResponse(BaseModel):
 
 
 # Document API Tag
-document_tag = tag("document", "Document Management APIs")
+document_tag = tag(["document"])
 
 
 @manager.route("/upload", methods=["POST"])  # noqa: F821

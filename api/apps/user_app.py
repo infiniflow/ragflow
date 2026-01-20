@@ -199,9 +199,9 @@ class ErrorResponse(BaseModel):
 
 
 # API Tags for grouping
-user_tag = tag("user", "User Management APIs")
-auth_tag = tag("auth", "Authentication and OAuth APIs")
-tenant_tag = tag("tenant", "Tenant Management APIs")
+user_tag = tag(["user"])
+auth_tag = tag(["auth"])
+tenant_tag = tag(["tenant"])
 
 
 # =============================================================================

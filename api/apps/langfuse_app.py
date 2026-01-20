@@ -62,7 +62,7 @@ class DeleteApiKeyResponse(BaseModel):
 
 # Langfuse API Endpoints
 
-langfuse_tag = tag("langfuse", "Langfuse Integration Management APIs")
+langfuse_tag = tag(["langfuse"])
 
 
 @manager.route("/api_key", methods=["POST", "PUT"])  # noqa: F821

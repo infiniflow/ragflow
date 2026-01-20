@@ -80,7 +80,7 @@ class StatsResponse(BaseModel):
 
 
 # API Tag for grouping
-api_tag = tag("api", "API Token Management and Statistics APIs")
+api_tag = tag(["api"])
 
 
 @manager.route('/new_token', methods=['POST'])  # noqa: F821

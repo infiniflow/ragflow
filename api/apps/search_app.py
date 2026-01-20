@@ -98,7 +98,7 @@ class DeleteSearchResponse(BaseModel):
 
 # Search API Endpoints
 
-search_tag = tag("search", "Search Application Management APIs")
+search_tag = tag(["search"])
 
 
 @manager.route("/create", methods=["POST"])  # noqa: F821

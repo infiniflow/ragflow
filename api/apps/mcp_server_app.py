@@ -233,7 +233,7 @@ class TestMCPResponse(BaseModel):
 
 
 # Tag for MCP server endpoints
-mcp_server_tag = tag("mcp_server", "MCP Server Management APIs")
+mcp_server_tag = tag(["mcp_server"])
 
 @manager.route("/list", methods=["POST"])  # noqa: F821
 @login_required

@@ -249,7 +249,7 @@ class PromptsResponse(BaseModel):
 
 
 # Canvas API tag
-canvas_tag = tag("canvas", "Canvas/Agent Management APIs")
+canvas_tag = tag(["canvas"])
 
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821

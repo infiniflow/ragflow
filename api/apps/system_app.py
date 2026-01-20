@@ -112,8 +112,8 @@ class PingResponse(BaseModel):
 
 
 # API Tags
-system_tag = tag("system", "System Management APIs")
-api_token_tag = tag("api_token", "API Token Management APIs")
+system_tag = tag(["system"])
+api_token_tag = tag(["api_token"])
 
 
 @manager.route("/version", methods=["GET"])  # noqa: F821

@@ -136,7 +136,7 @@ class MoveFilesResponse(BaseModel):
 
 
 # File Management API Tag
-file_tag = tag("file", "File and Folder Management APIs")
+file_tag = tag(["file"])
 
 
 @manager.route('/upload', methods=['POST'])  # noqa: F821

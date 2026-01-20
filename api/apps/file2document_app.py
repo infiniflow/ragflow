@@ -68,7 +68,7 @@ class RemoveResponse(BaseModel):
 
 # File2Document API Endpoints
 
-file2document_tag = tag("file2document", "File to Document Management APIs")
+file2document_tag = tag(["file2document"])
 
 
 @manager.route('/convert', methods=['POST'])  # noqa: F821

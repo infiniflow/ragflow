@@ -136,7 +136,7 @@ class DeleteDialogResponse(BaseModel):
 
 
 # Dialog API Tag
-dialog_tag = tag("dialog", "Dialog/Conversation Management APIs")
+dialog_tag = tag(["dialog"])
 
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
