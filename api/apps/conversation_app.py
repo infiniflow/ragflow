@@ -19,7 +19,11 @@ import re
 import logging
 from copy import deepcopy
 import tempfile
+from typing import Annotated
 from quart import Response, request
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import validate_request as qs_validate_request, validate_response, tag
+
 from api.apps import current_user, login_required
 from api.db.db_models import APIToken
 from api.db.services.conversation_service import ConversationService, structure_answer
@@ -34,9 +38,160 @@ from rag.prompts.generator import chunks_format
 from common.constants import RetCode, LLMType
 
 
+# Pydantic Schemas for OpenAPI Documentation
+
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class ConversationResponse(BaseModel):
+    """Response schema for conversation operations."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Conversation data")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class SetConversationRequest(BaseSchema):
+    """Request schema for setting conversation."""
+    conversation_id: Annotated[str, Field(..., description="Conversation ID")]
+    is_new: Annotated[bool, Field(..., description="Whether this is a new conversation")]
+    name: Annotated[str, Field("New conversation", description="Conversation name", max_length=255)]
+    dialog_id: Annotated[str, Field(..., description="Associated dialog ID")]
+
+
+class GetConversationResponse(BaseModel):
+    """Response schema for getting conversation details."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Conversation details including messages and references")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class GetSSEConversationResponse(BaseModel):
+    """Response schema for getting SSE conversation."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Dialog data with avatar")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class DeleteConversationRequest(BaseSchema):
+    """Request schema for deleting conversations."""
+    conversation_ids: Annotated[list[str], Field(..., description="List of conversation IDs to delete", min_length=1)]
+
+
+class DeleteConversationResponse(BaseModel):
+    """Response schema for deleting conversations."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Deletion status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class ListConversationResponse(BaseModel):
+    """Response schema for listing conversations."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[list[dict], Field(..., description="List of conversations")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class CompletionRequest(BaseSchema):
+    """Request schema for conversation completion."""
+    conversation_id: Annotated[str, Field(..., description="Conversation ID")]
+    messages: Annotated[list[dict], Field(..., description="List of messages in the conversation")]
+    llm_id: Annotated[str | None, Field(None, description="Optional LLM model ID to use")]
+    temperature: Annotated[float | None, Field(None, description="Temperature for LLM generation", ge=0, le=2)]
+    top_p: Annotated[float | None, Field(None, description="Top p sampling parameter", ge=0, le=1)]
+    frequency_penalty: Annotated[float | None, Field(None, description="Frequency penalty", ge=-2, le=2)]
+    presence_penalty: Annotated[float | None, Field(None, description="Presence penalty", ge=-2, le=2)]
+    max_tokens: Annotated[int | None, Field(None, description="Maximum tokens to generate", ge=1)]
+    stream: Annotated[bool, Field(True, description="Whether to stream the response")]
+
+
+class CompletionResponse(BaseModel):
+    """Response schema for conversation completion (non-streaming)."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Completion result with answer and reference")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class Sequence2TxtResponse(BaseModel):
+    """Response schema for audio to text conversion."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Converted text from audio")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class TTSRequest(BaseSchema):
+    """Request schema for text to speech conversion."""
+    text: Annotated[str, Field(..., description="Text to convert to speech", min_length=1)]
+
+
+class DeleteMessageRequest(BaseSchema):
+    """Request schema for deleting a message."""
+    conversation_id: Annotated[str, Field(..., description="Conversation ID")]
+    message_id: Annotated[str, Field(..., description="Message ID to delete")]
+
+
+class ThumbUpRequest(BaseSchema):
+    """Request schema for thumb up/down feedback."""
+    conversation_id: Annotated[str, Field(..., description="Conversation ID")]
+    message_id: Annotated[str, Field(..., description="Message ID to give feedback on")]
+    thumbup: Annotated[bool | None, Field(None, description="True for thumb up, False for thumb down")]
+    feedback: Annotated[str, Field("", description="Optional feedback text", max_length=65535)]
+
+
+class AskRequest(BaseSchema):
+    """Request schema for asking a question."""
+    question: Annotated[str, Field(..., description="Question to ask", min_length=1)]
+    kb_ids: Annotated[list[str], Field(..., description="Knowledge base IDs to search", min_length=1)]
+    search_id: Annotated[str | None, Field(None, description="Optional search app ID")]
+
+
+class MindMapRequest(BaseSchema):
+    """Request schema for generating a mind map."""
+    question: Annotated[str, Field(..., description="Question to generate mind map for", min_length=1)]
+    kb_ids: Annotated[list[str], Field(..., description="Knowledge base IDs", min_length=1)]
+    search_id: Annotated[str | None, Field(None, description="Optional search app ID")]
+
+
+class MindMapResponse(BaseModel):
+    """Response schema for mind map generation."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Generated mind map data")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class RelatedQuestionsRequest(BaseSchema):
+    """Request schema for getting related questions."""
+    question: Annotated[str, Field(..., description="Question to get related questions for", min_length=1)]
+    search_id: Annotated[str | None, Field(None, description="Optional search app ID")]
+
+
+class RelatedQuestionsResponse(BaseModel):
+    """Response schema for related questions."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[list[str], Field(..., description="List of related questions")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+# Conversation API Endpoints
+
+conversation_tag = tag("conversation", "Conversation Management APIs")
+
+
 @manager.route("/set", methods=["POST"])  # noqa: F821
 @login_required
+@qs_validate_request(SetConversationRequest)
+@validate_response(200, ConversationResponse)
+@conversation_tag
 async def set_conversation():
+    """
+    Create or update a conversation.
+
+    Creates a new conversation or updates an existing one.
+    For new conversations, initializes with the dialog's prologue message.
+    For existing conversations, updates the conversation settings.
+    """
     req = await get_request_json()
     conv_id = req.get("conversation_id")
     is_new = req.get("is_new")
@@ -80,7 +235,16 @@ async def set_conversation():
 
 @manager.route("/get", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, GetConversationResponse)
+@conversation_tag
 async def get():
+    """
+    Get conversation details.
+
+    Retrieves detailed information about a specific conversation including
+    all messages, references, and associated dialog avatar.
+    Only authorized users (conversation owners) can access this endpoint.
+    """
     conv_id = request.args["conversation_id"]
     try:
         e, conv = ConversationService.get_by_id(conv_id)
@@ -108,7 +272,16 @@ async def get():
 
 
 @manager.route("/getsse/<dialog_id>", methods=["GET"])  # type: ignore # noqa: F821
+@validate_response(200, GetSSEConversationResponse)
+@conversation_tag
 def getsse(dialog_id):
+    """
+    Get dialog for SSE connection.
+
+    Retrieves dialog information for Server-Sent Events (SSE) connections.
+    Uses API token authentication instead of session-based authentication.
+    This endpoint is designed for external API integrations.
+    """
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_data_error_result(message='Authorization is not valid!"')
@@ -130,7 +303,17 @@ def getsse(dialog_id):
 
 @manager.route("/rm", methods=["POST"])  # noqa: F821
 @login_required
+@validate_request("conversation_ids")
+@qs_validate_request(DeleteConversationRequest)
+@validate_response(200, DeleteConversationResponse)
+@conversation_tag
 async def rm():
+    """
+    Delete conversations.
+
+    Permanently deletes one or more conversations by their IDs.
+    Only the owner of the conversations can delete them.
+    """
     req = await get_request_json()
     conv_ids = req["conversation_ids"]
     try:
@@ -152,7 +335,16 @@ async def rm():
 
 @manager.route("/list", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, ListConversationResponse)
+@conversation_tag
 async def list_conversation():
+    """
+    List conversations for a dialog.
+
+    Retrieves all conversations associated with a specific dialog,
+    ordered by creation time (most recent first).
+    Only the dialog owner can access this endpoint.
+    """
     dialog_id = request.args["dialog_id"]
     try:
         if not DialogService.query(tenant_id=current_user.id, id=dialog_id):
@@ -168,7 +360,20 @@ async def list_conversation():
 @manager.route("/completion", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id", "messages")
+@qs_validate_request(CompletionRequest)
+@validate_response(200, CompletionResponse)
+@conversation_tag
 async def completion():
+    """
+    Complete a conversation with an AI response.
+
+    Processes a conversation and generates an AI response using the configured LLM.
+    Supports both streaming and non-streaming modes.
+    Can override the default LLM settings with custom parameters.
+
+    Streaming mode returns Server-Sent Events (SSE) with incremental responses.
+    Non-streaming mode returns a complete response in a single message.
+    """
     req = await get_request_json()
     msg = []
     for m in req["messages"]:
@@ -252,7 +457,20 @@ async def completion():
 
 @manager.route("/sequence2txt", methods=["POST"])  # noqa: F821
 @login_required
+@validate_response(200, Sequence2TxtResponse)
+@conversation_tag
 async def sequence2txt():
+    """
+    Convert audio to text (Speech-to-Text).
+
+    Uploads an audio file and converts it to text using the configured ASR model.
+    Supports both streaming and non-streaming modes.
+    Streaming mode returns incremental transcription results via SSE.
+
+    Accepted audio formats: .wav, .mp3, .m4a, .aac, .flac, .ogg, .webm, .opus, .wma
+
+    Requires the tenant to have a default ASR model configured.
+    """
     req = await request.form
     stream_mode = req.get("stream", "false").lower() == "true"
     files = await request.files
@@ -311,7 +529,18 @@ async def sequence2txt():
 
 @manager.route("/tts", methods=["POST"])  # noqa: F821
 @login_required
+@qs_validate_request(TTSRequest)
+@conversation_tag
 async def tts():
+    """
+    Convert text to speech (Text-to-Speech).
+
+    Converts the provided text to audio using the configured TTS model.
+    Returns audio data in MP3 format via streaming response.
+
+    The text is automatically split at punctuation marks for better speech synthesis.
+    Requires the tenant to have a default TTS model configured.
+    """
     req = await get_request_json()
     text = req["text"]
 
@@ -344,7 +573,17 @@ async def tts():
 @manager.route("/delete_msg", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id", "message_id")
+@qs_validate_request(DeleteMessageRequest)
+@validate_response(200, ConversationResponse)
+@conversation_tag
 async def delete_msg():
+    """
+    Delete a message from a conversation.
+
+    Removes a user message and its corresponding assistant response from the conversation.
+    Also removes the associated reference documents.
+    The message is identified by its unique ID.
+    """
     req = await get_request_json()
     e, conv = ConversationService.get_by_id(req["conversation_id"])
     if not e:
@@ -367,7 +606,17 @@ async def delete_msg():
 @manager.route("/thumbup", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id", "message_id")
+@qs_validate_request(ThumbUpRequest)
+@validate_response(200, ConversationResponse)
+@conversation_tag
 async def thumbup():
+    """
+    Provide feedback on an assistant message.
+
+    Allows users to give thumbs up/down feedback on assistant responses.
+    Can optionally include text feedback for thumbs down responses.
+    This feedback is used to improve the system's performance.
+    """
     req = await get_request_json()
     e, conv = ConversationService.get_by_id(req["conversation_id"])
     if not e:
@@ -394,7 +643,19 @@ async def thumbup():
 @manager.route("/ask", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("question", "kb_ids")
+@qs_validate_request(AskRequest)
+@conversation_tag
 async def ask_about():
+    """
+    Ask a question against knowledge bases.
+
+    Performs semantic search across specified knowledge bases and generates
+    an AI response based on the retrieved context. Returns results via SSE streaming.
+
+    This is a standalone question-answering endpoint that doesn't require
+    a conversation or dialog. It searches the specified knowledge bases
+    and generates an answer using RAG (Retrieval-Augmented Generation).
+    """
     req = await get_request_json()
     uid = current_user.id
 
@@ -426,7 +687,20 @@ async def ask_about():
 @manager.route("/mindmap", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("question", "kb_ids")
+@qs_validate_request(MindMapRequest)
+@validate_response(200, MindMapResponse)
+@conversation_tag
 async def mindmap():
+    """
+    Generate a mind map for a question.
+
+    Creates a hierarchical mind map representation of a question by analyzing
+    relevant content from the specified knowledge bases.
+
+    The mind map structure helps visualize relationships and subtopics
+    related to the main question. Useful for exploring complex topics
+    and understanding the conceptual structure.
+    """
     req = await get_request_json()
     search_id = req.get("search_id", "")
     search_app = SearchService.get_detail(search_id) if search_id else {}
@@ -444,7 +718,19 @@ async def mindmap():
 @manager.route("/related_questions", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("question")
+@qs_validate_request(RelatedQuestionsRequest)
+@validate_response(200, RelatedQuestionsResponse)
+@conversation_tag
 async def related_questions():
+    """
+    Generate related questions for a given question.
+
+    Uses AI to generate a list of related follow-up questions based on
+    the input question. These questions can help users explore a topic
+    more deeply or discover related aspects they hadn't considered.
+
+    Useful for suggesting next steps in a research or inquiry process.
+    """
     req = await get_request_json()
 
     search_id = req.get("search_id", "")

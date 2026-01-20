@@ -16,6 +16,7 @@
 import logging
 from datetime import datetime
 import json
+from typing import Annotated
 
 from api.apps import login_required, current_user
 
@@ -34,67 +35,114 @@ from common.time_utils import current_timestamp, datetime_format
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
-from quart import jsonify
+from quart import jsonify, request
 from api.utils.health_utils import run_health_checks
 from common import settings
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import validate_request as qs_validate_request, validate_response, tag
+
+
+# Pydantic Schemas for OpenAPI Documentation
+
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class VersionResponse(BaseModel):
+    """Response schema for version endpoint."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Version information")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class SystemStatusResponse(BaseModel):
+    """Response schema for system status endpoint."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="System status information including doc_engine, storage, database, redis, and task_executor_heartbeats")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class NewTokenRequest(BaseSchema):
+    """Request schema for creating a new API token."""
+    name: Annotated[str | None, Field(None, description="Optional name for the token", max_length=255)]
+
+
+class NewTokenResponse(BaseModel):
+    """Response schema for new token endpoint."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Token information including token, beta, tenant_id, and timestamps")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class TokenListResponse(BaseModel):
+    """Response schema for token list endpoint."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[list[dict], Field(..., description="List of API tokens with their details")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class DeleteTokenResponse(BaseModel):
+    """Response schema for delete token endpoint."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Deletion status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class SystemConfigResponse(BaseModel):
+    """Response schema for system configuration endpoint."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="System configuration with registerEnabled flag")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class HealthzResponse(BaseModel):
+    """Response schema for health check endpoint."""
+    db: Annotated[str, Field(..., description="Database health status: 'ok' or 'nok'")]
+    redis: Annotated[str, Field(..., description="Redis health status: 'ok' or 'nok'")]
+    doc_engine: Annotated[str, Field(..., description="Document engine health status: 'ok' or 'nok'")]
+    storage: Annotated[str, Field(..., description="Storage health status: 'ok' or 'nok'")]
+    status: Annotated[str, Field(..., description="Overall health status: 'ok' if all checks pass, 'nok' otherwise")]
+
+
+class PingResponse(BaseModel):
+    """Response schema for ping endpoint."""
+    message: Annotated[str, Field("pong", description="Ping response message")]
+
+
+# API Tags
+system_tag = tag("system", "System Management APIs")
+api_token_tag = tag("api_token", "API Token Management APIs")
 
 
 @manager.route("/version", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, VersionResponse)
+@system_tag
 def version():
     """
     Get the current version of the application.
-    ---
-    tags:
-      - System
-    security:
-      - ApiKeyAuth: []
-    responses:
-      200:
-        description: Version retrieved successfully.
-        schema:
-          type: object
-          properties:
-            version:
-              type: string
-              description: Version number.
+
+    Returns version information for the RAGFlow system.
     """
     return get_json_result(data=get_ragflow_version())
 
 
 @manager.route("/status", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, SystemStatusResponse)
+@system_tag
 def status():
     """
     Get the system status.
-    ---
-    tags:
-      - System
-    security:
-      - ApiKeyAuth: []
-    responses:
-      200:
-        description: System is operational.
-        schema:
-          type: object
-          properties:
-            es:
-              type: object
-              description: Elasticsearch status.
-            storage:
-              type: object
-              description: Storage status.
-            database:
-              type: object
-              description: Database status.
-      503:
-        description: Service unavailable.
-        schema:
-          type: object
-          properties:
-            error:
-              type: string
-              description: Error message.
+
+    Returns comprehensive health status information including:
+    - doc_engine: Document store (Elasticsearch/Infinity) status
+    - storage: Object storage (MinIO/S3) status
+    - database: Database (MySQL) status
+    - redis: Redis cache status
+    - task_executor_heartbeats: Heartbeat status of task executors
     """
     res = {}
     st = timer()
@@ -172,41 +220,49 @@ def status():
 
 
 @manager.route("/healthz", methods=["GET"])  # noqa: F821
+@validate_response(200, HealthzResponse)
+@validate_response(500, HealthzResponse)
+@system_tag
 def healthz():
+    """
+    Health check endpoint for Kubernetes/liveness probes.
+
+    Performs basic health checks on critical system components:
+    - Database connectivity
+    - Redis connectivity
+    - Document engine (Elasticsearch/Infinity) connectivity
+    - Storage (MinIO/S3) connectivity
+
+    Returns HTTP 200 if all checks pass, HTTP 500 otherwise.
+    """
     result, all_ok = run_health_checks()
     return jsonify(result), (200 if all_ok else 500)
 
 
 @manager.route("/ping", methods=["GET"])  # noqa: F821
+@validate_response(200, str)
+@system_tag
 def ping():
+    """
+    Simple ping endpoint for connectivity testing.
+
+    Returns a plain "pong" response to verify the service is running.
+    Used for basic connectivity checks and load balancer health probes.
+    """
     return "pong", 200
 
 
 @manager.route("/new_token", methods=["POST"])  # noqa: F821
 @login_required
+@validate_response(200, NewTokenResponse)
+@api_token_tag
 def new_token():
     """
     Generate a new API token.
-    ---
-    tags:
-      - API Tokens
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: query
-        name: name
-        type: string
-        required: false
-        description: Name of the token.
-    responses:
-      200:
-        description: Token generated successfully.
-        schema:
-          type: object
-          properties:
-            token:
-              type: string
-              description: The generated API token.
+
+    Creates a new API token for the current user's tenant.
+    The token consists of a main token and a beta token (shorter version).
+    Returns the complete token object including tenant_id and timestamps.
     """
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
@@ -234,34 +290,15 @@ def new_token():
 
 @manager.route("/token_list", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, TokenListResponse)
+@api_token_tag
 def token_list():
     """
     List all API tokens for the current user.
-    ---
-    tags:
-      - API Tokens
-    security:
-      - ApiKeyAuth: []
-    responses:
-      200:
-        description: List of API tokens.
-        schema:
-          type: object
-          properties:
-            tokens:
-              type: array
-              items:
-                type: object
-                properties:
-                  token:
-                    type: string
-                    description: The API token.
-                  name:
-                    type: string
-                    description: Name of the token.
-                  create_time:
-                    type: string
-                    description: Token creation time.
+
+    Retrieves all API tokens associated with the current user's tenant.
+    Each token includes the main token, beta token, and creation timestamps.
+    If a token is missing its beta token, it will be auto-generated.
     """
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
@@ -282,29 +319,15 @@ def token_list():
 
 @manager.route("/token/<token>", methods=["DELETE"])  # noqa: F821
 @login_required
+@validate_response(200, DeleteTokenResponse)
+@api_token_tag
 def rm(token):
     """
     Remove an API token.
-    ---
-    tags:
-      - API Tokens
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: token
-        type: string
-        required: true
-        description: The API token to remove.
-    responses:
-      200:
-        description: Token removed successfully.
-        schema:
-          type: object
-          properties:
-            success:
-              type: boolean
-              description: Deletion status.
+
+    Deletes the specified API token from the current user's tenant.
+    The token to delete is specified as a path parameter.
+    Only tokens belonging to the current user's tenant can be deleted.
     """
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
@@ -319,20 +342,14 @@ def rm(token):
 
 
 @manager.route("/config", methods=["GET"])  # noqa: F821
+@validate_response(200, SystemConfigResponse)
+@system_tag
 def get_config():
     """
     Get system configuration.
-    ---
-    tags:
-        - System
-    responses:
-        200:
-            description: Return system configuration
-            schema:
-                type: object
-                properties:
-                    registerEnable:
-                        type: integer 0 means disabled, 1 means enabled
-                        description: Whether user registration is enabled
+
+    Returns public system configuration settings including:
+    - registerEnabled: Whether user self-registration is enabled (0=disabled, 1=enabled)
+    This endpoint does not require authentication.
     """
     return get_json_result(data={"registerEnabled": settings.REGISTER_ENABLED})

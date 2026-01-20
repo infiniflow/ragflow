@@ -17,8 +17,11 @@ import json
 import logging
 import random
 import re
+from typing import Annotated
 
+from pydantic import BaseModel, ConfigDict, Field
 from quart import request
+from quart_schema import validate_request as qs_validate_request, validate_response, tag
 import numpy as np
 
 from api.db.services.connector_service import Connector2KbService
@@ -50,10 +53,145 @@ from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 from api.apps import login_required, current_user
 
-@manager.route('/create', methods=['post'])  # noqa: F821
+
+# =============================================================================
+# Pydantic Schemas for OpenAPI Documentation
+# =============================================================================
+
+# Knowledge Base API Tag
+kb_tag = tag("kb", "Knowledge Base Management APIs")
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class APIResponse(BaseModel):
+    """Standard API response schema."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Response data")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class CreateKnowledgeBaseRequest(BaseSchema):
+    """Request schema for creating a knowledge base."""
+    name: Annotated[str, Field(..., description="Knowledge base name", min_length=1, max_length=255)]
+    parser_id: Annotated[str | None, Field(None, description="Parser ID for document parsing")]
+    description: Annotated[str | None, Field(None, description="Knowledge base description")]
+    avatar: Annotated[str | None, Field(None, description="Avatar URL")]
+    permission: Annotated[str | None, Field(None, description="Permission setting")]
+    chunk_num: Annotated[int, Field(0, description="Number of chunks")]
+    document_num: Annotated[int, Field(0, description="Number of documents")]
+    pagerank: Annotated[int, Field(0, description="PageRank value")]
+
+
+class CreateKnowledgeBaseResponse(BaseModel):
+    """Response schema for creating a knowledge base."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Created knowledge base ID (kb_id)")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class UpdateKnowledgeBaseRequest(BaseSchema):
+    """Request schema for updating a knowledge base."""
+    kb_id: Annotated[str, Field(..., description="Knowledge base ID to update")]
+    name: Annotated[str, Field(..., description="Updated knowledge base name", min_length=1, max_length=255)]
+    description: Annotated[str, Field("", description="Updated knowledge base description")]
+    parser_id: Annotated[str, Field(..., description="Updated parser ID")]
+    avatar: Annotated[str | None, Field(None, description="Updated avatar URL")]
+    permission: Annotated[str | None, Field(None, description="Updated permission setting")]
+    pagerank: Annotated[int, Field(0, description="Updated PageRank value")]
+    connectors: Annotated[list, Field([], description="List of connector IDs")]
+
+
+class UpdateMetadataSettingRequest(BaseSchema):
+    """Request schema for updating metadata settings."""
+    kb_id: Annotated[str, Field(..., description="Knowledge base ID")]
+    metadata: Annotated[dict, Field(..., description="Metadata configuration")]
+    enable_metadata: Annotated[bool, Field(True, description="Enable metadata extraction")]
+
+
+class ListKnowledgeBasesRequest(BaseSchema):
+    """Request schema for listing knowledge bases."""
+    owner_ids: Annotated[list[str] | None, Field(None, description="Filter by owner IDs")]
+
+
+class ListKnowledgeBasesResponse(BaseModel):
+    """Response schema for listing knowledge bases."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="List of knowledge bases and total count")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class DeleteKnowledgeBaseRequest(BaseSchema):
+    """Request schema for deleting a knowledge base."""
+    kb_id: Annotated[str, Field(..., description="Knowledge base ID to delete")]
+
+
+class DeleteKnowledgeBaseResponse(BaseModel):
+    """Response schema for deleting a knowledge base."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Deletion status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class RemoveTagsRequest(BaseSchema):
+    """Request schema for removing tags from knowledge base."""
+    tags: Annotated[list[str], Field(..., description="List of tags to remove", min_length=1)]
+
+
+class RenameTagRequest(BaseSchema):
+    """Request schema for renaming a tag."""
+    from_tag: Annotated[str, Field(..., description="Current tag name")]
+    to_tag: Annotated[str, Field(..., description="New tag name")]
+
+
+class DeletePipelineLogsRequest(BaseSchema):
+    """Request schema for deleting pipeline logs."""
+    log_ids: Annotated[list[str], Field(..., description="List of log IDs to delete", min_length=1)]
+
+
+class RunGraphRagRequest(BaseSchema):
+    """Request schema for running GraphRAG."""
+    kb_id: Annotated[str, Field(..., description="Knowledge base ID")]
+
+
+class RunRaptorRequest(BaseSchema):
+    """Request schema for running RAPTOR."""
+    kb_id: Annotated[str, Field(..., description="Knowledge base ID")]
+
+
+class RunMindmapRequest(BaseSchema):
+    """Request schema for running Mindmap."""
+    kb_id: Annotated[str, Field(..., description="Knowledge base ID")]
+
+
+class CheckEmbeddingRequest(BaseSchema):
+    """Request schema for checking embedding model compatibility."""
+    kb_id: Annotated[str, Field(..., description="Knowledge base ID")]
+    embd_id: Annotated[str, Field(..., description="Embedding model ID")]
+    check_num: Annotated[int, Field(5, description="Number of chunks to check", ge=1, le=100)]
+
+
+class CheckEmbeddingResponse(BaseModel):
+    """Response schema for checking embedding model compatibility."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Embedding check results with summary and details")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+@manager.route('/create', methods=['POST'])  # noqa: F821
 @login_required
+@kb_tag
 @validate_request("name")
+@qs_validate_request(CreateKnowledgeBaseRequest, create_model=False)
+@validate_response(200, CreateKnowledgeBaseResponse)
 async def create():
+    """
+    Create a new knowledge base.
+
+    Creates a new knowledge base with the given name and optional parameters.
+    Returns the created knowledge base ID.
+    """
     req = await get_request_json()
     e, res = KnowledgebaseService.create_with_name(
         name = req.pop("name", None),
@@ -73,10 +211,13 @@ async def create():
         return server_error_response(e)
 
 
-@manager.route('/update', methods=['post'])  # noqa: F821
+@manager.route('/update', methods=['POST'])  # noqa: F821
 @login_required
+@kb_tag
 @validate_request("kb_id", "name", "description", "parser_id")
 @not_allowed_parameters("id", "tenant_id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
+@qs_validate_request(UpdateKnowledgeBaseRequest, create_model=False)
+@validate_response(200, APIResponse)
 async def update():
     req = await get_request_json()
     if not isinstance(req["name"], str):
@@ -182,10 +323,19 @@ async def update():
         return server_error_response(e)
 
 
-@manager.route('/update_metadata_setting', methods=['post'])  # noqa: F821
+@manager.route('/update_metadata_setting', methods=['POST'])  # noqa: F821
 @login_required
+@kb_tag
 @validate_request("kb_id", "metadata")
+@qs_validate_request(UpdateMetadataSettingRequest, create_model=False)
+@validate_response(200, APIResponse)
 async def update_metadata_setting():
+    """
+    Update metadata settings for a knowledge base.
+
+    Updates the metadata configuration for a knowledge base, including
+    metadata fields and enablement status.
+    """
     req = await get_request_json()
     e, kb = KnowledgebaseService.get_by_id(req["kb_id"])
     if not e:
@@ -200,7 +350,15 @@ async def update_metadata_setting():
 
 @manager.route('/detail', methods=['GET'])  # noqa: F821
 @login_required
+@kb_tag
+@validate_response(200, APIResponse)
 def detail():
+    """
+    Get knowledge base details.
+
+    Retrieves detailed information about a knowledge base including
+    size, connectors, and task completion timestamps.
+    """
     kb_id = request.args["kb_id"]
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
@@ -229,7 +387,16 @@ def detail():
 
 @manager.route('/list', methods=['POST'])  # noqa: F821
 @login_required
+@kb_tag
+@qs_validate_request(ListKnowledgeBasesRequest, create_model=False)
+@validate_response(200, ListKnowledgeBasesResponse)
 async def list_kbs():
+    """
+    List knowledge bases.
+
+    Returns a paginated list of knowledge bases with optional filtering by keywords,
+    parser type, and owner IDs.
+    """
     args = request.args
     keywords = args.get("keywords", "")
     page_number = int(args.get("page", 0))
@@ -264,10 +431,19 @@ async def list_kbs():
         return server_error_response(e)
 
 
-@manager.route('/rm', methods=['post'])  # noqa: F821
+@manager.route('/rm', methods=['POST'])  # noqa: F821
 @login_required
+@kb_tag
 @validate_request("kb_id")
+@qs_validate_request(DeleteKnowledgeBaseRequest, create_model=False)
+@validate_response(200, DeleteKnowledgeBaseResponse)
 async def rm():
+    """
+    Delete a knowledge base.
+
+    Permanently deletes a knowledge base and all associated documents,
+    files, and indexes. This operation cannot be undone.
+    """
     req = await get_request_json()
     if not KnowledgebaseService.accessible4deletion(req["kb_id"], current_user.id):
         return get_json_result(
@@ -324,7 +500,14 @@ async def rm():
 
 @manager.route('/<kb_id>/tags', methods=['GET'])  # noqa: F821
 @login_required
+@kb_tag
+@validate_response(200, APIResponse)
 def list_tags(kb_id):
+    """
+    List tags for a knowledge base.
+
+    Returns all tags associated with documents in the specified knowledge base.
+    """
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
             data=False,
@@ -341,7 +524,14 @@ def list_tags(kb_id):
 
 @manager.route('/tags', methods=['GET'])  # noqa: F821
 @login_required
+@kb_tag
+@validate_response(200, APIResponse)
 def list_tags_from_kbs():
+    """
+    List tags from multiple knowledge bases.
+
+    Returns all tags associated with documents across the specified knowledge bases.
+    """
     kb_ids = request.args.get("kb_ids", "").split(",")
     for kb_id in kb_ids:
         if not KnowledgebaseService.accessible(kb_id, current_user.id):
@@ -360,7 +550,15 @@ def list_tags_from_kbs():
 
 @manager.route('/<kb_id>/rm_tags', methods=['POST'])  # noqa: F821
 @login_required
+@kb_tag
+@qs_validate_request(RemoveTagsRequest, create_model=False)
+@validate_response(200, DeleteKnowledgeBaseResponse)
 async def rm_tags(kb_id):
+    """
+    Remove tags from a knowledge base.
+
+    Removes the specified tags from all documents in the knowledge base.
+    """
     req = await get_request_json()
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
@@ -380,7 +578,15 @@ async def rm_tags(kb_id):
 
 @manager.route('/<kb_id>/rename_tag', methods=['POST'])  # noqa: F821
 @login_required
+@kb_tag
+@qs_validate_request(RenameTagRequest, create_model=False)
+@validate_response(200, DeleteKnowledgeBaseResponse)
 async def rename_tags(kb_id):
+    """
+    Rename a tag in a knowledge base.
+
+    Renames all occurrences of a tag from old name to new name in the knowledge base.
+    """
     req = await get_request_json()
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
@@ -399,7 +605,14 @@ async def rename_tags(kb_id):
 
 @manager.route('/<kb_id>/knowledge_graph', methods=['GET'])  # noqa: F821
 @login_required
+@kb_tag
+@validate_response(200, APIResponse)
 async def knowledge_graph(kb_id):
+    """
+    Get knowledge graph for a knowledge base.
+
+    Returns the knowledge graph and mind map data for the specified knowledge base.
+    """
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
             data=False,
@@ -439,7 +652,14 @@ async def knowledge_graph(kb_id):
 
 @manager.route('/<kb_id>/knowledge_graph', methods=['DELETE'])  # noqa: F821
 @login_required
+@kb_tag
+@validate_response(200, DeleteKnowledgeBaseResponse)
 def delete_knowledge_graph(kb_id):
+    """
+    Delete knowledge graph for a knowledge base.
+
+    Deletes all knowledge graph data (entities, relations, subgraphs) from the knowledge base.
+    """
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
             data=False,
@@ -454,7 +674,14 @@ def delete_knowledge_graph(kb_id):
 
 @manager.route("/get_meta", methods=["GET"])  # noqa: F821
 @login_required
+@kb_tag
+@validate_response(200, APIResponse)
 def get_meta():
+    """
+    Get metadata for knowledge bases.
+
+    Returns metadata information for the specified knowledge bases.
+    """
     kb_ids = request.args.get("kb_ids", "").split(",")
     for kb_id in kb_ids:
         if not KnowledgebaseService.accessible(kb_id, current_user.id):
@@ -468,7 +695,14 @@ def get_meta():
 
 @manager.route("/basic_info", methods=["GET"])  # noqa: F821
 @login_required
+@kb_tag
+@validate_response(200, APIResponse)
 def get_basic_info():
+    """
+    Get basic information for a knowledge base.
+
+    Returns basic statistics and information about the specified knowledge base.
+    """
     kb_id = request.args.get("kb_id", "")
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
@@ -484,7 +718,14 @@ def get_basic_info():
 
 @manager.route("/list_pipeline_logs", methods=["POST"])  # noqa: F821
 @login_required
+@kb_tag
+@validate_response(200, APIResponse)
 async def list_pipeline_logs():
+    """
+    List pipeline operation logs.
+
+    Returns a paginated list of pipeline operation logs for a knowledge base.
+    """
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -528,7 +769,14 @@ async def list_pipeline_logs():
 
 @manager.route("/list_pipeline_dataset_logs", methods=["POST"])  # noqa: F821
 @login_required
+@kb_tag
+@validate_response(200, APIResponse)
 async def list_pipeline_dataset_logs():
+    """
+    List pipeline dataset operation logs.
+
+    Returns a paginated list of dataset-level pipeline operation logs.
+    """
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -562,7 +810,15 @@ async def list_pipeline_dataset_logs():
 
 @manager.route("/delete_pipeline_logs", methods=["POST"])  # noqa: F821
 @login_required
+@kb_tag
+@qs_validate_request(DeletePipelineLogsRequest, create_model=False)
+@validate_response(200, DeleteKnowledgeBaseResponse)
 async def delete_pipeline_logs():
+    """
+    Delete pipeline operation logs.
+
+    Deletes the specified pipeline operation log entries.
+    """
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -577,7 +833,14 @@ async def delete_pipeline_logs():
 
 @manager.route("/pipeline_log_detail", methods=["GET"])  # noqa: F821
 @login_required
+@kb_tag
+@validate_response(200, APIResponse)
 def pipeline_log_detail():
+    """
+    Get pipeline operation log details.
+
+    Returns detailed information about a specific pipeline operation log entry.
+    """
     log_id = request.args.get("log_id")
     if not log_id:
         return get_json_result(data=False, message='Lack of "Pipeline log ID"', code=RetCode.ARGUMENT_ERROR)
@@ -591,7 +854,15 @@ def pipeline_log_detail():
 
 @manager.route("/run_graphrag", methods=["POST"])  # noqa: F821
 @login_required
+@kb_tag
+@qs_validate_request(RunGraphRagRequest, create_model=False)
+@validate_response(200, APIResponse)
 async def run_graphrag():
+    """
+    Run GraphRAG on a knowledge base.
+
+    Initiates a GraphRAG task to build a knowledge graph from documents in the knowledge base.
+    """
     req = await get_request_json()
 
     kb_id = req.get("kb_id", "")
@@ -638,7 +909,14 @@ async def run_graphrag():
 
 @manager.route("/trace_graphrag", methods=["GET"])  # noqa: F821
 @login_required
+@kb_tag
+@validate_response(200, APIResponse)
 def trace_graphrag():
+    """
+    Trace GraphRAG task status.
+
+    Returns the current status and progress of the GraphRAG task for a knowledge base.
+    """
     kb_id = request.args.get("kb_id", "")
     if not kb_id:
         return get_error_data_result(message='Lack of "KB ID"')
@@ -660,7 +938,15 @@ def trace_graphrag():
 
 @manager.route("/run_raptor", methods=["POST"])  # noqa: F821
 @login_required
+@kb_tag
+@qs_validate_request(RunRaptorRequest, create_model=False)
+@validate_response(200, APIResponse)
 async def run_raptor():
+    """
+    Run RAPTOR on a knowledge base.
+
+    Initiates a RAPTOR task to build hierarchical summarization indices from documents.
+    """
     req = await get_request_json()
 
     kb_id = req.get("kb_id", "")
@@ -707,7 +993,14 @@ async def run_raptor():
 
 @manager.route("/trace_raptor", methods=["GET"])  # noqa: F821
 @login_required
+@kb_tag
+@validate_response(200, APIResponse)
 def trace_raptor():
+    """
+    Trace RAPTOR task status.
+
+    Returns the current status and progress of the RAPTOR task for a knowledge base.
+    """
     kb_id = request.args.get("kb_id", "")
     if not kb_id:
         return get_error_data_result(message='Lack of "KB ID"')
@@ -729,7 +1022,15 @@ def trace_raptor():
 
 @manager.route("/run_mindmap", methods=["POST"])  # noqa: F821
 @login_required
+@kb_tag
+@qs_validate_request(RunMindmapRequest, create_model=False)
+@validate_response(200, APIResponse)
 async def run_mindmap():
+    """
+    Run Mindmap on a knowledge base.
+
+    Initiates a Mindmap task to build a mind map from documents in the knowledge base.
+    """
     req = await get_request_json()
 
     kb_id = req.get("kb_id", "")
@@ -776,7 +1077,14 @@ async def run_mindmap():
 
 @manager.route("/trace_mindmap", methods=["GET"])  # noqa: F821
 @login_required
+@kb_tag
+@validate_response(200, APIResponse)
 def trace_mindmap():
+    """
+    Trace Mindmap task status.
+
+    Returns the current status and progress of the Mindmap task for a knowledge base.
+    """
     kb_id = request.args.get("kb_id", "")
     if not kb_id:
         return get_error_data_result(message='Lack of "KB ID"')
@@ -798,7 +1106,14 @@ def trace_mindmap():
 
 @manager.route("/unbind_task", methods=["DELETE"])  # noqa: F821
 @login_required
+@kb_tag
+@validate_response(200, DeleteKnowledgeBaseResponse)
 def delete_kb_task():
+    """
+    Unbind and cancel a pipeline task.
+
+    Cancels and unbinds a GraphRAG, RAPTOR, or Mindmap task from the knowledge base.
+    """
     kb_id = request.args.get("kb_id", "")
     if not kb_id:
         return get_error_data_result(message='Lack of "KB ID"')
@@ -843,9 +1158,18 @@ def delete_kb_task():
 
     return get_json_result(data=True)
 
-@manager.route("/check_embedding", methods=["post"])  # noqa: F821
+@manager.route("/check_embedding", methods=["POST"])  # noqa: F821
 @login_required
+@kb_tag
+@qs_validate_request(CheckEmbeddingRequest, create_model=False)
+@validate_response(200, CheckEmbeddingResponse)
 async def check_embedding():
+    """
+    Check embedding model compatibility.
+
+    Tests the compatibility of an embedding model by comparing vector similarities
+    between stored vectors and newly generated vectors.
+    """
 
     def _guess_vec_field(src: dict) -> str | None:
         for k in src or {}:

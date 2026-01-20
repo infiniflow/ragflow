@@ -15,6 +15,10 @@
 #
 import logging
 import asyncio
+from typing import Annotated
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import validate_request as qs_validate_request, validate_response, tag
+
 from api.db import UserTenantRole
 from api.db.db_models import UserTenant
 from api.db.services.user_service import UserTenantService, UserService
@@ -28,9 +32,80 @@ from common import settings
 from api.apps import login_required, current_user
 
 
+# Pydantic Schemas for OpenAPI Documentation
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class CreateUserRequest(BaseSchema):
+    """Request schema for creating/inviting a user to a tenant."""
+    email: Annotated[str, Field(..., description="Email address of the user to invite", min_length=1)
+
+
+class CreateUserResponse(BaseModel):
+    """Response schema for creating/inviting a user to a tenant."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(
+        ...,
+        description="Created user information including id, avatar, email, and nickname"
+    )]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class UserListResponse(BaseModel):
+    """Response schema for listing users in a tenant."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[list[dict], Field(
+        ...,
+        description="List of users with their details including id, email, nickname, "
+                    "avatar, role, status, delta_seconds, and update_date"
+    )]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class DeleteUserResponse(BaseModel):
+    """Response schema for removing a user from a tenant."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Deletion status, True if successful")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class TenantListResponse(BaseModel):
+    """Response schema for listing tenants for a user."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[list[dict], Field(
+        ...,
+        description="List of tenants with their details including tenant_id, tenant_name, "
+                    "role, status, delta_seconds, and update_date"
+    )]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class AgreeTenantResponse(BaseModel):
+    """Response schema for agreeing to join a tenant."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Agreement status, True if successful")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+# API Tag for grouping
+tenant_tag = tag("tenant", "Tenant and User Management APIs")
+
+
 @manager.route("/<tenant_id>/user/list", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, UserListResponse)
+@tenant_tag
 def user_list(tenant_id):
+    """
+    List users in a tenant.
+
+    Retrieves a list of all users associated with the specified tenant_id.
+    Only the tenant owner (user whose ID matches tenant_id) can access this endpoint.
+    Returns user information including their role, status, and time since last update.
+    """
     if current_user.id != tenant_id:
         return get_json_result(
             data=False,
@@ -49,7 +124,23 @@ def user_list(tenant_id):
 @manager.route('/<tenant_id>/user', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("email")
+@qs_validate_request(CreateUserRequest)
+@validate_response(200, CreateUserResponse)
+@tenant_tag
 async def create(tenant_id):
+    """
+    Invite a user to join a tenant.
+
+    Invites a user (by email) to join the specified tenant. The user must already exist
+    in the system. An invitation email will be sent to the user. The invited user will
+    have an INVITE role initially and can accept the invitation to become a NORMAL member.
+    Only the tenant owner can invite users.
+
+    Returns error if:
+    - The user email is not found in the system
+    - The user is already a member of the tenant
+    - The user is the owner of the tenant
+    """
     if current_user.id != tenant_id:
         return get_json_result(
             data=False,
@@ -107,7 +198,18 @@ async def create(tenant_id):
 
 @manager.route('/<tenant_id>/user/<user_id>', methods=['DELETE'])  # noqa: F821
 @login_required
+@validate_response(200, DeleteUserResponse)
+@tenant_tag
 def rm(tenant_id, user_id):
+    """
+    Remove a user from a tenant.
+
+    Removes the specified user from the tenant. This action can be performed by:
+    - The tenant owner (current_user.id == tenant_id)
+    - The user themselves (current_user.id == user_id)
+
+    This operation is irreversible and will revoke the user's access to the tenant's resources.
+    """
     if current_user.id != tenant_id and current_user.id != user_id:
         return get_json_result(
             data=False,
@@ -123,7 +225,15 @@ def rm(tenant_id, user_id):
 
 @manager.route("/list", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, TenantListResponse)
+@tenant_tag
 def tenant_list():
+    """
+    List tenants for the current user.
+
+    Retrieves a list of all tenants that the current user is a member of.
+    Returns tenant information including the user's role, status, and time since last update.
+    """
     try:
         users = UserTenantService.get_tenants_by_user_id(current_user.id)
         for u in users:
@@ -135,7 +245,16 @@ def tenant_list():
 
 @manager.route("/agree/<tenant_id>", methods=["PUT"])  # noqa: F821
 @login_required
+@validate_response(200, AgreeTenantResponse)
+@tenant_tag
 def agree(tenant_id):
+    """
+    Accept tenant invitation.
+
+    Accepts an invitation to join a tenant. This endpoint should be called by a user
+    who has been invited to join a tenant (with INVITE role). Upon accepting, the user's
+    role will be updated to NORMAL, granting them full access to the tenant's resources.
+    """
     try:
         UserTenantService.filter_update([UserTenant.tenant_id == tenant_id, UserTenant.user_id == current_user.id],
                                         {"role": UserTenantRole.NORMAL})

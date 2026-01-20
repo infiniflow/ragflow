@@ -14,23 +14,106 @@
 #  limitations under the License.
 #
 
+from typing import Annotated
 from quart import request
-from api.apps import current_user, login_required
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import validate_request as qs_validate_request, validate_response, tag
 
+from api.apps import current_user, login_required
 from api.constants import DATASET_NAME_LIMIT
 from api.db.db_models import DB
 from api.db.services import duplicate_name
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
-from common.constants import RetCode, StatusEnum
+from common.constants import StatusEnum, RetCode
 from api.utils.api_utils import get_data_error_result, get_json_result, not_allowed_parameters, get_request_json, server_error_response, validate_request
 
 
-@manager.route("/create", methods=["post"])  # noqa: F821
+# Pydantic Schemas for OpenAPI Documentation
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class CreateSearchRequest(BaseSchema):
+    """Request schema for creating a search application."""
+    name: Annotated[str, Field(..., description="Search application name", min_length=1, max_length=255)]
+    description: Annotated[str | None, Field(None, description="Search application description", max_length=65535)]
+
+
+class CreateSearchResponse(BaseModel):
+    """Response schema for creating a search application."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Created search application data containing search_id")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class UpdateSearchRequest(BaseSchema):
+    """Request schema for updating a search application."""
+    search_id: Annotated[str, Field(..., description="Search application ID to update")]
+    name: Annotated[str, Field(..., description="Updated search application name", min_length=1, max_length=DATASET_NAME_LIMIT)]
+    search_config: Annotated[dict, Field(..., description="Search configuration settings")]
+    tenant_id: Annotated[str, Field(..., description="Tenant ID")]
+
+
+class UpdateSearchResponse(BaseModel):
+    """Response schema for updating a search application."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Updated search application data")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class SearchDetailResponse(BaseModel):
+    """Response schema for search application detail."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Search application detail data")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class ListSearchRequest(BaseSchema):
+    """Request schema for listing search applications."""
+    owner_ids: Annotated[list[str] | None, Field(None, description="Filter by owner IDs")]
+
+
+class ListSearchResponse(BaseModel):
+    """Response schema for listing search applications."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="List of search applications with total count")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class DeleteSearchRequest(BaseSchema):
+    """Request schema for deleting a search application."""
+    search_id: Annotated[str, Field(..., description="Search application ID to delete")]
+
+
+class DeleteSearchResponse(BaseModel):
+    """Response schema for deleting a search application."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Deletion status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+# Search API Endpoints
+
+search_tag = tag("search", "Search Application Management APIs")
+
+
+@manager.route("/create", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("name")
+@qs_validate_request(CreateSearchRequest)
+@validate_response(200, CreateSearchResponse)
+@search_tag
 async def create():
+    """
+    Create a new search application.
+
+    Creates a new search application with the provided name and optional description.
+    The search application ID will be automatically generated and returned in the response.
+    """
     req = await get_request_json()
     search_name = req["name"]
     description = req.get("description", "")
@@ -61,11 +144,20 @@ async def create():
             return server_error_response(e)
 
 
-@manager.route("/update", methods=["post"])  # noqa: F821
+@manager.route("/update", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("search_id", "name", "search_config", "tenant_id")
 @not_allowed_parameters("id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
+@qs_validate_request(UpdateSearchRequest)
+@validate_response(200, UpdateSearchResponse)
+@search_tag
 async def update():
+    """
+    Update an existing search application.
+
+    Updates the search application with new configuration settings.
+    Only the owner of the search application can update it.
+    """
     req = await get_request_json()
     if not isinstance(req["name"], str):
         return get_data_error_result(message="Search name must be string.")
@@ -120,7 +212,15 @@ async def update():
 
 @manager.route("/detail", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, SearchDetailResponse)
+@search_tag
 def detail():
+    """
+    Get search application details.
+
+    Retrieves detailed information about a specific search application by its ID.
+    The user must have permission to access this search application.
+    """
     search_id = request.args["search_id"]
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
@@ -140,7 +240,16 @@ def detail():
 
 @manager.route("/list", methods=["POST"])  # noqa: F821
 @login_required
+@qs_validate_request(ListSearchRequest)
+@validate_response(200, ListSearchResponse)
+@search_tag
 async def list_search_app():
+    """
+    List search applications.
+
+    Retrieves a paginated list of search applications with optional filtering.
+    Supports filtering by owner IDs and pagination with customizable page size and ordering.
+    """
     keywords = request.args.get("keywords", "")
     page_number = int(request.args.get("page", 0))
     items_per_page = int(request.args.get("page_size", 0))
@@ -170,10 +279,19 @@ async def list_search_app():
         return server_error_response(e)
 
 
-@manager.route("/rm", methods=["post"])  # noqa: F821
+@manager.route("/rm", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("search_id")
+@qs_validate_request(DeleteSearchRequest)
+@validate_response(200, DeleteSearchResponse)
+@search_tag
 async def rm():
+    """
+    Delete a search application.
+
+    Permanently deletes a search application by its ID.
+    Only the owner of the search application can delete it.
+    """
     req = await get_request_json()
     search_id = req["search_id"]
     if not SearchService.accessible4deletion(search_id, current_user.id):

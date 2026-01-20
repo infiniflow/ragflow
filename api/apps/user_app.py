@@ -22,9 +22,12 @@ import secrets
 import time
 from datetime import datetime
 import base64
+from typing import Annotated
 
 from quart import make_response, redirect, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import validate_request as qs_validate_request, validate_response, tag
 
 from api.apps.auth import get_auth_client
 from api.db import FileType, UserTenantRole
@@ -62,36 +65,160 @@ from common import settings
 from common.http_client import async_request
 
 
+# =============================================================================
+# Pydantic Schemas for OpenAPI Documentation
+# =============================================================================
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class LoginRequest(BaseSchema):
+    """Request schema for user login."""
+    email: Annotated[str, Field(..., description="User email address", examples=["user@example.com"])]
+    password: Annotated[str, Field(..., description="User password (encrypted)", examples=["encrypted_password"])]
+
+
+class LoginResponse(BaseModel):
+    """Response schema for successful login."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(
+        ...,
+        description="User information including id, nickname, email, avatar, login_channel, etc."
+    )]
+    message: Annotated[str, Field(..., description="Welcome message or error message")]
+
+
+class LoginChannelResponse(BaseModel):
+    """Response schema for login channels."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[list[dict], Field(
+        ...,
+        description="List of available OAuth channels with channel, display_name, and icon"
+    )]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class UpdateUserRequest(BaseSchema):
+    """Request schema for updating user settings."""
+    password: Annotated[str | None, Field(None, description="Current password (for password change)")] = None
+    new_password: Annotated[str | None, Field(None, description="New password (encrypted)")] = None
+    nickname: Annotated[str | None, Field(None, description="New nickname")] = None
+    avatar: Annotated[str | None, Field(None, description="Base64 encoded avatar image")] = None
+
+
+class UpdateUserResponse(BaseModel):
+    """Response schema for updating user settings."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Update status, True if successful")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class UserInfoResponse(BaseModel):
+    """Response schema for user profile information."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(
+        ...,
+        description="User profile information including id, nickname, email, avatar, etc."
+    )]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class RegisterRequest(BaseSchema):
+    """Request schema for user registration."""
+    email: Annotated[str, Field(..., description="User email address", examples=["user@example.com"])]
+    password: Annotated[str, Field(..., description="User password (encrypted)", examples=["encrypted_password"])]
+    nickname: Annotated[str, Field(..., description="User nickname", examples=["John Doe"])]
+
+
+class TenantInfoResponse(BaseModel):
+    """Response schema for tenant information."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(
+        ...,
+        description="Tenant information including tenant_id, name, llm_id, embd_id, asr_id, img2txt_id, etc."
+    )]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class UpdateTenantInfoRequest(BaseSchema):
+    """Request schema for updating tenant information."""
+    tenant_id: Annotated[str, Field(..., description="Tenant ID to update")]
+    llm_id: Annotated[str, Field(..., description="Language model ID")]
+    embd_id: Annotated[str, Field(..., description="Embedding model ID")]
+    asr_id: Annotated[str, Field(..., description="ASR model ID")]
+    img2txt_id: Annotated[str, Field(..., description="Image to text model ID")]
+
+
+class UpdateTenantInfoResponse(BaseModel):
+    """Response schema for updating tenant information."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Update status, True if successful")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class SendOtpRequest(BaseSchema):
+    """Request schema for sending OTP for password reset."""
+    email: Annotated[str, Field(..., description="User email address", examples=["user@example.com"])]
+    captcha: Annotated[str, Field(..., description="Image captcha text", examples=["ABC123"])]
+
+
+class SendOtpResponse(BaseModel):
+    """Response schema for OTP sending."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Operation status, True if email sent successfully")]
+    message: Annotated[str, Field(..., description="Success or error message")]
+
+
+class VerifyOtpRequest(BaseSchema):
+    """Request schema for verifying OTP."""
+    email: Annotated[str, Field(..., description="User email address", examples=["user@example.com"])]
+    otp: Annotated[str, Field(..., description="One-time password received via email", examples=["ABCDEF"])]
+
+
+class VerifyOtpResponse(BaseModel):
+    """Response schema for OTP verification."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Verification status, True if OTP is valid")]
+    message: Annotated[str, Field(..., description="Success or error message")]
+
+
+class ResetPasswordRequest(BaseSchema):
+    """Request schema for resetting password."""
+    email: Annotated[str, Field(..., description="User email address", examples=["user@example.com"])]
+    new_password: Annotated[str, Field(..., description="New password (encrypted)", examples=["encrypted_password"])]
+    confirm_new_password: Annotated[str, Field(..., description="Confirm new password (encrypted)", examples=["encrypted_password"])]
+
+
+class ErrorResponse(BaseModel):
+    """Generic error response schema."""
+    code: Annotated[int, Field(..., description="Error code")]
+    data: Annotated[bool, Field(..., description="Operation status, False on error")]
+    message: Annotated[str, Field(..., description="Error message description")]
+
+
+# API Tags for grouping
+user_tag = tag("user", "User Management APIs")
+auth_tag = tag("auth", "Authentication and OAuth APIs")
+tenant_tag = tag("tenant", "Tenant Management APIs")
+
+
+# =============================================================================
+# Route Handlers
+# =============================================================================
+
 @manager.route("/login", methods=["POST", "GET"])  # noqa: F821
+@qs_validate_request(LoginRequest)
+@validate_response(200, LoginResponse)
+@user_tag
 async def login():
     """
-    User login endpoint.
-    ---
-    tags:
-      - User
-    parameters:
-      - in: body
-        name: body
-        description: Login credentials.
-        required: true
-        schema:
-          type: object
-          properties:
-            email:
-              type: string
-              description: User email.
-            password:
-              type: string
-              description: User password.
-    responses:
-      200:
-        description: Login successful.
-        schema:
-          type: object
-      401:
-        description: Authentication failed.
-        schema:
-          type: object
+    Authenticate user with email and password.
+
+    Validates user credentials and returns user information on successful authentication.
+    The password should be encrypted before sending. Default admin account (admin@ragflow.io)
+    cannot be used for normal service login.
     """
     json_body = await get_request_json()
     if not json_body:
@@ -142,9 +269,14 @@ async def login():
 
 
 @manager.route("/login/channels", methods=["GET"])  # noqa: F821
+@validate_response(200, LoginChannelResponse)
+@auth_tag
 async def get_login_channels():
     """
     Get all supported authentication channels.
+
+    Returns a list of available OAuth/OIDC authentication channels configured in the system.
+    Each channel includes the channel identifier, display name, and icon information.
     """
     try:
         channels = []
@@ -163,7 +295,14 @@ async def get_login_channels():
 
 
 @manager.route("/login/<channel>", methods=["GET"])  # noqa: F821
+@auth_tag
 async def oauth_login(channel):
+    """
+    Initiate OAuth/OIDC authentication flow for the specified channel.
+
+    Redirects the user to the OAuth provider's authorization page.
+    The user will be redirected back to the callback endpoint after authentication.
+    """
     channel_config = settings.OAUTH_CONFIG.get(channel)
     if not channel_config:
         raise ValueError(f"Invalid channel name: {channel}")
@@ -176,9 +315,14 @@ async def oauth_login(channel):
 
 
 @manager.route("/oauth/callback/<channel>", methods=["GET"])  # noqa: F821
+@auth_tag
 async def oauth_callback(channel):
     """
     Handle the OAuth/OIDC callback for various channels dynamically.
+
+    Processes the OAuth callback from the specified channel, exchanges the authorization
+    code for an access token, fetches user information, and authenticates or registers the user.
+    Redirects to the frontend with authentication token or error details.
     """
     try:
         channel_config = settings.OAUTH_CONFIG.get(channel)
@@ -271,25 +415,13 @@ async def oauth_callback(channel):
 
 
 @manager.route("/github_callback", methods=["GET"])  # noqa: F821
+@auth_tag
 async def github_callback():
     """
     **Deprecated**, Use `/oauth/callback/<channel>` instead.
 
-    GitHub OAuth callback endpoint.
-    ---
-    tags:
-      - OAuth
-    parameters:
-      - in: query
-        name: code
-        type: string
-        required: true
-        description: Authorization code from GitHub.
-    responses:
-      200:
-        description: Authentication successful.
-        schema:
-          type: object
+    GitHub OAuth callback endpoint (legacy).
+    This endpoint is maintained for backward compatibility.
     """
     res = await async_request(
         "POST",
@@ -359,23 +491,13 @@ async def github_callback():
 
 
 @manager.route("/feishu_callback", methods=["GET"])  # noqa: F821
+@auth_tag
 async def feishu_callback():
     """
     Feishu OAuth callback endpoint.
-    ---
-    tags:
-      - OAuth
-    parameters:
-      - in: query
-        name: code
-        type: string
-        required: true
-        description: Authorization code from Feishu.
-    responses:
-      200:
-        description: Authentication successful.
-        schema:
-          type: object
+
+    **Deprecated**, Use `/oauth/callback/<channel>` instead for better consistency.
+    Handles the OAuth callback from Feishu (Lark) authentication provider.
     """
     app_access_token_res = await async_request(
         "POST",
@@ -489,19 +611,14 @@ async def user_info_from_github(access_token):
 
 @manager.route("/logout", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, UpdateUserResponse)
+@user_tag
 async def log_out():
     """
     User logout endpoint.
-    ---
-    tags:
-      - User
-    security:
-      - ApiKeyAuth: []
-    responses:
-      200:
-        description: Logout successful.
-        schema:
-          type: object
+
+    Invalidates the current user's access token and ends the session.
+    Requires authentication.
     """
     current_user.access_token = f"INVALID_{secrets.token_hex(16)}"
     current_user.save()
@@ -511,33 +628,16 @@ async def log_out():
 
 @manager.route("/setting", methods=["POST"])  # noqa: F821
 @login_required
+@qs_validate_request(UpdateUserRequest)
+@validate_response(200, UpdateUserResponse)
+@user_tag
 async def setting_user():
     """
     Update user settings.
-    ---
-    tags:
-      - User
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: body
-        name: body
-        description: User settings to update.
-        required: true
-        schema:
-          type: object
-          properties:
-            nickname:
-              type: string
-              description: New nickname.
-            email:
-              type: string
-              description: New email.
-    responses:
-      200:
-        description: Settings updated successfully.
-        schema:
-          type: object
+
+    Updates the current user's profile information. Supports changing password
+    (requires current password for verification), nickname, and avatar.
+    Requires authentication.
     """
     update_dict = {}
     request_data = await get_request_json()
@@ -579,29 +679,15 @@ async def setting_user():
 
 @manager.route("/info", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, UserInfoResponse)
+@user_tag
 async def user_profile():
     """
     Get user profile information.
-    ---
-    tags:
-      - User
-    security:
-      - ApiKeyAuth: []
-    responses:
-      200:
-        description: User profile retrieved successfully.
-        schema:
-          type: object
-          properties:
-            id:
-              type: string
-              description: User ID.
-            nickname:
-              type: string
-              description: User nickname.
-            email:
-              type: string
-              description: User email.
+
+    Returns the current authenticated user's profile information including
+    id, nickname, email, avatar, and other user details.
+    Requires authentication.
     """
     return get_json_result(data=current_user.to_dict())
 
@@ -670,34 +756,16 @@ def user_register(user_id, user):
 
 @manager.route("/register", methods=["POST"])  # noqa: F821
 @validate_request("nickname", "email", "password")
+@qs_validate_request(RegisterRequest)
+@validate_response(200, LoginResponse)
+@user_tag
 async def user_add():
     """
     Register a new user.
-    ---
-    tags:
-      - User
-    parameters:
-      - in: body
-        name: body
-        description: Registration details.
-        required: true
-        schema:
-          type: object
-          properties:
-            nickname:
-              type: string
-              description: User nickname.
-            email:
-              type: string
-              description: User email.
-            password:
-              type: string
-              description: User password.
-    responses:
-      200:
-        description: Registration successful.
-        schema:
-          type: object
+
+    Creates a new user account with email and password. Validates email format,
+    checks for existing accounts, and initializes the user's tenant and default settings.
+    The password should be encrypted before sending.
     """
 
     if not settings.REGISTER_ENABLED:
@@ -764,32 +832,15 @@ async def user_add():
 
 @manager.route("/tenant_info", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, TenantInfoResponse)
+@tenant_tag
 async def tenant_info():
     """
     Get tenant information.
-    ---
-    tags:
-      - Tenant
-    security:
-      - ApiKeyAuth: []
-    responses:
-      200:
-        description: Tenant information retrieved successfully.
-        schema:
-          type: object
-          properties:
-            tenant_id:
-              type: string
-              description: Tenant ID.
-            name:
-              type: string
-              description: Tenant name.
-            llm_id:
-              type: string
-              description: LLM ID.
-            embd_id:
-              type: string
-              description: Embedding model ID.
+
+    Retrieves the current user's tenant information including tenant ID, name,
+    and configured model IDs for various AI services (LLM, embedding, ASR, etc.).
+    Requires authentication.
     """
     try:
         tenants = TenantService.get_info_by(current_user.id)
@@ -803,42 +854,16 @@ async def tenant_info():
 @manager.route("/set_tenant_info", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id")
+@qs_validate_request(UpdateTenantInfoRequest)
+@validate_response(200, UpdateTenantInfoResponse)
+@tenant_tag
 async def set_tenant_info():
     """
     Update tenant information.
-    ---
-    tags:
-      - Tenant
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: body
-        name: body
-        description: Tenant information to update.
-        required: true
-        schema:
-          type: object
-          properties:
-            tenant_id:
-              type: string
-              description: Tenant ID.
-            llm_id:
-              type: string
-              description: LLM ID.
-            embd_id:
-              type: string
-              description: Embedding model ID.
-            asr_id:
-              type: string
-              description: ASR model ID.
-            img2txt_id:
-              type: string
-              description: Image to Text model ID.
-    responses:
-      200:
-        description: Tenant information updated successfully.
-        schema:
-          type: object
+
+    Updates the tenant's configured AI model IDs for LLM, embedding, ASR, and image-to-text services.
+    This allows users to customize which AI models are used for their tenant.
+    Requires authentication.
     """
     req = await get_request_json()
     try:
@@ -850,11 +875,17 @@ async def set_tenant_info():
 
 
 @manager.route("/forget/captcha", methods=["GET"])  # noqa: F821
+@auth_tag
 async def forget_get_captcha():
     """
-    GET /forget/captcha?email=<email>
-    - Generate an image captcha and cache it in Redis under key captcha:{email} with TTL = OTP_TTL_SECONDS.
-    - Returns the captcha as a PNG image.
+    Generate a captcha image for password reset.
+
+    Generates a random image captcha for the specified email address and returns it as a PNG image.
+    The captcha is cached in Redis for 60 seconds. This captcha must be solved before
+    requesting an OTP (one-time password) for password reset.
+
+    Query Parameters:
+        - email: User email address
     """
     email = (request.args.get("email") or "")
     if not email:
@@ -878,11 +909,20 @@ async def forget_get_captcha():
 
 
 @manager.route("/forget/otp", methods=["POST"])  # noqa: F821
+@qs_validate_request(SendOtpRequest)
+@validate_response(200, SendOtpResponse)
+@auth_tag
 async def forget_send_otp():
     """
-    POST /forget/otp
-    - Verify the image captcha stored at captcha:{email} (case-insensitive).
-    - On success, generate an email OTP (A–Z with length = OTP_LENGTH), store hash + salt (and timestamp) in Redis with TTL, reset attempts and cooldown, and send the OTP via email.
+    Send OTP (one-time password) for password reset.
+
+    Verifies the image captcha and sends an OTP to the user's email address.
+    The OTP is valid for a limited time and has a limited number of verification attempts.
+    Implements rate limiting and cooldown periods to prevent abuse.
+
+    Request Body:
+        - email: User email address
+        - captcha: Solved captcha text from the image
     """
     req = await get_request_json()
     email = req.get("email") or ""
@@ -948,12 +988,20 @@ def _verified_key(email: str) -> str:
 
 
 @manager.route("/forget/verify-otp", methods=["POST"])  # noqa: F821
+@qs_validate_request(VerifyOtpRequest)
+@validate_response(200, VerifyOtpResponse)
+@auth_tag
 async def forget_verify_otp():
     """
-    Verify email + OTP only. On success:
-    - consume the OTP and attempt counters
-    - set a short-lived verified flag in Redis for the email
-    Request JSON: { email, otp }
+    Verify OTP for password reset.
+
+    Verifies the OTP sent to the user's email address. On successful verification,
+    marks the email as verified in Redis for a limited time, allowing password reset.
+    Implements attempt limiting with automatic lockout after too many failed attempts.
+
+    Request Body:
+        - email: User email address
+        - otp: One-time password received via email
     """
     req = await get_request_json()
     email = req.get("email") or ""
@@ -1009,15 +1057,21 @@ async def forget_verify_otp():
 
 
 @manager.route("/forget/reset-password", methods=["POST"])  # noqa: F821
+@qs_validate_request(ResetPasswordRequest)
+@validate_response(200, LoginResponse)
+@auth_tag
 async def forget_reset_password():
     """
-    Reset password after successful OTP verification.
-    Requires: { email, new_password, confirm_new_password }
-    Steps:
-    - check verified flag in Redis
-    - update user password
-    - auto login
-    - clear verified flag
+    Reset password after OTP verification.
+
+    Completes the password reset flow by updating the user's password.
+    Requires that the email has been verified via OTP. Automatically logs in the user
+    after successful password reset.
+
+    Request Body:
+        - email: User email address
+        - new_password: New password (encrypted)
+        - confirm_new_password: Confirm new password (encrypted)
     """
     
     req = await get_request_json()

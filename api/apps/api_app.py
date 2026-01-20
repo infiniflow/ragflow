@@ -14,7 +14,11 @@
 #  limitations under the License.
 #
 from datetime import datetime, timedelta
+from typing import Annotated
 from quart import request
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import validate_request as qs_validate_request, validate_response, tag
+
 from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService, API4ConversationService
 from api.db.services.user_service import UserTenantService
@@ -23,9 +27,75 @@ from common.time_utils import current_timestamp, datetime_format
 from api.apps import login_required, current_user
 
 
+# Pydantic Schemas for OpenAPI Documentation
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class NewTokenRequest(BaseSchema):
+    """Request schema for creating a new API token."""
+    dialog_id: Annotated[str, Field(..., description="Dialog ID associated with the token")]
+    canvas_id: Annotated[str | None, Field(None, description="Canvas ID for agent tokens (alternative to dialog_id)")]
+
+
+class NewTokenResponse(BaseModel):
+    """Response schema for creating a new API token."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Created token data including token, tenant_id, dialog_id, etc.")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class TokenListResponse(BaseModel):
+    """Response schema for listing API tokens."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[list[dict], Field(..., description="List of API tokens with their details")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class DeleteTokensRequest(BaseSchema):
+    """Request schema for deleting API tokens."""
+    tokens: Annotated[list[str], Field(..., description="List of token strings to delete")]
+    tenant_id: Annotated[str, Field(..., description="Tenant ID owning the tokens")]
+
+
+class DeleteTokensResponse(BaseModel):
+    """Response schema for deleting API tokens."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Deletion status, True if successful")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class StatsResponse(BaseModel):
+    """Response schema for API usage statistics."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(
+        ...,
+        description="Usage statistics containing pv (page views), uv (unique visitors), "
+                    "speed (tokens per second), tokens (thousands), round (conversation rounds), "
+                    "and thumb_up (user feedback) data points"
+    )]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+# API Tag for grouping
+api_tag = tag("api", "API Token Management and Statistics APIs")
+
+
 @manager.route('/new_token', methods=['POST'])  # noqa: F821
 @login_required
+@qs_validate_request(NewTokenRequest)
+@validate_response(200, NewTokenResponse)
+@api_tag
 async def new_token():
+    """
+    Create a new API token.
+
+    Creates a new API token for the current user's tenant. The token can be associated
+    with either a dialog or a canvas (agent). The generated token can be used to authenticate
+    API requests for the associated dialog or agent.
+    """
     req = await get_request_json()
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
@@ -55,7 +125,15 @@ async def new_token():
 
 @manager.route('/token_list', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, TokenListResponse)
+@api_tag
 def token_list():
+    """
+    List API tokens for a dialog or canvas.
+
+    Retrieves all API tokens associated with the specified dialog_id or canvas_id
+    for the current user's tenant. Returns a list of tokens with their details.
+    """
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
         if not tenants:
@@ -70,8 +148,17 @@ def token_list():
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
 @validate_request("tokens", "tenant_id")
+@qs_validate_request(DeleteTokensRequest)
+@validate_response(200, DeleteTokensResponse)
+@api_tag
 @login_required
 async def rm():
+    """
+    Delete API tokens.
+
+    Deletes the specified API tokens for the given tenant_id. This operation is irreversible
+    and any applications using these tokens will no longer be able to authenticate.
+    """
     req = await get_request_json()
     try:
         for token in req["tokens"]:
@@ -84,7 +171,17 @@ async def rm():
 
 @manager.route('/stats', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, StatsResponse)
+@api_tag
 def stats():
+    """
+    Get API usage statistics.
+
+    Retrieves usage statistics for API conversations within a specified date range.
+    Returns metrics including page views (pv), unique visitors (uv), processing speed,
+    token consumption, conversation rounds, and user feedback (thumb_up).
+    The date range defaults to the last 7 days if not specified.
+    """
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
         if not tenants:

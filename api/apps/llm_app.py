@@ -16,7 +16,10 @@
 import logging
 import json
 import os
+from typing import Annotated
 from quart import request
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import validate_request as qs_validate_request, validate_response, tag
 
 from api.apps import login_required, current_user
 from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMService
@@ -28,9 +31,154 @@ from rag.utils.base64_image import test_image
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel, OcrModel, Seq2txtModel
 
 
+# Pydantic Schemas for OpenAPI Documentation
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class StandardResponse(BaseModel):
+    """Standard API response schema."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[object, Field(..., description="Response data")]
+    message: Annotated[str, Field("success", description="Response message")]
+
+
+class FactoriesResponse(BaseModel):
+    """Response schema for getting LLM factories."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[list[dict], Field(..., description="List of available LLM factories with their model types")]
+    message: Annotated[str, Field("success", description="Response message")]
+
+
+class SetAPIKeyRequest(BaseSchema):
+    """Request schema for setting LLM API key."""
+    llm_factory: Annotated[str, Field(..., description="LLM factory name (e.g., 'OpenAI', 'Azure-OpenAI')")]
+    api_key: Annotated[str, Field(..., description="API key for the LLM factory")]
+    base_url: Annotated[str | None, Field(None, description="Optional custom base URL for API requests")]
+    model_type: Annotated[str | None, Field(None, description="Specific model type to configure")]
+    llm_name: Annotated[str | None, Field(None, description="Specific model name to configure")]
+
+
+class SetAPIKeyResponse(BaseModel):
+    """Response schema for setting LLM API key."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="True if API key was set successfully")]
+    message: Annotated[str, Field("success", description="Response message")]
+
+
+class AddLLMRequest(BaseSchema):
+    """Request schema for adding a new LLM configuration."""
+    llm_factory: Annotated[str, Field(..., description="LLM factory name (e.g., 'VolcEngine', 'LocalAI')")]
+    api_key: Annotated[str, Field(..., description="API key for the LLM")]
+    api_base: Annotated[str | None, Field(None, description="Optional custom API base URL")]
+    llm_name: Annotated[str, Field(..., description="Name of the LLM model")]
+    model_type: Annotated[str, Field(..., description="Type of model (chat, embedding, rerank, etc.)")]
+    max_tokens: Annotated[int | None, Field(None, description="Maximum tokens for the model")]
+    # Factory-specific fields
+    ark_api_key: Annotated[str | None, Field(None, description="VolcEngine ark API key")]
+    endpoint_id: Annotated[str | None, Field(None, description="VolcEngine endpoint ID")]
+    hunyuan_sid: Annotated[str | None, Field(None, description="Tencent Hunyuan session ID")]
+    hunyuan_sk: Annotated[str | None, Field(None, description="Tencent Hunyuan secret key")]
+    tencent_cloud_sid: Annotated[str | None, Field(None, description="Tencent Cloud session ID")]
+    tencent_cloud_sk: Annotated[str | None, Field(None, description="Tencent Cloud secret key")]
+    auth_mode: Annotated[str | None, Field(None, description="Bedrock authentication mode")]
+    bedrock_ak: Annotated[str | None, Field(None, description="Bedrock access key")]
+    bedrock_sk: Annotated[str | None, Field(None, description="Bedrock secret key")]
+    bedrock_region: Annotated[str | None, Field(None, description="Bedrock region")]
+    aws_role_arn: Annotated[str | None, Field(None, description="AWS role ARN for Bedrock")]
+    spark_api_password: Annotated[str | None, Field(None, description="XunFei Spark API password")]
+    spark_app_id: Annotated[str | None, Field(None, description="XunFei Spark app ID")]
+    spark_api_secret: Annotated[str | None, Field(None, description="XunFei Spark API secret")]
+    spark_api_key: Annotated[str | None, Field(None, description="XunFei Spark API key")]
+    yiyan_ak: Annotated[str | None, Field(None, description="Baidu Yiyan access key")]
+    yiyan_sk: Annotated[str | None, Field(None, description="Baidu Yiyan secret key")]
+    fish_audio_ak: Annotated[str | None, Field(None, description="Fish Audio access key")]
+    fish_audio_refid: Annotated[str | None, Field(None, description="Fish Audio reference ID")]
+    google_project_id: Annotated[str | None, Field(None, description="Google Cloud project ID")]
+    google_region: Annotated[str | None, Field(None, description="Google Cloud region")]
+    google_service_account_key: Annotated[str | None, Field(None, description="Google Cloud service account key")]
+    api_version: Annotated[str | None, Field(None, description="Azure OpenAI API version")]
+    provider_order: Annotated[str | None, Field(None, description="Provider order for some factories")]
+
+
+class AddLLMResponse(BaseModel):
+    """Response schema for adding a new LLM configuration."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="True if LLM was added successfully")]
+    message: Annotated[str, Field("success", description="Response message")]
+
+
+class DeleteLLMRequest(BaseSchema):
+    """Request schema for deleting an LLM configuration."""
+    llm_factory: Annotated[str, Field(..., description="LLM factory name")]
+    llm_name: Annotated[str, Field(..., description="LLM model name")]
+
+
+class DeleteLLMResponse(BaseModel):
+    """Response schema for deleting an LLM configuration."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="True if LLM was deleted successfully")]
+    message: Annotated[str, Field("success", description="Response message")]
+
+
+class EnableLLMRequest(BaseSchema):
+    """Request schema for enabling/disabling an LLM configuration."""
+    llm_factory: Annotated[str, Field(..., description="LLM factory name")]
+    llm_name: Annotated[str, Field(..., description="LLM model name")]
+    status: Annotated[str | None, Field("1", description="Status value ('1' for enabled, '0' for disabled)")]
+
+
+class EnableLLMResponse(BaseModel):
+    """Response schema for enabling/disabling an LLM configuration."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="True if status was updated successfully")]
+    message: Annotated[str, Field("success", description="Response message")]
+
+
+class DeleteFactoryRequest(BaseSchema):
+    """Request schema for deleting an LLM factory and all its models."""
+    llm_factory: Annotated[str, Field(..., description="LLM factory name to delete")]
+
+
+class DeleteFactoryResponse(BaseModel):
+    """Response schema for deleting an LLM factory."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="True if factory was deleted successfully")]
+    message: Annotated[str, Field("success", description="Response message")]
+
+
+class MyLLMsResponse(BaseModel):
+    """Response schema for getting user's LLM configurations."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Dictionary mapping factory names to their LLM configurations")]
+    message: Annotated[str, Field("success", description="Response message")]
+
+
+class ListLLMsResponse(BaseModel):
+    """Response schema for listing available LLM models."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Dictionary mapping factory names to their available models")]
+    message: Annotated[str, Field("success", description="Response message")]
+
+
+# Create tag for LLM management endpoints
+llm_tag = tag("llm", description="LLM factory and model management endpoints")
+
+
 @manager.route("/factories", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, FactoriesResponse)
+@llm_tag
 def factories():
+    """
+    Get available LLM factories.
+
+    Returns a list of LLM factories (OpenAI, Azure, etc.) available for use,
+    along with the model types each factory supports (chat, embedding, rerank, etc.).
+    Filters out internal factories like Youdao, FastEmbed, BAAI, and Builtin.
+    """
     try:
         fac = get_allowed_llm_factories()
         fac = [f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI", "Builtin"]]
@@ -57,8 +205,19 @@ def factories():
 
 @manager.route("/set_api_key", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("llm_factory", "api_key")
+@qs_validate_request(SetAPIKeyRequest)
+@validate_response(200, SetAPIKeyResponse)
+@llm_tag
 async def set_api_key():
+    """
+    Set API key for an LLM factory.
+
+    Validates the provided API key by testing it against available models
+    (chat, embedding, rerank) from the specified factory. If validation succeeds,
+    the API key is stored for all models from that factory.
+
+    Supports custom base URLs for OpenAI-compatible APIs.
+    """
     req = await get_request_json()
     # test if api key works
     chat_passed, embd_passed, rerank_passed = False, False, False
@@ -127,8 +286,28 @@ async def set_api_key():
 
 @manager.route("/add_llm", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("llm_factory")
+@qs_validate_request(AddLLMRequest)
+@validate_response(200, AddLLMResponse)
+@llm_tag
 async def add_llm():
+    """
+    Add a new LLM configuration.
+
+    Adds and validates a new LLM model configuration for the current tenant.
+    Supports various LLM factories with factory-specific authentication methods.
+
+    Factory-specific authentication:
+    - VolcEngine: ark_api_key, endpoint_id
+    - Tencent Hunyuan: hunyuan_sid, hunyuan_sk
+    - Tencent Cloud: tencent_cloud_sid, tencent_cloud_sk
+    - Bedrock: bedrock_ak, bedrock_sk, bedrock_region, aws_role_arn
+    - XunFei Spark: spark_api_password (for chat) or spark_app_id, spark_api_secret, spark_api_key (for tts)
+    - BaiduYiyan: yiyan_ak, yiyan_sk
+    - Fish Audio: fish_audio_ak, fish_audio_refid
+    - Google Cloud: google_project_id, google_region, google_service_account_key
+    - Azure-OpenAI: api_version
+    - OpenRouter: provider_order
+    """
     req = await get_request_json()
     factory = req["llm_factory"]
     api_key = req.get("api_key", "x")
@@ -299,8 +478,16 @@ async def add_llm():
 
 @manager.route("/delete_llm", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("llm_factory", "llm_name")
+@qs_validate_request(DeleteLLMRequest)
+@validate_response(200, DeleteLLMResponse)
+@llm_tag
 async def delete_llm():
+    """
+    Delete an LLM configuration.
+
+    Removes the specified LLM model configuration from the current tenant's
+    available models. This action cannot be undone.
+    """
     req = await get_request_json()
     TenantLLMService.filter_delete([TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"], TenantLLM.llm_name == req["llm_name"]])
     return get_json_result(data=True)
@@ -308,8 +495,16 @@ async def delete_llm():
 
 @manager.route("/enable_llm", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("llm_factory", "llm_name")
+@qs_validate_request(EnableLLMRequest)
+@validate_response(200, EnableLLMResponse)
+@llm_tag
 async def enable_llm():
+    """
+    Enable or disable an LLM configuration.
+
+    Updates the status of the specified LLM model configuration.
+    Use status='1' to enable and status='0' to disable the model.
+    """
     req = await get_request_json()
     TenantLLMService.filter_update(
         [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"], TenantLLM.llm_name == req["llm_name"]], {"status": str(req.get("status", "1"))}
@@ -319,8 +514,16 @@ async def enable_llm():
 
 @manager.route("/delete_factory", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("llm_factory")
+@qs_validate_request(DeleteFactoryRequest)
+@validate_response(200, DeleteFactoryResponse)
+@llm_tag
 async def delete_factory():
+    """
+    Delete an entire LLM factory and all its models.
+
+    Removes all LLM model configurations associated with the specified
+    factory from the current tenant's available models. This action cannot be undone.
+    """
     req = await get_request_json()
     TenantLLMService.filter_delete([TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"]])
     return get_json_result(data=True)
@@ -328,7 +531,19 @@ async def delete_factory():
 
 @manager.route("/my_llms", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, MyLLMsResponse)
+@llm_tag
 def my_llms():
+    """
+    Get current tenant's LLM configurations.
+
+    Returns all LLM model configurations available to the current tenant,
+    grouped by factory. Includes information about model types, usage statistics,
+    and configuration details.
+
+    Query parameters:
+    - include_details: If 'true', returns detailed information including api_base and max_tokens
+    """
     try:
         TenantLLMService.ensure_mineru_from_env(current_user.id)
         include_details = request.args.get("include_details", "false").lower() == "true"
@@ -373,7 +588,20 @@ def my_llms():
 
 @manager.route("/list", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, ListLLMsResponse)
+@llm_tag
 async def list_app():
+    """
+    List all available LLM models.
+
+    Returns a comprehensive list of all LLM models available to the current tenant,
+    including system built-in models and tenant-configured models. Models are
+    grouped by factory and include availability status.
+
+    Query parameters:
+    - model_type: Optional filter to return only models of a specific type
+                  (e.g., 'chat', 'embedding', 'rerank', 'image2text', etc.)
+    """
     self_deployed = ["FastEmbed", "Ollama", "Xinference", "LocalAI", "LM-Studio", "GPUStack"]
     weighted = []
     model_type = request.args.get("model_type")

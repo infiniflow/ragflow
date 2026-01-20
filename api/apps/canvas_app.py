@@ -17,7 +17,10 @@ import inspect
 import json
 import logging
 from functools import partial
+from typing import Annotated
 from quart import request, Response, make_response
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import validate_request as qs_validate_request, validate_response, tag
 from agent.component import LLM
 from api.db import CanvasCategory
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
@@ -48,16 +51,234 @@ from common import settings
 from api.apps import login_required, current_user
 
 
+# =============================================================================
+# Pydantic Schemas for OpenAPI Documentation
+# =============================================================================
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class CanvasTemplateResponse(BaseModel):
+    """Response schema for canvas templates."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[list[dict], Field(..., description="List of canvas templates")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class DeleteCanvasRequest(BaseSchema):
+    """Request schema for deleting canvas."""
+    canvas_ids: Annotated[list[str], Field(..., description="List of canvas IDs to delete", min_length=1)]
+
+
+class DeleteCanvasResponse(BaseModel):
+    """Response schema for deleting canvas."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Deletion status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class SaveCanvasRequest(BaseSchema):
+    """Request schema for saving canvas."""
+    dsl: Annotated[dict | str, Field(..., description="Canvas DSL (can be JSON object or string)")]
+    title: Annotated[str, Field(..., description="Canvas title", min_length=1, max_length=255)]
+    id: Annotated[str | None, Field(None, description="Canvas ID (None for new canvas)")]
+    canvas_category: Annotated[str | None, Field(CanvasCategory.Agent, description="Canvas category")]
+    description: Annotated[str | None, Field(None, description="Canvas description")]
+    avatar: Annotated[str | None, Field(None, description="Canvas avatar URL")]
+
+
+class SaveCanvasResponse(BaseModel):
+    """Response schema for saving canvas."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Saved canvas data")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class GetCanvasResponse(BaseModel):
+    """Response schema for getting canvas."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Canvas details")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class CompletionRequest(BaseSchema):
+    """Request schema for canvas completion."""
+    id: Annotated[str, Field(..., description="Canvas ID")]
+    query: Annotated[str, Field("", description="User query/message")]
+    files: Annotated[list[dict], Field([], description="List of file information")]
+    inputs: Annotated[dict, Field({}, description="Additional input parameters")]
+    user_id: Annotated[str | None, Field(None, description="User ID (defaults to current user)")]
+
+
+class CompletionResponse(BaseModel):
+    """Response schema for canvas completion (SSE)."""
+    code: Annotated[int, Field(0, description="Response code")]
+    message: Annotated[str, Field("Success", description="Response message")]
+    data: Annotated[dict | bool, Field(..., description="Response data or stream status")]
+
+
+class RerunRequest(BaseSchema):
+    """Request schema for rerunning canvas."""
+    id: Annotated[str, Field(..., description="Canvas ID")]
+    dsl: Annotated[dict, Field(..., description="Canvas DSL configuration")]
+    component_id: Annotated[str, Field(..., description="Component ID to rerun")]
+
+
+class RerunResponse(BaseModel):
+    """Response schema for rerunning canvas."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Rerun status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class CancelResponse(BaseModel):
+    """Response schema for canceling task."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Cancel status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class ResetRequest(BaseSchema):
+    """Request schema for resetting canvas."""
+    id: Annotated[str, Field(..., description="Canvas ID")]
+
+
+class ResetResponse(BaseModel):
+    """Response schema for resetting canvas."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Reset canvas DSL")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class InputFormResponse(BaseModel):
+    """Response schema for getting input form."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Input form configuration")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class DebugRequest(BaseSchema):
+    """Request schema for debugging component."""
+    id: Annotated[str, Field(..., description="Canvas ID")]
+    component_id: Annotated[str, Field(..., description="Component ID to debug")]
+    params: Annotated[dict, Field(..., description="Component parameters for debugging")]
+
+
+class DebugResponse(BaseModel):
+    """Response schema for debugging component."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Debug output results")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class TestDBConnectRequest(BaseSchema):
+    """Request schema for testing database connection."""
+    db_type: Annotated[str, Field(..., description="Database type (mysql, mariadb, postgres, mssql, IBM DB2, trino)")]
+    database: Annotated[str, Field(..., description="Database name")]
+    username: Annotated[str, Field(..., description="Database username")]
+    host: Annotated[str, Field(..., description="Database host")]
+    port: Annotated[int, Field(..., description="Database port", gt=0, le=65535)]
+    password: Annotated[str, Field(..., description="Database password")]
+
+
+class TestDBConnectResponse(BaseModel):
+    """Response schema for testing database connection."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[str, Field(..., description="Connection test result message")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class GetListVersionResponse(BaseModel):
+    """Response schema for getting canvas version list."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[list[dict], Field(..., description="List of canvas versions")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class GetVersionResponse(BaseModel):
+    """Response schema for getting specific canvas version."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Canvas version details")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class ListCanvasResponse(BaseModel):
+    """Response schema for listing canvases."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Canvas list with total count")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class SettingRequest(BaseSchema):
+    """Request schema for updating canvas settings."""
+    id: Annotated[str, Field(..., description="Canvas ID")]
+    title: Annotated[str, Field(..., description="New canvas title", min_length=1)]
+    permission: Annotated[str, Field(..., description="Canvas permission settings")]
+    description: Annotated[str | None, Field(None, description="Canvas description")]
+    avatar: Annotated[str | None, Field(None, description="Canvas avatar URL")]
+
+
+class SettingResponse(BaseModel):
+    """Response schema for updating canvas settings."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[int, Field(..., description="Number of updated records")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class TraceResponse(BaseModel):
+    """Response schema for getting canvas trace logs."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Trace log data")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class SessionsResponse(BaseModel):
+    """Response schema for getting canvas sessions."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Sessions list with total count")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class PromptsResponse(BaseModel):
+    """Response schema for getting system prompts."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="System prompt templates")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+# Canvas API tag
+canvas_tag = tag("canvas", "Canvas/Agent Management APIs")
+
+
 @manager.route('/templates', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, CanvasTemplateResponse)
+@canvas_tag
 def templates():
+    """
+    Get all canvas templates.
+
+    Retrieves a list of all available canvas templates that can be used to create new canvases.
+    Templates include predefined agent workflows and configurations.
+    """
     return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.get_all()])
 
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
 @validate_request("canvas_ids")
 @login_required
+@qs_validate_request(DeleteCanvasRequest)
+@validate_response(200, DeleteCanvasResponse)
+@canvas_tag
 async def rm():
+    """
+    Delete canvases.
+
+    Permanently deletes one or more canvases by their IDs.
+    Only the owner of a canvas can delete it.
+    """
     req = await get_request_json()
     for i in req["canvas_ids"]:
         if not UserCanvasService.accessible(i, current_user.id):
@@ -71,7 +292,16 @@ async def rm():
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @validate_request("dsl", "title")
 @login_required
+@qs_validate_request(SaveCanvasRequest)
+@validate_response(200, SaveCanvasResponse)
+@canvas_tag
 async def save():
+    """
+    Save or update a canvas.
+
+    Creates a new canvas or updates an existing one with the provided DSL configuration.
+    Automatically creates a version snapshot of the canvas.
+    """
     req = await get_request_json()
     if not isinstance(req["dsl"], str):
         req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
@@ -98,7 +328,15 @@ async def save():
 
 @manager.route('/get/<canvas_id>', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, GetCanvasResponse)
+@canvas_tag
 def get(canvas_id):
+    """
+    Get canvas details.
+
+    Retrieves detailed information about a specific canvas by its ID.
+    The user must have permission to access this canvas.
+    """
     if not UserCanvasService.accessible(canvas_id, current_user.id):
         return get_data_error_result(message="canvas not found.")
     e, c = UserCanvasService.get_by_canvas_id(canvas_id)
@@ -106,7 +344,15 @@ def get(canvas_id):
 
 
 @manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
+@validate_response(200, GetCanvasResponse)
+@canvas_tag
 def getsse(canvas_id):
+    """
+    Get canvas via API token.
+
+    Retrieves canvas details using API token authentication instead of user session.
+    Used for external API access to canvas configurations.
+    """
     token = request.headers.get('Authorization').split()
     if len(token) != 2:
         return get_data_error_result(message='Authorization is not valid!"')
@@ -130,7 +376,17 @@ def getsse(canvas_id):
 @manager.route('/completion', methods=['POST'])  # noqa: F821
 @validate_request("id")
 @login_required
+@qs_validate_request(CompletionRequest)
+@validate_response(200, CompletionResponse)
+@canvas_tag
 async def run():
+    """
+    Execute canvas completion.
+
+    Runs a canvas workflow with the provided query and inputs.
+    Returns results via Server-Sent Events (SSE) for real-time streaming.
+    Supports both Agent and DataFlow canvas types.
+    """
     req = await get_request_json()
     query = req.get("query", "")
     files = req.get("files", [])
@@ -187,7 +443,16 @@ async def run():
 @manager.route('/rerun', methods=['POST'])  # noqa: F821
 @validate_request("id", "dsl", "component_id")
 @login_required
+@qs_validate_request(RerunRequest)
+@validate_response(200, RerunResponse)
+@canvas_tag
 async def rerun():
+    """
+    Rerun a canvas component.
+
+    Reruns a specific component in a DataFlow pipeline.
+    Clears previous document data and restarts processing from the specified component.
+    """
     req = await get_request_json()
     doc = PipelineOperationLogService.get_documents_info(req["id"])
     if not doc:
@@ -214,7 +479,14 @@ async def rerun():
 
 @manager.route('/cancel/<task_id>', methods=['PUT'])  # noqa: F821
 @login_required
+@validate_response(200, CancelResponse)
+@canvas_tag
 def cancel(task_id):
+    """
+    Cancel a running task.
+
+    Cancels a currently running canvas or pipeline task by setting a cancel flag in Redis.
+    """
     try:
         REDIS_CONN.set(f"{task_id}-cancel", "x")
     except Exception as e:
@@ -225,7 +497,15 @@ def cancel(task_id):
 @manager.route('/reset', methods=['POST'])  # noqa: F821
 @validate_request("id")
 @login_required
+@qs_validate_request(ResetRequest)
+@validate_response(200, ResetResponse)
+@canvas_tag
 async def reset():
+    """
+    Reset canvas state.
+
+    Resets a canvas to its initial state, clearing all conversation history and component states.
+    """
     req = await get_request_json()
     if not UserCanvasService.accessible(req["id"], current_user.id):
         return get_json_result(
@@ -262,7 +542,15 @@ async def upload(canvas_id):
 
 @manager.route('/input_form', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, InputFormResponse)
+@canvas_tag
 def input_form():
+    """
+    Get component input form configuration.
+
+    Retrieves the input form schema for a specific component in a canvas.
+    Used to dynamically generate UI forms for component configuration.
+    """
     cvs_id = request.args.get("id")
     cpn_id = request.args.get("component_id")
     try:
@@ -283,7 +571,16 @@ def input_form():
 @manager.route('/debug', methods=['POST'])  # noqa: F821
 @validate_request("id", "component_id", "params")
 @login_required
+@qs_validate_request(DebugRequest)
+@validate_response(200, DebugResponse)
+@canvas_tag
 async def debug():
+    """
+    Debug a canvas component.
+
+    Tests a specific component with custom parameters without running the full canvas.
+    Useful for testing individual components in isolation.
+    """
     req = await get_request_json()
     if not UserCanvasService.accessible(req["id"], current_user.id):
         return get_json_result(
@@ -320,7 +617,16 @@ async def debug():
 @manager.route('/test_db_connect', methods=['POST'])  # noqa: F821
 @validate_request("db_type", "database", "username", "host", "port", "password")
 @login_required
+@qs_validate_request(TestDBConnectRequest)
+@validate_response(200, TestDBConnectResponse)
+@canvas_tag
 async def test_db_connect():
+    """
+    Test database connection.
+
+    Tests the connection to a database using the provided credentials.
+    Supports MySQL, MariaDB, PostgreSQL, MSSQL, IBM DB2, and Trino.
+    """
     req = await get_request_json()
     try:
         if req["db_type"] in ["mysql", "mariadb"]:
@@ -422,7 +728,14 @@ async def test_db_connect():
 #api get list version dsl of canvas
 @manager.route('/getlistversion/<canvas_id>', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, GetListVersionResponse)
+@canvas_tag
 def getlistversion(canvas_id):
+    """
+    Get canvas version history.
+
+    Retrieves a list of all historical versions of a canvas, sorted by update time (newest first).
+    """
     try:
         versions =sorted([c.to_dict() for c in UserCanvasVersionService.list_by_canvas_id(canvas_id)], key=lambda x: x["update_time"]*-1)
         return get_json_result(data=versions)
@@ -433,7 +746,14 @@ def getlistversion(canvas_id):
 #api get version dsl of canvas
 @manager.route('/getversion/<version_id>', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, GetVersionResponse)
+@canvas_tag
 def getversion( version_id):
+    """
+    Get specific canvas version.
+
+    Retrieves details of a specific canvas version by its version ID.
+    """
     try:
         e, version = UserCanvasVersionService.get_by_id(version_id)
         if version:
@@ -444,7 +764,15 @@ def getversion( version_id):
 
 @manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, ListCanvasResponse)
+@canvas_tag
 def list_canvas():
+    """
+    List canvases with pagination.
+
+    Retrieves a paginated list of canvases with optional filtering by keywords, category, and owners.
+    Supports sorting and customizable page size.
+    """
     keywords = request.args.get("keywords", "")
     page_number = int(request.args.get("page", 0))
     items_per_page = int(request.args.get("page_size", 0))
@@ -473,7 +801,16 @@ def list_canvas():
 @manager.route('/setting', methods=['POST'])  # noqa: F821
 @validate_request("id", "title", "permission")
 @login_required
+@qs_validate_request(SettingRequest)
+@validate_response(200, SettingResponse)
+@canvas_tag
 async def setting():
+    """
+    Update canvas settings.
+
+    Updates canvas metadata including title, description, permission, and avatar.
+    Only the owner of the canvas can update its settings.
+    """
     req = await get_request_json()
     req["user_id"] = current_user.id
 
@@ -497,7 +834,14 @@ async def setting():
 
 
 @manager.route('/trace', methods=['GET'])  # noqa: F821
+@validate_response(200, TraceResponse)
+@canvas_tag
 def trace():
+    """
+    Get canvas execution trace logs.
+
+    Retrieves execution logs and trace information for a specific canvas run from Redis.
+    """
     cvs_id = request.args.get("canvas_id")
     msg_id = request.args.get("message_id")
     try:
@@ -512,7 +856,15 @@ def trace():
 
 @manager.route('/<canvas_id>/sessions', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, SessionsResponse)
+@canvas_tag
 def sessions(canvas_id):
+    """
+    Get canvas conversation sessions.
+
+    Retrieves a paginated list of conversation sessions for a canvas.
+    Supports filtering by user, keywords, date range, and whether to include DSL.
+    """
     tenant_id = current_user.id
     if not UserCanvasService.accessible(canvas_id, tenant_id):
         return get_json_result(
@@ -542,7 +894,15 @@ def sessions(canvas_id):
 
 @manager.route('/prompts', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, PromptsResponse)
+@canvas_tag
 def prompts():
+    """
+    Get system prompt templates.
+
+    Retrieves built-in system prompt templates used for various agent tasks
+    including task analysis, plan generation, reflection, and citation guidelines.
+    """
     from rag.prompts.generator import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
 
     return get_json_result(data={

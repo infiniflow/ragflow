@@ -25,7 +25,11 @@ Provides REST API for RAG evaluation functionality including:
 - Configuration recommendations
 """
 
+from typing import Annotated
 from quart import request
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import validate_request as qs_validate_request, validate_response, tag
+
 from api.apps import login_required, current_user
 from api.db.services.evaluation_service import EvaluationService
 from api.utils.api_utils import (
@@ -38,11 +42,107 @@ from api.utils.api_utils import (
 from common.constants import RetCode
 
 
+# ==================== Pydantic Schemas for OpenAPI Documentation ====================
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class CreateDatasetRequest(BaseSchema):
+    """Request schema for creating an evaluation dataset."""
+    name: Annotated[str, Field(..., description="Dataset name", min_length=1, max_length=255)]
+    description: Annotated[str | None, Field(None, description="Optional dataset description", max_length=65535)]
+    kb_ids: Annotated[list[str], Field(..., description="List of knowledge base IDs to associate with the dataset")]
+
+
+class DatasetResponse(BaseModel):
+    """Response schema for dataset operations."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Dataset data containing dataset_id")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class DatasetListResponse(BaseModel):
+    """Response schema for listing datasets."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="List of datasets with pagination info")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class UpdateDatasetRequest(BaseSchema):
+    """Request schema for updating a dataset."""
+    name: Annotated[str | None, Field(None, description="Updated dataset name", min_length=1, max_length=255)]
+    description: Annotated[str | None, Field(None, description="Updated dataset description")]
+    kb_ids: Annotated[list[str] | None, Field(None, description="Updated list of knowledge base IDs")]
+
+
+class AddTestCaseRequest(BaseSchema):
+    """Request schema for adding a test case to a dataset."""
+    question: Annotated[str, Field(..., description="Test question", min_length=1)]
+    reference_answer: Annotated[str | None, Field(None, description="Optional ground truth answer")]
+    relevant_doc_ids: Annotated[list[str] | None, Field(None, description="List of relevant document IDs")]
+    relevant_chunk_ids: Annotated[list[str] | None, Field(None, description="List of relevant chunk IDs")]
+    metadata: Annotated[dict | None, Field(None, description="Optional metadata for the test case")]
+
+
+class TestCaseResponse(BaseModel):
+    """Response schema for test case operations."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Test case data containing case_id or cases list")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class ImportTestCasesRequest(BaseSchema):
+    """Request schema for bulk importing test cases."""
+    cases: Annotated[list[dict], Field(..., description="List of test cases to import", min_length=1)]
+
+
+class StartEvaluationRequest(BaseSchema):
+    """Request schema for starting an evaluation run."""
+    dataset_id: Annotated[str, Field(..., description="Dataset ID to evaluate")]
+    dialog_id: Annotated[str, Field(..., description="Dialog ID to use for evaluation")]
+    name: Annotated[str | None, Field(None, description="Optional name for the evaluation run")]
+
+
+class EvaluationRunResponse(BaseModel):
+    """Response schema for evaluation run operations."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Evaluation run data")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class CompareRunsRequest(BaseSchema):
+    """Request schema for comparing multiple evaluation runs."""
+    run_ids: Annotated[list[str], Field(..., description="List of run IDs to compare", min_length=2)]
+
+
+class EvaluateSingleRequest(BaseSchema):
+    """Request schema for real-time single question evaluation."""
+    question: Annotated[str, Field(..., description="Question to evaluate", min_length=1)]
+    dialog_id: Annotated[str, Field(..., description="Dialog ID to use for evaluation")]
+    reference_answer: Annotated[str | None, Field(None, description="Optional ground truth answer")]
+    relevant_chunk_ids: Annotated[list[str] | None, Field(None, description="List of relevant chunk IDs")]
+
+
+class ErrorResponse(BaseModel):
+    """Response schema for error responses."""
+    code: Annotated[int, Field(..., description="Error code")]
+    data: Annotated[dict | None, Field(None, description="Error data")]
+    message: Annotated[str, Field(..., description="Error message")]
+
+
 # ==================== Dataset Management ====================
+
+evaluation_tag = tag("evaluation", "RAG Evaluation Management APIs")
+
 
 @manager.route('/dataset/create', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("name", "kb_ids")
+@qs_validate_request(CreateDatasetRequest)
+@validate_response(200, DatasetResponse)
+@evaluation_tag
 async def create_dataset():
     """
     Create a new evaluation dataset.
@@ -84,6 +184,8 @@ async def create_dataset():
 
 @manager.route('/dataset/list', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, DatasetListResponse)
+@evaluation_tag
 async def list_datasets():
     """
     List evaluation datasets for current tenant.
@@ -110,6 +212,8 @@ async def list_datasets():
 
 @manager.route('/dataset/<dataset_id>', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, DatasetResponse)
+@evaluation_tag
 async def get_dataset(dataset_id):
     """Get dataset details by ID"""
     try:
@@ -127,6 +231,9 @@ async def get_dataset(dataset_id):
 
 @manager.route('/dataset/<dataset_id>', methods=['PUT'])  # noqa: F821
 @login_required
+@qs_validate_request(UpdateDatasetRequest)
+@validate_response(200, DatasetResponse)
+@evaluation_tag
 async def update_dataset(dataset_id):
     """
     Update dataset.
@@ -159,6 +266,8 @@ async def update_dataset(dataset_id):
 
 @manager.route('/dataset/<dataset_id>', methods=['DELETE'])  # noqa: F821
 @login_required
+@validate_response(200, DatasetResponse)
+@evaluation_tag
 async def delete_dataset(dataset_id):
     """Delete dataset (soft delete)"""
     try:
@@ -177,6 +286,9 @@ async def delete_dataset(dataset_id):
 @manager.route('/dataset/<dataset_id>/case/add', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("question")
+@qs_validate_request(AddTestCaseRequest)
+@validate_response(200, TestCaseResponse)
+@evaluation_tag
 async def add_test_case(dataset_id):
     """
     Add a test case to a dataset.
@@ -217,6 +329,9 @@ async def add_test_case(dataset_id):
 @manager.route('/dataset/<dataset_id>/case/import', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("cases")
+@qs_validate_request(ImportTestCasesRequest)
+@validate_response(200, TestCaseResponse)
+@evaluation_tag
 async def import_test_cases(dataset_id):
     """
     Bulk import test cases.
@@ -259,6 +374,8 @@ async def import_test_cases(dataset_id):
 
 @manager.route('/dataset/<dataset_id>/cases', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, TestCaseResponse)
+@evaluation_tag
 async def get_test_cases(dataset_id):
     """Get all test cases for a dataset"""
     try:
@@ -270,6 +387,8 @@ async def get_test_cases(dataset_id):
 
 @manager.route('/case/<case_id>', methods=['DELETE'])  # noqa: F821
 @login_required
+@validate_response(200, TestCaseResponse)
+@evaluation_tag
 async def delete_test_case(case_id):
     """Delete a test case"""
     try:
@@ -288,6 +407,9 @@ async def delete_test_case(case_id):
 @manager.route('/run/start', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("dataset_id", "dialog_id")
+@qs_validate_request(StartEvaluationRequest)
+@validate_response(200, EvaluationRunResponse)
+@evaluation_tag
 async def start_evaluation():
     """
     Start an evaluation run.
@@ -322,6 +444,8 @@ async def start_evaluation():
 
 @manager.route('/run/<run_id>', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, EvaluationRunResponse)
+@evaluation_tag
 async def get_evaluation_run(run_id):
     """Get evaluation run details"""
     try:
@@ -340,6 +464,8 @@ async def get_evaluation_run(run_id):
 
 @manager.route('/run/<run_id>/results', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, EvaluationRunResponse)
+@evaluation_tag
 async def get_run_results(run_id):
     """Get detailed results for an evaluation run"""
     try:
@@ -358,6 +484,8 @@ async def get_run_results(run_id):
 
 @manager.route('/run/list', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, EvaluationRunResponse)
+@evaluation_tag
 async def list_evaluation_runs():
     """
     List evaluation runs.
@@ -377,6 +505,8 @@ async def list_evaluation_runs():
 
 @manager.route('/run/<run_id>', methods=['DELETE'])  # noqa: F821
 @login_required
+@validate_response(200, EvaluationRunResponse)
+@evaluation_tag
 async def delete_evaluation_run(run_id):
     """Delete an evaluation run"""
     try:
@@ -390,6 +520,8 @@ async def delete_evaluation_run(run_id):
 
 @manager.route('/run/<run_id>/recommendations', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, EvaluationRunResponse)
+@evaluation_tag
 async def get_recommendations(run_id):
     """Get configuration recommendations based on evaluation results"""
     try:
@@ -402,6 +534,9 @@ async def get_recommendations(run_id):
 @manager.route('/compare', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("run_ids")
+@qs_validate_request(CompareRunsRequest)
+@validate_response(200, EvaluationRunResponse)
+@evaluation_tag
 async def compare_runs():
     """
     Compare multiple evaluation runs.
@@ -428,6 +563,8 @@ async def compare_runs():
 
 @manager.route('/run/<run_id>/export', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, EvaluationRunResponse)
+@evaluation_tag
 async def export_results(run_id):
     """Export evaluation results as JSON/CSV"""
     try:
@@ -452,6 +589,9 @@ async def export_results(run_id):
 @manager.route('/evaluate_single', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("question", "dialog_id")
+@qs_validate_request(EvaluateSingleRequest)
+@validate_response(200, EvaluationRunResponse)
+@evaluation_tag
 async def evaluate_single():
     """
     Evaluate a single question-answer pair in real-time.

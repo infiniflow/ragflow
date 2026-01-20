@@ -18,7 +18,11 @@ import os.path
 import pathlib
 import re
 from pathlib import Path
+from typing import Annotated
 from quart import request, make_response
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import validate_request as qs_validate_request, validate_response, tag
+
 from api.apps import current_user, login_required
 from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
@@ -49,10 +53,268 @@ from rag.nlp import search, rag_tokenizer
 from common import settings
 
 
+# Pydantic Schemas for OpenAPI Documentation
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class UploadResponse(BaseModel):
+    """Response schema for file upload."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[list[dict], Field(..., description="List of uploaded file information")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class WebCrawlRequest(BaseSchema):
+    """Request schema for web crawling."""
+    kb_id: Annotated[str, Field(..., description="Knowledge base ID")]
+    name: Annotated[str, Field(..., description="Document name")]
+    url: Annotated[str, Field(..., description="URL to crawl")]
+
+
+class WebCrawlResponse(BaseModel):
+    """Response schema for web crawling."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Crawl success status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class CreateDocumentRequest(BaseSchema):
+    """Request schema for creating a virtual document."""
+    name: Annotated[str, Field(..., description="Document name", min_length=1)]
+    kb_id: Annotated[str, Field(..., description="Knowledge base ID")]
+
+
+class CreateDocumentResponse(BaseModel):
+    """Response schema for creating a document."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Created document information")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class ListDocumentsRequest(BaseSchema):
+    """Request schema for listing documents."""
+    kb_id: Annotated[str, Field(..., description="Knowledge base ID")]
+    keywords: Annotated[str | None, Field(None, description="Search keywords")]
+    page: Annotated[int | None, Field(0, description="Page number")]
+    page_size: Annotated[int | None, Field(0, description="Items per page")]
+    orderby: Annotated[str | None, Field("create_time", description="Order by field")]
+    desc: Annotated[bool | None, Field(True, description="Descending order")]
+    create_time_from: Annotated[int | None, Field(0, description="Filter by create time start (timestamp)")]
+    create_time_to: Annotated[int | None, Field(0, description="Filter by create time end (timestamp)")]
+    return_empty_metadata: Annotated[bool | None, Field(False, description="Return documents with empty metadata")]
+    run_status: Annotated[list[str] | None, Field(None, description="Filter by run status")]
+    types: Annotated[list[str] | None, Field(None, description="Filter by file types")]
+    suffix: Annotated[list[str] | None, Field(None, description="Filter by file suffix")]
+    metadata_condition: Annotated[dict | None, Field(None, description="Metadata filter conditions")]
+    metadata: Annotated[dict | None, Field(None, description="Metadata filter values")]
+
+
+class ListDocumentsResponse(BaseModel):
+    """Response schema for listing documents."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Document list with total count")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class FilterRequest(BaseSchema):
+    """Request schema for getting document filters."""
+    kb_id: Annotated[str, Field(..., description="Knowledge base ID")]
+    keywords: Annotated[str | None, Field(None, description="Search keywords")]
+    run_status: Annotated[list[str] | None, Field(None, description="Filter by run status")]
+    types: Annotated[list[str] | None, Field(None, description="Filter by file types")]
+    suffix: Annotated[list[str] | None, Field(None, description="Filter by file suffix")]
+
+
+class FilterResponse(BaseModel):
+    """Response schema for document filters."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Filter options with total count")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class DocInfosRequest(BaseSchema):
+    """Request schema for getting document information."""
+    doc_ids: Annotated[list[str], Field(..., description="List of document IDs")]
+
+
+class DocInfosResponse(BaseModel):
+    """Response schema for document information."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[list[dict], Field(..., description="List of document details")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class MetadataSummaryRequest(BaseSchema):
+    """Request schema for metadata summary."""
+    kb_id: Annotated[str, Field(..., description="Knowledge base ID")]
+
+
+class MetadataSummaryResponse(BaseModel):
+    """Response schema for metadata summary."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Metadata summary information")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class MetadataUpdateRequest(BaseSchema):
+    """Request schema for batch updating metadata."""
+    kb_id: Annotated[str, Field(..., description="Knowledge base ID")]
+    selector: Annotated[dict, Field(..., description="Selector for documents to update")]
+    updates: Annotated[list[dict], Field(..., description="List of metadata updates")]
+    deletes: Annotated[list[dict], Field(..., description="List of metadata keys to delete")]
+
+
+class MetadataUpdateResponse(BaseModel):
+    """Response schema for metadata update."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Update count and matched document count")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class UpdateMetadataSettingRequest(BaseSchema):
+    """Request schema for updating document metadata settings."""
+    doc_id: Annotated[str, Field(..., description="Document ID")]
+    metadata: Annotated[dict, Field(..., description="Metadata configuration")]
+
+
+class UpdateMetadataSettingResponse(BaseModel):
+    """Response schema for updating metadata settings."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Updated document information")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class ThumbnailsResponse(BaseModel):
+    """Response schema for getting thumbnails."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Dictionary mapping document IDs to thumbnail URLs")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class ChangeStatusRequest(BaseSchema):
+    """Request schema for changing document status."""
+    doc_ids: Annotated[list[str], Field(..., description="List of document IDs")]
+    status: Annotated[str, Field(..., description="New status (0 or 1)")]
+
+
+class ChangeStatusResponse(BaseModel):
+    """Response schema for changing document status."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Document ID to status update result mapping")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class DeleteDocumentRequest(BaseSchema):
+    """Request schema for deleting documents."""
+    doc_id: Annotated[str | list[str], Field(..., description="Document ID or list of document IDs")]
+
+
+class DeleteDocumentResponse(BaseModel):
+    """Response schema for deleting documents."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Deletion success status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class RunDocumentRequest(BaseSchema):
+    """Request schema for running document parsing."""
+    doc_ids: Annotated[list[str], Field(..., description="List of document IDs to process")]
+    run: Annotated[str, Field(..., description="Run action (START, STOP, etc.)")]
+    delete: Annotated[bool | None, Field(False, description="Delete existing chunks before rerun")]
+    apply_kb: Annotated[bool | None, Field(None, description="Apply knowledge base parser settings")]
+
+
+class RunDocumentResponse(BaseModel):
+    """Response schema for running document parsing."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Run success status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class RenameDocumentRequest(BaseSchema):
+    """Request schema for renaming a document."""
+    doc_id: Annotated[str, Field(..., description="Document ID")]
+    name: Annotated[str, Field(..., description="New document name", min_length=1)]
+
+
+class RenameDocumentResponse(BaseModel):
+    """Response schema for renaming a document."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Rename success status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class ChangeParserRequest(BaseSchema):
+    """Request schema for changing document parser."""
+    doc_id: Annotated[str, Field(..., description="Document ID")]
+    parser_id: Annotated[str, Field(..., description="New parser ID")]
+    parser_config: Annotated[dict | None, Field(None, description="Parser configuration")]
+    pipeline_id: Annotated[str | None, Field(None, description="Pipeline ID")]
+
+
+class ChangeParserResponse(BaseModel):
+    """Response schema for changing parser."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Parser change success status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class UploadAndParseRequest(BaseSchema):
+    """Request schema for uploading and parsing a document."""
+    conversation_id: Annotated[str, Field(..., description="Conversation ID")]
+
+
+class UploadAndParseResponse(BaseModel):
+    """Response schema for upload and parse."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[list[str], Field(..., description="List of created document IDs")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class ParseRequest(BaseSchema):
+    """Request schema for parsing a document."""
+    url: Annotated[str | None, Field(None, description="URL to parse")]
+
+
+class ParseResponse(BaseModel):
+    """Response schema for document parsing."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[str, Field(..., description="Parsed text content")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class SetMetaRequest(BaseSchema):
+    """Request schema for setting document metadata."""
+    doc_id: Annotated[str, Field(..., description="Document ID")]
+    meta: Annotated[str, Field(..., description="JSON string of metadata fields")]
+
+
+class SetMetaResponse(BaseModel):
+    """Response schema for setting metadata."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Set metadata success status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+# Document API Tag
+document_tag = tag("document", "Document Management APIs")
+
+
 @manager.route("/upload", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("kb_id")
+@validate_response(200, UploadResponse)
+@document_tag
 async def upload():
+    """
+    Upload files to a knowledge base.
+
+    Uploads one or more files to the specified knowledge base.
+    Files will be processed and stored for later parsing and indexing.
+    """
     form = await request.form
     kb_id = form.get("kb_id")
     if not kb_id:
@@ -100,7 +362,16 @@ async def upload():
 @manager.route("/web_crawl", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("kb_id", "name", "url")
+@qs_validate_request(WebCrawlRequest)
+@validate_response(200, WebCrawlResponse)
+@document_tag
 async def web_crawl():
+    """
+    Crawl a web page and create a document.
+
+    Downloads the specified URL, converts it to PDF,
+    and creates a document in the knowledge base.
+    """
     form = await request.form
     kb_id = form.get("kb_id")
     if not kb_id:
@@ -166,7 +437,16 @@ async def web_crawl():
 @manager.route("/create", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("name", "kb_id")
+@qs_validate_request(CreateDocumentRequest)
+@validate_response(200, CreateDocumentResponse)
+@document_tag
 async def create():
+    """
+    Create a virtual document.
+
+    Creates a new virtual document in the knowledge base
+    without uploading an actual file.
+    """
     req = await get_request_json()
     kb_id = req["kb_id"]
     if not kb_id:
@@ -222,7 +502,16 @@ async def create():
 
 @manager.route("/list", methods=["POST"])  # noqa: F821
 @login_required
+@qs_validate_request(ListDocumentsRequest)
+@validate_response(200, ListDocumentsResponse)
+@document_tag
 async def list_docs():
+    """
+    List documents in a knowledge base.
+
+    Retrieves a paginated list of documents with optional filtering
+    by keywords, status, type, and metadata.
+    """
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -353,7 +642,16 @@ async def list_docs():
 
 @manager.route("/filter", methods=["POST"])  # noqa: F821
 @login_required
+@qs_validate_request(FilterRequest)
+@validate_response(200, FilterResponse)
+@document_tag
 async def get_filter():
+    """
+    Get document filter options.
+
+    Returns available filter values for documents in the knowledge base,
+    including run status, file types, and suffixes.
+    """
     req = await get_request_json()
 
     kb_id = req.get("kb_id")
@@ -391,7 +689,15 @@ async def get_filter():
 
 @manager.route("/infos", methods=["POST"])  # noqa: F821
 @login_required
+@qs_validate_request(DocInfosRequest)
+@validate_response(200, DocInfosResponse)
+@document_tag
 async def doc_infos():
+    """
+    Get document information.
+
+    Retrieves detailed information for multiple documents by their IDs.
+    """
     req = await get_request_json()
     doc_ids = req["doc_ids"]
     for doc_id in doc_ids:
@@ -403,7 +709,16 @@ async def doc_infos():
 
 @manager.route("/metadata/summary", methods=["POST"])  # noqa: F821
 @login_required
+@qs_validate_request(MetadataSummaryRequest)
+@validate_response(200, MetadataSummaryResponse)
+@document_tag
 async def metadata_summary():
+    """
+    Get metadata summary for a knowledge base.
+
+    Returns a summary of all metadata fields and their values
+    across documents in the knowledge base.
+    """
     req = await get_request_json()
     kb_id = req.get("kb_id")
     if not kb_id:
@@ -425,7 +740,16 @@ async def metadata_summary():
 
 @manager.route("/metadata/update", methods=["POST"])  # noqa: F821
 @login_required
+@qs_validate_request(MetadataUpdateRequest)
+@validate_response(200, MetadataUpdateResponse)
+@document_tag
 async def metadata_update():
+    """
+    Batch update document metadata.
+
+    Updates or deletes metadata fields for multiple documents
+    matching the specified selector criteria.
+    """
     req = await get_request_json()
     kb_id = req.get("kb_id")
     if not kb_id:
@@ -485,7 +809,15 @@ async def metadata_update():
 @manager.route("/update_metadata_setting", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id", "metadata")
+@qs_validate_request(UpdateMetadataSettingRequest)
+@validate_response(200, UpdateMetadataSettingResponse)
+@document_tag
 async def update_metadata_setting():
+    """
+    Update document metadata settings.
+
+    Updates the metadata extraction configuration for a specific document.
+    """
     req = await get_request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
@@ -504,7 +836,14 @@ async def update_metadata_setting():
 
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
 # @login_required
+@validate_response(200, ThumbnailsResponse)
+@document_tag
 def thumbnails():
+    """
+    Get document thumbnails.
+
+    Retrieves thumbnail URLs for the specified documents.
+    """
     doc_ids = request.args.getlist("doc_ids")
     if not doc_ids:
         return get_json_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
@@ -524,7 +863,16 @@ def thumbnails():
 @manager.route("/change_status", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_ids", "status")
+@qs_validate_request(ChangeStatusRequest)
+@validate_response(200, ChangeStatusResponse)
+@document_tag
 async def change_status():
+    """
+    Change document availability status.
+
+    Updates the status of multiple documents to make them
+    available or unavailable for search.
+    """
     req = await get_request_json()
     doc_ids = req.get("doc_ids", [])
     status = str(req.get("status", ""))
@@ -564,7 +912,16 @@ async def change_status():
 @manager.route("/rm", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id")
+@qs_validate_request(DeleteDocumentRequest)
+@validate_response(200, DeleteDocumentResponse)
+@document_tag
 async def rm():
+    """
+    Delete documents.
+
+    Deletes one or more documents from the knowledge base.
+    This operation is irreversible.
+    """
     req = await get_request_json()
     doc_ids = req["doc_id"]
     if isinstance(doc_ids, str):
@@ -585,7 +942,16 @@ async def rm():
 @manager.route("/run", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_ids", "run")
+@qs_validate_request(RunDocumentRequest)
+@validate_response(200, RunDocumentResponse)
+@document_tag
 async def run():
+    """
+    Run document parsing.
+
+    Starts, stops, or manages the parsing process for documents.
+    Can optionally delete existing chunks before re-parsing.
+    """
     req = await get_request_json()
     try:
         def _run_sync():
@@ -644,7 +1010,15 @@ async def run():
 @manager.route("/rename", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id", "name")
+@qs_validate_request(RenameDocumentRequest)
+@validate_response(200, RenameDocumentResponse)
+@document_tag
 async def rename():
+    """
+    Rename a document.
+
+    Changes the name of a document while preserving the file extension.
+    """
     req = await get_request_json()
     try:
         def _rename_sync():
@@ -695,7 +1069,15 @@ async def rename():
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
 # @login_required
+@validate_response(200, None)  # Binary response, no schema
+@document_tag
 async def get(doc_id):
+    """
+    Get document file.
+
+    Downloads the original file for a document by its ID.
+    Returns the file content with appropriate content type.
+    """
     try:
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
@@ -721,7 +1103,14 @@ async def get(doc_id):
 
 @manager.route("/download/<attachment_id>", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, None)  # Binary response, no schema
+@document_tag
 async def download_attachment(attachment_id):
+    """
+    Download document attachment.
+
+    Downloads an attachment file associated with a document.
+    """
     try:
         ext = request.args.get("ext", "markdown")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, current_user.id, attachment_id)
@@ -737,7 +1126,16 @@ async def download_attachment(attachment_id):
 @manager.route("/change_parser", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id")
+@qs_validate_request(ChangeParserRequest)
+@validate_response(200, ChangeParserResponse)
+@document_tag
 async def change_parser():
+    """
+    Change document parser.
+
+    Changes the parser type and configuration for a document.
+    Will reset the document parsing status and require re-parsing.
+    """
 
     req = await get_request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
@@ -791,7 +1189,14 @@ async def change_parser():
 
 @manager.route("/image/<image_id>", methods=["GET"])  # noqa: F821
 # @login_required
+@validate_response(200, None)  # Binary response, no schema
+@document_tag
 async def get_image(image_id):
+    """
+    Get document image.
+
+    Retrieves an image associated with a document (e.g., chart, diagram).
+    """
     try:
         arr = image_id.split("-")
         if len(arr) != 2:
@@ -808,7 +1213,15 @@ async def get_image(image_id):
 @manager.route("/upload_and_parse", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id")
+@qs_validate_request(UploadAndParseRequest)
+@validate_response(200, UploadAndParseResponse)
+@document_tag
 async def upload_and_parse():
+    """
+    Upload and parse a document for conversation.
+
+    Uploads a file and immediately parses it for use in a conversation context.
+    """
     files = await request.files
     if "file" not in files:
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
@@ -825,7 +1238,16 @@ async def upload_and_parse():
 
 @manager.route("/parse", methods=["POST"])  # noqa: F821
 @login_required
+@qs_validate_request(ParseRequest)
+@validate_response(200, ParseResponse)
+@document_tag
 async def parse():
+    """
+    Parse a document or URL.
+
+    Parses an uploaded file or URL to extract text content.
+    Useful for previewing document parsing results.
+    """
     req = await get_request_json()
     url = req.get("url", "")
     if url:
@@ -881,7 +1303,16 @@ async def parse():
 @manager.route("/set_meta", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id", "meta")
+@qs_validate_request(SetMetaRequest)
+@validate_response(200, SetMetaResponse)
+@document_tag
 async def set_meta():
+    """
+    Set document metadata fields.
+
+    Updates the metadata fields for a specific document.
+    Metadata should be provided as a JSON string.
+    """
     req = await get_request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
@@ -914,7 +1345,15 @@ async def set_meta():
 
 
 @manager.route("/upload_info", methods=["POST"])  # noqa: F821
+@validate_response(200, UploadResponse)
+@document_tag
 async def upload_info():
+    """
+    Get upload information for a file.
+
+    Retrieves information about a file before or after upload,
+    such as file type, size, and parsing requirements.
+    """
     files = await request.files
     file = files['file'] if files and files.get("file") else None
     try:

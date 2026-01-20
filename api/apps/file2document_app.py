@@ -15,6 +15,10 @@
 #
 
 from pathlib import Path
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import validate_request as qs_validate_request, validate_response, tag
 
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -28,10 +32,66 @@ from api.db import FileType
 from api.db.services.document_service import DocumentService
 
 
+# =============================================================================
+# Pydantic Schemas for OpenAPI Documentation
+# =============================================================================
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class ConvertRequest(BaseSchema):
+    """Request schema for converting files to documents."""
+    file_ids: Annotated[list[str], Field(..., description="List of file IDs to convert", min_length=1)]
+    kb_ids: Annotated[list[str], Field(..., description="List of knowledge base IDs to associate documents with", min_length=1)]
+
+
+class ConvertResponse(BaseModel):
+    """Response schema for file to document conversion."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[list[dict], Field(..., description="List of created file-to-document mappings")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class RemoveRequest(BaseSchema):
+    """Request schema for removing file-to-document mappings."""
+    file_ids: Annotated[list[str], Field(..., description="List of file IDs to remove documents for", min_length=1)]
+
+
+class RemoveResponse(BaseModel):
+    """Response schema for removing file-to-document mappings."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Removal status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+# File2Document API Endpoints
+
+file2document_tag = tag("file2document", "File to Document Management APIs")
+
+
 @manager.route('/convert', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("file_ids", "kb_ids")
+@qs_validate_request(ConvertRequest)
+@validate_response(200, ConvertResponse)
+@file2document_tag
 async def convert():
+    """
+    Convert files to documents in knowledge bases.
+
+    Converts the specified files to documents and associates them with the provided knowledge bases.
+    If a file is a folder, all innermost files within the folder will be converted.
+    Existing documents associated with the files will be removed before creating new ones.
+
+    Args:
+        file_ids: List of file IDs to convert
+        kb_ids: List of knowledge base IDs to associate documents with
+
+    Returns:
+        List of created file-to-document mappings with their details
+    """
     req = await get_request_json()
     kb_ids = req["kb_ids"]
     file_ids = req["file_ids"]
@@ -102,7 +162,22 @@ async def convert():
 @manager.route('/rm', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("file_ids")
+@qs_validate_request(RemoveRequest)
+@validate_response(200, RemoveResponse)
+@file2document_tag
 async def rm():
+    """
+    Remove file-to-document mappings and associated documents.
+
+    Removes the file-to-document mappings for the specified files and deletes
+    the associated documents from the system. This operation cannot be undone.
+
+    Args:
+        file_ids: List of file IDs to remove documents for
+
+    Returns:
+        Removal status (true if successful)
+    """
     req = await get_request_json()
     file_ids = req["file_ids"]
     if not file_ids:

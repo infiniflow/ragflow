@@ -18,7 +18,10 @@ import json
 import re
 import base64
 import xxhash
+from typing import Annotated
 from quart import request
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import validate_request as qs_validate_request, validate_response, tag
 
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -43,10 +46,173 @@ from common.constants import RetCode, LLMType, ParserType, PAGERANK_FLD
 from common import settings
 from api.apps import login_required, current_user
 
+
+# Pydantic Schemas for OpenAPI Documentation
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class ChunkListItem(BaseModel):
+    """Schema for a single chunk item in the list."""
+    chunk_id: Annotated[str, Field(..., description="Chunk ID")]
+    content_with_weight: Annotated[str, Field(..., description="Chunk content with weight")]
+    doc_id: Annotated[str, Field(..., description="Document ID")]
+    docnm_kwd: Annotated[str, Field(..., description="Document name")]
+    important_kwd: Annotated[list[str], Field(default_factory=list, description="Important keywords")]
+    question_kwd: Annotated[list[str], Field(default_factory=list, description="Question keywords")]
+    image_id: Annotated[str, Field("", description="Image ID associated with chunk")]
+    available_int: Annotated[int, Field(1, description="Availability status (1=available, 0=unavailable)")]
+    positions: Annotated[list[list[int]], Field(default_factory=list, description="Chunk positions in document")]
+    doc_type_kwd: Annotated[str | None, Field(None, description="Document type")]
+
+
+class DocumentInfo(BaseModel):
+    """Schema for document information."""
+    id: str
+    name: str
+    # Add other fields as needed
+
+
+class ListChunksResponse(BaseModel):
+    """Response schema for listing chunks."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Data containing total, chunks list, and document info")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class ChunkData(BaseModel):
+    """Schema for chunk data."""
+    chunk_id: Annotated[str, Field(..., description="Chunk ID")]
+    content_with_weight: Annotated[str, Field(..., description="Chunk content")]
+    doc_id: Annotated[str, Field(..., description="Document ID")]
+    docnm_kwd: Annotated[str, Field(..., description="Document name")]
+    important_kwd: Annotated[list[str], Field(default_factory=list, description="Important keywords")]
+    question_kwd: Annotated[list[str], Field(default_factory=list, description="Question keywords")]
+    available_int: Annotated[int, Field(1, description="Availability status")]
+    # Add other fields as needed
+
+
+class GetChunkResponse(BaseModel):
+    """Response schema for getting a chunk."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Chunk data")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class SetChunkRequest(BaseSchema):
+    """Request schema for setting a chunk."""
+    doc_id: Annotated[str, Field(..., description="Document ID")]
+    chunk_id: Annotated[str, Field(..., description="Chunk ID to update")]
+    content_with_weight: Annotated[str, Field(..., description="New chunk content")]
+    important_kwd: Annotated[list[str] | None, Field(None, description="Important keywords list")]
+    question_kwd: Annotated[list[str] | None, Field(None, description="Question keywords list")]
+    tag_kwd: Annotated[str | None, Field(None, description="Tag keywords")]
+    tag_feas: Annotated[list[float] | None, Field(None, description="Tag features")]
+    available_int: Annotated[int | None, Field(None, description="Availability status")]
+    image_base64: Annotated[str | None, Field(None, description="Base64 encoded image")]
+    img_id: Annotated[str | None, Field(None, description="Image ID")]
+
+
+class SetChunkResponse(BaseModel):
+    """Response schema for setting a chunk."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Update status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class SwitchChunkRequest(BaseSchema):
+    """Request schema for switching chunk availability."""
+    chunk_ids: Annotated[list[str], Field(..., description="List of chunk IDs to switch")]
+    available_int: Annotated[int, Field(..., description="New availability status (1=available, 0=unavailable)")]
+    doc_id: Annotated[str, Field(..., description="Document ID")]
+
+
+class SwitchChunkResponse(BaseModel):
+    """Response schema for switching chunk availability."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Switch status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class DeleteChunksRequest(BaseSchema):
+    """Request schema for deleting chunks."""
+    chunk_ids: Annotated[list[str], Field(..., description="List of chunk IDs to delete")]
+    doc_id: Annotated[str, Field(..., description="Document ID")]
+
+
+class DeleteChunksResponse(BaseModel):
+    """Response schema for deleting chunks."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[bool, Field(..., description="Deletion status")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class CreateChunkRequest(BaseSchema):
+    """Request schema for creating a chunk."""
+    doc_id: Annotated[str, Field(..., description="Document ID")]
+    content_with_weight: Annotated[str, Field(..., description="Chunk content")]
+    important_kwd: Annotated[list[str] | None, Field(default_factory=list, description="Important keywords")]
+    question_kwd: Annotated[list[str] | None, Field(default_factory=list, description="Question keywords")]
+    tag_feas: Annotated[list[float] | None, Field(None, description="Tag features")]
+
+
+class CreateChunkResponse(BaseModel):
+    """Response schema for creating a chunk."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Created chunk data containing chunk_id")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class RetrievalTestRequest(BaseSchema):
+    """Request schema for retrieval test."""
+    kb_id: Annotated[list[str] | str, Field(..., description="Knowledge base ID(s)")]
+    question: Annotated[str, Field(..., description="Question to retrieve")]
+    doc_ids: Annotated[list[str] | None, Field(None, description="Filter by document IDs")]
+    use_kg: Annotated[bool, Field(False, description="Whether to use knowledge graph")]
+    top_k: Annotated[int, Field(1024, description="Top K results")]
+    page: Annotated[int, Field(1, description="Page number")]
+    size: Annotated[int, Field(30, description="Page size")]
+    similarity_threshold: Annotated[float, Field(0.0, description="Similarity threshold")]
+    vector_similarity_weight: Annotated[float, Field(0.3, description="Vector similarity weight")]
+    rerank_id: Annotated[str | None, Field(None, description="Rerank model ID")]
+    keyword: Annotated[bool, Field(False, description="Whether to use keyword extraction")]
+    cross_languages: Annotated[list[str], Field(default_factory=list, description="Cross language options")]
+    search_id: Annotated[str | None, Field(None, description="Search configuration ID")]
+    meta_data_filter: Annotated[dict | None, Field(None, description="Metadata filter configuration")]
+
+
+class RetrievalTestResponse(BaseModel):
+    """Response schema for retrieval test."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Retrieval results with chunks and labels")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class KnowledgeGraphResponse(BaseModel):
+    """Response schema for knowledge graph."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    data: Annotated[dict, Field(..., description="Knowledge graph data containing graph and mind_map")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+# Tag for chunk endpoints
+chunk_tag = tag("chunk", "Chunk Management APIs")
+
 @manager.route('/list', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("doc_id")
+@qs_validate_request(BaseSchema)
+@validate_response(200, ListChunksResponse)
+@chunk_tag
 async def list_chunk():
+    """
+    List chunks for a document.
+
+    Retrieves a paginated list of chunks for a specific document with optional keyword search.
+    Supports filtering by availability status and highlights matching content.
+    """
     req = await get_request_json()
     doc_id = req["doc_id"]
     page = int(req.get("page", 1))
@@ -95,7 +261,15 @@ async def list_chunk():
 
 @manager.route('/get', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, GetChunkResponse)
+@chunk_tag
 def get():
+    """
+    Get chunk details.
+
+    Retrieves detailed information about a specific chunk by its ID.
+    Searches across all user's tenants to find the chunk.
+    """
     chunk_id = request.args["chunk_id"]
     try:
         chunk = None
@@ -128,7 +302,17 @@ def get():
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("doc_id", "chunk_id", "content_with_weight")
+@qs_validate_request(SetChunkRequest)
+@validate_response(200, SetChunkResponse)
+@chunk_tag
 async def set():
+    """
+    Update a chunk.
+
+    Updates an existing chunk with new content, keywords, and other properties.
+    Supports updating chunk content, important keywords, question keywords, tags, and availability status.
+    Also handles image updates if provided.
+    """
     req = await get_request_json()
     content_with_weight = req["content_with_weight"]
     if not isinstance(content_with_weight, (str, bytes)):
@@ -202,7 +386,16 @@ async def set():
 @manager.route('/switch', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("chunk_ids", "available_int", "doc_id")
+@qs_validate_request(SwitchChunkRequest)
+@validate_response(200, SwitchChunkResponse)
+@chunk_tag
 async def switch():
+    """
+    Switch chunk availability.
+
+    Changes the availability status of one or more chunks.
+    Use available_int=1 to make chunks available, or 0 to make them unavailable.
+    """
     req = await get_request_json()
     try:
         def _switch_sync():
@@ -225,7 +418,17 @@ async def switch():
 @manager.route('/rm', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("chunk_ids", "doc_id")
+@qs_validate_request(DeleteChunksRequest)
+@validate_response(200, DeleteChunksResponse)
+@chunk_tag
 async def rm():
+    """
+    Delete chunks.
+
+    Permanently deletes one or more chunks from a document.
+    Also removes associated images from storage if they exist.
+    Updates the document's chunk count accordingly.
+    """
     req = await get_request_json()
     try:
         def _rm_sync():
@@ -267,7 +470,17 @@ async def rm():
 @manager.route('/create', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("doc_id", "content_with_weight")
+@qs_validate_request(CreateChunkRequest)
+@validate_response(200, CreateChunkResponse)
+@chunk_tag
 async def create():
+    """
+    Create a new chunk.
+
+    Creates a new chunk for a document with the provided content.
+    Automatically generates embeddings and indexes the chunk for search.
+    Returns the ID of the created chunk.
+    """
     req = await get_request_json()
     chunck_id = xxhash.xxh64((req["content_with_weight"] + req["doc_id"]).encode("utf-8")).hexdigest()
     d = {"id": chunck_id, "content_ltks": rag_tokenizer.tokenize(req["content_with_weight"]),
@@ -326,7 +539,18 @@ async def create():
 @manager.route('/retrieval_test', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("kb_id", "question")
+@qs_validate_request(RetrievalTestRequest)
+@validate_response(200, RetrievalTestResponse)
+@chunk_tag
 async def retrieval_test():
+    """
+    Test retrieval functionality.
+
+    Performs a retrieval test on knowledge bases with the given question.
+    Supports various retrieval options including similarity threshold, vector weight, reranking,
+    keyword extraction, and knowledge graph integration.
+    Returns ranked chunks along with labels used for retrieval.
+    """
     req = await get_request_json()
     page = int(req.get("page", 1))
     size = int(req.get("size", 30))
@@ -437,7 +661,15 @@ async def retrieval_test():
 
 @manager.route('/knowledge_graph', methods=['GET'])  # noqa: F821
 @login_required
+@validate_response(200, KnowledgeGraphResponse)
+@chunk_tag
 async def knowledge_graph():
+    """
+    Get knowledge graph for a document.
+
+    Retrieves the knowledge graph and mind map data associated with a document.
+    Returns structured graph data that can be used for visualization and analysis.
+    """
     doc_id = request.args["doc_id"]
     tenant_id = DocumentService.get_tenant_id(doc_id)
     kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)

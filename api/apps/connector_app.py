@@ -21,8 +21,11 @@ import uuid
 from html import escape
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated
 from quart import request, make_response
 from google_auth_oauthlib.flow import Flow
+from quart_schema import validate_request as qs_validate_request, validate_response, tag
 
 from api.db import InputType
 from api.db.services.connector_service import ConnectorService, SyncLogsService
@@ -36,9 +39,123 @@ from api.apps import login_required, current_user
 from box_sdk_gen import BoxOAuth, OAuthConfig, GetAuthorizeUrlOptions
 
 
+# Pydantic Schemas for OpenAPI Documentation
+
+class BaseSchema(BaseModel):
+    """Base schema with common configuration."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class BaseResponse(BaseModel):
+    """Base response schema with common fields."""
+    code: Annotated[int, Field(0, description="Response code, 0 for success")]
+    message: Annotated[str, Field("Success", description="Response message")]
+
+
+class SetConnectorRequest(BaseSchema):
+    """Request schema for setting/creating a connector."""
+    id: Annotated[str | None, Field(None, description="Connector ID (optional for new connectors)")]
+    name: Annotated[str | None, Field(None, description="Connector name")]
+    source: Annotated[str | None, Field(None, description="Data source type")]
+    config: Annotated[dict, Field(..., description="Connector configuration")]
+    prune_freq: Annotated[int | None, Field(None, description="Prune frequency in hours")]
+    refresh_freq: Annotated[int | None, Field(None, description="Refresh frequency in minutes")]
+    timeout_secs: Annotated[int | None, Field(None, description="Timeout in seconds")]
+
+
+class SetConnectorResponse(BaseResponse):
+    """Response schema for setting a connector."""
+    data: Annotated[dict, Field(..., description="Connector data")]
+
+
+class ListConnectorsResponse(BaseResponse):
+    """Response schema for listing connectors."""
+    data: Annotated[list, Field(..., description="List of connectors")]
+
+
+class ConnectorDetailResponse(BaseResponse):
+    """Response schema for getting connector details."""
+    data: Annotated[dict, Field(..., description="Connector details")]
+
+
+class ListLogsResponse(BaseResponse):
+    """Response schema for listing connector logs."""
+    data: Annotated[dict, Field(..., description="Logs data with total count")]
+
+
+class ResumeConnectorRequest(BaseSchema):
+    """Request schema for resuming/pausing a connector."""
+    resume: Annotated[bool, Field(..., description="True to resume, False to pause")]
+
+
+class ResumeConnectorResponse(BaseResponse):
+    """Response schema for resuming/pausing a connector."""
+    data: Annotated[bool, Field(..., description="Operation result")]
+
+
+class RebuildConnectorRequest(BaseSchema):
+    """Request schema for rebuilding a connector."""
+    kb_id: Annotated[str, Field(..., description="Knowledge base ID")]
+
+
+class RebuildConnectorResponse(BaseResponse):
+    """Response schema for rebuilding a connector."""
+    data: Annotated[bool, Field(..., description="Rebuild operation result")]
+
+
+class DeleteConnectorResponse(BaseResponse):
+    """Response schema for deleting a connector."""
+    data: Annotated[bool, Field(..., description="Deletion result")]
+
+
+class StartGoogleOAuthRequest(BaseSchema):
+    """Request schema for starting Google OAuth flow."""
+    credentials: Annotated[str | dict, Field(..., description="Google OAuth credentials JSON or dict")]
+
+
+class StartGoogleOAuthResponse(BaseResponse):
+    """Response schema for starting Google OAuth flow."""
+    data: Annotated[dict, Field(..., description="OAuth flow data with flow_id and authorization_url")]
+
+
+class PollOAuthResultRequest(BaseSchema):
+    """Request schema for polling OAuth result."""
+    flow_id: Annotated[str, Field(..., description="OAuth flow ID to poll")]
+
+
+class PollOAuthResultResponse(BaseResponse):
+    """Response schema for polling OAuth result."""
+    data: Annotated[dict, Field(..., description="OAuth credentials data")]
+
+
+class StartBoxOAuthRequest(BaseSchema):
+    """Request schema for starting Box OAuth flow."""
+    client_id: Annotated[str, Field(..., description="Box OAuth client ID")]
+    client_secret: Annotated[str, Field(..., description="Box OAuth client secret")]
+    redirect_uri: Annotated[str | None, Field(None, description="OAuth redirect URI")]
+
+
+class StartBoxOAuthResponse(BaseResponse):
+    """Response schema for starting Box OAuth flow."""
+    data: Annotated[dict, Field(..., description="OAuth flow data with flow_id and authorization_url")]
+
+
+# Tag for connector endpoints
+connector_tag = tag("connector", "Connector Management APIs")
+
+
 @manager.route("/set", methods=["POST"])  # noqa: F821
 @login_required
+@qs_validate_request(SetConnectorRequest)
+@validate_response(200, SetConnectorResponse)
+@connector_tag
 async def set_connector():
+    """
+    Create or update a connector.
+
+    Creates a new connector or updates an existing one with the provided configuration.
+    For new connectors, an ID will be automatically generated.
+    """
     req = await get_request_json()
     if req.get("id"):
         conn = {fld: req[fld] for fld in ["prune_freq", "refresh_freq", "config", "timeout_secs"] if fld in req}
@@ -67,13 +184,27 @@ async def set_connector():
 
 @manager.route("/list", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, ListConnectorsResponse)
+@connector_tag
 def list_connector():
+    """
+    List all connectors for the current user.
+
+    Retrieves a list of all connectors associated with the current user's tenant.
+    """
     return get_json_result(data=ConnectorService.list(current_user.id))
 
 
 @manager.route("/<connector_id>", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, ConnectorDetailResponse)
+@connector_tag
 def get_connector(connector_id):
+    """
+    Get connector details by ID.
+
+    Retrieves detailed information about a specific connector.
+    """
     e, conn = ConnectorService.get_by_id(connector_id)
     if not e:
         return get_data_error_result(message="Can't find this Connector!")
@@ -82,7 +213,14 @@ def get_connector(connector_id):
 
 @manager.route("/<connector_id>/logs", methods=["GET"])  # noqa: F821
 @login_required
+@validate_response(200, ListLogsResponse)
+@connector_tag
 def list_logs(connector_id):
+    """
+    List sync logs for a connector.
+
+    Retrieves pagination sync logs for the specified connector.
+    """
     req = request.args.to_dict(flat=True)
     arr, total = SyncLogsService.list_sync_tasks(connector_id, int(req.get("page", 1)), int(req.get("page_size", 15)))
     return get_json_result(data={"total": total, "logs": arr})
@@ -90,7 +228,15 @@ def list_logs(connector_id):
 
 @manager.route("/<connector_id>/resume", methods=["PUT"])  # noqa: F821
 @login_required
+@qs_validate_request(ResumeConnectorRequest)
+@validate_response(200, ResumeConnectorResponse)
+@connector_tag
 async def resume(connector_id):
+    """
+    Resume or pause a connector.
+
+    Resumes or pauses the synchronization task for a connector based on the resume flag.
+    """
     req = await get_request_json()
     if req.get("resume"):
         ConnectorService.resume(connector_id, TaskStatus.SCHEDULE)
@@ -102,7 +248,15 @@ async def resume(connector_id):
 @manager.route("/<connector_id>/rebuild", methods=["PUT"])  # noqa: F821
 @login_required
 @validate_request("kb_id")
+@qs_validate_request(RebuildConnectorRequest)
+@validate_response(200, RebuildConnectorResponse)
+@connector_tag
 async def rebuild(connector_id):
+    """
+    Rebuild a connector's knowledge base.
+
+    Triggers a rebuild of the knowledge base associated with the connector.
+    """
     req = await get_request_json()
     err = ConnectorService.rebuild(req["kb_id"], connector_id, current_user.id)
     if err:
@@ -112,7 +266,14 @@ async def rebuild(connector_id):
 
 @manager.route("/<connector_id>/rm", methods=["POST"])  # noqa: F821
 @login_required
+@validate_response(200, DeleteConnectorResponse)
+@connector_tag
 def rm_connector(connector_id):
+    """
+    Delete a connector.
+
+    Permanently deletes a connector and stops its synchronization tasks.
+    """
     ConnectorService.resume(connector_id, TaskStatus.CANCEL)
     ConnectorService.delete_by_id(connector_id)
     return get_json_result(data=True)
@@ -188,7 +349,16 @@ async def _render_web_oauth_popup(flow_id: str, success: bool, message: str, sou
 @manager.route("/google/oauth/web/start", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("credentials")
+@qs_validate_request(StartGoogleOAuthRequest)
+@validate_response(200, StartGoogleOAuthResponse)
+@connector_tag
 async def start_google_web_oauth():
+    """
+    Start Google OAuth web authorization flow.
+
+    Initiates the OAuth 2.0 authorization flow for Google Drive or Gmail.
+    Returns an authorization URL that the user should visit to grant permissions.
+    """
     source = request.args.get("type", "google-drive")
     if source not in ("google-drive", "gmail"):
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message="Invalid Google OAuth type.")
@@ -260,7 +430,14 @@ async def start_google_web_oauth():
 
 
 @manager.route("/gmail/oauth/web/callback", methods=["GET"])  # noqa: F821
+@connector_tag
 async def google_gmail_web_oauth_callback():
+    """
+    Gmail OAuth callback endpoint.
+
+    Handles the OAuth callback from Google after user authorization.
+    This endpoint receives the authorization code and exchanges it for access tokens.
+    """
     state_id = request.args.get("state")
     error = request.args.get("error")
     source = "gmail"
@@ -310,7 +487,14 @@ async def google_gmail_web_oauth_callback():
 
 
 @manager.route("/google-drive/oauth/web/callback", methods=["GET"])  # noqa: F821
+@connector_tag
 async def google_drive_web_oauth_callback():
+    """
+    Google Drive OAuth callback endpoint.
+
+    Handles the OAuth callback from Google after user authorization.
+    This endpoint receives the authorization code and exchanges it for access tokens.
+    """
     state_id = request.args.get("state")
     error = request.args.get("error")
     source = "google-drive"
@@ -361,7 +545,16 @@ async def google_drive_web_oauth_callback():
 @manager.route("/google/oauth/web/result", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("flow_id")
+@qs_validate_request(PollOAuthResultRequest)
+@validate_response(200, PollOAuthResultResponse)
+@connector_tag
 async def poll_google_web_result():
+    """
+    Poll Google OAuth result.
+
+    Polls for the result of the OAuth authorization flow.
+    Returns the credentials when the authorization is complete.
+    """
     req = await request.json or {}
     source = request.args.get("type")
     if source not in ("google-drive", "gmail"):
@@ -380,11 +573,20 @@ async def poll_google_web_result():
 
 @manager.route("/box/oauth/web/start", methods=["POST"])  # noqa: F821
 @login_required
+@qs_validate_request(StartBoxOAuthRequest)
+@validate_response(200, StartBoxOAuthResponse)
+@connector_tag
 async def start_box_web_oauth():
+    """
+    Start Box OAuth web authorization flow.
+
+    Initiates the OAuth 2.0 authorization flow for Box.
+    Returns an authorization URL that the user should visit to grant permissions.
+    """
     req = await get_request_json()
 
     client_id = req.get("client_id")
-    client_secret = req.get("client_secret")    
+    client_secret = req.get("client_secret")
     redirect_uri = req.get("redirect_uri", BOX_WEB_OAUTH_REDIRECT_URI)
 
     if not client_id or not client_secret:
@@ -422,7 +624,14 @@ async def start_box_web_oauth():
     )
 
 @manager.route("/box/oauth/web/callback", methods=["GET"])  # noqa: F821
+@connector_tag
 async def box_web_oauth_callback():
+    """
+    Box OAuth callback endpoint.
+
+    Handles the OAuth callback from Box after user authorization.
+    This endpoint receives the authorization code and exchanges it for access tokens.
+    """
     flow_id = request.args.get("state")
     if not flow_id:
         return await _render_web_oauth_popup("", False, "Missing OAuth parameters.", "box")
@@ -466,7 +675,16 @@ async def box_web_oauth_callback():
 @manager.route("/box/oauth/web/result", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("flow_id")
+@qs_validate_request(PollOAuthResultRequest)
+@validate_response(200, PollOAuthResultResponse)
+@connector_tag
 async def poll_box_web_result():
+    """
+    Poll Box OAuth result.
+
+    Polls for the result of the OAuth authorization flow.
+    Returns the credentials when the authorization is complete.
+    """
     req = await get_request_json()
     flow_id = req.get("flow_id")
 
@@ -477,7 +695,7 @@ async def poll_box_web_result():
     cache_raw = json.loads(cache_blob)
     if cache_raw.get("user_id") != current_user.id:
         return get_json_result(code=RetCode.PERMISSION_ERROR, message="You are not allowed to access this authorization result.")
-    
+
     REDIS_CONN.delete(_web_result_cache_key(flow_id, "box"))
 
     return get_json_result(data={"credentials": cache_raw})
