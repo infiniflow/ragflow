@@ -49,6 +49,7 @@ request.interceptors.response.use(
 
       authorizationUtil.removeAll();
       history.push(Routes.Admin);
+      window.location.reload();
     } else if (data?.code && data.code !== 0) {
       notification.error({
         message: `${i18n.t('message.hint')}: ${data?.code}`,
@@ -80,6 +81,7 @@ request.interceptors.response.use(
 
       authorizationUtil.removeAll();
       history.push(Routes.Admin);
+      window.location.reload();
     } else if (data?.code && data.code !== 0) {
       notification.error({
         message: `${i18n.t('message.hint')}: ${data?.code}`,
