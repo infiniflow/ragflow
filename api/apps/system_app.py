@@ -35,11 +35,11 @@ from common.time_utils import current_timestamp, datetime_format
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
-from quart import jsonify, request
+from quart import jsonify
 from api.utils.health_utils import run_health_checks
 from common import settings
 from pydantic import BaseModel, ConfigDict, Field
-from quart_schema import validate_request as qs_validate_request, validate_response, tag
+from quart_schema import validate_response, tag
 
 
 # Pydantic Schemas for OpenAPI Documentation

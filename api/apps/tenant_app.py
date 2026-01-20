@@ -41,7 +41,7 @@ class BaseSchema(BaseModel):
 
 class CreateUserRequest(BaseSchema):
     """Request schema for creating/inviting a user to a tenant."""
-    email: Annotated[str, Field(..., description="Email address of the user to invite", min_length=1)
+    email: Annotated[str, Field(..., description="Email address of the user to invite", min_length=1)]
 
 
 class CreateUserResponse(BaseModel):

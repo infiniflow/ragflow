@@ -24,7 +24,7 @@ from quart_schema import validate_request as qs_validate_request, validate_respo
 from api.apps import login_required, current_user
 from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMService
 from api.db.services.llm_service import LLMService
-from api.utils.api_utils import get_allowed_llm_factories, get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
+from api.utils.api_utils import get_allowed_llm_factories, get_data_error_result, get_json_result, get_request_json, server_error_response
 from common.constants import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
 from rag.utils.base64_image import test_image
