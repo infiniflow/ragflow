@@ -31,6 +31,7 @@ except Exception as e:  # pragma: no cover - fallback without toolbelt
     print(f"Fallback without belt: {e}")
     MultipartEncoder = None
 
+
 def encrypt(input_string):
     pub = "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArq9XTUSeYr2+N1h3Afl/z8Dse/2yD0ZGrKwx+EEEcdsBLca9Ynmx3nIB5obmLlSfmskLpBo0UACBmB5rEjBp2Q2f3AG3Hjd4B+gNCG6BDaawuDlgANIhGnaTLrIqWrrcm4EMzJOnAOI1fgzJRsOOUEfaS318Eq9OVO3apEyCCt0lOQK6PuksduOjVxtltDav+guVAA068NrPYmRNabVKRNLJpL8w4D44sfth5RvZ3q9t+6RTArpEtc5sh5ChzvqPOzKGMXW83C95TxmXqpbK6olN4RevSfVjEAgCydH6HN6OhtOQEcnrU97r9H0iZOWwbw3pVrZiUkuRD1R56Wzs2wIDAQAB\n-----END PUBLIC KEY-----"
     pub_key = RSA.importKey(pub)
@@ -584,9 +585,44 @@ class RAGFlowClient:
         response = self.http_client.request("POST", "/kb/list", use_api_base=False, auth_kind="web")
         res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            self._print_table_simple(res_json["data"]["kbs"])
         else:
             print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+
+    def create_user_dataset(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        payload = {
+            "name": command["dataset_name"],
+            "embd_id": command["embedding"]
+        }
+        if "parser_id" in command:
+            payload["parser_id"] = command["parser"]
+        if "pipeline" in command:
+            payload["pipeline_id"] = command["pipeline"]
+        response = self.http_client.request("POST", "/kb/create", json_body=payload, use_api_base=False,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(f"Fail to create datasets, code: {res_json['code']}, message: {res_json['message']}")
+
+    def drop_user_dataset(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+
+        dataset_name = command["dataset_name"]
+        dataset_id = self._get_dataset_id(dataset_name)
+        if dataset_id is None:
+            return
+        payload = {"kb_id": dataset_id}
+        response = self.http_client.request("POST", "/kb/rm", json_body=payload, use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            print(f"Drop dataset {dataset_name} successfully")
+        else:
+            print(f"Fail to drop datasets, code: {res_json['code']}, message: {res_json['message']}")
 
     def list_user_dataset_files(self, command_dict):
         if self.server_type != "user":

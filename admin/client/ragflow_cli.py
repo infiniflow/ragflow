@@ -463,6 +463,10 @@ class RAGFlowCLI(Cmd):
                 self.ragflow_client.list_environments(command_dict)
             case "list_user_datasets":
                 self.ragflow_client.list_user_datasets(command_dict)
+            case "create_user_dataset":
+                self.ragflow_client.create_user_dataset(command_dict)
+            case "drop_user_dataset":
+                self.ragflow_client.drop_user_dataset(command_dict)
             case "list_user_dataset_files":
                 self.ragflow_client.list_user_dataset_files(command_dict)
             case "list_user_agents":

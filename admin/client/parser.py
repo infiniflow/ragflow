@@ -55,6 +55,9 @@ sql_command: list_services
            | generate_key
            | list_keys
            | drop_key
+           | create_user_dataset_with_parser
+           | create_user_dataset_with_pipeline
+           | drop_user_dataset
            | list_user_datasets
            | list_user_dataset_files
            | list_user_agents
@@ -125,6 +128,10 @@ AS: "AS"i
 PARSE: "PARSE"i
 IMPORT: "IMPORT"i
 INTO: "INTO"i
+WITH: "WITH"i
+EMBEDDING: "EMBEDDING"i
+PARSER: "PARSER"i
+PIPELINE: "PIPELINE"i
 
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
@@ -170,6 +177,9 @@ list_configs: LIST CONFIGS ";"
 list_environments: LIST ENVS ";"
 
 list_user_datasets: LIST DATASETS ";"
+create_user_dataset_with_parser: CREATE DATASET quoted_string WITH EMBEDDING quoted_string PARSER quoted_string ";" 
+create_user_dataset_with_pipeline: CREATE DATASET quoted_string WITH EMBEDDING quoted_string PIPELINE quoted_string ";" 
+drop_user_dataset: DROP DATASET quoted_string ";"
 list_user_dataset_files: LIST FILES OF DATASET quoted_string ";"
 list_user_agents: LIST AGENTS ";"
 list_user_chats: LIST CHATS ";"
@@ -349,6 +359,24 @@ class RAGFlowCLITransformer(Transformer):
 
     def list_user_datasets(self, items):
         return {"type": "list_user_datasets"}
+
+    def create_user_dataset_with_parser(self, items):
+        dataset_name = items[2].children[0].strip("'\"")
+        embedding = items[5].children[0].strip("'\"")
+        parser_type = items[7].children[0].strip("'\"")
+        return {"type": "create_user_dataset", "dataset_name": dataset_name, "embedding": embedding,
+                "parser_type": parser_type}
+
+    def create_user_dataset_with_pipeline(self, items):
+        dataset_name = items[2].children[0].strip("'\"")
+        embedding = items[5].children[0].strip("'\"")
+        pipeline = items[7].children[0].strip("'\"")
+        return {"type": "create_user_dataset", "dataset_name": dataset_name, "embedding": embedding,
+                "pipeline": pipeline}
+
+    def drop_user_dataset(self, items):
+        dataset_name = items[2].children[0].strip("'\"")
+        return {"type": "drop_user_dataset", "dataset_name": dataset_name}
 
     def list_user_dataset_files(self, items):
         dataset_name = items[4].children[0].strip("'\"")
