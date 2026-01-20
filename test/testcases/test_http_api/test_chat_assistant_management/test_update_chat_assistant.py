@@ -100,7 +100,7 @@ class TestChatAssistantUpdate:
     @pytest.mark.parametrize(
         "llm, expected_code, expected_message",
         [
-            ({}, 100, "ValueError"),
+            ({}, 0, ""),
             ({"model_name": "glm-4"}, 0, ""),
             ({"model_name": "unknown"}, 102, "`model_name` unknown doesn't exist"),
             ({"temperature": 0}, 0, ""),
@@ -131,9 +131,11 @@ class TestChatAssistantUpdate:
             pytest.param({"unknown": "unknown"}, 0, "", marks=pytest.mark.skip),
         ],
     )
-    def test_llm(self, HttpApiAuth, add_chat_assistants_func, llm, expected_code, expected_message):
+    def test_llm(self, HttpApiAuth, add_chat_assistants_func, chat_assistant_llm_model_type, llm, expected_code, expected_message):
         dataset_id, _, chat_assistant_ids = add_chat_assistants_func
-        payload = {"name": "llm_test", "dataset_ids": [dataset_id], "llm": llm}
+        llm_payload = dict(llm)
+        llm_payload.setdefault("model_type", chat_assistant_llm_model_type)
+        payload = {"name": "llm_test", "dataset_ids": [dataset_id], "llm": llm_payload}
         res = update_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code == 0:

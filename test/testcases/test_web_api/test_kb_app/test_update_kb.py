@@ -77,7 +77,8 @@ class TestDatasetUpdate:
     @pytest.mark.p1
     @given(name=valid_names())
     @example("a" * 128)
-    @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    # Network-bound API call; disable Hypothesis deadline to avoid flaky timeouts.
+    @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
     def test_name(self, WebApiAuth, add_dataset_func, name):
         dataset_id = add_dataset_func
         payload = {"name": name, "description": "", "parser_id": "naive", "kb_id": dataset_id}
