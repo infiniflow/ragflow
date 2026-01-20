@@ -824,11 +824,18 @@ class DocumentService(CommonService):
             changed = False
             for upd in updates:
                 key = upd.get("key")
-                if not key or key not in meta:
+                if not key:
                     continue
 
                 new_value = upd.get("value")
                 match_provided = "match" in upd
+                if key not in meta:
+                    if match_provided:
+                        continue
+                    meta[key] = dedupe_list(new_value) if isinstance(new_value, list) else new_value
+                    changed = True
+                    continue
+
                 if isinstance(meta[key], list):
                     if not match_provided:
                         if isinstance(new_value, list):
@@ -1279,7 +1286,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         for b in range(0, len(cks), es_bulk_size):
             if try_create_idx:
                 if not settings.docStoreConn.index_exist(idxnm, kb_id):
-                    settings.docStoreConn.create_idx(idxnm, kb_id, len(vectors[0]))
+                    settings.docStoreConn.create_idx(idxnm, kb_id, len(vectors[0]), kb.parser_id)
                 try_create_idx = False
             settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
 

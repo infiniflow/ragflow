@@ -9,7 +9,7 @@ mysql:
   user: '${MYSQL_USER:-root}'
   password: '${MYSQL_PASSWORD:-infini_rag_flow}'
   host: '${MYSQL_HOST:-mysql}'
-  port: 3306
+  port: ${MYSQL_PORT:-3306}
   max_connections: 900
   stale_timeout: 300
   max_allowed_packet: ${MYSQL_MAX_PACKET:-1073741824}
@@ -29,6 +29,7 @@ os:
   password: '${OPENSEARCH_PASSWORD:-infini_rag_flow_OS_01}'
 infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
+  postgres_port: 5432
   db_name: 'default_db'
 oceanbase:
   scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
@@ -38,6 +39,14 @@ oceanbase:
     password: '${OCEANBASE_PASSWORD:-infini_rag_flow}'
     host: '${OCEANBASE_HOST:-oceanbase}'
     port: ${OCEANBASE_PORT:-2881}
+seekdb:
+  scheme: 'oceanbase' # SeekDB is the lite version of OceanBase
+  config:
+    db_name: '${SEEKDB_DOC_DBNAME:-ragflow_doc}'
+    user: '${SEEKDB_USER:-root}'
+    password: '${SEEKDB_PASSWORD:-infini_rag_flow}'
+    host: '${SEEKDB_HOST:-seekdb}'
+    port: ${SEEKDB_PORT:-2881}
 redis:
   db: 1
   username: '${REDIS_USERNAME:-}'
