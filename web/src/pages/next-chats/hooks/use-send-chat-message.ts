@@ -1,3 +1,4 @@
+import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
 import { MessageType } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
@@ -133,52 +134,56 @@ export const useSendMessage = (controller: AbortController) => {
   const { createConversationBeforeSendMessage } =
     useCreateConversationBeforeSendMessage();
 
-  const handlePressEnter = useCallback(async () => {
-    if (trim(value) === '') return;
+  const handlePressEnter = useCallback(
+    async (...[{ enableThinking }]: NextMessageInputOnPressEnterParameter) => {
+      if (trim(value) === '') return;
 
-    const data = await createConversationBeforeSendMessage(value);
+      const data = await createConversationBeforeSendMessage(value);
 
-    if (data === undefined) {
-      return;
-    }
+      if (data === undefined) {
+        return;
+      }
 
-    const { targetConversationId, currentMessages } = data;
+      const { targetConversationId, currentMessages } = data;
 
-    const id = uuid();
+      const id = uuid();
 
-    addNewestQuestion({
-      content: value,
-      files: files,
-      id,
-      role: MessageType.User,
-      conversationId: targetConversationId,
-    });
-
-    if (done) {
-      setValue('');
-      sendMessage({
-        currentConversationId: targetConversationId,
-        messages: currentMessages,
-        message: {
-          id,
-          content: value.trim(),
-          role: MessageType.User,
-          files: files,
-          conversationId: targetConversationId,
-        },
+      addNewestQuestion({
+        content: value,
+        files: files,
+        id,
+        role: MessageType.User,
+        conversationId: targetConversationId,
       });
-    }
-    clearFiles();
-  }, [
-    value,
-    createConversationBeforeSendMessage,
-    addNewestQuestion,
-    files,
-    done,
-    clearFiles,
-    setValue,
-    sendMessage,
-  ]);
+
+      if (done) {
+        setValue('');
+        sendMessage({
+          currentConversationId: targetConversationId,
+          messages: currentMessages,
+          message: {
+            id,
+            content: value.trim(),
+            role: MessageType.User,
+            files: files,
+            conversationId: targetConversationId,
+            reasoning: enableThinking,
+          },
+        });
+      }
+      clearFiles();
+    },
+    [
+      value,
+      createConversationBeforeSendMessage,
+      addNewestQuestion,
+      files,
+      done,
+      clearFiles,
+      setValue,
+      sendMessage,
+    ],
+  );
 
   useEffect(() => {
     //  #1289

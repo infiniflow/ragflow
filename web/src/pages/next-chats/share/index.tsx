@@ -123,6 +123,7 @@ const ChatContainer = () => {
                 uploadMethod="external_upload_and_parse"
                 showUploadIcon={false}
                 stopOutputMessage={stopOutputMessage}
+                showReasoning
               ></NextMessageInput>
             </div>
           </div>
