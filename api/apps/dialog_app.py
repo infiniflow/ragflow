@@ -37,7 +37,7 @@ import logging
 
 class BaseSchema(BaseModel):
     """Base schema with common configuration."""
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="allow", strict=False)
 
 
 class PromptConfigParameter(BaseModel):

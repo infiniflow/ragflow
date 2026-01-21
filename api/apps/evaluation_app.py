@@ -46,7 +46,7 @@ from common.constants import RetCode
 
 class BaseSchema(BaseModel):
     """Base schema with common configuration."""
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="allow", strict=False)
 
 
 class CreateDatasetRequest(BaseSchema):

@@ -33,7 +33,7 @@ from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_too
 
 class BaseSchema(BaseModel):
     """Base schema with common configuration."""
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="allow", strict=False)
 
 
 class MCPServerData(BaseModel):
