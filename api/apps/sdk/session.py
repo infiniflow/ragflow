@@ -260,8 +260,10 @@ async def chat_completion_openai_like(tenant_id, chat_id):
         return get_error_data_result("The last content of this conversation is not from user.")
 
     prompt = messages[-1]["content"]
+    # Initialize tiktoken encoder for proper token counting (OpenAI-compatible)
+    tiktoken_encode = tiktoken.get_encoding("cl100k_base")
     # Treat context tokens as reasoning tokens
-    context_token_used = sum(len(message["content"]) for message in messages)
+    context_token_used = sum(len(tiktoken_encode.encode(message["content"])) for message in messages)
 
     dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
     if not dia:
@@ -354,7 +356,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
                     delta = ans.get("answer") or ""
                     if not delta:
                         continue
-                    token_used += len(delta)
+                    token_used += len(tiktoken_encode.encode(delta))
                     if in_think:
                         full_reasoning += delta
                         response["choices"][0]["delta"]["reasoning_content"] = delta
@@ -372,7 +374,8 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             response["choices"][0]["delta"]["content"] = None
             response["choices"][0]["delta"]["reasoning_content"] = None
             response["choices"][0]["finish_reason"] = "stop"
-            response["usage"] = {"prompt_tokens": len(prompt), "completion_tokens": token_used, "total_tokens": len(prompt) + token_used}
+            prompt_tokens = len(tiktoken_encode.encode(prompt))
+            response["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": token_used, "total_tokens": prompt_tokens + token_used}
             if need_reference:
                 reference_payload = final_reference if final_reference is not None else last_ans.get("reference", [])
                 response["choices"][0]["delta"]["reference"] = chunks_format(reference_payload)
@@ -403,12 +406,12 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             "created": int(time.time()),
             "model": req.get("model", ""),
             "usage": {
-                "prompt_tokens": len(prompt),
-                "completion_tokens": len(content),
-                "total_tokens": len(prompt) + len(content),
+                "prompt_tokens": len(tiktoken_encode.encode(prompt)),
+                "completion_tokens": len(tiktoken_encode.encode(content)),
+                "total_tokens": len(tiktoken_encode.encode(prompt)) + len(tiktoken_encode.encode(content)),
                 "completion_tokens_details": {
                     "reasoning_tokens": context_token_used,
-                    "accepted_prediction_tokens": len(content),
+                    "accepted_prediction_tokens": len(tiktoken_encode.encode(content)),
                     "rejected_prediction_tokens": 0,  # 0 for simplicity
                 },
             },
