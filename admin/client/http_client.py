@@ -19,7 +19,7 @@ import json
 from typing import Any, Dict, Optional
 
 import requests
-from requests.sessions import HTTPAdapter
+# from requests.sessions import HTTPAdapter
 
 
 class HttpClient:
