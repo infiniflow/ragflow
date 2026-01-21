@@ -184,6 +184,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       metadata: {
+        type: 'Type',
+        fieldNameInvalid: 'Field name can only contain letters or underscores.',
+        builtIn: 'Built-in',
+        generation: 'Generation',
         toMetadataSetting: 'Generation settings',
         toMetadataSettingTip: 'Set auto-metadata in Configuration.',
         descriptionTip:
@@ -289,7 +293,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       localFiles: 'Local files',
       emptyFiles: 'Create empty file',
       webCrawl: 'Web crawl',
-      chunkNumber: 'Chunk number',
+      chunkNumber: 'Chunks',
       uploadDate: 'Upload date',
       chunkMethod: 'Chunking method',
       enabled: 'Enable',

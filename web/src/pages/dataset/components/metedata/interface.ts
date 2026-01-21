@@ -1,6 +1,10 @@
 import { ReactNode } from 'react';
-import { MetadataType } from './hook';
-export type IMetaDataReturnType = Record<string, Array<Array<string | number>>>;
+import { MetadataType } from './hooks/use-manage-modal';
+export type IMetaDataReturnType = Record<
+  string,
+  | { type: string; values: Array<Array<string | number>> }
+  | Array<Array<string | number>>
+>;
 export type IMetaDataReturnJSONType = Record<
   string,
   Array<string | number> | string
@@ -32,11 +36,11 @@ export type IMetaDataReturnJSONSettings =
 
 export type MetadataValueType =
   | 'string'
-  | 'bool'
-  | 'enum'
+  // | 'list<string>'
+  // | 'bool'
+  // | 'enum'
   | 'time'
-  | 'int'
-  | 'float';
+  | 'number';
 
 export type IMetaDataTableData = {
   field: string;
@@ -52,6 +56,7 @@ export type IBuiltInMetadataItem = {
 };
 
 export type IManageModalProps = {
+  documentIds?: string[];
   title: ReactNode;
   isShowDescription?: boolean;
   isDeleteSingleValue?: boolean;
@@ -118,4 +123,5 @@ export type ShowManageMetadataModalProps = Partial<IManageModalProps> & {
   options?: ShowManageMetadataModalOptions;
   title?: ReactNode | string;
   isDeleteSingleValue?: boolean;
+  documentIds?: string[];
 };

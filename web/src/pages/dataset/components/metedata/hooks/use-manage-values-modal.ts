@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  isMetadataValueTypeWithEnum,
-  MetadataDeleteMap,
-  MetadataType,
-} from '../hooks/use-manage-modal';
+import { MetadataDeleteMap, MetadataType } from '../hooks/use-manage-modal';
 import { IManageValuesProps, IMetaDataTableData } from '../interface';
 
 export const useManageValues = (props: IManageValuesProps) => {
@@ -48,7 +44,7 @@ export const useManageValues = (props: IManageValuesProps) => {
 
   // Use functional update to avoid closure issues
   const handleChange = useCallback(
-    (field: string, value: any) => {
+    async (field: string, value: any) => {
       if (field === 'field' && existsKeys.includes(value)) {
         setValueError((prev) => {
           return {
@@ -71,17 +67,16 @@ export const useManageValues = (props: IManageValuesProps) => {
         if (field === 'valueType') {
           const nextValueType = (value ||
             'string') as IMetaDataTableData['valueType'];
-          const supportsEnum = isMetadataValueTypeWithEnum(nextValueType);
-          if (!supportsEnum) {
-            setTempValues([]);
-          }
+
+          // const supportsEnum = isMetadataValueTypeWithEnum(nextValueType);
+          // if (!supportsEnum) {
+          //   setTempValues([]);
+          // }
           return {
             ...prev,
             valueType: nextValueType,
-            values: supportsEnum ? prev.values : [],
-            restrictDefinedValues: supportsEnum
-              ? prev.restrictDefinedValues || nextValueType === 'enum'
-              : false,
+            values: prev.values || [],
+            restrictDefinedValues: prev.restrictDefinedValues,
           };
         }
         return {
@@ -89,6 +84,7 @@ export const useManageValues = (props: IManageValuesProps) => {
           [field]: value,
         };
       });
+      return true;
     },
     [existsKeys, type, t],
   );
@@ -113,23 +109,46 @@ export const useManageValues = (props: IManageValuesProps) => {
     if (type === MetadataType.Setting && valueError.field) {
       return;
     }
-    const supportsEnum = isMetadataValueTypeWithEnum(metaData.valueType);
-    if (!supportsEnum) {
-      onSave({
-        ...metaData,
-        values: [],
-        restrictDefinedValues: false,
-      });
-      handleHideModal();
-      return;
-    }
+    // const supportsEnum = isMetadataValueTypeWithEnum(metaData.valueType);
+    // if (!supportsEnum) {
+    // onSave({
+    //   ...metaData,
+    //   values: [],
+    //   restrictDefinedValues: false,
+    // });
+    // handleHideModal();
+    // return;
+    // }
     onSave(metaData);
     handleHideModal();
   }, [metaData, onSave, handleHideModal, type, valueError]);
 
+  // Handle blur event, synchronize to main state
+  const handleValueBlur = useCallback(
+    (values?: string[]) => {
+      const newValues = values || tempValues;
+      if (data.values.length > 0) {
+        newValues.forEach((newValue, index) => {
+          if (index < data.values.length) {
+            const originalValue = data.values[index];
+            if (originalValue !== newValue) {
+              addUpdateValue(metaData.field, originalValue, newValue);
+            }
+          } else {
+            if (newValue) {
+              addUpdateValue(metaData.field, '', newValue);
+            }
+          }
+        });
+      }
+      handleChange('values', [...new Set([...newValues])]);
+    },
+    [handleChange, tempValues, metaData, data, addUpdateValue],
+  );
+
   // Handle value changes, only update temporary state
   const handleValueChange = useCallback(
-    (index: number, value: string) => {
+    (index: number, value: string, isUpdate: boolean = false) => {
       setTempValues((prev) => {
         if (prev.includes(value)) {
           setValueError((prev) => {
@@ -149,31 +168,14 @@ export const useManageValues = (props: IManageValuesProps) => {
         }
         const newValues = [...prev];
         newValues[index] = value;
-
+        if (isUpdate) {
+          handleValueBlur(newValues);
+        }
         return newValues;
       });
     },
-    [t, type],
+    [t, type, handleValueBlur],
   );
-
-  // Handle blur event, synchronize to main state
-  const handleValueBlur = useCallback(() => {
-    if (data.values.length > 0) {
-      tempValues.forEach((newValue, index) => {
-        if (index < data.values.length) {
-          const originalValue = data.values[index];
-          if (originalValue !== newValue) {
-            addUpdateValue(metaData.field, originalValue, newValue);
-          }
-        } else {
-          if (newValue) {
-            addUpdateValue(metaData.field, '', newValue);
-          }
-        }
-      });
-    }
-    handleChange('values', [...new Set([...tempValues])]);
-  }, [handleChange, tempValues, metaData, data, addUpdateValue]);
 
   // Handle delete operation
   const handleDelete = useCallback(
@@ -197,6 +199,14 @@ export const useManageValues = (props: IManageValuesProps) => {
     },
     [addDeleteValue, metaData],
   );
+
+  const handleClearValues = useCallback(() => {
+    setTempValues([]);
+    setMetaData((prev) => ({
+      ...prev,
+      values: [],
+    }));
+  }, [setTempValues, setMetaData]);
 
   const showDeleteModal = (item: string, callback: () => void) => {
     setDeleteDialogContent({
@@ -227,6 +237,7 @@ export const useManageValues = (props: IManageValuesProps) => {
 
   return {
     metaData,
+    handleClearValues,
     tempValues,
     valueError,
     deleteDialogContent,

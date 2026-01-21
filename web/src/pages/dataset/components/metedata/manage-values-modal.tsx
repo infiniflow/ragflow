@@ -2,49 +2,87 @@ import {
   ConfirmDeleteDialog,
   ConfirmDeleteDialogNode,
 } from '@/components/confirm-delete-dialog';
+import { DynamicForm, FormFieldType } from '@/components/dynamic-form';
 import EditTag from '@/components/edit-tag';
 import { Button } from '@/components/ui/button';
-import { FormLabel } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/input-date';
 import { Modal } from '@/components/ui/modal/modal';
-import { RAGFlowSelect } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import { formatPureDate } from '@/utils/date';
+import dayjs from 'dayjs';
 import { Plus, Trash2 } from 'lucide-react';
-import { memo } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  isMetadataValueTypeWithEnum,
-  metadataValueTypeOptions,
-} from './hooks/use-manage-modal';
+import { metadataValueTypeOptions } from './hooks/use-manage-modal';
 import { useManageValues } from './hooks/use-manage-values-modal';
-import { IManageValuesProps } from './interface';
+import { IManageValuesProps, MetadataValueType } from './interface';
 
 // Create a separate input component, wrapped with memo to avoid unnecessary re-renders
 const ValueInputItem = memo(
   ({
     item,
     index,
+    type,
     onValueChange,
     onDelete,
     onBlur,
   }: {
     item: string;
     index: number;
-    onValueChange: (index: number, value: string) => void;
+    type: MetadataValueType;
+    onValueChange: (index: number, value: string, isUpdate?: boolean) => void;
     onDelete: (index: number) => void;
     onBlur: (index: number) => void;
   }) => {
+    const value = useMemo(() => {
+      if (type === 'time') {
+        if (item) {
+          try {
+            // Using dayjs to parse date strings in various formats including DD/MM/YYYY
+            const parsedDate = dayjs(item, [
+              'YYYY-MM-DD',
+              'DD/MM/YYYY',
+              'MM/DD/YYYY',
+              'DD-MM-YYYY',
+              'MM-DD-YYYY',
+            ]);
+
+            if (!parsedDate.isValid()) {
+              console.error('Invalid date format:', item);
+              return undefined; // Return current date as fallback
+            }
+            return parsedDate.toDate();
+          } catch (error) {
+            console.error('Error parsing date:', item, error);
+            return undefined; // Return current date as fallback
+          }
+        }
+        return undefined;
+      }
+      return item;
+    }, [item, type]);
     return (
       <div
         key={`value-item-${index}`}
         className="flex items-center gap-2.5 w-full"
       >
         <div className="flex-1 w-full">
-          <Input
-            value={item}
-            onChange={(e) => onValueChange(index, e.target.value)}
-            onBlur={() => onBlur(index)}
-          />
+          {type === 'time' && (
+            <DateInput
+              value={value as Date}
+              onChange={(value) => {
+                onValueChange(index, formatPureDate(value), true);
+              }}
+            />
+          )}
+          {type !== 'time' && (
+            <Input
+              value={value as string}
+              type={type === 'number' ? 'number' : 'text'}
+              onChange={(e) => onValueChange(index, e.target.value)}
+              onBlur={() => onBlur(index)}
+            />
+          )}
         </div>
         <Button
           type="button"
@@ -59,12 +97,15 @@ const ValueInputItem = memo(
   },
 );
 
+ValueInputItem.displayName = 'ValueInputItem';
+
 export const ManageValuesModal = (props: IManageValuesProps) => {
   const {
     title,
     isEditField,
     visible,
     isAddValue,
+    isShowValueSwitch,
     isShowDescription,
     isVerticalShowValue,
     isShowType,
@@ -74,6 +115,7 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
     tempValues,
     valueError,
     deleteDialogContent,
+    handleClearValues,
     handleChange,
     handleValueChange,
     handleValueBlur,
@@ -84,7 +126,79 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
     handleHideModal,
   } = useManageValues(props);
   const { t } = useTranslation();
-  const canShowValues = isMetadataValueTypeWithEnum(metaData.valueType);
+
+  const formRef = useRef<any>();
+
+  const [valueType, setValueType] = useState<MetadataValueType>(
+    metaData.valueType || 'string',
+  );
+
+  // Define form fields based on component properties
+  const formFields = [
+    ...(isEditField
+      ? [
+          {
+            name: 'field',
+            label: t('knowledgeDetails.metadata.fieldName'),
+            type: FormFieldType.Text,
+            required: true,
+            validation: {
+              pattern: /^[a-zA-Z_]*$/,
+              message: t('knowledgeDetails.metadata.fieldNameInvalid'),
+            },
+            defaultValue: metaData.field,
+            onChange: (value: string) => handleChange('field', value),
+          },
+        ]
+      : []),
+    ...(isShowType
+      ? [
+          {
+            name: 'valueType',
+            label: 'Type',
+            type: FormFieldType.Select,
+            options: metadataValueTypeOptions,
+            defaultValue: metaData.valueType || 'string',
+            onChange: (value: string) => {
+              setValueType(value as MetadataValueType);
+              handleChange('valueType', value);
+              handleClearValues();
+            },
+          },
+        ]
+      : []),
+    ...(isShowDescription
+      ? [
+          {
+            name: 'description',
+            label: t('knowledgeDetails.metadata.description'),
+            type: FormFieldType.Textarea,
+            tooltip: t('knowledgeDetails.metadata.descriptionTip'),
+            defaultValue: metaData.description,
+            className: 'mt-2',
+            onChange: (value: string) => handleChange('description', value),
+          },
+        ]
+      : []),
+    ...(isShowValueSwitch
+      ? [
+          {
+            name: 'restrictDefinedValues',
+            label: t('knowledgeDetails.metadata.restrictDefinedValues'),
+            tooltip: t('knowledgeDetails.metadata.restrictDefinedValuesTip'),
+            type: FormFieldType.Switch,
+            defaultValue: metaData.restrictDefinedValues || false,
+            onChange: (value: boolean) =>
+              handleChange('restrictDefinedValues', value),
+          },
+        ]
+      : []),
+  ];
+
+  // Handle form submission
+  const handleSubmit = () => {
+    handleSave();
+  };
 
   return (
     <Modal
@@ -93,7 +207,7 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
       onCancel={handleHideModal}
       className="!w-[460px]"
       okText={t('common.confirm')}
-      onOk={handleSave}
+      onOk={() => formRef.current?.submit(handleSubmit)}
       maskClosable={false}
       footer={null}
     >
@@ -103,52 +217,18 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
             {metaData.field}
           </div>
         )}
-        {isEditField && (
-          <div className="flex flex-col gap-2">
-            <div>{t('knowledgeDetails.metadata.fieldName')}</div>
-            <div>
-              <Input
-                value={metaData.field}
-                onChange={(e) => {
-                  const value = e.target?.value || '';
-                  if (/^[a-zA-Z_]*$/.test(value)) {
-                    handleChange('field', value);
-                  }
-                }}
-              />
-              <div className="text-state-error text-sm">{valueError.field}</div>
-            </div>
-          </div>
+
+        {formFields.length > 0 && (
+          <DynamicForm.Root
+            ref={formRef}
+            fields={formFields}
+            onSubmit={handleSubmit}
+            className="space-y-4"
+          />
         )}
-        {isShowType && (
-          <div className="flex flex-col gap-2">
-            <div>Type</div>
-            <RAGFlowSelect
-              value={metaData.valueType || 'string'}
-              options={metadataValueTypeOptions}
-              onChange={(value) => handleChange('valueType', value)}
-            />
-          </div>
-        )}
-        {isShowDescription && (
-          <div className="flex flex-col gap-2">
-            <FormLabel
-              className="text-text-primary text-base"
-              tooltip={t('knowledgeDetails.metadata.descriptionTip')}
-            >
-              {t('knowledgeDetails.metadata.description')}
-            </FormLabel>
-            <div>
-              <Textarea
-                value={metaData.description}
-                onChange={(e) => {
-                  handleChange('description', e.target?.value || '');
-                }}
-              />
-            </div>
-          </div>
-        )}
-        {canShowValues && (
+
+        {((metaData.restrictDefinedValues && isShowValueSwitch) ||
+          !isShowValueSwitch) && (
           <div className="flex flex-col gap-2">
             <div className="flex justify-between items-center">
               <div>{t('knowledgeDetails.metadata.values')}</div>
@@ -172,6 +252,7 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
                       key={`value-item-${index}`}
                       item={item}
                       index={index}
+                      type={valueType || 'string'}
                       onValueChange={handleValueChange}
                       onDelete={(idx: number) => {
                         showDeleteModal(item, () => {
