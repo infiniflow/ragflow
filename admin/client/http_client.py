@@ -106,24 +106,6 @@ class HttpClient:
                 end_time = time.perf_counter()
                 total_duration += end_time - start_time
                 response_list.append(response)
-
-            # start_time = time.perf_counter()
-            # for _ in range(iterations):
-            #     response = requests.request(
-            #         method=method,
-            #         url=url,
-            #         headers=merged_headers,
-            #         json=json_body,
-            #         data=data,
-            #         files=files,
-            #         params=params,
-            #         timeout=timeout,
-            #         stream=stream,
-            #         verify=self.verify_ssl,
-            #     )
-            #     response_list.append(response)
-            # end_time = time.perf_counter()
-            # total_duration = end_time - start_time
             return {"duration": total_duration, "response_list": response_list}
         else:
             return requests.request(
