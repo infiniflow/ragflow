@@ -914,7 +914,7 @@ class RAGFlowClient:
             print(f"Documents {document_names} not found in {dataset_name}")
 
         payload = {"doc_ids": document_ids, "run": 1}
-        response = self.http_client.request("POST", f"/document/run", json_body=payload, use_api_base=False,
+        response = self.http_client.request("POST", "/document/run", json_body=payload, use_api_base=False,
                                             auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
@@ -940,7 +940,7 @@ class RAGFlowClient:
             document_ids.append(doc["id"])
 
         payload = {"doc_ids": document_ids, "run": 1}
-        response = self.http_client.request("POST", f"/document/run", json_body=payload, use_api_base=False,
+        response = self.http_client.request("POST", "/document/run", json_body=payload, use_api_base=False,
                                             auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
@@ -982,7 +982,7 @@ class RAGFlowClient:
             headers = {"Content-Type": encoder.content_type}
             response = self.http_client.request(
                 "POST",
-                f"/document/upload",
+                "/document/upload",
                 headers=headers,
                 data=encoder,
                 json_body=None,
