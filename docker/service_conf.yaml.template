@@ -52,7 +52,7 @@ redis:
   username: '${REDIS_USERNAME:-}'
   password: '${REDIS_PASSWORD:-infini_rag_flow}'
   host: '${REDIS_HOST:-redis}'
-  port: 6379
+  port: '${REDIS_PORT:-6379}'
 user_default_llm:
   default_models:
     embedding_model:
