@@ -170,6 +170,7 @@ test = [
     "requests>=2.32.2",
     "requests-toolbelt>=1.0.0",
     "pycryptodomex==3.20.0",
+    "pytest-playwright>=1.57.0",
 ]
 
 [[tool.uv.index]]
@@ -206,9 +207,12 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 
 markers = [
+    "p0: critical priority test cases",
     "p1: high priority test cases",
     "p2: medium priority test cases",
     "p3: low priority test cases",
+    "smoke: smoke test cases",
+    "auth: authentication UI tests",
 ]
 
 # Test collection and runtime configuration

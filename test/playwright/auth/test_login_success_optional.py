@@ -1,0 +1,212 @@
+import json
+import os
+from urllib.parse import urlparse
+
+import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import expect
+
+DEMO_EMAIL = "qa@infiniflow.com"
+DEMO_PASSWORD = "123"
+
+
+def _env_bool(name: str) -> bool:
+    value = os.getenv(name)
+    if not value:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_creds():
+    if _env_bool("DEMO_CREDS"):
+        return DEMO_EMAIL, DEMO_PASSWORD, "demo"
+    email = os.getenv("SEEDED_USER_EMAIL")
+    password = os.getenv("SEEDED_USER_PASSWORD")
+    if not email or not password:
+        return None
+    return email, password, "env"
+
+
+def _debug_login_state(page, label: str) -> None:
+    if not _env_bool("PW_DEBUG_DUMP"):
+        return
+    try:
+        title = page.title()
+    except Exception as exc:
+        title = f"<title_error:{exc}>"
+    try:
+        storage_flags = page.evaluate(
+            """
+            () => ({
+              hasToken: Boolean(localStorage.getItem('Token')),
+              hasAuth: Boolean(localStorage.getItem('Authorization')),
+              hasUserInfo: Boolean(localStorage.getItem('UserInfo')),
+            })
+            """
+        )
+    except Exception as exc:
+        storage_flags = {"error": str(exc)}
+    print(
+        f"[auth-debug] label={label} url={page.url} title={title} storage={storage_flags}",
+        flush=True,
+    )
+
+
+@pytest.mark.p1
+@pytest.mark.auth
+def test_login_success_optional(
+    login_url, page, active_auth_context, step, snap, auth_click
+):
+    creds = _resolve_creds()
+    if not creds:
+        pytest.skip("SEEDED_USER_EMAIL/SEEDED_USER_PASSWORD not set and DEMO_CREDS=1 not enabled")
+    seeded_email, seeded_password, source = creds
+    if source == "env":
+        lowered = seeded_email.lower()
+        example_domain = "example.com"
+        if lowered.endswith(f"@{example_domain}"):
+            raise AssertionError(
+                "SEEDED_USER_EMAIL must be a real account (not *@example.com). "
+                "Set valid credentials or use DEMO_CREDS=1 for demo mode."
+            )
+    print(f"[AUTH] using email: {seeded_email} (source={source})", flush=True)
+
+    post_login_path = os.getenv("POST_LOGIN_PATH")
+
+    with step("open login page"):
+        page.goto(login_url, wait_until="domcontentloaded")
+    snap("open")
+
+    form, _ = active_auth_context()
+    email_input = form.locator("input[autocomplete='email']")
+    password_input = form.locator("input[type='password']")
+
+    with step("fill credentials"):
+        expect(email_input).to_have_count(1)
+        expect(password_input).to_have_count(1)
+        email_input.fill(seeded_email)
+        password_input.fill(seeded_password)
+        expect(password_input).to_have_attribute("type", "password")
+        password_input.blur()
+    snap("filled")
+
+    with step("submit login"):
+        submit_button = form.locator("button[type='submit']")
+        expect(submit_button).to_have_count(1)
+        auth_click(submit_button, "submit_login")
+    snap("submitted")
+
+    error_locator = page.locator(
+        "[data-sonner-toast], .toaster .toast, [role='alert'], .ant-notification-notice-error"
+    )
+    post_login_path_js = json.dumps(post_login_path)
+    wait_js = """
+        () => {{
+          const postLoginPath = {post_login_path};
+          const isVisible = (el) => {{
+            if (!el) return false;
+            const style = window.getComputedStyle(el);
+            if (style && (style.visibility === 'hidden' || style.display === 'none')) {{
+              return false;
+            }}
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          }};
+          const path = window.location.pathname || '';
+          const successByUrl = postLoginPath
+            ? path.startsWith(postLoginPath)
+            : !path.includes('/login');
+          const successMarker = document.querySelector(
+            "a[href*='github.com/infiniflow/ragflow'], a[href*='discord.com/invite']"
+          );
+          const errorToast = Array.from(
+            document.querySelectorAll('[data-sonner-toast], .toaster .toast, [role="alert"], .ant-notification-notice-error')
+          ).find(isVisible);
+          if (errorToast) return {{ state: 'error' }};
+          if (successByUrl || successMarker) return {{ state: 'success' }};
+          return false;
+        }}
+        """.format(post_login_path=post_login_path_js)
+
+    with step("wait for success or error"):
+        try:
+            result = page.wait_for_function(
+                wait_js,
+                timeout=15000,
+            )
+        except PlaywrightTimeoutError as exc:
+            snap("failure")
+            _debug_login_state(page, "wait_for_outcome_timeout")
+            raise AssertionError(
+                f"Login result did not resolve in time. url={page.url}"
+            ) from exc
+
+    with step("verify authenticated UI marker"):
+        outcome = result.json_value()
+        if outcome.get("state") == "error":
+            snap("error")
+            toast_text = ""
+            if error_locator.count() > 0:
+                toast_text = error_locator.first.inner_text().strip()[:200]
+            snap("failure")
+            _debug_login_state(page, "login_error")
+            raise AssertionError(
+                "Login error detected. "
+                f"url={page.url} error_found={error_locator.count() > 0} toast_snippet={toast_text}"
+            )
+        path = urlparse(page.url).path
+        if post_login_path:
+            if not path.startswith(post_login_path):
+                snap("failure")
+                _debug_login_state(page, "post_login_path_mismatch")
+                raise AssertionError(
+                    f"Post-login path mismatch. expected_prefix={post_login_path} url={page.url}"
+                )
+        elif "/login" in path:
+            snap("failure")
+            _debug_login_state(page, "still_on_login_path")
+            raise AssertionError(f"URL still on login after submit. url={page.url}")
+
+    token_wait_js = """
+        () => {
+          const token = localStorage.getItem('Token');
+          const auth = localStorage.getItem('Authorization');
+          return Boolean((token && token.length) || (auth && auth.length));
+        }
+        """
+
+    with step("verify auth tokens and login form hidden"):
+        try:
+            page.wait_for_function(token_wait_js, timeout=15000)
+        except PlaywrightTimeoutError as exc:
+            snap("failure")
+            _debug_login_state(page, "token_wait_timeout")
+            raise AssertionError(
+                f"Auth tokens not found after login. url={page.url}"
+            ) from exc
+        try:
+            expect(page.locator("form:visible input[autocomplete='email']")).to_have_count(
+                0, timeout=15000
+            )
+        except AssertionError as exc:
+            snap("failure")
+            _debug_login_state(page, "login_form_still_visible")
+            raise AssertionError(
+                f"Login form still visible after login. url={page.url}"
+            ) from exc
+        values = page.evaluate(
+            """
+            () => ({
+              hasToken: Boolean(localStorage.getItem('Token')),
+              hasAuth: Boolean(localStorage.getItem('Authorization')),
+            })
+            """
+        )
+        if not any(values.values()):
+            snap("failure")
+            _debug_login_state(page, "token_missing_after_wait")
+            raise AssertionError(
+                "No auth tokens found in localStorage after login. "
+                "Expected Token or Authorization."
+            )
+    snap("success")
