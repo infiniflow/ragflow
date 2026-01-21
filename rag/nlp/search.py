@@ -443,6 +443,9 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
+        # Apply top_k limit to total results before pagination If Top_k changed otherwise by default 1024
+        valid_idx = valid_idx[:top]
+
         max_pages = max(RERANK_LIMIT // max(page_size, 1), 1)
         page_index = (page - 1) % max_pages
         begin = page_index * page_size
