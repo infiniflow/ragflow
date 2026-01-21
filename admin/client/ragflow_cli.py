@@ -28,7 +28,7 @@ from Cryptodome.PublicKey import RSA
 from lark import Lark, Tree
 from parser import GRAMMAR, RAGFlowCLITransformer
 from http_client import HttpClient
-from ragflow_client import RAGFlowClient
+from ragflow_client import RAGFlowClient, run_command
 from user import login_user
 
 warnings.filterwarnings("ignore", category=getpass.GetPassWarning)
@@ -46,44 +46,7 @@ def encode_to_base64(input_string):
     return base64_encoded.decode("utf-8")
 
 
-def show_help():
-    """Help info"""
-    help_text = """
-Commands:
-LIST SERVICES
-SHOW SERVICE <service>
-STARTUP SERVICE <service>
-SHUTDOWN SERVICE <service>
-RESTART SERVICE <service>
-LIST USERS
-SHOW USER <user>
-DROP USER <user>
-CREATE USER <user> <password>
-ALTER USER PASSWORD <user> <new_password>
-ALTER USER ACTIVE <user> <on/off>
-LIST DATASETS OF <user>
-LIST AGENTS OF <user>
-CREATE ROLE <role>
-DROP ROLE <role>
-ALTER ROLE <role> SET DESCRIPTION <description>
-LIST ROLES
-SHOW ROLE <role>
-GRANT <action_list> ON <function> TO ROLE <role>
-REVOKE <action_list> ON <function> TO ROLE <role>
-ALTER USER <user> SET ROLE <role>
-SHOW USER PERMISSION <user>
-SHOW VERSION
-GRANT ADMIN <user>
-REVOKE ADMIN <user>
-GENERATE KEY FOR USER <user>
-LIST KEYS OF <user>
-DROP KEY <key> OF <user>
 
-Meta Commands:
-\\?, \\h, \\help     Show this help
-\\q, \\quit, \\exit   Quit the CLI
-    """
-    print(help_text)
 
 
 class RAGFlowCLI(Cmd):
@@ -334,135 +297,7 @@ class RAGFlowCLI(Cmd):
                 command_dict = parsed_command
 
         # print(f"Parsed command: {command_dict}")
-
-        command_type = command_dict["type"]
-
-        match command_type:
-            case "register_user":
-                if self.is_interactive:
-                    print("Register user command is not supported in interactive mode")
-                    return
-                self.ragflow_client.register_user(command_dict)
-            case "list_services":
-                self.ragflow_client.list_services()
-            case "show_service":
-                self.ragflow_client.show_service(command_dict)
-            case "restart_service":
-                self.ragflow_client.restart_service(command_dict)
-            case "shutdown_service":
-                self.ragflow_client.shutdown_service(command_dict)
-            case "startup_service":
-                self.ragflow_client.startup_service(command_dict)
-            case "list_users":
-                self.ragflow_client.list_users(command_dict)
-            case "show_user":
-                self.ragflow_client.show_user(command_dict)
-            case "drop_user":
-                self.ragflow_client.drop_user(command_dict)
-            case "alter_user":
-                self.ragflow_client.alter_user(command_dict)
-            case "create_user":
-                self.ragflow_client.create_user(command_dict)
-            case "activate_user":
-                self.ragflow_client.activate_user(command_dict)
-            case "list_datasets":
-                self.ragflow_client.handle_list_datasets(command_dict)
-            case "list_agents":
-                self.ragflow_client.handle_list_agents(command_dict)
-            case "create_role":
-                self.ragflow_client.create_role(command_dict)
-            case "drop_role":
-                self.ragflow_client.drop_role(command_dict)
-            case "alter_role":
-                self.ragflow_client.alter_role(command_dict)
-            case "list_roles":
-                self.ragflow_client.list_roles(command_dict)
-            case "show_role":
-                self.ragflow_client.show_role(command_dict)
-            case "grant_permission":
-                self.ragflow_client.grant_permission(command_dict)
-            case "revoke_permission":
-                self.ragflow_client.revoke_permission(command_dict)
-            case "alter_user_role":
-                self.ragflow_client.alter_user_role(command_dict)
-            case "show_user_permission":
-                self.ragflow_client.show_user_permission(command_dict)
-            case "show_version":
-                self.ragflow_client.show_version(command_dict)
-            case "grant_admin":
-                self.ragflow_client.grant_admin(command_dict)
-            case "revoke_admin":
-                self.ragflow_client.revoke_admin(command_dict)
-            case "generate_key":
-                self.ragflow_client.generate_key(command_dict)
-            case "list_keys":
-                self.ragflow_client.list_keys(command_dict)
-            case "drop_key":
-                self.ragflow_client.drop_key(command_dict)
-            case "set_variable":
-                self.ragflow_client.set_variable(command_dict)
-            case "show_variable":
-                self.ragflow_client.show_variable(command_dict)
-            case "list_variables":
-                self.ragflow_client.list_variables(command_dict)
-            case "list_configs":
-                self.ragflow_client.list_configs(command_dict)
-            case "list_environments":
-                self.ragflow_client.list_environments(command_dict)
-            case "create_model_provider":
-                self.ragflow_client.create_model_provider(command_dict)
-            case "drop_model_provider":
-                self.ragflow_client.drop_model_provider(command_dict)
-            case "show_current_user":
-                self.ragflow_client.show_current_user(command_dict)
-            case "set_default_model":
-                self.ragflow_client.set_default_model(command_dict)
-            case "reset_default_model":
-                self.ragflow_client.reset_default_model(command_dict)
-            case "list_user_datasets":
-                self.ragflow_client.list_user_datasets(command_dict)
-            case "create_user_dataset":
-                self.ragflow_client.create_user_dataset(command_dict)
-            case "drop_user_dataset":
-                self.ragflow_client.drop_user_dataset(command_dict)
-            case "list_user_dataset_files":
-                self.ragflow_client.list_user_dataset_files(command_dict)
-            case "list_user_agents":
-                self.ragflow_client.list_user_agents(command_dict)
-            case "list_user_chats":
-                self.ragflow_client.list_user_chats(command_dict)
-            case "create_user_chat":
-                self.ragflow_client.create_user_chat(command_dict)
-            case "drop_user_chat":
-                self.ragflow_client.drop_user_chat(command_dict)
-            case "list_user_model_providers":
-                self.ragflow_client.list_user_model_providers(command_dict)
-            case "list_user_default_models":
-                self.ragflow_client.list_user_default_models(command_dict)
-            case "parse_dataset_docs":
-                self.ragflow_client.parse_dataset_docs(command_dict)
-            case "parse_dataset":
-                self.ragflow_client.parse_dataset(command_dict)
-            case "import_docs_into_dataset":
-                self.ragflow_client.import_docs_into_dataset(command_dict)
-            case "search_on_datasets":
-                self.ragflow_client.search_on_datasets(command_dict)
-            case "meta":
-                self._handle_meta_command(command_dict)
-            case _:
-                print(f"Command '{command_type}' would be executed with API")
-
-    def _handle_meta_command(self, command):
-        meta_command = command["command"]
-        args = command.get("args", [])
-
-        if meta_command in ["?", "h", "help"]:
-            show_help()
-        elif meta_command in ["q", "quit", "exit"]:
-            print("Goodbye!")
-        else:
-            print(f"Meta command '{meta_command}' with args {args}")
-
+        run_command(self.ragflow_client, command_dict, self.is_interactive)
 
 def main():
 

@@ -86,6 +86,7 @@ sql_command: list_services
            | parse_dataset_async
            | import_docs_into_dataset
            | search_on_datasets
+           | benchmark
 
 // meta command definition
 meta_command: "\\" meta_command_name [meta_args]
@@ -164,6 +165,7 @@ ASR: "ASR"i
 TTS: "TTS"i
 ASYNC: "ASYNC"i
 SYNC: "SYNC"i
+BENCHMARK: "BENCHMARK"i
 
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
@@ -208,6 +210,37 @@ list_variables: LIST VARS ";"
 list_configs: LIST CONFIGS ";"
 list_environments: LIST ENVS ";"
 
+benchmark: BENCHMARK NUMBER NUMBER user_statement
+
+user_statement: show_current_user
+                | create_model_provider
+                | drop_model_provider
+                | set_default_llm
+                | set_default_vlm
+                | set_default_embedding
+                | set_default_reranker
+                | set_default_asr
+                | set_default_tts
+                | reset_default_llm
+                | reset_default_vlm
+                | reset_default_embedding
+                | reset_default_reranker
+                | reset_default_asr
+                | reset_default_tts
+                | create_user_dataset_with_parser
+                | create_user_dataset_with_pipeline
+                | drop_user_dataset
+                | list_user_datasets
+                | list_user_dataset_files
+                | list_user_agents
+                | list_user_chats
+                | create_user_chat
+                | drop_user_chat
+                | list_user_model_providers
+                | list_user_default_models
+                | import_docs_into_dataset
+                | search_on_datasets
+
 show_current_user: SHOW CURRENT USER ";"
 create_model_provider: CREATE MODEL PROVIDER quoted_string quoted_string ";"
 drop_model_provider: DROP MODEL PROVIDER quoted_string ";"
@@ -236,11 +269,12 @@ create_user_chat: CREATE CHAT quoted_string ";"
 drop_user_chat: DROP CHAT quoted_string ";"
 list_user_model_providers: LIST MODEL PROVIDERS ";"
 list_user_default_models: LIST DEFAULT MODELS ";"
+import_docs_into_dataset: IMPORT quoted_string INTO DATASET quoted_string ";"
+search_on_datasets: SEARCH quoted_string ON DATASETS quoted_string ";"
+
 parse_dataset_docs: PARSE quoted_string OF DATASET quoted_string ";"
 parse_dataset_sync: PARSE DATASET quoted_string SYNC ";"
 parse_dataset_async: PARSE DATASET quoted_string ASYNC ";"
-import_docs_into_dataset: IMPORT quoted_string INTO DATASET quoted_string ";"
-search_on_datasets: SEARCH quoted_string ON DATASETS quoted_string ";"
 
 identifier_list: identifier ("," identifier)*
 
@@ -544,6 +578,12 @@ class RAGFlowCLITransformer(Transformer):
             datasets = datasets[0]
             datasets = datasets.split(" ")
         return {"type": "search_on_datasets", "datasets": datasets, "question": question}
+
+    def benchmark(self, items):
+        concurrency: int = int(items[1])
+        iterations: int = int(items[2])
+        command = items[3].children[0]
+        return {"type": "benchmark", "concurrency": concurrency, "iterations": iterations, "command": command}
 
     def action_list(self, items):
         return items

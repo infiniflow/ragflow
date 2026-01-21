@@ -1194,3 +1194,211 @@ class RAGFlowClient:
             print(row)
 
         print(separator)
+
+
+def run_command(client: RAGFlowClient, command_dict: dict, is_interactive: bool):
+    command_type = command_dict["type"]
+
+    match command_type:
+        case "benchmark":
+            run_benchmark(client, command_dict, is_interactive)
+        case "register_user":
+            if is_interactive:
+                print("Register user command is not supported in interactive mode")
+                return
+            client.register_user(command_dict)
+        case "list_services":
+            client.list_services()
+        case "show_service":
+            client.show_service(command_dict)
+        case "restart_service":
+            client.restart_service(command_dict)
+        case "shutdown_service":
+            client.shutdown_service(command_dict)
+        case "startup_service":
+            client.startup_service(command_dict)
+        case "list_users":
+            client.list_users(command_dict)
+        case "show_user":
+            client.show_user(command_dict)
+        case "drop_user":
+            client.drop_user(command_dict)
+        case "alter_user":
+            client.alter_user(command_dict)
+        case "create_user":
+            client.create_user(command_dict)
+        case "activate_user":
+            client.activate_user(command_dict)
+        case "list_datasets":
+            client.handle_list_datasets(command_dict)
+        case "list_agents":
+            client.handle_list_agents(command_dict)
+        case "create_role":
+            client.create_role(command_dict)
+        case "drop_role":
+            client.drop_role(command_dict)
+        case "alter_role":
+            client.alter_role(command_dict)
+        case "list_roles":
+            client.list_roles(command_dict)
+        case "show_role":
+            client.show_role(command_dict)
+        case "grant_permission":
+            client.grant_permission(command_dict)
+        case "revoke_permission":
+            client.revoke_permission(command_dict)
+        case "alter_user_role":
+            client.alter_user_role(command_dict)
+        case "show_user_permission":
+            client.show_user_permission(command_dict)
+        case "show_version":
+            client.show_version(command_dict)
+        case "grant_admin":
+            client.grant_admin(command_dict)
+        case "revoke_admin":
+            client.revoke_admin(command_dict)
+        case "generate_key":
+            client.generate_key(command_dict)
+        case "list_keys":
+            client.list_keys(command_dict)
+        case "drop_key":
+            client.drop_key(command_dict)
+        case "set_variable":
+            client.set_variable(command_dict)
+        case "show_variable":
+            client.show_variable(command_dict)
+        case "list_variables":
+            client.list_variables(command_dict)
+        case "list_configs":
+            client.list_configs(command_dict)
+        case "list_environments":
+            client.list_environments(command_dict)
+        case "create_model_provider":
+            client.create_model_provider(command_dict)
+        case "drop_model_provider":
+            client.drop_model_provider(command_dict)
+        case "show_current_user":
+            client.show_current_user(command_dict)
+        case "set_default_model":
+            client.set_default_model(command_dict)
+        case "reset_default_model":
+            client.reset_default_model(command_dict)
+        case "list_user_datasets":
+            client.list_user_datasets(command_dict)
+        case "create_user_dataset":
+            client.create_user_dataset(command_dict)
+        case "drop_user_dataset":
+            client.drop_user_dataset(command_dict)
+        case "list_user_dataset_files":
+            client.list_user_dataset_files(command_dict)
+        case "list_user_agents":
+            client.list_user_agents(command_dict)
+        case "list_user_chats":
+            client.list_user_chats(command_dict)
+        case "create_user_chat":
+            client.create_user_chat(command_dict)
+        case "drop_user_chat":
+            client.drop_user_chat(command_dict)
+        case "list_user_model_providers":
+            client.list_user_model_providers(command_dict)
+        case "list_user_default_models":
+            client.list_user_default_models(command_dict)
+        case "parse_dataset_docs":
+            client.parse_dataset_docs(command_dict)
+        case "parse_dataset":
+            client.parse_dataset(command_dict)
+        case "import_docs_into_dataset":
+            client.import_docs_into_dataset(command_dict)
+        case "search_on_datasets":
+            client.search_on_datasets(command_dict)
+        case "meta":
+            _handle_meta_command(command_dict)
+        case _:
+            print(f"Command '{command_type}' would be executed with API")
+
+
+def _handle_meta_command(command: dict):
+    meta_command = command["command"]
+    args = command.get("args", [])
+
+    if meta_command in ["?", "h", "help"]:
+        show_help()
+    elif meta_command in ["q", "quit", "exit"]:
+        print("Goodbye!")
+    else:
+        print(f"Meta command '{meta_command}' with args {args}")
+
+
+def show_help():
+    """Help info"""
+    help_text = """
+Commands:
+LIST SERVICES
+SHOW SERVICE <service>
+STARTUP SERVICE <service>
+SHUTDOWN SERVICE <service>
+RESTART SERVICE <service>
+LIST USERS
+SHOW USER <user>
+DROP USER <user>
+CREATE USER <user> <password>
+ALTER USER PASSWORD <user> <new_password>
+ALTER USER ACTIVE <user> <on/off>
+LIST DATASETS OF <user>
+LIST AGENTS OF <user>
+CREATE ROLE <role>
+DROP ROLE <role>
+ALTER ROLE <role> SET DESCRIPTION <description>
+LIST ROLES
+SHOW ROLE <role>
+GRANT <action_list> ON <function> TO ROLE <role>
+REVOKE <action_list> ON <function> TO ROLE <role>
+ALTER USER <user> SET ROLE <role>
+SHOW USER PERMISSION <user>
+SHOW VERSION
+GRANT ADMIN <user>
+REVOKE ADMIN <user>
+GENERATE KEY FOR USER <user>
+LIST KEYS OF <user>
+DROP KEY <key> OF <user>
+
+Meta Commands:
+\\?, \\h, \\help     Show this help
+\\q, \\quit, \\exit   Quit the CLI
+    """
+    print(help_text)
+
+
+def run_benchmark(client: RAGFlowClient, command_dict: dict, is_interactive: bool):
+    concurrency = command_dict.get("concurrency", 1)
+    iterations = command_dict.get("iterations", 1)
+    command: dict = command_dict["command"]
+    if concurrency < 1:
+        print("Concurrency must be greater than 0")
+        return
+    elif concurrency == 1:
+        start_time = time.perf_counter()
+        for i in range(iterations):
+            run_command(client, command, is_interactive)
+        end_time = time.perf_counter()
+        total_duration = end_time - start_time
+        qps = iterations / total_duration if total_duration > 0 else None
+        print(f"command: {command}, Concurrency: {concurrency} , iterations: {iterations}")
+        print(f"total duration: {total_duration:.4f}s, QPS: {qps}")
+        pass
+    else:
+        pass
+
+    pass
+
+
+class Benchmark:
+    def __init__(self, concurrency, command):
+        self.concurrency = concurrency
+        self.command = command
+
+    def run(self):
+        pass
+
+    def report(self):
+        pass
