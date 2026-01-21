@@ -34,11 +34,12 @@ import {
 } from 'react-hook-form';
 import { useLocation } from 'react-router';
 import { DataSetContext } from '..';
+import { MetadataType } from '../../components/metedata/constant';
 import {
-  MetadataType,
   useManageMetadata,
   util,
 } from '../../components/metedata/hooks/use-manage-modal';
+
 import {
   IBuiltInMetadataItem,
   IMetaDataReturnJSONSettings,
