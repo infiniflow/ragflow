@@ -415,18 +415,10 @@ class RAGFlowCLI(Cmd):
                 self.ragflow_client.drop_model_provider(command_dict)
             case "show_current_user":
                 self.ragflow_client.show_current_user(command_dict)
-            case "set_default_llm":
-                self.ragflow_client.set_default_llm(command_dict)
-            case "set_default_vlm":
-                self.ragflow_client.set_default_vlm(command_dict)
-            case "set_default_embedding":
-                self.ragflow_client.set_default_embedding(command_dict)
-            case "set_default_reranker":
-                self.ragflow_client.set_default_reranker(command_dict)
-            case "set_default_asr":
-                self.ragflow_client.set_default_asr(command_dict)
-            case "set_default_tts":
-                self.ragflow_client.set_default_tts(command_dict)
+            case "set_default_model":
+                self.ragflow_client.set_default_model(command_dict)
+            case "reset_default_model":
+                self.ragflow_client.reset_default_model(command_dict)
             case "list_user_datasets":
                 self.ragflow_client.list_user_datasets(command_dict)
             case "create_user_dataset":

@@ -62,6 +62,12 @@ sql_command: list_services
            | set_default_reranker
            | set_default_asr
            | set_default_tts
+           | reset_default_llm
+           | reset_default_vlm
+           | reset_default_embedding
+           | reset_default_reranker
+           | reset_default_asr
+           | reset_default_tts
            | create_model_provider
            | drop_model_provider
            | create_user_dataset_with_parser
@@ -120,6 +126,7 @@ FOR: "FOR"i
 RESOURCES: "RESOURCES"i
 ON: "ON"i
 SET: "SET"i
+RESET: "RESET"i
 VERSION: "VERSION"i
 VAR: "VAR"i
 VARS: "VARS"i
@@ -203,6 +210,13 @@ set_default_embedding: SET DEFAULT EMBEDDING quoted_string ";"
 set_default_reranker: SET DEFAULT RERANKER quoted_string ";"
 set_default_asr: SET DEFAULT ASR quoted_string ";"
 set_default_tts: SET DEFAULT TTS quoted_string ";"
+
+reset_default_llm: RESET DEFAULT LLM ";"
+reset_default_vlm: RESET DEFAULT VLM ";"
+reset_default_embedding: RESET DEFAULT EMBEDDING ";"
+reset_default_reranker: RESET DEFAULT RERANKER ";"
+reset_default_asr: RESET DEFAULT ASR ";"
+reset_default_tts: RESET DEFAULT TTS ";"
 
 list_user_datasets: LIST DATASETS ";"
 create_user_dataset_with_parser: CREATE DATASET quoted_string WITH EMBEDDING quoted_string PARSER quoted_string ";" 
@@ -400,27 +414,45 @@ class RAGFlowCLITransformer(Transformer):
 
     def set_default_llm(self, items):
         llm_id = items[3].children[0].strip("'\"")
-        return {"type": "set_default_llm", "llm_id": llm_id}
+        return {"type": "set_default_model", "model_type": "llm_id", "model_id": llm_id}
 
     def set_default_vlm(self, items):
         vlm_id = items[3].children[0].strip("'\"")
-        return {"type": "set_default_vlm", "vlm_id": vlm_id}
+        return {"type": "set_default_model", "model_type": "img2txt_id", "model_id": vlm_id}
 
     def set_default_embedding(self, items):
         embedding_id = items[3].children[0].strip("'\"")
-        return {"type": "set_default_embedding", "embedding_id": embedding_id}
+        return {"type": "set_default_model", "model_type": "embd_id", "model_id": embedding_id}
 
     def set_default_reranker(self, items):
         reranker_id = items[3].children[0].strip("'\"")
-        return {"type": "set_default_reranker", "reranker_id": reranker_id}
+        return {"type": "set_default_model", "model_type": "reranker_id", "model_id": reranker_id}
 
     def set_default_asr(self, items):
         asr_id = items[3].children[0].strip("'\"")
-        return {"type": "set_default_asr", "asr_id": asr_id}
+        return {"type": "set_default_model", "model_type": "asr_id", "model_id": asr_id}
 
     def set_default_tts(self, items):
         tts_id = items[3].children[0].strip("'\"")
-        return {"type": "set_default_tts", "tts_id": tts_id}
+        return {"type": "set_default_model", "model_type": "tts_id", "model_id": tts_id}
+
+    def reset_default_llm(self, items):
+        return {"type": "reset_default_model", "model_type": "llm_id"}
+
+    def reset_default_vlm(self, items):
+        return {"type": "reset_default_model", "model_type": "img2txt_id"}
+
+    def reset_default_embedding(self, items):
+        return {"type": "reset_default_model", "model_type": "embd_id"}
+
+    def reset_default_reranker(self, items):
+        return {"type": "reset_default_model", "model_type": "reranker_id"}
+
+    def reset_default_asr(self, items):
+        return {"type": "reset_default_model", "model_type": "asr_id"}
+
+    def reset_default_tts(self, items):
+        return {"type": "reset_default_model", "model_type": "tts_id"}
 
     def list_user_datasets(self, items):
         return {"type": "list_user_datasets"}

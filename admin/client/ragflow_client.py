@@ -586,51 +586,45 @@ class RAGFlowClient:
     def create_model_provider(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
-        provider_name: str = command["provider_name"]
-        provider_key: str = command["provider_key"]
-        print(f"Creating model provider {provider_name} with key {provider_key}")
+        llm_factory: str = command["provider_name"]
+        api_key: str = command["provider_key"]
+        payload = {"api_key": api_key, "llm_factory": llm_factory}
+        response = self.http_client.request("POST", "/llm/set_api_key", json_body=payload, use_api_base=False,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200 and res_json["code"] == 0:
+            print(f"Success to add model provider {llm_factory}")
+        else:
+            print(f"Fail to add model provider {llm_factory}, code: {res_json['code']}, message: {res_json['message']}")
 
     def drop_model_provider(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
-        provider_name: str = command["provider_name"]
-        print(f"Dropping model provider {provider_name}")
+        llm_factory: str = command["provider_name"]
+        payload = {"llm_factory": llm_factory}
+        response = self.http_client.request("POST", "/llm/delete_factory", json_body=payload, use_api_base=False,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200 and res_json["code"] == 0:
+            print(f"Success to drop model provider {llm_factory}")
+        else:
+            print(
+                f"Fail to drop model provider {llm_factory}, code: {res_json['code']}, message: {res_json['message']}")
 
-    def set_default_llm(self, command):
+    def set_default_model(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
-        llm_id: str = command["llm_id"]
-        print(f"Setting default LLM to {llm_id}")
 
-    def set_default_vlm(self, command):
+        model_type: str = command["model_type"]
+        model_id: str = command["model_id"]
+        self._set_default_models(model_type, model_id)
+
+    def reset_default_model(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
-        vlm_id: str = command["vlm_id"]
-        print(f"Setting default VLM to {vlm_id}")
 
-    def set_default_embedding(self, command):
-        if self.server_type != "user":
-            print("This command is only allowed in USER mode")
-        embedding_id: str = command["embedding_id"]
-        print(f"Setting default Embedding to {embedding_id}")
-
-    def set_default_reranker(self, command):
-        if self.server_type != "user":
-            print("This command is only allowed in USER mode")
-        reranker_id: str = command["reranker_id"]
-        print(f"Setting default Reranker to {reranker_id}")
-
-    def set_default_asr(self, command):
-        if self.server_type != "user":
-            print("This command is only allowed in USER mode")
-        asr_id: str = command["asr_id"]
-        print(f"Setting default ASR to {asr_id}")
-
-    def set_default_tts(self, command):
-        if self.server_type != "user":
-            print("This command is only allowed in USER mode")
-        tts_id: str = command["tts_id"]
-        print(f"Setting default TTS to {tts_id}")
+        model_type: str = command["model_type"]
+        self._set_default_models(model_type, "")
 
     def list_user_datasets(self, command):
         if self.server_type != "user":
@@ -728,16 +722,19 @@ class RAGFlowClient:
             for key, value in res_json["data"].items():
                 new_input.append({"model provider": key, "models": value})
             self._print_table_simple(new_input)
+        else:
+            print(f"Fail to list model provider, code: {res_json['code']}, message: {res_json['message']}")
 
     def list_user_default_models(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
 
-        response = self.http_client.request("GET", "/user/tenant_info", use_api_base=False, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200:
+        res_json = self._get_default_models()
+        if res_json is None:
+            return
+        else:
             new_input = []
-            for key, value in res_json["data"].items():
+            for key, value in res_json.items():
                 if key == "asr_id" and value != "":
                     new_input.append({"model_category": "ASR", "model_name": value})
                 elif key == "embd_id" and value != "":
@@ -905,6 +902,37 @@ class RAGFlowClient:
             print(f"Dataset {dataset_name} not found")
             return None
         return dataset_id
+
+    def _get_default_models(self):
+        response = self.http_client.request("GET", "/user/tenant_info", use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200 and res_json["code"] == 0:
+            return res_json["data"]
+        else:
+            print(f"Fail to list user default models, code: {res_json['code']}, message: {res_json['message']}")
+            return None
+
+    def _set_default_models(self, model_type, model_id):
+        current_payload = self._get_default_models()
+        if current_payload is None:
+            return
+        else:
+            current_payload.update({model_type: model_id})
+        payload = {
+            "tenant_id": current_payload["tenant_id"],
+            "llm_id": current_payload["llm_id"],
+            "embd_id": current_payload["embd_id"],
+            "img2txt_id": current_payload["img2txt_id"],
+            "asr_id": current_payload["asr_id"],
+            "tts_id": current_payload["tts_id"],
+        }
+        response = self.http_client.request("POST", "/user/set_tenant_info", json_body=payload, use_api_base=False,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200 and res_json["code"] == 0:
+            print(f"Success to set default llm to {model_type}")
+        else:
+            print(f"Fail to set default llm to {model_type}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _format_service_detail_table(self, data):
         if isinstance(data, list):
