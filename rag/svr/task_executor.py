@@ -35,7 +35,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
 from common.connection_utils import timeout
-from common.metadata_utils import update_metadata_to, metadata_schema
+from common.metadata_utils import turn2jsonschema, update_metadata_to, metadata_schema
 from rag.utils.base64_image import image2id
 from rag.utils.raptor_utils import should_skip_raptor, get_skip_reason
 from common.log_utils import init_root_logger
@@ -415,7 +415,7 @@ async def build_chunks(task, progress_callback):
                     return
                 async with chat_limiter:
                     cached = await gen_metadata(chat_mdl,
-                                                metadata_schema(task["parser_config"]["metadata"]),
+                                                turn2jsonschema(task["parser_config"]["metadata"]),
                                                 d["content_with_weight"])
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata",
                               task["parser_config"]["metadata"])

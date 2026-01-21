@@ -776,10 +776,25 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_metadata_summary(cls, kb_id):
+    def get_metadata_summary(cls, kb_id, document_ids=None):
+        def _meta_value_type(value):
+            if value is None:
+                return None
+            if isinstance(value, list):
+                return "list"
+            if isinstance(value, bool):
+                return "string"
+            if isinstance(value, (int, float)):
+                return "number"
+            return "string"
+
         fields = [cls.model.id, cls.model.meta_fields]
         summary = {}
-        for r in cls.model.select(*fields).where(cls.model.kb_id == kb_id):
+        type_counter = {}
+        query = cls.model.select(*fields).where(cls.model.kb_id == kb_id)
+        if document_ids:
+            query = query.where(cls.model.id.in_(document_ids))
+        for r in query:
             meta_fields = r.meta_fields or {}
             if isinstance(meta_fields, str):
                 try:
@@ -789,6 +804,11 @@ class DocumentService(CommonService):
             if not isinstance(meta_fields, dict):
                 continue
             for k, v in meta_fields.items():
+                value_type = _meta_value_type(v)
+                if value_type:
+                    if k not in type_counter:
+                        type_counter[k] = {}
+                    type_counter[k][value_type] = type_counter[k].get(value_type, 0) + 1
                 values = v if isinstance(v, list) else [v]
                 for vv in values:
                     if not vv:
@@ -797,11 +817,19 @@ class DocumentService(CommonService):
                     if k not in summary:
                         summary[k] = {}
                     summary[k][sv] = summary[k].get(sv, 0) + 1
-        return {k: sorted([(val, cnt) for val, cnt in v.items()], key=lambda x: x[1], reverse=True) for k, v in summary.items()}
+        result = {}
+        for k, v in summary.items():
+            values = sorted([(val, cnt) for val, cnt in v.items()], key=lambda x: x[1], reverse=True)
+            type_counts = type_counter.get(k, {})
+            value_type = "string"
+            if type_counts:
+                value_type = max(type_counts.items(), key=lambda item: item[1])[0]
+            result[k] = {"type": value_type, "values": values}
+        return result
 
     @classmethod
     @DB.connection_context()
-    def batch_update_metadata(cls, kb_id, doc_ids, updates=None, deletes=None):
+    def batch_update_metadata(cls, kb_id, doc_ids, updates=None, deletes=None, adds=None):
         updates = updates or []
         deletes = deletes or []
         if not doc_ids:
@@ -824,8 +852,10 @@ class DocumentService(CommonService):
             changed = False
             for upd in updates:
                 key = upd.get("key")
-                if not key or key not in meta:
+                if not key:
                     continue
+                if key not in meta:
+                    meta[key] = upd.get("value")
 
                 new_value = upd.get("value")
                 match_provided = "match" in upd
@@ -888,7 +918,7 @@ class DocumentService(CommonService):
         updated_docs = 0
         with DB.atomic():
             rows = cls.model.select(cls.model.id, cls.model.meta_fields).where(
-                (cls.model.id.in_(doc_ids)) & (cls.model.kb_id == kb_id)
+                cls.model.id.in_(doc_ids)
             )
             for r in rows:
                 meta = _normalize_meta(r.meta_fields or {})
