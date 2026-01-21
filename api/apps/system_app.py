@@ -178,7 +178,7 @@ def healthz():
 
 
 @manager.route("/ping", methods=["GET"])  # noqa: F821
-def ping():
+async def ping():
     return "pong", 200
 
 

@@ -22,8 +22,9 @@ import urllib.parse
 from pathlib import Path
 from http_client import HttpClient
 from lark import Tree
-from user import encrypt_password
+from user import encrypt_password, login_user
 
+import getpass
 import base64
 from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from Cryptodome.PublicKey import RSA
@@ -47,6 +48,31 @@ class RAGFlowClient:
     def __init__(self, http_client: HttpClient, server_type: str):
         self.http_client = http_client
         self.server_type = server_type
+
+    def login_user(self, command):
+        email : str = command["email"]
+        user_password = getpass.getpass(f"password for {email}: ").strip()
+        try:
+            token = login_user(self.http_client, self.server_type, email, user_password)
+            self.http_client.login_token = token
+            print(f"Login user {email} successfully")
+        except Exception as e:
+            print(str(e))
+            print("Can't access server for login (connection failed)")
+
+    def ping_server(self, command):
+        iterations = command.get("iterations", 1)
+        if iterations > 1:
+            response = self.http_client.request("GET", "/system/ping", use_api_base=False, auth_kind="web",
+                                                iterations=iterations)
+            return response
+        else:
+            response = self.http_client.request("GET", "/system/ping", use_api_base=False, auth_kind="web")
+            if response.status_code == 200 and response.content == b"pong":
+                print("Server is alive")
+            else:
+                print("Server is down")
+            return None
 
     def register_user(self, command):
         if self.server_type != "user":
@@ -1222,16 +1248,17 @@ class RAGFlowClient:
         print(separator)
 
 
-def run_command(client: RAGFlowClient, command_dict: dict, is_interactive: bool):
+def run_command(client: RAGFlowClient, command_dict: dict):
     command_type = command_dict["type"]
 
     match command_type:
         case "benchmark":
-            run_benchmark(client, command_dict, is_interactive)
+            run_benchmark(client, command_dict)
+        case "login_user":
+            client.login_user(command_dict)
+        case "ping_server":
+            return client.ping_server(command_dict)
         case "register_user":
-            if is_interactive:
-                print("Register user command is not supported in interactive mode")
-                return
             client.register_user(command_dict)
         case "list_services":
             client.list_services()
@@ -1395,23 +1422,31 @@ Meta Commands:
     print(help_text)
 
 
-def run_benchmark(client: RAGFlowClient, command_dict: dict, is_interactive: bool):
+def run_benchmark(client: RAGFlowClient, command_dict: dict):
     concurrency = command_dict.get("concurrency", 1)
     iterations = command_dict.get("iterations", 1)
     command: dict = command_dict["command"]
     command.update({"iterations": iterations})
+
+    command_type = command["type"]
     if concurrency < 1:
         print("Concurrency must be greater than 0")
         return
     elif concurrency == 1:
-        result = run_command(client, command, is_interactive)
+        result = run_command(client, command)
+        success_count: int = 0
         response_list = result["response_list"]
-        total_duration = result["duration"]
-        success_count = 0
         for response in response_list:
-            res_json = response.json()
-            if response.status_code == 200 and res_json["code"] == 0:
-                success_count += 1
+            match command_type:
+                case "ping_server":
+                    if response.status_code == 200:
+                        success_count += 1
+                case _:
+                    res_json = response.json()
+                    if response.status_code == 200 and res_json["code"] == 0:
+                        success_count += 1
+
+        total_duration = result["duration"]
         qps = iterations / total_duration if total_duration > 0 else None
         print(f"command: {command}, Concurrency: {concurrency}, iterations: {iterations}")
         print(
@@ -1426,8 +1461,7 @@ def run_benchmark(client: RAGFlowClient, command_dict: dict, is_interactive: boo
                 executor.submit(
                     run_command,
                     client,
-                    command,
-                    is_interactive
+                    command
                 ): idx
                 for idx in range(concurrency)
             }
@@ -1439,9 +1473,14 @@ def run_benchmark(client: RAGFlowClient, command_dict: dict, is_interactive: boo
         for result in results:
             response_list = result["response_list"]
             for response in response_list:
-                res_json = response.json()
-                if response.status_code == 200 and res_json["code"] == 0:
-                    success_count += 1
+                match command_type:
+                    case "ping_server":
+                        if response.status_code == 200:
+                            success_count += 1
+                    case _:
+                        res_json = response.json()
+                        if response.status_code == 200 and res_json["code"] == 0:
+                            success_count += 1
 
         total_duration = end_time - start_time
         total_command_count = iterations * concurrency
