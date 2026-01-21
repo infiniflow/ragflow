@@ -1,3 +1,4 @@
+import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
@@ -24,8 +25,7 @@ export const useGetSharedChatSearchParams = () => {
   const [searchParams] = useSearchParams();
   const data_prefix = 'data_';
   const data = Object.fromEntries(
-    searchParams
-      .entries()
+    Array.from(searchParams.entries())
       .filter(([key]) => key.startsWith(data_prefix))
       .map(([key, value]) => [key.replace(data_prefix, ''), value]),
   );
@@ -72,6 +72,7 @@ export const useSendSharedMessage = () => {
         quote: true,
         question: message.content,
         session_id: get(derivedMessages, '0.session_id'),
+        reasoning: message.reasoning,
       });
 
       if (isCompletionError(res)) {
@@ -118,14 +119,14 @@ export const useSendSharedMessage = () => {
   }, [answer, addNewestAnswer]);
 
   const handlePressEnter = useCallback(
-    (documentIds: string[]) => {
+    (...[{ enableThinking }]: NextMessageInputOnPressEnterParameter) => {
       if (trim(value) === '') return;
       const id = uuid();
       if (done) {
         setValue('');
         addNewestQuestion({
           content: value,
-          doc_ids: documentIds,
+          doc_ids: [],
           id,
           role: MessageType.User,
         });
@@ -133,6 +134,7 @@ export const useSendSharedMessage = () => {
           content: value.trim(),
           id,
           role: MessageType.User,
+          reasoning: enableThinking,
         });
       }
     },
