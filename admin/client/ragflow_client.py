@@ -1022,17 +1022,24 @@ class RAGFlowClient:
             # "top_k": 1024,
             # "kb_id": command_dict["datasets"][0],
         }
-        response = self.http_client.request("POST", "/chunk/retrieval_test", json_body=payload, use_api_base=False,
-                                            auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200:
-            if res_json["code"] == 0:
-                self._print_table_simple(res_json["data"])
+        iterations = command_dict.get("iterations", 1)
+        if iterations > 1:
+            response = self.http_client.request("POST", "/chunk/retrieval_test", json_body=payload, use_api_base=False,
+                                                auth_kind="web", iterations=iterations)
+            return response
+        else:
+            response = self.http_client.request("POST", "/chunk/retrieval_test", json_body=payload, use_api_base=False,
+                                                auth_kind="web")
+            res_json = response.json()
+            if response.status_code == 200:
+                if res_json["code"] == 0:
+                    self._print_table_simple(res_json["data"]["chunks"])
+                else:
+                    print(
+                        f"Fail to search datasets: {dataset_names}, code: {res_json['code']}, message: {res_json['message']}")
             else:
                 print(
                     f"Fail to search datasets: {dataset_names}, code: {res_json['code']}, message: {res_json['message']}")
-        else:
-            print(f"Fail to search datasets: {dataset_names}, code: {res_json['code']}, message: {res_json['message']}")
 
     def show_version(self, command):
         if self.server_type == "admin":
@@ -1329,7 +1336,7 @@ def run_command(client: RAGFlowClient, command_dict: dict, is_interactive: bool)
         case "import_docs_into_dataset":
             client.import_docs_into_dataset(command_dict)
         case "search_on_datasets":
-            client.search_on_datasets(command_dict)
+            return client.search_on_datasets(command_dict)
         case "meta":
             _handle_meta_command(command_dict)
         case _:
