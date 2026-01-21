@@ -1,22 +1,6 @@
 import { ReactNode } from 'react';
 import { MetadataType } from './hook';
-export type MetadataValueType =
-  | 'string'
-  | 'bool'
-  | 'enum'
-  | 'time'
-  | 'int'
-  | 'float';
-
-export type IMetaDataSummaryItem = {
-  type?: MetadataValueType | string;
-  values: Array<Array<string | number>>;
-};
-
-export type IMetaDataReturnType = Record<
-  string,
-  Array<Array<string | number>> | IMetaDataSummaryItem
->;
+export type IMetaDataReturnType = Record<string, Array<Array<string | number>>>;
 export type IMetaDataReturnJSONType = Record<
   string,
   Array<string | number> | string
@@ -45,6 +29,14 @@ export interface IMetaDataJsonSchema {
 export type IMetaDataReturnJSONSettings =
   | IMetaDataJsonSchema
   | Array<IMetaDataReturnJSONSettingItem>;
+
+export type MetadataValueType =
+  | 'string'
+  | 'bool'
+  | 'enum'
+  | 'time'
+  | 'int'
+  | 'float';
 
 export type IMetaDataTableData = {
   field: string;

@@ -119,25 +119,6 @@ const schemaToValueType = (
   return DEFAULT_VALUE_TYPE;
 };
 
-const normalizeSummaryValueType = (valueType?: string): MetadataValueType => {
-  if (!valueType) return DEFAULT_VALUE_TYPE;
-  if (
-    valueType === 'string' ||
-    valueType === 'bool' ||
-    valueType === 'enum' ||
-    valueType === 'time' ||
-    valueType === 'int' ||
-    valueType === 'float'
-  ) {
-    return valueType;
-  }
-  if (valueType === 'boolean') return 'bool';
-  if (valueType === 'integer') return 'int';
-  if (valueType === 'number') return 'float';
-  if (valueType === 'time') return 'time';
-  return DEFAULT_VALUE_TYPE;
-};
-
 const valueTypeToSchema = (
   valueType: MetadataValueType,
   description: string,
@@ -180,21 +161,12 @@ const valueTypeToSchema = (
 export const util = {
   changeToMetaDataTableData(data: IMetaDataReturnType): IMetaDataTableData[] {
     return Object.entries(data).map(([key, value]) => {
-      const summaryValues = Array.isArray(value)
-        ? value
-        : Array.isArray(value?.values)
-          ? value.values
-          : [];
-      const values = summaryValues.map(([v]) => v.toString());
-      const valueType =
-        !Array.isArray(value) && value?.type
-          ? normalizeSummaryValueType(value.type)
-          : undefined;
+      const values = value.map(([v]) => v.toString());
+      console.log('values', values);
       return {
         field: key,
         description: '',
         values: values,
-        valueType: valueType,
       } as IMetaDataTableData;
     });
   },
