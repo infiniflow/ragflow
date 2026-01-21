@@ -1427,25 +1427,25 @@ def run_benchmark(client: RAGFlowClient, command_dict: dict):
     iterations = command_dict.get("iterations", 1)
     command: dict = command_dict["command"]
     command.update({"iterations": iterations})
+
+    command_type = command["type"]
     if concurrency < 1:
         print("Concurrency must be greater than 0")
         return
     elif concurrency == 1:
         result = run_command(client, command)
-        command_type = command["type"]
-
         success_count: int = 0
         response_list = result["response_list"]
-        match command_type:
-            case "ping_server":
-                for response in response_list:
+        for response in response_list:
+            match command_type:
+                case "ping_server":
                     if response.status_code == 200:
                         success_count += 1
-            case _:
-                for response in response_list:
+                case _:
                     res_json = response.json()
                     if response.status_code == 200 and res_json["code"] == 0:
                         success_count += 1
+
         total_duration = result["duration"]
         qps = iterations / total_duration if total_duration > 0 else None
         print(f"command: {command}, Concurrency: {concurrency}, iterations: {iterations}")
@@ -1473,9 +1473,14 @@ def run_benchmark(client: RAGFlowClient, command_dict: dict):
         for result in results:
             response_list = result["response_list"]
             for response in response_list:
-                res_json = response.json()
-                if response.status_code == 200 and res_json["code"] == 0:
-                    success_count += 1
+                match command_type:
+                    case "ping_server":
+                        if response.status_code == 200:
+                            success_count += 1
+                    case _:
+                        res_json = response.json()
+                        if response.status_code == 200 and res_json["code"] == 0:
+                            success_count += 1
 
         total_duration = end_time - start_time
         total_command_count = iterations * concurrency
