@@ -197,17 +197,36 @@ async def async_chat_solo(dialog, messages, stream=True):
         msg[-1]["content"] += attachments
     if stream:
         stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
+        last_state = None
         async for kind, value, state in _stream_with_think_delta(stream_iter):
+            last_state = state
             if kind == "marker":
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
                 yield {"answer": "", "reference": {}, "audio_binary": None, "prompt": "", "created_at": time.time(), "final": False, **flags}
                 continue
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
+        # Yield final response with token usage
+        token_usage = last_state.token_usage if last_state else 0
+        final_response = {"answer": "", "reference": {}, "audio_binary": None, "prompt": "", "created_at": time.time(), "final": True}
+        if token_usage:
+            final_response["usage"] = {
+                "prompt_tokens": 0,
+                "completion_tokens": token_usage,
+                "total_tokens": token_usage
+            }
+        yield final_response
     else:
-        answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
+        answer, used_tokens = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
-        yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
+        response = {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
+        if used_tokens:
+            response["usage"] = {
+                "prompt_tokens": 0,
+                "completion_tokens": used_tokens,
+                "total_tokens": used_tokens
+            }
+        yield response
 
 
 def get_models(dialog):
@@ -565,18 +584,31 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 continue
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
         full_answer = last_state.full_text if last_state else ""
+        token_usage = last_state.token_usage if last_state else 0
         if full_answer:
             final = decorate_answer(thought + full_answer)
             final["final"] = True
             final["audio_binary"] = None
             final["answer"] = ""
+            if token_usage:
+                final["usage"] = {
+                    "prompt_tokens": 0,  # Not available from streaming response
+                    "completion_tokens": token_usage,
+                    "total_tokens": token_usage
+                }
             yield final
     else:
-        answer = await chat_mdl.async_chat(prompt + prompt4citation, msg[1:], gen_conf)
+        answer, used_tokens = await chat_mdl.async_chat(prompt + prompt4citation, msg[1:], gen_conf)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         res = decorate_answer(answer)
         res["audio_binary"] = tts(tts_mdl, answer)
+        if used_tokens:
+            res["usage"] = {
+                "prompt_tokens": 0,  # Not separately available
+                "completion_tokens": used_tokens,
+                "total_tokens": used_tokens
+            }
         yield res
 
     return
@@ -658,7 +690,7 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
 
     async def get_table():
         nonlocal sys_prompt, user_prompt, question, tried_times
-        sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
+        sql, _ = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
         logging.debug(f"use_sql: Raw SQL from LLM: {repr(sql[:500])}")
         # Remove think blocks if present (format: </think>...)
         sql = re.sub(r"</think>\n.*?\n\s*", "", sql, flags=re.DOTALL)
@@ -958,6 +990,7 @@ class _ThinkStreamState:
         self.last_model_full = ""
         self.in_think = False
         self.buffer = ""
+        self.token_usage = 0
 
 
 def _next_think_delta(state: _ThinkStreamState) -> str:
@@ -990,6 +1023,10 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
     state = _ThinkStreamState()
     async for chunk in stream_iter:
         if not chunk:
+            continue
+        # Handle token usage tuple from LLMBundle.async_chat_streamly_delta
+        if isinstance(chunk, tuple) and len(chunk) == 2 and chunk[0] == "token_usage":
+            state.token_usage = chunk[1]
             continue
         if chunk.startswith(state.last_model_full):
             new_part = chunk[len(state.last_model_full):]

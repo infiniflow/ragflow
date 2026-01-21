@@ -397,7 +397,7 @@ class LLMBundle(LLM4Tenant):
             generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
             generation.end()
 
-        return txt
+        return txt, used_tokens
 
     async def async_chat_streamly(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
         total_tokens = 0
@@ -483,4 +483,6 @@ class LLMBundle(LLM4Tenant):
             if generation:
                 generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
                 generation.end()
+            # Yield token usage at the end as a tuple marker
+            yield ("token_usage", total_tokens)
             return
