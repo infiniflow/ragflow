@@ -449,7 +449,7 @@ class Dealer:
         end = begin + page_size
         page_idx = valid_idx[begin:end]
         
-        # Limit top_k total results after excuting others
+        # Limit top_k total results after executing others
         page_idx = page_idx[:top]
 
         dim = len(sres.query_vector)
