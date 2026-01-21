@@ -159,21 +159,21 @@ class UserMgr:
         # tenant_id is typically the same as user_id for the owner tenant
         tenant_id: str = usr.id
 
-        # Query all API tokens for this tenant
-        api_tokens: Any = APITokenService.query(tenant_id=tenant_id)
+        # Query all API keys for this tenant
+        api_keys: Any = APITokenService.query(tenant_id=tenant_id)
 
         result: list[dict[str, Any]] = []
-        for token_obj in api_tokens:
-            result.append(token_obj.to_dict())
+        for key in api_keys:
+            result.append(key.to_dict())
 
         return result
 
     @staticmethod
-    def save_api_token(api_token: dict[str, Any]) -> bool:
-        return APITokenService.save(**api_token)
+    def save_api_key(api_key: dict[str, Any]) -> bool:
+        return APITokenService.save(**api_key)
 
     @staticmethod
-    def delete_api_token(username: str, token: str) -> bool:
+    def delete_api_key(username: str, key: str) -> bool:
         # use email to find user. check exist and unique.
         user_list: list[Any] = UserService.query_user_by_email(username)
         if not user_list:
@@ -185,8 +185,8 @@ class UserMgr:
         # tenant_id is typically the same as user_id for the owner tenant
         tenant_id: str = usr.id
 
-        # Delete the API token
-        deleted_count: int = APITokenService.filter_delete([APIToken.tenant_id == tenant_id, APIToken.token == token])
+        # Delete the API key
+        deleted_count: int = APITokenService.filter_delete([APIToken.tenant_id == tenant_id, APIToken.token == key])
         return deleted_count > 0
 
     @staticmethod
@@ -305,6 +305,13 @@ class ServiceMgr:
             raise AdminException(f"invalid service_index: {service_idx}")
 
         service_config = configs[service_idx]
+
+        # exclude retrieval service if retrieval_type is not matched
+        doc_engine = os.getenv("DOC_ENGINE", "elasticsearch")
+        if service_config.service_type == "retrieval":
+            if service_config.retrieval_type != doc_engine:
+                raise AdminException(f"invalid service_index: {service_idx}")
+
         service_info = {"name": service_config.name, "detail_func_name": service_config.detail_func_name}
 
         detail_func = getattr(health_utils, service_info.get("detail_func_name"))
