@@ -29,7 +29,7 @@ from api.utils.api_utils import get_error_data_result, get_json_result, get_requ
 
 class BaseSchema(BaseModel):
     """Base schema with common configuration."""
-    model_config = ConfigDict(extra="allow", strict=False)
+    model_config = ConfigDict(extra="ignore", strict=False)
 
 
 class SetApiKeyRequest(BaseSchema):

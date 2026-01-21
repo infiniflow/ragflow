@@ -57,7 +57,7 @@ from api.apps import login_required, current_user
 
 class BaseSchema(BaseModel):
     """Base schema with common configuration."""
-    model_config = ConfigDict(extra="allow", strict=False)
+    model_config = ConfigDict(extra="ignore", strict=False)
 
 
 class CanvasTemplateResponse(BaseModel):

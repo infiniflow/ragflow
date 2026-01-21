@@ -34,7 +34,7 @@ from api.utils.api_utils import get_data_error_result, get_json_result, not_allo
 
 class BaseSchema(BaseModel):
     """Base schema with common configuration."""
-    model_config = ConfigDict(extra="allow", strict=False)
+    model_config = ConfigDict(extra="ignore", strict=False)
 
 
 class CreateSearchRequest(BaseSchema):
