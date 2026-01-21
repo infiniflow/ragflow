@@ -18,11 +18,11 @@ import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import { CircleStop, Paperclip, Send, Upload, X } from 'lucide-react';
 import * as React from 'react';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { AudioButton } from '../ui/audio-button';
 
-interface IProps {
+interface NextMessageInputProps {
   disabled: boolean;
   value: string;
   sendDisabled: boolean;
@@ -32,13 +32,18 @@ interface IProps {
   isShared?: boolean;
   showUploadIcon?: boolean;
   isUploading?: boolean;
-  onPressEnter(...prams: any[]): void;
+  onPressEnter({ enableThinking }: { enableThinking: boolean }): void;
   onInputChange: React.ChangeEventHandler<HTMLTextAreaElement>;
   createConversationBeforeUploadDocument?(message: string): Promise<any>;
   stopOutputMessage?(): void;
   onUpload?: NonNullable<FileUploadProps['onUpload']>;
   removeFile?(file: File): void;
+  showReasoning?: boolean;
 }
+
+export type NextMessageInputOnPressEnterParameter = Parameters<
+  NextMessageInputProps['onPressEnter']
+>;
 
 export function NextMessageInput({
   isUploading = false,
@@ -52,11 +57,18 @@ export function NextMessageInput({
   stopOutputMessage,
   onPressEnter,
   removeFile,
-}: IProps) {
+  showReasoning = false,
+}: NextMessageInputProps) {
   const [files, setFiles] = React.useState<File[]>([]);
   const [audioInputValue, setAudioInputValue] = React.useState<string | null>(
     null,
   );
+
+  const [enableThinking, setEnableThinking] = useState(false);
+
+  const handleThinkingToggle = useCallback(() => {
+    setEnableThinking((prev) => !prev);
+  }, []);
 
   useEffect(() => {
     if (audioInputValue !== null) {
@@ -65,11 +77,11 @@ export function NextMessageInput({
       } as React.ChangeEvent<HTMLTextAreaElement>);
 
       setTimeout(() => {
-        onPressEnter();
+        onPressEnter({ enableThinking });
         setAudioInputValue(null);
       }, 0);
     }
-  }, [audioInputValue, onInputChange, onPressEnter]);
+  }, [audioInputValue, onInputChange, onPressEnter, enableThinking]);
 
   const onFileReject = React.useCallback((file: File, message: string) => {
     toast(message, {
@@ -79,9 +91,9 @@ export function NextMessageInput({
 
   const submit = React.useCallback(() => {
     if (isUploading) return;
-    onPressEnter();
+    onPressEnter({ enableThinking });
     setFiles([]);
-  }, [isUploading, onPressEnter]);
+  }, [isUploading, onPressEnter, enableThinking]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -165,38 +177,49 @@ export function NextMessageInput({
           disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}
         />
-        <div
-          className={cn('flex items-center justify-between gap-1.5', {
-            'justify-end': !showUploadIcon,
-          })}
-        >
-          {showUploadIcon && (
-            <FileUploadTrigger asChild>
+        <div className={cn('flex items-center justify-between gap-1.5')}>
+          <div className="flex items-center gap-3">
+            {showUploadIcon && (
+              <FileUploadTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="size-7 rounded-sm"
+                  disabled={isUploading || sendLoading}
+                >
+                  <Paperclip className="size-3.5" />
+                  <span className="sr-only">Attach file</span>
+                </Button>
+              </FileUploadTrigger>
+            )}
+            {showReasoning && (
               <Button
                 type="button"
-                size="icon"
                 variant="ghost"
-                className="size-7 rounded-sm"
-                disabled={isUploading || sendLoading}
+                className={cn(
+                  'rounded-sm h-7 focus-visible:bg-none! hover:bg-none!',
+                  {
+                    'bg-accent-primary text-white': enableThinking,
+                  },
+                )}
+                onClick={handleThinkingToggle}
               >
-                <Paperclip className="size-3.5" />
-                <span className="sr-only">Attach file</span>
+                <span>Thinking</span>
               </Button>
-            </FileUploadTrigger>
-          )}
+            )}
+          </div>
           {sendLoading ? (
             <Button onClick={stopOutputMessage} className="size-5 rounded-sm">
               <CircleStop />
             </Button>
           ) : (
             <div className="flex items-center gap-3">
-              {/* <div className="bg-bg-input rounded-md hover:bg-bg-card p-1"> */}
               <AudioButton
                 onOk={(value) => {
                   setAudioInputValue(value);
                 }}
               />
-              {/* </div> */}
               <Button
                 className="size-5 rounded-sm"
                 disabled={

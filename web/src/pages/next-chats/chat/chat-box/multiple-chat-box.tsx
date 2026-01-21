@@ -260,6 +260,7 @@ export function MultipleChatBox({
           }
           stopOutputMessage={stopOutputMessage}
           onUpload={handleUploadFile}
+          showReasoning
         />
       </div>
       {visible && (

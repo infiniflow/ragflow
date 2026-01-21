@@ -119,6 +119,7 @@ export function SingleChatBox({
         onUpload={handleUploadFile}
         isUploading={isUploading}
         removeFile={removeFile}
+        showReasoning
       />
       {visible && (
         <PdfSheet
