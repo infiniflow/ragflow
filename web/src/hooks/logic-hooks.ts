@@ -274,7 +274,6 @@ export const useSendMessageWithSse = (
                 const val = JSON.parse(value?.data || '');
                 const d = val?.data;
                 if (typeof d !== 'boolean') {
-
                   setAnswer((prev) => {
                     const prevAnswer = prev.answer || '';
                     const currentAnswer = d.answer || '';
