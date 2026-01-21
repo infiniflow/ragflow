@@ -226,10 +226,18 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
     control: formMethods.control,
     name: 'search_config.use_rerank',
   });
+  
   const aiSummaryDisabled = useWatch({
     control: formMethods.control,
     name: 'search_config.summary',
   });
+
+  // Reset top_k to 1024 when rerank is disabled
+  useEffect(() => {
+    if (!rerankModelDisabled) {
+      formMethods.setValue('search_config.top_k', 1024);
+    }
+  }, [rerankModelDisabled, formMethods]);
 
   const { updateSearch } = useUpdateSearch();
   const [formSubmitLoading, setFormSubmitLoading] = useState(false);
