@@ -85,7 +85,7 @@ class HttpClient:
     ) -> requests.Response | dict:
         url = self.build_url(path, use_api_base=use_api_base)
         merged_headers = self._headers(auth_kind, headers)
-        timeout: Tuple[float, float] = (self.connect_timeout, self.read_timeout)
+        # timeout: Tuple[float, float] = (self.connect_timeout, self.read_timeout)
         session = requests.Session()
         if iterations > 1:
             response_list = []
