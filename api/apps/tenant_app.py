@@ -35,9 +35,18 @@ from api.apps import login_required, current_user
 # Pydantic Schemas for OpenAPI Documentation
 
 class BaseSchema(BaseModel):
-    """Base schema with common configuration."""
-    model_config = ConfigDict(extra="ignore", strict=False)
+    """Base schema with common configuration.
 
+    Designed for OpenAPI documentation generation without affecting
+    existing request validation logic. Uses Pydantic v2 defaults.
+    """
+    model_config = ConfigDict(
+        extra='ignore',      # Silently ignore extra fields
+        strict=False,        # Allow type coercion
+        validate_default=False,  # Don't validate defaults
+        validate_assignment=False,  # Don't validate on assignment
+        arbitrary_types_allowed=True  # Allow any Python type
+    )
 
 class CreateUserRequest(BaseSchema):
     """Request schema for creating/inviting a user to a tenant."""

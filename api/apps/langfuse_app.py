@@ -28,9 +28,18 @@ from api.utils.api_utils import get_error_data_result, get_json_result, get_requ
 # Pydantic Schemas for OpenAPI Documentation
 
 class BaseSchema(BaseModel):
-    """Base schema with common configuration."""
-    model_config = ConfigDict(extra="ignore", strict=False)
+    """Base schema with common configuration.
 
+    Designed for OpenAPI documentation generation without affecting
+    existing request validation logic. Uses Pydantic v2 defaults.
+    """
+    model_config = ConfigDict(
+        extra='ignore',      # Silently ignore extra fields
+        strict=False,        # Allow type coercion
+        validate_default=False,  # Don't validate defaults
+        validate_assignment=False,  # Don't validate on assignment
+        arbitrary_types_allowed=True  # Allow any Python type
+    )
 
 class SetApiKeyRequest(BaseSchema):
     """Request schema for setting Langfuse API keys."""
