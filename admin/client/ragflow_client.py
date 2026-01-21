@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import time
 from typing import Any
 import urllib.parse
 from pathlib import Path
@@ -676,18 +677,15 @@ class RAGFlowClient:
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
 
-        dataset_id = self._get_dataset_id(command_dict["dataset_name"])
+        dataset_name = command_dict["dataset_name"]
+        dataset_id = self._get_dataset_id(dataset_name)
         if dataset_id is None:
             return
 
-        response = self.http_client.request("POST", f"/document/list?kb_id={dataset_id}", use_api_base=False,
-                                            auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200:
-            self._print_table_simple(res_json["data"]["docs"])
-        else:
-            print(
-                f"Fail to list files from dataset {dataset_id}, code: {res_json['code']}, message: {res_json['message']}")
+        res_json = self._list_documents(dataset_name, dataset_id)
+        if res_json is None:
+            return
+        self._print_table_simple(res_json)
 
     def list_user_agents(self, command):
         if self.server_type != "user":
@@ -760,17 +758,14 @@ class RAGFlowClient:
         if dataset_id is None:
             return
 
-        response = self.http_client.request("POST", f"/document/list?kb_id={dataset_id}", use_api_base=False,
-                                            auth_kind="web")
-        res_json = response.json()
-        if response.status_code != 200:
-            print(
-                f"Fail to list files from dataset {dataset_name}, code: {res_json['code']}, message: {res_json['message']}")
+        res_json = self._list_documents(dataset_name, dataset_id)
+        if res_json is None:
+            return
 
         document_names = command_dict["document_names"]
         document_ids = []
         to_parse_doc_names = []
-        for doc in res_json["data"]["docs"]:
+        for doc in res_json:
             doc_name = doc["name"]
             if doc_name in document_names:
                 document_ids.append(doc["id"])
@@ -792,7 +787,43 @@ class RAGFlowClient:
             print(f"Success to parse {to_parse_doc_names} of {dataset_name}")
         else:
             print(
-                f"Fail to list documents {res_json["data"]["docs"]}, code: {res_json['code']}, message: {res_json['message']}")
+                f"Fail to parse documents {res_json["data"]["docs"]}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def parse_dataset(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+
+        dataset_name = command_dict["dataset_name"]
+        dataset_id = self._get_dataset_id(dataset_name)
+        if dataset_id is None:
+            return
+
+        res_json = self._list_documents(dataset_name, dataset_id)
+        if res_json is None:
+            return
+        document_ids = []
+        for doc in res_json:
+            document_ids.append(doc["id"])
+
+        payload = {"doc_ids": document_ids, "run": 1}
+        response = self.http_client.request("POST", f"/document/run", json_body=payload, use_api_base=False,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200 and res_json["code"] == 0:
+            pass
+        else:
+            print(f"Fail to parse dataset {dataset_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+        if command_dict["method"] == "async":
+            print(f"Success to start parse dataset {dataset_name}")
+            return
+        else:
+            print(f"Start to parse dataset {dataset_name}, please wait...")
+            if self._wait_parse_done(dataset_name, dataset_id):
+                print(f"Success to parse dataset {dataset_name}")
+            else:
+                print(f"Parse dataset {dataset_name} timeout")
+
 
     def import_docs_into_dataset(self, command_dict):
         if self.server_type != "user":
@@ -884,6 +915,34 @@ class RAGFlowClient:
                 self._print_table_simple({"version": res_json["data"]})
         else:
             print(f"Fail to show version, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _wait_parse_done(self, dataset_name:str, dataset_id: str):
+        start = time.monotonic()
+        while True:
+            docs = self._list_documents(dataset_name, dataset_id)
+            if docs is None:
+                return False
+            all_done = True
+            for doc in docs:
+                if doc.get("run") != "3":
+                    print(f"Document {doc["name"]} is not done, status: {doc.get("run")}")
+                    all_done = False
+                    break
+            if all_done:
+                return True
+            if time.monotonic() - start > 60:
+                return False
+            time.sleep(0.5)
+
+    def _list_documents(self, dataset_name: str, dataset_id: str):
+        response = self.http_client.request("POST", f"/document/list?kb_id={dataset_id}", use_api_base=False,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code != 200:
+            print(
+                f"Fail to list files from dataset {dataset_name}, code: {res_json['code']}, message: {res_json['message']}")
+            return None
+        return res_json["data"]["docs"]
 
     def _get_dataset_id(self, dataset_name: str):
         response = self.http_client.request("POST", "/kb/list", use_api_base=False, auth_kind="web")

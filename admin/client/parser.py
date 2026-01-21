@@ -80,6 +80,8 @@ sql_command: list_services
            | list_user_model_providers
            | list_user_default_models
            | parse_dataset_docs
+           | parse_dataset_sync
+           | parse_dataset_async
            | import_docs_into_dataset
            | search_on_datasets
 
@@ -157,6 +159,8 @@ EMBEDDING: "EMBEDDING"i
 RERANKER: "RERANKER"i
 ASR: "ASR"i
 TTS: "TTS"i
+ASYNC: "ASYNC"i
+SYNC: "SYNC"i
 
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
@@ -228,6 +232,8 @@ list_user_chats: LIST CHATS ";"
 list_user_model_providers: LIST MODEL PROVIDERS ";"
 list_user_default_models: LIST DEFAULT MODELS ";"
 parse_dataset_docs: PARSE quoted_string OF DATASET quoted_string ";"
+parse_dataset_sync: PARSE DATASET quoted_string SYNC ";"
+parse_dataset_async: PARSE DATASET quoted_string ASYNC ";"
 import_docs_into_dataset: IMPORT quoted_string INTO DATASET quoted_string ";"
 search_on_datasets: SEARCH quoted_string ON DATASETS quoted_string ";"
 
@@ -499,6 +505,14 @@ class RAGFlowCLITransformer(Transformer):
             document_names = document_names.split(" ")
         dataset_name = items[4].children[0].strip("'\"")
         return {"type": "parse_dataset_docs", "dataset_name": dataset_name, "document_names": document_names}
+
+    def parse_dataset_sync(self, items):
+        dataset_name = items[2].children[0].strip("'\"")
+        return {"type": "parse_dataset", "dataset_name": dataset_name, "method": "sync"}
+
+    def parse_dataset_async(self, items):
+        dataset_name = items[2].children[0].strip("'\"")
+        return {"type": "parse_dataset", "dataset_name": dataset_name, "method": "async"}
 
     def import_docs_into_dataset(self, items):
         document_list_str = items[1].children[0].strip("'\"")
