@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MetadataDeleteMap, MetadataType } from '../hooks/use-manage-modal';
+import {
+  MetadataDeleteMap,
+  MetadataType,
+  metadataValueTypeEnum,
+} from '../constant';
 import { IManageValuesProps, IMetaDataTableData } from '../interface';
 
 export const useManageValues = (props: IManageValuesProps) => {
   const {
     data,
-
+    isAddValueMode,
     hideModal,
     onSave,
     addUpdateValue,
@@ -17,7 +21,8 @@ export const useManageValues = (props: IManageValuesProps) => {
   const { t } = useTranslation();
   const [metaData, setMetaData] = useState<IMetaDataTableData>({
     ...data,
-    valueType: data.valueType || 'string',
+    valueType: data.valueType || metadataValueTypeEnum.string,
+    values: data.values || [''],
   });
   const [valueError, setValueError] = useState<Record<string, string>>({
     field: '',
@@ -31,6 +36,8 @@ export const useManageValues = (props: IManageValuesProps) => {
     onOk: () => {},
     onCancel: () => {},
   });
+
+  const [shouldSave, setShouldSave] = useState(false);
   const hideDeleteModal = () => {
     setDeleteDialogContent({
       visible: false,
@@ -79,10 +86,11 @@ export const useManageValues = (props: IManageValuesProps) => {
             restrictDefinedValues: prev.restrictDefinedValues,
           };
         }
-        return {
+        const newMetadata = {
           ...prev,
           [field]: value,
         };
+        return newMetadata;
       });
       return true;
     },
@@ -90,13 +98,13 @@ export const useManageValues = (props: IManageValuesProps) => {
   );
 
   // Maintain separate state for each input box
-  const [tempValues, setTempValues] = useState<string[]>([...data.values]);
+  const [tempValues, setTempValues] = useState<string[]>(['']);
 
   useEffect(() => {
     setTempValues([...data.values]);
     setMetaData({
       ...data,
-      valueType: data.valueType || 'string',
+      valueType: data.valueType || metadataValueTypeEnum.string,
     });
   }, [data]);
 
@@ -119,31 +127,63 @@ export const useManageValues = (props: IManageValuesProps) => {
     // handleHideModal();
     // return;
     // }
-    onSave(metaData);
-    handleHideModal();
-  }, [metaData, onSave, handleHideModal, type, valueError]);
+    if (isAddValueMode) {
+      addUpdateValue(
+        metaData.field,
+        undefined,
+        metaData.values,
+        metaData.valueType,
+      );
+    }
+    // onSave(metaData);
+    setShouldSave(true);
+  }, [
+    metaData,
+    // onSave,
+    // handleHideModal,
+    type,
+    valueError,
+    isAddValueMode,
+    addUpdateValue,
+  ]);
+
+  useEffect(() => {
+    if (shouldSave) {
+      const timer = setTimeout(() => {
+        onSave(metaData);
+        setShouldSave(false);
+        clearTimeout(timer);
+        handleHideModal();
+      }, 100);
+    }
+  }, [shouldSave, onSave, handleHideModal, metaData]);
 
   // Handle blur event, synchronize to main state
   const handleValueBlur = useCallback(
     (values?: string[]) => {
       const newValues = values || tempValues;
-      if (data.values.length > 0) {
+      if (data.values.length > 0 && !isAddValueMode) {
         newValues.forEach((newValue, index) => {
           if (index < data.values.length) {
             const originalValue = data.values[index];
             if (originalValue !== newValue) {
-              addUpdateValue(metaData.field, originalValue, newValue);
+              addUpdateValue(
+                metaData.field,
+                originalValue,
+                newValue,
+                metaData.valueType,
+              );
             }
           } else {
             if (newValue) {
-              addUpdateValue(metaData.field, '', newValue);
+              addUpdateValue(metaData.field, '', newValue, metaData.valueType);
             }
           }
         });
       }
       handleChange('values', [...new Set([...newValues])]);
     },
-    [handleChange, tempValues, metaData, data, addUpdateValue],
+    [handleChange, tempValues, metaData, data, addUpdateValue, isAddValueMode],
   );
 
   // Handle value changes, only update temporary state
@@ -200,13 +240,16 @@ export const useManageValues = (props: IManageValuesProps) => {
     [addDeleteValue, metaData],
   );
 
-  const handleClearValues = useCallback(() => {
-    setTempValues([]);
-    setMetaData((prev) => ({
-      ...prev,
-      values: [],
-    }));
-  }, [setTempValues, setMetaData]);
+  const handleClearValues = useCallback(
+    (isClearInitialValues = false) => {
+      setTempValues(isClearInitialValues ? [] : ['']);
+      setMetaData((prev) => ({
+        ...prev,
+        values: isClearInitialValues ? [] : [''],
+      }));
+    },
+    [setTempValues, setMetaData],
+  );
 
   const showDeleteModal = (item: string, callback: () => void) => {
     setDeleteDialogContent({
