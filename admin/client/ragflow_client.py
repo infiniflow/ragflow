@@ -1406,7 +1406,7 @@ def run_benchmark(client: RAGFlowClient, command_dict: dict, is_interactive: boo
             if response.status_code == 200 and res_json["code"] == 0:
                 success_count += 1
         qps = iterations / total_duration if total_duration > 0 else None
-        print(f"command: {command}, Concurrency: {concurrency} , iterations: {iterations}")
+        print(f"command: {command}, Concurrency: {concurrency}, iterations: {iterations}")
         print(
             f"total duration: {total_duration:.4f}s, QPS: {qps}, COMMAND_COUNT: {iterations}, SUCCESS: {success_count}, FAILURE: {iterations - success_count}")
         pass
