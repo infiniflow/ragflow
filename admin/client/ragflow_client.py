@@ -1451,15 +1451,3 @@ def run_benchmark(client: RAGFlowClient, command_dict: dict, is_interactive: boo
             f"total duration: {total_duration:.4f}s, QPS: {qps}, COMMAND_COUNT: {total_command_count}, SUCCESS: {success_count}, FAILURE: {total_command_count - success_count}")
 
     pass
-
-
-class Benchmark:
-    def __init__(self, concurrency, command):
-        self.concurrency = concurrency
-        self.command = command
-
-    def run(self):
-        pass
-
-    def report(self):
-        pass
