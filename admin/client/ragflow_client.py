@@ -631,12 +631,20 @@ class RAGFlowClient:
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
 
-        response = self.http_client.request("POST", "/kb/list", use_api_base=False, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200:
-            self._print_table_simple(res_json["data"]["kbs"])
+        iterations = command.get("iterations", 1)
+        if iterations > 1:
+            response = self.http_client.request("POST", "/dialog/next", use_api_base=False, auth_kind="web",
+                                                iterations=iterations)
+            return response
         else:
-            print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+            response = self.http_client.request("POST", "/kb/list", use_api_base=False, auth_kind="web")
+            res_json = response.json()
+            if response.status_code == 200:
+                self._print_table_simple(res_json["data"]["kbs"])
+            else:
+                print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+            return None
+
 
     def create_user_dataset(self, command):
         if self.server_type != "user":
@@ -702,9 +710,12 @@ class RAGFlowClient:
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
 
-        res_json = self._list_chats()
+        res_json = self._list_chats(command)
         if res_json is None:
-            return
+            return None
+        if "iterations" in command:
+            # for benchmark
+            return res_json
         self._print_table_simple(res_json)
 
     def create_user_chat(self, command):
@@ -817,7 +828,7 @@ class RAGFlowClient:
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
         chat_name = command["chat_name"]
-        res_json = self._list_chats()
+        res_json = self._list_chats(command)
         to_drop_chat_ids = []
         for elem in res_json:
             if elem["name"] == chat_name:
@@ -1083,14 +1094,21 @@ class RAGFlowClient:
             return None
         return dataset_id
 
-    def _list_chats(self):
-        response = self.http_client.request("POST", "/dialog/next", use_api_base=False, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json["code"] == 0:
-            return res_json["data"]["dialogs"]
+    def _list_chats(self, command):
+        iterations = command.get("iterations", 1)
+        if iterations > 1:
+            response = self.http_client.request("POST", "/dialog/next", use_api_base=False, auth_kind="web",
+                                                iterations=iterations)
+            return response
         else:
-            print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
-            return None
+            response = self.http_client.request("POST", "/dialog/next", use_api_base=False, auth_kind="web",
+                                                iterations=iterations)
+            res_json = response.json()
+            if response.status_code == 200 and res_json["code"] == 0:
+                return res_json["data"]["dialogs"]
+            else:
+                print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+                return None
 
     def _get_default_models(self):
         response = self.http_client.request("GET", "/user/tenant_info", use_api_base=False, auth_kind="web")
@@ -1284,17 +1302,17 @@ def run_command(client: RAGFlowClient, command_dict: dict, is_interactive: bool)
         case "reset_default_model":
             client.reset_default_model(command_dict)
         case "list_user_datasets":
-            client.list_user_datasets(command_dict)
+            return client.list_user_datasets(command_dict)
         case "create_user_dataset":
             client.create_user_dataset(command_dict)
         case "drop_user_dataset":
             client.drop_user_dataset(command_dict)
         case "list_user_dataset_files":
-            client.list_user_dataset_files(command_dict)
+            return client.list_user_dataset_files(command_dict)
         case "list_user_agents":
-            client.list_user_agents(command_dict)
+            return client.list_user_agents(command_dict)
         case "list_user_chats":
-            client.list_user_chats(command_dict)
+            return client.list_user_chats(command_dict)
         case "create_user_chat":
             client.create_user_chat(command_dict)
         case "drop_user_chat":
@@ -1373,18 +1391,23 @@ def run_benchmark(client: RAGFlowClient, command_dict: dict, is_interactive: boo
     concurrency = command_dict.get("concurrency", 1)
     iterations = command_dict.get("iterations", 1)
     command: dict = command_dict["command"]
+    command.update({"iterations": iterations})
     if concurrency < 1:
         print("Concurrency must be greater than 0")
         return
     elif concurrency == 1:
-        start_time = time.perf_counter()
-        for i in range(iterations):
-            run_command(client, command, is_interactive)
-        end_time = time.perf_counter()
-        total_duration = end_time - start_time
+        result = run_command(client, command, is_interactive)
+        response_list = result["response_list"]
+        total_duration = result["duration"]
+        success_count = 0
+        for response in response_list:
+            res_json = response.json()
+            if response.status_code == 200 and res_json["code"] == 0:
+                success_count += 1
         qps = iterations / total_duration if total_duration > 0 else None
         print(f"command: {command}, Concurrency: {concurrency} , iterations: {iterations}")
-        print(f"total duration: {total_duration:.4f}s, QPS: {qps}")
+        print(
+            f"total duration: {total_duration:.4f}s, QPS: {qps}, SUCCESS: {success_count}, FAILURE: {iterations - success_count}")
         pass
     else:
         pass
