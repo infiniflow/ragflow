@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { ColumnDef } from '@tanstack/react-table';
+import { ColumnDef, Row, Table } from '@tanstack/react-table';
 import {
   ListChevronsDownUp,
   ListChevronsUpDown,
@@ -14,7 +14,7 @@ import {
   getMetadataValueTypeLabel,
   MetadataDeleteMap,
   MetadataType,
-} from './hooks/use-manage-modal';
+} from './constant';
 import { IMetaDataTableData } from './interface';
 
 interface IUseMetadataColumns {
@@ -102,7 +102,7 @@ export const useMetadataColumns = ({
         ? [
             {
               id: 'select',
-              header: ({ table }) => (
+              header: ({ table }: { table: Table<IMetaDataTableData> }) => (
                 <Checkbox
                   checked={
                     table.getIsAllPageRowsSelected() ||
@@ -114,7 +114,7 @@ export const useMetadataColumns = ({
                   aria-label="Select all"
                 />
               ),
-              cell: ({ row }) => (
+              cell: ({ row }: { row: Row<IMetaDataTableData> }) => (
                 <Checkbox
                   checked={row.getIsSelected()}
                   onCheckedChange={(value) => row.toggleSelected(!!value)}

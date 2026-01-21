@@ -19,10 +19,8 @@ import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-reques
 import { Upload } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  MetadataType,
-  useManageMetadata,
-} from '../components/metedata/hooks/use-manage-modal';
+import { MetadataType } from '../components/metedata/constant';
+import { useManageMetadata } from '../components/metedata/hooks/use-manage-modal';
 import { ManageMetadataModal } from '../components/metedata/manage-modal';
 import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import { DatasetTable } from './dataset-table';
@@ -253,6 +251,8 @@ export default function Dataset() {
             // selectedRowKeys={selectedRowKeys}
             tableData={tableData}
             isCanAdd={metadataConfig.isCanAdd}
+            isAddValue={metadataConfig.isAddValue}
+            isVerticalShowValue={metadataConfig.isVerticalShowValue}
             isEditField={metadataConfig.isEditField}
             isDeleteSingleValue={metadataConfig.isDeleteSingleValue}
             type={metadataConfig.type}
