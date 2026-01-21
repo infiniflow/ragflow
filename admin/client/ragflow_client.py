@@ -702,12 +702,134 @@ class RAGFlowClient:
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
 
-        response = self.http_client.request("POST", "/dialog/next", use_api_base=False, auth_kind="web")
+        res_json = self._list_chats()
+        if res_json is None:
+            return
+        self._print_table_simple(res_json)
+
+    def create_user_chat(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        '''
+        description
+        : 
+        ""
+        icon
+        : 
+        ""
+        language
+        : 
+        "English"
+        llm_id
+        : 
+        "glm-4-flash@ZHIPU-AI"
+        llm_setting
+        : 
+        {}
+        name
+        : 
+        "xx"
+        prompt_config
+        : 
+        {empty_response: "", prologue: "Hi! I'm your assistant. What can I do for you?", quote: true,…}
+        empty_response
+        : 
+        ""
+        keyword
+        : 
+        false
+        parameters
+        : 
+        [{key: "knowledge", optional: false}]
+        prologue
+        : 
+        "Hi! I'm your assistant. What can I do for you?"
+        quote
+        : 
+        true
+        reasoning
+        : 
+        false
+        refine_multiturn
+        : 
+        false
+        system
+        : 
+        "You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.\n\n      **Essential Rules:**\n        - Your answer must be derived **solely** from this knowledge base: `{knowledge}`.\n        - **When information is available**: Summarize the content to give a detailed answer.\n        - **When information is unavailable**: Your response must contain this exact sentence: \"The answer you are looking for is not found in the knowledge base!\"\n        - **Always consider** the entire conversation history."
+        toc_enhance
+        : 
+        false
+        tts
+        : 
+        false
+        use_kg
+        : 
+        false
+        similarity_threshold
+        : 
+        0.2
+        top_n
+        : 
+        8
+        vector_similarity_weight
+        : 
+        0.3
+        '''
+        chat_name = command["chat_name"]
+        payload = {
+            "description": "",
+            "icon": "",
+            "language": "English",
+            "llm_setting": {},
+            "prompt_config": {
+                "empty_response": "",
+                "prologue": "Hi! I'm your assistant. What can I do for you?",
+                "quote": True,
+                "keyword": False,
+                "tts": False,
+                "system": "You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.\n\n      **Essential Rules:**\n        - Your answer must be derived **solely** from this knowledge base: `{knowledge}`.\n        - **When information is available**: Summarize the content to give a detailed answer.\n        - **When information is unavailable**: Your response must contain this exact sentence: \"The answer you are looking for is not found in the knowledge base!\"\n        - **Always consider** the entire conversation history.",
+                "refine_multiturn": False,
+                "use_kg": False,
+                "reasoning": False,
+                "parameters": [
+                    {
+                        "key": "knowledge",
+                        "optional": False
+                    }
+                ],
+                "toc_enhance": False
+            },
+            "similarity_threshold": 0.2,
+            "top_n": 8,
+            "vector_similarity_weight": 0.3
+        }
+
+        payload.update({"name": chat_name})
+        response = self.http_client.request("POST", "/dialog/set", json_body=payload, use_api_base=False,
+                                            auth_kind="web")
         res_json = response.json()
-        if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+        if response.status_code == 200 and res_json["code"] == 0:
+            print(f"Success to create chat: {chat_name}")
         else:
-            print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to create chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def drop_user_chat(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        chat_name = command["chat_name"]
+        res_json = self._list_chats()
+        to_drop_chat_ids = []
+        for elem in res_json:
+            if elem["name"] == chat_name:
+                to_drop_chat_ids.append(elem["id"])
+        payload = {"dialog_ids": to_drop_chat_ids}
+        response = self.http_client.request("POST", "/dialog/rm", json_body=payload, use_api_base=False,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200 and res_json["code"] == 0:
+            print(f"Success to drop chat: {chat_name}")
+        else:
+            print(f"Fail to drop chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def list_user_model_providers(self, command):
         if self.server_type != "user":
@@ -824,7 +946,6 @@ class RAGFlowClient:
             else:
                 print(f"Parse dataset {dataset_name} timeout")
 
-
     def import_docs_into_dataset(self, command_dict):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
@@ -916,7 +1037,7 @@ class RAGFlowClient:
         else:
             print(f"Fail to show version, code: {res_json['code']}, message: {res_json['message']}")
 
-    def _wait_parse_done(self, dataset_name:str, dataset_id: str):
+    def _wait_parse_done(self, dataset_name: str, dataset_id: str):
         start = time.monotonic()
         while True:
             docs = self._list_documents(dataset_name, dataset_id)
@@ -961,6 +1082,15 @@ class RAGFlowClient:
             print(f"Dataset {dataset_name} not found")
             return None
         return dataset_id
+
+    def _list_chats(self):
+        response = self.http_client.request("POST", "/dialog/next", use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200 and res_json["code"] == 0:
+            return res_json["data"]["dialogs"]
+        else:
+            print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+            return None
 
     def _get_default_models(self):
         response = self.http_client.request("GET", "/user/tenant_info", use_api_base=False, auth_kind="web")

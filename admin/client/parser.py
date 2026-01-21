@@ -77,6 +77,8 @@ sql_command: list_services
            | list_user_dataset_files
            | list_user_agents
            | list_user_chats
+           | create_user_chat
+           | drop_user_chat
            | list_user_model_providers
            | list_user_default_models
            | parse_dataset_docs
@@ -143,6 +145,7 @@ PROVIDER: "PROVIDER"i
 PROVIDERS: "PROVIDERS"i
 DEFAULT: "DEFAULT"i
 CHATS: "CHATS"i
+CHAT: "CHAT"i
 FILES: "FILES"i
 AS: "AS"i
 PARSE: "PARSE"i
@@ -229,6 +232,8 @@ drop_user_dataset: DROP DATASET quoted_string ";"
 list_user_dataset_files: LIST FILES OF DATASET quoted_string ";"
 list_user_agents: LIST AGENTS ";"
 list_user_chats: LIST CHATS ";"
+create_user_chat: CREATE CHAT quoted_string ";"
+drop_user_chat: DROP CHAT quoted_string ";"
 list_user_model_providers: LIST MODEL PROVIDERS ";"
 list_user_default_models: LIST DEFAULT MODELS ";"
 parse_dataset_docs: PARSE quoted_string OF DATASET quoted_string ";"
@@ -490,6 +495,14 @@ class RAGFlowCLITransformer(Transformer):
 
     def list_user_chats(self, items):
         return {"type": "list_user_chats"}
+
+    def create_user_chat(self, items):
+        chat_name = items[2].children[0].strip("'\"")
+        return {"type": "create_user_chat", "chat_name": chat_name}
+
+    def drop_user_chat(self, items):
+        chat_name = items[2].children[0].strip("'\"")
+        return {"type": "drop_user_chat", "chat_name": chat_name}
 
     def list_user_model_providers(self, items):
         return {"type": "list_user_model_providers"}

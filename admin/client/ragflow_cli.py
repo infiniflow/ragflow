@@ -431,6 +431,10 @@ class RAGFlowCLI(Cmd):
                 self.ragflow_client.list_user_agents(command_dict)
             case "list_user_chats":
                 self.ragflow_client.list_user_chats(command_dict)
+            case "create_user_chat":
+                self.ragflow_client.create_user_chat(command_dict)
+            case "drop_user_chat":
+                self.ragflow_client.drop_user_chat(command_dict)
             case "list_user_model_providers":
                 self.ragflow_client.list_user_model_providers(command_dict)
             case "list_user_default_models":
