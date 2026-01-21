@@ -448,6 +448,9 @@ class Dealer:
         begin = page_index * page_size
         end = begin + page_size
         page_idx = valid_idx[begin:end]
+        
+        # Limit top_k total results after excuting others
+        page_idx = page_idx[:top]
 
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
