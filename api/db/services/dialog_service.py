@@ -206,14 +206,23 @@ async def async_chat_solo(dialog, messages, stream=True):
                 continue
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
         # Yield final response with token usage
-        token_usage = last_state.token_usage if last_state else 0
+        token_usage = last_state.token_usage if last_state else None
         final_response = {"answer": "", "reference": {}, "audio_binary": None, "prompt": "", "created_at": time.time(), "final": True}
         if token_usage:
-            final_response["usage"] = {
-                "prompt_tokens": 0,
-                "completion_tokens": token_usage,
-                "total_tokens": token_usage
-            }
+            # Handle both dict (from API) and int (fallback)
+            if isinstance(token_usage, dict):
+                final_response["usage"] = {
+                    "prompt_tokens": token_usage.get("prompt_tokens", 0),
+                    "completion_tokens": token_usage.get("completion_tokens", 0),
+                    "total_tokens": token_usage.get("total_tokens", 0)
+                }
+            else:
+                # Fallback: only have total count, assume it's all completion
+                final_response["usage"] = {
+                    "prompt_tokens": 0,
+                    "completion_tokens": token_usage,
+                    "total_tokens": token_usage
+                }
         yield final_response
     else:
         answer, used_tokens = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
