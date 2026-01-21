@@ -1,3 +1,4 @@
+import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
 import showMessage from '@/components/ui/message';
 import { MessageType } from '@/constants/chat';
 import {
@@ -175,63 +176,67 @@ export function useSendMultipleChatMessage(
     ],
   );
 
-  const handlePressEnter = useCallback(async () => {
-    if (trim(value) === '') return;
-    const id = uuid();
+  const handlePressEnter = useCallback(
+    async (...[{ enableThinking }]: NextMessageInputOnPressEnterParameter) => {
+      if (trim(value) === '') return;
+      const id = uuid();
 
-    const data = await createConversationBeforeSendMessage(value);
+      const data = await createConversationBeforeSendMessage(value);
 
-    if (data === undefined) {
-      return;
-    }
-
-    const { targetConversationId, currentMessages } = data;
-
-    chatBoxIds.forEach((chatBoxId) => {
-      if (!isLLMConfigEmpty(chatBoxId)) {
-        addNewestQuestion({
-          content: value,
-          id,
-          role: MessageType.User,
-          chatBoxId,
-          files,
-          conversationId: targetConversationId,
-        });
+      if (data === undefined) {
+        return;
       }
-    });
 
-    if (allDone) {
-      setValue('');
+      const { targetConversationId, currentMessages } = data;
+
       chatBoxIds.forEach((chatBoxId) => {
         if (!isLLMConfigEmpty(chatBoxId)) {
-          sendMessage({
-            message: {
-              id,
-              content: value.trim(),
-              role: MessageType.User,
-              files,
-              conversationId: targetConversationId,
-            },
+          addNewestQuestion({
+            content: value,
+            id,
+            role: MessageType.User,
             chatBoxId,
-            currentConversationId: targetConversationId,
-            messages: currentMessages,
+            files,
+            conversationId: targetConversationId,
           });
         }
       });
-    }
-    clearFiles();
-  }, [
-    value,
-    createConversationBeforeSendMessage,
-    chatBoxIds,
-    allDone,
-    clearFiles,
-    isLLMConfigEmpty,
-    addNewestQuestion,
-    files,
-    setValue,
-    sendMessage,
-  ]);
+
+      if (allDone) {
+        setValue('');
+        chatBoxIds.forEach((chatBoxId) => {
+          if (!isLLMConfigEmpty(chatBoxId)) {
+            sendMessage({
+              message: {
+                id,
+                content: value.trim(),
+                role: MessageType.User,
+                files,
+                conversationId: targetConversationId,
+                reasoning: enableThinking,
+              },
+              chatBoxId,
+              currentConversationId: targetConversationId,
+              messages: currentMessages,
+            });
+          }
+        });
+      }
+      clearFiles();
+    },
+    [
+      value,
+      createConversationBeforeSendMessage,
+      chatBoxIds,
+      allDone,
+      clearFiles,
+      isLLMConfigEmpty,
+      addNewestQuestion,
+      files,
+      setValue,
+      sendMessage,
+    ],
+  );
 
   useEffect(() => {
     if (answer.answer && conversationId) {

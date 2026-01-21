@@ -859,6 +859,13 @@ class DocumentService(CommonService):
 
                 new_value = upd.get("value")
                 match_provided = "match" in upd
+                if key not in meta:
+                    if match_provided:
+                        continue
+                    meta[key] = dedupe_list(new_value) if isinstance(new_value, list) else new_value
+                    changed = True
+                    continue
+
                 if isinstance(meta[key], list):
                     if not match_provided:
                         if isinstance(new_value, list):
