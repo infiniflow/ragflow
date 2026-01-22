@@ -606,12 +606,12 @@ def list_docs(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/metadata/summary", methods=["GET"])  # noqa: F821
 @token_required
-def metadata_summary(dataset_id, tenant_id):
+async def metadata_summary(dataset_id, tenant_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
-
+    req = await get_request_json()
     try:
-        summary = DocumentService.get_metadata_summary(dataset_id)
+        summary = DocumentService.get_metadata_summary(dataset_id, req.get("doc_ids"))
         return get_result(data={"summary": summary})
     except Exception as e:
         return server_error_response(e)

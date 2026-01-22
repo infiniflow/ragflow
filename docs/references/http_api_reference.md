@@ -2221,8 +2221,14 @@ Success:
   "code": 0,
   "data": {
     "summary": {
-      "tags": [["bar", 2], ["foo", 1], ["baz", 1]],
-      "author": [["alice", 2], ["bob", 1]]
+      "tags": {
+        "type": "string",
+        "values": [["bar", 2], ["foo", 1], ["baz", 1]]
+      },
+      "author": {
+        "type": "string",
+        "values": [["alice", 2], ["bob", 1]]
+      }
     }
   }
 }

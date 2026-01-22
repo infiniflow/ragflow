@@ -26,7 +26,7 @@ from api.db import VALID_FILE_TYPES, FileType
 from api.db.db_models import Task
 from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
-from common.metadata_utils import meta_filter, convert_conditions
+from common.metadata_utils import meta_filter, convert_conditions, turn2jsonschema
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -226,6 +226,7 @@ async def list_docs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
+        
     tenants = UserTenantService.query(user_id=current_user.id)
     for tenant in tenants:
         if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
@@ -345,6 +346,8 @@ async def list_docs():
                 doc_item["thumbnail"] = f"/v1/document/image/{kb_id}-{doc_item['thumbnail']}"
             if doc_item.get("source_type"):
                 doc_item["source_type"] = doc_item["source_type"].split("/")[0]
+            if doc_item["parser_config"].get("metadata"):
+                doc_item["parser_config"]["metadata"] = turn2jsonschema(doc_item["parser_config"]["metadata"])
 
         return get_json_result(data={"total": tol, "docs": docs})
     except Exception as e:
@@ -406,6 +409,7 @@ async def doc_infos():
 async def metadata_summary():
     req = await get_request_json()
     kb_id = req.get("kb_id")
+    doc_ids = req.get("doc_ids")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
 
@@ -417,7 +421,7 @@ async def metadata_summary():
         return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
 
     try:
-        summary = DocumentService.get_metadata_summary(kb_id)
+        summary = DocumentService.get_metadata_summary(kb_id, doc_ids)
         return get_json_result(data={"summary": summary})
     except Exception as e:
         return server_error_response(e)
@@ -425,35 +429,15 @@ async def metadata_summary():
 
 @manager.route("/metadata/update", methods=["POST"])  # noqa: F821
 @login_required
+@validate_request("doc_ids")
 async def metadata_update():
     req = await get_request_json()
-    kb_id = req.get("kb_id")
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-
-    tenants = UserTenantService.query(user_id=current_user.id)
-    for tenant in tenants:
-        if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
-            break
-    else:
-        return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
-
-    selector = req.get("selector", {}) or {}
+    document_ids = req.get("doc_ids")
     updates = req.get("updates", []) or []
     deletes = req.get("deletes", []) or []
 
-    if not isinstance(selector, dict):
-        return get_json_result(data=False, message="selector must be an object.", code=RetCode.ARGUMENT_ERROR)
     if not isinstance(updates, list) or not isinstance(deletes, list):
         return get_json_result(data=False, message="updates and deletes must be lists.", code=RetCode.ARGUMENT_ERROR)
-
-    metadata_condition = selector.get("metadata_condition", {}) or {}
-    if metadata_condition and not isinstance(metadata_condition, dict):
-        return get_json_result(data=False, message="metadata_condition must be an object.", code=RetCode.ARGUMENT_ERROR)
-
-    document_ids = selector.get("document_ids", []) or []
-    if document_ids and not isinstance(document_ids, list):
-        return get_json_result(data=False, message="document_ids must be a list.", code=RetCode.ARGUMENT_ERROR)
 
     for upd in updates:
         if not isinstance(upd, dict) or not upd.get("key") or "value" not in upd:
@@ -462,24 +446,8 @@ async def metadata_update():
         if not isinstance(d, dict) or not d.get("key"):
             return get_json_result(data=False, message="Each delete requires key.", code=RetCode.ARGUMENT_ERROR)
 
-    kb_doc_ids = KnowledgebaseService.list_documents_by_ids([kb_id])
-    target_doc_ids = set(kb_doc_ids)
-    if document_ids:
-        invalid_ids = set(document_ids) - set(kb_doc_ids)
-        if invalid_ids:
-            return get_json_result(data=False, message=f"These documents do not belong to dataset {kb_id}: {', '.join(invalid_ids)}", code=RetCode.ARGUMENT_ERROR)
-        target_doc_ids = set(document_ids)
-
-    if metadata_condition:
-        metas = DocumentService.get_flatted_meta_by_kbs([kb_id])
-        filtered_ids = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
-        target_doc_ids = target_doc_ids & filtered_ids
-        if metadata_condition.get("conditions") and not target_doc_ids:
-            return get_json_result(data={"updated": 0, "matched_docs": 0})
-
-    target_doc_ids = list(target_doc_ids)
-    updated = DocumentService.batch_update_metadata(kb_id, target_doc_ids, updates, deletes)
-    return get_json_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
+    updated = DocumentService.batch_update_metadata(None, document_ids, updates, deletes)
+    return get_json_result(data={"updated": updated})
 
 
 @manager.route("/update_metadata_setting", methods=["POST"])  # noqa: F821
