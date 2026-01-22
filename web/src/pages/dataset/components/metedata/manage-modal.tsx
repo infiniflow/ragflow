@@ -290,6 +290,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       icon: <Trash2 />,
       onClick: async () => {
         await handleDelete();
+        setRowSelection({});
         // if (code === 0) {
         //   setRowSelection({});
         // }
