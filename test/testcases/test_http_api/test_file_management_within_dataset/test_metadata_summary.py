@@ -16,7 +16,7 @@
 # Although the docs group this under "chunk management," the backend aggregates
 # Document.meta_fields via document_service#get_metadata_summary and the test
 # uses update_document, so it belongs with file/document management tests.
-import pytest
+# import pytest
 #from common import metadata_summary, update_document
 
 
