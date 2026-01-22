@@ -137,12 +137,8 @@ async def run():
     files = req.get("files", [])
     inputs = req.get("inputs", {})
     user_id = req.get("user_id", current_user.id)
-<<<<<<< HEAD
     session_id = req.get("session_id")
-    if not await asyncio.to_thread(UserCanvasService.accessible, req["id"], current_user.id):
-=======
     if not await thread_pool_exec(UserCanvasService.accessible, req["id"], current_user.id):
->>>>>>> upstream/main
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
@@ -165,7 +161,7 @@ async def run():
     # Session isolation: use session-specific DSL if session_id is provided
     conv = None
     if session_id:
-        e_conv, conv = await asyncio.to_thread(API4ConversationService.get_by_id, session_id)
+        e_conv, conv = await thread_pool_exec(API4ConversationService.get_by_id, session_id)
         if not e_conv:
             return get_data_error_result(message="Session not found.")
         if not conv.message:
@@ -193,7 +189,7 @@ async def run():
             "dsl": cvs.dsl,
             "reference": []
         }
-        await asyncio.to_thread(API4ConversationService.save, **conv)
+        await thread_pool_exec(API4ConversationService.save, **conv)
         conv = API4Conversation(**conv)
 
     async def sse():
