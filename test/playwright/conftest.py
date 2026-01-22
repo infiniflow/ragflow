@@ -42,6 +42,46 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _failure_text(req) -> str:
+    failure = getattr(req, "failure", None)
+    if callable(failure):
+        try:
+            failure = failure()
+        except Exception:
+            return "unknown"
+    if failure is None:
+        return "unknown"
+    if isinstance(failure, str):
+        return failure or "unknown"
+    try:
+        error_text = getattr(failure, "error_text", None)
+        if error_text:
+            return str(error_text)
+    except Exception:
+        pass
+    try:
+        if isinstance(failure, dict):
+            for key in ("errorText", "error_text"):
+                value = failure.get(key)
+                if value:
+                    return str(value)
+    except Exception:
+        pass
+    try:
+        getter = getattr(failure, "get", None)
+        if callable(getter):
+            for key in ("errorText", "error_text"):
+                value = getter(key)
+                if value:
+                    return str(value)
+    except Exception:
+        pass
+    try:
+        return str(failure)
+    except Exception:
+        return "unknown"
+
+
 def _build_url(base_url: str, path: str) -> str:
     if not base_url:
         return path
@@ -225,11 +265,16 @@ def page(context, request):
             print(entry, flush=True)
 
     def on_request_failed(req):
-        failure_text = req.failure.error_text if req.failure else "unknown"
-        entry = f"requestfailed: {req.method} {req.url} -> {failure_text}"
-        page_instance._diag["request_failed"].append(entry)
-        if net_log:
-            print(entry, flush=True)
+        try:
+            failure_text = _failure_text(req)
+            entry = f"requestfailed: {req.method} {req.url} -> {failure_text}"
+            page_instance._diag["request_failed"].append(entry)
+            if net_log:
+                print(entry, flush=True)
+        except Exception as exc:
+            if net_log:
+                print(f"requestfailed: <handler_error> {exc}", flush=True)
+            return
 
     page_instance.on("console", on_console)
     page_instance.on("pageerror", on_page_error)
