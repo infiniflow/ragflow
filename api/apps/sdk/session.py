@@ -934,6 +934,7 @@ async def chatbots_inputs(dialog_id):
             "title": dialog.name,
             "avatar": dialog.icon,
             "prologue": dialog.prompt_config.get("prologue", ""),
+            "has_tavily_key": bool(dialog.prompt_config.get("tavily_api_key", "").strip()),
         }
     )
 
