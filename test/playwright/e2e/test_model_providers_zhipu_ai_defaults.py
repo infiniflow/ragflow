@@ -120,9 +120,52 @@ def _select_with_search(page, combobox, search_text: str, option_text: str) -> N
     search_inputs = page.locator("input[placeholder='Search...'], input[placeholder='Search…']")
     if search_inputs.count() > 0:
         search_inputs.last.fill(search_text)
-    option = page.locator("[cmdk-item], [role='option']").filter(has_text=option_text).first
-    expect(option).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-    option.click()
+    wait_js = """
+        () => {
+          const selectors = ['[role="listbox"]', '[cmdk-list]', '[data-state="open"]'];
+          return selectors.some((sel) => Array.from(document.querySelectorAll(sel)).some((el) => {
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          }));
+        }
+        """
+    page.wait_for_function(wait_js, timeout=RESULT_TIMEOUT_MS)
+
+    last_exc = None
+    option_pattern = re.compile(re.escape(option_text), re.I)
+    for _ in range(5):
+        try:
+            if hasattr(page, "get_by_role"):
+                option = page.get_by_role("option", name=option_pattern).first
+                if option.count() == 0:
+                    option = page.locator("[cmdk-item], [role='option']").filter(
+                        has_text=option_pattern
+                    ).first
+            else:
+                option = page.locator("[cmdk-item], [role='option']").filter(
+                    has_text=option_pattern
+                ).first
+            expect(option).to_be_attached(timeout=RESULT_TIMEOUT_MS)
+            expect(option).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+            try:
+                option.click()
+            except Exception as exc:
+                last_exc = exc
+                try:
+                    option.scroll_into_view_if_needed()
+                except Exception as scroll_exc:
+                    last_exc = scroll_exc
+                try:
+                    option.click(trial=True)
+                    option.click()
+                except Exception as click_exc:
+                    last_exc = click_exc
+                    option.click(force=True)
+            expect(combobox).to_contain_text(option_text, timeout=RESULT_TIMEOUT_MS)
+            return
+        except Exception as exc:
+            last_exc = exc
+    raise AssertionError(f"Failed to select option {option_text!r}: {last_exc}")
 
 
 @pytest.mark.p1
