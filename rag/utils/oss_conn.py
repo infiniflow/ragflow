@@ -16,7 +16,6 @@
 import logging
 import boto3
 from botocore.exceptions import ClientError
-from botocore.config import Config
 import time
 from io import BytesIO
 from common.decorator import singleton
