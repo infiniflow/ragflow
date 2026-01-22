@@ -19,6 +19,10 @@ import re
 import time
 
 import tiktoken
+import os
+import tempfile
+import logging
+
 from quart import Response, jsonify, request
 
 from agent.canvas import Canvas
@@ -35,7 +39,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter, convert_conditions, meta_filter
 from api.db.services.search_service import SearchService
-from api.db.services.user_service import UserTenantService
+from api.db.services.user_service import TenantService,UserTenantService
 from common.misc_utils import get_uuid
 from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, \
     get_result, get_request_json, server_error_response, token_required, validate_request
@@ -1045,11 +1049,13 @@ async def retrieval_test_embedded():
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
     langs = req.get("cross_languages", [])
+    rerank_id = req.get("rerank_id", "")
     tenant_id = objs[0].tenant_id
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
 
     async def _retrieval():
+        nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id
         local_doc_ids = list(doc_ids) if doc_ids else []
         tenant_ids = []
         _question = question
@@ -1061,6 +1067,15 @@ async def retrieval_test_embedded():
             meta_data_filter = search_config.get("meta_data_filter", {})
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
+            # Apply search_config settings if not explicitly provided in request
+            if not req.get("similarity_threshold"):
+                similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
+            if not req.get("vector_similarity_weight"):
+                vector_similarity_weight = float(search_config.get("vector_similarity_weight", vector_similarity_weight))
+            if not req.get("top_k"):
+                top = int(search_config.get("top_k", top))
+            if not req.get("rerank_id"):
+                rerank_id = search_config.get("rerank_id", "")
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
@@ -1090,8 +1105,8 @@ async def retrieval_test_embedded():
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
         rerank_mdl = None
-        if req.get("rerank_id"):
-            rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK.value, llm_name=req["rerank_id"])
+        if rerank_id:
+            rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK.value, llm_name=rerank_id)
 
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
@@ -1220,3 +1235,93 @@ async def mindmap():
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)
+
+@manager.route("/sequence2txt", methods=["POST"])  # noqa: F821
+@token_required
+async def sequence2txt(tenant_id):
+    req = await request.form
+    stream_mode = req.get("stream", "false").lower() == "true"
+    files = await request.files
+    if "file" not in files:
+        return get_error_data_result(message="Missing 'file' in multipart form-data")
+
+    uploaded = files["file"]
+
+    ALLOWED_EXTS = {
+        ".wav", ".mp3", ".m4a", ".aac",
+        ".flac", ".ogg", ".webm",
+        ".opus", ".wma"
+    }
+
+    filename = uploaded.filename or ""
+    suffix = os.path.splitext(filename)[-1].lower()
+    if suffix not in ALLOWED_EXTS:
+        return get_error_data_result(message=
+            f"Unsupported audio format: {suffix}. "
+            f"Allowed: {', '.join(sorted(ALLOWED_EXTS))}"
+        )
+    fd, temp_audio_path = tempfile.mkstemp(suffix=suffix)
+    os.close(fd)
+    await uploaded.save(temp_audio_path)
+
+    tenants = TenantService.get_info_by(tenant_id)
+    if not tenants:
+        return get_error_data_result(message="Tenant not found!")
+
+    asr_id = tenants[0]["asr_id"]
+    if not asr_id:
+        return get_error_data_result(message="No default ASR model is set")
+
+    asr_mdl=LLMBundle(tenants[0]["tenant_id"], LLMType.SPEECH2TEXT, asr_id)
+    if not stream_mode:
+        text = asr_mdl.transcription(temp_audio_path)
+        try:
+            os.remove(temp_audio_path)
+        except Exception as e:
+            logging.error(f"Failed to remove temp audio file: {str(e)}")
+        return get_json_result(data={"text": text})
+    async def event_stream():
+        try:
+            for evt in asr_mdl.stream_transcription(temp_audio_path):
+                yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            err = {"event": "error", "text": str(e)}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+        finally:
+            try:
+                os.remove(temp_audio_path)
+            except Exception as e:
+                logging.error(f"Failed to remove temp audio file: {str(e)}")
+
+    return Response(event_stream(), content_type="text/event-stream")
+
+@manager.route("/tts", methods=["POST"])  # noqa: F821
+@token_required
+async def tts(tenant_id):
+    req = await get_request_json()
+    text = req["text"]
+
+    tenants = TenantService.get_info_by(tenant_id)
+    if not tenants:
+        return get_error_data_result(message="Tenant not found!")
+
+    tts_id = tenants[0]["tts_id"]
+    if not tts_id:
+        return get_error_data_result(message="No default TTS model is set")
+
+    tts_mdl = LLMBundle(tenants[0]["tenant_id"], LLMType.TTS, tts_id)
+
+    def stream_audio():
+        try:
+            for txt in re.split(r"[，。/《》？；：！\n\r:;]+", text):
+                for chunk in tts_mdl.tts(txt):
+                    yield chunk
+        except Exception as e:
+            yield ("data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e)}}, ensure_ascii=False)).encode("utf-8")
+
+    resp = Response(stream_audio(), mimetype="audio/mpeg")
+    resp.headers.add_header("Cache-Control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+
+    return resp
