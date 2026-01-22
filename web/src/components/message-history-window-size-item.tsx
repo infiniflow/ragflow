@@ -1,5 +1,6 @@
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import NumberInput from './originui/number-input';
 import {
   FormControl,
   FormField,
@@ -7,9 +8,13 @@ import {
   FormLabel,
   FormMessage,
 } from './ui/form';
-import { NumberInput } from './ui/input';
 
-export function MessageHistoryWindowSizeFormField() {
+type MessageHistoryWindowSizeFormFieldProps = {
+  min?: number;
+};
+export function MessageHistoryWindowSizeFormField({
+  min,
+}: MessageHistoryWindowSizeFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
 
@@ -23,7 +28,7 @@ export function MessageHistoryWindowSizeFormField() {
             {t('flow.messageHistoryWindowSize')}
           </FormLabel>
           <FormControl>
-            <NumberInput {...field}></NumberInput>
+            <NumberInput {...field} min={min} className="w-full"></NumberInput>
           </FormControl>
           <FormMessage />
         </FormItem>
