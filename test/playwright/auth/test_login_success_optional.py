@@ -63,7 +63,7 @@ def test_login_success_optional(
     seeded_email, seeded_password, source = creds
     if source == "env":
         lowered = seeded_email.lower()
-        example_domain = "example.com"
+        example_domain = "infiniflow.io"
         if lowered.endswith(f"@{example_domain}"):
             raise AssertionError(
                 "SEEDED_USER_EMAIL must be a real account (not *@example.com). "
