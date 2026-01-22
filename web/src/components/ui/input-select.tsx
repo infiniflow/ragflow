@@ -308,12 +308,6 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
       } else {
         isAlreadySelected = (normalizedValue as string[]).includes(inputValue);
       }
-      console.log(
-        'showInputAsOption',
-        hasLabelMatch,
-        isAlreadySelected,
-        inputValue.toString().trim(),
-      );
       return (
         !hasLabelMatch &&
         !isAlreadySelected &&
@@ -350,9 +344,9 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
             return (
               <div
                 key={`${tagValue}-${index}`}
-                className="flex items-center bg-bg-card text-text-primary rounded px-2 py-1 text-xs mr-1 mb-1 border border-border-card"
+                className="flex items-center bg-bg-card text-text-primary rounded px-2 py-1 text-xs mr-1 mb-1 border border-border-card truncate"
               >
-                {option.label}
+                <div className="flex-1  truncate">{option.label}</div>
                 <button
                   type="button"
                   className="ml-1 text-text-secondary hover:text-text-primary focus:outline-none"
