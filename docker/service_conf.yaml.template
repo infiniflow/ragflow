@@ -81,6 +81,8 @@ user_default_llm:
 #   region: '${REGION}'
 #   bucket: '${BUCKET}'
 #   prefix_path: '${OSS_PREFIX_PATH}'
+#   signature_version: 's3'
+#   addressing_style: 'virtual'
 # azure:
 #   auth_type: 'sas'
 #   container_url: 'container_url'
