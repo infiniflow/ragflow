@@ -10,7 +10,8 @@ import { Locale } from 'date-fns';
 import dayjs from 'dayjs';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import * as React from 'react';
-
+import { TimePicker } from './time-picker';
+// import TimePicker from 'react-time-picker';
 interface DateInputProps extends Omit<
   React.InputHTMLAttributes<HTMLInputElement>,
   'value' | 'onChange'
@@ -45,8 +46,32 @@ const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
     const [open, setOpen] = React.useState(false);
 
     const handleDateSelect = (date: Date | undefined) => {
+      if (value) {
+        const valueDate = dayjs(value);
+        date?.setHours(valueDate.hour());
+        date?.setMinutes(valueDate.minute());
+        date?.setSeconds(valueDate.second());
+      }
       onChange?.(date);
-      setOpen(false);
+      // setOpen(false);
+    };
+
+    const handleTimeSelect = (date: Date | undefined) => {
+      const valueDate = dayjs(value);
+      if (value) {
+        date?.setFullYear(valueDate.year());
+        date?.setMonth(valueDate.month());
+        date?.setDate(valueDate.date());
+      }
+      if (date) {
+        onChange?.(date);
+      } else {
+        valueDate?.hour(0);
+        valueDate?.minute(0);
+        valueDate?.second(0);
+        onChange?.(valueDate.toDate());
+      }
+      // setOpen(false);
     };
 
     // Determine display format based on the type of date picker
@@ -90,12 +115,17 @@ const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
               mode="single"
               selected={value}
               onSelect={handleDateSelect}
-              initialFocus
-              {...(showTimeSelect && {
-                showTimeInput,
-                timeInputLabel,
-              })}
             />
+            {showTimeSelect && (
+              <TimePicker
+                value={value}
+                onChange={(value: Date | undefined) => {
+                  handleTimeSelect(value);
+                }}
+                showNow
+              />
+              // <TimePicker onChange={onChange} value={value} />
+            )}
           </PopoverContent>
         </Popover>
       </div>

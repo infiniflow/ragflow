@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DateInput } from '@/components/ui/input-date';
 import { Modal } from '@/components/ui/modal/modal';
-import { formatPureDate } from '@/utils/date';
+import { formatDate } from '@/utils/date';
 import dayjs from 'dayjs';
 import { Plus, Trash2 } from 'lucide-react';
 import { memo, useMemo, useRef, useState } from 'react';
@@ -46,11 +46,10 @@ const ValueInputItem = memo(
           try {
             // Using dayjs to parse date strings in various formats including DD/MM/YYYY
             const parsedDate = dayjs(item, [
+              'YYYY-MM-DD HH:mm:ss',
+              'DD/MM/YYYY HH:mm:ss',
               'YYYY-MM-DD',
               'DD/MM/YYYY',
-              'MM/DD/YYYY',
-              'DD-MM-YYYY',
-              'MM-DD-YYYY',
             ]);
 
             if (!parsedDate.isValid()) {
@@ -67,6 +66,7 @@ const ValueInputItem = memo(
       }
       return item;
     }, [item, type]);
+
     return (
       <div
         key={`value-item-${index}`}
@@ -77,8 +77,13 @@ const ValueInputItem = memo(
             <DateInput
               value={value as Date}
               onChange={(value) => {
-                onValueChange(index, formatPureDate(value), true);
+                onValueChange(
+                  index,
+                  formatDate(value, 'YYYY-MM-DDTHH:mm:ss'),
+                  true,
+                );
               }}
+              showTimeSelect={true}
             />
           )}
           {type !== 'time' && (
