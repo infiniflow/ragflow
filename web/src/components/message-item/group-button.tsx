@@ -73,7 +73,11 @@ export const AssistantGroupButton = ({
           </>
         )}
         {prompt && (
-          <Radio.Button value="e" onClick={showPromptModal}>
+          <Radio.Button
+            value="e"
+            onClick={showPromptModal}
+            data-testid="chat-stream-done"
+          >
             <PromptIcon style={{ fontSize: '16px' }} />
           </Radio.Button>
         )}

@@ -7,6 +7,7 @@ export interface SegmentedLabeledOption {
   disabled?: boolean;
   label: React.ReactNode;
   value: SegmentedRawOption;
+  dataTestId?: string;
   /**
    * html `title` property for label
    */
@@ -111,6 +112,7 @@ export function Segmented({
                 : '',
             )}
             onClick={() => handleOnChange(actualValue)}
+            data-testid={isObject ? option.dataTestId : undefined}
           >
             {isObject ? option.label : option}
           </div>

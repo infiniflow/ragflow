@@ -205,7 +205,7 @@ export default function Agent() {
   } = useRunDataflow({ showLogSheet: showPipelineLogSheet, setMessageId });
 
   return (
-    <section className="h-full">
+    <section className="h-full" data-testid="agent-detail">
       <PageHeader>
         <section>
           <Breadcrumb>
@@ -240,7 +240,11 @@ export default function Agent() {
           >
             <MessageSquareCode /> {t('flow.conversationVariable')}
           </ButtonLoading>
-          <Button variant={'secondary'} onClick={handleButtonRunClick}>
+          <Button
+            variant={'secondary'}
+            onClick={handleButtonRunClick}
+            data-testid="agent-run"
+          >
             <CirclePlay />
             {t('flow.run')}
           </Button>

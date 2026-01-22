@@ -389,6 +389,10 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                       placeholder={t('chat.knowledgeBasesMessage')}
                       maxCount={10}
                       defaultValue={field.value}
+                      data-testid="datasets-combobox"
+                      optionsTestId="datasets-options"
+                      optionTestId="datasets-option"
+                      optionTestIdPrefix="datasets-option-"
                       {...field}
                     />
                   </FormControl>
@@ -573,7 +577,11 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               >
                 {t('search.cancelText')}
               </Button>
-              <Button type="submit" disabled={formSubmitLoading}>
+              <Button
+                type="submit"
+                disabled={formSubmitLoading}
+                data-testid="dialog-set-save"
+              >
                 {formSubmitLoading && (
                   <div className="size-4">
                     <Spin size="small" />

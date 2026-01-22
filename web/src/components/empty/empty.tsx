@@ -78,8 +78,9 @@ export const EmptyAppCard = (props: {
   className?: string;
   isSearch?: boolean;
   size?: 'small' | 'large';
+  dataTestId?: string;
 }) => {
-  const { type, showIcon, className, isSearch } = props;
+  const { type, showIcon, className, isSearch, dataTestId } = props;
   let defaultClass = '';
   let style = {};
   switch (props.size) {
@@ -99,6 +100,7 @@ export const EmptyAppCard = (props: {
     <div
       className=" cursor-pointer "
       onClick={isSearch ? undefined : props.onClick}
+      data-testid={dataTestId}
     >
       <EmptyCard
         icon={showIcon ? EmptyCardData[type].icon : undefined}

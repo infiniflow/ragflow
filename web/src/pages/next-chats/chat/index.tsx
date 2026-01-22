@@ -92,7 +92,7 @@ export default function Chat() {
 
   if (isDebugMode) {
     return (
-      <section className="pt-14 h-[100vh] pb-24">
+      <section className="pt-14 h-[100vh] pb-24" data-testid="chat-detail">
         <div className="flex items-center justify-between px-10 pb-5">
           <span className="text-2xl">
             {t('chat.multipleModels')} ({chatBoxIds.length}/3)
@@ -114,7 +114,7 @@ export default function Chat() {
   }
 
   return (
-    <section className="h-full flex flex-col pr-5">
+    <section className="h-full flex flex-col pr-5" data-testid="chat-detail">
       <PageHeader>
         <Breadcrumb>
           <BreadcrumbList>

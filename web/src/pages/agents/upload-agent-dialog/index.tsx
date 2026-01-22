@@ -20,13 +20,18 @@ export function UploadAgentDialog({
 
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent>
+      <DialogContent data-testid="agent-import-modal">
         <DialogHeader>
           <DialogTitle>{t('fileManager.uploadFile')}</DialogTitle>
         </DialogHeader>
         <UploadAgentForm hideModal={hideModal} onOk={onOk}></UploadAgentForm>
         <DialogFooter>
-          <ButtonLoading type="submit" form={TagRenameId} loading={loading}>
+          <ButtonLoading
+            type="submit"
+            form={TagRenameId}
+            loading={loading}
+            data-testid="app-save"
+          >
             {t('common.save')}
           </ButtonLoading>
         </DialogFooter>

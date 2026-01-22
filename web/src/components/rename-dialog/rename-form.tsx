@@ -69,6 +69,7 @@ export function RenameForm({
                   placeholder={t('common.namePlaceholder')}
                   {...field}
                   autoComplete="off"
+                  data-testid="app-name-input"
                 />
               </FormControl>
               <FormMessage />

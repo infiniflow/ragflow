@@ -164,6 +164,7 @@ export function NextMessageInput({
           className="field-sizing-content min-h-10 w-full resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
           disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}
+          data-testid="chat-textarea"
         />
         <div
           className={cn('flex items-center justify-between gap-1.5', {
@@ -189,7 +190,7 @@ export function NextMessageInput({
               <CircleStop />
             </Button>
           ) : (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3" data-testid="agent-run-idle">
               {/* <div className="bg-bg-input rounded-md hover:bg-bg-card p-1"> */}
               <AudioButton
                 onOk={(value) => {
