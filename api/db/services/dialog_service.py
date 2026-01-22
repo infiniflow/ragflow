@@ -600,11 +600,20 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             final["audio_binary"] = None
             final["answer"] = ""
             if token_usage:
-                final["usage"] = {
-                    "prompt_tokens": 0,  # Not available from streaming response
-                    "completion_tokens": token_usage,
-                    "total_tokens": token_usage
-                }
+                # Handle both dict (from API) and int (fallback)
+                if isinstance(token_usage, dict):
+                    final["usage"] = {
+                        "prompt_tokens": token_usage.get("prompt_tokens", 0),
+                        "completion_tokens": token_usage.get("completion_tokens", 0),
+                        "total_tokens": token_usage.get("total_tokens", 0)
+                    }
+                else:
+                    # Fallback: only have total count, assume it's all completion
+                    final["usage"] = {
+                        "prompt_tokens": 0,
+                        "completion_tokens": token_usage,
+                        "total_tokens": token_usage
+                    }
             yield final
     else:
         answer, used_tokens = await chat_mdl.async_chat(prompt + prompt4citation, msg[1:], gen_conf)
