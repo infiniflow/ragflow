@@ -92,6 +92,7 @@ class RAGFlowPdfParser:
         try:
             pip_install_torch()
             import torch.cuda
+
             if torch.cuda.is_available():
                 self.updown_cnt_mdl.set_param({"device": "cuda"})
         except Exception:
@@ -196,13 +197,112 @@ class RAGFlowPdfParser:
                     return False
         return True
 
-    def _table_transformer_job(self, ZM):
+    def _evaluate_table_orientation(self, table_img, sample_ratio=0.3):
+        """
+        Evaluate the best rotation orientation for a table image.
+
+        Tests 4 rotation angles (0°, 90°, 180°, 270°) and uses OCR
+        confidence scores to determine the best orientation.
+
+        Args:
+            table_img: PIL Image object of the table region
+            sample_ratio: Sampling ratio for quick evaluation
+
+        Returns:
+            tuple: (best_angle, best_img, confidence_scores)
+                - best_angle: Best rotation angle (0, 90, 180, 270)
+                - best_img: Image rotated to best orientation
+                - confidence_scores: Dict of scores for each angle
+        """
+
+        rotations = [
+            (0, "original"),
+            (90, "rotate_90"),  # clockwise 90°
+            (180, "rotate_180"),  # 180°
+            (270, "rotate_270"),  # clockwise 270° (counter-clockwise 90°)
+        ]
+
+        results = {}
+        best_score = -1
+        best_angle = 0
+        best_img = table_img
+
+        for angle, name in rotations:
+            # Rotate image
+            if angle == 0:
+                rotated_img = table_img
+            else:
+                # PIL's rotate is counter-clockwise, use negative angle for clockwise
+                rotated_img = table_img.rotate(-angle, expand=True)
+
+            # Convert to numpy array for OCR
+            img_array = np.array(rotated_img)
+
+            # Perform OCR detection and recognition
+            try:
+                ocr_results = self.ocr(img_array)
+
+                if ocr_results:
+                    # Calculate average confidence
+                    scores = [conf for _, (_, conf) in ocr_results]
+                    avg_score = sum(scores) / len(scores) if scores else 0
+                    total_regions = len(scores)
+
+                    # Combined score: considers both average confidence and number of regions
+                    # More regions + higher confidence = better orientation
+                    combined_score = avg_score * (1 + 0.1 * min(total_regions, 50) / 50)
+                else:
+                    avg_score = 0
+                    total_regions = 0
+                    combined_score = 0
+
+            except Exception as e:
+                logging.warning(f"OCR failed for angle {angle}: {e}")
+                avg_score = 0
+                total_regions = 0
+                combined_score = 0
+
+            results[angle] = {"avg_confidence": avg_score, "total_regions": total_regions, "combined_score": combined_score}
+
+            logging.debug(f"Table orientation {angle}°: avg_conf={avg_score:.4f}, regions={total_regions}, combined={combined_score:.4f}")
+
+            if combined_score > best_score:
+                best_score = combined_score
+                best_angle = angle
+                best_img = rotated_img
+
+        logging.info(f"Best table orientation: {best_angle}° (score={best_score:.4f})")
+
+        return best_angle, best_img, results
+
+    def _table_transformer_job(self, ZM, auto_rotate=True):
+        """
+        Process table structure recognition.
+
+        When auto_rotate=True, the complete workflow:
+        1. Evaluate table orientation and select the best rotation angle
+        2. Use rotated image for table structure recognition (TSR)
+        3. Re-OCR the rotated image
+        4. Match new OCR results with TSR cell coordinates
+
+        Args:
+            ZM: Zoom factor
+            auto_rotate: Whether to enable auto orientation correction
+        """
         logging.debug("Table processing...")
         imgs, pos = [], []
         tbcnt = [0]
         MARGIN = 10
         self.tb_cpns = []
+        self.table_rotations = {}  # Store rotation info for each table
+        self.rotated_table_imgs = {}  # Store rotated table images
+
         assert len(self.page_layout) == len(self.page_images)
+
+        # Collect layout info for all tables
+        table_layouts = []  # [(page, table_layout, left, top, right, bott), ...]
+
+        table_index = 0
         for p, tbls in enumerate(self.page_layout):  # for page
             tbls = [f for f in tbls if f["type"] == "table"]
             tbcnt.append(len(tbls))
@@ -214,29 +314,70 @@ class RAGFlowPdfParser:
                 top *= ZM
                 right *= ZM
                 bott *= ZM
-                pos.append((left, top))
-                imgs.append(self.page_images[p].crop((left, top, right, bott)))
+                pos.append((left, top, p, table_index))  # Add page and table_index
+
+                # Record table layout info
+                table_layouts.append({"page": p, "table_index": table_index, "layout": tb, "coords": (left, top, right, bott)})
+
+                # Crop table image
+                table_img = self.page_images[p].crop((left, top, right, bott))
+
+                if auto_rotate:
+                    # Evaluate table orientation
+                    logging.debug(f"Evaluating orientation for table {table_index} on page {p}")
+                    best_angle, rotated_img, rotation_scores = self._evaluate_table_orientation(table_img)
+
+                    # Store rotation info
+                    self.table_rotations[table_index] = {
+                        "page": p,
+                        "original_pos": (left, top, right, bott),
+                        "best_angle": best_angle,
+                        "scores": rotation_scores,
+                        "rotated_size": rotated_img.size,  # (width, height)
+                    }
+
+                    # Store the rotated image
+                    self.rotated_table_imgs[table_index] = rotated_img
+                    imgs.append(rotated_img)
+
+                    if best_angle != 0:
+                        logging.info(f"Table {table_index} on page {p}: rotated {best_angle}° for better recognition")
+                else:
+                    imgs.append(table_img)
+                    self.table_rotations[table_index] = {"page": p, "original_pos": (left, top, right, bott), "best_angle": 0, "scores": {}, "rotated_size": table_img.size}
+                    self.rotated_table_imgs[table_index] = table_img
+
+                table_index += 1
 
         assert len(self.page_images) == len(tbcnt) - 1
         if not imgs:
             return
+
+        # Perform table structure recognition (TSR)
         recos = self.tbl_det(imgs)
+
+        # If tables were rotated, re-OCR the rotated images and replace table boxes
+        if auto_rotate:
+            self._ocr_rotated_tables(ZM, table_layouts, recos, tbcnt)
+
+        # Process TSR results (keep original logic but handle rotated coordinates)
         tbcnt = np.cumsum(tbcnt)
         for i in range(len(tbcnt) - 1):  # for page
             pg = []
             for j, tb_items in enumerate(recos[tbcnt[i] : tbcnt[i + 1]]):  # for table
                 poss = pos[tbcnt[i] : tbcnt[i + 1]]
                 for it in tb_items:  # for table components
-                    it["x0"] = it["x0"] + poss[j][0]
-                    it["x1"] = it["x1"] + poss[j][0]
-                    it["top"] = it["top"] + poss[j][1]
-                    it["bottom"] = it["bottom"] + poss[j][1]
-                    for n in ["x0", "x1", "top", "bottom"]:
-                        it[n] /= ZM
-                    it["top"] += self.page_cum_height[i]
-                    it["bottom"] += self.page_cum_height[i]
-                    it["pn"] = i
+                    # TSR coordinates are relative to rotated image, need to record
+                    it["x0_rotated"] = it["x0"]
+                    it["x1_rotated"] = it["x1"]
+                    it["top_rotated"] = it["top"]
+                    it["bottom_rotated"] = it["bottom"]
+
+                    # For rotated tables, coordinate transformation to page space requires rotation
+                    # Since we already re-OCR'd on rotated image, keep simple processing here
+                    it["pn"] = poss[j][2]  # page number
                     it["layoutno"] = j
+                    it["table_index"] = poss[j][3]  # table index
                     pg.append(it)
             self.tb_cpns.extend(pg)
 
@@ -249,8 +390,9 @@ class RAGFlowPdfParser:
         headers = gather(r".*header$")
         rows = gather(r".* (row|header)")
         spans = gather(r".*spanning")
-        clmns = sorted([r for r in self.tb_cpns if re.match(r"table column$", r["label"])], key=lambda x: (x["pn"], x["layoutno"], x["x0"]))
+        clmns = sorted([r for r in self.tb_cpns if re.match(r"table column$", r["label"])], key=lambda x: (x["pn"], x["layoutno"], x["x0_rotated"] if "x0_rotated" in x else x["x0"]))
         clmns = Recognizer.layouts_cleanup(self.boxes, clmns, 5, 0.5)
+
         for b in self.boxes:
             if b.get("layout_type", "") != "table":
                 continue
@@ -281,6 +423,109 @@ class RAGFlowPdfParser:
                 b["H_left"] = spans[ii]["x0"]
                 b["H_right"] = spans[ii]["x1"]
                 b["SP"] = ii
+
+    def _ocr_rotated_tables(self, ZM, table_layouts, tsr_results, tbcnt):
+        """
+        Re-OCR rotated table images and update self.boxes.
+
+        Args:
+            ZM: Zoom factor
+            table_layouts: List of table layout info
+            tsr_results: TSR recognition results
+            tbcnt: Cumulative table count per page
+        """
+        tbcnt = np.cumsum(tbcnt)
+
+        for tbl_info in table_layouts:
+            table_index = tbl_info["table_index"]
+            page = tbl_info["page"]
+            layout = tbl_info["layout"]
+            left, top, right, bott = tbl_info["coords"]
+
+            rotation_info = self.table_rotations.get(table_index, {})
+            best_angle = rotation_info.get("best_angle", 0)
+
+            # Get the rotated table image
+            rotated_img = self.rotated_table_imgs.get(table_index)
+            if rotated_img is None:
+                continue
+
+            # If table was rotated, re-OCR the rotated image
+            if best_angle != 0:
+                logging.info(f"Re-OCR table {table_index} on page {page} with rotation {best_angle}°")
+
+                # Perform OCR on rotated image
+                img_array = np.array(rotated_img)
+                ocr_results = self.ocr(img_array)
+
+                if not ocr_results:
+                    logging.warning(f"No OCR results for rotated table {table_index}")
+                    continue
+
+                # Remove original text boxes from this table region in self.boxes
+                # Table region is defined by layout's x0, top, x1, bottom
+                table_x0 = layout["x0"]
+                table_top = layout["top"]
+                table_x1 = layout["x1"]
+                table_bottom = layout["bottom"]
+
+                # Filter out original boxes within the table region
+                original_box_count = len(self.boxes)
+                self.boxes = [
+                    b
+                    for b in self.boxes
+                    if not (
+                        b.get("page_number") == page + self.page_from
+                        and b.get("layout_type") == "table"
+                        and b["x0"] >= table_x0 - 5
+                        and b["x1"] <= table_x1 + 5
+                        and b["top"] >= table_top - 5
+                        and b["bottom"] <= table_bottom + 5
+                    )
+                ]
+                removed_count = original_box_count - len(self.boxes)
+                logging.debug(f"Removed {removed_count} original boxes from table {table_index}")
+
+                # Add new OCR results to self.boxes
+                # OCR coordinates are relative to rotated image, need to preserve
+                rotated_width, rotated_height = rotated_img.size
+
+                for bbox, (text, conf) in ocr_results:
+                    if conf < 0.5:  # Filter low confidence results
+                        continue
+
+                    # bbox format: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+                    x_coords = [p[0] for p in bbox]
+                    y_coords = [p[1] for p in bbox]
+
+                    # Coordinates in rotated image
+                    box_x0 = min(x_coords) / ZM
+                    box_x1 = max(x_coords) / ZM
+                    box_top = min(y_coords) / ZM
+                    box_bottom = max(y_coords) / ZM
+
+                    # Create new box, mark as from rotated table
+                    new_box = {
+                        "text": text,
+                        "x0": box_x0 + table_x0,  # Coordinates relative to page
+                        "x1": box_x1 + table_x0,
+                        "top": box_top + table_top + self.page_cum_height[page],
+                        "bottom": box_bottom + table_top + self.page_cum_height[page],
+                        "page_number": page + self.page_from,
+                        "layout_type": "table",
+                        "layoutno": f"table-{table_index}",
+                        "_rotated": True,
+                        "_rotation_angle": best_angle,
+                        "_table_index": table_index,
+                        # Save original coordinates in rotated image for table reconstruction
+                        "_rotated_x0": box_x0,
+                        "_rotated_x1": box_x1,
+                        "_rotated_top": box_top,
+                        "_rotated_bottom": box_bottom,
+                    }
+                    self.boxes.append(new_box)
+
+                logging.info(f"Added {len(ocr_results)} OCR results from rotated table {table_index}")
 
     def __ocr(self, pagenum, img, chars, ZM=3, device_id: int | None = None):
         start = timer()
@@ -412,10 +657,8 @@ class RAGFlowPdfParser:
             page_cols[pg] = best_k
             logging.info(f"[Page {pg}] best_score={best_score:.2f}, best_k={best_k}")
 
-
         global_cols = Counter(page_cols.values()).most_common(1)[0][0]
         logging.info(f"Global column_num decided by majority: {global_cols}")
-
 
         for pg, bxs in by_page.items():
             if not bxs:
@@ -1184,10 +1427,26 @@ class RAGFlowPdfParser:
         if len(self.boxes) == 0 and zoomin < 9:
             self.__images__(fnm, zoomin * 3, page_from, page_to, callback)
 
-    def __call__(self, fnm, need_image=True, zoomin=3, return_html=False):
+    def __call__(self, fnm, need_image=True, zoomin=3, return_html=False, auto_rotate_tables=None):
+        """
+        Parse a PDF file.
+
+        Args:
+            fnm: PDF file path or binary content
+            need_image: Whether to extract images
+            zoomin: Zoom factor
+            return_html: Whether to return tables in HTML format
+            auto_rotate_tables: Whether to enable auto orientation correction for tables.
+                               None: Use TABLE_AUTO_ROTATE env var setting (default: True)
+                               True: Enable auto orientation correction
+                               False: Disable auto orientation correction
+        """
+        if auto_rotate_tables is None:
+            auto_rotate_tables = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
+
         self.__images__(fnm, zoomin)
         self._layouts_rec(zoomin)
-        self._table_transformer_job(zoomin)
+        self._table_transformer_job(zoomin, auto_rotate=auto_rotate_tables)
         self._text_merge()
         self._concat_downward()
         self._filter_forpages()
@@ -1205,8 +1464,11 @@ class RAGFlowPdfParser:
         if callback:
             callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
 
+        # Read table auto-rotation setting from environment variable
+        auto_rotate_tables = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
+
         start = timer()
-        self._table_transformer_job(zoomin)
+        self._table_transformer_job(zoomin, auto_rotate=auto_rotate_tables)
         if callback:
             callback(0.83, "Table analysis ({:.2f}s)".format(timer() - start))
 
@@ -1498,10 +1760,7 @@ class VisionParser(RAGFlowPdfParser):
 
             if text:
                 width, height = self.page_images[idx].size
-                all_docs.append((
-                    text,
-                    f"@@{pdf_page_num + 1}\t{0.0:.1f}\t{width / zoomin:.1f}\t{0.0:.1f}\t{height / zoomin:.1f}##"
-                ))
+                all_docs.append((text, f"@@{pdf_page_num + 1}\t{0.0:.1f}\t{width / zoomin:.1f}\t{0.0:.1f}\t{height / zoomin:.1f}##"))
         return all_docs, []
 
 
