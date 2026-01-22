@@ -1,7 +1,8 @@
 import { lazy } from 'react';
-import { createBrowserRouter, Navigate } from 'react-router';
+import { createBrowserRouter, Navigate, redirect } from 'react-router';
 import FallbackComponent from './components/fallback-component';
 import { IS_ENTERPRISE } from './pages/admin/utils';
+import authorizationUtil from './utils/authorization-util';
 
 export enum Routes {
   Root = '/',
@@ -117,7 +118,16 @@ const routeConfig = [
     path: Routes.Root,
     layout: false,
     Component: lazy(() => import('@/layouts/next')),
-    wrappers: ['@/wrappers/auth'],
+    loader: ({ request }) => {
+      const url = new URL(request.url);
+      const auth = url.searchParams.get('auth');
+      if (auth) {
+        authorizationUtil.setAuthorization(auth);
+        url.searchParams.delete('auth');
+        return redirect(`${url.pathname}${url.search}`);
+      }
+      return null;
+    },
     children: [
       {
         path: Routes.Root,
