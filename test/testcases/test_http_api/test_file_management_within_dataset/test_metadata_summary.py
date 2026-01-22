@@ -17,7 +17,7 @@
 # Document.meta_fields via document_service#get_metadata_summary and the test
 # uses update_document, so it belongs with file/document management tests.
 import pytest
-from common import metadata_summary, update_document
+#from common import metadata_summary, update_document
 
 
 def _summary_to_counts(summary):
