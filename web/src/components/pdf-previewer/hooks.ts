@@ -12,11 +12,14 @@ export const useCatchDocumentError = (url: string) => {
       const ret = await axios.get(url, { responseType: 'arraybuffer' });
       const data = ret.data;
       if (data instanceof ArrayBuffer) {
-        return;
-      }
-      const jsonData = JSON.parse(new TextDecoder().decode(data));
-      if (jsonData.code !== 0) {
-        setError(jsonData?.message);
+        try {
+          const jsonData = JSON.parse(new TextDecoder().decode(data));
+          if (jsonData.code !== 0) {
+            setError(jsonData?.message);
+          }
+        } catch (e) {
+          //
+        }
       }
     } catch (e) {
       console.error(e);

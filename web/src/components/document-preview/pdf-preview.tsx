@@ -1,5 +1,5 @@
 import * as pdfjs from 'pdfjs-dist';
-import { memo, useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import {
   AreaHighlight,
   Highlight,
