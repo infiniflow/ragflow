@@ -12,13 +12,7 @@ import {
   useRemoveConversation,
 } from '@/hooks/use-chat-request';
 import { cn } from '@/lib/utils';
-import {
-  Check,
-  PanelLeftClose,
-  PanelRightClose,
-  Plus,
-  Trash2,
-} from 'lucide-react';
+import { Check, PanelLeftClose, Plus, Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
@@ -28,12 +22,8 @@ import { ConversationDropdown } from './conversation-dropdown';
 type SessionProps = Pick<
   ReturnType<typeof useHandleClickConversationCard>,
   'handleConversationCardClick'
-> & { switchSettingVisible(): void; hasSingleChatBox: boolean };
-export function Sessions({
-  hasSingleChatBox,
-  handleConversationCardClick,
-  switchSettingVisible,
-}: SessionProps) {
+>;
+export function Sessions({ handleConversationCardClick }: SessionProps) {
   const { t } = useTranslation();
   const {
     list: conversationList,
@@ -115,15 +105,19 @@ export function Sessions({
 
   if (!visible) {
     return (
-      <PanelRightClose
-        className="cursor-pointer size-4 mt-8"
-        onClick={switchVisible}
-      />
+      <div className="p-5">
+        <RAGFlowAvatar
+          avatar={data.icon}
+          name={data.name}
+          className="size-8 cursor-pointer"
+          onClick={switchVisible}
+        ></RAGFlowAvatar>
+      </div>
     );
   }
 
   return (
-    <section className="p-6 w-[296px] flex flex-col">
+    <section className="p-5 w-[296px] flex flex-col">
       <section className="flex items-center text-base justify-between gap-2">
         <div className="flex gap-3 items-center min-w-0">
           <RAGFlowAvatar
@@ -159,9 +153,11 @@ export function Sessions({
             <ConfirmDeleteDialog
               onOk={handleBatchDelete}
               title={t('chat.batchDeleteSessions')}
-              content={t('chat.deleteSelectedConfirm', {
-                count: selectedCount,
-              })}
+              content={{
+                title: t('chat.deleteSelectedConfirm', {
+                  count: selectedCount,
+                }),
+              }}
             >
               <Button
                 variant="ghost"
@@ -244,16 +240,6 @@ export function Sessions({
             </CardContent>
           </Card>
         ))}
-      </div>
-      <div className="py-2">
-        <Button
-          className="w-full"
-          onClick={switchSettingVisible}
-          disabled={!hasSingleChatBox}
-          variant={'outline'}
-        >
-          {t('chat.chatSetting')}
-        </Button>
       </div>
     </section>
   );

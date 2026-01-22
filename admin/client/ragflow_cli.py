@@ -54,7 +54,6 @@ class RAGFlowCLI(Cmd):
         super().__init__()
         self.parser = Lark(GRAMMAR, start="start", parser="lalr", transformer=RAGFlowCLITransformer())
         self.command_history = []
-        self.is_interactive = False
         self.account = "admin@ragflow.io"
         self.account_password: str = "admin"
         self.session = requests.Session()
@@ -212,7 +211,6 @@ class RAGFlowCLI(Cmd):
         print(separator)
 
     def run_interactive(self, args):
-        self.is_interactive = True
         if self.verify_auth(args, single_command=False, auth=args["auth"]):
             print(r"""
                 ____  ___   ______________                 ________    ____
@@ -226,7 +224,6 @@ class RAGFlowCLI(Cmd):
         print("RAGFlow command line interface - Type '\\?' for help, '\\q' to quit")
 
     def run_single_command(self, args):
-        self.is_interactive = False
         if self.verify_auth(args, single_command=True, auth=args["auth"]):
             command = args["command"]
             result = self.parse_command(command)
@@ -272,15 +269,15 @@ class RAGFlowCLI(Cmd):
                 else:
                     return {"error": "Invalid command"}
             else:
+                auth = True
                 if username is None:
-                    print("Error: username (-u) is required in user mode")
-                    return {"error": "Username required"}
+                    auth = False
                 return {
                     "host": parsed_args.host,
                     "port": parsed_args.port,
                     "type": parsed_args.type,
                     "username": username,
-                    "auth": True
+                    "auth": auth
                 }
         except SystemExit:
             return {"error": "Invalid connection arguments"}
@@ -297,7 +294,7 @@ class RAGFlowCLI(Cmd):
                 command_dict = parsed_command
 
         # print(f"Parsed command: {command_dict}")
-        run_command(self.ragflow_client, command_dict, self.is_interactive)
+        run_command(self.ragflow_client, command_dict)
 
 def main():
 
