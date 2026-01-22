@@ -18,7 +18,6 @@ import copy
 import re
 import time
 
-import tiktoken
 import os
 import tempfile
 import logging
