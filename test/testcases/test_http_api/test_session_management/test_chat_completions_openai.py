@@ -59,6 +59,7 @@ class TestChatCompletionsOpenAI:
             HttpApiAuth,
             chat_id,
             {
+                "model": "model",  # Required by OpenAI-compatible API, value is ignored by RAGFlow
                 "messages": [{"role": "user", "content": "hello"}],
                 "stream": False,
             },
@@ -99,6 +100,7 @@ class TestChatCompletionsOpenAI:
             HttpApiAuth,
             chat_id,
             {
+                "model": "model",  # Required by OpenAI-compatible API, value is ignored by RAGFlow
                 "messages": [{"role": "user", "content": "hello"}],
                 "stream": False,
             },
@@ -121,6 +123,7 @@ class TestChatCompletionsOpenAI:
             HttpApiAuth,
             "invalid_chat_id",
             {
+                "model": "model",  # Required by OpenAI-compatible API, value is ignored by RAGFlow
                 "messages": [{"role": "user", "content": "hello"}],
                 "stream": False,
             },
