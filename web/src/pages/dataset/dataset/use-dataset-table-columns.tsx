@@ -16,10 +16,7 @@ import { formatDate } from '@/utils/date';
 import { ColumnDef } from '@tanstack/table-core';
 import { ArrowUpDown, MonitorUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import {
-  MetadataType,
-  util,
-} from '../components/metedata/hooks/use-manage-modal';
+import { MetadataType } from '../components/metedata/constant';
 import { ShowManageMetadataModalProps } from '../components/metedata/interface';
 import { DatasetActionCell } from './dataset-action-cell';
 import { ParsingStatusCell } from './parsing-status-cell';
@@ -181,12 +178,14 @@ export function useDatasetTableColumns({
             className="capitalize cursor-pointer"
             onClick={() => {
               showManageMetadataModal({
-                metadata: util.JSONToMetaDataTableData(
-                  row.original.meta_fields || {},
-                ),
+                // metadata: util.JSONToMetaDataTableData(
+                //   row.original.meta_fields || {},
+                // ),
+                isEditField: false,
                 isCanAdd: true,
+                isAddValue: true,
                 type: MetadataType.UpdateSingle,
-                record: row,
+                record: row.original,
                 title: (
                   <div className="flex flex-col gap-2 w-full">
                     <div className="text-base font-normal">
@@ -199,6 +198,7 @@ export function useDatasetTableColumns({
                   </div>
                 ),
                 isDeleteSingleValue: true,
+                documentIds: [row.original.id],
               });
             }}
           >
