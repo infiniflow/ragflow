@@ -15,6 +15,10 @@ As the final component of the workflow, a Message component returns the workflow
 
 ## Configurations
 
+### Status
+
+The HTTP status code (`200` ~ `399`) to return when the entire workflow completes. Available *only* when you select **Final response** as **Execution mode** in the [Begin](./begin.md) component.
+
 ### Messages
 
 The message to send out. Click `(x)` or type `/` to quickly insert variables.
@@ -23,7 +27,7 @@ Click **+ Add message** to add message options. When multiple messages are suppl
 
 ### Save to memory
 
-Select the corresponding Memory in the **Message** component under **Save to Memory**:
+Save the conversation to specified memories. Expand the dropdown list to either select all available memories or specified memories:
 
 
 ![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/save_to_memory.png)
