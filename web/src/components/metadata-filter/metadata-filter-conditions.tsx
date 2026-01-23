@@ -73,6 +73,7 @@ export function MetadataFilterConditions({
   }) {
     const { t } = useTranslation();
     const form = useFormContext();
+    const op = useWatch({ name: `${name}.${index}.op` });
     const key = useWatch({ name: fieldName });
     const valueOptions = useMemo(() => {
       if (!key || !metadata?.data || !metadata?.data[key]) return [];
@@ -85,6 +86,23 @@ export function MetadataFilterConditions({
       return [];
     }, [key]);
 
+    const handleChangeOp = useCallback(
+      (value: string) => {
+        form.setValue(`${name}.${index}.op`, value);
+        if (
+          !['in', 'not in'].includes(value) &&
+          !['in', 'not in'].includes(op)
+        ) {
+          return;
+        }
+        if (value === 'in' || value === 'not in') {
+          form.setValue(`${name}.${index}.value`, []);
+        } else {
+          form.setValue(`${name}.${index}.value`, '');
+        }
+      },
+      [form, index, op],
+    );
     return (
       <div className="flex gap-1">
         <Card
@@ -118,6 +136,9 @@ export function MetadataFilterConditions({
                     <FormControl>
                       <RAGFlowSelect
                         {...field}
+                        onChange={(value) => {
+                          handleChangeOp(value);
+                        }}
                         options={switchOperatorOptions}
                         onlyShowSelectedIcon
                         triggerClassName="w-30 bg-transparent border-none"
@@ -133,27 +154,30 @@ export function MetadataFilterConditions({
             <FormField
               control={form.control}
               name={`${name}.${index}.value`}
-              render={({ field: valueField }) => (
-                <FormItem>
-                  <FormControl>
-                    {canReference ? (
-                      <PromptEditor
-                        {...valueField}
-                        multiLine={false}
-                        showToolbar={false}
-                      ></PromptEditor>
-                    ) : (
-                      <InputSelect
-                        placeholder={t('common.pleaseInput')}
-                        {...valueField}
-                        options={valueOptions}
-                        className="w-full"
-                      />
-                    )}
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+              render={({ field: valueField }) => {
+                return (
+                  <FormItem>
+                    <FormControl>
+                      {canReference ? (
+                        <PromptEditor
+                          {...valueField}
+                          multiLine={false}
+                          showToolbar={false}
+                        ></PromptEditor>
+                      ) : (
+                        <InputSelect
+                          placeholder={t('common.pleaseInput')}
+                          {...valueField}
+                          options={valueOptions}
+                          className="w-full"
+                          multi={op === 'in' || op === 'not in'}
+                        />
+                      )}
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
             />
           </CardContent>
         </Card>

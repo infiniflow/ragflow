@@ -11,7 +11,11 @@ import { RowSelectionState } from '@tanstack/react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
-import { MetadataType, metadataValueTypeEnum } from '../constant';
+import {
+  DEFAULT_VALUE_TYPE,
+  MetadataType,
+  metadataValueTypeEnum,
+} from '../constant';
 import {
   IBuiltInMetadataItem,
   IMetaDataReturnJSONSettings,
@@ -182,7 +186,7 @@ export const useMetadataOperations = () => {
             key,
             match: originalValue,
             value: newValuesRes,
-            type,
+            valueType: type || DEFAULT_VALUE_TYPE,
           };
           return {
             ...prev,
@@ -193,7 +197,7 @@ export const useMetadataOperations = () => {
           ...prev,
           updates: [
             ...prev.updates,
-            { key, match: originalValue, value: newValuesRes, type },
+            { key, match: originalValue, value: newValuesRes, valueType: type },
           ],
         };
       });

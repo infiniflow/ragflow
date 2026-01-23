@@ -1,6 +1,8 @@
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/input-date';
+import { formatDate } from '@/utils/date';
 import { ColumnDef, Row, Table } from '@tanstack/react-table';
 import {
   ListChevronsDownUp,
@@ -14,6 +16,7 @@ import {
   getMetadataValueTypeLabel,
   MetadataDeleteMap,
   MetadataType,
+  metadataValueTypeEnum,
 } from './constant';
 import { IMetaDataTableData } from './interface';
 
@@ -80,7 +83,7 @@ export const useMetadataColumns = ({
       setEditingValue(null);
       setShouldSave(true);
     }
-  }, [editingValue, setTableData]);
+  }, [editingValue, setTableData, setShouldSave]);
 
   const cancelEditValue = () => {
     setEditingValue(null);
@@ -192,14 +195,6 @@ export const useMetadataColumns = ({
         ),
         cell: ({ row }) => {
           const values = row.getValue('values') as Array<string>;
-          //   const supportsEnum = isMetadataValueTypeWithEnum(
-          //     row.original.valueType,
-          //   );
-
-          // if (!supportsEnum || !Array.isArray(values) || values.length === 0) {
-          //   return <div></div>;
-          // }
-
           const displayedValues = expanded ? values : values.slice(0, 2);
           const hasMore = Array.isArray(values) && values.length > 2;
 
@@ -214,26 +209,46 @@ export const useMetadataColumns = ({
 
                   return isEditing ? (
                     <div key={value}>
-                      <Input
-                        type="text"
-                        value={editingValue.newValue}
-                        onChange={(e) =>
-                          setEditingValue({
-                            ...editingValue,
-                            newValue: e.target.value,
-                          })
-                        }
-                        onBlur={saveEditedValue}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            saveEditedValue();
-                          } else if (e.key === 'Escape') {
-                            cancelEditValue();
+                      {row.original.valueType ===
+                        metadataValueTypeEnum.time && (
+                        <DateInput
+                          value={new Date(editingValue.newValue)}
+                          onChange={(value) => {
+                            setEditingValue({
+                              ...editingValue,
+                              newValue: formatDate(
+                                value,
+                                'YYYY-MM-DDTHH:mm:ss',
+                              ),
+                            });
+                            // onValueChange(index, formatDate(value), true);
+                          }}
+                          showTimeSelect={true}
+                        />
+                      )}
+                      {row.original.valueType !==
+                        metadataValueTypeEnum.time && (
+                        <Input
+                          type="text"
+                          value={editingValue.newValue}
+                          onChange={(e) =>
+                            setEditingValue({
+                              ...editingValue,
+                              newValue: e.target.value,
+                            })
                           }
-                        }}
-                        autoFocus
-                        // className="text-sm min-w-20 max-w-32 outline-none bg-transparent px-1 py-0.5"
-                      />
+                          onBlur={saveEditedValue}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              saveEditedValue();
+                            } else if (e.key === 'Escape') {
+                              cancelEditValue();
+                            }
+                          }}
+                          autoFocus
+                          // className="text-sm min-w-20 max-w-32 outline-none bg-transparent px-1 py-0.5"
+                        />
+                      )}
                     </div>
                   ) : (
                     <Button

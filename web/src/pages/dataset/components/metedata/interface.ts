@@ -107,7 +107,7 @@ interface UpdateOperation {
   key: string;
   match: string;
   value: string | string[];
-  type?: MetadataValueType;
+  valueType?: MetadataValueType;
 }
 
 export interface MetadataOperations {
