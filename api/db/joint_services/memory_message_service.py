@@ -316,7 +316,6 @@ def fix_missing_tokenized_memory():
     else:
         for m in memory_list:
             message_list = MessageService.get_missing_field_messages(m.id, m.tenant_id, "tokenized_content_ltks")
-            logging.info(f"Fixing tokenized message for {m.name}.")
             for msg in message_list:
                 # update content to refresh tokenized field
                 MessageService.update_message({"message_id": msg["message_id"], "memory_id": m.id}, {"content": msg["content"]}, m.tenant_id, m.id)
