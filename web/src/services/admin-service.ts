@@ -157,6 +157,13 @@ export const createUser = (email: string, password: string) =>
     username: email,
     password,
   });
+
+export const grantSuperuser = (email: string) =>
+  request.put<ResponseData<void>>(api.adminSetSuperuser(email));
+
+export const revokeSuperuser = (email: string) =>
+  request.delete<ResponseData<void>>(api.adminSetSuperuser(email));
+
 export const getUserDetails = (email: string) =>
   request.get<ResponseData<[AdminService.UserDetail]>>(
     adminGetUserDetails(email),

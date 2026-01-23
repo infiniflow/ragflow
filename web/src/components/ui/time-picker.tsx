@@ -153,7 +153,7 @@ const TimePicker = forwardRef<HTMLDivElement, TimePickerProps>(
       bordered = true,
       disabledTime,
       hideDisabledOptions = false,
-      inputReadOnly = false,
+      inputReadOnly = true,
       use12Hours = false,
       size = 'middle',
       status,
@@ -495,47 +495,48 @@ const TimePicker = forwardRef<HTMLDivElement, TimePickerProps>(
           onOpenChange={handleOpenChange}
           modal={false} // Use non-modal dialog box, consistent with Ant Design behavior
         >
-          <div className="relative">
-            <Input
-              type="text"
-              value={inputValue}
-              onChange={handleInputChange}
-              placeholder={placeholder}
-              disabled={disabled}
-              readOnly={inputReadOnly}
-              className={cn(
-                'pl-3 pr-8 py-2 font-normal',
-                size === 'large' && 'h-10 text-base',
-                size === 'small' && 'h-8 text-sm',
-                status === 'error' && 'border-red-500',
-                status === 'warning' && '!border-yellow-500',
-                !bordered && 'border-transparent',
-                'cursor-pointer',
-              )}
-              autoFocus={autoFocus}
-            />
-            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center">
-              {allowClear && value && inputValue && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleClear();
-                  }}
-                  className="mr-2 text-muted-foreground hover:text-foreground"
-                >
-                  {clearIcon || '✕'}
-                </button>
-              )}
-              <PopoverTrigger asChild>
+          <PopoverTrigger asChild>
+            <div className="relative">
+              <Input
+                type="text"
+                value={inputValue}
+                onChange={handleInputChange}
+                placeholder={placeholder}
+                disabled={disabled}
+                readOnly={inputReadOnly}
+                className={cn(
+                  'pl-3 pr-8 py-2 font-normal',
+                  size === 'large' && 'h-10 text-base',
+                  size === 'small' && 'h-8 text-sm',
+                  status === 'error' && 'border-red-500',
+                  status === 'warning' && '!border-yellow-500',
+                  !bordered && 'border-transparent',
+                  'cursor-pointer',
+                )}
+                autoFocus={autoFocus}
+              />
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center">
+                {allowClear && value && inputValue && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleClear();
+                    }}
+                    className="mr-2 text-muted-foreground hover:text-foreground"
+                  >
+                    {clearIcon || '✕'}
+                  </button>
+                )}
+
                 <div className="cursor-pointer">
                   {suffixIcon || (
                     <Clock size={16} className="text-muted-foreground" />
                   )}
                 </div>
-              </PopoverTrigger>
+              </div>
             </div>
-          </div>
+          </PopoverTrigger>
           <PopoverContent
             className={cn('w-auto p-3', popupClassName)}
             align={

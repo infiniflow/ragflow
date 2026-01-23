@@ -306,6 +306,24 @@ def init_memory_size_cache():
         logging.info("Memory size cache init done.")
 
 
+def fix_missing_tokenized_memory():
+    if settings.DOC_ENGINE != "elasticsearch":
+        logging.info("Not using elasticsearch as doc engine, no need to fix missing tokenized memory.")
+        return
+    memory_list = MemoryService.get_all_memory()
+    if not memory_list:
+        logging.info("No memory found, no need to fix missing tokenized memory.")
+    else:
+        for m in memory_list:
+            message_list = MessageService.get_missing_field_messages(m.id, m.tenant_id, "tokenized_content_ltks")
+            for msg in message_list:
+                # update content to refresh tokenized field
+                MessageService.update_message({"message_id": msg["message_id"], "memory_id": m.id}, {"content": msg["content"]}, m.tenant_id, m.id)
+            if message_list:
+                logging.info(f"Fixed {len(message_list)} messages missing tokenized field in memory: {m.name}.")
+        logging.info("Fix missing tokenized memory done.")
+
+
 def judge_system_prompt_is_default(system_prompt: str, memory_type: int|list[str]):
     memory_type_list = memory_type if isinstance(memory_type, list) else get_memory_type_human(memory_type)
     return system_prompt == PromptAssembler.assemble_system_prompt({"memory_type": memory_type_list})
