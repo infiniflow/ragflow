@@ -67,23 +67,27 @@ export const useMetadataColumns = ({
     setEditingValue({ field, value, newValue: value });
   };
 
-  const saveEditedValue = useCallback(() => {
-    if (editingValue) {
-      setTableData((prev) => {
-        return prev.map((row) => {
-          if (row.field === editingValue.field) {
-            const updatedValues = row.values.map((v) =>
-              v === editingValue.value ? editingValue.newValue : v,
-            );
-            return { ...row, values: updatedValues };
-          }
-          return row;
+  const saveEditedValue = useCallback(
+    (newValue?: { field: string; value: string; newValue: string }) => {
+      const realValue = newValue || editingValue;
+      if (realValue) {
+        setTableData((prev) => {
+          return prev.map((row) => {
+            if (row.field === realValue.field) {
+              const updatedValues = row.values.map((v) =>
+                v === realValue.value ? realValue.newValue : v,
+              );
+              return { ...row, values: updatedValues };
+            }
+            return row;
+          });
         });
-      });
-      setEditingValue(null);
-      setShouldSave(true);
-    }
-  }, [editingValue, setTableData, setShouldSave]);
+        setEditingValue(null);
+        setShouldSave(true);
+      }
+    },
+    [editingValue, setTableData, setShouldSave],
+  );
 
   const cancelEditValue = () => {
     setEditingValue(null);
@@ -214,15 +218,23 @@ export const useMetadataColumns = ({
                         <DateInput
                           value={new Date(editingValue.newValue)}
                           onChange={(value) => {
-                            setEditingValue({
+                            console.log('value', value);
+                            const newValue = {
                               ...editingValue,
                               newValue: formatDate(
                                 value,
                                 'YYYY-MM-DDTHH:mm:ss',
                               ),
-                            });
+                            };
+                            setEditingValue(newValue);
+                            saveEditedValue(newValue);
                             // onValueChange(index, formatDate(value), true);
                           }}
+                          // openChange={(open) => {
+                          //   console.log('open', open);
+                          //   if (!open) {
+                          //   }
+                          // }}
                           showTimeSelect={true}
                         />
                       )}
@@ -261,7 +273,11 @@ export const useMetadataColumns = ({
                       aria-label="Edit"
                     >
                       <div className="flex gap-1 items-center">
-                        <div className="text-sm truncate max-w-24">{value}</div>
+                        <div className="text-sm truncate max-w-24">
+                          {row.original.valueType === metadataValueTypeEnum.time
+                            ? formatDate(value, 'DD/MM/YYYY HH:mm:ss')
+                            : value}
+                        </div>
                         {isDeleteSingleValue && (
                           <Button
                             variant={'delete'}
