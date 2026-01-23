@@ -374,3 +374,22 @@ def chat_completions(auth, chat_id, payload=None):
     url = f"{HOST_ADDRESS}/api/{VERSION}/chats/{chat_id}/completions"
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def chat_completions_openai(auth, chat_id, payload=None):
+    """
+    Send a request to the OpenAI-compatible chat completions endpoint.
+
+    Args:
+        auth: Authentication object
+        chat_id: Chat assistant ID
+        payload: Dictionary in OpenAI chat completions format containing:
+            - messages: list (required) - List of message objects with 'role' and 'content'
+            - stream: bool (optional) - Whether to stream responses, default False
+
+    Returns:
+        Response JSON in OpenAI chat completions format with usage information
+    """
+    url = f"{HOST_ADDRESS}/api/{VERSION}/chats_openai/{chat_id}/chat/completions"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
