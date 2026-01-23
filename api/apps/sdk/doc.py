@@ -1579,6 +1579,7 @@ async def retrieval_test(tenant_id):
             cks = await settings.retriever.retrieval_by_toc(question, ranks["chunks"], tenant_ids, chat_mdl, size)
             if cks:
                 ranks["chunks"] = cks
+        ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
         if use_kg:
             ck = await settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
