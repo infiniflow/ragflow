@@ -2451,7 +2451,9 @@ Important structured information may include: names, dates, locations, events, k
 
       role: 'Role',
       user: 'User',
+      userType: 'User type',
       superuser: 'Superuser',
+      normalUser: 'Normal',
 
       createTime: 'Create time',
       lastLoginTime: 'Last login time',
