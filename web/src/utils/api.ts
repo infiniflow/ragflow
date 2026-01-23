@@ -263,6 +263,8 @@ export default {
   adminLogout: `${ExternalApi}${api_host}/admin/logout`,
   adminListUsers: `${ExternalApi}${api_host}/admin/users`,
   adminCreateUser: `${ExternalApi}${api_host}/admin/users`,
+  adminSetSuperuser: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}/admin`,
   adminGetUserDetails: (username: string) =>
     `${ExternalApi}${api_host}/admin/users/${username}`,
   adminUpdateUserStatus: (username: string) =>
