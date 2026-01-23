@@ -1,5 +1,8 @@
 # Copyright (c) 2024 Microsoft Corporation.
 # Licensed under the MIT License
+
+from common.misc_utils import thread_pool_exec
+
 """
 Reference:
  - [graphrag](https://github.com/microsoft/graphrag)
@@ -25,7 +28,6 @@ from graphrag.general.leiden import add_community_info2graph
 from rag.llm.chat_model import Base as CompletionLLM
 from graphrag.utils import perform_variable_replacements, dict_has_keys_with_types, chat_limiter
 from common.token_utils import num_tokens_from_string
-
 
 @dataclass
 class CommunityReportsResult:
@@ -102,7 +104,7 @@ class CommunityReportsExtractor(Extractor):
             async with chat_limiter:
                 try:
                     timeout = 180 if enable_timeout_assertion else 1000000000
-                    response = await asyncio.wait_for(asyncio.to_thread(self._chat,text,[{"role": "user", "content": "Output:"}],{},task_id),timeout=timeout)
+                    response = await asyncio.wait_for(thread_pool_exec(self._chat,text,[{"role": "user", "content": "Output:"}],{},task_id),timeout=timeout)
                 except asyncio.TimeoutError:
                     logging.warning("extract_community_report._chat timeout, skipping...")
                     return

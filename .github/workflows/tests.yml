@@ -164,7 +164,7 @@ jobs:
           INFINITY_THRIFT_PORT=$((23817 + RUNNER_NUM * 10))
           INFINITY_HTTP_PORT=$((23820 + RUNNER_NUM * 10))
           INFINITY_PSQL_PORT=$((5432 + RUNNER_NUM * 10))
-          MYSQL_PORT=$((5455 + RUNNER_NUM * 10))
+          EXPOSE_MYSQL_PORT=$((5455 + RUNNER_NUM * 10))
           MINIO_PORT=$((9000 + RUNNER_NUM * 10))
           MINIO_CONSOLE_PORT=$((9001 + RUNNER_NUM * 10))
           TEI_PORT=$((6380 + RUNNER_NUM * 10))
@@ -183,7 +183,7 @@ jobs:
           echo -e "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}" >> docker/.env
           echo -e "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}" >> docker/.env
           echo -e "INFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}" >> docker/.env
-          echo -e "MYSQL_PORT=${MYSQL_PORT}" >> docker/.env
+          echo -e "EXPOSE_MYSQL_PORT=${EXPOSE_MYSQL_PORT}" >> docker/.env
           echo -e "MINIO_PORT=${MINIO_PORT}" >> docker/.env
           echo -e "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}" >> docker/.env
           echo -e "TEI_PORT=${TEI_PORT}" >> docker/.env
@@ -212,14 +212,14 @@ jobs:
           done
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api 2>&1 | tee es_sdk_test.log
 
-      - name: Run frontend api tests against Elasticsearch
+      - name: Run web api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short sdk/python/test/test_frontend_api/get_email.py sdk/python/test/test_frontend_api/test_dataset.py 2>&1 | tee es_api_test.log
+          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/ 2>&1 | tee es_web_api_test.log
           
       - name: Run http api tests against Elasticsearch
         run: |
@@ -257,14 +257,14 @@ jobs:
           done
           source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
 
-      - name: Run frontend api tests against Infinity
+      - name: Run web api tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short sdk/python/test/test_frontend_api/get_email.py sdk/python/test/test_frontend_api/test_dataset.py 2>&1 | tee infinity_api_test.log
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/ 2>&1 | tee infinity_web_api_test.log
 
       - name: Run http api tests against Infinity
         run: |

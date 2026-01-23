@@ -606,12 +606,12 @@ def list_docs(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/metadata/summary", methods=["GET"])  # noqa: F821
 @token_required
-def metadata_summary(dataset_id, tenant_id):
+async def metadata_summary(dataset_id, tenant_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
-
+    req = await get_request_json()
     try:
-        summary = DocumentService.get_metadata_summary(dataset_id)
+        summary = DocumentService.get_metadata_summary(dataset_id, req.get("doc_ids"))
         return get_result(data={"summary": summary})
     except Exception as e:
         return server_error_response(e)
@@ -1579,6 +1579,7 @@ async def retrieval_test(tenant_id):
             cks = await settings.retriever.retrieval_by_toc(question, ranks["chunks"], tenant_ids, chat_mdl, size)
             if cks:
                 ranks["chunks"] = cks
+        ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
         if use_kg:
             ck = await settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
