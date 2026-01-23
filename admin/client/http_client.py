@@ -87,7 +87,7 @@ class HttpClient:
         url = self.build_url(path, use_api_base=use_api_base)
         merged_headers = self._headers(auth_kind, headers)
         # timeout: Tuple[float, float] = (self.connect_timeout, self.read_timeout)
-        session = requests.Session()
+        # session = requests.Session()
         # adapter = HTTPAdapter(pool_connections=100, pool_maxsize=100)
         # session.mount("http://", adapter)
         if iterations > 1:
