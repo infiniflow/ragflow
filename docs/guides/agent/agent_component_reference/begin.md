@@ -68,7 +68,7 @@ The response mode of the workflow, i.e., how the workflow respond to external HT
 - **Accepted response**: When an HTTP request is validated, a success response is returned immediately, and the workflow runs asynchronously in the background.
   - When selected, you configure the corresponding HTTP status code and message in the **Begin** component.
   - The HTTP status code to return is in the range of `200-399`.
-- **Final response**: The system returns the final processing result only after the entire workflow execution completes.
+- **Final response**: The system returns the final processing result only after the entire workflow completes.
   - When selected, you configure the corresponding HTTP status code and message in the [message](./message.md) component.
   - The HTTP status code to return is in the range of `200-399`.
 
