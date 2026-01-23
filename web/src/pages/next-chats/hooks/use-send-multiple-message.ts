@@ -177,7 +177,11 @@ export function useSendMultipleChatMessage(
   );
 
   const handlePressEnter = useCallback(
-    async (...[{ enableThinking }]: NextMessageInputOnPressEnterParameter) => {
+    async (
+      ...[
+        { enableThinking, enableInternet },
+      ]: NextMessageInputOnPressEnterParameter
+    ) => {
       if (trim(value) === '') return;
       const id = uuid();
 
@@ -214,6 +218,7 @@ export function useSendMultipleChatMessage(
                 files,
                 conversationId: targetConversationId,
                 reasoning: enableThinking,
+                internet: enableInternet,
               },
               chatBoxId,
               currentConversationId: targetConversationId,

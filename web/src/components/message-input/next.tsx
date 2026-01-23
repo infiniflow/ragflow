@@ -16,7 +16,15 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { t } from 'i18next';
-import { CircleStop, Paperclip, Send, Upload, X } from 'lucide-react';
+import {
+  Atom,
+  CircleStop,
+  Globe,
+  Paperclip,
+  Send,
+  Upload,
+  X,
+} from 'lucide-react';
 import * as React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -32,13 +40,20 @@ interface NextMessageInputProps {
   isShared?: boolean;
   showUploadIcon?: boolean;
   isUploading?: boolean;
-  onPressEnter({ enableThinking }: { enableThinking: boolean }): void;
+  onPressEnter({
+    enableThinking,
+    enableInternet,
+  }: {
+    enableThinking: boolean;
+    enableInternet: boolean;
+  }): void;
   onInputChange: React.ChangeEventHandler<HTMLTextAreaElement>;
   createConversationBeforeUploadDocument?(message: string): Promise<any>;
   stopOutputMessage?(): void;
   onUpload?: NonNullable<FileUploadProps['onUpload']>;
   removeFile?(file: File): void;
   showReasoning?: boolean;
+  showInternet?: boolean;
 }
 
 export type NextMessageInputOnPressEnterParameter = Parameters<
@@ -58,6 +73,7 @@ export function NextMessageInput({
   onPressEnter,
   removeFile,
   showReasoning = false,
+  showInternet = false,
 }: NextMessageInputProps) {
   const [files, setFiles] = React.useState<File[]>([]);
   const [audioInputValue, setAudioInputValue] = React.useState<string | null>(
@@ -65,10 +81,22 @@ export function NextMessageInput({
   );
 
   const [enableThinking, setEnableThinking] = useState(false);
+  const [enableInternet, setEnableInternet] = useState(false);
 
   const handleThinkingToggle = useCallback(() => {
     setEnableThinking((prev) => !prev);
   }, []);
+
+  const handleInternetToggle = useCallback(() => {
+    setEnableInternet((prev) => !prev);
+  }, []);
+
+  const pressEnter = useCallback(() => {
+    onPressEnter({
+      enableThinking,
+      enableInternet: showInternet ? enableInternet : false,
+    });
+  }, [onPressEnter, enableThinking, enableInternet, showInternet]);
 
   useEffect(() => {
     if (audioInputValue !== null) {
@@ -77,11 +105,19 @@ export function NextMessageInput({
       } as React.ChangeEvent<HTMLTextAreaElement>);
 
       setTimeout(() => {
-        onPressEnter({ enableThinking });
+        pressEnter();
         setAudioInputValue(null);
       }, 0);
     }
-  }, [audioInputValue, onInputChange, onPressEnter, enableThinking]);
+  }, [
+    audioInputValue,
+    onInputChange,
+    onPressEnter,
+    enableThinking,
+    enableInternet,
+    showInternet,
+    pressEnter,
+  ]);
 
   const onFileReject = React.useCallback((file: File, message: string) => {
     toast(message, {
@@ -91,9 +127,9 @@ export function NextMessageInput({
 
   const submit = React.useCallback(() => {
     if (isUploading) return;
-    onPressEnter({ enableThinking });
+    pressEnter();
     setFiles([]);
-  }, [isUploading, onPressEnter, enableThinking]);
+  }, [isUploading, pressEnter]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -205,7 +241,23 @@ export function NextMessageInput({
                 )}
                 onClick={handleThinkingToggle}
               >
+                <Atom />
                 <span>Thinking</span>
+              </Button>
+            )}
+            {showInternet && (
+              <Button
+                type="button"
+                variant="ghost"
+                className={cn(
+                  'rounded-sm h-7 focus-visible:bg-none! hover:bg-none!',
+                  {
+                    'bg-accent-primary text-white': enableInternet,
+                  },
+                )}
+                onClick={handleInternetToggle}
+              >
+                <Globe />
               </Button>
             )}
           </div>

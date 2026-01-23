@@ -291,6 +291,7 @@ export const useSendAgentMessage = ({
 
         params.session_id = sessionId;
         params.reasoning = message.reasoning;
+        params.internet = message.internet;
       }
 
       try {
@@ -358,13 +359,21 @@ export const useSendAgentMessage = ({
   ]);
 
   const handlePressEnter = useCallback(
-    (...[{ enableThinking }]: NextMessageInputOnPressEnterParameter) => {
+    (
+      ...[
+        { enableThinking, enableInternet },
+      ]: NextMessageInputOnPressEnterParameter
+    ) => {
       if (trim(value) === '') return;
       const msgBody = buildRequestBody(value);
       if (done) {
         setValue('');
         sendMessage({
-          message: { ...msgBody, reasoning: enableThinking },
+          message: {
+            ...msgBody,
+            reasoning: enableThinking,
+            internet: enableInternet,
+          },
         });
       }
       addNewestOneQuestion({ ...msgBody, files: fileList });
