@@ -95,37 +95,35 @@ class HttpClient:
             total_duration = 0.0
             for _ in range(iterations):
                 start_time = time.perf_counter()
-                response = session.get(url, headers=merged_headers, json=json_body, data=data, stream=stream)
-                # response = requests.request(
-                #     method=method,
-                #     url=url,
-                #     headers=merged_headers,
-                #     json=json_body,
-                #     data=data,
-                #     files=files,
-                #     params=params,
-                #     timeout=timeout,
-                #     stream=stream,
-                #     verify=self.verify_ssl,
-                # )
+                # response = session.get(url, headers=merged_headers, json=json_body, data=data, stream=stream)
+                response = requests.request(
+                    method=method,
+                    url=url,
+                    headers=merged_headers,
+                    json=json_body,
+                    data=data,
+                    files=files,
+                    params=params,
+                    stream=stream,
+                    verify=self.verify_ssl,
+                )
                 end_time = time.perf_counter()
                 total_duration += end_time - start_time
                 response_list.append(response)
             return {"duration": total_duration, "response_list": response_list}
         else:
-            return session.get(url, headers=merged_headers, json=json_body, data=data, stream=stream)
-            # return requests.request(
-            #     method=method,
-            #     url=url,
-            #     headers=merged_headers,
-            #     json=json_body,
-            #     data=data,
-            #     files=files,
-            #     params=params,
-            #     timeout=timeout,
-            #     stream=stream,
-            #     verify=self.verify_ssl,
-            # )
+            # return session.get(url, headers=merged_headers, json=json_body, data=data, stream=stream)
+            return requests.request(
+                method=method,
+                url=url,
+                headers=merged_headers,
+                json=json_body,
+                data=data,
+                files=files,
+                params=params,
+                stream=stream,
+                verify=self.verify_ssl,
+            )
 
     def request_json(
             self,
