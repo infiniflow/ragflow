@@ -148,6 +148,7 @@ async def retrieval(tenant_id):
             doc_ids=doc_ids,
             rank_feature=label_question(question, [kb])
         )
+        ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], [tenant_id])
 
         if use_kg:
             ck = await settings.kg_retriever.retrieval(question,
