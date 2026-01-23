@@ -35,6 +35,9 @@ import { useHandleMenuClick } from '../../sidebar/hooks';
 import {
   getMetadataValueTypeLabel,
   MetadataType,
+  metadataValueTypeEnum,
+} from './constant';
+import {
   useManageMetaDataModal,
   useOperateData,
 } from './hooks/use-manage-modal';
@@ -72,7 +75,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     field: '',
     description: '',
     values: [],
-    valueType: 'string',
+    valueType: metadataValueTypeEnum.string,
   });
 
   const [activeTab, setActiveTab] = useState<MetadataSettingsTab>('generation');
@@ -98,11 +101,17 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
   );
   const { handleMenuClick } = useHandleMenuClick();
   const [shouldSave, setShouldSave] = useState(false);
+  const [isAddValueMode, setIsAddValueMode] = useState(false);
   const {
     visible: manageValuesVisible,
     showModal: showManageValuesModal,
     hideModal: hideManageValuesModal,
   } = useSetModalState();
+
+  const hideManageValuesModalFunc = () => {
+    setIsAddValueMode(false);
+    hideManageValuesModal();
+  };
 
   const isSettingsMode =
     metadataType === MetadataType.Setting ||
@@ -166,10 +175,15 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     setValueData({
       field: '',
       description: '',
-      values: [],
-      valueType: 'string',
+      values:
+        metadataType === MetadataType.Setting ||
+        metadataType === MetadataType.SingleFileSetting
+          ? []
+          : [''],
+      valueType: metadataValueTypeEnum.string,
     });
     setCurrentValueIndex(tableData.length || 0);
+    setIsAddValueMode(true);
     showManageValuesModal();
   };
   const handleEditValueRow = useCallback(
@@ -246,6 +260,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       return Array.from(fieldMap.values());
     });
     setShouldSave(true);
+    setIsAddValueMode(false);
   };
 
   useEffect(() => {
@@ -254,7 +269,6 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
         handleSave({ callback: () => {}, builtInMetadata: builtInSelection });
         setShouldSave(false);
       }, 0);
-      console.log('shouldSave');
       return () => clearTimeout(timer);
     }
   }, [tableData, shouldSave, handleSave, builtInSelection]);
@@ -276,6 +290,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       icon: <Trash2 />,
       onClick: async () => {
         await handleDelete();
+        setRowSelection({});
         // if (code === 0) {
         //   setRowSelection({});
         // }
@@ -302,28 +317,30 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <div>{t('knowledgeDetails.metadata.metadata')}</div>
-              {metadataType === MetadataType.Manage && (
-                <Button
-                  variant={'ghost'}
-                  className="border border-border-button"
-                  type="button"
-                  onClick={handleMenuClick(Routes.DataSetSetting, {
-                    openMetadata: true,
-                  })}
-                >
-                  {t('knowledgeDetails.metadata.toMetadataSetting')}
-                </Button>
-              )}
-              {isCanAdd && activeTab !== 'built-in' && (
-                <Button
-                  variant={'ghost'}
-                  className="border border-border-button"
-                  type="button"
-                  onClick={handAddValueRow}
-                >
-                  <Plus />
-                </Button>
-              )}
+              <div>
+                {metadataType === MetadataType.Manage && (
+                  <Button
+                    variant={'ghost'}
+                    className="border border-border-button"
+                    type="button"
+                    onClick={handleMenuClick(Routes.DataSetSetting, {
+                      openMetadata: true,
+                    })}
+                  >
+                    {t('knowledgeDetails.metadata.toMetadataSetting')}
+                  </Button>
+                )}
+                {isCanAdd && activeTab !== 'built-in' && (
+                  <Button
+                    variant={'ghost'}
+                    className="border border-border-button"
+                    type="button"
+                    onClick={handAddValueRow}
+                  >
+                    <Plus />
+                  </Button>
+                )}
+              </div>
             </div>
 
             {rowSelectionIsEmpty || (
@@ -538,17 +555,18 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
           type={metadataType}
           existsKeys={existsKeys}
           visible={manageValuesVisible}
-          hideModal={hideManageValuesModal}
+          hideModal={hideManageValuesModalFunc}
           data={valueData}
           onSave={handleSaveValues}
           addUpdateValue={addUpdateValue}
           addDeleteValue={addDeleteValue}
-          isEditField={isEditField || isCanAdd}
-          isAddValue={isAddValue || isCanAdd}
+          isEditField={isEditField || isAddValueMode}
+          isAddValue={isAddValue || isAddValueMode}
           isShowDescription={isShowDescription}
           isShowValueSwitch={isShowValueSwitch}
           isShowType={isSettingsMode}
           isVerticalShowValue={isVerticalShowValue}
+          isAddValueMode={isAddValueMode}
           //   handleDeleteSingleValue={handleDeleteSingleValue}
           //   handleDeleteSingleRow={handleDeleteSingleRow}
         />

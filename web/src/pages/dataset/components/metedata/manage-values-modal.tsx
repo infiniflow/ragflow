@@ -8,12 +8,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DateInput } from '@/components/ui/input-date';
 import { Modal } from '@/components/ui/modal/modal';
-import { formatPureDate } from '@/utils/date';
+import { formatDate } from '@/utils/date';
 import dayjs from 'dayjs';
 import { Plus, Trash2 } from 'lucide-react';
 import { memo, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { metadataValueTypeOptions } from './hooks/use-manage-modal';
+import {
+  MetadataType,
+  metadataValueTypeEnum,
+  metadataValueTypeOptions,
+} from './constant';
 import { useManageValues } from './hooks/use-manage-values-modal';
 import { IManageValuesProps, MetadataValueType } from './interface';
 
@@ -26,6 +30,7 @@ const ValueInputItem = memo(
     onValueChange,
     onDelete,
     onBlur,
+    isCanDelete = true,
   }: {
     item: string;
     index: number;
@@ -33,6 +38,7 @@ const ValueInputItem = memo(
     onValueChange: (index: number, value: string, isUpdate?: boolean) => void;
     onDelete: (index: number) => void;
     onBlur: (index: number) => void;
+    isCanDelete?: boolean;
   }) => {
     const value = useMemo(() => {
       if (type === 'time') {
@@ -40,11 +46,10 @@ const ValueInputItem = memo(
           try {
             // Using dayjs to parse date strings in various formats including DD/MM/YYYY
             const parsedDate = dayjs(item, [
+              'YYYY-MM-DD HH:mm:ss',
+              'DD/MM/YYYY HH:mm:ss',
               'YYYY-MM-DD',
               'DD/MM/YYYY',
-              'MM/DD/YYYY',
-              'DD-MM-YYYY',
-              'MM-DD-YYYY',
             ]);
 
             if (!parsedDate.isValid()) {
@@ -61,6 +66,7 @@ const ValueInputItem = memo(
       }
       return item;
     }, [item, type]);
+
     return (
       <div
         key={`value-item-${index}`}
@@ -71,8 +77,13 @@ const ValueInputItem = memo(
             <DateInput
               value={value as Date}
               onChange={(value) => {
-                onValueChange(index, formatPureDate(value), true);
+                onValueChange(
+                  index,
+                  formatDate(value, 'YYYY-MM-DDTHH:mm:ss'),
+                  true,
+                );
               }}
+              showTimeSelect={true}
             />
           )}
           {type !== 'time' && (
@@ -84,14 +95,16 @@ const ValueInputItem = memo(
             />
           )}
         </div>
-        <Button
-          type="button"
-          variant="delete"
-          className="border border-border-button px-1 h-6 w-6 rounded-sm"
-          onClick={() => onDelete(index)}
-        >
-          <Trash2 size={14} className="w-4 h-4" />
-        </Button>
+        {isCanDelete && (
+          <Button
+            type="button"
+            variant="delete"
+            className="border border-border-button px-1 h-6 w-6 rounded-sm"
+            onClick={() => onDelete(index)}
+          >
+            <Trash2 size={14} className="w-4 h-4" />
+          </Button>
+        )}
       </div>
     );
   },
@@ -109,6 +122,7 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
     isShowDescription,
     isVerticalShowValue,
     isShowType,
+    type: metadataType,
   } = props;
   const {
     metaData,
@@ -158,11 +172,33 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
             label: 'Type',
             type: FormFieldType.Select,
             options: metadataValueTypeOptions,
-            defaultValue: metaData.valueType || 'string',
+            defaultValue: metaData.valueType || metadataValueTypeEnum.string,
             onChange: (value: string) => {
               setValueType(value as MetadataValueType);
               handleChange('valueType', value);
-              handleClearValues();
+              if (
+                metadataType === MetadataType.Manage ||
+                metadataType === MetadataType.UpdateSingle
+              ) {
+                handleClearValues();
+              }
+
+              if (
+                metadataType === MetadataType.Setting ||
+                metadataType === MetadataType.SingleFileSetting
+              ) {
+                if (
+                  value !== metadataValueTypeEnum.list &&
+                  value !== metadataValueTypeEnum.string
+                ) {
+                  handleChange('restrictDefinedValues', false);
+                  handleClearValues(true);
+                  formRef.current?.form.setValue(
+                    'restrictDefinedValues',
+                    false,
+                  );
+                }
+              }
             },
           },
         ]
@@ -188,6 +224,11 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
             tooltip: t('knowledgeDetails.metadata.restrictDefinedValuesTip'),
             type: FormFieldType.Switch,
             defaultValue: metaData.restrictDefinedValues || false,
+            shouldRender: (formData: any) => {
+              return (
+                formData.valueType === 'list' || formData.valueType === 'string'
+              );
+            },
             onChange: (value: boolean) =>
               handleChange('restrictDefinedValues', value),
           },
@@ -232,17 +273,19 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
           <div className="flex flex-col gap-2">
             <div className="flex justify-between items-center">
               <div>{t('knowledgeDetails.metadata.values')}</div>
-              {isAddValue && isVerticalShowValue && (
-                <div>
-                  <Button
-                    variant={'ghost'}
-                    className="border border-border-button"
-                    onClick={handleAddValue}
-                  >
-                    <Plus />
-                  </Button>
-                </div>
-              )}
+              {isAddValue &&
+                isVerticalShowValue &&
+                metaData.valueType === metadataValueTypeEnum['list'] && (
+                  <div>
+                    <Button
+                      variant={'ghost'}
+                      className="border border-border-button"
+                      onClick={handleAddValue}
+                    >
+                      <Plus />
+                    </Button>
+                  </div>
+                )}
             </div>
             {isVerticalShowValue && (
               <div className="flex flex-col gap-2 w-full">
@@ -259,7 +302,8 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
                           handleDelete(idx);
                         });
                       }}
-                      onBlur={handleValueBlur}
+                      isCanDelete={tempValues.length > 1}
+                      onBlur={() => handleValueBlur()}
                     />
                   );
                 })}

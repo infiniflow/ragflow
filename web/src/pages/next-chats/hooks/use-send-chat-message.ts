@@ -135,7 +135,11 @@ export const useSendMessage = (controller: AbortController) => {
     useCreateConversationBeforeSendMessage();
 
   const handlePressEnter = useCallback(
-    async (...[{ enableThinking }]: NextMessageInputOnPressEnterParameter) => {
+    async (
+      ...[
+        { enableThinking, enableInternet },
+      ]: NextMessageInputOnPressEnterParameter
+    ) => {
       if (trim(value) === '') return;
 
       const data = await createConversationBeforeSendMessage(value);
@@ -168,6 +172,7 @@ export const useSendMessage = (controller: AbortController) => {
             files: files,
             conversationId: targetConversationId,
             reasoning: enableThinking,
+            internet: enableInternet,
           },
         });
       }

@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { MetadataType } from './hooks/use-manage-modal';
+import { MetadataType } from './constant';
 export type IMetaDataReturnType = Record<
   string,
   | { type: string; values: Array<Array<string | number>> }
@@ -36,7 +36,7 @@ export type IMetaDataReturnJSONSettings =
 
 export type MetadataValueType =
   | 'string'
-  // | 'list<string>'
+  | 'list'
   // | 'bool'
   // | 'enum'
   | 'time'
@@ -84,14 +84,16 @@ export interface IManageValuesProps {
   isShowValueSwitch?: boolean;
   isShowType?: boolean;
   isVerticalShowValue?: boolean;
+  isAddValueMode?: boolean;
   data: IMetaDataTableData;
   type: MetadataType;
   hideModal: () => void;
   onSave: (data: IMetaDataTableData) => void;
   addUpdateValue: (
     key: string,
-    originalValue: string,
-    newValue: string,
+    originalValue: string | undefined,
+    newValue: string | string[],
+    type?: MetadataValueType,
   ) => void;
   addDeleteValue: (key: string, value: string) => void;
 }
@@ -104,7 +106,8 @@ interface DeleteOperation {
 interface UpdateOperation {
   key: string;
   match: string;
-  value: string;
+  value: string | string[];
+  valueType?: MetadataValueType;
 }
 
 export interface MetadataOperations {
