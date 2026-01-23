@@ -18,12 +18,13 @@ import copy
 import re
 import time
 
-import tiktoken
 import os
 import tempfile
 import logging
 
 from quart import Response, jsonify, request
+
+from common.token_utils import num_tokens_from_string
 
 from agent.canvas import Canvas
 from api.db.db_models import APIToken
@@ -265,7 +266,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 
     prompt = messages[-1]["content"]
     # Treat context tokens as reasoning tokens
-    context_token_used = sum(len(message["content"]) for message in messages)
+    context_token_used = sum(num_tokens_from_string(message["content"]) for message in messages)
 
     dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
     if not dia:
@@ -358,7 +359,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
                     delta = ans.get("answer") or ""
                     if not delta:
                         continue
-                    token_used += len(delta)
+                    token_used += num_tokens_from_string(delta)
                     if in_think:
                         full_reasoning += delta
                         response["choices"][0]["delta"]["reasoning_content"] = delta
@@ -376,7 +377,8 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             response["choices"][0]["delta"]["content"] = None
             response["choices"][0]["delta"]["reasoning_content"] = None
             response["choices"][0]["finish_reason"] = "stop"
-            response["usage"] = {"prompt_tokens": len(prompt), "completion_tokens": token_used, "total_tokens": len(prompt) + token_used}
+            prompt_tokens = num_tokens_from_string(prompt)
+            response["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": token_used, "total_tokens": prompt_tokens + token_used}
             if need_reference:
                 reference_payload = final_reference if final_reference is not None else last_ans.get("reference", [])
                 response["choices"][0]["delta"]["reference"] = chunks_format(reference_payload)
@@ -407,12 +409,12 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             "created": int(time.time()),
             "model": req.get("model", ""),
             "usage": {
-                "prompt_tokens": len(prompt),
-                "completion_tokens": len(content),
-                "total_tokens": len(prompt) + len(content),
+                "prompt_tokens": num_tokens_from_string(prompt),
+                "completion_tokens": num_tokens_from_string(content),
+                "total_tokens": num_tokens_from_string(prompt) + num_tokens_from_string(content),
                 "completion_tokens_details": {
                     "reasoning_tokens": context_token_used,
-                    "accepted_prediction_tokens": len(content),
+                    "accepted_prediction_tokens": num_tokens_from_string(content),
                     "rejected_prediction_tokens": 0,  # 0 for simplicity
                 },
             },
@@ -439,7 +441,6 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 @token_required
 async def agents_completion_openai_compatibility(tenant_id, agent_id):
     req = await get_request_json()
-    tiktoken_encode = tiktoken.get_encoding("cl100k_base")
     messages = req.get("messages", [])
     if not messages:
         return get_error_data_result("You must provide at least one message.")
@@ -447,7 +448,7 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
         return get_error_data_result(f"You don't own the agent {agent_id}")
 
     filtered_messages = [m for m in messages if m["role"] in ["user", "assistant"]]
-    prompt_tokens = sum(len(tiktoken_encode.encode(m["content"])) for m in filtered_messages)
+    prompt_tokens = sum(num_tokens_from_string(m["content"]) for m in filtered_messages)
     if not filtered_messages:
         return jsonify(
             get_data_openai(
@@ -455,7 +456,7 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
                 content="No valid messages found (user or assistant).",
                 finish_reason="stop",
                 model=req.get("model", ""),
-                completion_tokens=len(tiktoken_encode.encode("No valid messages found (user or assistant).")),
+                completion_tokens=num_tokens_from_string("No valid messages found (user or assistant)."),
                 prompt_tokens=prompt_tokens,
             )
         )
