@@ -19,46 +19,45 @@ import re
 from deepdoc.parser.utils import get_text
 from common.token_utils import num_tokens_from_string
 
+_BACKTICK_PAT = re.compile(r"`([^`]+)`", re.I)
 
 class RAGFlowTxtParser:
-    def __call__(self, fnm, binary=None, chunk_token_num=128, delimiter="\n!?;。；！？"):
+    def __call__(self, fnm:str, binary:bytes|None=None, chunk_token_num:int=128, delimiter:str="\n!?;。；！？"):
         txt = get_text(fnm, binary)
         return self.parser_txt(txt, chunk_token_num, delimiter)
 
     @classmethod
-    def parser_txt(cls, txt, chunk_token_num=128, delimiter="\n!?;。；！？"):
+    def parser_txt(cls, txt:str, chunk_token_num:int=128, delimiter:str="\n!?;。；！？"):
         if not isinstance(txt, str):
             raise TypeError("txt type should be str!")
-        cks = [""]
-        tk_nums = [0]
+        cks: list[str] = [""]
+        tk_nums: list[int] = [0]
         delimiter = delimiter.encode('utf-8').decode('unicode_escape').encode('latin1').decode('utf-8')
 
-        def add_chunk(t):
-            nonlocal cks, tk_nums, delimiter
-            tnum = num_tokens_from_string(t)
+        dels_list: list[str] = []
+        pos = 0
+        for m in _BACKTICK_PAT.finditer(delimiter):
+            start, end = m.span()
+            dels_list.append(m.group(1))
+            dels_list.extend(delimiter[pos: start])
+            pos = end
+        if pos < len(delimiter):
+            dels_list.extend(delimiter[pos:])
+
+        dels = "|".join(re.escape(d) for d in dels_list if d)
+        only_del_pat = re.compile(f"^({dels})$")
+        secs = re.split(f"({dels})", txt)
+
+        for sec in secs:
+            if only_del_pat.match(sec):
+                continue
+
+            tnum = num_tokens_from_string(sec)
             if tk_nums[-1] > chunk_token_num:
-                cks.append(t)
+                cks.append(sec)
                 tk_nums.append(tnum)
             else:
-                cks[-1] += t
+                cks[-1] += sec
                 tk_nums[-1] += tnum
-
-        dels = []
-        s = 0
-        for m in re.finditer(r"`([^`]+)`", delimiter, re.I):
-            f, t = m.span()
-            dels.append(m.group(1))
-            dels.extend(list(delimiter[s: f]))
-            s = t
-        if s < len(delimiter):
-            dels.extend(list(delimiter[s:]))
-        dels = [re.escape(d) for d in dels if d]
-        dels = [d for d in dels if d]
-        dels = "|".join(dels)
-        secs = re.split(r"(%s)" % dels, txt)
-        for sec in secs:
-            if re.match(f"^{dels}$", sec):
-                continue
-            add_chunk(sec)
 
         return [[c, ""] for c in cks]
