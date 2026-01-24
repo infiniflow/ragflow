@@ -1,6 +1,8 @@
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/input-date';
+import { formatDate } from '@/utils/date';
 import { ColumnDef, Row, Table } from '@tanstack/react-table';
 import {
   ListChevronsDownUp,
@@ -14,6 +16,7 @@ import {
   getMetadataValueTypeLabel,
   MetadataDeleteMap,
   MetadataType,
+  metadataValueTypeEnum,
 } from './constant';
 import { IMetaDataTableData } from './interface';
 
@@ -64,23 +67,27 @@ export const useMetadataColumns = ({
     setEditingValue({ field, value, newValue: value });
   };
 
-  const saveEditedValue = useCallback(() => {
-    if (editingValue) {
-      setTableData((prev) => {
-        return prev.map((row) => {
-          if (row.field === editingValue.field) {
-            const updatedValues = row.values.map((v) =>
-              v === editingValue.value ? editingValue.newValue : v,
-            );
-            return { ...row, values: updatedValues };
-          }
-          return row;
+  const saveEditedValue = useCallback(
+    (newValue?: { field: string; value: string; newValue: string }) => {
+      const realValue = newValue || editingValue;
+      if (realValue) {
+        setTableData((prev) => {
+          return prev.map((row) => {
+            if (row.field === realValue.field) {
+              const updatedValues = row.values.map((v) =>
+                v === realValue.value ? realValue.newValue : v,
+              );
+              return { ...row, values: updatedValues };
+            }
+            return row;
+          });
         });
-      });
-      setEditingValue(null);
-      setShouldSave(true);
-    }
-  }, [editingValue, setTableData]);
+        setEditingValue(null);
+        setShouldSave(true);
+      }
+    },
+    [editingValue, setTableData, setShouldSave],
+  );
 
   const cancelEditValue = () => {
     setEditingValue(null);
@@ -192,14 +199,6 @@ export const useMetadataColumns = ({
         ),
         cell: ({ row }) => {
           const values = row.getValue('values') as Array<string>;
-          //   const supportsEnum = isMetadataValueTypeWithEnum(
-          //     row.original.valueType,
-          //   );
-
-          // if (!supportsEnum || !Array.isArray(values) || values.length === 0) {
-          //   return <div></div>;
-          // }
-
           const displayedValues = expanded ? values : values.slice(0, 2);
           const hasMore = Array.isArray(values) && values.length > 2;
 
@@ -214,26 +213,54 @@ export const useMetadataColumns = ({
 
                   return isEditing ? (
                     <div key={value}>
-                      <Input
-                        type="text"
-                        value={editingValue.newValue}
-                        onChange={(e) =>
-                          setEditingValue({
-                            ...editingValue,
-                            newValue: e.target.value,
-                          })
-                        }
-                        onBlur={saveEditedValue}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            saveEditedValue();
-                          } else if (e.key === 'Escape') {
-                            cancelEditValue();
+                      {row.original.valueType ===
+                        metadataValueTypeEnum.time && (
+                        <DateInput
+                          value={new Date(editingValue.newValue)}
+                          onChange={(value) => {
+                            console.log('value', value);
+                            const newValue = {
+                              ...editingValue,
+                              newValue: formatDate(
+                                value,
+                                'YYYY-MM-DDTHH:mm:ss',
+                              ),
+                            };
+                            setEditingValue(newValue);
+                            saveEditedValue(newValue);
+                            // onValueChange(index, formatDate(value), true);
+                          }}
+                          // openChange={(open) => {
+                          //   console.log('open', open);
+                          //   if (!open) {
+                          //   }
+                          // }}
+                          showTimeSelect={true}
+                        />
+                      )}
+                      {row.original.valueType !==
+                        metadataValueTypeEnum.time && (
+                        <Input
+                          type="text"
+                          value={editingValue.newValue}
+                          onChange={(e) =>
+                            setEditingValue({
+                              ...editingValue,
+                              newValue: e.target.value,
+                            })
                           }
-                        }}
-                        autoFocus
-                        // className="text-sm min-w-20 max-w-32 outline-none bg-transparent px-1 py-0.5"
-                      />
+                          onBlur={saveEditedValue}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              saveEditedValue();
+                            } else if (e.key === 'Escape') {
+                              cancelEditValue();
+                            }
+                          }}
+                          autoFocus
+                          // className="text-sm min-w-20 max-w-32 outline-none bg-transparent px-1 py-0.5"
+                        />
+                      )}
                     </div>
                   ) : (
                     <Button
@@ -246,7 +273,11 @@ export const useMetadataColumns = ({
                       aria-label="Edit"
                     >
                       <div className="flex gap-1 items-center">
-                        <div className="text-sm truncate max-w-24">{value}</div>
+                        <div className="text-sm truncate max-w-24">
+                          {row.original.valueType === metadataValueTypeEnum.time
+                            ? formatDate(value, 'DD/MM/YYYY HH:mm:ss')
+                            : value}
+                        </div>
                         {isDeleteSingleValue && (
                           <Button
                             variant={'delete'}

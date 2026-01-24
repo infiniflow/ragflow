@@ -21,7 +21,9 @@ start: command
 
 command: sql_command | meta_command
 
-sql_command: list_services
+sql_command: login_user
+           | ping_server
+           | list_services
            | show_service
            | startup_service
            | shutdown_service
@@ -98,6 +100,7 @@ meta_arg: /[^\\s"']+/ | quoted_string
 
 // command definition
 
+LOGIN: "LOGIN"i
 REGISTER: "REGISTER"i
 LIST: "LIST"i
 SERVICES: "SERVICES"i
@@ -166,7 +169,9 @@ TTS: "TTS"i
 ASYNC: "ASYNC"i
 SYNC: "SYNC"i
 BENCHMARK: "BENCHMARK"i
+PING: "PING"i
 
+login_user: LOGIN USER quoted_string ";"
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
 startup_service: STARTUP SERVICE NUMBER ";"
@@ -212,7 +217,8 @@ list_environments: LIST ENVS ";"
 
 benchmark: BENCHMARK NUMBER NUMBER user_statement
 
-user_statement: show_current_user
+user_statement: ping_server
+                | show_current_user
                 | create_model_provider
                 | drop_model_provider
                 | set_default_llm
@@ -241,6 +247,7 @@ user_statement: show_current_user
                 | import_docs_into_dataset
                 | search_on_datasets
 
+ping_server: PING ";"
 show_current_user: SHOW CURRENT USER ";"
 create_model_provider: CREATE MODEL PROVIDER quoted_string quoted_string ";"
 drop_model_provider: DROP MODEL PROVIDER quoted_string ";"
@@ -297,6 +304,13 @@ class RAGFlowCLITransformer(Transformer):
 
     def command(self, items):
         return items[0]
+
+    def login_user(self, items):
+        email = items[2].children[0].strip("'\"")
+        return {"type": "login_user", "email": email}
+
+    def ping_server(self, items):
+        return {"type": "ping_server"}
 
     def list_services(self, items):
         result = {"type": "list_services"}

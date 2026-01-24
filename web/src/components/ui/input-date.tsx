@@ -10,7 +10,10 @@ import { Locale } from 'date-fns';
 import dayjs from 'dayjs';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import * as React from 'react';
-
+import { useTranslation } from 'react-i18next';
+import { Button } from './button';
+import { TimePicker } from './time-picker';
+// import TimePicker from 'react-time-picker';
 interface DateInputProps extends Omit<
   React.InputHTMLAttributes<HTMLInputElement>,
   'value' | 'onChange'
@@ -21,9 +24,8 @@ interface DateInputProps extends Omit<
   dateFormat?: string;
   timeFormat?: string;
   showTimeSelectOnly?: boolean;
-  showTimeInput?: boolean;
-  timeInputLabel?: string;
   locale?: Locale; // Support for internationalization
+  openChange?: (open: boolean) => void;
 }
 
 const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
@@ -36,17 +38,45 @@ const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
       timeFormat = 'HH:mm:ss',
       showTimeSelect = false,
       showTimeSelectOnly = false,
-      showTimeInput = false,
-      timeInputLabel = '',
+      openChange,
       ...props
     },
     ref,
   ) => {
+    const { t } = useTranslation();
+    const [selectedDate, setSelectedDate] = React.useState<Date | undefined>(
+      value,
+    );
     const [open, setOpen] = React.useState(false);
 
     const handleDateSelect = (date: Date | undefined) => {
-      onChange?.(date);
-      setOpen(false);
+      if (selectedDate) {
+        const valueDate = dayjs(selectedDate);
+        date?.setHours(valueDate.hour());
+        date?.setMinutes(valueDate.minute());
+        date?.setSeconds(valueDate.second());
+      }
+      setSelectedDate(date);
+      // onChange?.(date);
+    };
+
+    const handleTimeSelect = (date: Date | undefined) => {
+      const valueDate = dayjs(selectedDate);
+      if (selectedDate) {
+        date?.setFullYear(valueDate.year());
+        date?.setMonth(valueDate.month());
+        date?.setDate(valueDate.date());
+      }
+      if (date) {
+        // onChange?.(date);
+        setSelectedDate(date);
+      } else {
+        valueDate?.hour(0);
+        valueDate?.minute(0);
+        valueDate?.second(0);
+        // onChange?.(valueDate.toDate());
+        setSelectedDate(valueDate.toDate());
+      }
     };
 
     // Determine display format based on the type of date picker
@@ -59,14 +89,23 @@ const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
 
     // Format the date according to the specified format
     const formattedValue = React.useMemo(() => {
-      return value && !isNaN(value.getTime())
-        ? dayjs(value).format(displayFormat)
+      return selectedDate && !isNaN(selectedDate.getTime())
+        ? dayjs(selectedDate).format(displayFormat)
         : '';
-    }, [value, displayFormat]);
+    }, [selectedDate, displayFormat]);
+
+    const handleOpenChange = (open: boolean) => {
+      setOpen(open);
+      openChange?.(open);
+    };
 
     return (
       <div className="grid gap-2">
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover
+          open={open}
+          onOpenChange={handleOpenChange}
+          disableOutsideClick
+        >
           <PopoverTrigger asChild>
             <div className="relative">
               <Input
@@ -88,14 +127,42 @@ const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
           <PopoverContent className="w-auto p-2" align="start">
             <Calendar
               mode="single"
-              selected={value}
+              selected={selectedDate}
               onSelect={handleDateSelect}
-              initialFocus
-              {...(showTimeSelect && {
-                showTimeInput,
-                timeInputLabel,
-              })}
             />
+            {showTimeSelect && (
+              <TimePicker
+                value={selectedDate}
+                onChange={(value: Date | undefined) => {
+                  handleTimeSelect(value);
+                }}
+                showNow
+              />
+              // <TimePicker onChange={onChange} value={value} />
+            )}
+            <div className="w-full flex justify-end mt-2">
+              <Button
+                variant="ghost"
+                type="button"
+                className="text-sm mr-2"
+                onClick={() => {
+                  onChange?.(value);
+                  handleOpenChange(false);
+                }}
+              >
+                {t('common.cancel')}
+              </Button>
+              <Button
+                type="button"
+                className="text-sm text-text-primary-inverse "
+                onClick={() => {
+                  onChange?.(selectedDate);
+                  handleOpenChange(false);
+                }}
+              >
+                {t('common.confirm')}
+              </Button>
+            </div>
           </PopoverContent>
         </Popover>
       </div>

@@ -13,6 +13,7 @@ export interface PromptConfig {
   use_kg: boolean;
   reasoning?: boolean;
   cross_languages?: Array<string>;
+  tavily_api_key?: string;
 }
 
 export interface Parameter {
@@ -100,6 +101,7 @@ export interface Message {
   chatBoxId?: string;
   attachment?: IAttachment;
   reasoning?: boolean;
+  internet?: boolean;
 }
 
 export interface IReferenceChunk {
@@ -183,6 +185,7 @@ export interface IExternalChatInfo {
   avatar?: string;
   title: string;
   prologue?: string;
+  has_tavily_key?: boolean;
 }
 
 export interface IMessage extends Message {
