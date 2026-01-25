@@ -1,9 +1,14 @@
 package service
 
 import (
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -111,8 +116,14 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, error) {
 		return nil, errors.New("invalid username or password")
 	}
 
+	// Decrypt password using RSA
+	decryptedPassword, err := s.decryptPassword(req.Password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt password: %w", err)
+	}
+
 	// Verify password
-	if user.Password == nil || !s.VerifyPassword(*user.Password, req.Password) {
+	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
 		return nil, errors.New("invalid username or password")
 	}
 
@@ -143,8 +154,14 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, error) 
 		return nil, errors.New("invalid email or password")
 	}
 
+	// Decrypt password using RSA
+	decryptedPassword, err := s.decryptPassword(req.Password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt password: %w", err)
+	}
+
 	// Verify password
-	if user.Password == nil || !s.VerifyPassword(*user.Password, req.Password) {
+	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
 		return nil, errors.New("invalid email or password")
 	}
 
@@ -272,6 +289,75 @@ func (s *UserService) constantTimeCompare(a, b []byte) bool {
 	}
 
 	return result == 0
+}
+
+// loadPrivateKey loads and decrypts the RSA private key from conf/private.pem
+func (s *UserService) loadPrivateKey() (*rsa.PrivateKey, error) {
+	// Read private key file
+	keyData, err := os.ReadFile("conf/private.pem")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read private key file: %w", err)
+	}
+
+	// Parse PEM block
+	block, _ := pem.Decode(keyData)
+	if block == nil {
+		return nil, errors.New("failed to decode PEM block")
+	}
+
+	// Decrypt the PEM block if it's encrypted
+	var privateKey interface{}
+	if block.Headers["Proc-Type"] == "4,ENCRYPTED" {
+		// Decrypt using password "Welcome"
+		decryptedData, err := x509.DecryptPEMBlock(block, []byte("Welcome"))
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt private key: %w", err)
+		}
+
+		// Parse the decrypted key
+		privateKey, err = x509.ParsePKCS1PrivateKey(decryptedData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse private key: %w", err)
+		}
+	} else {
+		// Not encrypted, parse directly
+		privateKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse private key: %w", err)
+		}
+	}
+
+	rsaPrivateKey, ok := privateKey.(*rsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("not an RSA private key")
+	}
+
+	return rsaPrivateKey, nil
+}
+
+// decryptPassword decrypts the password using RSA private key
+func (s *UserService) decryptPassword(encryptedPassword string) (string, error) {
+	// Try to decode base64
+	ciphertext, err := base64.StdEncoding.DecodeString(encryptedPassword)
+	if err != nil {
+		// If base64 decoding fails, assume it's already a plain password
+		return encryptedPassword, nil
+	}
+
+	// Load private key
+	privateKey, err := s.loadPrivateKey()
+	if err != nil {
+		return "", err
+	}
+
+	// Decrypt using PKCS#1 v1.5
+	plaintext, err := rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)
+	if err != nil {
+		// If decryption fails, assume it's already a plain password
+		return encryptedPassword, nil
+	}
+
+	return string(plaintext), nil
 }
 
 // GenerateToken generates a new access token
