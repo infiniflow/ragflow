@@ -673,7 +673,7 @@ class RAGFlowClient:
 
         iterations = command.get("iterations", 1)
         if iterations > 1:
-            response = self.http_client.request("POST", "/dialog/next", use_api_base=False, auth_kind="web",
+            response = self.http_client.request("POST", "/kb/list", use_api_base=False, auth_kind="web",
                                                 iterations=iterations)
             return response
         else:
