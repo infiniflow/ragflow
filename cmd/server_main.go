@@ -42,10 +42,13 @@ func main() {
 	documentService := service.NewDocumentService()
 	kbService := service.NewKnowledgebaseService()
 
+	// Initialize DAOs
+	userDAO := dao.NewUserDAO()
+
 	// Initialize handler layer
 	userHandler := handler.NewUserHandler(userService)
 	documentHandler := handler.NewDocumentHandler(documentService)
-	kbHandler := handler.NewKnowledgebaseHandler(kbService)
+	kbHandler := handler.NewKnowledgebaseHandler(kbService, userDAO)
 
 	// Initialize router
 	r := router.NewRouter(userHandler, documentHandler, kbHandler)
