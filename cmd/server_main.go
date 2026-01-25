@@ -40,13 +40,15 @@ func main() {
 	// Initialize service layer
 	userService := service.NewUserService()
 	documentService := service.NewDocumentService()
+	kbService := service.NewKnowledgebaseService()
 
 	// Initialize handler layer
 	userHandler := handler.NewUserHandler(userService)
 	documentHandler := handler.NewDocumentHandler(documentService)
+	kbHandler := handler.NewKnowledgebaseHandler(kbService)
 
 	// Initialize router
-	r := router.NewRouter(userHandler, documentHandler)
+	r := router.NewRouter(userHandler, documentHandler, kbHandler)
 
 	// Create Gin engine
 	engine := gin.New()

@@ -8,20 +8,23 @@ import (
 
 // Router router
 type Router struct {
-	userHandler     *handler.UserHandler
-	documentHandler *handler.DocumentHandler
-	systemHandler   *handler.SystemHandler
+	userHandler         *handler.UserHandler
+	documentHandler     *handler.DocumentHandler
+	systemHandler       *handler.SystemHandler
+	knowledgebaseHandler *handler.KnowledgebaseHandler
 }
 
 // NewRouter create router
 func NewRouter(
 	userHandler *handler.UserHandler,
 	documentHandler *handler.DocumentHandler,
+	knowledgebaseHandler *handler.KnowledgebaseHandler,
 ) *Router {
 	return &Router{
-		userHandler:     userHandler,
-		documentHandler: documentHandler,
-		systemHandler:   handler.NewSystemHandler(),
+		userHandler:         userHandler,
+		documentHandler:     documentHandler,
+		systemHandler:       handler.NewSystemHandler(),
+		knowledgebaseHandler: knowledgebaseHandler,
 	}
 }
 
@@ -74,6 +77,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 		authors := v1.Group("/authors")
 		{
 			authors.GET("/:author_id/documents", r.documentHandler.GetDocumentsByAuthorID)
+		}
+
+		// Knowledge base routes
+		kb := engine.Group("/v1/kb")
+		{
+			kb.POST("/list", r.knowledgebaseHandler.ListKbs)
 		}
 	}
 }
