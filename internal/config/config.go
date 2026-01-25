@@ -1,0 +1,139 @@
+package config
+
+import (
+	"fmt"
+	"log"
+	"strings"
+
+	"github.com/spf13/viper"
+)
+
+// Config application configuration
+type Config struct {
+	Server   ServerConfig   `mapstructure:"server"`
+	Database DatabaseConfig `mapstructure:"database"`
+	Log      LogConfig      `mapstructure:"log"`
+}
+
+// ServerConfig server configuration
+type ServerConfig struct {
+	Mode string `mapstructure:"mode"` // debug, release
+	Port int    `mapstructure:"port"`
+}
+
+// DatabaseConfig database configuration
+type DatabaseConfig struct {
+	Driver   string `mapstructure:"driver"` // mysql
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	Database string `mapstructure:"database"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	Charset  string `mapstructure:"charset"`
+}
+
+// LogConfig logging configuration
+type LogConfig struct {
+	Level  string `mapstructure:"level"`  // debug, info, warn, error
+	Format string `mapstructure:"format"` // json, text
+}
+
+var (
+	globalConfig *Config
+	globalViper  *viper.Viper
+)
+
+// Init initialize configuration
+func Init(configPath string) error {
+	v := viper.New()
+
+	// Set configuration file path
+	if configPath != "" {
+		v.SetConfigFile(configPath)
+	} else {
+		// Try to load service_conf.yaml from conf directory first
+		v.SetConfigName("service_conf")
+		v.SetConfigType("yaml")
+		v.AddConfigPath("./conf")
+		v.AddConfigPath(".")
+		v.AddConfigPath("./config")
+		v.AddConfigPath("./internal/config")
+		v.AddConfigPath("/etc/ragflow/")
+	}
+
+	// Read environment variables
+	v.SetEnvPrefix("RAGFLOW")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	// Read configuration file
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return fmt.Errorf("read config file error: %w", err)
+		}
+		log.Println("Config file not found, using environment variables only")
+	}
+
+	// Save viper instance
+	globalViper = v
+
+	// Unmarshal configuration to globalConfig
+	// Note: This will only unmarshal fields that match the Config struct
+	if err := v.Unmarshal(&globalConfig); err != nil {
+		return fmt.Errorf("unmarshal config error: %w", err)
+	}
+
+	// If we loaded service_conf.yaml, map mysql fields to DatabaseConfig
+	if globalConfig != nil && globalConfig.Database.Host == "" {
+		// Try to map from mysql section
+		if v.IsSet("mysql") {
+			mysqlConfig := v.Sub("mysql")
+			if mysqlConfig != nil {
+				globalConfig.Database.Driver = "mysql"
+				globalConfig.Database.Host = mysqlConfig.GetString("host")
+				globalConfig.Database.Port = mysqlConfig.GetInt("port")
+				globalConfig.Database.Database = mysqlConfig.GetString("name")
+				globalConfig.Database.Username = mysqlConfig.GetString("user")
+				globalConfig.Database.Password = mysqlConfig.GetString("password")
+				globalConfig.Database.Charset = "utf8mb4"
+			}
+		}
+	}
+
+	// Map ragflow section to ServerConfig
+	if globalConfig != nil && globalConfig.Server.Port == 0 {
+		// Try to map from ragflow section
+		if v.IsSet("ragflow") {
+			ragflowConfig := v.Sub("ragflow")
+			if ragflowConfig != nil {
+				globalConfig.Server.Port = ragflowConfig.GetInt("http_port")
+				// If mode is not set, default to debug
+				if globalConfig.Server.Mode == "" {
+					globalConfig.Server.Mode = "debug"
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// Get get global configuration
+func Get() *Config {
+	return globalConfig
+}
+
+// PrintAll prints all configuration settings
+func PrintAll() {
+	if globalViper == nil {
+		log.Println("Configuration not initialized")
+		return
+	}
+
+	allSettings := globalViper.AllSettings()
+	log.Println("=== All Configuration Settings ===")
+	for key, value := range allSettings {
+		log.Printf("%s: %v", key, value)
+	}
+	log.Println("=== End Configuration ===")
+}

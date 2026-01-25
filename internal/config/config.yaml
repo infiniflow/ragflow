@@ -1,0 +1,16 @@
+server:
+  mode: debug  # debug, release
+  port: 8080
+
+database:
+  driver: mysql
+  host: localhost
+  port: 3306
+  database: ragflow
+  username: root
+  password: ""
+  charset: utf8mb4
+
+log:
+  level: info  # debug, info, warn, error
+  format: json  # json, text

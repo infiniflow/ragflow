@@ -1,0 +1,67 @@
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/gin-gonic/gin"
+
+	"ragflow/internal/config"
+	"ragflow/internal/dao"
+	"ragflow/internal/handler"
+	"ragflow/internal/router"
+	"ragflow/internal/service"
+)
+
+func main() {
+	// Initialize configuration
+	if err := config.Init(""); err != nil {
+		log.Fatalf("Failed to initialize config: %v", err)
+	}
+
+	cfg := config.Get()
+	log.Printf("Server mode: %s", cfg.Server.Mode)
+
+	// Print all configuration settings
+	config.PrintAll()
+
+	// Set Gin mode
+	if cfg.Server.Mode == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	} else {
+		gin.SetMode(gin.DebugMode)
+	}
+
+	// Initialize database
+	if err := dao.InitDB(); err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+
+	// Initialize service layer
+	userService := service.NewUserService()
+	documentService := service.NewDocumentService()
+
+	// Initialize handler layer
+	userHandler := handler.NewUserHandler(userService)
+	documentHandler := handler.NewDocumentHandler(documentService)
+
+	// Initialize router
+	r := router.NewRouter(userHandler, documentHandler)
+
+	// Create Gin engine
+	engine := gin.New()
+
+	// Middleware
+	engine.Use(gin.Logger())
+	engine.Use(gin.Recovery())
+
+	// Setup routes
+	r.Setup(engine)
+
+	// Start server
+	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+	log.Printf("Server starting on %s", addr)
+	if err := engine.Run(addr); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
+}
