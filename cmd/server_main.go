@@ -57,7 +57,9 @@ func main() {
 	engine := gin.New()
 
 	// Middleware
-	engine.Use(gin.Logger())
+	if cfg.Server.Mode == "debug" {
+		engine.Use(gin.Logger())
+	}
 	engine.Use(gin.Recovery())
 
 	// Setup routes

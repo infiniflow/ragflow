@@ -2,8 +2,6 @@ package dao
 
 import (
 	"ragflow/internal/model"
-
-	"gorm.io/gorm"
 )
 
 // UserDAO user data access object
@@ -43,10 +41,10 @@ func (dao *UserDAO) GetByUsername(username string) (*model.User, error) {
 func (dao *UserDAO) GetByEmail(email string) (*model.User, error) {
 	var user model.User
 	query := DB.Where("email = ?", email)
-	sql := DB.ToSQL(func(tx *gorm.DB) *gorm.DB {
-		return tx.Where("email = ?", email).First(&user)
-	})
-	println("To execute SQL: %s\n", sql)
+	//sql := DB.ToSQL(func(tx *gorm.DB) *gorm.DB {
+	//	return tx.Where("email = ?", email).First(&user)
+	//})
+	//println("To execute SQL: %s\n", sql)
 	err := query.First(&user).Error
 	if err != nil {
 		return nil, err
