@@ -4,8 +4,7 @@ import "time"
 
 // User user model
 type User struct {
-	ID              string     `gorm:"column:id;primaryKey" json:"id"`
-	Username        string     `gorm:"column:username;size:100;not null;index" json:"username"`
+	ID              string     `gorm:"column:id;size:32;primaryKey" json:"id"`
 	AccessToken     *string    `gorm:"column:access_token;size:255;index" json:"access_token,omitempty"`
 	Nickname        string     `gorm:"column:nickname;size:100;not null;index" json:"nickname"`
 	Password        *string    `gorm:"column:password;size:255;index" json:"-"`
@@ -19,7 +18,7 @@ type User struct {
 	IsActive        string     `gorm:"column:is_active;size:1;not null;default:1;index" json:"is_active"`
 	IsAnonymous     string     `gorm:"column:is_anonymous;size:1;not null;default:0;index" json:"is_anonymous"`
 	LoginChannel    *string    `gorm:"column:login_channel;index" json:"login_channel,omitempty"`
-	Status          int        `gorm:"column:status;index" json:"status"`
+	Status          *string    `gorm:"column:status;size:1;default:1;index" json:"status"`
 	IsSuperuser     *bool      `gorm:"column:is_superuser;index" json:"is_superuser,omitempty"`
 	BaseModel
 }

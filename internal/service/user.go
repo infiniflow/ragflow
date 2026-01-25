@@ -70,20 +70,19 @@ type ChangePasswordRequest struct {
 
 // UserResponse user response
 type UserResponse struct {
-	ID        string `json:"id"`
-	Username  string `json:"username"`
-	Email     string `json:"email"`
-	Nickname  string `json:"nickname"`
-	Status    int    `json:"status"`
-	CreatedAt string `json:"created_at"`
+	ID        string  `json:"id"`
+	Email     string  `json:"email"`
+	Nickname  string  `json:"nickname"`
+	Status    *string `json:"status"`
+	CreatedAt string  `json:"created_at"`
 }
 
 // Register user registration
 func (s *UserService) Register(req *RegisterRequest) (*model.User, error) {
-	// Check if username exists
-	existUser, _ := s.userDAO.GetByUsername(req.Username)
+	// Check if email exists
+	existUser, _ := s.userDAO.GetByEmail(req.Email)
 	if existUser != nil {
-		return nil, errors.New("username already exists")
+		return nil, errors.New("email already exists")
 	}
 
 	// Generate password hash
@@ -93,12 +92,12 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, error) {
 	}
 
 	// Create user
+	status := "1"
 	user := &model.User{
-		Username: req.Username,
 		Password: &hashedPassword,
 		Email:    req.Email,
 		Nickname: req.Nickname,
-		Status:   1,
+		Status:   &status,
 	}
 
 	if err := s.userDAO.Create(user); err != nil {
@@ -110,10 +109,10 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, error) {
 
 // Login user login
 func (s *UserService) Login(req *LoginRequest) (*model.User, error) {
-	// Get user
-	user, err := s.userDAO.GetByUsername(req.Username)
+	// Get user by email (using username field as email)
+	user, err := s.userDAO.GetByEmail(req.Username)
 	if err != nil {
-		return nil, errors.New("invalid username or password")
+		return nil, errors.New("invalid email or password")
 	}
 
 	// Decrypt password using RSA
@@ -128,7 +127,7 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, error) {
 	}
 
 	// Check user status
-	if user.Status != 1 {
+	if user.Status == nil || *user.Status != "1" {
 		return nil, errors.New("user is disabled")
 	}
 
@@ -136,6 +135,13 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, error) {
 	token := s.GenerateToken()
 	if err := s.UpdateUserAccessToken(user, token); err != nil {
 		return nil, fmt.Errorf("failed to update access token: %w", err)
+	}
+
+	// Update timestamp
+	now := time.Now().Unix()
+	user.UpdateTime = &now
+	if err := s.userDAO.Update(user); err != nil {
+		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
 
 	return user, nil
@@ -166,7 +172,7 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, error) 
 	}
 
 	// Check user status
-	if user.Status != 1 {
+	if user.Status == nil || *user.Status != "1" {
 		return nil, errors.New("user is disabled")
 	}
 
@@ -174,6 +180,13 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, error) 
 	token := s.GenerateToken()
 	if err := s.UpdateUserAccessToken(user, token); err != nil {
 		return nil, fmt.Errorf("failed to update access token: %w", err)
+	}
+
+	// Update timestamp
+	now := time.Now().Unix()
+	user.UpdateTime = &now
+	if err := s.userDAO.Update(user); err != nil {
+		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
 
 	return user, nil
@@ -188,7 +201,6 @@ func (s *UserService) GetUserByID(id uint) (*UserResponse, error) {
 
 	return &UserResponse{
 		ID:        user.ID,
-		Username:  user.Username,
 		Email:     user.Email,
 		Nickname:  user.Nickname,
 		Status:    user.Status,
@@ -208,7 +220,6 @@ func (s *UserService) ListUsers(page, pageSize int) ([]*UserResponse, int64, err
 	for i, user := range users {
 		responses[i] = &UserResponse{
 			ID:        user.ID,
-			Username:  user.Username,
 			Email:     user.Email,
 			Nickname:  user.Nickname,
 			Status:    user.Status,
@@ -292,6 +303,7 @@ func (s *UserService) constantTimeCompare(a, b []byte) bool {
 }
 
 // loadPrivateKey loads and decrypts the RSA private key from conf/private.pem
+// nolint:staticcheck // DecryptPEMBlock is deprecated but still works for traditional PEM encryption
 func (s *UserService) loadPrivateKey() (*rsa.PrivateKey, error) {
 	// Read private key file
 	keyData, err := os.ReadFile("conf/private.pem")
@@ -309,6 +321,7 @@ func (s *UserService) loadPrivateKey() (*rsa.PrivateKey, error) {
 	var privateKey interface{}
 	if block.Headers["Proc-Type"] == "4,ENCRYPTED" {
 		// Decrypt using password "Welcome"
+		// Note: DecryptPEMBlock is deprecated but still functional for traditional PEM encryption
 		decryptedData, err := x509.DecryptPEMBlock(block, []byte("Welcome"))
 		if err != nil {
 			return nil, fmt.Errorf("failed to decrypt private key: %w", err)
@@ -391,9 +404,8 @@ func (s *UserService) GetUserProfile(user *model.User) map[string]interface{} {
 	}
 	return map[string]interface{}{
 		"id":         user.ID,
-		"username":   user.Username,
-		"email":      user.Email,
 		"nickname":   user.Nickname,
+		"email":      user.Email,
 		"status":     user.Status,
 		"created_at": time.Unix(user.CreateTime, 0).Format("2006-01-02 15:04:05"),
 		"updated_at": updatedAt,

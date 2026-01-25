@@ -52,7 +52,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 		"message": "registration successful",
 		"data": gin.H{
 			"id":       user.ID,
-			"username": user.Username,
+			"nickname": user.Nickname,
 			"email":    user.Email,
 		},
 	})
@@ -71,7 +71,8 @@ func (h *UserHandler) Login(c *gin.Context) {
 	var req service.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+			"code":    400,
+			"message": err.Error(),
 		})
 		return
 	}
@@ -79,18 +80,26 @@ func (h *UserHandler) Login(c *gin.Context) {
 	user, err := h.userService.Login(&req)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
+			"code":    401,
+			"message": err.Error(),
 		})
 		return
 	}
 
+	// Set Authorization header with access_token
+	if user.AccessToken != nil {
+		c.Header("Authorization", *user.AccessToken)
+	}
+	// Set CORS headers
+	c.Header("Access-Control-Allow-Origin", "*")
+	c.Header("Access-Control-Allow-Methods", "*")
+	c.Header("Access-Control-Allow-Headers", "*")
+	c.Header("Access-Control-Expose-Headers", "Authorization")
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "login successful",
-		"data": gin.H{
-			"id":       user.ID,
-			"username": user.Username,
-			"email":    user.Email,
-		},
+		"code":    0,
+		"message": "Welcome back!",
+		"data":    user,
 	})
 }
 
@@ -107,7 +116,8 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+			"code":    400,
+			"message": err.Error(),
 		})
 		return
 	}
@@ -115,18 +125,26 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	user, err := h.userService.LoginByEmail(&req)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
+			"code":    401,
+			"message": err.Error(),
 		})
 		return
 	}
 
+	// Set Authorization header with access_token
+	if user.AccessToken != nil {
+		c.Header("Authorization", *user.AccessToken)
+	}
+	// Set CORS headers
+	c.Header("Access-Control-Allow-Origin", "*")
+	c.Header("Access-Control-Allow-Methods", "*")
+	c.Header("Access-Control-Allow-Headers", "*")
+	c.Header("Access-Control-Expose-Headers", "Authorization")
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "login successful",
-		"data": gin.H{
-			"id":       user.ID,
-			"username": user.Username,
-			"email":    user.Email,
-		},
+		"code":    0,
+		"message": "Welcome back!",
+		"data":    user,
 	})
 }
 
