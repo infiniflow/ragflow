@@ -330,7 +330,7 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
 def doc_tokenize_chunks_with_images(chunks, doc, eng, child_delimiters_pattern=None, batch_size=10):
     res = []
     for ii, ck in enumerate(chunks):
-        text = ck.get('context_above', "") + ck.get('text') + ck.get('context_below', "")
+        text = ck.get("context_above", "") + ck.get("text") + ck.get("context_below", "")
         if len(text.strip()) == 0:
             continue
         logging.debug("-- {}".format(ck))
@@ -341,7 +341,7 @@ def doc_tokenize_chunks_with_images(chunks, doc, eng, child_delimiters_pattern=N
 
         if ck.get("ck_type") == "text":
             if child_delimiters_pattern:
-                d["mom_with_weight"] = ck
+                d["mom_with_weight"] = text
                 res.extend(split_with_pattern(d, child_delimiters_pattern, text, eng))
                 continue
         elif ck.get("ck_type") == "image":
@@ -1367,7 +1367,7 @@ def _merge_cks(cks, chunk_token_num):
     merged = []
     image_idxs = []
     prev_text_ck = -1
-    
+
     for i in range(len(cks)):
         ck_type = cks[i]["ck_type"]
 
@@ -1376,8 +1376,8 @@ def _merge_cks(cks, chunk_token_num):
             if ck_type == "image":
                 image_idxs.append(len(merged) - 1)
             continue
-        
-        
+
+
         if prev_text_ck<0 or merged[prev_text_ck]["tk_nums"] >= chunk_token_num:
             merged.append(cks[i])
             prev_text_ck = len(merged) - 1
@@ -1390,25 +1390,25 @@ def _merge_cks(cks, chunk_token_num):
 
 
 def naive_merge_docx(
-    sections, 
-    chunk_token_num = 128, 
+    sections,
+    chunk_token_num = 128,
     delimiter="\n。；！？",
     table_context_size=0,
     image_context_size=0,):
 
     if not sections:
         return [], []
-    
+
     cks, tables, images = _build_cks(sections, delimiter)
 
     if table_context_size > 0:
         for i in tables:
             _add_context(cks, i, table_context_size)
-    
+
     if image_context_size > 0:
         for i in images:
             _add_context(cks, i, image_context_size)
-    
+
     merged_cks, merged_image_idx = _merge_cks(cks, chunk_token_num)
 
     return merged_cks, merged_image_idx
