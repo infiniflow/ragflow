@@ -338,10 +338,17 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
-        from api.db.services.task_service import TaskService
+        from api.db.services.task_service import TaskService, cancel_all_task_of
         cls.clear_chunk_num(doc.id)
 
-        # Delete tasks first
+        # Cancel all running tasks first Using preset function in task_service.py ---  set cancel flag in Redis 
+        try:
+            cancel_all_task_of(doc.id)
+            logging.info(f"Cancelled all tasks for document {doc.id}")
+        except Exception as e:
+            logging.warning(f"Failed to cancel tasks for document {doc.id}: {e}")
+
+        # Delete tasks from database
         try:
             TaskService.filter_delete([Task.doc_id == doc.id])
         except Exception as e:
