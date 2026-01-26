@@ -72,6 +72,7 @@ export type IManageModalProps = {
   isVerticalShowValue?: boolean;
   builtInMetadata?: IBuiltInMetadataItem[];
   success?: (data: any) => void;
+  secondTitle?: ReactNode;
 };
 
 export interface IManageValuesProps {
