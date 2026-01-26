@@ -327,7 +327,7 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
     return res
 
 
-def doc_tokenize_chunks_with_images(chunks, doc, eng, child_delimiters_pattern=None, batch_size=10):
+def adv_tokenize_chunks(chunks, doc, eng, child_delimiters_pattern=None, batch_size=10):
     res = []
     for ii, ck in enumerate(chunks):
         text = ck.get('context_above', "") + ck.get('text') + ck.get('context_below', "")
@@ -1389,7 +1389,7 @@ def _merge_cks(cks, chunk_token_num):
     return merged, image_idxs
 
 
-def naive_merge_docx(
+def adv_naive_merge(
     sections, 
     chunk_token_num = 128, 
     delimiter="\n。；！？",

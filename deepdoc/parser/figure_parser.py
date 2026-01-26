@@ -123,7 +123,7 @@ def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
     return tbls
 
 
-def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, **kwargs):
+def adv_vision_figure_parser_wrapper(chunks, idx_lst, callback=None, **kwargs):
     if not chunks:
         return []
     try:

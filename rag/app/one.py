@@ -22,7 +22,7 @@ from deepdoc.parser.utils import get_text
 from rag.app import naive
 from rag.nlp import rag_tokenizer, tokenize
 from deepdoc.parser import PdfParser, ExcelParser, HtmlParser
-from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper_naive
+from deepdoc.parser.figure_parser import adv_vision_figure_parser_wrapper
 from rag.app.naive import by_plaintext, PARSERS
 from common.parser_config_utils import normalize_layout_recognizer
 
@@ -81,7 +81,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
             cks.append({"text": text, "image": image, "ck_type": ck_type})
 
-        vision_figure_parser_docx_wrapper_naive(cks, image_idxs, callback, **kwargs)
+        adv_vision_figure_parser_wrapper(cks, image_idxs, callback, **kwargs)
         sections = [ck["text"] for ck in cks if ck.get("text")]
         callback(0.8, "Finish parsing.")
 
