@@ -50,9 +50,10 @@ func main() {
 	kbService := service.NewKnowledgebaseService()
 	chunkService := service.NewChunkService()
 	llmService := service.NewLLMService()
+	tenantService := service.NewTenantService()
 
 	// Initialize handler layer
-	userHandler := handler.NewUserHandler(userService)
+	userHandler := handler.NewUserHandler(userService, tenantService)
 	documentHandler := handler.NewDocumentHandler(documentService)
 	kbHandler := handler.NewKnowledgebaseHandler(kbService, userService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)

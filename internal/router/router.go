@@ -52,6 +52,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 	engine.POST("/v1/user/logout", r.userHandler.Logout)
 	// User info endpoint
 	engine.GET("/v1/user/info", r.userHandler.Info)
+	// User tenant info endpoint
+	engine.GET("/v1/user/tenant_info", r.userHandler.TenantInfo)
 	// User settings endpoint
 	engine.POST("/v1/user/setting", r.userHandler.Setting)
 	// User change password endpoint
