@@ -285,8 +285,41 @@ class InfinityConnectionBase(DocStoreConnection):
         self.logger.info(f"INFINITY created table {table_name}, vector size {vector_size}")
         return True
 
+    def create_doc_meta_idx(self, index_name: str):
+        """
+        Create a document metadata table.
+
+        Table name pattern: ragflow_doc_meta_{tenant_id}
+        - Per-tenant metadata table for storing document metadata fields
+        """
+        table_name = index_name
+        inf_conn = self.connPool.get_conn()
+        inf_db = inf_conn.create_database(self.dbName, ConflictType.Ignore)
+        try:
+            fp_mapping = os.path.join(get_project_base_directory(), "conf", "doc_meta_infinity_mapping.json")
+            if not os.path.exists(fp_mapping):
+                self.logger.error(f"Document metadata mapping file not found at {fp_mapping}")
+                return False
+            schema = json.load(open(fp_mapping))
+            inf_db.create_table(
+                table_name,
+                schema,
+                ConflictType.Ignore,
+            )
+            self.connPool.release_conn(inf_conn)
+            self.logger.info(f"INFINITY created document metadata table {table_name}")
+            return True
+
+        except Exception as e:
+            self.connPool.release_conn(inf_conn)
+            self.logger.exception(f"Error creating document metadata table {table_name}: {e}")
+            return False
+
     def delete_idx(self, index_name: str, dataset_id: str):
-        table_name = f"{index_name}_{dataset_id}"
+        if index_name.startswith("ragflow_doc_meta_"):
+            table_name = index_name
+        else:
+            table_name = f"{index_name}_{dataset_id}"
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
         db_instance.drop_table(table_name, ConflictType.Ignore)
@@ -294,7 +327,10 @@ class InfinityConnectionBase(DocStoreConnection):
         self.logger.info(f"INFINITY dropped table {table_name}")
 
     def index_exist(self, index_name: str, dataset_id: str) -> bool:
-        table_name = f"{index_name}_{dataset_id}"
+        if index_name.startswith("ragflow_doc_meta_"):
+            table_name = index_name
+        else:
+            table_name = f"{index_name}_{dataset_id}"
         try:
             inf_conn = self.connPool.get_conn()
             db_instance = inf_conn.get_database(self.dbName)
@@ -341,7 +377,10 @@ class InfinityConnectionBase(DocStoreConnection):
     def delete(self, condition: dict, index_name: str, dataset_id: str) -> int:
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
-        table_name = f"{index_name}_{dataset_id}"
+        if index_name.startswith("ragflow_doc_meta_"):
+            table_name = index_name
+        else:
+            table_name = f"{index_name}_{dataset_id}"
         try:
             table_instance = db_instance.get_table(table_name)
         except Exception:
