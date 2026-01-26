@@ -295,7 +295,7 @@ class InfinityConnectionBase(DocStoreConnection):
                     ConflictType.Ignore,
                 )
 
-        # Create secondary indexes for fields with index_type配置
+        # Create secondary indexes for fields with index_type
         for field_name, field_info in schema.items():
             if "index_type" not in field_info:
                 continue
