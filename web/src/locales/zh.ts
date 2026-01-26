@@ -175,6 +175,7 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        selectFiles: '已选择 {{count}} 个文件',
         type: '类型',
         fieldNameInvalid: '字段名称只能包含字母或下划线。',
         builtIn: '内置',
@@ -192,10 +193,10 @@ export default {
         fieldExists: '字段名已存在。',
         fieldSetting: '字段设置',
         changesAffectNewParses: '更改仅影响新的解析。',
-        editMetadataForDataset: '查看和编辑元数据 ',
+        // editMetadataForDataset: '查看和编辑元数据 ',
         restrictDefinedValues: '限制为已定义的值',
         metadataGenerationSettings: '元数据生成设置',
-        manageMetadataForDataset: '管理此数据集的元数据',
+        // manageMetadataForDataset: '管理此数据集的元数据',
         manageMetadata: '管理元数据',
         metadata: '元数据',
         values: '值',

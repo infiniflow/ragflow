@@ -184,6 +184,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       metadata: {
+        selectFiles: 'Selected {{count}} files',
         type: 'Type',
         fieldNameInvalid: 'Field name can only contain letters or underscores.',
         builtIn: 'Built-in',
@@ -205,10 +206,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         fieldExists: 'Field already exists.',
         fieldSetting: 'Field settings',
         changesAffectNewParses: 'Changes affect new parses only.',
-        editMetadataForDataset: 'View and edit metadata for ',
+        // editMetadataForDataset: 'View and edit metadata for ',
         restrictDefinedValues: 'Restrict to defined values',
         metadataGenerationSettings: 'Metadata generation settings',
-        manageMetadataForDataset: 'Manage metadata for this dataset',
+        // manageMetadataForDataset: 'Manage metadata for this dataset',
         manageMetadata: 'Manage metadata',
         metadata: 'Metadata',
         values: 'Values',

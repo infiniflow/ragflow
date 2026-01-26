@@ -11,11 +11,7 @@ import { RowSelectionState } from '@tanstack/react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
-import {
-  DEFAULT_VALUE_TYPE,
-  MetadataType,
-  metadataValueTypeEnum,
-} from '../constant';
+import { DEFAULT_VALUE_TYPE, MetadataType } from '../constant';
 import {
   IBuiltInMetadataItem,
   IMetaDataReturnJSONSettings,
@@ -25,6 +21,7 @@ import {
   MetadataOperations,
   MetadataValueType,
   ShowManageMetadataModalProps,
+  UpdateOperation,
 } from '../interface';
 
 export const util = {
@@ -136,6 +133,7 @@ export const useMetadataOperations = () => {
     deletes: [],
     updates: [],
   });
+  // const operationsRef = useRef(operations);
 
   const addDeleteRow = useCallback((key: string) => {
     setOperations((prev) => ({
@@ -165,41 +163,60 @@ export const useMetadataOperations = () => {
       newValue: string | string[],
       type?: MetadataValueType,
     ) => {
-      let newValuesRes: string | string[];
-      if (type !== metadataValueTypeEnum['list']) {
-        if (Array.isArray(newValue) && newValue.length > 0) {
-          newValuesRes = newValue[0];
-        } else {
-          newValuesRes = newValue;
-        }
-      } else {
-        newValuesRes = newValue;
-      }
+      // let newValuesRes: string | string[];
+      // if (type !== metadataValueTypeEnum['list']) {
+      //   if (Array.isArray(newValue) && newValue.length > 0) {
+      //     newValuesRes = newValue[0];
+      //   } else {
+      //     newValuesRes = newValue;
+      //   }
+      // } else {
+      //   newValuesRes = newValue;
+      // }
       setOperations((prev) => {
+        let updatedUpdates = [...prev.updates];
         const existsIndex = prev.updates.findIndex(
-          (update) => update.key === key && update.match === originalValue,
+          (update) =>
+            update.key === key &&
+            update.match === originalValue &&
+            update.match !== '',
         );
-
         if (existsIndex > -1) {
-          const updatedUpdates = [...prev.updates];
           updatedUpdates[existsIndex] = {
             key,
             match: originalValue,
-            value: newValuesRes,
+            value: newValue,
             valueType: type || DEFAULT_VALUE_TYPE,
           };
-          return {
-            ...prev,
-            updates: updatedUpdates,
-          };
+
+          // operationsRef.current = updatedOperations;
+        } else {
+          updatedUpdates.push({
+            key,
+            match: originalValue,
+            value: newValue,
+            valueType: type,
+          });
         }
-        return {
+        updatedUpdates = updatedUpdates.reduce((pre, cur) => {
+          if (
+            !pre.some(
+              (item) =>
+                item.key === cur.key &&
+                item.match === cur.match &&
+                item.value === cur.value,
+            )
+          ) {
+            pre.push(cur);
+          }
+          return pre;
+        }, [] as UpdateOperation[]);
+
+        const updatedOperations = {
           ...prev,
-          updates: [
-            ...prev.updates,
-            { key, match: originalValue, value: newValuesRes, valueType: type },
-          ],
+          updates: updatedUpdates,
         };
+        return updatedOperations;
       });
     },
     [],
@@ -213,6 +230,7 @@ export const useMetadataOperations = () => {
   }, []);
 
   return {
+    // operationsRef,
     operations,
     addDeleteBatch,
     addDeleteRow,
@@ -272,6 +290,7 @@ export const useManageMetaDataModal = (
   const [tableData, setTableData] = useState<IMetaDataTableData[]>(metaData);
   const queryClient = useQueryClient();
   const {
+    // operationsRef,
     operations,
     addDeleteRow,
     addDeleteBatch,
