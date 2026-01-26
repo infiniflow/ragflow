@@ -12,16 +12,18 @@ import (
 
 // ChunkService chunk service
 type ChunkService struct {
-	docEngine engine.DocEngine
-	engineType config.EngineType
+	docEngine    engine.DocEngine
+	engineType   config.EngineType
+	modelProvider ModelProvider
 }
 
 // NewChunkService creates chunk service
 func NewChunkService() *ChunkService {
 	cfg := config.Get()
 	return &ChunkService{
-		docEngine: engine.Get(),
-		engineType: cfg.DocEngine.Type,
+		docEngine:    engine.Get(),
+		engineType:   cfg.DocEngine.Type,
+		modelProvider: NewModelProvider(),
 	}
 }
 
@@ -81,15 +83,29 @@ func (s *ChunkService) elasticsearchRetrieval(ctx context.Context, req *Retrieva
 		From:       getOffset(req.Page),
 	}
 
-	// If there's a question, build text match query
+	// If there's a question, build vector search query
 	if req.Question != "" {
-		// TODO: Should use embedding model to convert question to vector
-		// For now, use simple text match
-		searchReq.Query = elasticsearch.BuildMatchTextQuery(
-			[]string{"title", "content"},
-			req.Question,
-			"AUTO",
-		)
+		// Get embedding model
+		embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, "")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get embedding model: %w", err)
+		}
+
+		// Generate vector for the question
+		vector, err := embeddingModel.EncodeQuery(req.Question)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode query: %w", err)
+		}
+
+		// Build knn query
+		searchReq.Query = map[string]interface{}{
+			"knn": map[string]interface{}{
+				"field":         "embedding",
+				"query_vector":  vector,
+				"k":             10,
+				"num_candidates": 100,
+			},
+		}
 	}
 
 	// Execute search
