@@ -1,5 +1,5 @@
 import { lazy } from 'react';
-import { createBrowserRouter, Navigate } from 'react-router';
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 import FallbackComponent from './components/fallback-component';
 import { IS_ENTERPRISE } from './pages/admin/utils';
 
@@ -389,53 +389,58 @@ const routeConfig = [
   },
   {
     path: Routes.Admin,
-    layout: false,
     Component: lazy(() => import('@/pages/admin/layouts/root-layout')),
+    errorElement: <FallbackComponent />,
     children: [
       {
-        path: '',
+        path: Routes.Admin,
         Component: lazy(() => import('@/pages/admin/login')),
-      },
-      {
-        path: `${Routes.AdminUserManagement}/:id`,
-        Component: lazy(() => import('@/pages/admin/user-detail')),
       },
       {
         path: Routes.Admin,
         Component: lazy(
-          () => import('@/pages/admin/layouts/navigation-layout'),
+          () => import('@/pages/admin/layouts/authorized-layout'),
         ),
-        wrappers: ['@/pages/admin/wrappers/authorized'],
         children: [
           {
-            path: Routes.AdminServices,
-            Component: lazy(() => import('@/pages/admin/service-status')),
+            path: `${Routes.AdminUserManagement}/:id`,
+            Component: lazy(() => import('@/pages/admin/user-detail')),
           },
           {
-            path: Routes.AdminUserManagement,
-            Component: lazy(() => import('@/pages/admin/users')),
+            Component: lazy(
+              () => import('@/pages/admin/layouts/navigation-layout'),
+            ),
+            children: [
+              {
+                path: Routes.AdminServices,
+                Component: lazy(() => import('@/pages/admin/service-status')),
+              },
+              {
+                path: Routes.AdminUserManagement,
+                Component: lazy(() => import('@/pages/admin/users')),
+              },
+              ...(IS_ENTERPRISE
+                ? [
+                    {
+                      path: Routes.AdminWhitelist,
+                      Component: lazy(() => import('@/pages/admin/whitelist')),
+                    },
+                    {
+                      path: Routes.AdminRoles,
+                      Component: lazy(() => import('@/pages/admin/roles')),
+                    },
+                    {
+                      path: Routes.AdminMonitoring,
+                      Component: lazy(() => import('@/pages/admin/monitoring')),
+                    },
+                  ]
+                : []),
+            ],
           },
-          ...(IS_ENTERPRISE
-            ? [
-                {
-                  path: Routes.AdminWhitelist,
-                  Component: lazy(() => import('@/pages/admin/whitelist')),
-                },
-                {
-                  path: Routes.AdminRoles,
-                  Component: lazy(() => import('@/pages/admin/roles')),
-                },
-                {
-                  path: Routes.AdminMonitoring,
-                  Component: lazy(() => import('@/pages/admin/monitoring')),
-                },
-              ]
-            : []),
         ],
       },
     ],
-    errorElement: <FallbackComponent />,
-  },
+  } satisfies RouteObject,
 ];
 
 const routers = createBrowserRouter(routeConfig, {

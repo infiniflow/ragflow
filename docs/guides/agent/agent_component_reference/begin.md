@@ -27,6 +27,50 @@ Mode defines how the workflow is triggered.
 
 - Conversational: The agent is triggered from a conversation.
 - Task: The agent starts without a conversation.
+- Webhook: Receive external HTTP requests via webhooks, enabling automated triggers and workflow initiation.  
+  *When selected, a unique Webhook URL is generated for the current agent.*
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/webhook_mode.png)
+
+### Methods
+
+The supported HTTP methods. Available only when **Webhook** is selected as **Mode**.
+
+
+### Security
+
+The authentication method to choose, available *only* when **Webhook** is selected as **Mode**. Including:
+
+- **token**: Token-based authentication.
+- **basic**: Basic authentication.
+- **jwt**: JWT authentication.  
+
+### Schema
+
+The schema defines the data structure for HTTP requests received by the system in **Webhook** mode. It configurations include:
+
+- Content type:
+  - `application/json`
+  - `multipart/form-data`
+  - `application/x-www-form-urlencoded`
+  - `text-plain`
+  - `application/octet-stream`
+- Query parameters
+- Header parameters
+- Request body parameters
+
+### Response
+
+Available only when **Webhook** is selected as **Mode**. 
+
+The response mode of the workflow, i.e., how the workflow respond to external HTTP requests. Supported options:
+
+- **Accepted response**: When an HTTP request is validated, a success response is returned immediately, and the workflow runs asynchronously in the background.
+  - When selected, you configure the corresponding HTTP status code and message in the **Begin** component.
+  - The HTTP status code to return is in the range of `200-399`.
+- **Final response**: The system returns the final processing result only after the entire workflow completes.
+  - When selected, you configure the corresponding HTTP status code and message in the [message](./message.md) component.
+  - The HTTP status code to return is in the range of `200-399`.
 
 ### Opening greeting
 
