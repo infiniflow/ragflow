@@ -262,6 +262,10 @@ class RDBMSConnector(LoadConnector, PollConnector):
                 yield batch
                 
         finally:
+            try:
+                cursor.fetchall()
+            except Exception:
+                pass
             cursor.close()
             self._close_connection()
 
