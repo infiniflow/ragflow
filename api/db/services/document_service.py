@@ -338,10 +338,17 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
-        from api.db.services.task_service import TaskService
+        from api.db.services.task_service import TaskService, cancel_all_task_of
         cls.clear_chunk_num(doc.id)
 
-        # Delete tasks first
+        # Cancel all running tasks first Using preset function in task_service.py ---  set cancel flag in Redis 
+        try:
+            cancel_all_task_of(doc.id)
+            logging.info(f"Cancelled all tasks for document {doc.id}")
+        except Exception as e:
+            logging.warning(f"Failed to cancel tasks for document {doc.id}: {e}")
+
+        # Delete tasks from database
         try:
             TaskService.filter_delete([Task.doc_id == doc.id])
         except Exception as e:
@@ -668,8 +675,7 @@ class DocumentService(CommonService):
                 if k not in old:
                     old[k] = v
                     continue
-                if isinstance(v, dict):
-                    assert isinstance(old[k], dict)
+                if isinstance(v, dict) and isinstance(old[k], dict):
                     dfs_update(old[k], v)
                 else:
                     old[k] = v
@@ -786,6 +792,8 @@ class DocumentService(CommonService):
                 return "string"
             if isinstance(value, (int, float)):
                 return "number"
+            if re.match(r"\d{4}\-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", str(value)):
+                return "time"
             return "string"
 
         fields = [cls.model.id, cls.model.meta_fields]
@@ -854,11 +862,9 @@ class DocumentService(CommonService):
                 key = upd.get("key")
                 if not key:
                     continue
-                if key not in meta:
-                    meta[key] = upd.get("value")
 
                 new_value = upd.get("value")
-                match_provided = "match" in upd
+                match_provided = upd.get("match")
                 if key not in meta:
                     if match_provided:
                         continue
@@ -871,7 +877,7 @@ class DocumentService(CommonService):
                         if isinstance(new_value, list):
                             meta[key] = dedupe_list(new_value)
                         else:
-                            meta[key] = new_value
+                            meta[key].append(new_value)
                         changed = True
                     else:
                         match_value = upd.get("match")

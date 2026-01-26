@@ -73,6 +73,7 @@ export const useSendSharedMessage = () => {
         question: message.content,
         session_id: get(derivedMessages, '0.session_id'),
         reasoning: message.reasoning,
+        internet: message.internet,
       });
 
       if (isCompletionError(res)) {
@@ -119,7 +120,11 @@ export const useSendSharedMessage = () => {
   }, [answer, addNewestAnswer]);
 
   const handlePressEnter = useCallback(
-    (...[{ enableThinking }]: NextMessageInputOnPressEnterParameter) => {
+    (
+      ...[
+        { enableThinking, enableInternet },
+      ]: NextMessageInputOnPressEnterParameter
+    ) => {
       if (trim(value) === '') return;
       const id = uuid();
       if (done) {
@@ -135,6 +140,7 @@ export const useSendSharedMessage = () => {
           id,
           role: MessageType.User,
           reasoning: enableThinking,
+          internet: enableInternet,
         });
       }
     },

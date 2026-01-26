@@ -13,7 +13,8 @@ const storage = {
     return localStorage.getItem(UserInfo);
   },
   getUserInfoObject: () => {
-    return JSON.parse(localStorage.getItem('userInfo') || '');
+    const userInfoStr = localStorage.getItem(UserInfo);
+    return userInfoStr ? JSON.parse(userInfoStr) : null;
   },
   setAuthorization: (value: string) => {
     localStorage.setItem(Authorization, value);

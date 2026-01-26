@@ -50,6 +50,18 @@ class RAGFlowClient:
         self.server_type = server_type
 
     def login_user(self, command):
+        try:
+            response = self.http_client.request("GET", "/system/ping", use_api_base=False, auth_kind="web")
+            if response.status_code == 200 and response.content == b"pong":
+                pass
+            else:
+                print("Server is down")
+                return
+        except Exception as e:
+            print(str(e))
+            print("Can't access server for login (connection failed)")
+            return
+
         email : str = command["email"]
         user_password = getpass.getpass(f"password for {email}: ").strip()
         try:
@@ -661,7 +673,7 @@ class RAGFlowClient:
 
         iterations = command.get("iterations", 1)
         if iterations > 1:
-            response = self.http_client.request("POST", "/dialog/next", use_api_base=False, auth_kind="web",
+            response = self.http_client.request("POST", "/kb/list", use_api_base=False, auth_kind="web",
                                                 iterations=iterations)
             return response
         else:
