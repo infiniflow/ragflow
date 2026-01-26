@@ -31,7 +31,11 @@ class InfinityConnectionPool:
         if hasattr(settings, "INFINITY"):
             self.INFINITY_CONFIG = settings.INFINITY
         else:
-            self.INFINITY_CONFIG = settings.get_base_config("infinity", {"uri": "infinity:23817"})
+            self.INFINITY_CONFIG = settings.get_base_config("infinity", {
+                "uri": "infinity:23817",
+                "postgres_port": 5432,
+                "db_name": "default_db"
+            })
 
         infinity_uri = self.INFINITY_CONFIG["uri"]
         if ":" in infinity_uri:
@@ -60,6 +64,19 @@ class InfinityConnectionPool:
 
     def get_conn_pool(self):
         return self.conn_pool
+
+    def get_conn_uri(self):
+        """
+        Get connection URI for PostgreSQL protocol.
+        """
+        infinity_uri = self.INFINITY_CONFIG["uri"]
+        postgres_port = self.INFINITY_CONFIG["postgres_port"]
+        db_name = self.INFINITY_CONFIG["db_name"]
+
+        if ":" in infinity_uri:
+            host, _ = infinity_uri.split(":")
+            return f"host={host} port={postgres_port} dbname={db_name}"
+        return f"host=localhost port={postgres_port} dbname={db_name}"
 
     def refresh_conn_pool(self):
         try:

@@ -338,10 +338,17 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
-        from api.db.services.task_service import TaskService
+        from api.db.services.task_service import TaskService, cancel_all_task_of
         cls.clear_chunk_num(doc.id)
 
-        # Delete tasks first
+        # Cancel all running tasks first Using preset function in task_service.py ---  set cancel flag in Redis 
+        try:
+            cancel_all_task_of(doc.id)
+            logging.info(f"Cancelled all tasks for document {doc.id}")
+        except Exception as e:
+            logging.warning(f"Failed to cancel tasks for document {doc.id}: {e}")
+
+        # Delete tasks from database
         try:
             TaskService.filter_delete([Task.doc_id == doc.id])
         except Exception as e:
@@ -776,10 +783,27 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_metadata_summary(cls, kb_id):
+    def get_metadata_summary(cls, kb_id, document_ids=None):
+        def _meta_value_type(value):
+            if value is None:
+                return None
+            if isinstance(value, list):
+                return "list"
+            if isinstance(value, bool):
+                return "string"
+            if isinstance(value, (int, float)):
+                return "number"
+            if re.match(r"\d{4}\-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", str(value)):
+                return "time"
+            return "string"
+
         fields = [cls.model.id, cls.model.meta_fields]
         summary = {}
-        for r in cls.model.select(*fields).where(cls.model.kb_id == kb_id):
+        type_counter = {}
+        query = cls.model.select(*fields).where(cls.model.kb_id == kb_id)
+        if document_ids:
+            query = query.where(cls.model.id.in_(document_ids))
+        for r in query:
             meta_fields = r.meta_fields or {}
             if isinstance(meta_fields, str):
                 try:
@@ -789,6 +813,11 @@ class DocumentService(CommonService):
             if not isinstance(meta_fields, dict):
                 continue
             for k, v in meta_fields.items():
+                value_type = _meta_value_type(v)
+                if value_type:
+                    if k not in type_counter:
+                        type_counter[k] = {}
+                    type_counter[k][value_type] = type_counter[k].get(value_type, 0) + 1
                 values = v if isinstance(v, list) else [v]
                 for vv in values:
                     if not vv:
@@ -797,11 +826,19 @@ class DocumentService(CommonService):
                     if k not in summary:
                         summary[k] = {}
                     summary[k][sv] = summary[k].get(sv, 0) + 1
-        return {k: sorted([(val, cnt) for val, cnt in v.items()], key=lambda x: x[1], reverse=True) for k, v in summary.items()}
+        result = {}
+        for k, v in summary.items():
+            values = sorted([(val, cnt) for val, cnt in v.items()], key=lambda x: x[1], reverse=True)
+            type_counts = type_counter.get(k, {})
+            value_type = "string"
+            if type_counts:
+                value_type = max(type_counts.items(), key=lambda item: item[1])[0]
+            result[k] = {"type": value_type, "values": values}
+        return result
 
     @classmethod
     @DB.connection_context()
-    def batch_update_metadata(cls, kb_id, doc_ids, updates=None, deletes=None):
+    def batch_update_metadata(cls, kb_id, doc_ids, updates=None, deletes=None, adds=None):
         updates = updates or []
         deletes = deletes or []
         if not doc_ids:
@@ -824,11 +861,20 @@ class DocumentService(CommonService):
             changed = False
             for upd in updates:
                 key = upd.get("key")
-                if not key or key not in meta:
+                if not key:
                     continue
+                if key not in meta:
+                    meta[key] = upd.get("value")
 
                 new_value = upd.get("value")
                 match_provided = "match" in upd
+                if key not in meta:
+                    if match_provided:
+                        continue
+                    meta[key] = dedupe_list(new_value) if isinstance(new_value, list) else new_value
+                    changed = True
+                    continue
+
                 if isinstance(meta[key], list):
                     if not match_provided:
                         if isinstance(new_value, list):
@@ -888,7 +934,7 @@ class DocumentService(CommonService):
         updated_docs = 0
         with DB.atomic():
             rows = cls.model.select(cls.model.id, cls.model.meta_fields).where(
-                (cls.model.id.in_(doc_ids)) & (cls.model.kb_id == kb_id)
+                cls.model.id.in_(doc_ids)
             )
             for r in rows:
                 meta = _normalize_meta(r.meta_fields or {})
@@ -1279,7 +1325,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         for b in range(0, len(cks), es_bulk_size):
             if try_create_idx:
                 if not settings.docStoreConn.index_exist(idxnm, kb_id):
-                    settings.docStoreConn.create_idx(idxnm, kb_id, len(vectors[0]))
+                    settings.docStoreConn.create_idx(idxnm, kb_id, len(vectors[0]), kb.parser_id)
                 try_create_idx = False
             settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
 

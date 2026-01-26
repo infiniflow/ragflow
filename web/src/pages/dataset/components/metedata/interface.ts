@@ -1,6 +1,10 @@
 import { ReactNode } from 'react';
-import { MetadataType } from './hook';
-export type IMetaDataReturnType = Record<string, Array<Array<string | number>>>;
+import { MetadataType } from './constant';
+export type IMetaDataReturnType = Record<
+  string,
+  | { type: string; values: Array<Array<string | number>> }
+  | Array<Array<string | number>>
+>;
 export type IMetaDataReturnJSONType = Record<
   string,
   Array<string | number> | string
@@ -32,11 +36,11 @@ export type IMetaDataReturnJSONSettings =
 
 export type MetadataValueType =
   | 'string'
-  | 'bool'
-  | 'enum'
+  | 'list'
+  // | 'bool'
+  // | 'enum'
   | 'time'
-  | 'int'
-  | 'float';
+  | 'number';
 
 export type IMetaDataTableData = {
   field: string;
@@ -52,6 +56,7 @@ export type IBuiltInMetadataItem = {
 };
 
 export type IManageModalProps = {
+  documentIds?: string[];
   title: ReactNode;
   isShowDescription?: boolean;
   isDeleteSingleValue?: boolean;
@@ -79,14 +84,16 @@ export interface IManageValuesProps {
   isShowValueSwitch?: boolean;
   isShowType?: boolean;
   isVerticalShowValue?: boolean;
+  isAddValueMode?: boolean;
   data: IMetaDataTableData;
   type: MetadataType;
   hideModal: () => void;
   onSave: (data: IMetaDataTableData) => void;
   addUpdateValue: (
     key: string,
-    originalValue: string,
-    newValue: string,
+    originalValue: string | undefined,
+    newValue: string | string[],
+    type?: MetadataValueType,
   ) => void;
   addDeleteValue: (key: string, value: string) => void;
 }
@@ -99,7 +106,8 @@ interface DeleteOperation {
 interface UpdateOperation {
   key: string;
   match: string;
-  value: string;
+  value: string | string[];
+  valueType?: MetadataValueType;
 }
 
 export interface MetadataOperations {
@@ -118,4 +126,5 @@ export type ShowManageMetadataModalProps = Partial<IManageModalProps> & {
   options?: ShowManageMetadataModalOptions;
   title?: ReactNode | string;
   isDeleteSingleValue?: boolean;
+  documentIds?: string[];
 };

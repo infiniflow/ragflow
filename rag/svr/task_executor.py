@@ -14,6 +14,10 @@
 #  limitations under the License.
 
 import time
+
+
+from common.misc_utils import thread_pool_exec
+
 start_ts = time.time()
 
 import asyncio
@@ -31,7 +35,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
 from common.connection_utils import timeout
-from common.metadata_utils import update_metadata_to, metadata_schema
+from common.metadata_utils import turn2jsonschema, update_metadata_to
 from rag.utils.base64_image import image2id
 from rag.utils.raptor_utils import should_skip_raptor, get_skip_reason
 from common.log_utils import init_root_logger
@@ -231,7 +235,7 @@ async def collect():
 
 
 async def get_storage_binary(bucket, name):
-    return await asyncio.to_thread(settings.STORAGE_IMPL.get, bucket, name)
+    return await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, name)
 
 
 @timeout(60 * 80, 1)
@@ -262,7 +266,7 @@ async def build_chunks(task, progress_callback):
 
     try:
         async with chunk_limiter:
-            cks = await asyncio.to_thread(
+            cks = await thread_pool_exec(
                 chunker.chunk,
                 task["name"],
                 binary=binary,
@@ -411,7 +415,7 @@ async def build_chunks(task, progress_callback):
                     return
                 async with chat_limiter:
                     cached = await gen_metadata(chat_mdl,
-                                                metadata_schema(task["parser_config"]["metadata"]),
+                                                turn2jsonschema(task["parser_config"]["metadata"]),
                                                 d["content_with_weight"])
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata",
                               task["parser_config"]["metadata"])
@@ -558,7 +562,8 @@ def build_TOC(task, docs, progress_callback):
 
 def init_kb(row, vector_size: int):
     idxnm = search.index_name(row["tenant_id"])
-    return settings.docStoreConn.create_idx(idxnm, row.get("kb_id", ""), vector_size)
+    parser_id = row.get("parser_id", None)
+    return settings.docStoreConn.create_idx(idxnm, row.get("kb_id", ""), vector_size, parser_id)
 
 
 async def embedding(docs, mdl, parser_config=None, callback=None):
@@ -577,7 +582,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
 
     tk_count = 0
     if len(tts) == len(cnts):
-        vts, c = await asyncio.to_thread(mdl.encode, tts[0:1])
+        vts, c = await thread_pool_exec(mdl.encode, tts[0:1])
         tts = np.tile(vts[0], (len(cnts), 1))
         tk_count += c
 
@@ -589,7 +594,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     cnts_ = np.array([])
     for i in range(0, len(cnts), settings.EMBEDDING_BATCH_SIZE):
         async with embed_limiter:
-            vts, c = await asyncio.to_thread(batch_encode, cnts[i: i + settings.EMBEDDING_BATCH_SIZE])
+            vts, c = await thread_pool_exec(batch_encode, cnts[i: i + settings.EMBEDDING_BATCH_SIZE])
         if len(cnts_) == 0:
             cnts_ = vts
         else:
@@ -675,7 +680,7 @@ async def run_dataflow(task: dict):
             prog = 0.8
             for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
                 async with embed_limiter:
-                    vts, c = await asyncio.to_thread(batch_encode, texts[i: i + settings.EMBEDDING_BATCH_SIZE])
+                    vts, c = await thread_pool_exec(batch_encode, texts[i: i + settings.EMBEDDING_BATCH_SIZE])
                 if len(vects) == 0:
                     vects = vts
                 else:
@@ -739,7 +744,7 @@ async def run_dataflow(task: dict):
 
     start_ts = timer()
     set_progress(task_id, prog=0.82, msg="[DOC Engine]:\nStart to index...")
-    e = await insert_es(task_id, task["tenant_id"], task["kb_id"], chunks, partial(set_progress, task_id, 0, 100000000))
+    e = await insert_chunks(task_id, task["tenant_id"], task["kb_id"], chunks, partial(set_progress, task_id, 0, 100000000))
     if not e:
         PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id,
                                            task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
@@ -805,19 +810,48 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
     if raptor_config.get("scope", "file") == "file":
         for x, doc_id in enumerate(doc_ids):
             chunks = []
+            skipped_chunks = 0
             for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
                                                    fields=["content_with_weight", vctr_nm],
                                                    sort_by_position=True):
+                # Skip chunks that don't have the required vector field (may have been indexed with different embedding model)
+                if vctr_nm not in d or d[vctr_nm] is None:
+                    skipped_chunks += 1
+                    logging.warning(f"RAPTOR: Chunk missing vector field '{vctr_nm}' in doc {doc_id}, skipping")
+                    continue
                 chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+            
+            if skipped_chunks > 0:
+                callback(msg=f"[WARN] Skipped {skipped_chunks} chunks without vector field '{vctr_nm}' for doc {doc_id}. Consider re-parsing the document with the current embedding model.")
+            
+            if not chunks:
+                logging.warning(f"RAPTOR: No valid chunks with vectors found for doc {doc_id}")
+                callback(msg=f"[WARN] No valid chunks with vectors found for doc {doc_id}, skipping")
+                continue
+                
             await generate(chunks, doc_id)
             callback(prog=(x + 1.) / len(doc_ids))
     else:
         chunks = []
+        skipped_chunks = 0
         for doc_id in doc_ids:
             for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
                                                    fields=["content_with_weight", vctr_nm],
                                                    sort_by_position=True):
+                # Skip chunks that don't have the required vector field
+                if vctr_nm not in d or d[vctr_nm] is None:
+                    skipped_chunks += 1
+                    logging.warning(f"RAPTOR: Chunk missing vector field '{vctr_nm}' in doc {doc_id}, skipping")
+                    continue
                 chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+
+        if skipped_chunks > 0:
+            callback(msg=f"[WARN] Skipped {skipped_chunks} chunks without vector field '{vctr_nm}'. Consider re-parsing documents with the current embedding model.")
+
+        if not chunks:
+            logging.error(f"RAPTOR: No valid chunks with vectors found in any document for kb {row['kb_id']}")
+            callback(msg=f"[ERROR] No valid chunks with vectors found. Please ensure documents are parsed with the current embedding model (vector size: {vector_size}).")
+            return res, tk_count
 
         await generate(chunks, fake_doc_id)
 
@@ -833,7 +867,17 @@ async def delete_image(kb_id, chunk_id):
         raise
 
 
-async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback):
+async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback):
+    """
+    Insert chunks into document store (Elasticsearch OR Infinity).
+
+    Args:
+        task_id: Task identifier
+        task_tenant_id: Tenant ID
+        task_dataset_id: Dataset/knowledge base ID
+        chunks: List of chunk dictionaries to insert
+        progress_callback: Callback function for progress updates
+    """
     mothers = []
     mother_ids = set([])
     for ck in chunks:
@@ -857,7 +901,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
         mothers.append(mom_ck)
 
     for b in range(0, len(mothers), settings.DOC_BULK_SIZE):
-        await asyncio.to_thread(settings.docStoreConn.insert, mothers[b:b + settings.DOC_BULK_SIZE],
+        await thread_pool_exec(settings.docStoreConn.insert, mothers[b:b + settings.DOC_BULK_SIZE],
                                 search.index_name(task_tenant_id), task_dataset_id, )
         task_canceled = has_canceled(task_id)
         if task_canceled:
@@ -865,7 +909,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
             return False
 
     for b in range(0, len(chunks), settings.DOC_BULK_SIZE):
-        doc_store_result = await asyncio.to_thread(settings.docStoreConn.insert, chunks[b:b + settings.DOC_BULK_SIZE],
+        doc_store_result = await thread_pool_exec(settings.docStoreConn.insert, chunks[b:b + settings.DOC_BULK_SIZE],
                                                    search.index_name(task_tenant_id), task_dataset_id, )
         task_canceled = has_canceled(task_id)
         if task_canceled:
@@ -883,7 +927,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
             TaskService.update_chunk_ids(task_id, chunk_ids_str)
         except DoesNotExist:
             logging.warning(f"do_handle_task update_chunk_ids failed since task {task_id} is unknown.")
-            doc_store_result = await asyncio.to_thread(settings.docStoreConn.delete, {"id": chunk_ids},
+            doc_store_result = await thread_pool_exec(settings.docStoreConn.delete, {"id": chunk_ids},
                                                        search.index_name(task_tenant_id), task_dataset_id, )
             tasks = []
             for chunk_id in chunk_ids:
@@ -931,13 +975,6 @@ async def do_handle_task(task):
 
     # prepare the progress callback function
     progress_callback = partial(set_progress, task_id, task_from_page, task_to_page)
-
-    # FIXME: workaround, Infinity doesn't support table parsing method, this check is to notify user
-    lower_case_doc_engine = settings.DOC_ENGINE.lower()
-    if lower_case_doc_engine == 'infinity' and task['parser_id'].lower() == 'table':
-        error_message = "Table parsing method is not supported by Infinity, please use other parsing methods or use Elasticsearch as the document engine."
-        progress_callback(-1, msg=error_message)
-        raise Exception(error_message)
 
     task_canceled = has_canceled(task_id)
     if task_canceled:
@@ -1092,14 +1129,14 @@ async def do_handle_task(task):
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
 
-    async def _maybe_insert_es(_chunks):
+    async def _maybe_insert_chunks(_chunks):
         if has_canceled(task_id):
             return True
-        insert_result = await insert_es(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
+        insert_result = await insert_chunks(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
         return bool(insert_result)
 
     try:
-        if not await _maybe_insert_es(chunks):
+        if not await _maybe_insert_chunks(chunks):
             return
 
         logging.info(
@@ -1115,7 +1152,7 @@ async def do_handle_task(task):
         if toc_thread:
             d = toc_thread.result()
             if d:
-                if not await _maybe_insert_es([d]):
+                if not await _maybe_insert_chunks([d]):
                     return
                 DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, 0, 1, 0)
 
@@ -1134,13 +1171,13 @@ async def do_handle_task(task):
     finally:
         if has_canceled(task_id):
             try:
-                exists = await asyncio.to_thread(
+                exists = await thread_pool_exec(
                     settings.docStoreConn.index_exist,
                     search.index_name(task_tenant_id),
                     task_dataset_id,
                 )
                 if exists:
-                    await asyncio.to_thread(
+                    await thread_pool_exec(
                         settings.docStoreConn.delete,
                         {"doc_id": task_doc_id},
                         search.index_name(task_tenant_id),
