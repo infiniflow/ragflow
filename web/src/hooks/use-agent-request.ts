@@ -269,7 +269,12 @@ export const useFetchAgent = (): {
       );
       set(data, 'data.dsl.messages', messageList);
 
-      const sysHistoryPath = ['data', 'dsl', 'globals', 'sys.history'];
+      const sysHistoryPath = [
+        'data',
+        'dsl',
+        'globals',
+        AgentGlobals.SysHistory,
+      ];
 
       if (isEmpty(get(data, sysHistoryPath))) {
         set(data, sysHistoryPath, []);
