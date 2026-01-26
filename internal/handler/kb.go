@@ -6,21 +6,20 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"ragflow/internal/dao"
 	"ragflow/internal/service"
 )
 
 // KnowledgebaseHandler knowledge base handler
 type KnowledgebaseHandler struct {
 	kbService *service.KnowledgebaseService
-	userDAO   *dao.UserDAO
+	userService *service.UserService
 }
 
 // NewKnowledgebaseHandler create knowledge base handler
-func NewKnowledgebaseHandler(kbService *service.KnowledgebaseService, userDAO *dao.UserDAO) *KnowledgebaseHandler {
+func NewKnowledgebaseHandler(kbService *service.KnowledgebaseService, userService *service.UserService) *KnowledgebaseHandler {
 	return &KnowledgebaseHandler{
 		kbService: kbService,
-		userDAO:   userDAO,
+		userService: userService,
 	}
 }
 
@@ -40,31 +39,6 @@ func NewKnowledgebaseHandler(kbService *service.KnowledgebaseService, userDAO *d
 // @Success 200 {object} service.ListKbsResponse
 // @Router /v1/kb/list [post]
 func (h *KnowledgebaseHandler) ListKbs(c *gin.Context) {
-	// Get query parameters
-	keywords := c.Query("keywords")
-	pageStr := c.Query("page")
-	pageSizeStr := c.Query("page_size")
-	parserID := c.Query("parser_id")
-	orderby := c.Query("orderby")
-	descStr := c.Query("desc")
-
-	// Parse page and page_size
-	page := 0
-	if pageStr != "" {
-		page, _ = strconv.Atoi(pageStr)
-	}
-
-	pageSize := 0
-	if pageSizeStr != "" {
-		pageSize, _ = strconv.Atoi(pageSizeStr)
-	}
-
-	// Parse desc
-	desc := true
-	if descStr == "false" {
-		desc = false
-	}
-
 	// Parse request body - allow empty body
 	var req service.ListKbsRequest
 	if c.Request.ContentLength > 0 {
@@ -75,26 +49,58 @@ func (h *KnowledgebaseHandler) ListKbs(c *gin.Context) {
 			})
 			return
 		}
-	} // else req remains zero-valued
+	}
 
-	// Override with query parameters if not provided in body
-	if req.Keywords == nil && keywords != "" {
-		req.Keywords = &keywords
+	// Extract parameters from query or request body with defaults
+	keywords := ""
+	if req.Keywords != nil {
+		keywords = *req.Keywords
+	} else if queryKeywords := c.Query("keywords"); queryKeywords != "" {
+		keywords = queryKeywords
 	}
-	if req.Page == nil && page > 0 {
-		req.Page = &page
+
+	page := 0
+	if req.Page != nil {
+		page = *req.Page
+	} else if pageStr := c.Query("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
 	}
-	if req.PageSize == nil && pageSize > 0 {
-		req.PageSize = &pageSize
+
+	pageSize := 0
+	if req.PageSize != nil {
+		pageSize = *req.PageSize
+	} else if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 {
+			pageSize = ps
+		}
 	}
-	if req.ParserID == nil && parserID != "" {
-		req.ParserID = &parserID
+
+	parserID := ""
+	if req.ParserID != nil {
+		parserID = *req.ParserID
+	} else if queryParserID := c.Query("parser_id"); queryParserID != "" {
+		parserID = queryParserID
 	}
-	if req.Orderby == nil && orderby != "" {
-		req.Orderby = &orderby
+
+	orderby := "update_time"
+	if req.Orderby != nil {
+		orderby = *req.Orderby
+	} else if queryOrderby := c.Query("orderby"); queryOrderby != "" {
+		orderby = queryOrderby
 	}
-	if req.Desc == nil {
-		req.Desc = &desc
+
+	desc := true
+	if req.Desc != nil {
+		desc = *req.Desc
+	} else if descStr := c.Query("desc"); descStr != "" {
+		desc = descStr == "true"
+	}
+
+	var ownerIDs []string
+	if req.OwnerIDs != nil {
+		ownerIDs = *req.OwnerIDs
 	}
 
 	// Get access token from Authorization header
@@ -108,7 +114,7 @@ func (h *KnowledgebaseHandler) ListKbs(c *gin.Context) {
 	}
 
 	// Get user by access token
-	user, err := h.userDAO.GetByAccessToken(token)
+	user, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"code":    401,
@@ -119,7 +125,7 @@ func (h *KnowledgebaseHandler) ListKbs(c *gin.Context) {
 	userID := user.ID
 
 	// List knowledge bases
-	result, err := h.kbService.ListKbs(&req, userID)
+	result, err := h.kbService.ListKbs(keywords, page, pageSize, parserID, orderby, desc, ownerIDs, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

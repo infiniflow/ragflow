@@ -37,45 +37,14 @@ type ListKbsResponse struct {
 }
 
 // ListKbs list knowledge bases
-func (s *KnowledgebaseService) ListKbs(req *ListKbsRequest, userID string) (*ListKbsResponse, error) {
-	// Set defaults
-	keywords := ""
-	if req.Keywords != nil {
-		keywords = *req.Keywords
-	}
-
-	page := 0
-	if req.Page != nil {
-		page = *req.Page
-	}
-
-	pageSize := 0
-	if req.PageSize != nil {
-		pageSize = *req.PageSize
-	}
-
-	parserID := ""
-	if req.ParserID != nil {
-		parserID = *req.ParserID
-	}
-
-	orderby := "update_time"
-	if req.Orderby != nil {
-		orderby = *req.Orderby
-	}
-
-	desc := true
-	if req.Desc != nil {
-		desc = *req.Desc
-	}
-
+func (s *KnowledgebaseService) ListKbs(keywords string, page int, pageSize int, parserID string, orderby string, desc bool, ownerIDs []string, userID string) (*ListKbsResponse, error) {
 	var kbs []*model.Knowledgebase
 	var total int64
 	var err error
 
 	// If owner IDs are provided, filter by them
-	if req.OwnerIDs != nil && len(*req.OwnerIDs) > 0 {
-		kbs, total, err = s.kbDAO.ListByOwnerIDs(*req.OwnerIDs, page, pageSize, orderby, desc, keywords, parserID)
+	if ownerIDs != nil && len(ownerIDs) > 0 {
+		kbs, total, err = s.kbDAO.ListByOwnerIDs(ownerIDs, page, pageSize, orderby, desc, keywords, parserID)
 	} else {
 		// Get joined tenants by user ID
 		tenants, err := s.tenantDAO.GetJoinedTenantsByUserID(userID)
