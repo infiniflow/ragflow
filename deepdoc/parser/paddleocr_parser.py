@@ -74,7 +74,7 @@ class PaddleOCRVLConfig:
     layout_nms: Optional[bool] = None
     layout_unclip_ratio: Optional[Union[float, Tuple[float, float], dict]] = None
     layout_merge_bboxes_mode: Optional[Union[str, dict]] = None
-    layout_shape_mode: str = "auto"
+    layout_shape_mode: Optional[str] = None
     prompt_label: Optional[str] = None
     format_block_content: Optional[bool] = True
     repetition_penalty: Optional[float] = None
@@ -86,9 +86,9 @@ class PaddleOCRVLConfig:
     merge_layout_blocks: Optional[bool] = False
     markdown_ignore_labels: Optional[List[str]] = None
     vlm_extra_args: Optional[dict] = None
-    restructure_pages: bool = False
-    merge_tables: bool = True
-    relevel_titles: bool = True
+    restructure_pages: Optional[bool] = False
+    merge_tables: Optional[bool] = None
+    relevel_titles: Optional[bool] = None
 
 
 @dataclass
