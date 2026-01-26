@@ -8,6 +8,7 @@ import (
 
 	"ragflow/internal/config"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/handler"
 	"ragflow/internal/router"
 	"ragflow/internal/service"
@@ -37,18 +38,26 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
+	// Initialize doc engine
+	if err := engine.Init(&cfg.DocEngine); err != nil {
+		log.Fatalf("Failed to initialize doc engine: %v", err)
+	}
+	defer engine.Close()
+
 	// Initialize service layer
 	userService := service.NewUserService()
 	documentService := service.NewDocumentService()
 	kbService := service.NewKnowledgebaseService()
+	chunkService := service.NewChunkService()
 
 	// Initialize handler layer
 	userHandler := handler.NewUserHandler(userService)
 	documentHandler := handler.NewDocumentHandler(documentService)
 	kbHandler := handler.NewKnowledgebaseHandler(kbService, userService)
+	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 
 	// Initialize router
-	r := router.NewRouter(userHandler, documentHandler, kbHandler)
+	r := router.NewRouter(userHandler, documentHandler, kbHandler, chunkHandler)
 
 	// Create Gin engine
 	engine := gin.New()

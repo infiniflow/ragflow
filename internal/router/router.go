@@ -12,6 +12,7 @@ type Router struct {
 	documentHandler     *handler.DocumentHandler
 	systemHandler       *handler.SystemHandler
 	knowledgebaseHandler *handler.KnowledgebaseHandler
+	chunkHandler        *handler.ChunkHandler
 }
 
 // NewRouter create router
@@ -19,12 +20,14 @@ func NewRouter(
 	userHandler *handler.UserHandler,
 	documentHandler *handler.DocumentHandler,
 	knowledgebaseHandler *handler.KnowledgebaseHandler,
+	chunkHandler *handler.ChunkHandler,
 ) *Router {
 	return &Router{
 		userHandler:         userHandler,
 		documentHandler:     documentHandler,
 		systemHandler:       handler.NewSystemHandler(),
 		knowledgebaseHandler: knowledgebaseHandler,
+		chunkHandler:        chunkHandler,
 	}
 }
 
@@ -83,6 +86,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 		kb := engine.Group("/v1/kb")
 		{
 			kb.POST("/list", r.knowledgebaseHandler.ListKbs)
+		}
+
+		// Chunk routes
+		chunk := engine.Group("/v1/chunk")
+		{
+			chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
 		}
 	}
 }

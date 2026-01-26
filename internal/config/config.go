@@ -10,9 +10,10 @@ import (
 
 // Config application configuration
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Log      LogConfig      `mapstructure:"log"`
+	Server     ServerConfig     `mapstructure:"server"`
+	Database   DatabaseConfig   `mapstructure:"database"`
+	Log        LogConfig        `mapstructure:"log"`
+	DocEngine  DocEngineConfig  `mapstructure:"doc_engine"`
 }
 
 // ServerConfig server configuration
@@ -36,6 +37,35 @@ type DatabaseConfig struct {
 type LogConfig struct {
 	Level  string `mapstructure:"level"`  // debug, info, warn, error
 	Format string `mapstructure:"format"` // json, text
+}
+
+// DocEngineConfig document engine configuration
+type DocEngineConfig struct {
+	Type     EngineType           `mapstructure:"type"`
+	ES       *ElasticsearchConfig `mapstructure:"es"`
+	Infinity *InfinityConfig      `mapstructure:"infinity"`
+}
+
+// EngineType document engine type
+type EngineType string
+
+const (
+	EngineElasticsearch EngineType = "elasticsearch"
+	EngineInfinity      EngineType = "infinity"
+)
+
+// ElasticsearchConfig Elasticsearch configuration
+type ElasticsearchConfig struct {
+	Hosts    string `mapstructure:"hosts"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+}
+
+// InfinityConfig Infinity configuration
+type InfinityConfig struct {
+	URI          string `mapstructure:"uri"`
+	PostgresPort int    `mapstructure:"postgres_port"`
+	DBName       string `mapstructure:"db_name"`
 }
 
 var (
@@ -110,6 +140,48 @@ func Init(configPath string) error {
 				// If mode is not set, default to debug
 				if globalConfig.Server.Mode == "" {
 					globalConfig.Server.Mode = "release"
+				}
+			}
+		}
+	}
+
+	// Map doc_engine section to DocEngineConfig
+	if globalConfig != nil && globalConfig.DocEngine.Type == "" {
+		// Try to map from doc_engine section
+		if v.IsSet("doc_engine") {
+			docEngineConfig := v.Sub("doc_engine")
+			if docEngineConfig != nil {
+				globalConfig.DocEngine.Type = EngineType(docEngineConfig.GetString("type"))
+			}
+		}
+		// Also check legacy es section for backward compatibility
+		if v.IsSet("es") {
+			esConfig := v.Sub("es")
+			if esConfig != nil {
+				if globalConfig.DocEngine.Type == "" {
+					globalConfig.DocEngine.Type = EngineElasticsearch
+				}
+				if globalConfig.DocEngine.ES == nil {
+					globalConfig.DocEngine.ES = &ElasticsearchConfig{
+						Hosts:    esConfig.GetString("hosts"),
+						Username: esConfig.GetString("username"),
+						Password: esConfig.GetString("password"),
+					}
+				}
+			}
+		}
+		if v.IsSet("infinity") {
+			infConfig := v.Sub("infinity")
+			if infConfig != nil {
+				if globalConfig.DocEngine.Type == "" {
+					globalConfig.DocEngine.Type = EngineInfinity
+				}
+				if globalConfig.DocEngine.Infinity == nil {
+					globalConfig.DocEngine.Infinity = &InfinityConfig{
+						URI:          infConfig.GetString("uri"),
+						PostgresPort: infConfig.GetInt("postgres_port"),
+						DBName:       infConfig.GetString("db_name"),
+					}
 				}
 			}
 		}
