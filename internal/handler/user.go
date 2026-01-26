@@ -12,15 +12,13 @@ import (
 
 // UserHandler user handler
 type UserHandler struct {
-	userService   *service.UserService
-	tenantService *service.TenantService
+	userService *service.UserService
 }
 
 // NewUserHandler create user handler
-func NewUserHandler(userService *service.UserService, tenantService *service.TenantService) *UserHandler {
+func NewUserHandler(userService *service.UserService) *UserHandler {
 	return &UserHandler{
-		userService:   userService,
-		tenantService: tenantService,
+		userService: userService,
 	}
 }
 
@@ -424,51 +422,4 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 	})
 }
 
-// TenantInfo get tenant information
-// @Summary Get Tenant Information
-// @Description Get current user's tenant information (owner tenant)
-// @Tags users
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/user/tenant_info [get]
-func (h *UserHandler) TenantInfo(c *gin.Context) {
-	// Extract token from request
-	token := extractToken(c)
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Access token required",
-		})
-		return
-	}
 
-	// Get user by token
-	user, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Invalid access token",
-		})
-		return
-	}
-
-	// Get tenant info
-	tenantInfo, err := h.tenantService.GetTenantInfo(user.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get tenant information",
-		})
-		return
-	}
-
-	if tenantInfo == nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "Tenant not found",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"data": tenantInfo,
-	})
-}

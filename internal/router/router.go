@@ -9,6 +9,7 @@ import (
 // Router router
 type Router struct {
 	userHandler         *handler.UserHandler
+	tenantHandler       *handler.TenantHandler
 	documentHandler     *handler.DocumentHandler
 	systemHandler       *handler.SystemHandler
 	knowledgebaseHandler *handler.KnowledgebaseHandler
@@ -19,6 +20,7 @@ type Router struct {
 // NewRouter create router
 func NewRouter(
 	userHandler *handler.UserHandler,
+	tenantHandler *handler.TenantHandler,
 	documentHandler *handler.DocumentHandler,
 	knowledgebaseHandler *handler.KnowledgebaseHandler,
 	chunkHandler *handler.ChunkHandler,
@@ -26,6 +28,7 @@ func NewRouter(
 ) *Router {
 	return &Router{
 		userHandler:         userHandler,
+		tenantHandler:       tenantHandler,
 		documentHandler:     documentHandler,
 		systemHandler:       handler.NewSystemHandler(),
 		knowledgebaseHandler: knowledgebaseHandler,
@@ -53,7 +56,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// User info endpoint
 	engine.GET("/v1/user/info", r.userHandler.Info)
 	// User tenant info endpoint
-	engine.GET("/v1/user/tenant_info", r.userHandler.TenantInfo)
+	engine.GET("/v1/user/tenant_info", r.tenantHandler.TenantInfo)
 	// User settings endpoint
 	engine.POST("/v1/user/setting", r.userHandler.Setting)
 	// User change password endpoint
