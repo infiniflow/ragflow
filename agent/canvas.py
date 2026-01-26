@@ -15,6 +15,7 @@
 #
 import asyncio
 import base64
+from datetime import datetime
 import inspect
 import binascii
 import json
@@ -283,7 +284,9 @@ class Canvas(Graph):
             "sys.query": "",
             "sys.user_id": tenant_id,
             "sys.conversation_turns": 0,
-            "sys.files": []
+            "sys.files": [],
+            "sys.history": [],
+            "sys.now": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         }
         self.variables = {}
         super().__init__(dsl, tenant_id, task_id)
@@ -299,7 +302,9 @@ class Canvas(Graph):
             "sys.query": "",
             "sys.user_id": "",
             "sys.conversation_turns": 0,
-            "sys.files": []
+            "sys.files": [],
+            "sys.history": [],
+            "sys.now": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         }
         if "variables" in self.dsl:
             self.variables = self.dsl["variables"]
@@ -387,6 +392,7 @@ class Canvas(Graph):
         if not self.globals["sys.conversation_turns"] :
             self.globals["sys.conversation_turns"] = 0
         self.globals["sys.conversation_turns"] += 1
+        self.globals["sys.now"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
         def decorate(event, dt):
             nonlocal created_at
@@ -638,6 +644,7 @@ class Canvas(Graph):
                            "created_at": st,
                        })
             self.history.append(("assistant", self.get_component_obj(self.path[-1]).output()))
+            self.globals["sys.history"].append(self.history[-1])
         elif "Task has been canceled" in self.error:
             yield decorate("workflow_finished",
                        {
@@ -715,6 +722,7 @@ class Canvas(Graph):
 
     def add_user_input(self, question):
         self.history.append(("user", question))
+        self.globals["sys.history"].append(self.history[-1])
 
     def get_prologue(self):
         return self.components["begin"]["obj"]._param.prologue
