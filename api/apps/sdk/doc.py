@@ -1514,6 +1514,12 @@ async def retrieval_test(tenant_id):
     page = int(req.get("page", 1))
     size = int(req.get("page_size", 30))
     question = req["question"]
+    # Trim whitespace and validate question
+    if isinstance(question, str):
+        question = question.strip()
+    # Return empty result if question is empty or whitespace-only
+    if not question:
+        return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
     doc_ids = req.get("document_ids", [])
     use_kg = req.get("use_kg", False)
     toc_enhance = req.get("toc_enhance", False)
