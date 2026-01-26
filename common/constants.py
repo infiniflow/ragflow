@@ -136,6 +136,8 @@ class FileSource(StrEnum):
     BITBUCKET = "bitbucket"
     ZENDESK = "zendesk"
     SEAFILE = "seafile"
+    MYSQL = "mysql"
+    POSTGRESQL = "postgresql"
 
 
 class PipelineTaskType(StrEnum):
