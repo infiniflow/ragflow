@@ -49,15 +49,17 @@ func main() {
 	documentService := service.NewDocumentService()
 	kbService := service.NewKnowledgebaseService()
 	chunkService := service.NewChunkService()
+	llmService := service.NewLLMService()
 
 	// Initialize handler layer
 	userHandler := handler.NewUserHandler(userService)
 	documentHandler := handler.NewDocumentHandler(documentService)
 	kbHandler := handler.NewKnowledgebaseHandler(kbService, userService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
+	llmHandler := handler.NewLLMHandler(llmService, userService)
 
 	// Initialize router
-	r := router.NewRouter(userHandler, documentHandler, kbHandler, chunkHandler)
+	r := router.NewRouter(userHandler, documentHandler, kbHandler, chunkHandler, llmHandler)
 
 	// Create Gin engine
 	engine := gin.New()

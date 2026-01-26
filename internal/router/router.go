@@ -13,6 +13,7 @@ type Router struct {
 	systemHandler       *handler.SystemHandler
 	knowledgebaseHandler *handler.KnowledgebaseHandler
 	chunkHandler        *handler.ChunkHandler
+	llmHandler          *handler.LLMHandler
 }
 
 // NewRouter create router
@@ -21,6 +22,7 @@ func NewRouter(
 	documentHandler *handler.DocumentHandler,
 	knowledgebaseHandler *handler.KnowledgebaseHandler,
 	chunkHandler *handler.ChunkHandler,
+	llmHandler *handler.LLMHandler,
 ) *Router {
 	return &Router{
 		userHandler:         userHandler,
@@ -28,6 +30,7 @@ func NewRouter(
 		systemHandler:       handler.NewSystemHandler(),
 		knowledgebaseHandler: knowledgebaseHandler,
 		chunkHandler:        chunkHandler,
+		llmHandler:          llmHandler,
 	}
 }
 
@@ -82,16 +85,22 @@ func (r *Router) Setup(engine *gin.Engine) {
 			authors.GET("/:author_id/documents", r.documentHandler.GetDocumentsByAuthorID)
 		}
 
-		// Knowledge base routes
-		kb := engine.Group("/v1/kb")
-		{
-			kb.POST("/list", r.knowledgebaseHandler.ListKbs)
-		}
+	// Knowledge base routes
+	kb := engine.Group("/v1/kb")
+	{
+		kb.POST("/list", r.knowledgebaseHandler.ListKbs)
+	}
 
-		// Chunk routes
-		chunk := engine.Group("/v1/chunk")
-		{
-			chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
-		}
+	// Chunk routes
+	chunk := engine.Group("/v1/chunk")
+	{
+		chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
+	}
+
+	// LLM routes
+	llm := engine.Group("/v1/llm")
+	{
+		llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
+	}
 	}
 }
