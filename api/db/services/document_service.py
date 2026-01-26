@@ -675,8 +675,7 @@ class DocumentService(CommonService):
                 if k not in old:
                     old[k] = v
                     continue
-                if isinstance(v, dict):
-                    assert isinstance(old[k], dict)
+                if isinstance(v, dict) and isinstance(old[k], dict):
                     dfs_update(old[k], v)
                 else:
                     old[k] = v
