@@ -2,26 +2,41 @@ package main
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"ragflow/internal/config"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/handler"
+	"ragflow/internal/logger"
 	"ragflow/internal/router"
 	"ragflow/internal/service"
 )
 
 func main() {
+	// Initialize logger with default level
+	if err := logger.Init("info"); err != nil {
+		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
+	}
+
 	// Initialize configuration
 	if err := config.Init(""); err != nil {
-		log.Fatalf("Failed to initialize config: %v", err)
+		logger.Fatal("Failed to initialize config", zap.Error(err))
 	}
 
 	cfg := config.Get()
-	log.Printf("Server mode: %s", cfg.Server.Mode)
+
+	// Reinitialize logger with configured level if different
+	if cfg.Log.Level != "" && cfg.Log.Level != "info" {
+		if err := logger.Init(cfg.Log.Level); err != nil {
+			logger.Error("Failed to reinitialize logger with configured level", err)
+		}
+	}
+	config.SetLogger(logger.Logger)
+
+	logger.Info("Server mode", zap.String("mode", cfg.Server.Mode))
 
 	// Print all configuration settings
 	config.PrintAll()
@@ -35,12 +50,12 @@ func main() {
 
 	// Initialize database
 	if err := dao.InitDB(); err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		logger.Fatal("Failed to initialize database", zap.Error(err))
 	}
 
 	// Initialize doc engine
 	if err := engine.Init(&cfg.DocEngine); err != nil {
-		log.Fatalf("Failed to initialize doc engine: %v", err)
+		logger.Fatal("Failed to initialize doc engine", zap.Error(err))
 	}
 	defer engine.Close()
 
@@ -77,8 +92,8 @@ func main() {
 
 	// Start server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	log.Printf("Server starting on %s", addr)
+	logger.Info("Server starting", zap.String("addr", addr))
 	if err := engine.Run(addr); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+		logger.Fatal("Failed to start server", zap.Error(err))
 	}
 }

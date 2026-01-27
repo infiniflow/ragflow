@@ -1,8 +1,6 @@
 package logger
 
 import (
-	"log"
-
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -15,13 +13,6 @@ var (
 // Init initializes the global logger
 // Note: This requires zap to be installed: go get go.uber.org/zap
 func Init(level string) error {
-	// Check if zap is available, if not, use standard logger
-	defer func() {
-		if Logger == nil {
-			log.Printf("Logger initialized (standard library)")
-		}
-	}()
-
 	// Parse log level
 	var zapLevel zapcore.Level
 	switch level {
@@ -66,47 +57,42 @@ func Sync() {
 	}
 }
 
-// Fatal logs a fatal message using zap or standard logger
+// Fatal logs a fatal message using zap
 func Fatal(msg string, fields ...zap.Field) {
-	if Logger != nil {
-		Logger.Fatal(msg, fields...)
-	} else {
-		log.Fatalf(msg)
+	if Logger == nil {
+		panic("logger not initialized")
 	}
+	Logger.Fatal(msg, fields...)
 }
 
 // Info logs an info message using zap or standard logger
 func Info(msg string, fields ...zap.Field) {
-	if Logger != nil {
-		Logger.Info(msg, fields...)
-	} else {
-		log.Println(msg)
+	if Logger == nil {
+		return
 	}
+	Logger.Info(msg, fields...)
 }
 
 // Error logs an error message using zap or standard logger
 func Error(msg string, err error) {
-	if Logger != nil {
-		Logger.Error(msg, zap.Error(err))
-	} else {
-		log.Printf("%s: %v", msg, err)
+	if Logger == nil {
+		return
 	}
+	Logger.Error(msg, zap.Error(err))
 }
 
 // Debug logs a debug message using zap or standard logger
 func Debug(msg string, fields ...zap.Field) {
-	if Logger != nil {
-		Logger.Debug(msg, fields...)
-	} else {
-		log.Printf("[DEBUG] %s", msg)
+	if Logger == nil {
+		return
 	}
+	Logger.Debug(msg, fields...)
 }
 
 // Warn logs a warning message using zap or standard logger
 func Warn(msg string, fields ...zap.Field) {
-	if Logger != nil {
-		Logger.Warn(msg, fields...)
-	} else {
-		log.Printf("[WARN] %s", msg)
+	if Logger == nil {
+		return
 	}
+	Logger.Warn(msg, fields...)
 }

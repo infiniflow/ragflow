@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/config"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
+	"ragflow/internal/logger"
 	"ragflow/internal/model"
 )
 
@@ -79,6 +82,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	if len(tenants) == 0 {
 		return nil, fmt.Errorf("user has no accessible tenants")
 	}
+	logger.Debug("Retrieved user tenants from database", zap.String("userID", userID), zap.Int("tenantCount", len(tenants)))
 
 	// Determine kb_id list
 	var kbIDs []string
@@ -112,6 +116,11 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		for _, tenant := range tenants {
 			kb, err := s.kbDAO.GetByIDAndTenantID(kbID, tenant.TenantID)
 			if err == nil && kb != nil {
+				logger.Debug("Found knowledge base record in database", 
+					zap.String("kbID", kbID), 
+					zap.String("tenantID", tenant.TenantID),
+					zap.String("kbName", kb.Name),
+					zap.String("embdID", kb.EmbdID))
 				tenantIDs = append(tenantIDs, tenant.TenantID)
 				kbRecords = append(kbRecords, kb)
 				found = true
@@ -138,6 +147,9 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user owner tenants: %w", err)
 	}
+	logger.Debug("Retrieved owner tenants from database", 
+		zap.String("userID", userID), 
+		zap.Int("ownerTenantCount", len(ownerTenants)))
 	
 	// Choose target tenant: prioritize owner tenant if available in tenantIDs
 	targetTenantID := tenantIDs[0]
@@ -163,6 +175,9 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
+	logger.Debug("Retrieved embedding model from database",
+		zap.String("targetTenantID", targetTenantID),
+		zap.String("embdID", kbRecords[0].EmbdID))
 	vector, err := embeddingModel.EncodeQuery(req.Question)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode query: %w", err)

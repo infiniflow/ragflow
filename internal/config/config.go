@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -72,7 +71,7 @@ type InfinityConfig struct {
 var (
 	globalConfig *Config
 	globalViper  *viper.Viper
-	logger      *zap.Logger
+	zapLogger    *zap.Logger
 )
 
 // Init initialize configuration
@@ -103,11 +102,7 @@ func Init(configPath string) error {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return fmt.Errorf("read config file error: %w", err)
 		}
-		if logger != nil {
-			logger.Info("Config file not found, using environment variables only")
-		} else {
-			log.Println("Config file not found, using environment variables only")
-		}
+		zapLogger.Info("Config file not found, using environment variables only")
 	}
 
 	// Save viper instance
@@ -203,32 +198,20 @@ func Get() *Config {
 
 // SetLogger sets the logger instance
 func SetLogger(l *zap.Logger) {
-	logger = l
+	zapLogger = l
 }
 
 // PrintAll prints all configuration settings
 func PrintAll() {
 	if globalViper == nil {
-		if logger != nil {
-			logger.Info("Configuration not initialized")
-		} else {
-			log.Println("Configuration not initialized")
-		}
+		zapLogger.Info("Configuration not initialized")
 		return
 	}
 
 	allSettings := globalViper.AllSettings()
-	if logger != nil {
-		logger.Info("=== All Configuration Settings ===")
-		for key, value := range allSettings {
-			logger.Info("config", zap.String("key", key), zap.Any("value", value))
-		}
-		logger.Info("=== End Configuration ===")
-	} else {
-		log.Println("=== All Configuration Settings ===")
-		for key, value := range allSettings {
-			log.Printf("%s: %v", key, value)
-		}
-		log.Println("=== End Configuration ===")
+	zapLogger.Info("=== All Configuration Settings ===")
+	for key, value := range allSettings {
+		zapLogger.Info("config", zap.String("key", key), zap.Any("value", value))
 	}
+	zapLogger.Info("=== End Configuration ===")
 }
