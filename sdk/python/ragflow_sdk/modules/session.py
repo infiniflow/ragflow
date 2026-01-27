@@ -61,6 +61,8 @@ class Session(Base):
                     json_data = json.loads(content)
                 except json.JSONDecodeError:
                     continue  # Skip lines that are not valid JSON
+                if json_data.get("event") != "message":
+                    continue
 
                 if (
                     (self.__session_type == "agent" and json_data.get("event") == "message_end")
@@ -82,7 +84,7 @@ class Session(Base):
     def _structure_answer(self, json_data):
         answer = ""
         if self.__session_type == "agent":
-           answer = json_data["data"]["content"]
+            answer = json_data["data"]["content"]
         elif self.__session_type == "chat":
             answer = json_data["answer"]
         reference = json_data.get("reference", {})
