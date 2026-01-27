@@ -7,15 +7,15 @@ import (
 
 // KnowledgebaseService knowledge base service
 type KnowledgebaseService struct {
-	kbDAO     *dao.KnowledgebaseDAO
-	tenantDAO  *dao.TenantDAO
+	kbDAO         *dao.KnowledgebaseDAO
+	userTenantDAO *dao.UserTenantDAO
 }
 
 // NewKnowledgebaseService create knowledge base service
 func NewKnowledgebaseService() *KnowledgebaseService {
 	return &KnowledgebaseService{
-		kbDAO:     dao.NewKnowledgebaseDAO(),
-		tenantDAO:  dao.NewTenantDAO(),
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
 	}
 }
 
@@ -46,16 +46,10 @@ func (s *KnowledgebaseService) ListKbs(keywords string, page int, pageSize int, 
 	if ownerIDs != nil && len(ownerIDs) > 0 {
 		kbs, total, err = s.kbDAO.ListByOwnerIDs(ownerIDs, page, pageSize, orderby, desc, keywords, parserID)
 	} else {
-		// Get joined tenants by user ID
-		tenants, err := s.tenantDAO.GetJoinedTenantsByUserID(userID)
+		// Get tenant IDs by user ID
+		tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 		if err != nil {
 			return nil, err
-		}
-
-		// Extract tenant IDs
-		tenantIDs := make([]string, len(tenants))
-		for i, t := range tenants {
-			tenantIDs[i] = t.TenantID
 		}
 
 		kbs, total, err = s.kbDAO.ListByTenantIDs(tenantIDs, userID, page, pageSize, orderby, desc, keywords, parserID)
