@@ -64,9 +64,9 @@ class PaddleOCRVLConfig:
     """Configuration for PaddleOCR-VL algorithm."""
 
     use_doc_orientation_classify: Optional[bool] = False
+    use_doc_orientation_classify: Optional[bool] = False
     use_doc_unwarping: Optional[bool] = False
     use_layout_detection: Optional[bool] = None
-    use_polygon_points: Optional[bool] = None
     use_chart_recognition: Optional[bool] = None
     use_seal_recognition: Optional[bool] = None
     use_ocr_for_image_block: Optional[bool] = None
@@ -74,6 +74,7 @@ class PaddleOCRVLConfig:
     layout_nms: Optional[bool] = None
     layout_unclip_ratio: Optional[Union[float, Tuple[float, float], dict]] = None
     layout_merge_bboxes_mode: Optional[Union[str, dict]] = None
+    layout_shape_mode: Optional[str] = None
     prompt_label: Optional[str] = None
     format_block_content: Optional[bool] = True
     repetition_penalty: Optional[float] = None
@@ -85,6 +86,9 @@ class PaddleOCRVLConfig:
     merge_layout_blocks: Optional[bool] = False
     markdown_ignore_labels: Optional[List[str]] = None
     vlm_extra_args: Optional[dict] = None
+    restructure_pages: Optional[bool] = False
+    merge_tables: Optional[bool] = None
+    relevel_titles: Optional[bool] = None
 
 
 @dataclass
@@ -111,13 +115,12 @@ class PaddleOCRConfig:
         algorithm = cfg.get("algorithm", "PaddleOCR-VL")
 
         # Validate algorithm
-        if algorithm not in ("PaddleOCR-VL",):
+        if algorithm not in ("PaddleOCR-VL"):
             raise ValueError(f"Unsupported algorithm: {algorithm}")
 
         # Extract algorithm-specific configuration
         algorithm_config: dict[str, Any] = {}
         if algorithm == "PaddleOCR-VL":
-            # Create default PaddleOCRVLConfig object and convert to dict
             algorithm_config = asdict(PaddleOCRVLConfig())
         algorithm_config_user = cfg.get("algorithm_config")
         if isinstance(algorithm_config_user, dict):
@@ -160,7 +163,6 @@ class PaddleOCRParser(RAGFlowPdfParser):
             "use_doc_orientation_classify": "useDocOrientationClassify",
             "use_doc_unwarping": "useDocUnwarping",
             "use_layout_detection": "useLayoutDetection",
-            "use_polygon_points": "usePolygonPoints",
             "use_chart_recognition": "useChartRecognition",
             "use_seal_recognition": "useSealRecognition",
             "use_ocr_for_image_block": "useOcrForImageBlock",
@@ -168,6 +170,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
             "layout_nms": "layoutNms",
             "layout_unclip_ratio": "layoutUnclipRatio",
             "layout_merge_bboxes_mode": "layoutMergeBboxesMode",
+            "layout_shape_mode": "layoutShapeMode",
             "prompt_label": "promptLabel",
             "format_block_content": "formatBlockContent",
             "repetition_penalty": "repetitionPenalty",
@@ -179,6 +182,9 @@ class PaddleOCRParser(RAGFlowPdfParser):
             "merge_layout_blocks": "mergeLayoutBlocks",
             "markdown_ignore_labels": "markdownIgnoreLabels",
             "vlm_extra_args": "vlmExtraArgs",
+            "restructure_pages": "restructurePages",
+            "merge_tables": "mergeTables",
+            "relevel_titles": "relevelTitles",
         },
     }
 
@@ -370,7 +376,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
         """Convert API response to section tuples."""
         sections: list[SectionTuple] = []
 
-        if algorithm == "PaddleOCR-VL":
+        if algorithm in ("PaddleOCR-VL",):
             layout_parsing_results = result.get("layoutParsingResults", [])
 
             for page_idx, layout_result in enumerate(layout_parsing_results):
