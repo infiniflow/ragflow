@@ -1526,14 +1526,18 @@ async def retrieval_test(tenant_id):
             if doc_id not in doc_ids_list:
                 return get_error_data_result(f"The datasets don't own the document {doc_id}")
     if not doc_ids:
-        metadata_condition = req.get("metadata_condition", {}) or {}
-        metas = DocumentService.get_meta_by_kbs(kb_ids)
-        doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
-        # If metadata_condition has conditions but no docs match, return empty result
-        if not doc_ids and metadata_condition.get("conditions"):
-            return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
-        if metadata_condition and not doc_ids:
-            doc_ids = ["-999"]
+        metadata_condition = req.get("metadata_condition")
+        if metadata_condition:
+            metas = DocumentService.get_meta_by_kbs(kb_ids)
+            doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+            # If metadata_condition has conditions but no docs match, return empty result
+            if not doc_ids and metadata_condition.get("conditions"):
+                return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
+            if metadata_condition and not doc_ids:
+                doc_ids = ["-999"]
+        else:
+            # If doc_ids is None all documents of the datasets are used
+            doc_ids = None
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
