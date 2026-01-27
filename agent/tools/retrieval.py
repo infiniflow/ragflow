@@ -21,7 +21,7 @@ import re
 from abc import ABC
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.constants import LLMType
-from api.db.services.doc_metadata_service import  DocMetadataService
+from api.db.services.doc_metadata_service import DocMetadataService
 from common.metadata_utils import apply_meta_data_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
