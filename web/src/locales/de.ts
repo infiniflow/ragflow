@@ -64,6 +64,7 @@ export default {
         tokenPlaceholder: 'z.B. eyJhbGciOiJIUzI1Ni...',
       },
       selected: 'Ausgewählt',
+      seeAll: 'Alle anzeigen',
     },
     login: {
       loginTitle: 'Melden Sie sich bei Ihrem Konto an',
@@ -102,6 +103,7 @@ export default {
       search: 'Suche',
       welcome: 'Willkommen bei',
       dataset: 'Datensatz',
+      memories: 'Gedächtnis',
       Memories: 'Gedächtnis',
     },
     memories: {
@@ -115,6 +117,10 @@ export default {
 Semantisches Gedächtnis: Allgemeines Wissen und Fakten über den Benutzer und die Welt.
 Episodisches Gedächtnis: Zeitgestempelte Aufzeichnungen spezifischer Ereignisse und Erfahrungen.
 Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte Abläufe.`,
+      raw: 'raw',
+      semantic: 'semantisch',
+      episodic: 'episodisch',
+      procedural: 'prozedural',
       editName: 'Namen bearbeiten',
       memory: 'Gedächtnis',
       createMemory: 'Gedächtnis erstellen',
@@ -129,6 +135,8 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
     },
     memory: {
       messages: {
+        forget: 'Vergessen',
+        forgetMessageTip: 'Sind Sie sicher, dass Sie vergessen möchten?',
         messageDescription:
           'Der Gedächtnisabruf wird mit Ähnlichkeitsschwellenwert, Schlüsselwortähnlichkeitsgewicht und Top N aus den erweiterten Einstellungen konfiguriert.',
         copied: 'Kopiert!',
@@ -147,6 +155,8 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
         action: 'Aktion',
       },
       config: {
+        memorySizeTooltip: `Berücksichtigt den Inhalt jeder Nachricht + deren Einbettungsvektor (≈ Inhalt + Dimensionen × 8 Bytes).
+Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Standardlimit von 5 MB fasst ~500 solcher Nachrichten.`,
         avatar: 'Avatar',
         description: 'Beschreibung',
         memorySize: 'Gedächtnisgröße',
@@ -181,6 +191,39 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
     },
     knowledgeDetails: {
       metadata: {
+        type: 'Typ',
+        fieldNameInvalid:
+          'Feldname darf nur Buchstaben oder Unterstriche enthalten.',
+        builtIn: 'Eingebaut',
+        generation: 'Generierung',
+        toMetadataSetting: 'Generierungseinstellungen',
+        toMetadataSettingTip: 'Auto-Metadaten in der Konfiguration festlegen.',
+        descriptionTip:
+          'Geben Sie Beschreibungen oder Beispiele an, um das LLM beim Extrahieren von Werten für dieses Feld zu unterstützen. Wenn leer gelassen, wird der Feldname verwendet.',
+        restrictDefinedValuesTip:
+          'Enum-Modus: Beschränkt die LLM-Extraktion darauf, nur voreingestellte Werte abzugleichen. Definieren Sie Werte unten.',
+        valueExists:
+          'Wert existiert bereits. Bestätigen Sie, um Duplikate zusammenzuführen und alle zugehörigen Dateien zu kombinieren.',
+        fieldNameExists:
+          'Feld existiert bereits. Bestätigen Sie, um Duplikate zusammenzuführen und alle zugehörigen Dateien zu kombinieren.',
+        valueSingleExists:
+          'Wert existiert bereits. Bestätigen Sie, um Duplikate zusammenzuführen.',
+        fieldSingleNameExists:
+          'Feldname existiert bereits. Bestätigen Sie, um Duplikate zusammenzuführen.',
+        fieldExists: 'Feld existiert bereits.',
+        fieldSetting: 'Feldeinstellungen',
+        deleteWarn:
+          'Dieses {{field}} wird aus allen zugehörigen Dateien entfernt',
+        deleteManageFieldAllWarn:
+          'Dieses Feld und alle zugehörigen Werte werden aus allen zugehörigen Dateien gelöscht.',
+        deleteManageValueAllWarn:
+          'Dieser Wert wird aus allen zugehörigen Dateien gelöscht.',
+        deleteManageFieldSingleWarn:
+          'Dieses Feld und alle zugehörigen Werte werden aus diesen Dateien gelöscht.',
+        deleteManageValueSingleWarn:
+          'Dieser Wert wird aus diesen Dateien gelöscht.',
+        deleteSettingFieldWarn: `Dieses Feld wird gelöscht; vorhandene Metadaten sind davon nicht betroffen.`,
+        deleteSettingValueWarn: `Dieser Wert wird gelöscht; vorhandene Metadaten sind davon nicht betroffen.`,
         changesAffectNewParses: 'Änderungen betreffen nur neue Analysen.',
         editMetadataForDataset: 'Metadaten anzeigen und bearbeiten für ',
         restrictDefinedValues: 'Auf definierte Werte beschränken',
@@ -189,12 +232,21 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
         manageMetadata: 'Metadaten verwalten',
         metadata: 'Metadaten',
         values: 'Werte',
+        value: 'Wert',
         action: 'Aktion',
         field: 'Feld',
         description: 'Beschreibung',
         fieldName: 'Feldname',
         editMetadata: 'Metadaten bearbeiten',
       },
+      redoAll: 'Vorhandene Chunks löschen',
+      applyAutoMetadataSettings:
+        'Globale Auto-Metadaten-Einstellungen anwenden',
+      parseFileTip: 'Sind Sie sicher, dass Sie die Datei analysieren möchten?',
+      parseFile: 'Datei analysieren',
+      emptyMetadata: 'Keine Metadaten',
+      metadataField: 'Metadatenfeld',
+      systemAttribute: 'Systemattribut',
       localUpload: 'Lokaler Upload',
       fileSize: 'Dateigröße',
       fileType: 'Dateityp',
@@ -209,7 +261,7 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       generate: 'Generieren',
       raptor: 'RAPTOR',
       processingType: 'Verarbeitungstyp',
-      dataPipeline: 'Ingestion-Pipeline',
+      dataPipeline: 'Dateneingabe-Pipeline',
       operations: 'Operationen',
       taskId: 'Aufgaben-ID',
       duration: 'Dauer',
@@ -271,13 +323,13 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
         'Führen Sie einen Abruftest durch, um zu prüfen, ob RAGFlow die beabsichtigten Inhalte für das LLM wiederherstellen kann.',
       similarityThreshold: 'Ähnlichkeitsschwelle',
       similarityThresholdTip:
-        'RAGFlow verwendet entweder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit oder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Neuordnungsbewertung während des Abrufs. Dieser Parameter legt den Schwellenwert für Ähnlichkeiten zwischen der Benutzeranfrage und den Chunks fest. Jeder Chunk mit einer Ähnlichkeitsbewertung unter diesem Schwellenwert wird von den Ergebnissen ausgeschlossen. Standardmäßig ist der Schwellenwert auf 0,2 festgelegt. Das bedeutet, dass nur Textblöcke mit einer hybriden Ähnlichkeitsbewertung von 20 oder höher abgerufen werden.',
+        'RAGFlow verwendet entweder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit oder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Rerank-bewertung während des Abrufs. Dieser Parameter legt den Schwellenwert für Ähnlichkeiten zwischen der Benutzeranfrage und den Chunks fest. Jeder Chunk mit einer Ähnlichkeitsbewertung unter diesem Schwellenwert wird von den Ergebnissen ausgeschlossen. Standardmäßig ist der Schwellenwert auf 0,2 festgelegt. Das bedeutet, dass nur Textblöcke mit einer hybriden Ähnlichkeitsbewertung von 20 oder höher abgerufen werden.',
       vectorSimilarityWeight: 'Schlüsselwortähnlichkeitsgewicht',
       vectorSimilarityWeightTip:
-        'Dies legt das Gewicht der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert fest, entweder in Verbindung mit der Vektorkosinus-Ähnlichkeit oder mit der Neuordnungsbewertung. Die Summe der beiden Gewichte muss 1,0 ergeben.',
+        'Dies legt das Gewicht der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert fest, entweder in Verbindung mit der Vektorkosinus-Ähnlichkeit oder mit der Rerank-bewertung. Die Summe der beiden Gewichte muss 1,0 ergeben.',
       keywordSimilarityWeight: 'Schlüsselwortähnlichkeitsgewicht',
       keywordSimilarityWeightTip:
-        'Dies legt das Gewicht der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert fest, entweder in Verbindung mit der Vektorkosinus-Ähnlichkeit oder mit der Neuordnungsbewertung. Die Summe der beiden Gewichte muss 1,0 ergeben.',
+        'Dies legt das Gewicht der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert fest, entweder in Verbindung mit der Vektorkosinus-Ähnlichkeit oder mit der Rerank-bewertung. Die Summe der beiden Gewichte muss 1,0 ergeben.',
       testText: 'Testtext',
       testTextPlaceholder: 'Geben Sie hier Ihre Frage ein!',
       testingLabel: 'Testen',
@@ -321,10 +373,10 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       bulk: 'Masse',
       cancel: 'Abbrechen',
       close: 'Schließen',
-      rerankModel: 'Neuordnungsmodell',
+      rerankModel: 'Rerank-modell',
       rerankPlaceholder: 'Bitte auswählen',
       rerankTip:
-        'Wenn leer gelassen, verwendet RAGFlow eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit; wenn ein Neuordnungsmodell ausgewählt wird, ersetzt eine gewichtete Neuordnungsbewertung die gewichtete Vektorkosinus-Ähnlichkeit. Bitte beachten Sie, dass die Verwendung eines Neuordnungsmodells die Antwortzeit des Systems erheblich erhöht.',
+        'Wenn leer gelassen, verwendet RAGFlow eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit; wenn ein Rerank-modell ausgewählt wird, ersetzt eine gewichtete Rerank-bewertung die gewichtete Vektorkosinus-Ähnlichkeit. Bitte beachten Sie, dass die Verwendung eines Rerank-modells die Antwortzeit des Systems erheblich erhöht.',
       topK: 'Top-K',
       topKTip:
         'In Verbindung mit dem Rerank model wird mit dieser Einstellung die Anzahl der Textblöcke festgelegt, die an das angegebene reranking model gesendet werden.',
@@ -374,7 +426,12 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       reRankModelWaring: 'Das Rerank-Modell ist sehr zeitaufwendig.',
     },
     knowledgeConfiguration: {
+      globalIndexModelTip:
+        'Wird verwendet, um Wissensgraphen, RAPTOR, Auto-Metadaten, Auto-Schlüsselwörter und Auto-Fragen zu generieren. Die Modellleistung beeinflusst die Generierungsqualität.',
+      globalIndexModel: 'Indizierungsmodell',
       settings: 'Einstellungen',
+      autoMetadataTip:
+        'Automatische Generierung von Metadaten. Gilt für neue Dateien während der Analyse. Vorhandene Dateien müssen neu analysiert werden, um aktualisiert zu werden (Chunks bleiben erhalten). Beachten Sie, dass zusätzliche Tokens vom in der "Konfiguration" angegebenen Indizierungsmodell verbraucht werden.',
       autoMetadata: 'Auto-Metadaten',
       mineruOptions: 'MinerU Optionen',
       mineruParseMethod: 'Analysemethode',
@@ -388,15 +445,17 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       paddleocrOptions: 'PaddleOCR-Optionen',
       paddleocrApiUrl: 'PaddleOCR API-URL',
       paddleocrApiUrlTip: 'API-Endpunkt-URL des PaddleOCR-Dienstes',
-      paddleocrApiUrlPlaceholder: 'Zum Beispiel: https://paddleocr-server.com/layout-parsing',
+      paddleocrApiUrlPlaceholder:
+        'Zum Beispiel: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio-Zugriffstoken',
       paddleocrAccessTokenTip: 'Zugriffstoken für die PaddleOCR-API (optional)',
       paddleocrAccessTokenPlaceholder: 'Ihr AI Studio-Token (optional)',
       paddleocrAlgorithm: 'PaddleOCR-Algorithmus',
-      paddleocrAlgorithmTip: 'Algorithmus, der für die PaddleOCR-Verarbeitung verwendet wird',
+      paddleocrAlgorithmTip:
+        'Algorithmus, der für die PaddleOCR-Verarbeitung verwendet wird',
       paddleocrSelectAlgorithm: 'Algorithmus auswählen',
       paddleocrModelNamePlaceholder: 'Zum Beispiel: paddleocr-umgebung-1',
-      overlappedPercent: 'Überlappungsprozent(%)',
+      overlappedPercent: 'Chunk-Überlappung (%)',
       generationScopeTip:
         'Bestimmt, ob RAPTOR für den gesamten Datensatz oder für eine einzelne Datei generiert wird.',
       scopeDataset: 'Datensatz',
@@ -428,20 +487,20 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       fileFilter: 'Dateifilter',
       setDefaultTip: '',
       setDefault: 'Als Standard festlegen',
-      editLinkDataPipeline: 'Ingestion-Pipeline bearbeiten',
+      editLinkDataPipeline: 'Dateneingabe-Pipeline bearbeiten',
       linkPipelineSetTip:
-        'Verknüpfung der Ingestion-Pipeline mit diesem Datensatz verwalten',
+        'Verknüpfung der Dateneingabe-Pipeline mit diesem Datensatz verwalten',
       default: 'Standard',
-      dataPipeline: 'Ingestion-Pipeline',
-      linkDataPipeline: 'Ingestion-Pipeline verknüpfen',
+      dataPipeline: 'Dateneingabe-Pipeline',
+      linkDataPipeline: 'Dateneingabe-Pipeline verknüpfen',
       enableAutoGenerate: 'Automatische Generierung aktivieren',
       teamPlaceholder: 'Bitte wählen Sie ein Team.',
       dataFlowPlaceholder: 'Bitte wählen Sie eine Pipeline.',
       buildItFromScratch: 'Von Grund auf neu erstellen',
       dataFlow: 'Pipeline',
-      parseType: 'Analysetyp',
+      parseType: 'Art der Dateneingabe',
       manualSetup: 'Pipeline wählen',
-      builtIn: 'Eingebaut',
+      builtIn: 'eingebaute Dateneingabe',
       imageTableContextWindow: 'Kontextfenster für Bild und Tabelle',
       imageTableContextWindowTip:
         'Erfasst N Token Text ober- und unterhalb von Bild und Tabelle, um reicheren Kontext bereitzustellen.',
@@ -634,30 +693,7 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         'In einem Wissensgraphen ist eine Gemeinschaft ein Cluster von Entitäten, die durch Beziehungen verbunden sind. Sie können das LLM eine Zusammenfassung für jede Gemeinschaft erstellen lassen, bekannt als Gemeinschaftsbericht. Weitere Informationen finden Sie hier: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
       theDocumentBeingParsedCannotBeDeleted:
         'Das Dokument, das gerade analysiert wird, kann nicht gelöscht werden',
-      mcp: 'MCP',
-      mineru: {
-        modelNameRequired: 'Modellname ist erforderlich',
-        apiServerRequired: 'MinerU API-Server-Konfiguration ist erforderlich',
-        serverUrlBackendLimit:
-          'MinerU Server-URL-Adresse ist nur für das HTTP-Client-Backend verfügbar',
-        apiserver: 'MinerU API-Server-Konfiguration',
-        outputDir: 'MinerU Ausgabeverzeichnispfad',
-        backend: 'MinerU Verarbeitungs-Backend-Typ',
-        serverUrl: 'MinerU Server-URL-Adresse',
-        deleteOutput: 'Ausgabedateien nach Verarbeitung löschen',
-        selectBackend: 'Verarbeitungs-Backend auswählen',
-        backendOptions: {
-          pipeline: 'Standard-Pipeline-Verarbeitung',
-          vlmTransformers: 'Vision Language Model mit Transformers',
-          vlmVllmEngine: 'Vision Language Model mit vLLM Engine',
-          vlmHttpClient: 'Vision Language Model über HTTP-Client',
-          vlmMlxEngine: 'Vision Language Model mit MLX Engine',
-          vlmVllmAsyncEngine:
-            'Vision Language Model mit vLLM Async Engine (Experimentell)',
-          vlmLmdeployEngine:
-            'Vision Language Model mit LMDeploy Engine (Experimentell)',
-        },
-      },
+      lastWeek: 'von letzter Woche',
     },
     chunk: {
       type: 'Typ',
@@ -873,6 +909,8 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       tocEnhance: 'Inhaltsverzeichnis verbessern',
       tocEnhanceTip:
         'Während der Analyse des Dokuments wurden Inhaltsverzeichnisinformationen generiert (siehe Option "Inhaltsverzeichnis-Extraktion aktivieren" in der allgemeinen Methode). Dies ermöglicht es dem großen Modell, Inhaltsverzeichniselemente zurückzugeben, die für die Abfrage des Benutzers relevant sind, und diese Elemente zu verwenden, um verwandte Chunks abzurufen und diese Chunks während des Sortiervorgangs zu gewichten. Dieser Ansatz leitet sich von der Nachahmung der Verhaltenslogik ab, wie Menschen in Büchern nach Wissen suchen.',
+      batchDeleteSessions: 'Stapel löschen',
+      deleteSelectedConfirm: 'Die ausgewählten {count} Sitzung(en) löschen?',
     },
     setting: {
       deleteModel: 'Modell löschen',
@@ -975,6 +1013,12 @@ Beispiel: Virtual Hosted Style`,
         'Verbinden Sie Ihr Box-Laufwerk, um Dateien und Ordner zu synchronisieren.',
       githubDescription:
         'Verbinden Sie GitHub, um Pull Requests und Issues zur Recherche zu synchronisieren.',
+      airtableDescription:
+        'Verbinden Sie sich mit Airtable und synchronisieren Sie Dateien aus einer bestimmten Tabelle in einem vorgesehenen Arbeitsbereich.',
+      asanaDescription:
+        'Verbinden Sie sich mit Asana und synchronisieren Sie Dateien aus einem bestimmten Arbeitsbereich.',
+      imapDescription:
+        'Verbinden Sie sich mit Ihrem IMAP-Postfach, um E-Mails für den Wissensabruf zu synchronisieren.',
       dropboxAccessTokenTip:
         'Generieren Sie ein langlebiges Zugriffstoken in der Dropbox App Console mit den Bereichen files.metadata.read, files.content.read und sharing.read.',
       moodleDescription:
@@ -1121,14 +1165,15 @@ Beispiel: Virtual Hosted Style`,
       baseUrlNameMessage: 'Bitte geben Sie Ihre Basis-URL ein!',
       paddleocr: {
         apiUrl: 'PaddleOCR API-URL',
-        apiUrlPlaceholder: 'Zum Beispiel: https://paddleocr-server.com/layout-parsing',
+        apiUrlPlaceholder:
+          'Zum Beispiel: https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio-Zugriffstoken',
         accessTokenPlaceholder: 'Ihr AI Studio-Token (optional)',
         algorithm: 'PaddleOCR-Algorithmus',
         selectAlgorithm: 'Algorithmus auswählen',
         modelNamePlaceholder: 'Zum Beispiel: paddleocr-from-env-1',
         modelNameRequired: 'Der Modellname ist ein Pflichtfeld',
-        apiUrlRequired: 'Die PaddleOCR API-URL ist ein Pflichtfeld'
+        apiUrlRequired: 'Die PaddleOCR API-URL ist ein Pflichtfeld',
       },
       vision: 'Unterstützt es Vision?',
       ollamaLink: 'Wie integriere ich {{name}}',
@@ -1272,6 +1317,15 @@ Beispiel: Virtual Hosted Style`,
             'Vision Language Model mit LMDeploy Engine (Experimentell)',
         },
       },
+      modelTypes: {
+        chat: 'Chat',
+        embedding: 'Embedding',
+        rerank: 'Rerank',
+        sequence2text: 'sequence2text',
+        tts: 'TTS',
+        image2text: 'Img2txt',
+        speech2text: 'ASR',
+      },
     },
     message: {
       registered: 'Registriert!',
@@ -1349,7 +1403,7 @@ Beispiel: Virtual Hosted Style`,
       marketing: 'Marketing',
       consumerApp: 'Verbraucher-App',
       other: 'Andere',
-      ingestionPipeline: 'Ingestion-Pipeline',
+      ingestionPipeline: 'Dateneingabe-Pipeline',
       agents: 'Agenten',
       days: 'Tage',
       beginInput: 'Eingabe beginnen',
@@ -1723,6 +1777,8 @@ Beispiel: Virtual Hosted Style`,
         notEmpty: 'Nicht leer',
         in: 'In',
         notIn: 'Nicht in',
+        is: 'Ist',
+        isNot: 'Ist nicht',
       },
       switchLogicOperatorOptions: {
         and: 'UND',
@@ -1988,6 +2044,8 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       beginInputTip:
         'Durch Definieren von Eingabeparametern kann auf diesen Inhalt von anderen Komponenten in nachfolgenden Prozessen zugegriffen werden.',
       query: 'Abfragevariablen',
+      switchPromptMessage:
+        'Die Prompt-Wörter werden geändert. Bitte bestätigen Sie, ob Sie die vorhandenen Prompt-Wörter verwerfen möchten?',
       queryRequired: 'Abfrage ist erforderlich',
       queryTip: 'Wählen Sie die Variable, die Sie verwenden möchten',
       agent: 'Agent',
@@ -2054,7 +2112,7 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       createFromTemplate: 'Aus Vorlage erstellen',
       importJsonFile: 'JSON-Datei importieren',
       ceateAgent: 'Agenten-Flow',
-      createPipeline: 'Ingestion-Pipeline',
+      createPipeline: ' Dateneingabe-Pipeline',
       chooseAgentType: 'Agententyp wählen',
       parser: 'Parser',
       parserDescription:
@@ -2089,7 +2147,7 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       addParser: 'Parser hinzufügen',
       hierarchy: 'Hierarchie',
       regularExpressions: 'Reguläre Ausdrücke',
-      overlappedPercent: 'Überlappungsprozent (%)',
+      overlappedPercent: 'Chunk-Überlappung (%)',
       searchMethod: 'Suchmethode',
       searchMethodTip: `Definiert, wie der Inhalt durchsucht werden kann — durch Volltext, Embedding oder beides.
 Der Indexer speichert den Inhalt in den entsprechenden Datenstrukturen für die ausgewählten Methoden.`,
@@ -2143,6 +2201,7 @@ Wichtige Anweisungen:
           metadata: `Extrahiere wichtige strukturierte Informationen aus dem gegebenen Inhalt. Gib NUR einen gültigen JSON-String ohne zusätzlichen Text aus. Wenn keine wichtigen strukturierten Informationen gefunden werden, gib ein leeres JSON-Objekt aus: {}.
 
 Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereignisse, wichtige Fakten, numerische Daten oder andere extrahierbare Entitäten.`,
+          toc: '',
         },
         user: {
           keywords: `Textinhalt
@@ -2152,6 +2211,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
           summary: `Text zum Zusammenfassen:
 [Text hier einfügen]`,
           metadata: `Inhalt: [INHALT HIER EINFÜGEN]`,
+          toc: '[Text hier einfügen]',
         },
       },
       cancel: 'Abbrechen',
@@ -2248,7 +2308,13 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
         requestBodyParameters: 'Anfrage-Body-Parameter',
         streaming: 'Akzeptierte Antwort',
         immediately: 'Endgültige Antwort',
+        overview: 'Übersicht',
+        logs: 'Logs',
+        agentStatus: 'Agentenstatus:',
       },
+      saveToMemory: 'Im Gedächtnis speichern',
+      retrievalFrom: 'Abruf von',
+      tocDataSource: 'Datenquelle',
     },
     llmTools: {
       bad_calculator: {
@@ -2326,7 +2392,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
     dataflowParser: {
       result: 'Ergebnis',
       parseSummary: 'Analyse-Zusammenfassung',
-      parseSummaryTip: 'Parser：deepdoc',
+      parseSummaryTip: 'Parser：DeepDoc',
       parserMethod: 'Parser-Methode',
       outputFormat: 'Ausgabeformat',
       rerunFromCurrentStep: 'Vom aktuellen Schritt erneut ausführen',
@@ -2350,10 +2416,10 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       <p>Um sie zu behalten, klicken Sie bitte auf Erneut ausführen, um die aktuelle Stufe erneut auszuführen.</p> `,
       changeStepModalConfirmText: 'Trotzdem wechseln',
       changeStepModalCancelText: 'Abbrechen',
-      unlinkPipelineModalTitle: 'Ingestion-Pipeline trennen',
+      unlinkPipelineModalTitle: 'Dateneingabe-Pipeline trennen',
       unlinkPipelineModalConfirmText: 'Trennen',
       unlinkPipelineModalContent: `
-      <p>Nach dem Trennen ist dieser Datensatz nicht mehr mit der aktuellen Ingestion-Pipeline verbunden.</p>
+      <p>Nach dem Trennen ist dieser Datensatz nicht mehr mit der aktuellen Dateneingabe-Pipeline verbunden.</p>
       <p>Dateien, die bereits analysiert werden, werden bis zum Abschluss fortgesetzt</p>
       <p>Dateien, die noch nicht analysiert wurden, werden nicht mehr verarbeitet</p> <br/>
       <p>Sind Sie sicher, dass Sie fortfahren möchten?</p> `,
@@ -2364,7 +2430,8 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
     },
     datasetOverview: {
       downloadTip: 'Dateien werden von Datenquellen heruntergeladen. ',
-      processingTip: 'Dateien werden von der Ingestion-Pipeline verarbeitet.',
+      processingTip:
+        'Dateien werden von der Dateneingabe-Pipeline verarbeitet.',
       totalFiles: 'Gesamtdateien',
       downloading: 'Wird heruntergeladen',
       downloadSuccessTip: 'Gesamte erfolgreiche Downloads',
