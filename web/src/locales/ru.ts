@@ -513,7 +513,8 @@ export default {
       paddleocrOptions: 'Параметры PaddleOCR',
       paddleocrApiUrl: 'URL API PaddleOCR',
       paddleocrApiUrlTip: 'URL конечной точки API сервиса PaddleOCR',
-      paddleocrApiUrlPlaceholder: 'Например: https://paddleocr-server.com/layout-parsing',
+      paddleocrApiUrlPlaceholder:
+        'Например: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Токен доступа AI Studio',
       paddleocrAccessTokenTip: 'Токен доступа к API PaddleOCR (необязательно)',
       paddleocrAccessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
@@ -979,10 +980,6 @@ export default {
       'sa-east-1': 'Южная Америка (Сан-Паулу)',
       'us-gov-east-1': 'AWS GovCloud (US-East)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
-      addHunyuanSID: 'Hunyuan Secret ID',
-      HunyuanSIDMessage: 'Пожалуйста, введите ваш Secret ID',
-      addHunyuanSK: 'Hunyuan Secret Key',
-      HunyuanSKMessage: 'Пожалуйста, введите ваш Secret Key',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Пожалуйста, введите ваш Secret ID',
       addTencentCloudSK: 'TencentCloud Secret Key',
@@ -1047,14 +1044,15 @@ export default {
       mcp: 'MCP',
       paddleocr: {
         apiUrl: 'URL API PaddleOCR',
-        apiUrlPlaceholder: 'Например: https://paddleocr-server.com/layout-parsing',
+        apiUrlPlaceholder:
+          'Например: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Токен доступа AI Studio',
         accessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
         algorithm: 'Алгоритм PaddleOCR',
         selectAlgorithm: 'Выбрать алгоритм',
         modelNamePlaceholder: 'Например: paddleocr-from-env-1',
         modelNameRequired: 'Имя модели является обязательным',
-        apiUrlRequired: 'URL API PaddleOCR является обязательным'
+        apiUrlRequired: 'URL API PaddleOCR является обязательным',
       },
     },
     message: {

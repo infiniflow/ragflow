@@ -162,13 +162,16 @@ export default {
     knowledgeConfiguration: {
       paddleocrOptions: 'Opciones de PaddleOCR',
       paddleocrApiUrl: 'URL de API de PaddleOCR',
-      paddleocrApiUrlTip: 'La URL del endpoint de la API para el servicio PaddleOCR',
+      paddleocrApiUrlTip:
+        'La URL del endpoint de la API para el servicio PaddleOCR',
       paddleocrApiUrlPlaceholder: 'ej: https://servidor-paddleocr.com/api',
       paddleocrAccessToken: 'Token de acceso de AI Studio',
-      paddleocrAccessTokenTip: 'Token de acceso para la API de PaddleOCR (opcional)',
+      paddleocrAccessTokenTip:
+        'Token de acceso para la API de PaddleOCR (opcional)',
       paddleocrAccessTokenPlaceholder: 'Su token de AI Studio (opcional)',
       paddleocrAlgorithm: 'Algoritmo de PaddleOCR',
-      paddleocrAlgorithmTip: 'Algoritmo a utilizar para el análisis de PaddleOCR',
+      paddleocrAlgorithmTip:
+        'Algoritmo a utilizar para el análisis de PaddleOCR',
       paddleocrSelectAlgorithm: 'Seleccionar algoritmo',
       paddleocrModelNamePlaceholder: 'ej: paddleocr-desde-env-1',
     },
@@ -395,14 +398,15 @@ export default {
       baseUrlNameMessage: '¡Por favor ingresa tu URL base!',
       paddleocr: {
         apiUrl: 'URL de la API de PaddleOCR',
-        apiUrlPlaceholder: 'Por ejemplo: https://paddleocr-server.com/layout-parsing',
+        apiUrlPlaceholder:
+          'Por ejemplo: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token de acceso de AI Studio',
         accessTokenPlaceholder: 'Su token de AI Studio (opcional)',
         algorithm: 'Algoritmo de PaddleOCR',
         selectAlgorithm: 'Seleccionar algoritmo',
         modelNamePlaceholder: 'Por ejemplo: paddleocr-from-env-1',
         modelNameRequired: 'El nombre del modelo es obligatorio',
-        apiUrlRequired: 'La URL de la API de PaddleOCR es obligatoria'
+        apiUrlRequired: 'La URL de la API de PaddleOCR es obligatoria',
       },
       vision: '¿Soporta visión?',
       ollamaLink: 'Cómo integrar {{name}}',
@@ -427,10 +431,6 @@ export default {
       'eu-central-1': 'Europa (Frankfurt)',
       'us-gov-west-1': 'AWS GovCloud (EE. UU. Oeste)',
       'ap-southeast-2': 'Asia Pacífico (Sídney)',
-      addHunyuanSID: 'ID Secreto de Hunyuan',
-      HunyuanSIDMessage: '¡Por favor ingresa tu ID Secreto!',
-      addHunyuanSK: 'Clave Secreta de Hunyuan',
-      HunyuanSKMessage: '¡Por favor ingresa tu Clave Secreta!',
       addTencentCloudSID: 'ID Secreto de TencentCloud',
       TencentCloudSIDMessage: '¡Por favor ingresa tu ID Secreto!',
       addTencentCloudSK: 'Clave Secreta de TencentCloud',
