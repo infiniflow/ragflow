@@ -84,13 +84,23 @@ class InfinityConnectionBase(DocStoreConnection):
             column_names = inf_table.show_columns()["name"]
             column_names = set(column_names)
             for field_name, field_info in schema.items():
-                if field_name in column_names:
-                    continue
-                res = inf_table.add_columns({field_name: field_info})
-                assert res.error_code == infinity.ErrorCode.OK
-                self.logger.info(f"INFINITY added following column to table {table_name}: {field_name} {field_info}")
+                is_new_column = field_name not in column_names
+                if is_new_column:
+                    res = inf_table.add_columns({field_name: field_info})
+                    assert res.error_code == infinity.ErrorCode.OK
+                    self.logger.info(f"INFINITY added following column to table {table_name}: {field_name} {field_info}")
 
-                # Create secondary index if specified
+                if field_info["type"] == "varchar" and "analyzer" in field_info:
+                    analyzers = field_info["analyzer"]
+                    if isinstance(analyzers, str):
+                        analyzers = [analyzers]
+                    for analyzer in analyzers:
+                        inf_table.create_index(
+                            f"ft_{re.sub(r'[^a-zA-Z0-9]', '_', field_name)}_{re.sub(r'[^a-zA-Z0-9]', '_', analyzer)}",
+                            IndexInfo(field_name, IndexType.FullText, {"ANALYZER": analyzer}),
+                            ConflictType.Ignore,
+                        )
+
                 if "index_type" in field_info:
                     index_config = field_info["index_type"]
                     if isinstance(index_config, str) and index_config == "secondary":
@@ -100,7 +110,6 @@ class InfinityConnectionBase(DocStoreConnection):
                             ConflictType.Ignore,
                         )
                         self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name}")
-                        continue
                     elif isinstance(index_config, dict):
                         if index_config.get("type") == "secondary":
                             params = {}
@@ -112,20 +121,6 @@ class InfinityConnectionBase(DocStoreConnection):
                                 ConflictType.Ignore,
                             )
                             self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name} with params {params}")
-                            continue
-
-                # Create FullText index if analyzer is specified
-                if field_info["type"] != "varchar" or "analyzer" not in field_info:
-                    continue
-                analyzers = field_info["analyzer"]
-                if isinstance(analyzers, str):
-                    analyzers = [analyzers]
-                for analyzer in analyzers:
-                    inf_table.create_index(
-                        f"ft_{re.sub(r'[^a-zA-Z0-9]', '_', field_name)}_{re.sub(r'[^a-zA-Z0-9]', '_', analyzer)}",
-                        IndexInfo(field_name, IndexType.FullText, {"ANALYZER": analyzer}),
-                        ConflictType.Ignore,
-                    )
 
     """
     Dataframe and fields convert
