@@ -51,7 +51,7 @@ MINIMAL_DSL = {
 
 @pytest.fixture(scope="function")
 def agent_instance(client, request):
-    # 清理同名 Agent
+    # Clean up agents with the same title
     try:
         agents = list_agents(client, title=AGENT_TITLE)
         for agent in agents:
@@ -59,7 +59,7 @@ def agent_instance(client, request):
     except Exception:
         pass
 
-    # 创建 Agent
+    # Create Agent
     create_agent(client, title=AGENT_TITLE, dsl=MINIMAL_DSL)
     agents = list_agents(client, title=AGENT_TITLE)
     assert len(agents) > 0
@@ -79,31 +79,31 @@ def agent_instance(client, request):
 class TestAgentSessions:
     @pytest.mark.p2
     def test_create_list_delete_agent_sessions(self, agent_instance):
-        # 1. 创建会话
+        # 1. Create session
         session = create_agent_session(agent_instance)
         assert session.id is not None
-        # 注意：SDK 的 Session 对象可能没有直接暴露 agent_id 属性，或者属性名不同
-        # 根据 session.py，它在初始化时会根据 res_dict 设置属性
+        # Note: The SDK's Session object might not directly expose agent_id, or the attribute name might differ.
+        # According to session.py, it sets attributes based on res_dict during initialization.
         assert hasattr(session, "agent_id") or hasattr(session, "id")
 
-        # 2. 列表查询
+        # 2. List sessions
         sessions = list_agent_sessions(agent_instance, id=session.id)
         assert len(sessions) == 1
         assert sessions[0].id == session.id
 
-        # 3. 删除会话
+        # 3. Delete session
         delete_agent_sessions(agent_instance, ids=[session.id])
         
-        # 4. 验证删除
+        # 4. Verify deletion
         remaining_sessions = list_agent_sessions(agent_instance, id=session.id)
         assert len(remaining_sessions) == 0
 
     @pytest.mark.p1
     def test_agent_ask_completions(self, agent_instance):
-        """测试 Agent 问答功能，覆盖 session.py 中的 _ask_agent"""
+        """Test Agent Q&A functionality, covering _ask_agent in session.py"""
         session = create_agent_session(agent_instance)
-        print("------session------",session)
-        # 同步问答
+        
+        # Synchronous Q&A
         question = "Hello Agent"
         try:
             messages = list(session.ask(question=question, stream=False, session_id=session.id))
@@ -113,16 +113,16 @@ class TestAgentSessions:
         except KeyError as e:
             pytest.skip(f"Agent response structure might have changed: {e}")
 
-        # 流式问答
+        # Streaming Q&A
         stream_messages = []
         try:
-            # 修改点：显式传递 session_id=session.id
+            # Explicitly pass session_id=session.id
             for msg in session.ask(question="Stream test", stream=True, session_id=session.id):
                 stream_messages.append(msg)
             
             assert len(stream_messages) > 0
             assert stream_messages[-1].content is not None
         except KeyError as e:
-            # 如果失败，尝试打印更多信息（在 pytest -s 模式下可见）
+            # If it fails, try to print more information (visible in pytest -s mode)
             print(f"\nCaptured KeyError in stream: {e}")
             pytest.fail(f"Agent stream response structure error: {e}. Check if 'data' or 'content' exists in the response.")
