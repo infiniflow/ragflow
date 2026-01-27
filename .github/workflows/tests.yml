@@ -161,6 +161,7 @@ jobs:
           # Compute port numbers using bash arithmetic
           ES_PORT=$((1200 + RUNNER_NUM * 10))
           OS_PORT=$((1201 + RUNNER_NUM * 10))
+          REDIS_PORT=$((6379 + RUNNER_NUM * 10))
           INFINITY_THRIFT_PORT=$((23817 + RUNNER_NUM * 10))
           INFINITY_HTTP_PORT=$((23820 + RUNNER_NUM * 10))
           INFINITY_PSQL_PORT=$((5432 + RUNNER_NUM * 10))
