@@ -1180,13 +1180,30 @@ class LiteLLMBase(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
+        gen_conf = deepcopy(gen_conf) if gen_conf else {}
+
         if self.provider == SupportedLiteLLMProvider.HunYuan:
             unsupported = ["presence_penalty", "frequency_penalty"]
             for key in unsupported:
                 gen_conf.pop(key, None)
 
-        if "max_tokens" in gen_conf:
-            del gen_conf["max_tokens"]
+        elif "kimi-k2.5" in self.model_name.lower():
+            reasoning = gen_conf.pop("reasoning", None) # will never get one here, handle this later
+            thinking = {"type": "enabled"} # enable thinking by default
+            if reasoning is not None:
+                thinking = {"type": "enabled"} if reasoning else {"type": "disabled"}
+            elif not isinstance(thinking, dict) or thinking.get("type") not in {"enabled", "disabled"}:
+                thinking = {"type": "disabled"}
+            gen_conf["thinking"] = thinking
+
+            thinking_enabled = thinking.get("type") == "enabled"
+            gen_conf["temperature"] = 1.0 if thinking_enabled else 0.6
+            gen_conf["top_p"] = 0.95
+            gen_conf["n"] = 1
+            gen_conf["presence_penalty"] = 0.0
+            gen_conf["frequency_penalty"] = 0.0
+
+        gen_conf.pop("max_tokens", None)
         return gen_conf
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
