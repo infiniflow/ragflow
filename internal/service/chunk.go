@@ -18,7 +18,7 @@ type ChunkService struct {
 	engineType    config.EngineType
 	modelProvider ModelProvider
 	kbDAO         *dao.KnowledgebaseDAO
-	tenantDAO     *dao.TenantDAO
+	userTenantDAO *dao.UserTenantDAO
 }
 
 // NewChunkService creates chunk service
@@ -29,7 +29,7 @@ func NewChunkService() *ChunkService {
 		engineType:    cfg.DocEngine.Type,
 		modelProvider: NewModelProvider(),
 		kbDAO:         dao.NewKnowledgebaseDAO(),
-		tenantDAO:     dao.NewTenantDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
 	}
 }
 
@@ -72,7 +72,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	ctx := context.Background()
 
 	// Get user's tenants
-	tenants, err := s.tenantDAO.GetJoinedTenantsByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -134,7 +134,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	}
 
 	// Get user's owner tenants to prioritize
-	ownerTenants, err := s.tenantDAO.GetInfoByUserID(userID)
+	ownerTenants, err := s.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user owner tenants: %w", err)
 	}
