@@ -52,6 +52,31 @@ func (dao *TenantLLMDAO) ListByTenant(tenantID string) ([]model.TenantLLM, error
 	return tenantLLMs, nil
 }
 
+// GetByTenantFactoryAndModelName get tenant LLM by tenant ID, factory and model name
+func (dao *TenantLLMDAO) GetByTenantFactoryAndModelName(tenantID, factory, modelName string) (*model.TenantLLM, error) {
+	var tenantLLM model.TenantLLM
+	err := DB.Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?", tenantID, factory, modelName).First(&tenantLLM).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tenantLLM, nil
+}
+
+// Create create a new tenant LLM record
+func (dao *TenantLLMDAO) Create(tenantLLM *model.TenantLLM) error {
+	return DB.Create(tenantLLM).Error
+}
+
+// Update update an existing tenant LLM record
+func (dao *TenantLLMDAO) Update(tenantLLM *model.TenantLLM) error {
+	return DB.Save(tenantLLM).Error
+}
+
+// Delete delete a tenant LLM record by tenant ID, factory and model name
+func (dao *TenantLLMDAO) Delete(tenantID, factory, modelName string) error {
+	return DB.Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?", tenantID, factory, modelName).Delete(&model.TenantLLM{}).Error
+}
+
 // GetMyLLMs get tenant LLMs with factory details
 func (dao *TenantLLMDAO) GetMyLLMs(tenantID string, includeDetails bool) ([]model.MyLLM, error) {
 	var myLLMs []model.MyLLM
