@@ -4,15 +4,15 @@ ragflow:
 admin:
   host: 0.0.0.0
   http_port: 9381
-mysql:
-  name: 'rag_flow'
-  user: 'root'
-  password: 'infini_rag_flow'
-  host: 'localhost'
-  port: 5455
-  max_connections: 900
-  stale_timeout: 300
-  max_allowed_packet: 1073741824
+#mysql:
+#  name: 'rag_flow'
+#  user: 'root'
+#  password: 'infini_rag_flow'
+#  host: 'localhost'
+#  port: 5455
+#  max_connections: 900
+#  stale_timeout: 300
+#  max_allowed_packet: 1073741824
 minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
@@ -52,6 +52,14 @@ user_default_llm:
     embedding_model:
       api_key: 'xxx'
       base_url: 'http://localhost:6380'
+postgres:
+  name: ${POSTGRES_DB:-rag_flow}
+  user: ${POSTGRES_USER:-rag_flow}
+  password: ${POSTGRES_PASSWORD:-infini_rag_flow}
+  host: ${POSTGRES_HOST:-postgres}
+  port: ${POSTGRES_PORT:-5432}
+  max_connections: 100
+  stale_timeout: 30
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'
