@@ -57,27 +57,20 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y postgresql-client
 
 # Install uv
-ARG TARGETARCH
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
-    set -eux; \
-    if [ "$NEED_MIRROR" = "1" ]; then \
+    if [ "$NEED_MIRROR" == "1" ]; then \
         mkdir -p /etc/uv && \
         echo 'python-install-mirror = "https://registry.npmmirror.com/-/binary/python-build-standalone/"' > /etc/uv/uv.toml && \
         echo '[[index]]' >> /etc/uv/uv.toml && \
         echo 'url = "https://pypi.tuna.tsinghua.edu.cn/simple"' >> /etc/uv/uv.toml && \
         echo 'default = true' >> /etc/uv/uv.toml; \
     fi; \
-    case "${TARGETARCH}" in \
-      amd64) UV_DIR="uv-x86_64-unknown-linux-gnu" ;; \
-      arm64) UV_DIR="uv-aarch64-unknown-linux-gnu" ;; \
-      *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
-    esac; \
-    tar xzf "/deps/${UV_DIR}.tar.gz" && \
-    cp "${UV_DIR}/uv" /usr/local/bin/uv && \
-    chmod +x /usr/local/bin/uv && \
-    rm -rf "${UV_DIR}" && \
-    uv --version && \
-    uv python install 3.12
+    arch="$(uname -m)"; \
+    if [ "$arch" = "x86_64" ]; then uv_arch="x86_64"; else uv_arch="aarch64"; fi; \
+    tar xzf "/deps/uv-${uv_arch}-unknown-linux-gnu.tar.gz" \
+    && cp "uv-${uv_arch}-unknown-linux-gnu/"* /usr/local/bin/ \
+    && rm -rf "uv-${uv_arch}-unknown-linux-gnu" \
+    && uv python install 3.12
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 ENV PATH=/root/.local/bin:$PATH
