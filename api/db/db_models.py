@@ -281,7 +281,11 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
         except Exception as e:
             logging.error(f"Failed to reconnect: {e}")
             time.sleep(0.1)
-            self.connect()
+            try:
+                self.connect()
+            except Exception as e2:
+                logging.error(f"Failed to reconnect on second attempt: {e2}")
+                raise
 
     def begin(self):
         for attempt in range(self.max_retries + 1):
@@ -352,7 +356,11 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
         except Exception as e:
             logging.error(f"Failed to reconnect to PostgreSQL: {e}")
             time.sleep(0.1)
-            self.connect()
+            try:
+                self.connect()
+            except Exception as e2:
+                logging.error(f"Failed to reconnect to PostgreSQL on second attempt: {e2}")
+                raise
 
     def begin(self):
         for attempt in range(self.max_retries + 1):

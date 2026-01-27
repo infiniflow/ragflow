@@ -16,10 +16,7 @@ import { formatDate } from '@/utils/date';
 import { ColumnDef } from '@tanstack/table-core';
 import { ArrowUpDown, MonitorUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import {
-  MetadataType,
-  util,
-} from '../components/metedata/hooks/use-manage-modal';
+import { MetadataType } from '../components/metedata/constant';
 import { ShowManageMetadataModalProps } from '../components/metedata/interface';
 import { DatasetActionCell } from './dataset-action-cell';
 import { ParsingStatusCell } from './parsing-status-cell';
@@ -172,6 +169,51 @@ export function useDatasetTableColumns({
       ),
     },
     {
+      accessorKey: 'meta_fields',
+      header: t('metadata.metadata'),
+      cell: ({ row }) => {
+        const length = Object.keys(row.getValue('meta_fields') || {}).length;
+        return (
+          <div
+            className="capitalize cursor-pointer"
+            onClick={() => {
+              showManageMetadataModal({
+                // metadata: util.JSONToMetaDataTableData(
+                //   row.original.meta_fields || {},
+                // ),
+                isEditField: false,
+                isCanAdd: true,
+                isAddValue: true,
+                type: MetadataType.UpdateSingle,
+                record: row.original,
+                title: (
+                  <div className="flex flex-col gap-2 w-full">
+                    <div className="text-base font-normal">
+                      {t('metadata.editMetadata')}
+                    </div>
+                    {/* <div className="text-sm text-text-secondary w-full truncate">
+                      {t('metadata.editMetadataForDataset')}
+                      {row.original.name}
+                    </div> */}
+                  </div>
+                ),
+                secondTitle: (
+                  <div className="w-full flex gap-1 text-sm text-text-secondary">
+                    <FileIcon name={row.original.name}></FileIcon>
+                    <div className="truncate">{row.original.name}</div>
+                  </div>
+                ),
+                isDeleteSingleValue: true,
+                documentIds: [row.original.id],
+              });
+            }}
+          >
+            {length + ' fields'}
+          </div>
+        );
+      },
+    },
+    {
       accessorKey: 'run',
       header: t('Parse'),
       // meta: { cellClassName: 'min-w-[20vw]' },
@@ -180,26 +222,6 @@ export function useDatasetTableColumns({
           <ParsingStatusCell
             record={row.original}
             showChangeParserModal={showChangeParserModal}
-            showSetMetaModal={(row) =>
-              showManageMetadataModal({
-                metadata: util.JSONToMetaDataTableData(row.meta_fields || {}),
-                isCanAdd: true,
-                type: MetadataType.UpdateSingle,
-                record: row,
-                title: (
-                  <div className="flex flex-col gap-2 w-full">
-                    <div className="text-base font-normal">
-                      {t('metadata.editMetadata')}
-                    </div>
-                    <div className="text-sm text-text-secondary w-full truncate">
-                      {t('metadata.editMetadataForDataset')}
-                      {row.name}
-                    </div>
-                  </div>
-                ),
-                isDeleteSingleValue: true,
-              })
-            }
             showLog={showLog}
           ></ParsingStatusCell>
         );

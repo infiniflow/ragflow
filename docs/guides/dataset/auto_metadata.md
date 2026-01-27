@@ -5,7 +5,6 @@ sidebar_custom_props: {
    categoryIcon: LucideFileCodeCorner
 }
 ---
-
 # Auto-extract metadata
 
 Automatically extract metadata from uploaded files.

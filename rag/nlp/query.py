@@ -232,5 +232,5 @@ class FulltextQueryer(QueryBase):
                 keywords.append(f"{tk}^{w}")
 
         return MatchTextExpr(self.query_fields, " ".join(keywords), 100,
-                             {"minimum_should_match": min(3, len(keywords) / 10),
+                             {"minimum_should_match": min(3, round(len(keywords) / 10)),
                               "original_query": " ".join(origin_keywords)})

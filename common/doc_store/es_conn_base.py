@@ -123,7 +123,8 @@ class ESConnectionBase(DocStoreConnection):
     Table operations
     """
 
-    def create_idx(self, index_name: str, dataset_id: str, vector_size: int):
+    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None):
+        # parser_id is used by Infinity but not needed for ES (kept for interface compatibility)
         if self.index_exist(index_name, dataset_id):
             return True
         try:

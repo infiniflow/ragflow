@@ -5,8 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideActivity
 }
 ---
-
-
 # Admin Service
 
 The Admin Service is the core backend management service of the RAGFlow system, providing comprehensive system administration capabilities through centralized API interfaces for managing and controlling the entire platform. Adopting a client-server architecture, it supports access and operations via both a Web UI and an Admin CLI, ensuring flexible and efficient execution of administrative tasks.
@@ -27,7 +25,7 @@ With its unified interface design, the Admin Service combines the convenience of
    python admin/server/admin_server.py
    ```
 
-   The service will start and listen for incoming connections from the CLI on the configured port.
+   The service will start and listen for incoming connections from the CLI on the configured port. 
 
 ### Using docker image
 

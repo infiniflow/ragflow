@@ -19,6 +19,9 @@
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
 
+import time
+start_ts = time.time()
+
 import asyncio
 import copy
 import faulthandler
@@ -27,13 +30,13 @@ import os
 import signal
 import sys
 import threading
-import time
 import traceback
 from datetime import datetime, timezone
 from typing import Any
 
 from flask import json
 
+from api.utils.common import hash128
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
@@ -124,7 +127,7 @@ class SyncBase:
             docs = []
             for doc in document_batch:
                 d = {
-                    "id": doc.id,
+                    "id": hash128(doc.id),
                     "connector_id": task["connector_id"],
                     "source": self.SOURCE_NAME,
                     "semantic_identifier": doc.semantic_identifier,
@@ -1093,7 +1096,7 @@ class Gitlab(SyncBase):
         self.connector.load_credentials(
             {
                 "gitlab_access_token": self.conf.get("credentials", {}).get("gitlab_access_token"),
-                "gitlab_url": self.conf.get("credentials", {}).get("gitlab_url"),
+                "gitlab_url": self.conf.get("gitlab_url"),
             }
         )
 
@@ -1266,6 +1269,7 @@ async def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
+    logging.info(f"RAGFlow data sync is ready after {time.time() - start_ts}s initialization.")
     while not stop_event.is_set():
         await dispatch_tasks()
     logging.error("BUG!!! You should not reach here!!!")

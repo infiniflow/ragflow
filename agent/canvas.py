@@ -283,7 +283,8 @@ class Canvas(Graph):
             "sys.query": "",
             "sys.user_id": tenant_id,
             "sys.conversation_turns": 0,
-            "sys.files": []
+            "sys.files": [],
+            "sys.history": []
         }
         self.variables = {}
         super().__init__(dsl, tenant_id, task_id)
@@ -294,12 +295,15 @@ class Canvas(Graph):
         self.history = self.dsl["history"]
         if "globals" in self.dsl:
             self.globals = self.dsl["globals"]
+            if "sys.history" not in self.globals:
+                self.globals["sys.history"] = []
         else:
             self.globals = {
             "sys.query": "",
             "sys.user_id": "",
             "sys.conversation_turns": 0,
-            "sys.files": []
+            "sys.files": [],
+            "sys.history": []
         }
         if "variables" in self.dsl:
             self.variables = self.dsl["variables"]
@@ -340,21 +344,23 @@ class Canvas(Graph):
                 key = k[4:]
                 if key in self.variables:
                     variable = self.variables[key]
-                    if variable["value"]:
-                        self.globals[k] = variable["value"]
+                    if variable["type"] == "string":
+                        self.globals[k] = ""
+                        variable["value"] = ""
+                    elif variable["type"] == "number":
+                        self.globals[k] = 0
+                        variable["value"] = 0
+                    elif variable["type"] == "boolean":
+                        self.globals[k] = False
+                        variable["value"] = False
+                    elif variable["type"] == "object":
+                        self.globals[k] = {}
+                        variable["value"] = {}
+                    elif variable["type"].startswith("array"):
+                        self.globals[k] = []
+                        variable["value"] = []
                     else:
-                        if variable["type"] == "string":
-                            self.globals[k] = ""
-                        elif variable["type"] == "number":
-                            self.globals[k] = 0
-                        elif variable["type"] == "boolean":
-                            self.globals[k] = False
-                        elif variable["type"] == "object":
-                            self.globals[k] = {}
-                        elif variable["type"].startswith("array"):
-                            self.globals[k] = []
-                        else:
-                            self.globals[k] = ""
+                        self.globals[k] = ""
                 else:
                     self.globals[k] = ""
 
@@ -638,6 +644,7 @@ class Canvas(Graph):
                            "created_at": st,
                        })
             self.history.append(("assistant", self.get_component_obj(self.path[-1]).output()))
+            self.globals["sys.history"].append(f"{self.history[-1][0]}: {self.history[-1][1]}")
         elif "Task has been canceled" in self.error:
             yield decorate("workflow_finished",
                        {
@@ -715,6 +722,7 @@ class Canvas(Graph):
 
     def add_user_input(self, question):
         self.history.append(("user", question))
+        self.globals["sys.history"].append(f"{self.history[-1][0]}: {self.history[-1][1]}")
 
     def get_prologue(self):
         return self.components["begin"]["obj"]._param.prologue

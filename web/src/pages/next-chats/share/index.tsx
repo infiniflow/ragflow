@@ -123,6 +123,8 @@ const ChatContainer = () => {
                 uploadMethod="external_upload_and_parse"
                 showUploadIcon={false}
                 stopOutputMessage={stopOutputMessage}
+                showReasoning
+                showInternet={chatInfo?.has_tavily_key}
               ></NextMessageInput>
             </div>
           </div>

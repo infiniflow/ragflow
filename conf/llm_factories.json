@@ -5531,6 +5531,51 @@
             "status": "1",
             "rank": "900",
             "llm": []
+        },
+        {
+            "name": "PaddleOCR",
+            "logo": "",
+            "tags": "OCR",
+            "status": "1",
+            "rank": "910",
+            "llm": []
+        },
+        {
+            "name": "n1n",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "rank": "900",
+            "llm": [
+                {
+                    "llm_name": "gpt-4o-mini",
+                    "tags": "LLM,CHAT,128K,IMAGE2TEXT",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-4o",
+                    "tags": "LLM,CHAT,128K,IMAGE2TEXT",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-3.5-turbo",
+                    "tags": "LLM,CHAT,4K",
+                    "max_tokens": 4096,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "deepseek-chat",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                }
+            ]
         }
     ]
 }

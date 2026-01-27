@@ -50,11 +50,6 @@ export function ChatPromptEngine() {
         tooltip={t('multiTurnTip')}
       ></SwitchFormField>
       <UseKnowledgeGraphFormField name="prompt_config.use_kg"></UseKnowledgeGraphFormField>
-      <SwitchFormField
-        name={'prompt_config.reasoning'}
-        label={t('reasoning')}
-        tooltip={t('reasoningTip')}
-      ></SwitchFormField>
       <RerankFormFields></RerankFormFields>
       <CrossLanguageFormField></CrossLanguageFormField>
       <DynamicVariableForm></DynamicVariableForm>

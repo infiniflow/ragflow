@@ -56,7 +56,7 @@ class TestRquest:
         BAD_CONTENT_TYPE = "text/xml"
         res = update_dataset(HttpApiAuth, dataset_id, {"name": "bad_content_type"}, headers={"Content-Type": BAD_CONTENT_TYPE})
         assert res["code"] == 101, res
-        assert res["message"] == f"Unsupported content type: Expected application/json, got {BAD_CONTENT_TYPE}", res
+        assert res["message"] == "No properties were modified", res
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -770,7 +770,12 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth)
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
+        assert res["data"][0]["parser_config"] == {
+            "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
+            "image_context_size": 0,
+            "table_context_size": 0,
+        }, res
 
     @pytest.mark.p3
     def test_parser_config_unset_with_chunk_method_change(self, HttpApiAuth, add_dataset_func):
@@ -781,7 +786,12 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth)
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
+        assert res["data"][0]["parser_config"] == {
+            "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
+            "image_context_size": 0,
+            "table_context_size": 0,
+        }, res
 
     @pytest.mark.p3
     def test_parser_config_none_with_chunk_method_change(self, HttpApiAuth, add_dataset_func):
@@ -792,7 +802,12 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth, {"id": dataset_id})
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
+        assert res["data"][0]["parser_config"] == {
+            "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
+            "image_context_size": 0,
+            "table_context_size": 0,
+        }, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

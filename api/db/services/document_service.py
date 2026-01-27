@@ -338,16 +338,44 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
-        from api.db.services.task_service import TaskService
+        from api.db.services.task_service import TaskService, cancel_all_task_of
         cls.clear_chunk_num(doc.id)
+
+        # Cancel all running tasks first Using preset function in task_service.py ---  set cancel flag in Redis 
+        try:
+            cancel_all_task_of(doc.id)
+            logging.info(f"Cancelled all tasks for document {doc.id}")
+        except Exception as e:
+            logging.warning(f"Failed to cancel tasks for document {doc.id}: {e}")
+
+        # Delete tasks from database
         try:
             TaskService.filter_delete([Task.doc_id == doc.id])
+        except Exception as e:
+            logging.warning(f"Failed to delete tasks for document {doc.id}: {e}")
+
+        # Delete chunk images (non-critical, log and continue)
+        try:
             cls.delete_chunk_images(doc, tenant_id)
+        except Exception as e:
+            logging.warning(f"Failed to delete chunk images for document {doc.id}: {e}")
+
+        # Delete thumbnail (non-critical, log and continue)
+        try:
             if doc.thumbnail and not doc.thumbnail.startswith(IMG_BASE64_PREFIX):
                 if settings.STORAGE_IMPL.obj_exist(doc.kb_id, doc.thumbnail):
                     settings.STORAGE_IMPL.rm(doc.kb_id, doc.thumbnail)
-            settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+        except Exception as e:
+            logging.warning(f"Failed to delete thumbnail for document {doc.id}: {e}")
 
+        # Delete chunks from doc store - this is critical, log errors
+        try:
+            settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+        except Exception as e:
+            logging.error(f"Failed to delete chunks from doc store for document {doc.id}: {e}")
+
+        # Cleanup knowledge graph references (non-critical, log and continue)
+        try:
             graph_source = settings.docStoreConn.get_fields(
                 settings.docStoreConn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [doc.kb_id]), ["source_id"]
             )
@@ -360,8 +388,9 @@ class DocumentService(CommonService):
                                              search.index_name(tenant_id), doc.kb_id)
                 settings.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
                                              search.index_name(tenant_id), doc.kb_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"Failed to cleanup knowledge graph for document {doc.id}: {e}")
+
         return cls.delete_by_id(doc.id)
 
     @classmethod
@@ -423,6 +452,7 @@ class DocumentService(CommonService):
             .where(
             cls.model.status == StatusEnum.VALID.value,
             ~(cls.model.type == FileType.VIRTUAL.value),
+            ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value)),
             (((cls.model.progress < 1) & (cls.model.progress > 0)) |
              (cls.model.id.in_(unfinished_task_query)))) # including unfinished tasks like GraphRAG, RAPTOR and Mindmap
         return list(docs.dicts())
@@ -645,8 +675,7 @@ class DocumentService(CommonService):
                 if k not in old:
                     old[k] = v
                     continue
-                if isinstance(v, dict):
-                    assert isinstance(old[k], dict)
+                if isinstance(v, dict) and isinstance(old[k], dict):
                     dfs_update(old[k], v)
                 else:
                     old[k] = v
@@ -753,10 +782,27 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_metadata_summary(cls, kb_id):
+    def get_metadata_summary(cls, kb_id, document_ids=None):
+        def _meta_value_type(value):
+            if value is None:
+                return None
+            if isinstance(value, list):
+                return "list"
+            if isinstance(value, bool):
+                return "string"
+            if isinstance(value, (int, float)):
+                return "number"
+            if re.match(r"\d{4}\-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", str(value)):
+                return "time"
+            return "string"
+
         fields = [cls.model.id, cls.model.meta_fields]
         summary = {}
-        for r in cls.model.select(*fields).where(cls.model.kb_id == kb_id):
+        type_counter = {}
+        query = cls.model.select(*fields).where(cls.model.kb_id == kb_id)
+        if document_ids:
+            query = query.where(cls.model.id.in_(document_ids))
+        for r in query:
             meta_fields = r.meta_fields or {}
             if isinstance(meta_fields, str):
                 try:
@@ -766,6 +812,11 @@ class DocumentService(CommonService):
             if not isinstance(meta_fields, dict):
                 continue
             for k, v in meta_fields.items():
+                value_type = _meta_value_type(v)
+                if value_type:
+                    if k not in type_counter:
+                        type_counter[k] = {}
+                    type_counter[k][value_type] = type_counter[k].get(value_type, 0) + 1
                 values = v if isinstance(v, list) else [v]
                 for vv in values:
                     if not vv:
@@ -774,11 +825,19 @@ class DocumentService(CommonService):
                     if k not in summary:
                         summary[k] = {}
                     summary[k][sv] = summary[k].get(sv, 0) + 1
-        return {k: sorted([(val, cnt) for val, cnt in v.items()], key=lambda x: x[1], reverse=True) for k, v in summary.items()}
+        result = {}
+        for k, v in summary.items():
+            values = sorted([(val, cnt) for val, cnt in v.items()], key=lambda x: x[1], reverse=True)
+            type_counts = type_counter.get(k, {})
+            value_type = "string"
+            if type_counts:
+                value_type = max(type_counts.items(), key=lambda item: item[1])[0]
+            result[k] = {"type": value_type, "values": values}
+        return result
 
     @classmethod
     @DB.connection_context()
-    def batch_update_metadata(cls, kb_id, doc_ids, updates=None, deletes=None):
+    def batch_update_metadata(cls, kb_id, doc_ids, updates=None, deletes=None, adds=None):
         updates = updates or []
         deletes = deletes or []
         if not doc_ids:
@@ -801,17 +860,24 @@ class DocumentService(CommonService):
             changed = False
             for upd in updates:
                 key = upd.get("key")
-                if not key or key not in meta:
+                if not key:
                     continue
 
                 new_value = upd.get("value")
-                match_provided = "match" in upd
+                match_provided = upd.get("match")
+                if key not in meta:
+                    if match_provided:
+                        continue
+                    meta[key] = dedupe_list(new_value) if isinstance(new_value, list) else new_value
+                    changed = True
+                    continue
+
                 if isinstance(meta[key], list):
                     if not match_provided:
                         if isinstance(new_value, list):
                             meta[key] = dedupe_list(new_value)
                         else:
-                            meta[key] = new_value
+                            meta[key].append(new_value)
                         changed = True
                     else:
                         match_value = upd.get("match")
@@ -865,7 +931,7 @@ class DocumentService(CommonService):
         updated_docs = 0
         with DB.atomic():
             rows = cls.model.select(cls.model.id, cls.model.meta_fields).where(
-                (cls.model.id.in_(doc_ids)) & (cls.model.kb_id == kb_id)
+                cls.model.id.in_(doc_ids)
             )
             for r in rows:
                 meta = _normalize_meta(r.meta_fields or {})
@@ -914,6 +980,8 @@ class DocumentService(CommonService):
                 bad = 0
                 e, doc = DocumentService.get_by_id(d["id"])
                 status = doc.run  # TaskStatus.RUNNING.value
+                if status == TaskStatus.CANCEL.value:
+                    continue
                 doc_progress = doc.progress if doc and doc.progress else 0.0
                 special_task_running = False
                 priority = 0
@@ -957,7 +1025,16 @@ class DocumentService(CommonService):
                         info["progress_msg"] += "\n%d tasks are ahead in the queue..."%get_queue_length(priority)
                 else:
                     info["progress_msg"] = "%d tasks are ahead in the queue..."%get_queue_length(priority)
-                cls.update_by_id(d["id"], info)
+                info["update_time"] = current_timestamp()
+                info["update_date"] = get_format_time()
+                (
+                    cls.model.update(info)
+                    .where(
+                        (cls.model.id == d["id"])
+                        & ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value))
+                    )
+                    .execute()
+                )
             except Exception as e:
                 if str(e).find("'0'") < 0:
                     logging.exception("fetch task exception")
@@ -990,7 +1067,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def knowledgebase_basic_info(cls, kb_id: str) -> dict[str, int]:
-        # cancelled: run == "2" but progress can vary
+        # cancelled: run == "2"
         cancelled = (
             cls.model.select(fn.COUNT(1))
             .where((cls.model.kb_id == kb_id) & (cls.model.run == TaskStatus.CANCEL))
@@ -1245,7 +1322,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         for b in range(0, len(cks), es_bulk_size):
             if try_create_idx:
                 if not settings.docStoreConn.index_exist(idxnm, kb_id):
-                    settings.docStoreConn.create_idx(idxnm, kb_id, len(vectors[0]))
+                    settings.docStoreConn.create_idx(idxnm, kb_id, len(vectors[0]), kb.parser_id)
                 try_create_idx = False
             settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
 

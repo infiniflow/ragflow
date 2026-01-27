@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet, useNavigate } from 'react-router';
 
@@ -21,10 +21,12 @@ import authorizationUtil from '@/utils/authorization-util';
 
 import ThemeSwitch from '../components/theme-switch';
 import { IS_ENTERPRISE } from '../utils';
+import { CurrentUserInfoContext } from './root-layout';
 
 const AdminNavigationLayout = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [, setCurrentUserInfo] = useContext(CurrentUserInfoContext);
 
   const { data: version } = useQuery({
     queryKey: ['admin/version'],
@@ -72,6 +74,10 @@ const AdminNavigationLayout = () => {
       await logout();
       authorizationUtil.removeAll();
       navigate(Routes.Admin);
+      setCurrentUserInfo({
+        userInfo: null,
+        source: null,
+      });
     },
     retry: false,
   });

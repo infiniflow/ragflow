@@ -49,6 +49,7 @@ request.interceptors.response.use(
 
       authorizationUtil.removeAll();
       history.push(Routes.Admin);
+      window.location.reload();
     } else if (data?.code && data.code !== 0) {
       notification.error({
         message: `${i18n.t('message.hint')}: ${data?.code}`,
@@ -80,6 +81,7 @@ request.interceptors.response.use(
 
       authorizationUtil.removeAll();
       history.push(Routes.Admin);
+      window.location.reload();
     } else if (data?.code && data.code !== 0) {
       notification.error({
         message: `${i18n.t('message.hint')}: ${data?.code}`,
@@ -155,6 +157,13 @@ export const createUser = (email: string, password: string) =>
     username: email,
     password,
   });
+
+export const grantSuperuser = (email: string) =>
+  request.put<ResponseData<void>>(api.adminSetSuperuser(email));
+
+export const revokeSuperuser = (email: string) =>
+  request.delete<ResponseData<void>>(api.adminSetSuperuser(email));
+
 export const getUserDetails = (email: string) =>
   request.get<ResponseData<[AdminService.UserDetail]>>(
     adminGetUserDetails(email),

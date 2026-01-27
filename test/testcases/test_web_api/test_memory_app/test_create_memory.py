@@ -21,7 +21,7 @@ from test_web_api.common import create_memory
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from hypothesis import example, given, settings
-from test.testcases.utils.hypothesis_utils import valid_names
+from utils.hypothesis_utils import valid_names
 
 
 class TestAuthorization:

@@ -42,6 +42,7 @@ class InfinityConnection(InfinityConnectionBase):
         return False
 
     def convert_select_fields(self, output_fields: list[str]) -> list[str]:
+        need_empty_count = "important_kwd" in output_fields
         for i, field in enumerate(output_fields):
             if field in ["docnm_kwd", "title_tks", "title_sm_tks"]:
                 output_fields[i] = "docnm"
@@ -53,6 +54,8 @@ class InfinityConnection(InfinityConnectionBase):
                 output_fields[i] = "content"
             elif field in ["authors_tks", "authors_sm_tks"]:
                 output_fields[i] = "authors"
+        if need_empty_count and "important_kwd_empty_count" not in output_fields:
+            output_fields.append("important_kwd_empty_count")
         return list(set(output_fields))
 
     @staticmethod
@@ -314,7 +317,18 @@ class InfinityConnection(InfinityConnectionBase):
                     break
             if vector_size == 0:
                 raise ValueError("Cannot infer vector size from documents")
-            self.create_idx(index_name, knowledgebase_id, vector_size)
+
+            # Determine parser_id from document structure
+            # Table parser documents have 'chunk_data' field
+            parser_id = None
+            if "chunk_data" in documents[0] and isinstance(documents[0].get("chunk_data"), dict):
+                from common.constants import ParserType
+                parser_id = ParserType.TABLE.value
+                self.logger.debug("Detected TABLE parser from document structure")
+
+            # Fallback: Create table with base schema (shouldn't normally happen as init_kb() creates it)
+            self.logger.debug(f"Fallback: Creating table {table_name} with base schema, parser_id: {parser_id}")
+            self.create_idx(index_name, knowledgebase_id, vector_size, parser_id)
             table_instance = db_instance.get_table(table_name)
 
         # embedding fields can't have a default value....
@@ -340,7 +354,13 @@ class InfinityConnection(InfinityConnectionBase):
                     if not d.get("docnm_kwd"):
                         d["docnm"] = self.list2str(v)
                 elif k == "important_kwd":
-                    d["important_keywords"] = self.list2str(v)
+                    if isinstance(v, list):
+                        empty_count = sum(1 for kw in v if kw == "")
+                        tokens = [kw for kw in v if kw != ""]
+                        d["important_keywords"] = self.list2str(tokens, ",")
+                        d["important_kwd_empty_count"] = empty_count
+                    else:
+                        d["important_keywords"] = self.list2str(v, ",")
                 elif k == "important_tks":
                     if not d.get("important_kwd"):
                         d["important_keywords"] = v
@@ -369,6 +389,12 @@ class InfinityConnection(InfinityConnectionBase):
                         d[k] = v
                 elif re.search(r"_feas$", k):
                     d[k] = json.dumps(v)
+                elif k == "chunk_data":
+                    # Convert data dict to JSON string for storage
+                    if isinstance(v, dict):
+                        d[k] = json.dumps(v)
+                    else:
+                        d[k] = v
                 elif k == "kb_id":
                     if isinstance(d[k], list):
                         d[k] = d[k][0]  # since d[k] is a list, but we need a str
@@ -429,7 +455,13 @@ class InfinityConnection(InfinityConnectionBase):
                 if not new_value.get("docnm_kwd"):
                     new_value["docnm"] = v
             elif k == "important_kwd":
-                new_value["important_keywords"] = self.list2str(v)
+                if isinstance(v, list):
+                    empty_count = sum(1 for kw in v if kw == "")
+                    tokens = [kw for kw in v if kw != ""]
+                    new_value["important_keywords"] = self.list2str(tokens, ",")
+                    new_value["important_kwd_empty_count"] = empty_count
+                else:
+                    new_value["important_keywords"] = self.list2str(v, ",")
             elif k == "important_tks":
                 if not new_value.get("important_kwd"):
                     new_value["important_keywords"] = v
@@ -532,7 +564,15 @@ class InfinityConnection(InfinityConnectionBase):
                     res[field] = res["docnm"]
         if "important_keywords" in res.columns:
             if "important_kwd" in fields_all:
-                res["important_kwd"] = res["important_keywords"].apply(lambda v: v.split())
+                if "important_kwd_empty_count" in res.columns:
+                    base = res["important_keywords"].apply(lambda raw: raw.split(",") if raw else [])
+                    counts = res["important_kwd_empty_count"].fillna(0).astype(int)
+                    res["important_kwd"] = [
+                        tokens + [""] * empty_count
+                        for tokens, empty_count in zip(base.tolist(), counts.tolist())
+                    ]
+                else:
+                    res["important_kwd"] = res["important_keywords"].apply(lambda v: v.split(",") if v else [])
             if "important_tks" in fields_all:
                 res["important_tks"] = res["important_keywords"]
         if "questions" in res.columns:
@@ -563,6 +603,9 @@ class InfinityConnection(InfinityConnectionBase):
                 res2[column] = res2[column].apply(lambda v: [kwd for kwd in v.split("###") if kwd])
             elif re.search(r"_feas$", k):
                 res2[column] = res2[column].apply(lambda v: json.loads(v) if v else {})
+            elif k == "chunk_data":
+                # Parse JSON data back to dict for table parser fields
+                res2[column] = res2[column].apply(lambda v: json.loads(v) if v and isinstance(v, str) else v)
             elif k == "position_int":
                 def to_position_int(v):
                     if v:

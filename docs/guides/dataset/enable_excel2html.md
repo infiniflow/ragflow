@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideToggleRight
 }
 ---
-
 # Enable Excel2HTML
 
 Convert complex Excel spreadsheets into HTML tables.

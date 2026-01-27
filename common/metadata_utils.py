@@ -212,7 +212,7 @@ def update_metadata_to(metadata, meta):
     return metadata
 
 
-def metadata_schema(metadata: list|None) -> Dict[str, Any]:
+def metadata_schema(metadata: dict|list|None) -> Dict[str, Any]:
     if not metadata:
         return {}
     properties = {}
@@ -238,3 +238,47 @@ def metadata_schema(metadata: list|None) -> Dict[str, Any]:
 
     json_schema["additionalProperties"] = False
     return json_schema
+
+
+def _is_json_schema(obj: dict) -> bool:
+    if not isinstance(obj, dict):
+        return False
+    if "$schema" in obj:
+        return True
+    return obj.get("type") == "object" and isinstance(obj.get("properties"), dict)
+
+
+def _is_metadata_list(obj: list) -> bool:
+    if not isinstance(obj, list) or not obj:
+        return False
+    for item in obj:
+        if not isinstance(item, dict):
+            return False
+        key = item.get("key")
+        if not isinstance(key, str) or not key:
+            return False
+        if "enum" in item and not isinstance(item["enum"], list):
+            return False
+        if "description" in item and not isinstance(item["description"], str):
+            return False
+        if "descriptions" in item and not isinstance(item["descriptions"], str):
+            return False
+    return True
+
+
+def turn2jsonschema(obj: dict | list) -> Dict[str, Any]:
+    if isinstance(obj, dict) and _is_json_schema(obj):
+        return obj
+    if isinstance(obj, list) and _is_metadata_list(obj):
+        normalized = []
+        for item in obj:
+            description = item.get("description", item.get("descriptions", ""))
+            normalized_item = {
+                "key": item.get("key"),
+                "description": description,
+            }
+            if "enum" in item:
+                normalized_item["enum"] = item["enum"]
+            normalized.append(normalized_item)
+        return metadata_schema(normalized)
+    return {}
