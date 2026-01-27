@@ -19,12 +19,12 @@ from ragflow_sdk import Session
 
 class TestSessionMethods:
     """
-    专门用于测试 sdk/python/ragflow_sdk/modules/session.py 中的方法，
+    Specifically for testing methods in sdk/python/ragflow_sdk/modules/session.py.
     """
 
     @pytest.mark.p1
     def test_ask_sync(self, add_sessions_with_chat_assistant_func):
-        """测试同步问答 (stream=False)"""
+        """Test synchronous Q&A (stream=False)"""
         chat_assistant, sessions = add_sessions_with_chat_assistant_func
         session = sessions[0]
         
@@ -39,26 +39,25 @@ class TestSessionMethods:
 
     @pytest.mark.p1
     def test_ask_stream(self, add_sessions_with_chat_assistant_func):
-        """测试流式问答 (stream=True)"""
+        """Test streaming Q&A (stream=True)"""
         chat_assistant, sessions = add_sessions_with_chat_assistant_func
         session = sessions[0]
         
-        # 调用 ask 方法并迭代生成器
+        # Call ask method and iterate through the generator
         stream_responses = []
         for message in session.ask(question="Tell me a joke.", stream=True):
             assert message.role == "assistant"
             stream_responses.append(message)
-        
         assert len(stream_responses) > 0
 
     @pytest.mark.p1
     def test_session_update_method(self, add_sessions_with_chat_assistant_func):
-        """测试 Session 对象的 update 方法"""
+        """Test the update method of the Session object"""
         chat_assistant, sessions = add_sessions_with_chat_assistant_func
         session = sessions[0]
         
         new_name = "Updated Session Name"
-        # 直接调用 session 对象的 update 方法，这会触发 session.py 中的 update
+        # Directly call the update method of the session object, which triggers update in session.py
         session.update({"name": new_name})
         
         # 验证更新结果
@@ -67,11 +66,11 @@ class TestSessionMethods:
 
     @pytest.mark.p2
     def test_message_structure(self, add_sessions_with_chat_assistant_func):
-        """验证 Message 对象的结构"""
+        """Verify the structure of the Message object"""
         chat_assistant, sessions = add_sessions_with_chat_assistant_func
         session = sessions[0]
         
-        # 获取一个回答
+        # Get a response
         messages = list(session.ask(question="Hi", stream=False))
         message = messages[0]
         
