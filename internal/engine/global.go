@@ -2,10 +2,12 @@ package engine
 
 import (
 	"fmt"
-	"log"
 	"sync"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/config"
+	"ragflow/internal/logger"
 )
 
 var (
@@ -28,7 +30,7 @@ func Init(cfg *config.DocEngineConfig) error {
 			initErr = fmt.Errorf("failed to create doc engine: %w", err)
 			return
 		}
-		log.Printf("Doc engine initialized: %s", cfg.Type)
+		logger.Info("Doc engine initialized", zap.String("type", string(cfg.Type)))
 	})
 	return initErr
 }

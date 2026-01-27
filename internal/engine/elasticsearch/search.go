@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"go.uber.org/zap"
+
+	"ragflow/internal/logger"
 )
 
 // SearchRequest Elasticsearch search request
@@ -76,8 +78,8 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req interface{}) (inte
 	}
 
 	// Log search details
-	log.Printf("[Elasticsearch] Searching indices: %v", searchReq.IndexNames)
-	log.Printf("[Elasticsearch] DSL:\n%s", buf.String())
+	logger.Debug("Elasticsearch searching indices", zap.Strings("indices", searchReq.IndexNames))
+	logger.Debug("Elasticsearch DSL", zap.String("dsl", buf.String()))
 
 	// Build search request
 	reqES := esapi.SearchRequest{
@@ -95,9 +97,9 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req interface{}) (inte
 	if res.IsError() {
 		bodyBytes, err := io.ReadAll(res.Body)
 		if err != nil {
-			log.Printf("[Elasticsearch] Failed to read error response body: %v", err)
+			logger.Error("Elasticsearch failed to read error response body", err)
 		} else {
-			log.Printf("[Elasticsearch] Error response body: %s", string(bodyBytes))
+			logger.Warn("Elasticsearch error response", zap.String("body", string(bodyBytes)))
 		}
 		return nil, fmt.Errorf("elasticsearch returned error: %s", res.Status())
 	}

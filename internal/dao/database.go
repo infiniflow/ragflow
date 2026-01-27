@@ -2,14 +2,15 @@ package dao
 
 import (
 	"fmt"
-	"log"
 	"time"
+
+	gormLogger "gorm.io/gorm/logger"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 
 	"ragflow/internal/config"
+	"ragflow/internal/logger"
 )
 
 var DB *gorm.DB
@@ -29,15 +30,17 @@ func InitDB() error {
 	)
 
 	// Set log level
-	logLevel := logger.Silent
+	var gormLogLevel gormLogger.LogLevel
 	if cfg.Server.Mode == "debug" {
-		logLevel = logger.Info
+		gormLogLevel = gormLogger.Info
+	} else {
+		gormLogLevel = gormLogger.Silent
 	}
 
 	// Connect to database
 	var err error
 	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logLevel),
+		Logger: gormLogger.Default.LogMode(gormLogLevel),
 		NowFunc: func() time.Time {
 			return time.Now().Local()
 		},
@@ -62,7 +65,7 @@ func InitDB() error {
 	//	return fmt.Errorf("failed to migrate database: %w", err)
 	//}
 
-	log.Println("Database connected and migrated successfully")
+	logger.Info("Database connected and migrated successfully")
 	return nil
 }
 
