@@ -142,12 +142,32 @@ class RDBMSConnector(LoadConnector, PollConnector):
                 pass
             self._connection = None
 
+    def _get_tables(self) -> list[str]:
+        """Get list of all tables in the database."""
+        connection = self._get_connection()
+        cursor = connection.cursor()
+        
+        try:
+            if self.db_type == DatabaseType.MYSQL:
+                cursor.execute("SHOW TABLES")
+            else:
+                cursor.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+                )
+            tables = [row[0] for row in cursor.fetchall()]
+            return tables
+        finally:
+            cursor.close()
+
     def _build_query_with_time_filter(
         self,
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
     ) -> str:
         """Build the query with optional time filtering for incremental sync."""
+        if not self.query:
+            return ""  # Will be handled by table discovery
         base_query = self.query.rstrip(";")
         
         if not self.timestamp_column or (start is None and end is None):
@@ -229,19 +249,16 @@ class RDBMSConnector(LoadConnector, PollConnector):
             metadata=metadata if metadata else None,
         )
 
-    def _yield_documents(
+    def _yield_documents_from_query(
         self,
-        start: Optional[datetime] = None,
-        end: Optional[datetime] = None,
+        query: str,
     ) -> Generator[list[Document], None, None]:
-        """Generate documents from database query results."""
+        """Generate documents from a single query."""
         connection = self._get_connection()
         cursor = connection.cursor()
         
         try:
-            query = self._build_query_with_time_filter(start, end)
             logging.info(f"Executing query: {query[:200]}...")
-            
             cursor.execute(query)
             column_names = [desc[0] for desc in cursor.description]
             
@@ -267,7 +284,25 @@ class RDBMSConnector(LoadConnector, PollConnector):
             except Exception:
                 pass
             cursor.close()
-            self._close_connection()
+
+    def _yield_documents(
+        self,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+    ) -> Generator[list[Document], None, None]:
+        """Generate documents from database query results."""
+        if self.query:
+            query = self._build_query_with_time_filter(start, end)
+            yield from self._yield_documents_from_query(query)
+        else:
+            tables = self._get_tables()
+            logging.info(f"No query specified. Loading all {len(tables)} tables: {tables}")
+            for table in tables:
+                query = f"SELECT * FROM {table}"
+                logging.info(f"Loading table: {table}")
+                yield from self._yield_documents_from_query(query)
+        
+        self._close_connection()
 
     def load_from_state(self) -> Generator[list[Document], None, None]:
         """Load all documents from the database (full sync)."""
@@ -305,9 +340,6 @@ class RDBMSConnector(LoadConnector, PollConnector):
         
         if not self.database:
             raise ConnectorValidationError("Database name is required.")
-        
-        if not self.query:
-            raise ConnectorValidationError("SQL query is required.")
         
         if not self.content_columns:
             raise ConnectorValidationError(
