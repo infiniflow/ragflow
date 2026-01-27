@@ -318,6 +318,9 @@ class DocMetadataService:
         """
         Update document metadata in ES/Infinity.
 
+        For Elasticsearch: Uses partial update to directly update the meta_fields field.
+        For Infinity: Falls back to delete+insert (Infinity doesn't support partial updates well).
+
         Args:
             doc_id: Document ID
             meta_fields: Metadata dictionary
@@ -340,17 +343,35 @@ class DocMetadataService:
 
             # Extract fields
             doc_obj = doc
+            tenant_id = doc.knowledgebase.tenant_id
             kb_id = doc_obj.kb_id
+            index_name = cls._get_doc_meta_index_name(tenant_id)
 
-            logging.debug(f"[update_document_metadata] Updating doc_id: {doc_id}, kb_id: {kb_id}, meta_fields: {meta_fields}")
-
-            # Delete old metadata first (skip empty table check since we're about to insert)
-            cls.delete_document_metadata(doc_id, skip_empty_check=True)
-
-            # Post-process to split combined values before inserting
+            # Post-process to split combined values
             processed_meta = cls._split_combined_values(meta_fields)
 
-            # Insert updated metadata
+            logging.debug(f"[update_document_metadata] Updating doc_id: {doc_id}, kb_id: {kb_id}, meta_fields: {processed_meta}")
+
+            # For Elasticsearch, use efficient partial update
+            if not settings.DOC_ENGINE_INFINITY:
+                try:
+                    # Use ES partial update API - much more efficient than delete+insert
+                    settings.docStoreConn.es.update(
+                        index=index_name,
+                        id=doc_id,
+                        refresh=True,  # Make changes immediately visible
+                        doc={"meta_fields": processed_meta}
+                    )
+                    logging.debug(f"Successfully updated metadata for document {doc_id} using ES partial update")
+                    return True
+                except Exception as e:
+                    logging.error(f"ES partial update failed for document {doc_id}: {e}")
+                    # Fall back to delete+insert if partial update fails
+                    logging.info(f"Falling back to delete+insert for document {doc_id}")
+
+            # For Infinity or as fallback: use delete+insert
+            logging.debug(f"[update_document_metadata] Using delete+insert method for doc_id: {doc_id}")
+            cls.delete_document_metadata(doc_id, skip_empty_check=True)
             return cls.insert_document_metadata(doc_id, processed_meta)
 
         except Exception as e:
@@ -987,7 +1008,7 @@ class DocMetadataService:
             return changed
 
         try:
-            results = cls._search_metadata(kb_id, condition={})
+            results = cls._search_metadata(kb_id, condition=None)
             if not results:
                 results = []  # Treat as empty list if None
 
@@ -1024,7 +1045,7 @@ class DocMetadataService:
                     logging.debug(f"[batch_update_metadata] Updating doc_id: {doc_id}, meta: {meta}")
                     # If metadata is empty, delete the row entirely instead of keeping empty metadata
                     if not meta:
-                        cls.delete_document_metadata(doc_id, kb_id)
+                        cls.delete_document_metadata(doc_id, skip_empty_check=True)
                     else:
                         cls.update_document_metadata(doc_id, meta)
                     updated_docs += 1
