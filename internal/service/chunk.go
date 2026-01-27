@@ -80,7 +80,7 @@ func (s *ChunkService) elasticsearchRetrieval(ctx context.Context, req *Retrieva
 	searchReq := &elasticsearch.SearchRequest{
 		IndexNames: indexNames,
 		Size:       getPageSize(req.Size),
-		From:       getOffset(req.Page),
+		From:       getOffset(req.Page, req.Size),
 	}
 
 	// If there's a question, build vector search query
@@ -98,12 +98,14 @@ func (s *ChunkService) elasticsearchRetrieval(ctx context.Context, req *Retrieva
 		}
 
 		// Build knn query
+		// Get top_k value with default
+		topK := getTopK(req.TopK)
 		searchReq.Query = map[string]interface{}{
 			"knn": map[string]interface{}{
 				"field":         "embedding",
 				"query_vector":  vector,
-				"k":             10,
-				"num_candidates": 100,
+				"k":             topK,
+				"num_candidates": topK * 10, // Ensure enough candidates
 			},
 		}
 	}
@@ -133,7 +135,7 @@ func (s *ChunkService) infinityRetrieval(ctx context.Context, req *RetrievalTest
 	searchReq := &infinity.SearchRequest{
 		TableName: tableName,
 		Limit:     getPageSize(req.Size),
-		Offset:    getOffset(req.Page),
+		Offset:    getOffset(req.Page, req.Size),
 	}
 
 	// If there's a question, add text match
@@ -141,7 +143,7 @@ func (s *ChunkService) infinityRetrieval(ctx context.Context, req *RetrievalTest
 		searchReq.MatchText = &infinity.MatchTextExpr{
 			Fields:       []string{"title", "content"},
 			MatchingText: req.Question,
-			TopN:        getPageSize(req.Size),
+			TopN:        getTopK(req.TopK),
 		}
 	}
 
@@ -180,15 +182,31 @@ func getPageSize(size *int) int {
 	if size != nil && *size > 0 {
 		return *size
 	}
-	return 10 // default value
+	return 30 // default value
 }
 
 // getOffset gets offset
-func getOffset(page *int) int {
+func getOffset(page *int, size *int) int {
 	if page != nil && *page > 0 {
-		return (*page - 1) * getPageSize(page)
+		return (*page - 1) * getPageSize(size)
 	}
 	return 0
+}
+
+// getTopK gets top k value
+func getTopK(topk *int) int {
+	if topk != nil && *topk > 0 {
+		return *topk
+	}
+	return 1024 // default value
+}
+
+// getUseKG gets use knowledge graph flag
+func getUseKG(usekg *bool) bool {
+	if usekg != nil {
+		return *usekg
+	}
+	return false // default value
 }
 
 // convertESChunks converts ES returned chunks

@@ -62,6 +62,24 @@ func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 		return
 	}
 
+	// Set default values for optional parameters
+	if req.Page == nil {
+		defaultPage := 1
+		req.Page = &defaultPage
+	}
+	if req.Size == nil {
+		defaultSize := 30
+		req.Size = &defaultSize
+	}
+	if req.TopK == nil {
+		defaultTopK := 1024
+		req.TopK = &defaultTopK
+	}
+	if req.UseKG == nil {
+		defaultUseKG := false
+		req.UseKG = &defaultUseKG
+	}
+
 	// Validate required fields
 	if req.Question == "" {
 		c.JSON(http.StatusBadRequest, gin.H{

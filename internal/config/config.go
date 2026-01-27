@@ -10,10 +10,10 @@ import (
 
 // Config application configuration
 type Config struct {
-	Server     ServerConfig     `mapstructure:"server"`
-	Database   DatabaseConfig   `mapstructure:"database"`
-	Log        LogConfig        `mapstructure:"log"`
-	DocEngine  DocEngineConfig  `mapstructure:"doc_engine"`
+	Server    ServerConfig    `mapstructure:"server"`
+	Database  DatabaseConfig  `mapstructure:"database"`
+	Log       LogConfig       `mapstructure:"log"`
+	DocEngine DocEngineConfig `mapstructure:"doc_engine"`
 }
 
 // ServerConfig server configuration
@@ -139,7 +139,7 @@ func Init(configPath string) error {
 				globalConfig.Server.Port = ragflowConfig.GetInt("http_port")
 				// If mode is not set, default to debug
 				if globalConfig.Server.Mode == "" {
-					globalConfig.Server.Mode = "release"
+					globalConfig.Server.Mode = "debug"
 				}
 			}
 		}
