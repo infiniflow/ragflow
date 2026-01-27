@@ -38,20 +38,20 @@ func NewChunkService() *ChunkService {
 
 // RetrievalTestRequest retrieval test request
 type RetrievalTestRequest struct {
-	KbID                  interface{} `json:"kb_id" binding:"required"` // string or []string
-	Question              string      `json:"question" binding:"required"`
-	Page                  *int        `json:"page,omitempty"`
-	Size                  *int        `json:"size,omitempty"`
-	DocIDs                []string    `json:"doc_ids,omitempty"`
-	UseKG                 *bool       `json:"use_kg,omitempty"`
-	TopK                  *int        `json:"top_k,omitempty"`
-	CrossLanguages        []string    `json:"cross_languages,omitempty"`
-	SearchID              *string     `json:"search_id,omitempty"`
-	MetaDataFilter        map[string]interface{} `json:"meta_data_filter,omitempty"`
-	RerankID              *string     `json:"rerank_id,omitempty"`
-	Keyword               *bool       `json:"keyword,omitempty"`
-	SimilarityThreshold   *float64    `json:"similarity_threshold,omitempty"`
-	VectorSimilarityWeight *float64   `json:"vector_similarity_weight,omitempty"`
+	KbID                   interface{}            `json:"kb_id" binding:"required"` // string or []string
+	Question               string                 `json:"question" binding:"required"`
+	Page                   *int                   `json:"page,omitempty"`
+	Size                   *int                   `json:"size,omitempty"`
+	DocIDs                 []string               `json:"doc_ids,omitempty"`
+	UseKG                  *bool                  `json:"use_kg,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"`
+	CrossLanguages         []string               `json:"cross_languages,omitempty"`
+	SearchID               *string                `json:"search_id,omitempty"`
+	MetaDataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
+	RerankID               *string                `json:"rerank_id,omitempty"`
+	Keyword                *bool                  `json:"keyword,omitempty"`
+	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
+	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
 }
 
 // RetrievalTestResponse retrieval test response
@@ -116,8 +116,8 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		for _, tenant := range tenants {
 			kb, err := s.kbDAO.GetByIDAndTenantID(kbID, tenant.TenantID)
 			if err == nil && kb != nil {
-				logger.Debug("Found knowledge base record in database", 
-					zap.String("kbID", kbID), 
+				logger.Debug("Found knowledge base record in database",
+					zap.String("kbID", kbID),
 					zap.String("tenantID", tenant.TenantID),
 					zap.String("kbName", kb.Name),
 					zap.String("embdID", kb.EmbdID))
@@ -128,7 +128,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 			}
 		}
 		if !found {
-			return nil, fmt.Errorf("Only owner of dataset authorized for this operation.")
+			return nil, fmt.Errorf("only owner of dataset is authorized for this operation")
 		}
 	}
 
@@ -147,26 +147,12 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user owner tenants: %w", err)
 	}
-	logger.Debug("Retrieved owner tenants from database", 
-		zap.String("userID", userID), 
+	logger.Debug("Retrieved owner tenants from database",
+		zap.String("userID", userID),
 		zap.Int("ownerTenantCount", len(ownerTenants)))
-	
+
 	// Choose target tenant: prioritize owner tenant if available in tenantIDs
 	targetTenantID := tenantIDs[0]
-	if len(ownerTenants) > 0 {
-		// Create a set of tenantIDs for quick lookup
-		tenantIDSet := make(map[string]bool)
-		for _, tid := range tenantIDs {
-			tenantIDSet[tid] = true
-		}
-		// Find first owner tenant that is in tenantIDs
-		for _, owner := range ownerTenants {
-			if tenantIDSet[owner.TenantID] {
-				targetTenantID = owner.TenantID
-				break
-			}
-		}
-	}
 
 	// Get embedding model for the target tenant
 	// Note: embedding model name is taken from the kb record's embd_id
@@ -210,9 +196,9 @@ func (s *ChunkService) elasticsearchRetrieval(ctx context.Context, req *Retrieva
 	topK := getTopK(req.TopK)
 	searchReq.Query = map[string]interface{}{
 		"knn": map[string]interface{}{
-			"field":         "embedding",
-			"query_vector":  vector,
-			"k":             topK,
+			"field":          "embedding",
+			"query_vector":   vector,
+			"k":              topK,
 			"num_candidates": topK * 10, // Ensure enough candidates
 		},
 	}
@@ -250,7 +236,7 @@ func (s *ChunkService) infinityRetrieval(ctx context.Context, req *RetrievalTest
 	searchReq.MatchText = &infinity.MatchTextExpr{
 		Fields:       []string{"title", "content"},
 		MatchingText: req.Question,
-		TopN:        getTopK(req.TopK),
+		TopN:         getTopK(req.TopK),
 	}
 
 	// Add vector match if vector is provided (for future support)
@@ -260,7 +246,7 @@ func (s *ChunkService) infinityRetrieval(ctx context.Context, req *RetrievalTest
 			EmbeddingData:     vector,
 			EmbeddingDataType: "float32",
 			DistanceType:      "cosine",
-			TopN:             getTopK(req.TopK),
+			TopN:              getTopK(req.TopK),
 			ExtraOptions:      nil,
 		}
 	}

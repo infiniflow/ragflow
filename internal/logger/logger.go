@@ -32,7 +32,7 @@ func Init(level string) error {
 	config := zap.Config{
 		Level:            zap.NewAtomicLevelAt(zapLevel),
 		Development:      false,
-		Encoding:         "json",
+		Encoding:         "console",
 		EncoderConfig:    zap.NewProductionEncoderConfig(),
 		OutputPaths:      []string{"stdout"},
 		ErrorOutputPaths: []string{"stderr"},
