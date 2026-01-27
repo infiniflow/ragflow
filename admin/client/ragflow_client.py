@@ -1159,10 +1159,14 @@ class RAGFlowClient:
     def _get_default_models(self):
         response = self.http_client.request("GET", "/user/tenant_info", use_api_base=False, auth_kind="web")
         res_json = response.json()
-        if response.status_code == 200 and res_json["code"] == 0:
-            return res_json["data"]
+        if response.status_code == 200:
+            if res_json["code"] == 0:
+                return res_json["data"]
+            else:
+                print(f"Fail to list user default models, code: {res_json['code']}, message: {res_json['message']}")
+                return None
         else:
-            print(f"Fail to list user default models, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to list user default models, HTTP code: {response.status_code}, message: {res_json}")
             return None
 
     def _set_default_models(self, model_type, model_id):
