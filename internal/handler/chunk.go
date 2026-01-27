@@ -146,11 +146,8 @@ func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 		return
 	}
 
-	// TODO: pass user context to service for permission checks
-	_ = user
-
-	// Call service
-	resp, err := h.chunkService.RetrievalTest(&req)
+	// Call service with user ID for permission checks
+	resp, err := h.chunkService.RetrievalTest(&req, user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

@@ -53,6 +53,10 @@ func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID stri
 	if modelNameStr == "" {
 		modelNameStr = "text-embedding-ada-002"
 	}
+	// Use provided model name if available
+	if len(modelName) > 0 && modelName[0] != "" {
+		modelNameStr = modelName[0]
+	}
 
 	return &openAIEmbeddingModel{
 		apiKey:  apiKey,

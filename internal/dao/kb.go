@@ -104,3 +104,23 @@ func (dao *KnowledgebaseDAO) ListByOwnerIDs(ownerIDs []string, page, pageSize in
 
 	return kbs, total, nil
 }
+
+// GetByID gets knowledge base by ID
+func (dao *KnowledgebaseDAO) GetByID(id string) (*model.Knowledgebase, error) {
+	var kb model.Knowledgebase
+	err := DB.Where("id = ? AND status = ?", id, "1").First(&kb).Error
+	if err != nil {
+		return nil, err
+	}
+	return &kb, nil
+}
+
+// GetByIDAndTenantID gets knowledge base by ID and tenant ID
+func (dao *KnowledgebaseDAO) GetByIDAndTenantID(id, tenantID string) (*model.Knowledgebase, error) {
+	var kb model.Knowledgebase
+	err := DB.Where("id = ? AND tenant_id = ? AND status = ?", id, tenantID, "1").First(&kb).Error
+	if err != nil {
+		return nil, err
+	}
+	return &kb, nil
+}

@@ -5,25 +5,31 @@ import (
 	"fmt"
 
 	"ragflow/internal/config"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
+	"ragflow/internal/model"
 )
 
 // ChunkService chunk service
 type ChunkService struct {
-	docEngine    engine.DocEngine
-	engineType   config.EngineType
+	docEngine     engine.DocEngine
+	engineType    config.EngineType
 	modelProvider ModelProvider
+	kbDAO         *dao.KnowledgebaseDAO
+	tenantDAO     *dao.TenantDAO
 }
 
 // NewChunkService creates chunk service
 func NewChunkService() *ChunkService {
 	cfg := config.Get()
 	return &ChunkService{
-		docEngine:    engine.Get(),
-		engineType:   cfg.DocEngine.Type,
+		docEngine:     engine.Get(),
+		engineType:    cfg.DocEngine.Type,
 		modelProvider: NewModelProvider(),
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		tenantDAO:     dao.NewTenantDAO(),
 	}
 }
 
@@ -53,26 +59,128 @@ type RetrievalTestResponse struct {
 }
 
 // RetrievalTest performs retrieval test
-func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest) (*RetrievalTestResponse, error) {
+func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error) {
 	if s.docEngine == nil {
 		return nil, fmt.Errorf("doc engine not initialized")
 	}
 
+	// Validate question is required
+	if req.Question == "" {
+		return nil, fmt.Errorf("question is required")
+	}
+
 	ctx := context.Background()
+
+	// Get user's tenants
+	tenants, err := s.tenantDAO.GetJoinedTenantsByUserID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user tenants: %w", err)
+	}
+	if len(tenants) == 0 {
+		return nil, fmt.Errorf("user has no accessible tenants")
+	}
+
+	// Determine kb_id list
+	var kbIDs []string
+	switch v := req.KbID.(type) {
+	case string:
+		kbIDs = []string{v}
+	case []interface{}:
+		for _, item := range v {
+			if str, ok := item.(string); ok {
+				kbIDs = append(kbIDs, str)
+			} else {
+				return nil, fmt.Errorf("kb_id array must contain strings")
+			}
+		}
+	case []string:
+		kbIDs = v
+	default:
+		return nil, fmt.Errorf("kb_id must be string or array of strings")
+	}
+
+	if len(kbIDs) == 0 {
+		return nil, fmt.Errorf("kb_id cannot be empty")
+	}
+
+	// Check permission for each kb_id
+	var tenantIDs []string
+	var kbRecords []*model.Knowledgebase
+
+	for _, kbID := range kbIDs {
+		found := false
+		for _, tenant := range tenants {
+			kb, err := s.kbDAO.GetByIDAndTenantID(kbID, tenant.TenantID)
+			if err == nil && kb != nil {
+				tenantIDs = append(tenantIDs, tenant.TenantID)
+				kbRecords = append(kbRecords, kb)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("Only owner of dataset authorized for this operation.")
+		}
+	}
+
+	// Check if all kb records have the same embedding model
+	if len(kbRecords) > 1 {
+		firstEmbdID := kbRecords[0].EmbdID
+		for i := 1; i < len(kbRecords); i++ {
+			if kbRecords[i].EmbdID != firstEmbdID {
+				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
+			}
+		}
+	}
+
+	// Get user's owner tenants to prioritize
+	ownerTenants, err := s.tenantDAO.GetInfoByUserID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user owner tenants: %w", err)
+	}
+	
+	// Choose target tenant: prioritize owner tenant if available in tenantIDs
+	targetTenantID := tenantIDs[0]
+	if len(ownerTenants) > 0 {
+		// Create a set of tenantIDs for quick lookup
+		tenantIDSet := make(map[string]bool)
+		for _, tid := range tenantIDs {
+			tenantIDSet[tid] = true
+		}
+		// Find first owner tenant that is in tenantIDs
+		for _, owner := range ownerTenants {
+			if tenantIDSet[owner.TenantID] {
+				targetTenantID = owner.TenantID
+				break
+			}
+		}
+	}
+
+	// Get embedding model for the target tenant
+	// Note: embedding model name is taken from the kb record's embd_id
+	// All kb records have the same embd_id (checked above)
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, targetTenantID, kbRecords[0].EmbdID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get embedding model: %w", err)
+	}
+	vector, err := embeddingModel.EncodeQuery(req.Question)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode query: %w", err)
+	}
 
 	// Execute different retrieval logic based on engine type
 	switch s.engineType {
 	case config.EngineElasticsearch:
-		return s.elasticsearchRetrieval(ctx, req)
+		return s.elasticsearchRetrieval(ctx, req, vector)
 	case config.EngineInfinity:
-		return s.infinityRetrieval(ctx, req)
+		return s.infinityRetrieval(ctx, req, vector)
 	default:
 		return nil, fmt.Errorf("unsupported engine type: %s", s.engineType)
 	}
 }
 
 // elasticsearchRetrieval Elasticsearch retrieval implementation
-func (s *ChunkService) elasticsearchRetrieval(ctx context.Context, req *RetrievalTestRequest) (*RetrievalTestResponse, error) {
+func (s *ChunkService) elasticsearchRetrieval(ctx context.Context, req *RetrievalTestRequest, vector []float64) (*RetrievalTestResponse, error) {
 	// Build index name list (based on kb_id)
 	indexNames := buildIndexNames(req.KbID)
 
@@ -83,31 +191,15 @@ func (s *ChunkService) elasticsearchRetrieval(ctx context.Context, req *Retrieva
 		From:       getOffset(req.Page, req.Size),
 	}
 
-	// If there's a question, build vector search query
-	if req.Question != "" {
-		// Get embedding model
-		embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, "")
-		if err != nil {
-			return nil, fmt.Errorf("failed to get embedding model: %w", err)
-		}
-
-		// Generate vector for the question
-		vector, err := embeddingModel.EncodeQuery(req.Question)
-		if err != nil {
-			return nil, fmt.Errorf("failed to encode query: %w", err)
-		}
-
-		// Build knn query
-		// Get top_k value with default
-		topK := getTopK(req.TopK)
-		searchReq.Query = map[string]interface{}{
-			"knn": map[string]interface{}{
-				"field":         "embedding",
-				"query_vector":  vector,
-				"k":             topK,
-				"num_candidates": topK * 10, // Ensure enough candidates
-			},
-		}
+	// Build knn query using the pre-generated embedding vector
+	topK := getTopK(req.TopK)
+	searchReq.Query = map[string]interface{}{
+		"knn": map[string]interface{}{
+			"field":         "embedding",
+			"query_vector":  vector,
+			"k":             topK,
+			"num_candidates": topK * 10, // Ensure enough candidates
+		},
 	}
 
 	// Execute search
@@ -122,12 +214,13 @@ func (s *ChunkService) elasticsearchRetrieval(ctx context.Context, req *Retrieva
 
 	return &RetrievalTestResponse{
 		Chunks: chunks,
+		Labels: []map[string]interface{}{}, // Empty labels for now
 		Total:  esResp.Hits.Total.Value,
 	}, nil
 }
 
 // infinityRetrieval Infinity retrieval implementation
-func (s *ChunkService) infinityRetrieval(ctx context.Context, req *RetrievalTestRequest) (*RetrievalTestResponse, error) {
+func (s *ChunkService) infinityRetrieval(ctx context.Context, req *RetrievalTestRequest, vector []float64) (*RetrievalTestResponse, error) {
 	// Build table name (based on kb_id)
 	tableName := buildTableName(req.KbID)
 
@@ -138,12 +231,22 @@ func (s *ChunkService) infinityRetrieval(ctx context.Context, req *RetrievalTest
 		Offset:    getOffset(req.Page, req.Size),
 	}
 
-	// If there's a question, add text match
-	if req.Question != "" {
-		searchReq.MatchText = &infinity.MatchTextExpr{
-			Fields:       []string{"title", "content"},
-			MatchingText: req.Question,
-			TopN:        getTopK(req.TopK),
+	// Add text match (question is always required)
+	searchReq.MatchText = &infinity.MatchTextExpr{
+		Fields:       []string{"title", "content"},
+		MatchingText: req.Question,
+		TopN:        getTopK(req.TopK),
+	}
+
+	// Add vector match if vector is provided (for future support)
+	if vector != nil && len(vector) > 0 {
+		searchReq.MatchDense = &infinity.MatchDenseExpr{
+			VectorColumnName:  "embedding",
+			EmbeddingData:     vector,
+			EmbeddingDataType: "float32",
+			DistanceType:      "cosine",
+			TopN:             getTopK(req.TopK),
+			ExtraOptions:      nil,
 		}
 	}
 
@@ -159,6 +262,7 @@ func (s *ChunkService) infinityRetrieval(ctx context.Context, req *RetrievalTest
 
 	return &RetrievalTestResponse{
 		Chunks: chunks,
+		Labels: []map[string]interface{}{}, // Empty labels for now
 		Total:  infResp.Total,
 	}, nil
 }
