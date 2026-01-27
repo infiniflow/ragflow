@@ -254,10 +254,11 @@ func extractToken(c *gin.Context) string {
 // @Router /v1/user/logout [post]
 func (h *UserHandler) Logout(c *gin.Context) {
 	// Extract token from request
-	token := extractToken(c)
+	token := c.GetHeader("Authorization")
 	if token == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Access token required",
+			"code":    401,
+			"message": "Missing Authorization header",
 		})
 		return
 	}
@@ -295,10 +296,11 @@ func (h *UserHandler) Logout(c *gin.Context) {
 // @Router /v1/user/info [get]
 func (h *UserHandler) Info(c *gin.Context) {
 	// Extract token from request
-	token := extractToken(c)
+	token := c.GetHeader("Authorization")
 	if token == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Access token required",
+			"code":    401,
+			"message": "Missing Authorization header",
 		})
 		return
 	}
@@ -332,10 +334,11 @@ func (h *UserHandler) Info(c *gin.Context) {
 // @Router /v1/user/setting [post]
 func (h *UserHandler) Setting(c *gin.Context) {
 	// Extract token from request
-	token := extractToken(c)
+	token := c.GetHeader("Authorization")
 	if token == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Access token required",
+			"code":    401,
+			"message": "Missing Authorization header",
 		})
 		return
 	}
@@ -383,10 +386,11 @@ func (h *UserHandler) Setting(c *gin.Context) {
 // @Router /v1/user/setting/password [post]
 func (h *UserHandler) ChangePassword(c *gin.Context) {
 	// Extract token from request
-	token := extractToken(c)
+	token := c.GetHeader("Authorization")
 	if token == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Access token required",
+			"code":    401,
+			"message": "Missing Authorization header",
 		})
 		return
 	}
@@ -421,5 +425,3 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 		"message": "password changed successfully",
 	})
 }
-
-

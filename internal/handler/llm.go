@@ -10,14 +10,14 @@ import (
 
 // LLMHandler LLM handler
 type LLMHandler struct {
-	llmService *service.LLMService
+	llmService  *service.LLMService
 	userService *service.UserService
 }
 
 // NewLLMHandler create LLM handler
 func NewLLMHandler(llmService *service.LLMService, userService *service.UserService) *LLMHandler {
 	return &LLMHandler{
-		llmService: llmService,
+		llmService:  llmService,
 		userService: userService,
 	}
 }
@@ -34,10 +34,11 @@ func NewLLMHandler(llmService *service.LLMService, userService *service.UserServ
 // @Router /v1/llm/my_llms [get]
 func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 	// Extract token from request
-	token := extractToken(c)
+	token := c.GetHeader("Authorization")
 	if token == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Access token required",
+			"code":    401,
+			"message": "Missing Authorization header",
 		})
 		return
 	}
