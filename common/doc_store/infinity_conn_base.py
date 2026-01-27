@@ -91,14 +91,28 @@ class InfinityConnectionBase(DocStoreConnection):
                 self.logger.info(f"INFINITY added following column to table {table_name}: {field_name} {field_info}")
 
                 # Create secondary index if specified
-                if "index_type" in field_info and field_info["index_type"] == "secondary":
-                    inf_table.create_index(
-                        f"sec_{field_name}",
-                        IndexInfo(field_name, IndexType.Secondary),
-                        ConflictType.Ignore,
-                    )
-                    self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name}")
-                    continue
+                if "index_type" in field_info:
+                    index_config = field_info["index_type"]
+                    if isinstance(index_config, str) and index_config == "secondary":
+                        inf_table.create_index(
+                            f"sec_{field_name}",
+                            IndexInfo(field_name, IndexType.Secondary),
+                            ConflictType.Ignore,
+                        )
+                        self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name}")
+                        continue
+                    elif isinstance(index_config, dict):
+                        if index_config.get("type") == "secondary":
+                            params = {}
+                            if "cardinality" in index_config:
+                                params = {"cardinality": index_config["cardinality"]}
+                            inf_table.create_index(
+                                f"sec_{field_name}",
+                                IndexInfo(field_name, IndexType.Secondary, params),
+                                ConflictType.Ignore,
+                            )
+                            self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name} with params {params}")
+                            continue
 
                 # Create FullText index if analyzer is specified
                 if field_info["type"] != "varchar" or "analyzer" not in field_info:
@@ -299,14 +313,25 @@ class InfinityConnectionBase(DocStoreConnection):
         for field_name, field_info in schema.items():
             if "index_type" not in field_info:
                 continue
-            index_type = field_info["index_type"]
-            if index_type == "secondary":
+            index_config = field_info["index_type"]
+            if isinstance(index_config, str) and index_config == "secondary":
                 inf_table.create_index(
                     f"sec_{field_name}",
                     IndexInfo(field_name, IndexType.Secondary),
                     ConflictType.Ignore,
                 )
                 self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name}")
+            elif isinstance(index_config, dict):
+                if index_config.get("type") == "secondary":
+                    params = {}
+                    if "cardinality" in index_config:
+                        params = {"cardinality": index_config["cardinality"]}
+                    inf_table.create_index(
+                        f"sec_{field_name}",
+                        IndexInfo(field_name, IndexType.Secondary, params),
+                        ConflictType.Ignore,
+                    )
+                    self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name} with params {params}")
 
         self.connPool.release_conn(inf_conn)
         self.logger.info(f"INFINITY created table {table_name}, vector size {vector_size}")
