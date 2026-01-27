@@ -61,6 +61,8 @@ class Session(Base):
                     json_data = json.loads(content)
                 except json.JSONDecodeError:
                     continue  # Skip lines that are not valid JSON
+                if json_data.get("event") != "message":
+                    continue
 
                 if (
                     (self.__session_type == "agent" and json_data.get("event") == "message_end")
