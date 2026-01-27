@@ -8,7 +8,9 @@ sidebar_custom_props: {
 
 # Build Ecommerce customer support agent
 
-This quickstart guides you through building an intelligent e‑commerce customer support agent. The agent uses RAGFlow’s workflow and Agent framework to automatically handle common customer requests such as product comparisons, usage instructions, and installation bookings—providing fast, accurate, and context-aware responses.
+This quickstart guides you through building an intelligent e‑commerce customer support agent. The agent uses RAGFlow’s workflow and Agent framework to automatically handle common customer requests such as product comparisons, usage instructions, and installation bookings—providing fast, accurate, and context-aware responses. In the following sections, we will walk you through the process of building an Ecommerce customer support Agent as shown below: 
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ecommerce_cs_agent_entirety.PNG)
 
 ## Prerequisites
 
@@ -37,9 +39,13 @@ This quickstart guides you through building an intelligent e‑commerce customer
    ```
 ### Add Categorize component
 
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_categorize.png)
+
 This **Categorize** component uses an LLM to recognize user intent and route the conversation to the correct workflow.
 
 ### Build a product feature comparison workflow
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/feature_comparison_workflow.png)
 
 1. Add a **Retrieval** component named “Feature Comparison Knowledge Base" and connect it to the “Product Information” dataset.
 2. Add an **Agent** component named “Feature Comparison Agent” after the **Retrieval** component.
@@ -55,6 +61,8 @@ This **Categorize** component uses an LLM to recognize user intent and route the
 
 ### Build a product user guide workflow
 
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/product_user_guide_workflow.png)
+
 1. Add a **Retrieval** component named “Usage Guide Knowledge Base” and link it to the “User Guide” dataset.
 2. Add an Agent component named “Usage Guide Agent.”
 3. Set its System Prompt:
@@ -68,6 +76,8 @@ This **Categorize** component uses an LLM to recognize user intent and route the
    ```
 
 ### Build an installation booking assistant
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/installation_booking_assistant.png)
 
 1. Add an **Agent** component named “Installation Booking Agent.”
 2. Configure its System Prompt to collect three details:
@@ -84,9 +94,12 @@ This **Categorize** component uses an LLM to recognize user intent and route the
 4. Connect a **Message** component after the three Agent branches.
    *This component displays the final response to the user.*
 
+   ![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/reply_message.png)
+
 5. Click **Save** → **Run** to view execution results and verify that each query is correctly routed and answered.
 6. You can test the workflow by asking:
    - Product comparison questions
    - Usage guidance questions
    - Installation booking requests
+
 
