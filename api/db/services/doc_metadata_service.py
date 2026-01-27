@@ -309,7 +309,7 @@ class DocMetadataService:
             return True
 
         except Exception as e:
-            logging.exception(f"Error inserting metadata for document {doc_id}: {e}")
+            logging.error(f"Error inserting metadata for document {doc_id}: {e}")
             return False
 
     @classmethod
@@ -354,7 +354,7 @@ class DocMetadataService:
             return cls.insert_document_metadata(doc_id, processed_meta)
 
         except Exception as e:
-            logging.exception(f"Error updating metadata for document {doc_id}: {e}")
+            logging.error(f"Error updating metadata for document {doc_id}: {e}")
             return False
 
     @classmethod
@@ -415,7 +415,7 @@ class DocMetadataService:
                     return True  # No metadata to delete is success
             except Exception as e:
                 # If get fails, document might not exist in metadata table, which is fine
-                logging.debug(f"[METADATA DELETE] Get failed: {e}")
+                logging.error(f"[METADATA DELETE] Get failed: {e}")
                 # Continue to check/drop table if needed
 
             # Delete from ES/Infinity (only if metadata exists)
@@ -439,7 +439,7 @@ class DocMetadataService:
             return True
 
         except Exception as e:
-            logging.exception(f"Error deleting metadata for document {doc_id}: {e}")
+            logging.error(f"Error deleting metadata for document {doc_id}: {e}")
             return False
 
     @classmethod
@@ -528,7 +528,7 @@ class DocMetadataService:
 
         except Exception as e:
             # Log but don't fail - metadata deletion was successful
-            logging.exception(f"[DROP EMPTY TABLE] Failed to check/drop empty metadata table {index_name}: {e}")
+            logging.error(f"[DROP EMPTY TABLE] Failed to check/drop empty metadata table {index_name}: {e}")
 
     @classmethod
     @DB.connection_context()
@@ -575,7 +575,7 @@ class DocMetadataService:
             return {}
 
         except Exception as e:
-            logging.exception(f"Error getting metadata for document {doc_id}: {e}")
+            logging.error(f"Error getting metadata for document {doc_id}: {e}")
             return {}
 
     @classmethod
@@ -654,7 +654,7 @@ class DocMetadataService:
             return meta
 
         except Exception as e:
-            logging.exception(f"Error getting metadata for KBs {kb_ids}: {e}")
+            logging.error(f"Error getting metadata for KBs {kb_ids}: {e}")
             return {}
 
     @classmethod
@@ -731,7 +731,7 @@ class DocMetadataService:
             return meta
 
         except Exception as e:
-            logging.exception(f"Error getting flattened metadata for KBs {kb_ids}: {e}")
+            logging.error(f"Error getting flattened metadata for KBs {kb_ids}: {e}")
             return {}
 
     @classmethod
@@ -773,7 +773,7 @@ class DocMetadataService:
             return meta_mapping
 
         except Exception as e:
-            logging.exception(f"Error getting metadata for documents: {e}")
+            logging.error(f"Error getting metadata for documents: {e}")
             return {}
 
     @classmethod
@@ -861,7 +861,7 @@ class DocMetadataService:
             return result
 
         except Exception as e:
-            logging.exception(f"Error getting metadata summary for KB {kb_id}: {e}")
+            logging.error(f"Error getting metadata summary for KB {kb_id}: {e}")
             return {}
 
     @classmethod
@@ -1048,5 +1048,5 @@ class DocMetadataService:
             return updated_docs
 
         except Exception as e:
-            logging.exception(f"Error in batch_update_metadata for KB {kb_id}: {e}")
+            logging.error(f"Error in batch_update_metadata for KB {kb_id}: {e}")
             return 0

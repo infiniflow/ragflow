@@ -306,8 +306,32 @@ class InfinityConnectionBase(DocStoreConnection):
                 schema,
                 ConflictType.Ignore,
             )
+
+            # Create secondary indexes on id and kb_id for better query performance
+            inf_table = inf_db.get_table(table_name)
+
+            try:
+                inf_table.create_index(
+                    f"idx_{table_name}_id",
+                    IndexInfo("id", IndexType.Secondary),
+                    ConflictType.Ignore,
+                )
+                self.logger.debug(f"INFINITY created secondary index on id for table {table_name}")
+            except Exception as e:
+                self.logger.warning(f"Failed to create index on id for {table_name}: {e}")
+
+            try:
+                inf_table.create_index(
+                    f"idx_{table_name}_kb_id",
+                    IndexInfo("kb_id", IndexType.Secondary),
+                    ConflictType.Ignore,
+                )
+                self.logger.debug(f"INFINITY created secondary index on kb_id for table {table_name}")
+            except Exception as e:
+                self.logger.warning(f"Failed to create index on kb_id for {table_name}: {e}")
+
             self.connPool.release_conn(inf_conn)
-            self.logger.info(f"INFINITY created document metadata table {table_name}")
+            self.logger.debug(f"INFINITY created document metadata table {table_name} with secondary indexes")
             return True
 
         except Exception as e:
