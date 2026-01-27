@@ -16,7 +16,7 @@
 
 from pathlib import Path
 
-from ragflow_sdk import Chat, Chunk, DataSet, Document, RAGFlow, Session
+from ragflow_sdk import Chat, Chunk, DataSet, Document, RAGFlow, Session, Agent
 from utils.file_utils import create_txt_file
 
 
@@ -50,3 +50,39 @@ def batch_create_chat_assistants(client: RAGFlow, num: int) -> list[Chat]:
 # SESSION MANAGEMENT
 def batch_add_sessions_with_chat_assistant(chat_assistant: Chat, num) -> list[Session]:
     return [chat_assistant.create_session(name=f"session_with_chat_assistant_{i}") for i in range(num)]
+
+
+# AGENT MANAGEMENT
+def create_agent(client: RAGFlow, title: str, dsl: dict, description: str | None = None) -> Agent:
+    client.create_agent(title=title, dsl=dsl, description=description)
+    # 变通：创建后立即获取列表中的第一个（假设按时间倒序排列，最新的在前面）
+    # 注意：这依赖于 list_agents 默认是按 update_time desc 排序的，ragflow.py 中确实是这样设置的
+    agents = client.list_agents(page=1, page_size=1)
+    if agents:
+        return agents[0]
+    raise Exception("Agent created but not found.")
+
+
+def list_agents(client: RAGFlow, **kwargs) -> list[Agent]:
+    return client.list_agents(**kwargs)
+
+
+def delete_agent(client: RAGFlow, agent_id: str) -> None:
+    return client.delete_agent(agent_id)
+
+
+# AGENT SESSION MANAGEMENT
+def create_agent_session(agent: Agent, **kwargs) -> Session:
+    return agent.create_session(**kwargs)
+
+
+def list_agent_sessions(agent: Agent, **kwargs) -> list[Session]:
+    return agent.list_sessions(**kwargs)
+
+
+def delete_agent_sessions(agent: Agent, ids: list[str] | None = None) -> None:
+    return agent.delete_sessions(ids=ids)
+
+
+def batch_add_sessions_with_agent(agent: Agent, num: int) -> list[Session]:
+    return [agent.create_session() for _ in range(num)]
