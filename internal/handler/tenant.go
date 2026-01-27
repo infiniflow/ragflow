@@ -22,8 +22,6 @@ func NewTenantHandler(tenantService *service.TenantService, userService *service
 	}
 }
 
-
-
 // TenantInfo get tenant information
 // @Summary Get Tenant Information
 // @Description Get current user's tenant information (owner tenant)
@@ -35,14 +33,14 @@ func NewTenantHandler(tenantService *service.TenantService, userService *service
 // @Router /v1/user/tenant_info [get]
 func (h *TenantHandler) TenantInfo(c *gin.Context) {
 	// Extract token from request
-	token := extractToken(c)
+	token := c.GetHeader("Authorization")
 	if token == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Access token required",
+			"code":    401,
+			"message": "Missing Authorization header",
 		})
 		return
 	}
-
 	// Get user by token
 	user, err := h.userService.GetUserByToken(token)
 	if err != nil {
@@ -69,6 +67,7 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
 		"data": tenantInfo,
 	})
 }
