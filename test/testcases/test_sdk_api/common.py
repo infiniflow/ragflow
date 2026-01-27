@@ -55,8 +55,8 @@ def batch_add_sessions_with_chat_assistant(chat_assistant: Chat, num) -> list[Se
 # AGENT MANAGEMENT
 def create_agent(client: RAGFlow, title: str, dsl: dict, description: str | None = None) -> Agent:
     client.create_agent(title=title, dsl=dsl, description=description)
-    # 变通：创建后立即获取列表中的第一个（假设按时间倒序排列，最新的在前面）
-    # 注意：这依赖于 list_agents 默认是按 update_time desc 排序的，ragflow.py 中确实是这样设置的
+    # Workaround: Get the first one from the list immediately after creation (assuming descending order by update_time)
+    # Note: This depends on list_agents defaulting to update_time desc, which is set in ragflow.py
     agents = client.list_agents(page=1, page_size=1)
     if agents:
         return agents[0]
