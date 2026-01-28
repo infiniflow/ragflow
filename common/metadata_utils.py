@@ -106,10 +106,10 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
             else:
                 if logic == "and":
                     doc_ids = doc_ids & set(ids)
+                    if not doc_ids:
+                        return []
                 else:
                     doc_ids = doc_ids | set(ids)
-            if not doc_ids:
-                return []
     return list(doc_ids)
 
 

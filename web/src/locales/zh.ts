@@ -750,8 +750,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '与存在惩罚类似，这减少了模型频繁重复相同单词的倾向。',
       maxTokens: '最大token数',
       maxTokensMessage: '最大token数是必填项',
-      maxTokensTip:
-        '这设置了模型输出的最大长度，以标记（单词或单词片段）的数量来衡量。',
+      maxTokensTip: `代理的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       quote: '显示引文',
@@ -935,8 +934,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       profileDescription: '在此更新您的照片和个人详细信息。',
       maxTokens: '最大token数',
       maxTokensMessage: '最大token数是必填项',
-      maxTokensTip:
-        '这设置了模型输出的最大长度，以标记（单词或单词片段）的数量来衡量。',
+      maxTokensTip: `代理的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       password: '密码',

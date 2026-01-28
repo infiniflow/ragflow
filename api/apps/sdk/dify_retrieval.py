@@ -18,6 +18,7 @@ import logging
 from quart import jsonify
 
 from api.db.services.document_service import DocumentService
+from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import meta_filter, convert_conditions
@@ -121,7 +122,7 @@ async def retrieval(tenant_id):
     similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
     top = int(retrieval_setting.get("top_k", 1024))
     metadata_condition = req.get("metadata_condition", {}) or {}
-    metas = DocumentService.get_meta_by_kbs([kb_id])
+    metas = DocMetadataService.get_meta_by_kbs([kb_id])
 
     doc_ids = []
     try:

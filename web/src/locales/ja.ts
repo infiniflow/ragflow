@@ -427,8 +427,7 @@ export default {
         '存在ペナルティと同様に、モデルが同じ単語を頻繁に繰り返す傾向を減少させます。',
       maxTokens: '最大トークン数',
       maxTokensMessage: '最大トークン数は必須です',
-      maxTokensTip:
-        'これは、モデルの出力の最大長を設定します。トークン（単語または単語の一部）の数で測定されます。',
+      maxTokensTip: `エージェントの最大コンテキストサイズ。無効または不正な値はエラーになります。デフォルトは512。`,
       maxTokensInvalidMessage: '最大トークン数に有効な数値を入力してください。',
       maxTokensMinMessage: '最大トークン数は0以上でなければなりません。',
       quote: '引用を表示',
@@ -517,8 +516,7 @@ export default {
       profileDescription: 'ここで写真と個人情報を更新してください。',
       maxTokens: '最大トークン数',
       maxTokensMessage: '最大トークン数は必須です',
-      maxTokensTip:
-        'これは、モデルの出力の最大長を設定します。トークン（単語または単語の一部）の数で測定されます。',
+      maxTokensTip: `エージェントの最大コンテキストサイズ。無効または不正な値はエラーになります。デフォルトは512。`,
       maxTokensInvalidMessage: '有効な数値を入力してください。',
       maxTokensMinMessage: '最大トークン数は0以上でなければなりません。',
       password: 'パスワード',

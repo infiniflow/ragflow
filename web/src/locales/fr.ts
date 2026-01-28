@@ -402,7 +402,7 @@ export default {
       frequencyPenaltyTip: `Similaire à la pénalité de présence, cela réduit la tendance du modèle à répéter fréquemment les mêmes mots.`,
       maxTokens: 'Nombre max de tokens',
       maxTokensMessage: 'Le nombre max de tokens est requis',
-      maxTokensTip: `Définit la longueur maximale de la sortie du modèle, mesurée en nombre de tokens (mots ou morceaux de mots). Par défaut 512. Si désactivé, aucune limite maximale n’est imposée, le modèle décide alors du nombre de tokens dans ses réponses.`,
+      maxTokensTip: `La taille maximale de contexte de l’agent ; une valeur invalide ou incorrecte provoquera une erreur. Valeur par défaut : 512.`,
       maxTokensInvalidMessage:
         'Veuillez saisir un nombre valide pour le nombre max de tokens.',
       maxTokensMinMessage:
@@ -483,7 +483,7 @@ export default {
         'Mettez à jour votre photo et vos informations personnelles ici.',
       maxTokens: 'Nombre maximum de tokens',
       maxTokensMessage: 'Le nombre maximum de tokens est requis',
-      maxTokensTip: `Cela définit la longueur maximale de la sortie du modèle, mesurée en nombre de tokens (mots ou morceaux de mots). Par défaut à 512. Si désactivé, la limite maximale de tokens est levée, permettant au modèle de déterminer le nombre de tokens dans ses réponses.`,
+      maxTokensTip: `La taille maximale de contexte de l’agent ; une valeur invalide ou incorrecte provoquera une erreur. Valeur par défaut : 512.`,
       maxTokensInvalidMessage:
         'Veuillez saisir un nombre valide pour le nombre maximum de tokens.',
       maxTokensMinMessage:
