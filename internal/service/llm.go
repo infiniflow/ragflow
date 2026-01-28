@@ -42,6 +42,7 @@ func (s *LLMService) GetMyLLMs(tenantID string, includeDetails bool) (map[string
 
 	// Group by factory
 	result := make(map[string]MyLLMResponse)
+	providerDAO := dao.NewModelProviderDAO()
 	for _, llm := range myLLMs {
 		// Get or create factory entry
 		resp, exists := result[llm.LLMFactory]
@@ -64,6 +65,24 @@ func (s *LLMService) GetMyLLMs(tenantID string, includeDetails bool) (map[string
 		if includeDetails {
 			item.APIBase = llm.APIBase
 			item.MaxTokens = llm.MaxTokens
+			
+			// If APIBase is empty, try to get from model provider configuration
+			if item.APIBase == "" {
+				provider := providerDAO.GetProviderByName(llm.LLMFactory)
+				if provider != nil {
+					// Determine appropriate API base URL based on model type
+					switch llm.ModelType {
+					case "embedding":
+						if provider.DefaultEmbeddingURL != "" {
+							item.APIBase = provider.DefaultEmbeddingURL
+						}
+					// Add other model types here if needed
+					// case "chat":
+					// case "rerank":
+					// etc.
+					}
+				}
+			}
 		}
 		
 		resp.LLM = append(resp.LLM, item)

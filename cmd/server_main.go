@@ -26,6 +26,12 @@ func main() {
 		logger.Fatal("Failed to initialize config", zap.Error(err))
 	}
 
+	// Load model providers configuration
+	if err := config.LoadModelProviders(""); err != nil {
+		logger.Fatal("Failed to load model providers", zap.Error(err))
+	}
+	logger.Info("Model providers loaded", zap.Int("count", len(config.GetModelProviders())))
+
 	cfg := config.Get()
 
 	// Reinitialize logger with configured level if different

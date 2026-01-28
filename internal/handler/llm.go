@@ -5,8 +5,18 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/dao"
 	"ragflow/internal/service"
 )
+// FactoryResponse represents a model provider factory
+type FactoryResponse struct {
+	Name       string   `json:"name"`
+	Logo       string   `json:"logo"`
+	Tags       string   `json:"tags"`
+	Status     string   `json:"status"`
+	Rank       string   `json:"rank"`
+	ModelTypes []string `json:"model_types"`
+}
 
 // LLMHandler LLM handler
 type LLMHandler struct {
@@ -76,5 +86,84 @@ func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": llms,
+	})
+}
+
+// Factories get model provider factories
+// @Summary Get Model Provider Factories
+// @Description Get list of model provider factories
+// @Tags llm
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {array} FactoryResponse
+// @Router /v1/llm/factories [get]
+func (h *LLMHandler) Factories(c *gin.Context) {
+	// Extract token from request
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Missing Authorization header",
+		})
+		return
+	}
+
+	// Get user by token
+	_, err := h.userService.GetUserByToken(token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Invalid access token",
+		})
+		return
+	}
+
+	// Get model providers
+	dao := dao.NewModelProviderDAO()
+	providers := dao.GetAllProviders()
+
+	// Filter out unwanted providers
+	filtered := make([]FactoryResponse, 0)
+	excluded := map[string]bool{
+		"Youdao":    true,
+		"FastEmbed": true,
+		"BAAI":      true,
+		"Builtin":   true,
+	}
+
+	for _, provider := range providers {
+		if excluded[provider.Name] {
+			continue
+		}
+
+		// Collect unique model types from LLMs
+		modelTypes := make(map[string]bool)
+		for _, llm := range provider.LLMs {
+			modelTypes[llm.ModelType] = true
+		}
+
+		// Convert to slice
+		modelTypeSlice := make([]string, 0, len(modelTypes))
+		for mt := range modelTypes {
+			modelTypeSlice = append(modelTypeSlice, mt)
+		}
+
+		// If no model types found, use defaults
+		if len(modelTypeSlice) == 0 {
+			modelTypeSlice = []string{"chat", "embedding", "rerank", "image2text", "speech2text", "tts", "ocr"}
+		}
+
+		filtered = append(filtered, FactoryResponse{
+			Name:       provider.Name,
+			Logo:       provider.Logo,
+			Tags:       provider.Tags,
+			Status:     provider.Status,
+			Rank:       provider.Rank,
+			ModelTypes: modelTypeSlice,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": filtered,
 	})
 }

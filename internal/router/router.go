@@ -106,6 +106,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	llm := engine.Group("/v1/llm")
 	{
 		llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
+		llm.GET("/factories", r.llmHandler.Factories)
 	}
 	}
 }

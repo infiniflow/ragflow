@@ -69,8 +69,15 @@ func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID stri
 		return nil, fmt.Errorf("no API key found for tenant %s and model %s", tenantID, compositeModelName)
 	}
 	apiBase := embeddingModel.APIBase
+	// If API base is empty, try to get default embedding URL from model provider configuration
 	if apiBase == "" {
-		return nil, fmt.Errorf("no API base found for tenant %s and model %s", tenantID, compositeModelName)
+		providerDAO := dao.NewModelProviderDAO()
+		providerConfig := providerDAO.GetProviderByName(provider)
+		if providerConfig != nil && providerConfig.DefaultEmbeddingURL != "" {
+			apiBase = providerConfig.DefaultEmbeddingURL
+		} else {
+			return nil, fmt.Errorf("no API base found for tenant %s and model %s", tenantID, compositeModelName)
+		}
 	}
 
 	return &openAIEmbeddingModel{
