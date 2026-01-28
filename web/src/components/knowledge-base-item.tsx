@@ -131,6 +131,10 @@ export function KnowledgeBaseFormField({
               maxCount={100}
               defaultValue={field.value}
               showSelectAll={false}
+              data-testid="datasets-combobox"
+              optionsTestId="datasets-options"
+              optionTestId="datasets-option"
+              optionTestIdPrefix="datasets-option-"
               {...field}
             />
           </FormControl>
