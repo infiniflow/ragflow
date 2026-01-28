@@ -149,8 +149,11 @@ class InfinityConnection(InfinityConnectionBase):
         if condition:
             table_found = False
             for indexName in index_names:
-                for kb_id in knowledgebase_ids:
-                    table_name = f"{indexName}_{kb_id}"
+                if indexName.startswith("ragflow_doc_meta_"):
+                    table_names_to_search = [indexName]
+                else:
+                    table_names_to_search = [f"{indexName}_{kb_id}" for kb_id in knowledgebase_ids]
+                for table_name in table_names_to_search:
                     try:
                         filter_cond = self.equivalent_condition_to_str(condition, db_instance.get_table(table_name))
                         table_found = True
@@ -221,8 +224,11 @@ class InfinityConnection(InfinityConnectionBase):
         total_hits_count = 0
         # Scatter search tables and gather the results
         for indexName in index_names:
-            for knowledgebaseId in knowledgebase_ids:
-                table_name = f"{indexName}_{knowledgebaseId}"
+            if indexName.startswith("ragflow_doc_meta_"):
+                table_names_to_search = [indexName]
+            else:
+                table_names_to_search = [f"{indexName}_{kb_id}" for kb_id in knowledgebase_ids]
+            for table_name in table_names_to_search:
                 try:
                     table_instance = db_instance.get_table(table_name)
                 except Exception:
@@ -276,8 +282,11 @@ class InfinityConnection(InfinityConnectionBase):
         df_list = list()
         assert isinstance(knowledgebase_ids, list)
         table_list = list()
-        for knowledgebaseId in knowledgebase_ids:
-            table_name = f"{index_name}_{knowledgebaseId}"
+        if index_name.startswith("ragflow_doc_meta_"):
+            table_names_to_search = [index_name]
+        else:
+            table_names_to_search = [f"{index_name}_{kb_id}" for kb_id in knowledgebase_ids]
+        for table_name in table_names_to_search:
             table_list.append(table_name)
             try:
                 table_instance = db_instance.get_table(table_name)
@@ -301,7 +310,10 @@ class InfinityConnection(InfinityConnectionBase):
     def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None) -> list[str]:
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
-        table_name = f"{index_name}_{knowledgebase_id}"
+        if index_name.startswith("ragflow_doc_meta_"):
+            table_name = index_name
+        else:
+            table_name = f"{index_name}_{knowledgebase_id}"
         try:
             table_instance = db_instance.get_table(table_name)
         except InfinityException as e:
@@ -405,6 +417,11 @@ class InfinityConnection(InfinityConnectionBase):
                 elif k in ["page_num_int", "top_int"]:
                     assert isinstance(v, list)
                     d[k] = "_".join(f"{num:08x}" for num in v)
+                elif k == "meta_fields":
+                    if isinstance(v, dict):
+                        d[k] = json.dumps(v, ensure_ascii=False)
+                    else:
+                        d[k] = v if v else "{}"
                 else:
                     d[k] = v
             for k in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "content_with_weight",
@@ -434,7 +451,10 @@ class InfinityConnection(InfinityConnectionBase):
         #     logger.info(f"update position_int: {newValue['position_int']}")
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
-        table_name = f"{index_name}_{knowledgebase_id}"
+        if index_name.startswith("ragflow_doc_meta_"):
+            table_name = index_name
+        else:
+            table_name = f"{index_name}_{knowledgebase_id}"
         table_instance = db_instance.get_table(table_name)
         # if "exists" in condition:
         #    del condition["exists"]

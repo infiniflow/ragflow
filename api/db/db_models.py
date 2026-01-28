@@ -795,7 +795,6 @@ class Document(DataBaseModel):
     progress_msg = TextField(null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True, index=True)
     process_duration = FloatField(default=0)
-    meta_fields = JSONField(null=True, default={})
     suffix = CharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
 
     run = CharField(max_length=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0", index=True)
@@ -1267,7 +1266,6 @@ def migrate_db():
     alter_db_add_column(migrator, "task", "digest", TextField(null=True, help_text="task digest", default=""))
     alter_db_add_column(migrator, "task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default=""))
     alter_db_add_column(migrator, "conversation", "user_id", CharField(max_length=255, null=True, help_text="user_id", index=True))
-    alter_db_add_column(migrator, "document", "meta_fields", JSONField(null=True, default={}))
     alter_db_add_column(migrator, "task", "task_type", CharField(max_length=32, null=False, default=""))
     alter_db_add_column(migrator, "task", "priority", IntegerField(default=0))
     alter_db_add_column(migrator, "user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True))

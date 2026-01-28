@@ -22,6 +22,7 @@ import xxhash
 from quart import request
 
 from api.db.services.document_service import DocumentService
+from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
@@ -381,7 +382,7 @@ async def retrieval_test():
                 chat_mdl = LLMBundle(user_id, LLMType.CHAT)
 
         if meta_data_filter:
-            metas = DocumentService.get_meta_by_kbs(kb_ids)
+            metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
             local_doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, local_doc_ids)
 
         tenants = UserTenantService.query(user_id=user_id)

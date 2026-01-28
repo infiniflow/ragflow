@@ -162,7 +162,11 @@ class ESConnection(ESConnectionBase):
                 self._connect()
                 continue
             except Exception as e:
-                self.logger.exception(f"ESConnection.search {str(index_names)} query: " + str(q) + str(e))
+                # Only log debug for NotFoundError(accepted when metadata index doesn't exist)
+                if 'NotFound' in str(e):
+                    self.logger.debug(f"ESConnection.search {str(index_names)} query: " + str(q) + " - " + str(e))
+                else:
+                    self.logger.exception(f"ESConnection.search {str(index_names)} query: " + str(q) + str(e))
                 raise e
 
         self.logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
