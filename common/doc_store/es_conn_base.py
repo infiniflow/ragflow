@@ -24,6 +24,7 @@ from abc import abstractmethod
 from elasticsearch import NotFoundError
 from elasticsearch_dsl import Index
 from elastic_transport import ConnectionTimeout
+from elasticsearch.client import IndicesClient
 from common.file_utils import get_project_base_directory
 from common.misc_utils import convert_bytes
 from common.doc_store.doc_store_base import DocStoreConnection, OrderByExpr, MatchExpr
@@ -128,12 +129,33 @@ class ESConnectionBase(DocStoreConnection):
         if self.index_exist(index_name, dataset_id):
             return True
         try:
-            from elasticsearch.client import IndicesClient
             return IndicesClient(self.es).create(index=index_name,
                                                  settings=self.mapping["settings"],
                                                  mappings=self.mapping["mappings"])
         except Exception:
             self.logger.exception("ESConnection.createIndex error %s" % index_name)
+
+    def create_doc_meta_idx(self, index_name: str):
+        """
+        Create a document metadata index.
+
+        Index name pattern: ragflow_doc_meta_{tenant_id}
+        - Per-tenant metadata index for storing document metadata fields
+        """
+        if self.index_exist(index_name, ""):
+            return True
+        try:
+            fp_mapping = os.path.join(get_project_base_directory(), "conf", "doc_meta_es_mapping.json")
+            if not os.path.exists(fp_mapping):
+                self.logger.error(f"Document metadata mapping file not found at {fp_mapping}")
+                return False
+
+            doc_meta_mapping = json.load(open(fp_mapping, "r"))
+            return IndicesClient(self.es).create(index=index_name,
+                                                 settings=doc_meta_mapping["settings"],
+                                                 mappings=doc_meta_mapping["mappings"])
+        except Exception as e:
+            self.logger.exception(f"Error creating document metadata index {index_name}: {e}")
 
     def delete_idx(self, index_name: str, dataset_id: str):
         if len(dataset_id) > 0:
