@@ -9,39 +9,37 @@ import (
 	"strings"
 )
 
-// giteeEmbeddingModel implements EmbeddingModel for GiteeAI API (assumed OpenAI-compatible)
-type giteeEmbeddingModel struct {
+// siliconflowEmbeddingModel implements EmbeddingModel for SILICONFLOW API (OpenAI-compatible)
+type siliconflowEmbeddingModel struct {
 	apiKey     string
 	apiBase    string
 	model      string
 	httpClient *http.Client
 }
 
-// GiteeEmbeddingRequest represents GiteeAI embedding request
-type GiteeEmbeddingRequest struct {
-	Model        string   `json:"model"`
-	Input        []string `json:"input"`
-	EncodeFormat string   `json:"encode_format"`
+// SiliconflowEmbeddingRequest represents SILICONFLOW embedding request
+type SiliconflowEmbeddingRequest struct {
+	Model string   `json:"model"`
+	Input []string `json:"input"`
 }
 
-// GiteeEmbeddingResponse represents GiteeAI embedding response
-type GiteeEmbeddingResponse struct {
+// SiliconflowEmbeddingResponse represents SILICONFLOW embedding response
+type SiliconflowEmbeddingResponse struct {
 	Data []struct {
 		Embedding []float64 `json:"embedding"`
 		Index     int       `json:"index"`
 	} `json:"data"`
 }
 
-// Encode encodes a list of texts into embeddings using GiteeAI API
-func (m *giteeEmbeddingModel) Encode(texts []string) ([][]float64, error) {
+// Encode encodes a list of texts into embeddings using SILICONFLOW API
+func (m *siliconflowEmbeddingModel) Encode(texts []string) ([][]float64, error) {
 	if len(texts) == 0 {
 		return [][]float64{}, nil
 	}
 
-	reqBody := GiteeEmbeddingRequest{
-		Model:        m.model,
-		Input:        texts,
-		EncodeFormat: "float",
+	reqBody := SiliconflowEmbeddingRequest{
+		Model: m.model,
+		Input: texts,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -49,12 +47,11 @@ func (m *giteeEmbeddingModel) Encode(texts []string) ([][]float64, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", m.apiBase, strings.NewReader(string(jsonData)))
+	req, err := http.NewRequest("POST", m.apiBase+"/embeddings", strings.NewReader(string(jsonData)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+m.apiKey)
 
@@ -66,10 +63,10 @@ func (m *giteeEmbeddingModel) Encode(texts []string) ([][]float64, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("GiteeAI API error: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("SILICONFLOW API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var embeddingResp GiteeEmbeddingResponse
+	var embeddingResp SiliconflowEmbeddingResponse
 	if err := json.NewDecoder(resp.Body).Decode(&embeddingResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
@@ -86,7 +83,7 @@ func (m *giteeEmbeddingModel) Encode(texts []string) ([][]float64, error) {
 }
 
 // EncodeQuery encodes a single query string into embedding
-func (m *giteeEmbeddingModel) EncodeQuery(query string) ([]float64, error) {
+func (m *siliconflowEmbeddingModel) EncodeQuery(query string) ([]float64, error) {
 	embeddings, err := m.Encode([]string{query})
 	if err != nil {
 		return nil, err
@@ -97,10 +94,10 @@ func (m *giteeEmbeddingModel) EncodeQuery(query string) ([]float64, error) {
 	return embeddings[0], nil
 }
 
-// init registers the GiteeAI embedding model factory
+// init registers the SILICONFLOW embedding model factory
 func init() {
-	RegisterEmbeddingModelFactory("GiteeAI", func(apiKey, apiBase, modelName string, httpClient *http.Client) model.EmbeddingModel {
-		return &giteeEmbeddingModel{
+	RegisterEmbeddingModelFactory("SILICONFLOW", func(apiKey, apiBase, modelName string, httpClient *http.Client) model.EmbeddingModel {
+		return &siliconflowEmbeddingModel{
 			apiKey:     apiKey,
 			apiBase:    apiBase,
 			model:      modelName,
