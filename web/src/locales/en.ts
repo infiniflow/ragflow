@@ -2235,7 +2235,7 @@ Important structured information may include: names, dates, locations, events, k
           'Accepted Response: The system returns an acknowledgment immediately after the request is validated, while the workflow continues to execute asynchronously in the background. /Final Response: The system returns a response only after the workflow execution is completed.',
         authMethods: 'Authentication methods',
         authType: 'Authentication type',
-        limit: 'Request limit',
+        limit: 'Request frequency limit',
         per: 'Time period',
         maxBodySize: 'Maximum body size',
         ipWhitelist: 'IP whitelist',
