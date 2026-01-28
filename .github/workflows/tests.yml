@@ -232,6 +232,68 @@ jobs:
           done
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 2>&1 | tee es_http_api_test.log
 
+      - name: RAGFlow CLI retrieval test
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+
+          EMAIL="ci-${GITHUB_RUN_ID}@example.com"
+          PASS="ci-pass-${GITHUB_RUN_ID}"
+          DATASET="ci_dataset_${GITHUB_RUN_ID}"
+
+          CLI="python admin/client/ragflow_cli.py"
+
+          set -a
+          source docker/.env
+          set +a
+
+          USER_HOST="$(echo "${HOST_ADDRESS}" | sed -E 's#^https?://([^:/]+).*#\1#')"
+          USER_PORT="${SVR_HTTP_PORT}"
+          ADMIN_HOST="${USER_HOST}"
+          ADMIN_PORT="${ADMIN_SVR_HTTP_PORT}"
+
+          admin_ready=0
+          for i in $(seq 1 30); do
+            if timeout 180s $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "ping" 2>&1 | tee /tmp/cli_admin_ping.log; then
+              admin_ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "${admin_ready}" -ne 1 ]]; then
+            echo "Admin service did not become ready"
+            exit 1
+          fi
+
+          timeout 180s $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "show version" | tee /tmp/cli_admin_version.log
+          timeout 180s $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "create user '$EMAIL' '$PASS'" | tee /tmp/cli_admin_create_user.log
+
+          user_ready=0
+          for i in $(seq 1 30); do
+            if timeout 180s $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "ping" 2>&1 | tee /tmp/cli_user_ping.log; then
+              user_ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "${user_ready}" -ne 1 ]]; then
+            echo "User service did not become ready"
+            exit 1
+          fi
+
+          timeout 180s $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "show version" | tee /tmp/cli_user_version.log
+          timeout 180s $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "create dataset '$DATASET' with embedding 'BAAI/bge-small-en-v1.5@Builtin' parser 'auto'" | tee /tmp/cli_create_dataset.log
+          timeout 180s $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "import 'test/benchmark/test_docs/Doc1.pdf,test/benchmark/test_docs/Doc2.pdf' into dataset '$DATASET'" | tee /tmp/cli_import.log
+          timeout 180s $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "parse dataset '$DATASET' sync" | tee /tmp/cli_parse.log
+          timeout 180s $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "search 'what are these documents about' on datasets '$DATASET'" | tee /tmp/cli_search.log
+
+          if grep -RniE "Traceback|ModuleNotFoundError|ImportError|Parse error|Bad response|Fail to|code:\\s*[1-9]" /tmp/cli_*.log; then
+            echo "Detected CLI error markers"
+            exit 1
+          fi
+
       - name: Collect ragflow log
         if: ${{ !cancelled() }}
         run: |
