@@ -1,7 +1,7 @@
 import { history } from '@/utils/simple-history-util';
-import { message, notification } from 'antd';
 import axios from 'axios';
 
+import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import i18n from '@/locales/config';
 import { Routes } from '@/routes';
@@ -41,38 +41,34 @@ request.interceptors.response.use(
     if (data?.code === 100) {
       message.error(data?.message);
     } else if (data?.code === 401) {
-      notification.error({
-        message: data?.message,
+      message.error(data?.message, {
         description: data?.message,
-        duration: 3,
       });
 
       authorizationUtil.removeAll();
       history.push(Routes.Admin);
       window.location.reload();
     } else if (data?.code && data.code !== 0) {
-      notification.error({
-        message: `${i18n.t('message.hint')}: ${data?.code}`,
+      message.error(`${i18n.t('message.hint')}: ${data?.code}`, {
         description: data?.message,
-        duration: 3,
       });
     }
 
     return response;
   },
   (error) => {
-    const { response, message } = error;
+    const { response } = error;
     const { data } = response ?? {};
 
     if (error.message === 'Failed to fetch') {
-      notification.error({
+      message.error({
         description: i18n.t('message.networkAnomalyDescription'),
         message: i18n.t('message.networkAnomaly'),
       });
     } else if (data?.code === 100) {
       message.error(data?.message);
     } else if (response.status === 401 || data?.code === 401) {
-      notification.error({
+      message.error({
         message: data?.message || response.statusText,
         description:
           data?.message || RetcodeMessage[response?.status as ResultCode],
@@ -83,13 +79,13 @@ request.interceptors.response.use(
       history.push(Routes.Admin);
       window.location.reload();
     } else if (data?.code && data.code !== 0) {
-      notification.error({
+      message.error({
         message: `${i18n.t('message.hint')}: ${data?.code}`,
         description: data?.message,
         duration: 3,
       });
     } else if (response.status) {
-      notification.error({
+      message.error({
         message: `${i18n.t('message.requestError')} ${response.status}: ${response.config.url}`,
         description:
           RetcodeMessage[response.status as ResultCode] || response.statusText,
@@ -138,6 +134,12 @@ const {
   adminImportWhitelist,
 
   adminGetSystemVersion,
+
+  adminListSandboxProviders,
+  adminGetSandboxProviderSchema,
+  adminGetSandboxConfig,
+  adminSetSandboxConfig,
+  adminTestSandboxConnection,
 } = api;
 
 type ResponseData<D = NonNullable<unknown>> = {
@@ -270,3 +272,49 @@ export const importWhitelistFromExcel = (file: File) => {
 
 export const getSystemVersion = () =>
   request.get<ResponseData<{ version: string }>>(adminGetSystemVersion);
+
+// Sandbox settings APIs
+export const listSandboxProviders = () =>
+  request.get<ResponseData<AdminService.SandboxProvider[]>>(
+    adminListSandboxProviders,
+  );
+
+export const getSandboxProviderSchema = (providerId: string) =>
+  request.get<ResponseData<Record<string, AdminService.SandboxConfigField>>>(
+    adminGetSandboxProviderSchema(providerId),
+  );
+
+export const getSandboxConfig = () =>
+  request.get<ResponseData<AdminService.SandboxConfig>>(adminGetSandboxConfig);
+
+export const setSandboxConfig = (params: {
+  providerType: string;
+  config: Record<string, unknown>;
+}) =>
+  request.post<ResponseData<AdminService.SandboxConfig>>(
+    adminSetSandboxConfig,
+    {
+      provider_type: params.providerType,
+      config: params.config,
+    },
+  );
+
+export const testSandboxConnection = (params: {
+  providerType: string;
+  config: Record<string, unknown>;
+}) =>
+  request.post<
+    ResponseData<{
+      success: boolean;
+      message: string;
+      details?: {
+        exit_code: number;
+        execution_time: number;
+        stdout: string;
+        stderr: string;
+      };
+    }>
+  >(adminTestSandboxConnection, {
+    provider_type: params.providerType,
+    config: params.config,
+  });

@@ -312,4 +312,12 @@ export default {
   adminImportWhitelist: `${ExternalApi}${api_host}/admin/whitelist/batch`,
 
   adminGetSystemVersion: `${ExternalApi}${api_host}/admin/version`,
+
+  // Sandbox settings
+  adminListSandboxProviders: `${ExternalApi}${api_host}/admin/sandbox/providers`,
+  adminGetSandboxProviderSchema: (providerId: string) =>
+    `${ExternalApi}${api_host}/admin/sandbox/providers/${providerId}/schema`,
+  adminGetSandboxConfig: `${ExternalApi}${api_host}/admin/sandbox/config`,
+  adminSetSandboxConfig: `${ExternalApi}${api_host}/admin/sandbox/config`,
+  adminTestSandboxConnection: `${ExternalApi}${api_host}/admin/sandbox/test`,
 };

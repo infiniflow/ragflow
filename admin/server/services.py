@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import json
 import os
 import logging
 import re
@@ -372,7 +373,23 @@ class SettingsMgr:
         elif len(settings) > 1:
             raise AdminException(f"Can't update more than 1 setting: {name}")
         else:
-            raise AdminException(f"No setting: {name}")
+            # Create new setting if it doesn't exist
+
+            # Determine data_type based on name and value
+            if name.startswith("sandbox."):
+                data_type = "json"
+            elif name.endswith(".enabled"):
+                data_type = "boolean"
+            else:
+                data_type = "string"
+
+            new_setting = {
+                "name": name,
+                "value": str(value),
+                "source": "admin",
+                "data_type": data_type,
+            }
+            SystemSettingsService.save(**new_setting)
 
 
 class ConfigMgr:
@@ -407,3 +424,300 @@ class EnvironmentsMgr:
         result.append(env_kv)
 
         return result
+
+
+class SandboxMgr:
+    """Manager for sandbox provider configuration and operations."""
+
+    # Provider registry with metadata
+    PROVIDER_REGISTRY = {
+        "self_managed": {
+            "name": "Self-Managed",
+            "description": "On-premise deployment using Daytona/Docker",
+            "tags": ["self-hosted", "low-latency", "secure"],
+        },
+        "aliyun_codeinterpreter": {
+            "name": "Aliyun Code Interpreter",
+            "description": "Aliyun Function Compute Code Interpreter - Code execution in serverless microVMs",
+            "tags": ["saas", "cloud", "scalable", "aliyun"],
+        },
+        "e2b": {
+            "name": "E2B",
+            "description": "E2B Cloud - Code Execution Sandboxes",
+            "tags": ["saas", "fast", "global"],
+        },
+    }
+
+    @staticmethod
+    def list_providers():
+        """List all available sandbox providers."""
+        result = []
+        for provider_id, metadata in SandboxMgr.PROVIDER_REGISTRY.items():
+            result.append({
+                "id": provider_id,
+                **metadata
+            })
+        return result
+
+    @staticmethod
+    def get_provider_config_schema(provider_id: str):
+        """Get configuration schema for a specific provider."""
+        from agent.sandbox.providers import (
+            SelfManagedProvider,
+            AliyunCodeInterpreterProvider,
+            E2BProvider,
+        )
+
+        schemas = {
+            "self_managed": SelfManagedProvider.get_config_schema(),
+            "aliyun_codeinterpreter": AliyunCodeInterpreterProvider.get_config_schema(),
+            "e2b": E2BProvider.get_config_schema(),
+        }
+
+        if provider_id not in schemas:
+            raise AdminException(f"Unknown provider: {provider_id}")
+
+        return schemas.get(provider_id, {})
+
+    @staticmethod
+    def get_config():
+        """Get current sandbox configuration."""
+        try:
+            # Get active provider type
+            provider_type_settings = SystemSettingsService.get_by_name("sandbox.provider_type")
+            if not provider_type_settings:
+                # Return default config if not set
+                provider_type = "self_managed"
+            else:
+                provider_type = provider_type_settings[0].value
+
+            # Get provider-specific config
+            provider_config_settings = SystemSettingsService.get_by_name(f"sandbox.{provider_type}")
+            if not provider_config_settings:
+                provider_config = {}
+            else:
+                try:
+                    provider_config = json.loads(provider_config_settings[0].value)
+                except json.JSONDecodeError:
+                    provider_config = {}
+
+            return {
+                "provider_type": provider_type,
+                "config": provider_config,
+            }
+        except Exception as e:
+            raise AdminException(f"Failed to get sandbox config: {str(e)}")
+
+    @staticmethod
+    def set_config(provider_type: str, config: dict, set_active: bool = True):
+        """
+        Set sandbox provider configuration.
+
+        Args:
+            provider_type: Provider identifier (e.g., "self_managed", "e2b")
+            config: Provider configuration dictionary
+            set_active: If True, also update the active provider. If False,
+                       only update the configuration without switching providers.
+                       Default: True
+
+        Returns:
+            Dictionary with updated provider_type and config
+        """
+        from agent.sandbox.providers import (
+            SelfManagedProvider,
+            AliyunCodeInterpreterProvider,
+            E2BProvider,
+        )
+
+        try:
+            # Validate provider type
+            if provider_type not in SandboxMgr.PROVIDER_REGISTRY:
+                raise AdminException(f"Unknown provider type: {provider_type}")
+
+            # Get provider schema for validation
+            schema = SandboxMgr.get_provider_config_schema(provider_type)
+
+            # Validate config against schema
+            for field_name, field_schema in schema.items():
+                if field_schema.get("required", False) and field_name not in config:
+                    raise AdminException(f"Required field '{field_name}' is missing")
+
+                # Type validation
+                if field_name in config:
+                    field_type = field_schema.get("type")
+                    if field_type == "integer":
+                        if not isinstance(config[field_name], int):
+                            raise AdminException(f"Field '{field_name}' must be an integer")
+                    elif field_type == "string":
+                        if not isinstance(config[field_name], str):
+                            raise AdminException(f"Field '{field_name}' must be a string")
+                    elif field_type == "bool":
+                        if not isinstance(config[field_name], bool):
+                            raise AdminException(f"Field '{field_name}' must be a boolean")
+
+                    # Range validation for integers
+                    if field_type == "integer" and field_name in config:
+                        min_val = field_schema.get("min")
+                        max_val = field_schema.get("max")
+                        if min_val is not None and config[field_name] < min_val:
+                            raise AdminException(f"Field '{field_name}' must be >= {min_val}")
+                        if max_val is not None and config[field_name] > max_val:
+                            raise AdminException(f"Field '{field_name}' must be <= {max_val}")
+
+            # Provider-specific custom validation
+            provider_classes = {
+                "self_managed": SelfManagedProvider,
+                "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
+                "e2b": E2BProvider,
+            }
+            provider = provider_classes[provider_type]()
+            is_valid, error_msg = provider.validate_config(config)
+            if not is_valid:
+                raise AdminException(f"Provider validation failed: {error_msg}")
+
+            # Update provider_type only if set_active is True
+            if set_active:
+                SettingsMgr.update_by_name("sandbox.provider_type", provider_type)
+
+            # Always update the provider config
+            config_json = json.dumps(config)
+            SettingsMgr.update_by_name(f"sandbox.{provider_type}", config_json)
+
+            return {"provider_type": provider_type, "config": config}
+        except AdminException:
+            raise
+        except Exception as e:
+            raise AdminException(f"Failed to set sandbox config: {str(e)}")
+
+    @staticmethod
+    def test_connection(provider_type: str, config: dict):
+        """
+        Test connection to sandbox provider by executing a simple Python script.
+
+        This creates a temporary sandbox instance and runs a test code to verify:
+        - Connection credentials are valid
+        - Sandbox can be created
+        - Code execution works correctly
+
+        Args:
+            provider_type: Provider identifier
+            config: Provider configuration dictionary
+
+        Returns:
+            dict with test results including stdout, stderr, exit_code, execution_time
+        """
+        try:
+            from agent.sandbox.providers import (
+                SelfManagedProvider,
+                AliyunCodeInterpreterProvider,
+                E2BProvider,
+            )
+
+            # Instantiate provider based on type
+            provider_classes = {
+                "self_managed": SelfManagedProvider,
+                "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
+                "e2b": E2BProvider,
+            }
+
+            if provider_type not in provider_classes:
+                raise AdminException(f"Unknown provider type: {provider_type}")
+
+            provider = provider_classes[provider_type]()
+
+            # Initialize with config
+            if not provider.initialize(config):
+                raise AdminException(f"Failed to initialize provider '{provider_type}'")
+
+            # Create a temporary sandbox instance for testing
+            instance = provider.create_instance(template="python")
+
+            if not instance or instance.status != "READY":
+                raise AdminException(f"Failed to create sandbox instance. Status: {instance.status if instance else 'None'}")
+
+            # Simple test code that exercises basic Python functionality
+            test_code = """
+# Test basic Python functionality
+import sys
+import json
+import math
+
+print("Python version:", sys.version)
+print("Platform:", sys.platform)
+
+# Test basic calculations
+result = 2 + 2
+print(f"2 + 2 = {result}")
+
+# Test JSON operations
+data = {"test": "data", "value": 123}
+print(f"JSON dump: {json.dumps(data)}")
+
+# Test math operations
+print(f"Math.sqrt(16) = {math.sqrt(16)}")
+
+# Test error handling
+try:
+    x = 1 / 1
+    print("Division test: OK")
+except Exception as e:
+    print(f"Error: {e}")
+
+# Return success indicator
+print("TEST_PASSED")
+"""
+
+            # Execute test code with timeout
+            execution_result = provider.execute_code(
+                instance_id=instance.instance_id,
+                code=test_code,
+                language="python",
+                timeout=10  # 10 seconds timeout
+            )
+
+            # Clean up the test instance (if provider supports it)
+            try:
+                if hasattr(provider, 'terminate_instance'):
+                    provider.terminate_instance(instance.instance_id)
+                    logging.info(f"Cleaned up test instance {instance.instance_id}")
+                else:
+                    logging.warning(f"Provider {provider_type} does not support terminate_instance, test instance may leak")
+            except Exception as cleanup_error:
+                logging.warning(f"Failed to cleanup test instance {instance.instance_id}: {cleanup_error}")
+
+            # Build detailed result message
+            success = execution_result.exit_code == 0 and "TEST_PASSED" in execution_result.stdout
+
+            message_parts = [
+                f"Test {success and 'PASSED' or 'FAILED'}",
+                f"Exit code: {execution_result.exit_code}",
+                f"Execution time: {execution_result.execution_time:.2f}s"
+            ]
+
+            if execution_result.stdout.strip():
+                stdout_preview = execution_result.stdout.strip()[:200]
+                message_parts.append(f"Output: {stdout_preview}...")
+
+            if execution_result.stderr.strip():
+                stderr_preview = execution_result.stderr.strip()[:200]
+                message_parts.append(f"Errors: {stderr_preview}...")
+
+            message = " | ".join(message_parts)
+
+            return {
+                "success": success,
+                "message": message,
+                "details": {
+                    "exit_code": execution_result.exit_code,
+                    "execution_time": execution_result.execution_time,
+                    "stdout": execution_result.stdout,
+                    "stderr": execution_result.stderr,
+                }
+            }
+
+        except AdminException:
+            raise
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            raise AdminException(f"Connection test failed: {str(e)}\\n\\nStack trace:\\n{error_details}")
