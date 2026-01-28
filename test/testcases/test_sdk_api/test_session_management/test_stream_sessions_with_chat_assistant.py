@@ -15,7 +15,6 @@
 #
 
 import pytest
-from ragflow_sdk import Session
 
 class TestSessionMethods:
     """

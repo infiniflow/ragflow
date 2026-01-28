@@ -16,7 +16,6 @@
 
 import pytest
 import time
-from ragflow_sdk import DataSet
 from utils.file_utils import create_txt_file
 
 class TestDatasetParsing:
