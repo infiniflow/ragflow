@@ -175,11 +175,16 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        selectFiles: '已选择 {{count}} 个文件',
+        type: '类型',
+        fieldNameInvalid: '字段名称只能包含字母或下划线。',
+        builtIn: '内置',
+        generation: '生成',
         toMetadataSettingTip: '在配置中设置自动元数据',
         toMetadataSetting: '生成设置',
         descriptionTip:
           '提供描述或示例来指导大语言模型为此字段提取值。如果留空，将依赖字段名称。',
-        restrictTDefinedValuesTip:
+        restrictDefinedValuesTip:
           '枚举模式：限制大语言模型提取的值只能匹配预设值。在下方定义值。',
         valueExists: '值已存在。确认合并重复项并组合所有关联文件。',
         fieldNameExists: '字段名已存在。确认合并重复项并组合所有关联文件。',
@@ -188,10 +193,10 @@ export default {
         fieldExists: '字段名已存在。',
         fieldSetting: '字段设置',
         changesAffectNewParses: '更改仅影响新的解析。',
-        editMetadataForDataset: '查看和编辑元数据 ',
+        // editMetadataForDataset: '查看和编辑元数据 ',
         restrictDefinedValues: '限制为已定义的值',
         metadataGenerationSettings: '元数据生成设置',
-        manageMetadataForDataset: '管理此数据集的元数据',
+        // manageMetadataForDataset: '管理此数据集的元数据',
         manageMetadata: '管理元数据',
         metadata: '元数据',
         values: '值',
@@ -1046,10 +1051,6 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       'eu-central-1': '欧洲 (法兰克福)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       'ap-southeast-2': '亚太地区 (悉尼)',
-      addHunyuanSID: '混元 Secret ID',
-      HunyuanSIDMessage: '请输入 Secret ID',
-      addHunyuanSK: '混元 Secret Key',
-      HunyuanSKMessage: '请输入 Secret Key',
       addTencentCloudSID: '腾讯云 Secret ID',
       TencentCloudSIDMessage: '请输入 Secret ID',
       addTencentCloudSK: '腾讯云 Secret Key',

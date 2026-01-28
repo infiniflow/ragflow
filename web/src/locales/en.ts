@@ -85,6 +85,7 @@ export default {
       description:
         'Sign up for free to explore top RAG technology. Create knowledge bases and AIs to empower your business.',
       review: 'from 500+ reviews',
+      seeAll: 'See all',
     },
     header: {
       knowledgeBase: 'Dataset',
@@ -184,11 +185,16 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       metadata: {
+        selectFiles: 'Selected {{count}} files',
+        type: 'Type',
+        fieldNameInvalid: 'Field name can only contain letters or underscores.',
+        builtIn: 'Built-in',
+        generation: 'Generation',
         toMetadataSetting: 'Generation settings',
         toMetadataSettingTip: 'Set auto-metadata in Configuration.',
         descriptionTip:
           'Provide descriptions or examples to guide LLM extract values for this field. If left empty, it will rely on the field name.',
-        restrictTDefinedValuesTip:
+        restrictDefinedValuesTip:
           'Enum Mode: Restricts LLM extraction to match preset values only. Define values below.',
         valueExists:
           'Value already exists. Confirm to merge duplicates and combine all associated files.',
@@ -201,10 +207,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         fieldExists: 'Field already exists.',
         fieldSetting: 'Field settings',
         changesAffectNewParses: 'Changes affect new parses only.',
-        editMetadataForDataset: 'View and edit metadata for ',
+        // editMetadataForDataset: 'View and edit metadata for ',
         restrictDefinedValues: 'Restrict to defined values',
         metadataGenerationSettings: 'Metadata generation settings',
-        manageMetadataForDataset: 'Manage metadata for this dataset',
+        // manageMetadataForDataset: 'Manage metadata for this dataset',
         manageMetadata: 'Manage metadata',
         metadata: 'Metadata',
         values: 'Values',
@@ -289,7 +295,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       localFiles: 'Local files',
       emptyFiles: 'Create empty file',
       webCrawl: 'Web crawl',
-      chunkNumber: 'Chunk number',
+      chunkNumber: 'Chunks',
       uploadDate: 'Upload date',
       chunkMethod: 'Chunking method',
       enabled: 'Enable',
@@ -664,6 +670,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'In a knowledge graph, a community is a cluster of entities linked by relationships. You can have the LLM generate an abstract for each community, known as a community report. See here for more information: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
       theDocumentBeingParsedCannotBeDeleted:
         'The document being parsed cannot be deleted',
+      lastWeek: 'from last week',
     },
     chunk: {
       type: 'Type',
@@ -1171,10 +1178,6 @@ Example: Virtual Hosted Style`,
       'sa-east-1': 'South America (São Paulo)',
       'us-gov-east-1': 'AWS GovCloud (US-East)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
-      addHunyuanSID: 'Hunyuan Secret ID',
-      HunyuanSIDMessage: 'Please input your Secret ID',
-      addHunyuanSK: 'Hunyuan Secret Key',
-      HunyuanSKMessage: 'Please input your Secret Key',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Please input your Secret ID',
       addTencentCloudSK: 'TencentCloud Secret Key',
@@ -2447,7 +2450,9 @@ Important structured information may include: names, dates, locations, events, k
 
       role: 'Role',
       user: 'User',
+      userType: 'User type',
       superuser: 'Superuser',
+      normalUser: 'Normal',
 
       createTime: 'Create time',
       lastLoginTime: 'Last login time',
