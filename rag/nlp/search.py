@@ -388,6 +388,9 @@ class Dealer:
             "doc_ids": doc_ids,
             "page": math.ceil(page_size * page / RERANK_LIMIT),
             "size": RERANK_LIMIT,
+            "question": question,
+            "vector": True,
+            "topk": top,
             "similarity": similarity_threshold,
             "available_int": 1,
         }
