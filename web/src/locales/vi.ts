@@ -458,8 +458,7 @@ export default {
         'Tương tự như hình phạt hiện diện, điều này làm giảm xu hướng của mô hình lặp lại cùng một từ thường xuyên.',
       maxTokens: 'Token tối đa',
       maxTokensMessage: 'Token tối đa là bắt buộc',
-      maxTokensTip:
-        'Điều này đặt độ dài tối đa của đầu ra của mô hình, được đo bằng số lượng token (từ hoặc phần của từ).',
+      maxTokensTip: `Kích thước ngữ cảnh tối đa của tác nhân; giá trị không hợp lệ hoặc sai sẽ gây lỗi. Mặc định là 512.`,
       maxTokensInvalidMessage: 'Vui lòng nhập số Token tối đa hợp lệ.',
       maxTokensMinMessage: 'Token tối đa không thể nhỏ hơn 0.',
       quote: 'Hiển thị Trích dẫn',
@@ -524,8 +523,7 @@ export default {
       profileDescription: 'Cập nhật ảnh và thông tin cá nhân của bạn tại đây.',
       maxTokens: 'Token tối đa',
       maxTokensMessage: 'Token tối đa là bắt buộc',
-      maxTokensTip:
-        'Điều này đặt độ dài tối đa của đầu ra của mô hình, được đo bằng số lượng token (từ hoặc phần của từ).',
+      maxTokensTip: `Kích thước ngữ cảnh tối đa của tác nhân; giá trị không hợp lệ hoặc sai sẽ gây lỗi. Mặc định là 512.`,
       maxTokensInvalidMessage: 'Vui lòng nhập số Token tối đa hợp lệ.',
       maxTokensMinMessage: 'Token tối đa không thể nhỏ hơn 0.',
       password: 'Mật khẩu',
