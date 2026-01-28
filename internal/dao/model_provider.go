@@ -1,15 +1,25 @@
 package dao
 
 import (
+	"sync"
+	
 	"ragflow/internal/config"
 )
 
 // ModelProviderDAO provides access to model provider configuration data
 type ModelProviderDAO struct{}
 
-// NewModelProviderDAO creates a new ModelProviderDAO instance
+var (
+	modelProviderDAOInstance *ModelProviderDAO
+	modelProviderDAOOnce     sync.Once
+)
+
+// NewModelProviderDAO creates a new ModelProviderDAO instance (singleton)
 func NewModelProviderDAO() *ModelProviderDAO {
-	return &ModelProviderDAO{}
+	modelProviderDAOOnce.Do(func() {
+		modelProviderDAOInstance = &ModelProviderDAO{}
+	})
+	return modelProviderDAOInstance
 }
 
 // GetAllProviders returns all model providers

@@ -29,6 +29,7 @@ type LLM struct {
 
 var (
 	modelProviders     []ModelProvider
+	modelProviderMap   map[string]int // name -> index in modelProviders slice
 	modelProvidersOnce sync.Once
 	modelProvidersErr  error
 )
@@ -56,6 +57,11 @@ func LoadModelProviders(path string) error {
 		}
 
 		modelProviders = root.Providers
+		// Build name to index map for fast lookup
+		modelProviderMap = make(map[string]int, len(modelProviders))
+		for i, provider := range modelProviders {
+			modelProviderMap[provider.Name] = i
+		}
 	})
 
 	return modelProvidersErr
@@ -69,10 +75,11 @@ func GetModelProviders() []ModelProvider {
 
 // GetModelProviderByName returns the model provider with the given name.
 func GetModelProviderByName(name string) *ModelProvider {
-	for i := range modelProviders {
-		if modelProviders[i].Name == name {
-			return &modelProviders[i]
-		}
+	if modelProviderMap == nil {
+		return nil
+	}
+	if idx, ok := modelProviderMap[name]; ok {
+		return &modelProviders[idx]
 	}
 	return nil
 }
