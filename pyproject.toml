@@ -78,7 +78,7 @@ dependencies = [
     "pyobvector==0.2.22",
     "pyodbc>=5.2.0,<6.0.0",
     "pypandoc>=1.16",
-    "pypdf==6.4.0",
+    "pypdf>=6.6.2",
     "pypdf2>=3.0.1,<4.0.0",
     "python-calamine>=0.4.0",
     "python-docx>=1.1.2,<2.0.0",
