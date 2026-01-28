@@ -247,8 +247,7 @@ export default {
         'Similar a la penalización por presencia, esto reduce la tendencia del modelo a repetir las mismas palabras con frecuencia.',
       maxTokens: 'Máximo de tokens',
       maxTokensMessage: 'El máximo de tokens es obligatorio',
-      maxTokensTip:
-        'Esto establece la longitud máxima de la salida del modelo, medida en el número de tokens (palabras o piezas de palabras).',
+      maxTokensTip: `El tamaño máximo de contexto del agente; un valor no válido o incorrecto provocará un error. Valor predeterminado: 512.`,
       maxTokensInvalidMessage:
         'Por favor, ingresa un número válido para Max Tokens.',
       maxTokensMinMessage: 'Max Tokens no puede ser menor que 0.',
@@ -303,8 +302,7 @@ export default {
       profileDescription: 'Actualiza tu foto y tus datos personales aquí.',
       maxTokens: 'Máximo de tokens',
       maxTokensMessage: 'El máximo de tokens es obligatorio',
-      maxTokensTip:
-        'Esto establece la longitud máxima de la salida del modelo, medida en el número de tokens (palabras o piezas de palabras).',
+      maxTokensTip: `El tamaño máximo de contexto del agente; un valor no válido o incorrecto provocará un error. Valor predeterminado: 512.`,
       maxTokensInvalidMessage:
         'Por favor, ingresa un número válido para Max Tokens.',
       maxTokensMinMessage: 'Max Tokens no puede ser menor que 0.',
