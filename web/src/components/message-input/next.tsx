@@ -209,9 +209,10 @@ export function NextMessageInput({
           value={value}
           onChange={onInputChange}
           placeholder={t('chat.messagePlaceholder')}
-          className="field-sizing-content min-h-10 w-full resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
+          className="min-h-10 max-h-40 w-full border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
           disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}
+          autoSize={{ minRows: 1, maxRows: 8 }}
         />
         <div className={cn('flex items-center justify-between gap-1.5')}>
           <div className="flex items-center gap-3">
