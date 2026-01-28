@@ -167,6 +167,7 @@ jobs:
           EXPOSE_MYSQL_PORT=$((5455 + RUNNER_NUM * 10))
           MINIO_PORT=$((9000 + RUNNER_NUM * 10))
           MINIO_CONSOLE_PORT=$((9001 + RUNNER_NUM * 10))
+          REDIS_PORT=$((6379 + RUNNER_NUM * 10))
           TEI_PORT=$((6380 + RUNNER_NUM * 10))
           KIBANA_PORT=$((6601 + RUNNER_NUM * 10))
           SVR_HTTP_PORT=$((9380 + RUNNER_NUM * 10))
@@ -186,6 +187,7 @@ jobs:
           echo -e "EXPOSE_MYSQL_PORT=${EXPOSE_MYSQL_PORT}" >> docker/.env
           echo -e "MINIO_PORT=${MINIO_PORT}" >> docker/.env
           echo -e "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}" >> docker/.env
+          echo -e "REDIS_PORT=${REDIS_PORT}" >> docker/.env
           echo -e "TEI_PORT=${TEI_PORT}" >> docker/.env
           echo -e "KIBANA_PORT=${KIBANA_PORT}" >> docker/.env
           echo -e "SVR_HTTP_PORT=${SVR_HTTP_PORT}" >> docker/.env
