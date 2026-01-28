@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"ragflow/internal/dao"
 	"strings"
 	"time"
@@ -38,27 +37,40 @@ func NewModelProvider() *ModelProviderImpl {
 	}
 }
 
+// parseModelName parses a composite model name in format "model_name@provider"
+// Returns modelName and provider separately
+func parseModelName(compositeName string) (modelName, provider string, err error) {
+	parts := strings.Split(compositeName, "@")
+	if len(parts) == 2 {
+		return parts[0], parts[1], nil
+	} else if len(parts) == 1 {
+		return parts[0], "", fmt.Errorf("provider name missing in model name: %s", compositeName)
+	} else {
+		return "", "", fmt.Errorf("invalid model name format: %s", compositeName)
+	}
+}
+
 // GetEmbeddingModel returns an embedding model for the given tenant
-func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID string, modelName string) (model.EmbeddingModel, error) {
-	// Get API key
-	tenantLLM, err := dao.NewTenantLLMDAO().GetByTenantAndModelName(tenantID, modelName)
+func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID string, compositeModelName string) (model.EmbeddingModel, error) {
+	// Parse composite model name to extract model name and provider
+	modelName, provider, err := parseModelName(compositeModelName)
 	if err != nil {
 		return nil, err
 	}
 
-	// For now, return a default OpenAI embedding model
-	// Configuration can come from environment variables or config file
-	apiKey := tenantLLM.APIKey
+	// Get API key and configuration
+	embeddingModel, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(tenantID, provider, modelName)
+	if err != nil {
+		return nil, err
+	}
+
+	apiKey := embeddingModel.APIKey
 	if apiKey == "" {
-		return nil, fmt.Errorf("no API key found for tenant %s and model %s", tenantID, modelName)
+		return nil, fmt.Errorf("no API key found for tenant %s and model %s", tenantID, compositeModelName)
 	}
-	apiBase := tenantLLM.APIBase
+	apiBase := embeddingModel.APIBase
 	if apiBase == "" {
-		return nil, fmt.Errorf("no API base found for tenant %s and model %s", tenantID, modelName)
-	}
-	modelNameStr := os.Getenv("EMBEDDING_MODEL")
-	if modelNameStr == "" {
-		modelNameStr = "text-embedding-ada-002"
+		return nil, fmt.Errorf("no API base found for tenant %s and model %s", tenantID, compositeModelName)
 	}
 
 	return &openAIEmbeddingModel{
@@ -70,13 +82,25 @@ func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID stri
 }
 
 // GetChatModel returns a chat model for the given tenant
-func (p *ModelProviderImpl) GetChatModel(ctx context.Context, tenantID string, modelName string) (model.ChatModel, error) {
-	return nil, fmt.Errorf("not implemented yet")
+func (p *ModelProviderImpl) GetChatModel(ctx context.Context, tenantID string, compositeModelName string) (model.ChatModel, error) {
+	// Parse composite model name to extract model name and provider
+	_, _, err := parseModelName(compositeModelName)
+	if err != nil {
+		return nil, err
+	}
+	// TODO: implement chat model creation
+	return nil, fmt.Errorf("chat model not implemented yet for model: %s", compositeModelName)
 }
 
 // GetRerankModel returns a rerank model for the given tenant
-func (p *ModelProviderImpl) GetRerankModel(ctx context.Context, tenantID string, modelName string) (model.RerankModel, error) {
-	return nil, fmt.Errorf("not implemented yet")
+func (p *ModelProviderImpl) GetRerankModel(ctx context.Context, tenantID string, compositeModelName string) (model.RerankModel, error) {
+	// Parse composite model name to extract model name and provider
+	_, _, err := parseModelName(compositeModelName)
+	if err != nil {
+		return nil, err
+	}
+	// TODO: implement rerank model creation
+	return nil, fmt.Errorf("rerank model not implemented yet for model: %s", compositeModelName)
 }
 
 // openAIEmbeddingModel implements EmbeddingModel for OpenAI API

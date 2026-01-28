@@ -13,9 +13,9 @@ func NewTenantLLMDAO() *TenantLLMDAO {
 }
 
 // GetByTenantAndModelName get tenant LLM by tenant ID and model name
-func (dao *TenantLLMDAO) GetByTenantAndModelName(tenantID, modelName string) (*model.TenantLLM, error) {
+func (dao *TenantLLMDAO) GetByTenantAndModelName(tenantID, providerName string, modelName string) (*model.TenantLLM, error) {
 	var tenantLLM model.TenantLLM
-	err := DB.Where("tenant_id = ? AND llm_name = ?", tenantID, modelName).First(&tenantLLM).Error
+	err := DB.Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?", tenantID, providerName, modelName).First(&tenantLLM).Error
 	if err != nil {
 		return nil, err
 	}
@@ -80,18 +80,18 @@ func (dao *TenantLLMDAO) Delete(tenantID, factory, modelName string) error {
 // GetMyLLMs get tenant LLMs with factory details
 func (dao *TenantLLMDAO) GetMyLLMs(tenantID string, includeDetails bool) ([]model.MyLLM, error) {
 	var myLLMs []model.MyLLM
-	
+
 	// Base query
 	query := DB.Table("tenant_llm tl").
 		Select("tl.llm_factory, lf.logo, lf.tags, tl.model_type, tl.llm_name, tl.used_tokens, tl.status").
 		Joins("JOIN llm_factories lf ON tl.llm_factory = lf.name").
 		Where("tl.tenant_id = ? AND tl.api_key IS NOT NULL", tenantID)
-	
+
 	// Add detailed fields if requested
 	if includeDetails {
 		query = query.Select("tl.llm_factory, lf.logo, lf.tags, tl.model_type, tl.llm_name, tl.used_tokens, tl.status, tl.api_base, tl.max_tokens")
 	}
-	
+
 	err := query.Find(&myLLMs).Error
 	if err != nil {
 		return nil, err
