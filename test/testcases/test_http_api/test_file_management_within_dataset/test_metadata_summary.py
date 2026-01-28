@@ -22,7 +22,9 @@
 
 def _summary_to_counts(summary):
     counts = {}
-    for key, pairs in summary.items():
+    for key, field_data in summary.items():
+        # New format: {key: {"type": "...", "values": [[value, count], ...]}}
+        pairs = field_data["values"]
         counts[key] = {str(k): v for k, v in pairs}
     return counts
 
