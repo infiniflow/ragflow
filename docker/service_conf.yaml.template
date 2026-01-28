@@ -1,10 +1,15 @@
+# --- Database selector (recommended) ---
+database_type: '${DATABASE_TYPE:-postgres}'
+db_type: '${DB_TYPE:-postgres}'
 ragflow:
   host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9380
 admin:
   host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9381
-mysql:
+
+# --- MySQL disabled (kept only as reference; key name prevents accidental use) ---
+mysql_disabled:
   name: '${MYSQL_DBNAME:-rag_flow}'
   user: '${MYSQL_USER:-root}'
   password: '${MYSQL_PASSWORD:-infini_rag_flow}'
@@ -58,14 +63,16 @@ user_default_llm:
     embedding_model:
       api_key: 'xxx'
       base_url: 'http://${TEI_HOST}:80'
-# postgres:
-#   name: '${POSTGRES_DBNAME:-rag_flow}'
-#   user: '${POSTGRES_USER:-rag_flow}'
-#   password: '${POSTGRES_PASSWORD:-infini_rag_flow}'
-#   host: '${POSTGRES_HOST:-postgres}'
-#   port: 5432
-#   max_connections: 100
-#   stale_timeout: 30
+
+postgres:
+  name: '${POSTGRES_DBNAME:-medlibre-ragflow}'
+  user: '${POSTGRES_USER:-devmedlibre}'
+  password: '${POSTGRES_PASSWORD:-devmedlibre123}'
+  host: '${POSTGRES_HOST:-10.88.0.20}'
+  port: ${POSTGRES_PORT:-5432}
+  max_connections: ${POSTGRES_MAX_CONNECTIONS:-900}
+  stale_timeout: ${POSTGRES_STALE_TIMEOUT:-300}
+
 # s3:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
@@ -161,6 +168,7 @@ user_default_llm:
 #     - "RAGFlow" # display name
 #     - "" # sender email address
 #   mail_frontend_url: "https://your-frontend.example.com"
+
 # tcadp_config:
 #   secret_id: '${TENCENT_SECRET_ID}'
 #   secret_key: '${TENCENT_SECRET_KEY}'
