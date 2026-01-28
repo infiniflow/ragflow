@@ -788,7 +788,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently.',
       maxTokens: 'Max tokens',
       maxTokensMessage: 'Max tokens is required',
-      maxTokensTip: `This sets the maximum length of the model's output, measured in the number of tokens (words or pieces of words). Defaults to 512. If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses.`,
+      maxTokensTip: `The maximum context size of the agent; an invalid or incorrect value will cause an error. Defaults to 512.`,
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
       quote: 'Show quote',
@@ -1014,6 +1014,30 @@ Example: Virtual Hosted Style`,
         'API token generated from https://id.atlassian.com/manage-profile/security/api-tokens.',
       jiraPasswordTip:
         'Optional password for Jira Server/Data Center environments.',
+      mysqlDescription:
+        'Connect to MySQL database to sync data from tables using SQL queries.',
+      mysqlQueryTip:
+        'SQL query to extract data from your database (e.g., SELECT * FROM products WHERE status = "active").',
+      mysqlContentColumnsTip:
+        'Comma-separated column names whose values will be combined as document content for vectorization.',
+      mysqlMetadataColumnsTip:
+        'Comma-separated column names to store as document metadata (not vectorized, but searchable).',
+      mysqlIdColumnTip:
+        'Column to use as unique document ID. If not specified, a hash of the content will be used.',
+      mysqlTimestampColumnTip:
+        'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      postgresqlDescription:
+        'Connect to PostgreSQL database to sync data from tables using SQL queries.',
+      postgresqlQueryTip:
+        "SQL query to extract data from your database (e.g., SELECT * FROM products WHERE status = 'active').",
+      postgresqlContentColumnsTip:
+        'Comma-separated column names whose values will be combined as document content for vectorization.',
+      postgresqlMetadataColumnsTip:
+        'Comma-separated column names to store as document metadata (not vectorized, but searchable).',
+      postgresqlIdColumnTip:
+        'Column to use as unique document ID. If not specified, a hash of the content will be used.',
+      postgresqlTimestampColumnTip:
+        'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',
@@ -1026,7 +1050,7 @@ Example: Virtual Hosted Style`,
       profileDescription: 'Update your photo and personal details here.',
       maxTokens: 'Max tokens',
       maxTokensMessage: 'Max tokens is required',
-      maxTokensTip: `This sets the maximum length of the model's output, measured in the number of tokens (words or pieces of words). Defaults to 512. If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses.`,
+      maxTokensTip: `The maximum context size of the agent; an invalid or incorrect value will cause an error. Defaults to 512.`,
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
       password: 'Password',
