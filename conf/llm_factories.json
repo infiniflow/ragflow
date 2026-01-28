@@ -995,6 +995,13 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "kimi-k2.5",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "kimi-latest",
                     "tags": "LLM,CHAT,8k,32k,128k",
                     "max_tokens": 131072,
