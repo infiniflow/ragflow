@@ -19,7 +19,7 @@ Unit tests for sandbox provider abstraction layer.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import requests
 
 from agent.sandbox.providers.base import SandboxProvider, SandboxInstance, ExecutionResult

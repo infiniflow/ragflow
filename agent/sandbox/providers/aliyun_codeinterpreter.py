@@ -223,23 +223,6 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
         timeout = min(timeout or self.timeout, 30)
 
         try:
-            # Get template name for code execution
-            if self.template_name:
-                template_name = self.template_name
-            else:
-                # Try to get default template, or create one if it doesn't exist
-                default_template_name = f"ragflow-{normalized_lang}-default"
-                try:
-                    Template.get_by_name(default_template_name, config=self._config)
-                    template_name = default_template_name
-                except Exception:
-                    template_input = TemplateInput(
-                        template_name=default_template_name,
-                        template_type=TemplateType.CODE_INTERPRETER,
-                    )
-                    Template.create(template_input, config=self._config)
-                    template_name = default_template_name
-
             # Connect to existing sandbox instance
             sandbox = Sandbox.connect(sandbox_id=instance_id, config=self._config)
 

@@ -3,6 +3,7 @@
 Quick verification script for Aliyun Code Interpreter provider using official SDK.
 """
 
+import importlib.util
 import sys
 
 sys.path.insert(0, ".")
@@ -34,9 +35,19 @@ print("✓ Provider has all required methods")
 # Test 3: Check SDK imports
 print("\n[3/5] Testing SDK imports...")
 try:
+    # Check if agentrun SDK is available using importlib
+    if (
+        importlib.util.find_spec("agentrun.sandbox") is None
+        or importlib.util.find_spec("agentrun.utils.config") is None
+        or importlib.util.find_spec("agentrun.utils.exception") is None
+    ):
+        raise ImportError("agentrun SDK not found")
+
+    # Verify imports work (assign to _ to indicate they're intentionally unused)
     from agentrun.sandbox import CodeInterpreterSandbox, TemplateType, CodeLanguage
     from agentrun.utils.config import Config
     from agentrun.utils.exception import ServerError
+    _ = (CodeInterpreterSandbox, TemplateType, CodeLanguage, Config, ServerError)
 
     print("✓ SDK modules imported successfully")
 except ImportError as e:

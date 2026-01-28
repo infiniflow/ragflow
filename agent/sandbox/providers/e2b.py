@@ -21,7 +21,6 @@ This provider integrates with E2B Cloud for cloud-based code execution
 using Firecracker microVMs.
 """
 
-import time
 import uuid
 from typing import Dict, Any, List
 
@@ -127,15 +126,8 @@ class E2BProvider(SandboxProvider):
         if not self._initialized:
             raise RuntimeError("Provider not initialized. Call initialize() first.")
 
-        # Normalize language
-        normalized_lang = self._normalize_language(language)
-
         # TODO: Implement actual E2B API call
         # POST /sandbox/{sandboxID}/execute
-        start_time = time.time()
-
-        # Placeholder implementation
-        execution_time = time.time() - start_time
 
         raise RuntimeError(
             "E2B provider is not yet fully implemented. "
