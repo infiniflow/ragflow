@@ -238,11 +238,11 @@ jobs:
       #     echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log
       #     sudo rm -rf docker/ragflow-logs
 
-      # - name: Stop ragflow:nightly
-      #   if: always()  # always run this step even if previous steps failed
-      #   run: |
-      #     sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
-      #     sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
+      - name: Stop ragflow:nightly
+        if: always()  # always run this step even if previous steps failed
+        run: |
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
+          sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
 
       - name: Start ragflow:nightly
         run: |
