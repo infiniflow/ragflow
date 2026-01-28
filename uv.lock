@@ -5675,11 +5675,11 @@ wheels = [
 
 [[package]]
 name = "pypdf"
-version = "6.4.0"
+version = "6.6.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f3/01/f7510cc6124f494cfbec2e8d3c2e1a20d4f6c18622b0c03a3a70e968bacb/pypdf-6.4.0.tar.gz", hash = "sha256:4769d471f8ddc3341193ecc5d6560fa44cf8cd0abfabf21af4e195cc0c224072", size = 5276661, upload-time = "2025-11-23T14:04:43.185Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b8/bb/a44bab1ac3c54dbcf653d7b8bcdee93dddb2d3bf025a3912cacb8149a2f2/pypdf-6.6.2.tar.gz", hash = "sha256:0a3ea3b3303982333404e22d8f75d7b3144f9cf4b2970b96856391a516f9f016", size = 5281850, upload-time = "2026-01-26T11:57:55.964Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/cd/f2/9c9429411c91ac1dd5cd66780f22b6df20c64c3646cdd1e6d67cf38579c4/pypdf-6.4.0-py3-none-any.whl", hash = "sha256:55ab9837ed97fd7fcc5c131d52fcc2223bc5c6b8a1488bbf7c0e27f1f0023a79", size = 329497, upload-time = "2025-11-23T14:04:41.448Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/7d/be/549aaf1dfa4ab4aed29b09703d2fb02c4366fc1f05e880948c296c5764b9/pypdf-6.6.2-py3-none-any.whl", hash = "sha256:44c0c9811cfb3b83b28f1c3d054531d5b8b81abaedee0d8cb403650d023832ba", size = 329132, upload-time = "2026-01-26T11:57:54.099Z" },
 ]
 
 [[package]]
@@ -6328,7 +6328,7 @@ requires-dist = [
     { name = "pyobvector", specifier = "==0.2.22" },
     { name = "pyodbc", specifier = ">=5.2.0,<6.0.0" },
     { name = "pypandoc", specifier = ">=1.16" },
-    { name = "pypdf", specifier = "==6.4.0" },
+    { name = "pypdf", specifier = ">=6.6.2" },
     { name = "pypdf2", specifier = ">=3.0.1,<4.0.0" },
     { name = "python-calamine", specifier = ">=0.4.0" },
     { name = "python-docx", specifier = ">=1.1.2,<2.0.0" },
