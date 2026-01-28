@@ -385,7 +385,6 @@ class Dealer:
         RERANK_LIMIT = math.ceil(64 / page_size) * page_size if page_size > 1 else 1
         RERANK_LIMIT = max(30, RERANK_LIMIT)
         req = {
-            "kb_ids": kb_ids,
             "doc_ids": doc_ids,
             "page": math.ceil(page_size * page / RERANK_LIMIT),
             "size": RERANK_LIMIT,
@@ -395,6 +394,8 @@ class Dealer:
             "similarity": similarity_threshold,
             "available_int": 1,
         }
+        if not settings.DOC_ENGINE_INFINITY:
+            req["kb_ids"] = kb_ids
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
