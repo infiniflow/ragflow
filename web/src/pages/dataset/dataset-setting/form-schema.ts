@@ -39,6 +39,9 @@ export const formSchema = z
         mineru_formula_enable: z.boolean().optional(),
         mineru_table_enable: z.boolean().optional(),
         mineru_lang: z.string().optional(),
+        mineru_batch_size: z.number().min(1).max(500).optional(),
+        mineru_start_page: z.number().min(0).optional(),
+        mineru_end_page: z.number().min(0).optional(),
         raptor: z
           .object({
             use_raptor: z.boolean().optional(),
