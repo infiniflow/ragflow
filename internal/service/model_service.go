@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"ragflow/internal/dao"
 	"strings"
 	"time"
 
@@ -16,11 +17,11 @@ import (
 // ModelProvider provides model instances based on tenant and model type
 type ModelProvider interface {
 	// GetEmbeddingModel returns an embedding model for the given tenant
-	GetEmbeddingModel(ctx context.Context, tenantID string, modelName ...string) (model.EmbeddingModel, error)
+	GetEmbeddingModel(ctx context.Context, tenantID string, modelName string) (model.EmbeddingModel, error)
 	// GetChatModel returns a chat model for the given tenant
-	GetChatModel(ctx context.Context, tenantID string, modelName ...string) (model.ChatModel, error)
+	GetChatModel(ctx context.Context, tenantID string, modelName string) (model.ChatModel, error)
 	// GetRerankModel returns a rerank model for the given tenant
-	GetRerankModel(ctx context.Context, tenantID string, modelName ...string) (model.RerankModel, error)
+	GetRerankModel(ctx context.Context, tenantID string, modelName string) (model.RerankModel, error)
 }
 
 // ModelProviderImpl implements ModelProvider
@@ -38,41 +39,43 @@ func NewModelProvider() *ModelProviderImpl {
 }
 
 // GetEmbeddingModel returns an embedding model for the given tenant
-func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID string, modelName ...string) (model.EmbeddingModel, error) {
+func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID string, modelName string) (model.EmbeddingModel, error) {
+	// Get API key
+	tenantLLM, err := dao.NewTenantLLMDAO().GetByTenantAndModelName(tenantID, modelName)
+	if err != nil {
+		return nil, err
+	}
+
 	// For now, return a default OpenAI embedding model
 	// Configuration can come from environment variables or config file
-	apiKey := os.Getenv("OPENAI_API_KEY")
+	apiKey := tenantLLM.APIKey
 	if apiKey == "" {
-		apiKey = os.Getenv("EMBEDDING_API_KEY")
+		return nil, fmt.Errorf("no API key found for tenant %s and model %s", tenantID, modelName)
 	}
-	apiBase := os.Getenv("OPENAI_API_BASE")
+	apiBase := tenantLLM.APIBase
 	if apiBase == "" {
-		apiBase = "https://api.openai.com/v1"
+		return nil, fmt.Errorf("no API base found for tenant %s and model %s", tenantID, modelName)
 	}
 	modelNameStr := os.Getenv("EMBEDDING_MODEL")
 	if modelNameStr == "" {
 		modelNameStr = "text-embedding-ada-002"
 	}
-	// Use provided model name if available
-	if len(modelName) > 0 && modelName[0] != "" {
-		modelNameStr = modelName[0]
-	}
 
 	return &openAIEmbeddingModel{
-		apiKey:  apiKey,
-		apiBase: apiBase,
-		model:   modelNameStr,
+		apiKey:     apiKey,
+		apiBase:    apiBase,
+		model:      modelName,
 		httpClient: p.httpClient,
 	}, nil
 }
 
 // GetChatModel returns a chat model for the given tenant
-func (p *ModelProviderImpl) GetChatModel(ctx context.Context, tenantID string, modelName ...string) (model.ChatModel, error) {
+func (p *ModelProviderImpl) GetChatModel(ctx context.Context, tenantID string, modelName string) (model.ChatModel, error) {
 	return nil, fmt.Errorf("not implemented yet")
 }
 
 // GetRerankModel returns a rerank model for the given tenant
-func (p *ModelProviderImpl) GetRerankModel(ctx context.Context, tenantID string, modelName ...string) (model.RerankModel, error) {
+func (p *ModelProviderImpl) GetRerankModel(ctx context.Context, tenantID string, modelName string) (model.RerankModel, error) {
 	return nil, fmt.Errorf("not implemented yet")
 }
 

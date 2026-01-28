@@ -3,7 +3,6 @@ package handler
 import (
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -217,30 +216,6 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 			"page_size": pageSize,
 		},
 	})
-}
-
-// Helper function to extract token from request
-func extractToken(c *gin.Context) string {
-	// Try to get token from Authorization header
-	authHeader := c.GetHeader("Authorization")
-	if authHeader != "" {
-		// Expected format: "Bearer token"
-		parts := strings.Split(authHeader, " ")
-		if len(parts) == 2 && parts[0] == "Bearer" {
-			return parts[1]
-		}
-	}
-	// Try to get token from query parameter
-	token := c.Query("token")
-	if token != "" {
-		return token
-	}
-	// Try to get token from form data
-	token = c.PostForm("token")
-	if token != "" {
-		return token
-	}
-	return ""
 }
 
 // Logout user logout
