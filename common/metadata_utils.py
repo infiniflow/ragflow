@@ -130,6 +130,7 @@ async def apply_meta_data_filter(
         list of doc_ids, ["-999"] when manual filters yield no result, or None
         when auto/semi_auto filters return empty.
     """
+    from rag.prompts.generator import gen_meta_filter # move from the top of the file to avoid circular import
 
     doc_ids = list(base_doc_ids) if base_doc_ids else []
 
@@ -139,8 +140,6 @@ async def apply_meta_data_filter(
     method = meta_data_filter.get("method")
 
     if method == "auto":
-        from rag.prompts.generator import gen_meta_filter # move from the top of the file to avoid circular import
-
         filters: dict = await gen_meta_filter(chat_mdl, metas, question)
         doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
         if not doc_ids:
