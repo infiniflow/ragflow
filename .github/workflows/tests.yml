@@ -203,7 +203,7 @@ jobs:
           echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
-          uv sync --python 3.12 --only-group test --no-default-groups --frozen && uv pip install sdk/python --group test
+          uv sync --python 3.12 --group test --frozen && uv pip install sdk/python
 
       - name: Run sdk tests against Elasticsearch
         run: |
