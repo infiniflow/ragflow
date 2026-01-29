@@ -413,7 +413,7 @@ export default {
         'Semelhante à penalidade de presença, isso reduz a tendência do modelo de repetir as mesmas palavras frequentemente.',
       maxTokens: 'Máximo de tokens',
       maxTokensMessage: 'O máximo de tokens é obrigatório',
-      maxTokensTip: `O tamanho máximo de contexto do agente; um valor inválido ou incorreto causará um erro. Padrão: 512.`,
+      maxTokensTip: `O tamanho máximo de contexto do modelo; um valor inválido ou incorreto causará um erro. Padrão: 512.`,
       maxTokensInvalidMessage:
         'Por favor, insira um número válido para o máximo de tokens.',
       maxTokensMinMessage: 'O máximo de tokens não pode ser menor que 0.',
@@ -471,7 +471,7 @@ export default {
       profileDescription: 'Atualize sua foto e detalhes pessoais aqui.',
       maxTokens: 'Máximo de Tokens',
       maxTokensMessage: 'Máximo de Tokens é obrigatório',
-      maxTokensTip: `O tamanho máximo de contexto do agente; um valor inválido ou incorreto causará um erro. Padrão: 512.`,
+      maxTokensTip: `O tamanho máximo de contexto do modelo; um valor inválido ou incorreto causará um erro. Padrão: 512.`,
       maxTokensInvalidMessage:
         'Por favor, insira um número válido para Máximo de Tokens.',
       maxTokensMinMessage: 'O Máximo de Tokens não pode ser menor que 0.',
