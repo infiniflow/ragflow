@@ -235,9 +235,13 @@ jobs:
       - name: Collect ragflow log
         if: ${{ !cancelled() }}
         run: |
-          cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-es
-          echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log
-          sudo rm -rf docker/ragflow-logs
+          if [ -d docker/ragflow-logs ]; then
+            cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-es
+            echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log || true
+          else
+            echo "No docker/ragflow-logs directory found; skipping log collection"
+          fi
+          sudo rm -rf docker/ragflow-logs || true
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
@@ -280,9 +284,13 @@ jobs:
       - name: Collect ragflow log
         if: ${{ !cancelled() }}
         run: |
-          cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-infinity
-          echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log
-          sudo rm -rf docker/ragflow-logs
+          if [ -d docker/ragflow-logs ]; then
+            cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-infinity
+            echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log || true
+          else
+            echo "No docker/ragflow-logs directory found; skipping log collection"
+          fi
+          sudo rm -rf docker/ragflow-logs || true
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
         run: |
