@@ -48,7 +48,8 @@ class ESConnectionBase(DocStoreConnection):
             msg = f"Elasticsearch mapping file not found at {fp_mapping}"
             self.logger.error(msg)
             raise Exception(msg)
-        self.mapping = json.load(open(fp_mapping, "r"))
+        with open(fp_mapping, "r") as f:
+            self.mapping = json.load(f)
         self.logger.info(f"Elasticsearch {settings.ES['hosts']} is healthy.")
 
     def _connect(self):
@@ -150,7 +151,8 @@ class ESConnectionBase(DocStoreConnection):
                 self.logger.error(f"Document metadata mapping file not found at {fp_mapping}")
                 return False
 
-            doc_meta_mapping = json.load(open(fp_mapping, "r"))
+            with open(fp_mapping, "r") as f:
+                doc_meta_mapping = json.load(f)
             return IndicesClient(self.es).create(index=index_name,
                                                  settings=doc_meta_mapping["settings"],
                                                  mappings=doc_meta_mapping["mappings"])
