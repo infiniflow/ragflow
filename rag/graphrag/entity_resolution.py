@@ -23,12 +23,12 @@ from typing import Any, Callable
 
 import networkx as nx
 
-from graphrag.general.extractor import Extractor
+from rag.graphrag.general.extractor import Extractor
 from rag.nlp import is_english
 import editdistance
-from graphrag.entity_resolution_prompt import ENTITY_RESOLUTION_PROMPT
+from rag.graphrag.entity_resolution_prompt import ENTITY_RESOLUTION_PROMPT
 from rag.llm.chat_model import Base as CompletionLLM
-from graphrag.utils import perform_variable_replacements, chat_limiter, GraphChange
+from rag.graphrag.utils import perform_variable_replacements, chat_limiter, GraphChange
 from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
 
