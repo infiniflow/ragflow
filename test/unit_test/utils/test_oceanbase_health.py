@@ -27,19 +27,13 @@ from rag.utils.ob_conn import OBConnection
 class TestOceanBaseHealthCheck:
     """Test cases for OceanBase health check functionality."""
     
-    @pytest.fixture
-    def mock_ob_connection(self):
-        """Create a mock OceanBase connection."""
-        mock_conn = Mock(spec=OBConnection)
-        mock_conn.uri = "localhost:2881"
-        return mock_conn
-    
     @patch('api.utils.health_utils.OBConnection')
     @patch.dict(os.environ, {'DOC_ENGINE': 'oceanbase'})
-    def test_get_oceanbase_status_success(self, mock_ob_class, mock_ob_connection):
+    def test_get_oceanbase_status_success(self, mock_ob_class):
         """Test successful OceanBase status retrieval."""
         # Setup mock
-        mock_ob_class.return_value = mock_ob_connection
+        mock_ob_connection = Mock()
+        mock_ob_connection.uri = "localhost:2881"
         mock_ob_connection.health.return_value = {
             "uri": "localhost:2881",
             "version_comment": "OceanBase 4.3.5.1",
@@ -56,6 +50,7 @@ class TestOceanBaseHealthCheck:
             "active_connections": 10,
             "max_connections": 300
         }
+        mock_ob_class.return_value = mock_ob_connection
         
         # Execute
         result = get_oceanbase_status()
@@ -88,9 +83,9 @@ class TestOceanBaseHealthCheck:
     
     @patch('api.utils.health_utils.OBConnection')
     @patch.dict(os.environ, {'DOC_ENGINE': 'oceanbase'})
-    def test_check_oceanbase_health_healthy(self, mock_ob_class, mock_ob_connection):
+    def test_check_oceanbase_health_healthy(self, mock_ob_class):
         """Test OceanBase health check returns healthy status."""
-        mock_ob_class.return_value = mock_ob_connection
+        mock_ob_connection = Mock()
         mock_ob_connection.health.return_value = {
             "uri": "localhost:2881",
             "version_comment": "OceanBase 4.3.5.1",
@@ -107,6 +102,7 @@ class TestOceanBaseHealthCheck:
             "active_connections": 10,
             "max_connections": 300
         }
+        mock_ob_class.return_value = mock_ob_connection
         
         result = check_oceanbase_health()
         
@@ -117,9 +113,9 @@ class TestOceanBaseHealthCheck:
     
     @patch('api.utils.health_utils.OBConnection')
     @patch.dict(os.environ, {'DOC_ENGINE': 'oceanbase'})
-    def test_check_oceanbase_health_degraded(self, mock_ob_class, mock_ob_connection):
+    def test_check_oceanbase_health_degraded(self, mock_ob_class):
         """Test OceanBase health check returns degraded status for high latency."""
-        mock_ob_class.return_value = mock_ob_connection
+        mock_ob_connection = Mock()
         mock_ob_connection.health.return_value = {
             "uri": "localhost:2881",
             "version_comment": "OceanBase 4.3.5.1",
@@ -136,6 +132,7 @@ class TestOceanBaseHealthCheck:
             "active_connections": 10,
             "max_connections": 300
         }
+        mock_ob_class.return_value = mock_ob_connection
         
         result = check_oceanbase_health()
         
@@ -144,9 +141,9 @@ class TestOceanBaseHealthCheck:
     
     @patch('api.utils.health_utils.OBConnection')
     @patch.dict(os.environ, {'DOC_ENGINE': 'oceanbase'})
-    def test_check_oceanbase_health_unhealthy(self, mock_ob_class, mock_ob_connection):
+    def test_check_oceanbase_health_unhealthy(self, mock_ob_class):
         """Test OceanBase health check returns unhealthy status."""
-        mock_ob_class.return_value = mock_ob_connection
+        mock_ob_connection = Mock()
         mock_ob_connection.health.return_value = {
             "uri": "localhost:2881",
             "status": "unhealthy",
@@ -157,6 +154,7 @@ class TestOceanBaseHealthCheck:
             "connection": "disconnected",
             "error": "Connection timeout"
         }
+        mock_ob_class.return_value = mock_ob_connection
         
         result = check_oceanbase_health()
         
@@ -177,33 +175,57 @@ class TestOceanBaseHealthCheck:
 class TestOBConnectionPerformanceMetrics:
     """Test cases for OBConnection performance metrics methods."""
     
-    @pytest.fixture
-    def mock_client(self):
-        """Create a mock OceanBase client."""
-        mock_client = Mock()
-        return mock_client
-    
     @patch('rag.utils.ob_conn.OBConnection.__init__', lambda self: None)
-    def test_get_performance_metrics_success(self, mock_client):
+    def test_get_performance_metrics_success(self):
         """Test successful retrieval of performance metrics."""
         conn = OBConnection()
+        mock_client = Mock()
         conn.client = mock_client
         conn.uri = "localhost:2881"
         conn.db_name = "test"
         
-        # Mock client methods
-        mock_client.perform_raw_text_sql.return_value.fetchone.side_effect = [
-            (1,),  # SELECT 1
-            (100.5,),  # Database size
-            (100.0,),  # Total space
-            [(1, 'user', 'host', 'db', 'Query', 0, 'executing', 'SELECT 1')],  # Processlist
-            (300,),  # Max connections
-            (0,),  # Slow queries
-            (5,)  # Active queries
-        ]
-        mock_client.perform_raw_text_sql.return_value.fetchall.return_value = [
+        # Mock client methods - create separate mock results for each call
+        mock_result1 = Mock()
+        mock_result1.fetchone.return_value = (1,)
+        
+        mock_result2 = Mock()
+        mock_result2.fetchone.return_value = (100.5,)
+        
+        mock_result3 = Mock()
+        mock_result3.fetchone.return_value = (100.0,)
+        
+        mock_result4 = Mock()
+        mock_result4.fetchall.return_value = [
             (1, 'user', 'host', 'db', 'Query', 0, 'executing', 'SELECT 1')
         ]
+        mock_result4.fetchone.return_value = ('max_connections', '300')
+        
+        mock_result5 = Mock()
+        mock_result5.fetchone.return_value = (0,)
+        
+        mock_result6 = Mock()
+        mock_result6.fetchone.return_value = (5,)
+        
+        # Setup side_effect to return different mocks for different queries
+        def sql_side_effect(query):
+            if "SELECT 1" in query:
+                return mock_result1
+            elif "information_schema.tables" in query:
+                return mock_result2
+            elif "__all_disk_stat" in query:
+                return mock_result3
+            elif "SHOW PROCESSLIST" in query:
+                return mock_result4
+            elif "SHOW VARIABLES LIKE 'max_connections'" in query:
+                return mock_result4
+            elif "information_schema.processlist" in query and "time >" in query:
+                return mock_result5
+            elif "information_schema.processlist" in query and "COUNT" in query:
+                return mock_result6
+            return Mock()
+        
+        mock_client.perform_raw_text_sql.side_effect = sql_side_effect
+        mock_client.pool_size = 300
         
         # Mock logger
         import logging
@@ -217,9 +239,10 @@ class TestOBConnectionPerformanceMetrics:
         assert "storage_total" in result
     
     @patch('rag.utils.ob_conn.OBConnection.__init__', lambda self: None)
-    def test_get_performance_metrics_connection_error(self, mock_client):
+    def test_get_performance_metrics_connection_error(self):
         """Test performance metrics when connection fails."""
         conn = OBConnection()
+        mock_client = Mock()
         conn.client = mock_client
         conn.uri = "localhost:2881"
         conn.logger = Mock()
@@ -232,17 +255,27 @@ class TestOBConnectionPerformanceMetrics:
         assert "error" in result
     
     @patch('rag.utils.ob_conn.OBConnection.__init__', lambda self: None)
-    def test_get_storage_info_success(self, mock_client):
+    def test_get_storage_info_success(self):
         """Test successful retrieval of storage information."""
         conn = OBConnection()
+        mock_client = Mock()
         conn.client = mock_client
         conn.db_name = "test"
         conn.logger = Mock()
         
-        mock_client.perform_raw_text_sql.return_value.fetchone.side_effect = [
-            (100.5,),  # Database size in MB
-            (100.0,)  # Total space in GB
-        ]
+        mock_result1 = Mock()
+        mock_result1.fetchone.return_value = (100.5,)
+        mock_result2 = Mock()
+        mock_result2.fetchone.return_value = (100.0,)
+        
+        def sql_side_effect(query):
+            if "information_schema.tables" in query:
+                return mock_result1
+            elif "__all_disk_stat" in query:
+                return mock_result2
+            return Mock()
+        
+        mock_client.perform_raw_text_sql.side_effect = sql_side_effect
         
         result = conn._get_storage_info()
         
@@ -251,27 +284,20 @@ class TestOBConnectionPerformanceMetrics:
         assert "MB" in result["storage_used"]
     
     @patch('rag.utils.ob_conn.OBConnection.__init__', lambda self: None)
-    def test_get_storage_info_fallback(self, mock_client):
+    def test_get_storage_info_fallback(self):
         """Test storage info with fallback when total space unavailable."""
         conn = OBConnection()
+        mock_client = Mock()
         conn.client = mock_client
         conn.db_name = "test"
         conn.logger = Mock()
         
         # First query succeeds, second fails
-        mock_client.perform_raw_text_sql.return_value.fetchone.side_effect = [
-            (100.5,),  # Database size
-            Exception("Table not found")  # Total space query fails
-        ]
-        mock_client.perform_raw_text_sql.side_effect = [
-            Mock(fetchone=lambda: (100.5,)),
-            Exception("Table not found")
-        ]
-        
-        # Reset side_effect for the actual call
-        def side_effect(*args):
-            if "information_schema.tables" in args[0]:
-                return Mock(fetchone=lambda: (100.5,))
+        def side_effect(query):
+            if "information_schema.tables" in query:
+                mock_result = Mock()
+                mock_result.fetchone.return_value = (100.5,)
+                return mock_result
             else:
                 raise Exception("Table not found")
         
@@ -283,20 +309,31 @@ class TestOBConnectionPerformanceMetrics:
         assert "storage_total" in result
     
     @patch('rag.utils.ob_conn.OBConnection.__init__', lambda self: None)
-    def test_get_connection_pool_stats(self, mock_client):
+    def test_get_connection_pool_stats(self):
         """Test retrieval of connection pool statistics."""
         conn = OBConnection()
+        mock_client = Mock()
         conn.client = mock_client
         conn.logger = Mock()
-        conn.client.pool_size = 300
+        mock_client.pool_size = 300
         
-        mock_client.perform_raw_text_sql.return_value.fetchall.return_value = [
+        mock_result1 = Mock()
+        mock_result1.fetchall.return_value = [
             (1, 'user', 'host', 'db', 'Query', 0, 'executing', 'SELECT 1'),
             (2, 'user', 'host', 'db', 'Sleep', 10, None, None)
         ]
-        mock_client.perform_raw_text_sql.return_value.fetchone.side_effect = [
-            ('max_connections', '300')
-        ]
+        
+        mock_result2 = Mock()
+        mock_result2.fetchone.return_value = ('max_connections', '300')
+        
+        def sql_side_effect(query):
+            if "SHOW PROCESSLIST" in query:
+                return mock_result1
+            elif "SHOW VARIABLES LIKE 'max_connections'" in query:
+                return mock_result2
+            return Mock()
+        
+        mock_client.perform_raw_text_sql.side_effect = sql_side_effect
         
         result = conn._get_connection_pool_stats()
         
@@ -305,13 +342,16 @@ class TestOBConnectionPerformanceMetrics:
         assert result["active_connections"] >= 0
     
     @patch('rag.utils.ob_conn.OBConnection.__init__', lambda self: None)
-    def test_get_slow_query_count(self, mock_client):
+    def test_get_slow_query_count(self):
         """Test retrieval of slow query count."""
         conn = OBConnection()
+        mock_client = Mock()
         conn.client = mock_client
         conn.logger = Mock()
         
-        mock_client.perform_raw_text_sql.return_value.fetchone.return_value = (5,)
+        mock_result = Mock()
+        mock_result.fetchone.return_value = (5,)
+        mock_client.perform_raw_text_sql.return_value = mock_result
         
         result = conn._get_slow_query_count(threshold_seconds=1)
         
@@ -319,13 +359,16 @@ class TestOBConnectionPerformanceMetrics:
         assert result >= 0
     
     @patch('rag.utils.ob_conn.OBConnection.__init__', lambda self: None)
-    def test_estimate_qps(self, mock_client):
+    def test_estimate_qps(self):
         """Test QPS estimation."""
         conn = OBConnection()
+        mock_client = Mock()
         conn.client = mock_client
         conn.logger = Mock()
         
-        mock_client.perform_raw_text_sql.return_value.fetchone.return_value = (10,)
+        mock_result = Mock()
+        mock_result.fetchone.return_value = (10,)
+        mock_client.perform_raw_text_sql.return_value = mock_result
         
         result = conn._estimate_qps()
         
