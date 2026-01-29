@@ -215,7 +215,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-es-sdk.xml test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-es-sdk.xml test/testcases/test_sdk_api/test_chat_assistant_management 2>&1 | tee infinity_sdk_test.log
       
       - name: Run web api tests against Elasticsearch
         run: |
@@ -284,7 +284,7 @@ jobs:
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
 
-      - name: Start ragflow:nightly
+      - name: Start ragflow:nightly(infinity)
         run: |
           sed -i '1i DOC_ENGINE=infinity' docker/.env
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
@@ -296,7 +296,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=p1 --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-infinity-sdk.xml test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-infinity-sdk.xml test/testcases/test_sdk_api/test_chat_assistant_management 2>&1 | tee infinity_sdk_test.log
 
       
       - name: Run web api tests against Infinity
