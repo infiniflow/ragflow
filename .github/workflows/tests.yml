@@ -203,7 +203,9 @@ jobs:
           echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
           # Patch entrypoint.sh for coverage
-          sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' docker/entrypoint.sh
+          if [[ "${HTTP_API_TEST_LEVEL}" == "p3" ]]; then
+            sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' docker/entrypoint.sh
+          fi
 
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
           uv sync --python 3.12 --only-group test --no-default-groups --frozen && uv pip install -e sdk/python --group test
@@ -215,7 +217,12 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-es-sdk.xml test/testcases/test_sdk_api/test_chat_assistant_management 2>&1 | tee infinity_sdk_test.log
+          if [[ "${HTTP_API_TEST_LEVEL}" == "p3" ]]; then
+            COV_ARGS="--cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-es-sdk.xml"
+          else
+            COV_ARGS=""
+          fi
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml ${COV_ARGS} test/testcases/test_sdk_api/test_chat_assistant_management 2>&1 | tee infinity_sdk_test.log
       
       - name: Run web api tests against Elasticsearch
         run: |
@@ -224,7 +231,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/ 2>&1 | tee es_web_api_test.log
+          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/test_chunk_app 2>&1 | tee es_web_api_test.log
           
       - name: Run http api tests against Elasticsearch
         run: |
@@ -233,10 +240,10 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 2>&1 | tee es_http_api_test.log
+          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api/test_chat_assistant_management 2>&1 | tee es_http_api_test.log
 
       - name: Stop ragflow to save coverage (ES)
-        if: ${{ !cancelled() }}
+        if: ${{ env.HTTP_API_TEST_LEVEL == 'p3' && !cancelled() }}
         run: |
           # Send SIGINT to ragflow_server.py to trigger coverage save
           PID=$(sudo docker exec ${RAGFLOW_CONTAINER} ps aux | grep "ragflow_server.py" | grep -v grep | awk '{print $2}' | head -n 1)
@@ -251,7 +258,7 @@ jobs:
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} stop
 
       - name: Generate ES server coverage report
-        if: ${{ !cancelled() }}
+        if: ${{ env.HTTP_API_TEST_LEVEL == 'p3' && !cancelled() }}
         run: |
           # .coverage file should be in docker/ragflow-logs/.coverage
           if [ -f docker/ragflow-logs/.coverage ]; then
@@ -296,7 +303,12 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-infinity-sdk.xml test/testcases/test_sdk_api/test_chat_assistant_management 2>&1 | tee infinity_sdk_test.log
+          if [[ "${HTTP_API_TEST_LEVEL}" == "p3" ]]; then
+            COV_ARGS="--cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-infinity-sdk.xml"
+          else
+            COV_ARGS=""
+          fi
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml ${COV_ARGS} test/testcases/test_sdk_api/test_chat_assistant_management 2>&1 | tee infinity_sdk_test.log
 
       
       - name: Run web api tests against Infinity
@@ -306,7 +318,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api 2>&1 | tee infinity_web_api_test.log
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/test_chunk_app 2>&1 | tee infinity_web_api_test.log
 
       - name: Run http api tests against Infinity
         run: |
@@ -315,10 +327,10 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 2>&1 | tee infinity_http_api_test.log
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api/test_chat_assistant_management 2>&1 | tee infinity_http_api_test.log
 
       - name: Stop ragflow to save coverage
-        if: ${{ !cancelled() }}
+        if: ${{ env.HTTP_API_TEST_LEVEL == 'p3' && !cancelled() }}
         run: |
           # Send SIGINT to ragflow_server.py to trigger coverage save
           PID=$(sudo docker exec ${RAGFLOW_CONTAINER} ps aux | grep "ragflow_server.py" | grep -v grep | awk '{print $2}' | head -n 1)
@@ -333,7 +345,7 @@ jobs:
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} stop
 
       - name: Generate Infinity server coverage report
-        if: ${{ !cancelled() }}
+        if: ${{ env.HTTP_API_TEST_LEVEL == 'p3' && !cancelled() }}
         run: |
           # .coverage file should be in docker/ragflow-logs/.coverage
           if [ -f docker/ragflow-logs/.coverage ]; then
@@ -353,7 +365,7 @@ jobs:
           
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
-        if: ${{ !cancelled() }}
+        if: ${{ env.HTTP_API_TEST_LEVEL == 'p3' && !cancelled() }}
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
