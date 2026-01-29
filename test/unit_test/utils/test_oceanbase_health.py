@@ -175,9 +175,10 @@ class TestOceanBaseHealthCheck:
 class TestOBConnectionPerformanceMetrics:
     """Test cases for OBConnection performance metrics methods."""
     
-    @patch('rag.utils.ob_conn.OBConnection.__init__', lambda self: None)
+    @patch.object(OBConnection, '__init__', lambda self: None)
     def test_get_performance_metrics_success(self):
         """Test successful retrieval of performance metrics."""
+        # Create connection instance with mocked __init__
         conn = OBConnection()
         mock_client = Mock()
         conn.client = mock_client
@@ -238,9 +239,10 @@ class TestOBConnectionPerformanceMetrics:
         assert "storage_used" in result
         assert "storage_total" in result
     
-    @patch('rag.utils.ob_conn.OBConnection.__init__', lambda self: None)
+    @patch.object(OBConnection, '__init__', lambda self: None)
     def test_get_performance_metrics_connection_error(self):
         """Test performance metrics when connection fails."""
+        # Create connection instance with mocked __init__
         conn = OBConnection()
         mock_client = Mock()
         conn.client = mock_client
@@ -254,9 +256,10 @@ class TestOBConnectionPerformanceMetrics:
         assert result["connection"] == "disconnected"
         assert "error" in result
     
-    @patch('rag.utils.ob_conn.OBConnection.__init__', lambda self: None)
+    @patch.object(OBConnection, '__init__', lambda self: None)
     def test_get_storage_info_success(self):
         """Test successful retrieval of storage information."""
+        # Create connection instance with mocked __init__
         conn = OBConnection()
         mock_client = Mock()
         conn.client = mock_client
@@ -283,9 +286,10 @@ class TestOBConnectionPerformanceMetrics:
         assert "storage_total" in result
         assert "MB" in result["storage_used"]
     
-    @patch('rag.utils.ob_conn.OBConnection.__init__', lambda self: None)
+    @patch.object(OBConnection, '__init__', lambda self: None)
     def test_get_storage_info_fallback(self):
         """Test storage info with fallback when total space unavailable."""
+        # Create connection instance with mocked __init__
         conn = OBConnection()
         mock_client = Mock()
         conn.client = mock_client
@@ -308,9 +312,10 @@ class TestOBConnectionPerformanceMetrics:
         assert "storage_used" in result
         assert "storage_total" in result
     
-    @patch('rag.utils.ob_conn.OBConnection.__init__', lambda self: None)
+    @patch.object(OBConnection, '__init__', lambda self: None)
     def test_get_connection_pool_stats(self):
         """Test retrieval of connection pool statistics."""
+        # Create connection instance with mocked __init__
         conn = OBConnection()
         mock_client = Mock()
         conn.client = mock_client
@@ -341,9 +346,10 @@ class TestOBConnectionPerformanceMetrics:
         assert "max_connections" in result
         assert result["active_connections"] >= 0
     
-    @patch('rag.utils.ob_conn.OBConnection.__init__', lambda self: None)
+    @patch.object(OBConnection, '__init__', lambda self: None)
     def test_get_slow_query_count(self):
         """Test retrieval of slow query count."""
+        # Create connection instance with mocked __init__
         conn = OBConnection()
         mock_client = Mock()
         conn.client = mock_client
@@ -358,9 +364,10 @@ class TestOBConnectionPerformanceMetrics:
         assert isinstance(result, int)
         assert result >= 0
     
-    @patch('rag.utils.ob_conn.OBConnection.__init__', lambda self: None)
+    @patch.object(OBConnection, '__init__', lambda self: None)
     def test_estimate_qps(self):
         """Test QPS estimation."""
+        # Create connection instance with mocked __init__
         conn = OBConnection()
         mock_client = Mock()
         conn.client = mock_client

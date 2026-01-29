@@ -164,9 +164,30 @@ def check_oceanbase_health() -> dict:
         performance_metrics = ob_conn.get_performance_metrics()
         
         # Determine overall health status
+        connection_status = performance_metrics.get("connection", "unknown")
+        
+        # If connection is disconnected, return unhealthy
+        if connection_status == "disconnected" or health_info.get("status") != "healthy":
+            return {
+                "status": "unhealthy",
+                "details": {
+                    "connection": connection_status,
+                    "latency_ms": performance_metrics.get("latency_ms", 0),
+                    "storage_used": performance_metrics.get("storage_used", "N/A"),
+                    "storage_total": performance_metrics.get("storage_total", "N/A"),
+                    "query_per_second": performance_metrics.get("query_per_second", 0),
+                    "slow_queries": performance_metrics.get("slow_queries", 0),
+                    "active_connections": performance_metrics.get("active_connections", 0),
+                    "max_connections": performance_metrics.get("max_connections", 0),
+                    "uri": health_info.get("uri", "unknown"),
+                    "version": health_info.get("version_comment", "unknown"),
+                    "error": health_info.get("error", performance_metrics.get("error"))
+                }
+            }
+        
+        # Check if healthy (connected and low latency)
         is_healthy = (
-            health_info.get("status") == "healthy" and
-            performance_metrics.get("connection") == "connected" and
+            connection_status == "connected" and
             performance_metrics.get("latency_ms", float('inf')) < 1000  # Latency under 1 second
         )
         
