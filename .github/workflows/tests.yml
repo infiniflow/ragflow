@@ -239,6 +239,9 @@ jobs:
           set -euo pipefail
           source .venv/bin/activate
 
+          export http_proxy=""; export https_proxy=""; export no_proxy="";
+          export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
+
           EMAIL="ci-${GITHUB_RUN_ID}@example.com"
           PASS="ci-pass-${GITHUB_RUN_ID}"
           DATASET="ci_dataset_${GITHUB_RUN_ID}"
