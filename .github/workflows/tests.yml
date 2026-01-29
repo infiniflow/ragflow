@@ -302,7 +302,6 @@ jobs:
             echo "Found .coverage file"
             cp docker/ragflow-logs/.coverage .coverage
             source .venv/bin/activate
-            pip install coverage
             coverage xml -o coverage-infinity-http-api.xml
           else
             echo ".coverage file not found!"
