@@ -23,7 +23,7 @@ All the execution logic of this tool should go into this method.
 When you start RAGFlow, you can see your plugin was loaded in the log:
 
 ```
-2025-05-15 19:29:08,959 INFO     34670 Recursively importing plugins from path `/some-path/ragflow/plugin/embedded_plugins`
+2025-05-15 19:29:08,959 INFO     34670 Recursively importing plugins from path `/some-path/ragflow/agent/plugin/embedded_plugins`
 2025-05-15 19:29:08,960 INFO     34670 Loaded llm_tools plugin BadCalculatorPlugin version 1.0.0
 ```
 

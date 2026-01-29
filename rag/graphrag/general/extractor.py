@@ -26,8 +26,8 @@ import networkx as nx
 from api.db.services.task_service import has_canceled
 from common.connection_utils import timeout
 from common.token_utils import truncate
-from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
-from graphrag.utils import (
+from rag.graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
+from rag.graphrag.utils import (
     GraphChange,
     chat_limiter,
     flat_uniq_list,
