@@ -799,7 +799,8 @@ class SparkChat(Base):
             base_url = "https://spark-api-open.xf-yun.com/v1"
         model2version = {
             "Spark-Max": "generalv3.5",
-            "Spark-Lite": "general",
+            "Spark-Max-32K": "max-32k",
+            "Spark-Lite": "lite",
             "Spark-Pro": "generalv3",
             "Spark-Pro-128K": "pro-128k",
             "Spark-4.0-Ultra": "4.0Ultra",
