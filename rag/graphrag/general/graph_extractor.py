@@ -13,9 +13,9 @@ from typing import Any
 from dataclasses import dataclass
 import tiktoken
 
-from graphrag.general.extractor import Extractor, ENTITY_EXTRACTION_MAX_GLEANINGS
-from graphrag.general.graph_prompt import GRAPH_EXTRACTION_PROMPT, CONTINUE_PROMPT, LOOP_PROMPT
-from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, chat_limiter, split_string_by_multi_markers
+from rag.graphrag.general.extractor import Extractor, ENTITY_EXTRACTION_MAX_GLEANINGS
+from rag.graphrag.general.graph_prompt import GRAPH_EXTRACTION_PROMPT, CONTINUE_PROMPT, LOOP_PROMPT
+from rag.graphrag.utils import ErrorHandlerFn, perform_variable_replacements, chat_limiter, split_string_by_multi_markers
 from rag.llm.chat_model import Base as CompletionLLM
 import networkx as nx
 from common.token_utils import num_tokens_from_string

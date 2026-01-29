@@ -1,5 +1,5 @@
 import logging
-from plugin.llm_tool_plugin import LLMToolMetadata, LLMToolPlugin
+from agent.plugin.llm_tool_plugin import LLMToolMetadata, LLMToolPlugin
 
 
 class BadCalculatorPlugin(LLMToolPlugin):

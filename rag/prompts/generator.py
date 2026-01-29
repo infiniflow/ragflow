@@ -492,7 +492,7 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str) -> dict:
 
 
 async def gen_json(system_prompt: str, user_prompt: str, chat_mdl, gen_conf={}, max_retry=2):
-    from graphrag.utils import get_llm_cache, set_llm_cache
+    from rag.graphrag.utils import get_llm_cache, set_llm_cache
     cached = get_llm_cache(chat_mdl.llm_name, system_prompt, user_prompt, gen_conf)
     if cached:
         return json_repair.loads(cached)

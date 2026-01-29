@@ -22,8 +22,8 @@ import json_repair
 import pandas as pd
 
 from common.misc_utils import get_uuid
-from graphrag.query_analyze_prompt import PROMPTS
-from graphrag.utils import get_entity_type2samples, get_llm_cache, set_llm_cache, get_relation
+from rag.graphrag.query_analyze_prompt import PROMPTS
+from rag.graphrag.utils import get_entity_type2samples, get_llm_cache, set_llm_cache, get_relation
 from common.token_utils import num_tokens_from_string
 
 from rag.nlp.search import Dealer, index_name
