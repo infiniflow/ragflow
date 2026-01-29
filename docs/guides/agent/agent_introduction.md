@@ -5,7 +5,7 @@ sidebar_custom_props: {
   categoryIcon: LucideBookOpenText
 }
 ---
-# Introduction to agents
+# Introduction
 
 Key concepts, basic operations, a quick view of the agent editor.
 
