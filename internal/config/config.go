@@ -140,7 +140,7 @@ func Init(configPath string) error {
 				globalConfig.Server.Port = ragflowConfig.GetInt("http_port")
 				// If mode is not set, default to debug
 				if globalConfig.Server.Mode == "" {
-					globalConfig.Server.Mode = "debug"
+					globalConfig.Server.Mode = "release"
 				}
 			}
 		}

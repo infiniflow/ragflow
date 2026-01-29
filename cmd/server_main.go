@@ -17,7 +17,7 @@ import (
 
 func main() {
 	// Initialize logger with default level
-	if err := logger.Init("debug"); err != nil {
+	if err := logger.Init("info"); err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 

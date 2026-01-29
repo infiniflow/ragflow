@@ -15,26 +15,29 @@ import (
 	"ragflow/internal/engine/infinity"
 	"ragflow/internal/logger"
 	"ragflow/internal/model"
+	"ragflow/internal/utility"
 )
 
 // ChunkService chunk service
 type ChunkService struct {
-	docEngine     engine.DocEngine
-	engineType    config.EngineType
-	modelProvider ModelProvider
-	kbDAO         *dao.KnowledgebaseDAO
-	userTenantDAO *dao.UserTenantDAO
+	docEngine      engine.DocEngine
+	engineType     config.EngineType
+	modelProvider  ModelProvider
+	embeddingCache *utility.EmbeddingLRU
+	kbDAO          *dao.KnowledgebaseDAO
+	userTenantDAO  *dao.UserTenantDAO
 }
 
 // NewChunkService creates chunk service
 func NewChunkService() *ChunkService {
 	cfg := config.Get()
 	return &ChunkService{
-		docEngine:     engine.Get(),
-		engineType:    cfg.DocEngine.Type,
-		modelProvider: NewModelProvider(),
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine:      engine.Get(),
+		engineType:     cfg.DocEngine.Type,
+		modelProvider:  NewModelProvider(),
+		embeddingCache: utility.NewEmbeddingLRU(1000), // default capacity
+		kbDAO:          dao.NewKnowledgebaseDAO(),
+		userTenantDAO:  dao.NewUserTenantDAO(),
 	}
 }
 
@@ -168,9 +171,36 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	logger.Debug("Retrieved embedding model from database",
 		zap.String("targetTenantID", targetTenantID),
 		zap.String("embdID", kbRecords[0].EmbdID))
-	vector, err := embeddingModel.EncodeQuery(req.Question)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode query: %w", err)
+	// Try to get embedding from cache first
+	embdID := kbRecords[0].EmbdID
+	var vector []float64
+
+	if s.embeddingCache != nil {
+		if cachedVector, ok := s.embeddingCache.Get(req.Question, embdID); ok {
+			logger.Debug("Embedding cache hit", 
+				zap.String("question", req.Question),
+				zap.String("embdID", embdID),
+				zap.Int("cacheSize", s.embeddingCache.Len()))
+			vector = cachedVector
+		} else {
+			// Cache miss, encode and store
+			vector, err = embeddingModel.EncodeQuery(req.Question)
+			if err != nil {
+				return nil, fmt.Errorf("failed to encode query: %w", err)
+			}
+			s.embeddingCache.Put(req.Question, embdID, vector)
+			logger.Debug("Embedding cache miss, stored",
+				zap.String("question", req.Question),
+				zap.String("embdID", embdID),
+				zap.Int("vectorDim", len(vector)),
+				zap.Int("cacheSize", s.embeddingCache.Len()))
+		}
+	} else {
+		// No cache, just encode
+		vector, err = embeddingModel.EncodeQuery(req.Question)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode query: %w", err)
+		}
 	}
 
 	// Execute different retrieval logic based on engine type
