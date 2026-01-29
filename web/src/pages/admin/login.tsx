@@ -1,5 +1,5 @@
 import { type AxiosResponseHeaders } from 'axios';
-import { useEffect, useId } from 'react';
+import { useContext, useEffect, useId } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
@@ -36,8 +36,11 @@ import { login } from '@/services/admin-service';
 import { BgSvg } from '../login-next/bg';
 import ThemeSwitch from './components/theme-switch';
 
+import { CurrentUserInfoContext } from './layouts/root-layout';
+
 function AdminLogin() {
   const navigate = useNavigate();
+  const [, setCurrentUserInfo] = useContext(CurrentUserInfoContext);
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
   const { isLogin } = useAuth();
 
@@ -59,16 +62,19 @@ function AdminLogin() {
         );
         const token = req.data.access_token;
 
-        const userInfo = {
-          avatar: req.data.avatar,
-          name: req.data.nickname,
-          email: req.data.email,
-        };
+        // Lift to global user info context
+        setCurrentUserInfo({
+          userInfo: req.data,
+          source: 'serverRequest',
+        });
 
         authorizationUtil.setItems({
           Authorization: authorization as string,
           Token: token,
-          userInfo: JSON.stringify(userInfo),
+          userInfo: JSON.stringify({
+            ...req.data,
+            name: req.data.nickname,
+          }),
         });
 
         navigate('/admin/services');

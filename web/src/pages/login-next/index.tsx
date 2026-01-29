@@ -43,8 +43,6 @@ const Login = () => {
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
   const [isLoginPage, setIsLoginPage] = useState(true);
 
-  const [isUserInteracting, setIsUserInteracting] = useState(true);
-
   const loading =
     signLoading ||
     registerLoading ||
@@ -73,12 +71,11 @@ const Login = () => {
     setTimeout(() => {
       setTitle(title === 'login' ? 'register' : 'login');
     }, 200);
-    // setTitle((title) => (title === 'login' ? 'register' : 'login'));
   };
 
   const FormSchema = z
     .object({
-      nickname: z.string().optional(),
+      nickname: z.string(),
       email: z
         .string()
         .email()
@@ -106,11 +103,8 @@ const Login = () => {
     resolver: zodResolver(FormSchema),
   });
 
-  const onCheck = async (params) => {
-    console.log('params', params);
+  const onCheck = async (params: z.infer<typeof FormSchema>) => {
     try {
-      // const params = await form.validateFields();
-
       const rsaPassWord = rsaPsw(params.password) as string;
 
       if (title === 'login') {
@@ -154,7 +148,7 @@ const Login = () => {
         color={'rgb(128, 255, 248)'}
       />
       <div className=" h-[inherit] relative overflow-auto">
-        <BgSvg isPaused={isUserInteracting} />
+        <BgSvg isPaused />
 
         <div className="absolute top-3 flex flex-col items-center mb-12 w-full text-text-primary">
           <div className="flex items-center mb-4 w-full pl-10 pt-10 ">
@@ -190,7 +184,7 @@ const Login = () => {
                 <Form {...form}>
                   <form
                     className="flex flex-col gap-8 text-text-primary "
-                    onSubmit={form.handleSubmit((data) => onCheck(data))}
+                    onSubmit={form.handleSubmit(onCheck)}
                   >
                     <FormField
                       control={form.control}

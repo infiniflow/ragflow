@@ -149,6 +149,39 @@ class CodeExec(ToolBase, ABC):
             return
 
         try:
+            # Try using the new sandbox provider system first
+            try:
+                from agent.sandbox.client import execute_code as sandbox_execute_code
+
+                if self.check_if_canceled("CodeExec execution"):
+                    return
+
+                # Execute code using the provider system
+                result = sandbox_execute_code(
+                    code=code,
+                    language=language,
+                    timeout=int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)),
+                    arguments=arguments
+                )
+
+                if self.check_if_canceled("CodeExec execution"):
+                    return
+
+                # Process the result
+                if result.stderr:
+                    self.set_output("_ERROR", result.stderr)
+                    return
+
+                parsed_stdout = self._deserialize_stdout(result.stdout)
+                logging.info(f"[CodeExec]: Provider system -> {parsed_stdout}")
+                self._populate_outputs(parsed_stdout, result.stdout)
+                return
+
+            except (ImportError, RuntimeError) as provider_error:
+                # Provider system not available or not configured, fall back to HTTP
+                logging.info(f"[CodeExec]: Provider system not available, using HTTP fallback: {provider_error}")
+
+            # Fallback to direct HTTP request
             code_b64 = self._encode_code(code)
             code_req = CodeExecutionRequest(code_b64=code_b64, language=language, arguments=arguments).model_dump()
         except Exception as e:

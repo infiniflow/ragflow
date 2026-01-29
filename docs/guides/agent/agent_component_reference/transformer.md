@@ -46,7 +46,7 @@ Click the dropdown menu of **Model** to show the model configuration window.
   - A higher **frequency penalty** value results in the model being more conservative in its use of repeated tokens.
   - Defaults to 0.7.
 - **Max tokens**:  
-  This sets the maximum length of the model's output, measured in the number of tokens (words or pieces of words). It is disabled by default, allowing the model to determine the number of tokens in its responses.
+  - The maximum context size of the agent.
 
 :::tip NOTE
 - It is not necessary to stick with the same model for all components. If a specific model is not performing well for a particular task, consider using a different one.

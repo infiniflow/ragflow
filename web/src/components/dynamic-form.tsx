@@ -834,6 +834,7 @@ const DynamicForm = {
       useImperativeHandle(
         ref,
         () => ({
+          form: form,
           submit: () => {
             form.handleSubmit((values) => {
               const filteredValues = filterActiveValues(values);
@@ -938,7 +939,6 @@ const DynamicForm = {
   ) as <T extends FieldValues>(
     props: DynamicFormProps<T> & { ref?: React.Ref<DynamicFormRef> },
   ) => React.ReactElement,
-
   SavingButton: ({
     submitLoading,
     buttonText,
@@ -1014,5 +1014,7 @@ const DynamicForm = {
     );
   },
 };
+
+DynamicForm.Root.displayName = 'DynamicFormRoot';
 
 export { DynamicForm };

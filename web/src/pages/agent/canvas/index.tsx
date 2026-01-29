@@ -157,10 +157,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     currentEventListWithoutMessageById,
     clearEventList,
     currentMessageId,
-    currentTaskId,
+    latestTaskId,
   } = useCacheChatLog();
 
-  const { stopMessage } = useStopMessageUnmount(chatVisible, currentTaskId);
+  const { stopMessage } = useStopMessageUnmount(chatVisible, latestTaskId);
 
   const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
     setCurrentMessageId,
@@ -179,10 +179,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
 
   useEffect(() => {
     if (!chatVisible) {
-      stopMessage(currentTaskId);
+      stopMessage(latestTaskId);
       clearEventList();
     }
-  }, [chatVisible, clearEventList, currentTaskId, stopMessage]);
+  }, [chatVisible, clearEventList, latestTaskId, stopMessage]);
 
   const setLastSendLoadingFunc = (loading: boolean, messageId: string) => {
     setCurrentSendLoading(!!loading);

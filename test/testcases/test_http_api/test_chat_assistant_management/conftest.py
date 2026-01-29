@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import batch_create_chat_assistants, delete_chat_assistants, list_documents, parse_documents
+from common import batch_create_chat_assistants, delete_chat_assistants, list_chat_assistants, list_documents, parse_documents
 from utils import wait_for
 
 
@@ -38,3 +38,12 @@ def add_chat_assistants_func(request, HttpApiAuth, add_document):
     parse_documents(HttpApiAuth, dataset_id, {"document_ids": [document_id]})
     condition(HttpApiAuth, dataset_id)
     return dataset_id, document_id, batch_create_chat_assistants(HttpApiAuth, 5)
+
+
+@pytest.fixture(scope="function")
+def chat_assistant_llm_model_type(HttpApiAuth, add_chat_assistants_func):
+    _, _, chat_assistant_ids = add_chat_assistants_func
+    res = list_chat_assistants(HttpApiAuth, {"id": chat_assistant_ids[0]})
+    if res.get("code") == 0 and res.get("data"):
+        return res["data"][0].get("llm", {}).get("model_type", "chat")
+    return "chat"

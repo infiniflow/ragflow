@@ -105,6 +105,12 @@ def vision_llm_chunk(binary, vision_model, prompt=None, callback=None):
     txt = ""
 
     try:
+        # Skip tiny crops that fail provider image-size limits.
+        if hasattr(img, "size"):
+            min_side = 11
+            if img.size[0] < min_side or img.size[1] < min_side:
+                callback(0.0, f"Skip tiny image for VLM: {img.size[0]}x{img.size[1]}")
+                return ""
         with io.BytesIO() as img_binary:
             try:
                 img.save(img_binary, format="JPEG")

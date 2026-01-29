@@ -27,6 +27,10 @@ from common.mcp_tool_call_conn import MCPToolCallSession, ToolCallSession
 from timeit import default_timer as timer
 
 
+
+
+from common.misc_utils import thread_pool_exec
+
 class ToolParameter(TypedDict):
     type: str
     description: str
@@ -56,12 +60,12 @@ class LLMToolPluginCallSession(ToolCallSession):
         st = timer()
         tool_obj = self.tools_map[name]
         if isinstance(tool_obj, MCPToolCallSession):
-            resp = await asyncio.to_thread(tool_obj.tool_call, name, arguments, 60)
+            resp = await thread_pool_exec(tool_obj.tool_call, name, arguments, 60)
         else:
             if hasattr(tool_obj, "invoke_async") and asyncio.iscoroutinefunction(tool_obj.invoke_async):
                 resp = await tool_obj.invoke_async(**arguments)
             else:
-                resp = await asyncio.to_thread(tool_obj.invoke, **arguments)
+                resp = await thread_pool_exec(tool_obj.invoke, **arguments)
 
         self.callback(name, arguments, resp, elapsed_time=timer()-st)
         return resp
@@ -122,6 +126,7 @@ class ToolParamBase(ComponentParamBase):
 class ToolBase(ComponentBase):
     def __init__(self, canvas, id, param: ComponentParamBase):
         from agent.canvas import Canvas  # Local import to avoid cyclic dependency
+
         assert isinstance(canvas, Canvas), "canvas must be an instance of Canvas"
         self._canvas = canvas
         self._id = id
@@ -164,7 +169,7 @@ class ToolBase(ComponentBase):
             elif asyncio.iscoroutinefunction(self._invoke):
                 res = await self._invoke(**kwargs)
             else:
-                res = await asyncio.to_thread(self._invoke, **kwargs)
+                res = await thread_pool_exec(self._invoke, **kwargs)
         except Exception as e:
             self._param.outputs["_ERROR"] = {"value": str(e)}
             logging.exception(e)

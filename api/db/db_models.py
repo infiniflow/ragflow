@@ -281,7 +281,11 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
         except Exception as e:
             logging.error(f"Failed to reconnect: {e}")
             time.sleep(0.1)
-            self.connect()
+            try:
+                self.connect()
+            except Exception as e2:
+                logging.error(f"Failed to reconnect on second attempt: {e2}")
+                raise
 
     def begin(self):
         for attempt in range(self.max_retries + 1):
@@ -352,7 +356,11 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
         except Exception as e:
             logging.error(f"Failed to reconnect to PostgreSQL: {e}")
             time.sleep(0.1)
-            self.connect()
+            try:
+                self.connect()
+            except Exception as e2:
+                logging.error(f"Failed to reconnect to PostgreSQL on second attempt: {e2}")
+                raise
 
     def begin(self):
         for attempt in range(self.max_retries + 1):
@@ -787,7 +795,6 @@ class Document(DataBaseModel):
     progress_msg = TextField(null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True, index=True)
     process_duration = FloatField(default=0)
-    meta_fields = JSONField(null=True, default={})
     suffix = CharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
 
     run = CharField(max_length=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0", index=True)
@@ -1201,7 +1208,7 @@ class SystemSettings(DataBaseModel):
     name = CharField(max_length=128, primary_key=True)
     source = CharField(max_length=32, null=False, index=False)
     data_type = CharField(max_length=32, null=False, index=False)
-    value = CharField(max_length=1024, null=False, index=False)
+    value = TextField(null=False, help_text="Configuration value (JSON, string, etc.)")
     class Meta:
         db_table = "system_settings"
 
@@ -1259,7 +1266,6 @@ def migrate_db():
     alter_db_add_column(migrator, "task", "digest", TextField(null=True, help_text="task digest", default=""))
     alter_db_add_column(migrator, "task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default=""))
     alter_db_add_column(migrator, "conversation", "user_id", CharField(max_length=255, null=True, help_text="user_id", index=True))
-    alter_db_add_column(migrator, "document", "meta_fields", JSONField(null=True, default={}))
     alter_db_add_column(migrator, "task", "task_type", CharField(max_length=32, null=False, default=""))
     alter_db_add_column(migrator, "task", "priority", IntegerField(default=0))
     alter_db_add_column(migrator, "user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True))
@@ -1286,4 +1292,6 @@ def migrate_db():
     alter_db_add_column(migrator, "tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
     alter_db_add_column(migrator, "connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False))
     alter_db_add_column(migrator, "llm_factories", "rank", IntegerField(default=0, index=False))
+    # Migrate system_settings.value from CharField to TextField for longer sandbox configs
+    alter_db_column_type(migrator, "system_settings", "value", TextField(null=False, help_text="Configuration value (JSON, string, etc.)"))
     logging.disable(logging.NOTSET)

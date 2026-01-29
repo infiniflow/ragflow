@@ -13,22 +13,29 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
+import base64
 import datetime
 import json
+import logging
 import re
-import base64
 import xxhash
 from quart import request
 
 from api.db.services.document_service import DocumentService
+from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
-from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request, \
-    get_request_json
+from api.utils.api_utils import (
+    get_data_error_result,
+    get_json_result,
+    server_error_response,
+    validate_request,
+    get_request_json,
+)
+from common.misc_utils import thread_pool_exec
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
@@ -37,7 +44,6 @@ from common.string_utils import remove_redundant_spaces
 from common.constants import RetCode, LLMType, ParserType, PAGERANK_FLD
 from common import settings
 from api.apps import login_required, current_user
-
 
 @manager.route('/list', methods=['POST'])  # noqa: F821
 @login_required
@@ -190,7 +196,7 @@ async def set():
                 settings.STORAGE_IMPL.put(bkt, name, image_binary)
             return get_json_result(data=True)
 
-        return await asyncio.to_thread(_set_sync)
+        return await thread_pool_exec(_set_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -213,7 +219,7 @@ async def switch():
                     return get_data_error_result(message="Index updating failure")
             return get_json_result(data=True)
 
-        return await asyncio.to_thread(_switch_sync)
+        return await thread_pool_exec(_switch_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -255,7 +261,7 @@ async def rm():
                     settings.STORAGE_IMPL.rm(doc.kb_id, cid)
             return get_json_result(data=True)
 
-        return await asyncio.to_thread(_rm_sync)
+        return await thread_pool_exec(_rm_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -265,6 +271,7 @@ async def rm():
 @validate_request("doc_id", "content_with_weight")
 async def create():
     req = await get_request_json()
+    req_id = request.headers.get("X-Request-ID")
     chunck_id = xxhash.xxh64((req["content_with_weight"] + req["doc_id"]).encode("utf-8")).hexdigest()
     d = {"id": chunck_id, "content_ltks": rag_tokenizer.tokenize(req["content_with_weight"]),
          "content_with_weight": req["content_with_weight"]}
@@ -283,10 +290,21 @@ async def create():
         d["tag_feas"] = req["tag_feas"]
 
     try:
+        def _log_response(resp, code, message):
+            logging.info(
+                "chunk_create response req_id=%s status=%s code=%s message=%s",
+                req_id,
+                getattr(resp, "status_code", None),
+                code,
+                message,
+            )
+
         def _create_sync():
             e, doc = DocumentService.get_by_id(req["doc_id"])
             if not e:
-                return get_data_error_result(message="Document not found!")
+                resp = get_data_error_result(message="Document not found!")
+                _log_response(resp, RetCode.DATA_ERROR, "Document not found!")
+                return resp
             d["kb_id"] = [doc.kb_id]
             d["docnm_kwd"] = doc.name
             d["title_tks"] = rag_tokenizer.tokenize(doc.name)
@@ -294,11 +312,15 @@ async def create():
 
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])
             if not tenant_id:
-                return get_data_error_result(message="Tenant not found!")
+                resp = get_data_error_result(message="Tenant not found!")
+                _log_response(resp, RetCode.DATA_ERROR, "Tenant not found!")
+                return resp
 
             e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
             if not e:
-                return get_data_error_result(message="Knowledgebase not found!")
+                resp = get_data_error_result(message="Knowledgebase not found!")
+                _log_response(resp, RetCode.DATA_ERROR, "Knowledgebase not found!")
+                return resp
             if kb.pagerank:
                 d[PAGERANK_FLD] = kb.pagerank
 
@@ -312,10 +334,13 @@ async def create():
 
             DocumentService.increment_chunk_num(
                 doc.id, doc.kb_id, c, 1, 0)
-            return get_json_result(data={"chunk_id": chunck_id})
+            resp = get_json_result(data={"chunk_id": chunck_id})
+            _log_response(resp, RetCode.SUCCESS, "success")
+            return resp
 
-        return await asyncio.to_thread(_create_sync)
+        return await thread_pool_exec(_create_sync)
     except Exception as e:
+        logging.info("chunk_create exception req_id=%s error=%r", req_id, e)
         return server_error_response(e)
 
 
@@ -357,7 +382,7 @@ async def retrieval_test():
                 chat_mdl = LLMBundle(user_id, LLMType.CHAT)
 
         if meta_data_filter:
-            metas = DocumentService.get_meta_by_kbs(kb_ids)
+            metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
             local_doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, local_doc_ids)
 
         tenants = UserTenantService.query(user_id=user_id)

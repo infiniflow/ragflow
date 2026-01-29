@@ -51,7 +51,7 @@ def list_agents(tenant_id):
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 30))
     order_by = request.args.get("orderby", "update_time")
-    if request.args.get("desc") == "False" or request.args.get("desc") == "false":
+    if str(request.args.get("desc","false")).lower() == "false":
         desc = False
     else:
         desc = True

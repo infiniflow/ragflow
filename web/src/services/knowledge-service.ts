@@ -264,10 +264,22 @@ export const listDocument = (
 export const documentFilter = (kb_id: string) =>
   request.post(api.get_dataset_filter, { kb_id });
 
-export const getMetaDataService = ({ kb_id }: { kb_id: string }) =>
-  request.post(api.getMetaData, { data: { kb_id } });
-export const updateMetaData = ({ kb_id, data }: { kb_id: string; data: any }) =>
-  request.post(api.updateMetaData, { data: { kb_id, ...data } });
+export const getMetaDataService = ({
+  kb_id,
+  doc_ids,
+}: {
+  kb_id: string;
+  doc_ids?: string[];
+}) => request.post(api.getMetaData, { data: { kb_id, doc_ids } });
+export const updateMetaData = ({
+  kb_id,
+  doc_ids,
+  data,
+}: {
+  kb_id: string;
+  doc_ids?: string[];
+  data: any;
+}) => request.post(api.updateMetaData, { data: { kb_id, doc_ids, ...data } });
 
 export const listDataPipelineLogDocument = (
   params?: IFetchKnowledgeListRequestParams,

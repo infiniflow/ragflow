@@ -60,6 +60,12 @@ class Chat(Base):
             super().__init__(rag, res_dict)
 
     def update(self, update_message: dict):
+        if not isinstance(update_message, dict):
+            raise Exception("ValueError('`update_message` must be a dict')")
+        if update_message.get("llm") == {}:
+            raise Exception("ValueError('`llm` cannot be empty')")
+        if update_message.get("prompt") == {}:
+            raise Exception("ValueError('`prompt` cannot be empty')")
         res = self.put(f"/chats/{self.id}", update_message)
         res = res.json()
         if res.get("code") != 0:

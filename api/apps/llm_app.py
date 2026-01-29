@@ -146,10 +146,6 @@ async def add_llm():
         # Assemble ark_api_key endpoint_id into api_key
         api_key = apikey_json(["ark_api_key", "endpoint_id"])
 
-    elif factory == "Tencent Hunyuan":
-        req["api_key"] = apikey_json(["hunyuan_sid", "hunyuan_sk"])
-        return await set_api_key()
-
     elif factory == "Tencent Cloud":
         req["api_key"] = apikey_json(["tencent_cloud_sid", "tencent_cloud_sk"])
         return await set_api_key()

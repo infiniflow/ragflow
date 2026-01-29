@@ -329,6 +329,14 @@ def _try_with_lock(lock_name: str, process_func, check_func, timeout: int = None
             try:
                 process_func()
                 return
+            except Exception as e:
+                if "Duplicate" in str(e):
+                    # In some cases, the schema may change after the lock is acquired, so if the error message
+                    # indicates that the column or index is duplicated, it should be assumed that 'process_func'
+                    # has been executed correctly.
+                    logger.warning(f"Skip processing {lock_name} due to duplication: {str(e)}")
+                    return
+                raise
             finally:
                 lock.release()
 
@@ -920,8 +928,14 @@ class OBConnection(DocStoreConnection):
 
                 # adjust the weight to 0~1
                 weight_sum = sum(fulltext_search_weight.values())
-                for column_name in fulltext_search_weight.keys():
-                    fulltext_search_weight[column_name] = fulltext_search_weight[column_name] / weight_sum
+                n = len(fulltext_search_weight)
+                if weight_sum <= 0 and n > 0:
+                    # All weights are 0 (e.g. "col^0"); use equal weights to avoid ZeroDivisionError
+                    for column_name in fulltext_search_weight:
+                        fulltext_search_weight[column_name] = 1.0 / n
+                else:
+                    for column_name in fulltext_search_weight:
+                        fulltext_search_weight[column_name] = fulltext_search_weight[column_name] / weight_sum
 
             elif isinstance(m, MatchDenseExpr):
                 assert m.embedding_data_type == "float", f"embedding data type '{m.embedding_data_type}' is not float."

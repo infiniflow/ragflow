@@ -275,7 +275,15 @@ export const useSendMessageWithSse = (
                 const d = val?.data;
                 if (typeof d !== 'boolean') {
                   setAnswer((prev) => {
-                    let newAnswer = (prev.answer || '') + (d.answer || '');
+                    const prevAnswer = prev.answer || '';
+                    const currentAnswer = d.answer || '';
+
+                    let newAnswer: string;
+                    if (prevAnswer && currentAnswer.startsWith(prevAnswer)) {
+                      newAnswer = currentAnswer;
+                    } else {
+                      newAnswer = prevAnswer + currentAnswer;
+                    }
 
                     if (d.start_to_think === true) {
                       newAnswer = newAnswer + '<think>';
@@ -400,7 +408,7 @@ export const useScrollToBottom = (
       const container = containerRef.current;
       container.scrollTo({
         top: container.scrollHeight - container.clientHeight,
-        behavior: 'smooth',
+        behavior: 'auto',
       });
     }
   }, [containerRef]);

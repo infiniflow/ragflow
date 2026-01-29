@@ -12,7 +12,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SharedFrom } from '@/constants/chat';
-import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useFetchConversationList,
@@ -48,8 +47,6 @@ export default function Chat() {
 
   const { handleConversationCardClick, controller, stopOutputMessage } =
     useHandleClickConversationCard();
-  const { visible: settingVisible, switchVisible: switchSettingVisible } =
-    useSetModalState(true);
 
   const { isDebugMode, switchDebugMode } = useSwitchDebugMode();
   const { removeChatBox, addChatBox, chatBoxIds, hasSingleChatBox } =
@@ -114,7 +111,7 @@ export default function Chat() {
   }
 
   return (
-    <section className="h-full flex flex-col pr-5">
+    <section className="h-full flex flex-col">
       <PageHeader>
         <Breadcrumb>
           <BreadcrumbList>
@@ -135,13 +132,9 @@ export default function Chat() {
         </Button>
       </PageHeader>
       <div className="flex flex-1 min-h-0 pb-9">
-        <Sessions
-          hasSingleChatBox={hasSingleChatBox}
-          handleConversationCardClick={handleSessionClick}
-          switchSettingVisible={switchSettingVisible}
-        ></Sessions>
+        <Sessions handleConversationCardClick={handleSessionClick}></Sessions>
 
-        <Card className="flex-1 min-w-0 bg-transparent border h-full">
+        <Card className="flex-1 min-w-0 bg-transparent border-none shadow-none h-full">
           <CardContent className="flex p-0 h-full">
             <Card className="flex flex-col flex-1 bg-transparent min-w-0">
               <CardHeader
@@ -162,11 +155,7 @@ export default function Chat() {
                 ></SingleChatBox>
               </CardContent>
             </Card>
-            {settingVisible && (
-              <ChatSettings
-                switchSettingVisible={switchSettingVisible}
-              ></ChatSettings>
-            )}
+            <ChatSettings hasSingleChatBox={hasSingleChatBox}></ChatSettings>
           </CardContent>
         </Card>
       </div>

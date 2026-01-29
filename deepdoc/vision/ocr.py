@@ -96,8 +96,9 @@ def load_model(model_dir, nm, device_id: int | None = None):
     options = ort.SessionOptions()
     options.enable_cpu_mem_arena = False
     options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-    options.intra_op_num_threads = 2
-    options.inter_op_num_threads = 2
+    # Prevent CPU oversubscription by allowing explicit thread control in multi-worker environments
+    options.intra_op_num_threads = int(os.environ.get("OCR_INTRA_OP_NUM_THREADS", "2"))
+    options.inter_op_num_threads = int(os.environ.get("OCR_INTER_OP_NUM_THREADS", "2"))
 
     # https://github.com/microsoft/onnxruntime/issues/9509#issuecomment-951546580
     # Shrink GPU memory after execution
@@ -117,6 +118,11 @@ def load_model(model_dir, nm, device_id: int | None = None):
             providers=['CUDAExecutionProvider'],
             provider_options=[cuda_provider_options]
             )
+        # Explicit arena shrinkage for GPU to release VRAM back to the system after each run
+        if os.environ.get("OCR_GPUMEM_ARENA_SHRINKAGE") == "1":
+            run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", f"gpu:{provider_device_id}")
+            logging.info(
+                f"load_model {model_file_path} enabled GPU memory arena shrinkage on device {provider_device_id}")
         logging.info(f"load_model {model_file_path} uses GPU (device {provider_device_id}, gpu_mem_limit={cuda_provider_options['gpu_mem_limit']}, arena_strategy={arena_strategy})")
     else:
         sess = ort.InferenceSession(

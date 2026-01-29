@@ -29,7 +29,7 @@ import api from '@/utils/api';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { get, set } from 'lodash';
+import { get, isEmpty, set } from 'lodash';
 import { useCallback, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import {
@@ -103,6 +103,7 @@ export const EmptyDsl = {
     [AgentGlobals.SysUserId]: '',
     [AgentGlobals.SysConversationTurns]: 0,
     [AgentGlobals.SysFiles]: [],
+    [AgentGlobals.SysHistory]: [],
   },
 };
 
@@ -267,6 +268,17 @@ export const useFetchAgent = (): {
         get(data, 'data.dsl.messages', []),
       );
       set(data, 'data.dsl.messages', messageList);
+
+      const sysHistoryPath = [
+        'data',
+        'dsl',
+        'globals',
+        AgentGlobals.SysHistory,
+      ];
+
+      if (isEmpty(get(data, sysHistoryPath))) {
+        set(data, sysHistoryPath, []);
+      }
 
       return data?.data ?? {};
     },
