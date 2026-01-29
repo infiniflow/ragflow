@@ -16,7 +16,6 @@
 """
 Unit tests for OceanBase health check and performance monitoring functionality.
 """
-import inspect
 import os
 import types
 import pytest
