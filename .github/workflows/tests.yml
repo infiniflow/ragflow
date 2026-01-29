@@ -302,7 +302,13 @@ jobs:
             echo "Found .coverage file"
             cp docker/ragflow-logs/.coverage .coverage
             source .venv/bin/activate
+            # Create .coveragerc to map container paths to host paths
+            echo "[paths]" > .coveragerc
+            echo "source =" >> .coveragerc
+            echo "    ." >> .coveragerc
+            echo "    /ragflow" >> .coveragerc
             coverage xml -o coverage-infinity-http-api.xml
+            rm .coveragerc
           else
             echo ".coverage file not found!"
           fi
