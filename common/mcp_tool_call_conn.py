@@ -42,9 +42,10 @@ class ToolCallSession(Protocol):
 class MCPToolCallSession(ToolCallSession):
     _ALL_INSTANCES: weakref.WeakSet["MCPToolCallSession"] = weakref.WeakSet()
 
-    def __init__(self, mcp_server: Any, server_variables: dict[str, Any] | None = None) -> None:
+    def __init__(self, mcp_server: Any, server_variables: dict[str, Any] | None = None, custom_header = None) -> None:
         self.__class__._ALL_INSTANCES.add(self)
 
+        self._custom_header = custom_header
         self._mcp_server = mcp_server
         self._server_variables = server_variables or {}
         self._queue = asyncio.Queue()
@@ -59,6 +60,7 @@ class MCPToolCallSession(ToolCallSession):
     async def _mcp_server_loop(self) -> None:
         url = self._mcp_server.url.strip()
         raw_headers: dict[str, str] = self._mcp_server.headers or {}
+        custom_header: dict[str, str] = self._custom_header or {}
         headers: dict[str, str] = {}
 
         for h, v in raw_headers.items():
@@ -66,6 +68,11 @@ class MCPToolCallSession(ToolCallSession):
             nv = Template(v).safe_substitute(self._server_variables)
             if nh.strip() and nv.strip().strip("Bearer"):
                 headers[nh] = nv
+
+        for h, v in custom_header.items():
+            nh = Template(h).safe_substitute(custom_header)
+            nv = Template(v).safe_substitute(custom_header)
+            headers[nh] = nv
 
         if self._mcp_server.server_type == MCPServerType.SSE:
             # SSE transport
