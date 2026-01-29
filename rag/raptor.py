@@ -25,7 +25,7 @@ from api.db.services.task_service import has_canceled
 from common.connection_utils import timeout
 from common.exceptions import TaskCanceledException
 from common.token_utils import truncate
-from graphrag.utils import (
+from rag.graphrag.utils import (
     chat_limiter,
     get_embed_cache,
     get_llm_cache,
