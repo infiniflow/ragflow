@@ -184,7 +184,6 @@ class TestOBConnectionPerformanceMetrics:
         conn = MockConn()
         # Get the actual class from the singleton wrapper's closure
         from rag.utils import ob_conn
-        import inspect
         # OBConnection is wrapped by @singleton decorator, so it's a function
         # The original class is stored in the closure of the singleton function
         # Find the class by checking all closure cells
