@@ -17,6 +17,7 @@
 Unit tests for OceanBase health check and performance monitoring functionality.
 """
 import os
+import types
 import pytest
 from unittest.mock import Mock, patch
 
@@ -183,7 +184,6 @@ class TestOBConnectionPerformanceMetrics:
         conn = MockConn()
         # Import the actual methods and bind them
         from rag.utils.ob_conn import OBConnection as RealOBConnection
-        import types
         conn.get_performance_metrics = types.MethodType(RealOBConnection.get_performance_metrics, conn)
         conn._get_storage_info = types.MethodType(RealOBConnection._get_storage_info, conn)
         conn._get_connection_pool_stats = types.MethodType(RealOBConnection._get_connection_pool_stats, conn)
