@@ -2,7 +2,7 @@
 
 You are encountering an issue with the **"Table"** option in RAGFlow. This is likely because the Table parser is optimized for extracting unstructured tables (e.g., from a PDF or image) or expects a very strict "Header-Data" format without complex merged cells or empty top rows.
 
-Since your file has empty rows and merged headers (indicated by the `,,,` in the snippets), RAGFlow's parser is likely failing to identify the structure correctly.
+Since the excel file has empty rows and merged headers (indicated by the `,,,` in the snippets), RAGFlow's parser is likely failing to identify the structure correctly.
 
 ---
 
@@ -19,7 +19,7 @@ When ingesting a file in RAGFlow, the parser determines how the text is chunked.
 | **Law / Paper / Book** | Specific Domains. | Optimized for long-form text with sections or legal clauses. | Not suitable for row-based Excel data. |
 
 ### The Fix:
-1.  **Clean your Excel:** Open the file, delete the top 1-2 rows so the column headers (e.g., "Source", "Date", "Verification") are in exactly **Row 1**.
+1.  **Clean the Excel file:** Open the file, delete the top 1-2 rows so the column headers (e.g., "Source", "Date", "Verification") are in exactly **Row 1**.
 2.  **Remove Merged Cells:** Ensure every header and data cell is distinct.
 3.  **Choose the right parser:**
     *   Use **Q&A** if you want the bot to specifically debunk rumors (map "News Text" to Question and "Correction" to Answer).
