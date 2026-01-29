@@ -22,7 +22,7 @@ export const MetadataFilterSchema = {
           z.object({
             key: z.string(),
             op: z.string(),
-            value: z.string(),
+            value: z.union([z.string(), z.array(z.string())]),
           }),
         )
         .optional(),

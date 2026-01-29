@@ -17,21 +17,29 @@ import json
 import logging
 import random
 import re
-import asyncio
 
+from common.metadata_utils import turn2jsonschema
 from quart import request
 import numpy as np
 
 from api.db.services.connector_service import Connector2KbService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
+from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.user_service import TenantService, UserTenantService
-from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters, \
-    get_request_json
+from api.utils.api_utils import (
+    get_error_data_result,
+    server_error_response,
+    get_data_error_result,
+    validate_request,
+    not_allowed_parameters,
+    get_request_json,
+)
+from common.misc_utils import thread_pool_exec
 from api.db import VALID_FILE_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
@@ -43,7 +51,6 @@ from common.constants import RetCode, PipelineTaskType, StatusEnum, VALID_TASK_S
 from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 from api.apps import login_required, current_user
-
 
 @manager.route('/create', methods=['post'])  # noqa: F821
 @login_required
@@ -90,7 +97,7 @@ async def update():
                 message="The chunking method Tag has not been supported by Infinity yet.",
                 data=False,
             )
-        if "pagerank" in req:
+        if "pagerank" in req and req["pagerank"] > 0:
             return get_json_result(
                 code=RetCode.DATA_ERROR,
                 message="'pagerank' can only be set when doc_engine is elasticsearch",
@@ -144,7 +151,7 @@ async def update():
 
         if kb.pagerank != req.get("pagerank", 0):
             if req.get("pagerank", 0) > 0:
-                await asyncio.to_thread(
+                await thread_pool_exec(
                     settings.docStoreConn.update,
                     {"kb_id": kb.id},
                     {PAGERANK_FLD: req["pagerank"]},
@@ -153,7 +160,7 @@ async def update():
                 )
             else:
                 # Elasticsearch requires PAGERANK_FLD be non-zero!
-                await asyncio.to_thread(
+                await thread_pool_exec(
                     settings.docStoreConn.update,
                     {"exists": PAGERANK_FLD},
                     {"remove": PAGERANK_FLD},
@@ -213,6 +220,8 @@ def detail():
                 message="Can't find this dataset!")
         kb["size"] = DocumentService.get_total_size_by_kb_id(kb_id=kb["id"],keywords="", run_status=[], types=[])
         kb["connectors"] = Connector2KbService.list_connectors(kb_id)
+        if kb["parser_config"].get("metadata"):
+            kb["parser_config"]["metadata"] = turn2jsonschema(kb["parser_config"]["metadata"])
 
         for key in ["graphrag_task_finish_at", "raptor_task_finish_at", "mindmap_task_finish_at"]:
             if finish_at := kb.get(key):
@@ -264,7 +273,8 @@ async def list_kbs():
 @validate_request("kb_id")
 async def rm():
     req = await get_request_json()
-    if not KnowledgebaseService.accessible4deletion(req["kb_id"], current_user.id):
+    uid = current_user.id
+    if not KnowledgebaseService.accessible4deletion(req["kb_id"], uid):
         return get_json_result(
             data=False,
             message='No authorization.',
@@ -272,7 +282,7 @@ async def rm():
         )
     try:
         kbs = KnowledgebaseService.query(
-            created_by=current_user.id, id=req["kb_id"])
+            created_by=uid, id=req["kb_id"])
         if not kbs:
             return get_json_result(
                 data=False, message='Only owner of dataset authorized for this operation.',
@@ -312,7 +322,7 @@ async def rm():
                     settings.STORAGE_IMPL.remove_bucket(kb.id)
             return get_json_result(data=True)
 
-        return await asyncio.to_thread(_rm_sync)
+        return await thread_pool_exec(_rm_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -458,7 +468,7 @@ def get_meta():
                 message='No authorization.',
                 code=RetCode.AUTHENTICATION_ERROR
             )
-    return get_json_result(data=DocumentService.get_meta_by_kbs(kb_ids))
+    return get_json_result(data=DocMetadataService.get_flatted_meta_by_kbs(kb_ids))
 
 
 @manager.route("/basic_info", methods=["GET"])  # noqa: F821
