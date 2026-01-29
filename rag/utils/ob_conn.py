@@ -928,8 +928,14 @@ class OBConnection(DocStoreConnection):
 
                 # adjust the weight to 0~1
                 weight_sum = sum(fulltext_search_weight.values())
-                for column_name in fulltext_search_weight.keys():
-                    fulltext_search_weight[column_name] = fulltext_search_weight[column_name] / weight_sum
+                n = len(fulltext_search_weight)
+                if weight_sum <= 0 and n > 0:
+                    # All weights are 0 (e.g. "col^0"); use equal weights to avoid ZeroDivisionError
+                    for column_name in fulltext_search_weight:
+                        fulltext_search_weight[column_name] = 1.0 / n
+                else:
+                    for column_name in fulltext_search_weight:
+                        fulltext_search_weight[column_name] = fulltext_search_weight[column_name] / weight_sum
 
             elif isinstance(m, MatchDenseExpr):
                 assert m.embedding_data_type == "float", f"embedding data type '{m.embedding_data_type}' is not float."

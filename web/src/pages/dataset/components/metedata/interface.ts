@@ -72,6 +72,7 @@ export type IManageModalProps = {
   isVerticalShowValue?: boolean;
   builtInMetadata?: IBuiltInMetadataItem[];
   success?: (data: any) => void;
+  secondTitle?: ReactNode;
 };
 
 export interface IManageValuesProps {
@@ -98,16 +99,16 @@ export interface IManageValuesProps {
   addDeleteValue: (key: string, value: string) => void;
 }
 
-interface DeleteOperation {
+export interface DeleteOperation {
   key: string;
   value?: string;
 }
 
-interface UpdateOperation {
+export interface UpdateOperation {
   key: string;
   match: string;
   value: string | string[];
-  type?: MetadataValueType;
+  valueType?: MetadataValueType;
 }
 
 export interface MetadataOperations {

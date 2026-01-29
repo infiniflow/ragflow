@@ -104,14 +104,21 @@ export default function Dataset() {
       isEditField: false,
       isDeleteSingleValue: true,
       isAddValue: true,
+      secondTitle: (
+        <>
+          {t('knowledgeDetails.metadata.selectFiles', {
+            count: documents.length,
+          })}
+        </>
+      ),
       title: (
         <div className="flex flex-col gap-2">
           <div className="text-base font-normal">
             {t('knowledgeDetails.metadata.manageMetadata')}
           </div>
-          <div className="text-sm text-text-secondary">
+          {/* <div className="text-sm text-text-secondary">
             {t('knowledgeDetails.metadata.manageMetadataForDataset')}
-          </div>
+          </div> */}
         </div>
       ),
       documentIds: documents.map((doc) => doc.id),
@@ -240,9 +247,9 @@ export default function Dataset() {
                   <div className="text-base font-normal">
                     {t('knowledgeDetails.metadata.manageMetadata')}
                   </div>
-                  <div className="text-sm text-text-secondary">
+                  {/* <div className="text-sm text-text-secondary">
                     {t('knowledgeDetails.metadata.manageMetadataForDataset')}
-                  </div>
+                  </div> */}
                 </div>
               )
             }
@@ -255,6 +262,7 @@ export default function Dataset() {
             isVerticalShowValue={metadataConfig.isVerticalShowValue}
             isEditField={metadataConfig.isEditField}
             isDeleteSingleValue={metadataConfig.isDeleteSingleValue}
+            secondTitle={metadataConfig.secondTitle}
             type={metadataConfig.type}
             documentIds={metadataConfig.documentIds}
             otherData={metadataConfig.record}

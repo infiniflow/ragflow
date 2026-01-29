@@ -191,10 +191,16 @@ export function useDatasetTableColumns({
                     <div className="text-base font-normal">
                       {t('metadata.editMetadata')}
                     </div>
-                    <div className="text-sm text-text-secondary w-full truncate">
+                    {/* <div className="text-sm text-text-secondary w-full truncate">
                       {t('metadata.editMetadataForDataset')}
                       {row.original.name}
-                    </div>
+                    </div> */}
+                  </div>
+                ),
+                secondTitle: (
+                  <div className="w-full flex gap-1 text-sm text-text-secondary">
+                    <FileIcon name={row.original.name}></FileIcon>
+                    <div className="truncate">{row.original.name}</div>
                   </div>
                 ),
                 isDeleteSingleValue: true,

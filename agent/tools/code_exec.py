@@ -110,7 +110,7 @@ module.exports = { main };
         self.lang = Language.PYTHON.value
         self.script = 'def main(arg1: str, arg2: str) -> dict: return {"result": arg1 + arg2}'
         self.arguments = {}
-        self.outputs = {"result": {"value": "", "type": "string"}}
+        self.outputs = {"result": {"value": "", "type": "object"}}
 
     def check(self):
         self.check_valid_value(self.lang, "Support languages", ["python", "python3", "nodejs", "javascript"])
@@ -140,26 +140,61 @@ class CodeExec(ToolBase, ABC):
                 continue
             arguments[k] = self._canvas.get_variable_value(v) if v else None
 
-        self._execute_code(language=lang, code=script, arguments=arguments)
+        return self._execute_code(language=lang, code=script, arguments=arguments)
 
     def _execute_code(self, language: str, code: str, arguments: dict):
         import requests
 
         if self.check_if_canceled("CodeExec execution"):
-            return
+            return self.output()
 
         try:
+            # Try using the new sandbox provider system first
+            try:
+                from agent.sandbox.client import execute_code as sandbox_execute_code
+
+                if self.check_if_canceled("CodeExec execution"):
+                    return
+
+                # Execute code using the provider system
+                result = sandbox_execute_code(
+                    code=code,
+                    language=language,
+                    timeout=int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)),
+                    arguments=arguments
+                )
+
+                if self.check_if_canceled("CodeExec execution"):
+                    return
+
+                # Process the result
+                if result.stderr:
+                    self.set_output("_ERROR", result.stderr)
+                    return
+
+                parsed_stdout = self._deserialize_stdout(result.stdout)
+                logging.info(f"[CodeExec]: Provider system -> {parsed_stdout}")
+                self._populate_outputs(parsed_stdout, result.stdout)
+                return
+
+            except (ImportError, RuntimeError) as provider_error:
+                # Provider system not available or not configured, fall back to HTTP
+                logging.info(f"[CodeExec]: Provider system not available, using HTTP fallback: {provider_error}")
+
+            # Fallback to direct HTTP request
             code_b64 = self._encode_code(code)
             code_req = CodeExecutionRequest(code_b64=code_b64, language=language, arguments=arguments).model_dump()
         except Exception as e:
             if self.check_if_canceled("CodeExec execution"):
-                return
+                return self.output()
 
             self.set_output("_ERROR", "construct code request error: " + str(e))
+            return self.output()
 
         try:
             if self.check_if_canceled("CodeExec execution"):
-                return "Task has been canceled"
+                self.set_output("_ERROR", "Task has been canceled")
+                return self.output()
 
             resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, timeout=int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
             logging.info(f"http://{settings.SANDBOX_HOST}:9385/run,  code_req: {code_req}, resp.status_code {resp.status_code}:")
@@ -174,17 +209,18 @@ class CodeExec(ToolBase, ABC):
                 stderr = body.get("stderr")
                 if stderr:
                     self.set_output("_ERROR", stderr)
-                    return
+                    return self.output()
                 raw_stdout = body.get("stdout", "")
                 parsed_stdout = self._deserialize_stdout(raw_stdout)
                 logging.info(f"[CodeExec]: http://{settings.SANDBOX_HOST}:9385/run -> {parsed_stdout}")
                 self._populate_outputs(parsed_stdout, raw_stdout)
             else:
                 self.set_output("_ERROR", "There is no response from sandbox")
+                return self.output()
 
         except Exception as e:
             if self.check_if_canceled("CodeExec execution"):
-                return
+                return self.output()
 
             self.set_output("_ERROR", "Exception executing code: " + str(e))
 
@@ -295,6 +331,8 @@ class CodeExec(ToolBase, ABC):
                 if key.startswith("_"):
                     continue
                 val = self._get_by_path(parsed_stdout, key)
+                if val is None and len(outputs_items) == 1:
+                    val = parsed_stdout
                 coerced = self._coerce_output_value(val, meta.get("type"))
                 logging.info(f"[CodeExec]: populate dict key='{key}' raw='{val}' coerced='{coerced}'")
                 self.set_output(key, coerced)

@@ -98,6 +98,7 @@ def message_fit_in(msg, max_length=4000):
 
 def kb_prompt(kbinfos, max_tokens, hash_id=False):
     from api.db.services.document_service import DocumentService
+    from api.db.services.doc_metadata_service import DocMetadataService
 
     knowledges = [get_value(ck, "content", "content_with_weight") for ck in kbinfos["chunks"]]
     kwlg_len = len(knowledges)
@@ -114,7 +115,12 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
             break
 
     docs = DocumentService.get_by_ids([get_value(ck, "doc_id", "document_id") for ck in kbinfos["chunks"][:chunks_num]])
-    docs = {d.id: d.meta_fields for d in docs}
+
+    docs_with_meta = {}
+    for d in docs:
+        meta = DocMetadataService.get_document_metadata(d.id)
+        docs_with_meta[d.id] = meta if meta else {}
+    docs = docs_with_meta
 
     def draw_node(k, line):
         if line is not None and not isinstance(line, str):
@@ -477,7 +483,7 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str) -> dict:
 
 
 async def gen_json(system_prompt: str, user_prompt: str, chat_mdl, gen_conf={}, max_retry=2):
-    from graphrag.utils import get_llm_cache, set_llm_cache
+    from rag.graphrag.utils import get_llm_cache, set_llm_cache
     cached = get_llm_cache(chat_mdl.llm_name, system_prompt, user_prompt, gen_conf)
     if cached:
         return json_repair.loads(cached)
