@@ -18,8 +18,7 @@ Unit tests for OceanBase health check and performance monitoring functionality.
 """
 import os
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from timeit import default_timer as timer
+from unittest.mock import Mock, patch
 
 from api.utils.health_utils import get_oceanbase_status, check_oceanbase_health
 from rag.utils.ob_conn import OBConnection

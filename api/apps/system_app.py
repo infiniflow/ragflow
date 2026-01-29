@@ -35,7 +35,7 @@ from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
 from quart import jsonify
-from api.utils.health_utils import run_health_checks, get_oceanbase_status, check_oceanbase_health
+from api.utils.health_utils import run_health_checks, get_oceanbase_status
 from common import settings
 
 
