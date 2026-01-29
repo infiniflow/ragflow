@@ -16,6 +16,7 @@
 """
 Unit tests for OceanBase health check and performance monitoring functionality.
 """
+import inspect
 import os
 import types
 import pytest
@@ -181,13 +182,19 @@ class TestOBConnectionPerformanceMetrics:
         class MockConn:
             pass
         conn = MockConn()
-        # Import the actual methods and bind them
-        from rag.utils.ob_conn import OBConnection as RealOBConnection
-        conn.get_performance_metrics = types.MethodType(RealOBConnection.get_performance_metrics, conn)
-        conn._get_storage_info = types.MethodType(RealOBConnection._get_storage_info, conn)
-        conn._get_connection_pool_stats = types.MethodType(RealOBConnection._get_connection_pool_stats, conn)
-        conn._get_slow_query_count = types.MethodType(RealOBConnection._get_slow_query_count, conn)
-        conn._estimate_qps = types.MethodType(RealOBConnection._estimate_qps, conn)
+        # Get the actual class from the singleton wrapper's closure
+        from rag.utils import ob_conn
+        # OBConnection is wrapped by @singleton decorator, so it's a function
+        # The original class is stored in the closure of the singleton function
+        # Access it via __closure__[0].cell_contents
+        ob_connection_class = ob_conn.OBConnection.__closure__[0].cell_contents
+        
+        # Bind the actual methods to our mock object
+        conn.get_performance_metrics = types.MethodType(ob_connection_class.get_performance_metrics, conn)
+        conn._get_storage_info = types.MethodType(ob_connection_class._get_storage_info, conn)
+        conn._get_connection_pool_stats = types.MethodType(ob_connection_class._get_connection_pool_stats, conn)
+        conn._get_slow_query_count = types.MethodType(ob_connection_class._get_slow_query_count, conn)
+        conn._estimate_qps = types.MethodType(ob_connection_class._estimate_qps, conn)
         return conn
     
     def test_get_performance_metrics_success(self):
