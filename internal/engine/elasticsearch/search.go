@@ -53,7 +53,24 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req interface{}) (inte
 	// Build search query
 	queryBody := make(map[string]interface{})
 	if searchReq.Query != nil {
-		queryBody["query"] = searchReq.Query
+		// Create a copy of the query map to avoid modifying the original
+		queryCopy := make(map[string]interface{})
+		for k, v := range searchReq.Query {
+			queryCopy[k] = v
+		}
+
+		// Check if this query contains a KNN component
+		if knnValue, ok := queryCopy["knn"]; ok {
+			// KNN queries should be at top level, not inside "query"
+			queryBody["knn"] = knnValue
+			// Remove the knn key from the copy
+			delete(queryCopy, "knn")
+		}
+
+		// If there are remaining query components after removing knn, add them under "query"
+		if len(queryCopy) > 0 {
+			queryBody["query"] = queryCopy
+		}
 	}
 	if searchReq.Size > 0 {
 		queryBody["size"] = searchReq.Size
@@ -77,9 +94,11 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req interface{}) (inte
 		return nil, fmt.Errorf("error encoding query: %w", err)
 	}
 
+	// query: {"query": {"bool": {"must": [{"query_string": {"fields": ["title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"], "type": "best_fields", "query": "((((rag OR (torment \"call on the carpet\" annoy tabloid tease ragtime)^0.2))^1.0)^5 OR (\"torment\" OR \"call on the carpet\" OR \"annoy\" OR \"tabloid\" OR \"teas\" OR \"ragtim\")^0.7)", "minimum_should_match": "30%", "boost": 1}}], "filter": [{"terms": {"kb_id": ["633f5749f0f011f0b06038a74640adcc"]}}, {"bool": {"must_not": [{"range": {"available_int": {"lt": 1}}}]}}], "boost": 0.050000000000000044}}, "knn": {"field": "q_1024_vec", "k": 1024, "num_candidates": 2048, "query_vector": [], "filter": {"bool": {"must": [{"query_string": {"fields": ["title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"], "type": "best_fields", "query": "((((rag OR (torment \"call on the carpet\" annoy tabloid tease ragtime)^0.2))^1.0)^5 OR (\"torment\" OR \"call on the carpet\" OR \"annoy\" OR \"tabloid\" OR \"teas\" OR \"ragtim\")^0.7)", "minimum_should_match": "30%", "boost": 1}}], "filter": [{"terms": {"kb_id": ["633f5749f0f011f0b06038a74640adcc"]}}, {"bool": {"must_not": [{"range": {"available_int": {"lt": 1}}}]}}], "boost": 0.050000000000000044}}, "similarity": 0.2}, "from": 0, "size": 90}
+
 	// Log search details
 	logger.Debug("Elasticsearch searching indices", zap.Strings("indices", searchReq.IndexNames))
-	logger.Debug("Elasticsearch DSL", zap.String("dsl", buf.String()))
+	logger.Debug("Elasticsearch DSL", zap.Any("dsl", queryBody))
 
 	// Build search request
 	reqES := esapi.SearchRequest{
@@ -101,7 +120,7 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req interface{}) (inte
 		} else {
 			logger.Warn("Elasticsearch error response", zap.String("body", string(bodyBytes)))
 		}
-		return nil, fmt.Errorf("elasticsearch returned error: %s", res.Status())
+		return nil, fmt.Errorf("Elasticsearch returned error: %s", res.Status())
 	}
 
 	// Parse response
@@ -117,7 +136,7 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req interface{}) (inte
 func BuildMatchTextQuery(fields []string, text string, fuzziness string) map[string]interface{} {
 	query := map[string]interface{}{
 		"multi_match": map[string]interface{}{
-			"query": text,
+			"query":  text,
 			"fields": fields,
 		},
 	}

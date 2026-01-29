@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -52,6 +54,7 @@ type RetrievalTestRequest struct {
 	Keyword                *bool                  `json:"keyword,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+	TenantIDs              []string               `json:"tenant_ids,omitempty"`
 }
 
 // RetrievalTestResponse retrieval test response
@@ -151,6 +154,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		zap.String("userID", userID),
 		zap.Int("ownerTenantCount", len(ownerTenants)))
 
+	req.TenantIDs = tenantIDs
 	// Choose target tenant: prioritize owner tenant if available in tenantIDs
 	targetTenantID := tenantIDs[0]
 
@@ -183,7 +187,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 // elasticsearchRetrieval Elasticsearch retrieval implementation
 func (s *ChunkService) elasticsearchRetrieval(ctx context.Context, req *RetrievalTestRequest, vector []float64) (*RetrievalTestResponse, error) {
 	// Build index name list (based on kb_id)
-	indexNames := buildIndexNames(req.KbID)
+	indexNames := buildIndexNames(req.TenantIDs)
 
 	// Build search request
 	searchReq := &elasticsearch.SearchRequest{
@@ -193,13 +197,19 @@ func (s *ChunkService) elasticsearchRetrieval(ctx context.Context, req *Retrieva
 	}
 
 	// Build knn query using the pre-generated embedding vector
+	dimensionStr := strconv.Itoa(len(vector))
+	var fieldBuilder strings.Builder
+	fieldBuilder.WriteString("q_")
+	fieldBuilder.WriteString(dimensionStr)
+	fieldBuilder.WriteString("_vec")
+	fieldName := fieldBuilder.String()
 	topK := getTopK(req.TopK)
 	searchReq.Query = map[string]interface{}{
 		"knn": map[string]interface{}{
-			"field":          "embedding",
+			"field":          fieldName,
 			"query_vector":   vector,
 			"k":              topK,
-			"num_candidates": topK * 10, // Ensure enough candidates
+			"num_candidates": topK, // Ensure enough candidates
 		},
 	}
 
@@ -269,10 +279,13 @@ func (s *ChunkService) infinityRetrieval(ctx context.Context, req *RetrievalTest
 }
 
 // buildIndexNames builds ES index name list
-func buildIndexNames(kbID interface{}) []string {
-	// TODO: Build actual index names based on kb_id
-	// Simplified for now
-	return []string{"chunks"}
+func buildIndexNames(tenantIDs []string) []string {
+	indexNames := make([]string, len(tenantIDs))
+	for i, tenantID := range tenantIDs {
+		indexNames[i] = fmt.Sprintf("ragflow_%s", tenantID)
+	}
+
+	return indexNames
 }
 
 // buildTableName builds Infinity table name
