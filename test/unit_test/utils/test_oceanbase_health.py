@@ -175,11 +175,26 @@ class TestOceanBaseHealthCheck:
 class TestOBConnectionPerformanceMetrics:
     """Test cases for OBConnection performance metrics methods."""
     
-    @patch.object(OBConnection, '__init__', lambda self: None)
+    def _create_mock_connection(self):
+        """Create a mock OBConnection with actual methods."""
+        # Create a simple object and bind the real methods to it
+        class MockConn:
+            pass
+        conn = MockConn()
+        # Import the actual methods and bind them
+        from rag.utils.ob_conn import OBConnection as RealOBConnection
+        import types
+        conn.get_performance_metrics = types.MethodType(RealOBConnection.get_performance_metrics, conn)
+        conn._get_storage_info = types.MethodType(RealOBConnection._get_storage_info, conn)
+        conn._get_connection_pool_stats = types.MethodType(RealOBConnection._get_connection_pool_stats, conn)
+        conn._get_slow_query_count = types.MethodType(RealOBConnection._get_slow_query_count, conn)
+        conn._estimate_qps = types.MethodType(RealOBConnection._estimate_qps, conn)
+        return conn
+    
     def test_get_performance_metrics_success(self):
         """Test successful retrieval of performance metrics."""
-        # Create connection instance with mocked __init__
-        conn = OBConnection()
+        # Create mock connection with actual methods
+        conn = self._create_mock_connection()
         mock_client = Mock()
         conn.client = mock_client
         conn.uri = "localhost:2881"
@@ -239,11 +254,10 @@ class TestOBConnectionPerformanceMetrics:
         assert "storage_used" in result
         assert "storage_total" in result
     
-    @patch.object(OBConnection, '__init__', lambda self: None)
     def test_get_performance_metrics_connection_error(self):
         """Test performance metrics when connection fails."""
-        # Create connection instance with mocked __init__
-        conn = OBConnection()
+        # Create mock connection with actual methods
+        conn = self._create_mock_connection()
         mock_client = Mock()
         conn.client = mock_client
         conn.uri = "localhost:2881"
@@ -256,11 +270,10 @@ class TestOBConnectionPerformanceMetrics:
         assert result["connection"] == "disconnected"
         assert "error" in result
     
-    @patch.object(OBConnection, '__init__', lambda self: None)
     def test_get_storage_info_success(self):
         """Test successful retrieval of storage information."""
-        # Create connection instance with mocked __init__
-        conn = OBConnection()
+        # Create mock connection with actual methods
+        conn = self._create_mock_connection()
         mock_client = Mock()
         conn.client = mock_client
         conn.db_name = "test"
@@ -286,11 +299,10 @@ class TestOBConnectionPerformanceMetrics:
         assert "storage_total" in result
         assert "MB" in result["storage_used"]
     
-    @patch.object(OBConnection, '__init__', lambda self: None)
     def test_get_storage_info_fallback(self):
         """Test storage info with fallback when total space unavailable."""
-        # Create connection instance with mocked __init__
-        conn = OBConnection()
+        # Create mock connection with actual methods
+        conn = self._create_mock_connection()
         mock_client = Mock()
         conn.client = mock_client
         conn.db_name = "test"
@@ -312,11 +324,10 @@ class TestOBConnectionPerformanceMetrics:
         assert "storage_used" in result
         assert "storage_total" in result
     
-    @patch.object(OBConnection, '__init__', lambda self: None)
     def test_get_connection_pool_stats(self):
         """Test retrieval of connection pool statistics."""
-        # Create connection instance with mocked __init__
-        conn = OBConnection()
+        # Create mock connection with actual methods
+        conn = self._create_mock_connection()
         mock_client = Mock()
         conn.client = mock_client
         conn.logger = Mock()
@@ -346,11 +357,10 @@ class TestOBConnectionPerformanceMetrics:
         assert "max_connections" in result
         assert result["active_connections"] >= 0
     
-    @patch.object(OBConnection, '__init__', lambda self: None)
     def test_get_slow_query_count(self):
         """Test retrieval of slow query count."""
-        # Create connection instance with mocked __init__
-        conn = OBConnection()
+        # Create mock connection with actual methods
+        conn = self._create_mock_connection()
         mock_client = Mock()
         conn.client = mock_client
         conn.logger = Mock()
@@ -364,11 +374,10 @@ class TestOBConnectionPerformanceMetrics:
         assert isinstance(result, int)
         assert result >= 0
     
-    @patch.object(OBConnection, '__init__', lambda self: None)
     def test_estimate_qps(self):
         """Test QPS estimation."""
-        # Create connection instance with mocked __init__
-        conn = OBConnection()
+        # Create mock connection with actual methods
+        conn = self._create_mock_connection()
         mock_client = Mock()
         conn.client = mock_client
         conn.logger = Mock()
