@@ -239,8 +239,7 @@ jobs:
           set -euo pipefail
           source .venv/bin/activate
 
-          export http_proxy=""; export https_proxy=""; export no_proxy="";
-          export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
+          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
 
           EMAIL="ci-${GITHUB_RUN_ID}@example.com"
           PASS="ci-pass-${GITHUB_RUN_ID}"
@@ -287,10 +286,16 @@ jobs:
           source docker/.env
           set +a
 
+          HOST_ADDRESS="http://host.docker.internal:${SVR_HTTP_PORT}"
           USER_HOST="$(echo "${HOST_ADDRESS}" | sed -E 's#^https?://([^:/]+).*#\1#')"
           USER_PORT="${SVR_HTTP_PORT}"
           ADMIN_HOST="${USER_HOST}"
           ADMIN_PORT="${ADMIN_SVR_HTTP_PORT}"
+
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
+            echo "Waiting for service to be available..."
+            sleep 5
+          done
 
           admin_ready=0
           for i in $(seq 1 30); do
