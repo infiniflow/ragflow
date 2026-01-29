@@ -25,12 +25,12 @@ from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
 from common.misc_utils import get_uuid
 from common.connection_utils import timeout
-from graphrag.entity_resolution import EntityResolution
-from graphrag.general.community_reports_extractor import CommunityReportsExtractor
-from graphrag.general.extractor import Extractor
-from graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
-from graphrag.light.graph_extractor import GraphExtractor as LightKGExt
-from graphrag.utils import (
+from rag.graphrag.entity_resolution import EntityResolution
+from rag.graphrag.general.community_reports_extractor import CommunityReportsExtractor
+from rag.graphrag.general.extractor import Extractor
+from rag.graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
+from rag.graphrag.light.graph_extractor import GraphExtractor as LightKGExt
+from rag.graphrag.utils import (
     GraphChange,
     chunk_id,
     does_graph_contains,
