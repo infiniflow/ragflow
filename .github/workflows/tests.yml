@@ -248,7 +248,7 @@ jobs:
         run: |
           sed -i '1i DOC_ENGINE=infinity' docker/.env
           # Patch entrypoint.sh for coverage
-          sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n        "$PY" -m pip install coverage\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' docker/entrypoint.sh
+          sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' docker/entrypoint.sh
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
 
       - name: Run sdk tests against Infinity
