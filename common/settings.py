@@ -317,7 +317,7 @@ def init_settings():
 
     global retriever, kg_retriever
     retriever = search.Dealer(docStoreConn)
-    from graphrag import search as kg_search
+    from rag.graphrag import search as kg_search
 
     kg_retriever = kg_search.KGSearch(docStoreConn)
 
