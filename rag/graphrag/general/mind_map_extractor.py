@@ -21,9 +21,9 @@ import re
 from typing import Any
 from dataclasses import dataclass
 
-from graphrag.general.extractor import Extractor
-from graphrag.general.mind_map_prompt import MIND_MAP_EXTRACTION_PROMPT
-from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, chat_limiter
+from rag.graphrag.general.extractor import Extractor
+from rag.graphrag.general.mind_map_prompt import MIND_MAP_EXTRACTION_PROMPT
+from rag.graphrag.utils import ErrorHandlerFn, perform_variable_replacements, chat_limiter
 from rag.llm.chat_model import Base as CompletionLLM
 import markdown_to_json
 from functools import reduce

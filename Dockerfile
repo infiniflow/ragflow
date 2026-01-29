@@ -192,10 +192,8 @@ COPY conf conf
 COPY deepdoc deepdoc
 COPY rag rag
 COPY agent agent
-COPY graphrag graphrag
 COPY pyproject.toml uv.lock ./
 COPY mcp mcp
-COPY plugin plugin
 COPY common common
 COPY memory memory
 

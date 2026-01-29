@@ -23,7 +23,7 @@ RAGFlow将会从`embedded_plugins`子文件夹中递归加载所有的插件。
 当你启动RAGFlow时，你会在日志中看见你的插件被加载了：
 
 ```
-2025-05-15 19:29:08,959 INFO     34670 Recursively importing plugins from path `/some-path/ragflow/plugin/embedded_plugins`
+2025-05-15 19:29:08,959 INFO     34670 Recursively importing plugins from path `/some-path/ragflow/agent/plugin/embedded_plugins`
 2025-05-15 19:29:08,960 INFO     34670 Loaded llm_tools plugin BadCalculatorPlugin version 1.0.0
 ```
 
