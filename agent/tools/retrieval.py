@@ -38,6 +38,8 @@ class RetrievalParam(ToolParamBase):
     Define the Retrieval component parameters.
     """
 
+    _DEFAULT_EMPTY_RESPONSE = 'You should return "This information is not available in the knowledge base"'
+
     def __init__(self):
         self.meta:ToolMeta = {
             "name": "search_my_dateset",
@@ -62,7 +64,7 @@ class RetrievalParam(ToolParamBase):
         self.memory_ids = []
         self.kb_vars = []
         self.rerank_id = ""
-        self.empty_response = ""
+        self.empty_response = self._DEFAULT_EMPTY_RESPONSE
         self.use_kg = False
         self.cross_languages = []
         self.toc_enhance = False
@@ -72,6 +74,8 @@ class RetrievalParam(ToolParamBase):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
         self.check_decimal_float(self.keywords_similarity_weight, "[Retrieval] Keyword similarity weight")
         self.check_positive_number(self.top_n, "[Retrieval] Top N")
+        if not self.empty_response:
+            self.empty_response = self._DEFAULT_EMPTY_RESPONSE
 
     def get_input_form(self) -> dict[str, dict]:
         return {
