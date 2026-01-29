@@ -816,7 +816,7 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         'Ähnlich wie die Präsenzstrafe reduziert dies die Tendenz des Modells, dieselben Wörter häufig zu wiederholen.',
       maxTokens: 'Maximale Tokens',
       maxTokensMessage: 'Maximale Tokens sind erforderlich',
-      maxTokensTip: `Die maximale Kontextgröße des Agenten; ein ungültiger oder falscher Wert führt zu einem Fehler. Standardmäßig 512.`,
+      maxTokensTip: `Die maximale Kontextgröße des Modell; ein ungültiger oder falscher Wert führt zu einem Fehler. Standardmäßig 512.`,
       maxTokensInvalidMessage:
         'Bitte geben Sie eine gültige Zahl für Maximale Tokens ein.',
       maxTokensMinMessage: 'Maximale Tokens können nicht weniger als 0 sein.',
@@ -1066,7 +1066,7 @@ Beispiel: Virtual Hosted Style`,
         'Aktualisieren Sie hier Ihr Foto und Ihre persönlichen Daten.',
       maxTokens: 'Maximale Tokens',
       maxTokensMessage: 'Maximale Tokens sind erforderlich',
-      maxTokensTip: `Die maximale Kontextgröße des Agenten; ein ungültiger oder falscher Wert führt zu einem Fehler. Standardmäßig 512.`,
+      maxTokensTip: `Die maximale Kontextgröße des Modell; ein ungültiger oder falscher Wert führt zu einem Fehler. Standardmäßig 512.`,
       maxTokensInvalidMessage:
         'Bitte geben Sie eine gültige Zahl für Maximale Tokens ein.',
       maxTokensMinMessage: 'Maximale Tokens können nicht weniger als 0 sein.',
