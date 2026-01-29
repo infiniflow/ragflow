@@ -16,6 +16,7 @@
 """
 Unit tests for OceanBase health check and performance monitoring functionality.
 """
+import inspect
 import os
 import types
 import pytest
@@ -183,10 +184,20 @@ class TestOBConnectionPerformanceMetrics:
         conn = MockConn()
         # Get the actual class from the singleton wrapper's closure
         from rag.utils import ob_conn
+        import inspect
         # OBConnection is wrapped by @singleton decorator, so it's a function
         # The original class is stored in the closure of the singleton function
-        # Access it via __closure__[0].cell_contents
-        ob_connection_class = ob_conn.OBConnection.__closure__[0].cell_contents
+        # Find the class by checking all closure cells
+        ob_connection_class = None
+        if hasattr(ob_conn.OBConnection, '__closure__') and ob_conn.OBConnection.__closure__:
+            for cell in ob_conn.OBConnection.__closure__:
+                cell_value = cell.cell_contents
+                if inspect.isclass(cell_value):
+                    ob_connection_class = cell_value
+                    break
+        
+        if ob_connection_class is None:
+            raise ValueError("Could not find OBConnection class in closure")
         
         # Bind the actual methods to our mock object
         conn.get_performance_metrics = types.MethodType(ob_connection_class.get_performance_metrics, conn)
