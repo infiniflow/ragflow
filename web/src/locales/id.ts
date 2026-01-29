@@ -418,7 +418,7 @@ export default {
         'Mirip dengan penalti kehadiran, ini mengurangi kecenderungan model untuk mengulangi kata yang sama secara sering.',
       maxTokens: 'Token Maksimum',
       maxTokensMessage: 'Token Maksimum diperlukan',
-      maxTokensTip: `Ukuran konteks maksimum agen; nilai yang tidak valid atau salah akan menyebabkan kesalahan. Default 512.`,
+      maxTokensTip: `Ukuran konteks maksimum model; nilai yang tidak valid atau salah akan menyebabkan kesalahan. Default 512.`,
       maxTokensInvalidMessage:
         'Silakan masukkan angka yang valid untuk Max Tokens.',
       maxTokensMinMessage: 'Max Tokens tidak boleh kurang dari 0.',
@@ -475,7 +475,7 @@ export default {
       profileDescription: 'Perbarui foto dan detail pribadi Anda di sini.',
       maxTokens: 'Token Maksimum',
       maxTokensMessage: 'Token Maksimum diperlukan',
-      maxTokensTip: `Ukuran konteks maksimum agen; nilai yang tidak valid atau salah akan menyebabkan kesalahan. Default 512.`,
+      maxTokensTip: `Ukuran konteks maksimum model; nilai yang tidak valid atau salah akan menyebabkan kesalahan. Default 512.`,
       maxTokensInvalidMessage:
         'Silakan masukkan angka yang valid untuk Max Tokens.',
       maxTokensMinMessage: 'Max Tokens tidak boleh kurang dari 0.',
