@@ -105,9 +105,33 @@ func (qb *QueryBuilder) AddSpaceBetweenEngZh(txt string) string {
 	return txt
 }
 
+// StrFullWidth2HalfWidth converts full-width characters to half-width characters.
+// Algorithm: For each character:
+// - Full-width space (U+3000) is converted to half-width space (U+0020).
+// - For other characters, subtract 0xFEE0 from its code point.
+// - If the resulting code point is not in the half-width character range (0x0020 to 0x7E),
+//   the original character is kept.
+func (qb *QueryBuilder) StrFullWidth2HalfWidth(ustring string) string {
+	var rstring strings.Builder
+	for _, uchar := range ustring {
+		insideCode := int32(uchar)
+		if insideCode == 0x3000 {
+			insideCode = 0x0020
+		} else {
+			insideCode -= 0xFEE0
+		}
+		if insideCode < 0x0020 || insideCode > 0x7E {
+			rstring.WriteRune(uchar)
+		} else {
+			rstring.WriteRune(insideCode)
+		}
+	}
+	return rstring.String()
+}
+
 // Question builds a full-text query expression based on input text.
 // References Python FulltextQueryer.question method.
-// Currently a simplified version, returns basic MatchTextExpr; future integration of term weight and synonyms.
+// Currently, a simplified version, returns basic MatchTextExpr; future integration of term weight and synonyms.
 func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*infinity.MatchTextExpr, []string) {
 	originalQuery := txt
 	// Add space between English and Chinese

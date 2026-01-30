@@ -163,6 +163,38 @@ func TestQueryBuilder_AddSpaceBetweenEngZh(t *testing.T) {
 	}
 }
 
+func TestQueryBuilder_StrFullWidth2HalfWidth(t *testing.T) {
+	qb := NewQueryBuilder()
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"Empty", "", ""},
+		{"Half-width remains", "hello world 123", "hello world 123"},
+		{"Full-width uppercase", "ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ", "ABCDEFGHIJKLMNOPQRSTUVWXYZ"},
+		{"Full-width lowercase", "ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ", "abcdefghijklmnopqrstuvwxyz"},
+		{"Full-width digits", "０１２３４５６７８９", "0123456789"},
+		{"Full-width punctuation", "！＂＃＄％＆＇（）＊＋，－．／：；＜＝＞？＠［＼］＾＿｀｛｜｝～", "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"},
+		{"Full-width space", "　", " "},
+		{"Mixed full-width and half-width", "Ｈｅｌｌｏ　Ｗｏｒｌｄ！123", "Hello World!123"},
+		{"Chinese characters unchanged", "你好世界", "你好世界"},
+		{"Japanese characters unchanged", "こんにちは", "こんにちは"},
+		{"Korean characters unchanged", "안녕하세요", "안녕하세요"},
+		{"Full-width symbols outside range", "＠＠＠", "@@@"}, // Actually full-width '@' is U+FF20 which maps to U+0040
+		{"Edge case: character just below range", "\u001F", "\u001F"}, // U+001F is < 0x0020, should remain
+		{"Edge case: character just above range", "\u007F", "\u007F"}, // U+007F is > 0x7E, should remain
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := qb.StrFullWidth2HalfWidth(tt.input)
+			if result != tt.expected {
+				t.Errorf("StrFullWidth2HalfWidth(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestQueryBuilder_Question(t *testing.T) {
 	qb := NewQueryBuilder()
 	tests := []struct {
