@@ -17,6 +17,7 @@
 
 # Standard library imports
 import base64
+import logging
 import re
 import shutil
 import subprocess
@@ -27,6 +28,8 @@ from io import BytesIO
 
 import pdfplumber
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 # Local imports
 from api.constants import IMG_BASE64_PREFIX
@@ -56,41 +59,92 @@ def filename_type(filename):
 
 def thumbnail_img(filename, blob):
     """
-    MySQL LongText max length is 65535
+    Generate a thumbnail image for the given file. Returns raw PNG bytes or None on failure.
+    MySQL LongText max length is 65535; thumbnail is kept under that limit.
+
+    Robustness and edge cases:
+    - None or empty blob/filename returns None.
+    - Corrupt or unreadable PDF/image files are caught and return None instead of raising.
+    - PDF with zero pages is handled without raising IndexError.
+    - PDF and image resources are always closed (try/finally) to avoid leaks.
     """
-    filename = filename.lower()
-    if re.match(r".*\.pdf$", filename):
-        with sys.modules[LOCK_KEY_pdfplumber]:
-            pdf = pdfplumber.open(BytesIO(blob))
+    if blob is None or (isinstance(blob, (bytes, bytearray)) and len(blob) == 0):
+        logger.debug("thumbnail_img: skipping empty or None blob")
+        return None
+    if filename is None or not isinstance(filename, str) or not filename.strip():
+        logger.debug("thumbnail_img: skipping invalid or empty filename")
+        return None
 
-            buffered = BytesIO()
-            resolution = 32
-            img = None
-            for _ in range(10):
-                # https://github.com/jsvine/pdfplumber?tab=readme-ov-file#creating-a-pageimage-with-to_image
-                pdf.pages[0].to_image(resolution=resolution).annotated.save(buffered, format="png")
-                img = buffered.getvalue()
-                if len(img) >= 64000 and resolution >= 2:
-                    resolution = resolution / 2
-                    buffered = BytesIO()
-                else:
-                    break
-        pdf.close()
-        return img
+    try:
+        blob_bytes = bytes(blob) if not isinstance(blob, bytes) else blob
+    except (TypeError, ValueError):
+        logger.warning("thumbnail_img: blob is not bytes-like")
+        return None
 
-    elif re.match(r".*\.(jpg|jpeg|png|tif|gif|icon|ico|webp)$", filename):
-        image = Image.open(BytesIO(blob))
-        image.thumbnail((30, 30))
-        buffered = BytesIO()
-        image.save(buffered, format="png")
-        return buffered.getvalue()
+    filename_lower = filename.lower().strip()
 
-    elif re.match(r".*\.(ppt|pptx)$", filename):
-        import aspose.pydrawing as drawing
-        import aspose.slides as slides
-
+    if re.match(r".*\.pdf$", filename_lower):
+        pdf = None
         try:
-            with slides.Presentation(BytesIO(blob)) as presentation:
+            with sys.modules[LOCK_KEY_pdfplumber]:
+                pdf = pdfplumber.open(BytesIO(blob_bytes))
+                if not pdf.pages:
+                    logger.warning("thumbnail_img: PDF has no pages")
+                    return None
+                buffered = BytesIO()
+                resolution = 32
+                img = None
+                for _ in range(10):
+                    # https://github.com/jsvine/pdfplumber?tab=readme-ov-file#creating-a-pageimage-with-to_image
+                    pdf.pages[0].to_image(resolution=resolution).annotated.save(buffered, format="png")
+                    img = buffered.getvalue()
+                    if len(img) >= 64000 and resolution >= 2:
+                        resolution = resolution / 2
+                        buffered = BytesIO()
+                    else:
+                        break
+                return img
+        except (IndexError, KeyError) as e:
+            logger.warning("thumbnail_img: PDF structure error (e.g. no pages): %s", e)
+            return None
+        except Exception as e:
+            logger.warning("thumbnail_img: PDF thumbnail failed: %s", e)
+            return None
+        finally:
+            if pdf is not None:
+                try:
+                    pdf.close()
+                except Exception as e:
+                    logger.debug("thumbnail_img: error closing PDF: %s", e)
+
+    if re.match(r".*\.(jpg|jpeg|png|tif|gif|icon|ico|webp)$", filename_lower):
+        try:
+            image = Image.open(BytesIO(blob_bytes))
+            image.load()
+        except OSError as e:
+            logger.warning("thumbnail_img: corrupt or unsupported image: %s", e)
+            return None
+        except Exception as e:
+            logger.warning("thumbnail_img: image open failed: %s", e)
+            return None
+        try:
+            image.thumbnail((30, 30))
+            buffered = BytesIO()
+            image.save(buffered, format="png")
+            return buffered.getvalue()
+        except Exception as e:
+            logger.warning("thumbnail_img: image thumbnail/save failed: %s", e)
+            return None
+
+    if re.match(r".*\.(ppt|pptx)$", filename_lower):
+        try:
+            import aspose.pydrawing as drawing
+            import aspose.slides as slides
+
+            with slides.Presentation(BytesIO(blob_bytes)) as presentation:
+                if not presentation.slides or len(presentation.slides) == 0:
+                    logger.warning("thumbnail_img: presentation has no slides")
+                    return None
                 buffered = BytesIO()
                 scale = 0.03
                 img = None
@@ -104,8 +158,8 @@ def thumbnail_img(filename, blob):
                     else:
                         break
                 return img
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("thumbnail_img: ppt/pptx thumbnail failed: %s", e)
     return None
 
 
@@ -118,52 +172,110 @@ def thumbnail(filename, blob):
 
 
 def repair_pdf_with_ghostscript(input_bytes):
-    if shutil.which("gs") is None:
+    """
+    Attempt to repair potentially broken PDF bytes using Ghostscript.
+
+    Robustness and edge cases:
+    - None or non-bytes input is returned unchanged; empty bytes return as-is.
+    - If Ghostscript is not installed or subprocess fails, original input_bytes is returned.
+    - Temp files are always cleaned up (context manager); no partial output on exception.
+    """
+    if input_bytes is None:
+        return None
+    if not isinstance(input_bytes, (bytes, bytearray)):
+        logger.warning("repair_pdf_with_ghostscript: expected bytes, got %s", type(input_bytes).__name__)
+        return input_bytes
+    if len(input_bytes) == 0:
         return input_bytes
 
-    with tempfile.NamedTemporaryFile(suffix=".pdf") as temp_in, tempfile.NamedTemporaryFile(suffix=".pdf") as temp_out:
-        temp_in.write(input_bytes)
-        temp_in.flush()
+    if shutil.which("gs") is None:
+        logger.debug("repair_pdf_with_ghostscript: gs not found, returning input unchanged")
+        return input_bytes
 
-        cmd = [
-            "gs",
-            "-o",
-            temp_out.name,
-            "-sDEVICE=pdfwrite",
-            "-dPDFSETTINGS=/prepress",
-            temp_in.name,
-        ]
-        try:
-            proc = subprocess.run(cmd, capture_output=True, text=True)
-            if proc.returncode != 0:
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as temp_in, tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as temp_out:
+            temp_in.write(input_bytes)
+            temp_in.flush()
+
+            cmd = [
+                "gs",
+                "-o",
+                temp_out.name,
+                "-sDEVICE=pdfwrite",
+                "-dPDFSETTINGS=/prepress",
+                temp_in.name,
+            ]
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            except subprocess.TimeoutExpired:
+                logger.warning("repair_pdf_with_ghostscript: gs timed out")
                 return input_bytes
-        except Exception:
-            return input_bytes
+            except Exception as e:
+                logger.warning("repair_pdf_with_ghostscript: subprocess error: %s", e)
+                return input_bytes
 
-        temp_out.seek(0)
-        repaired_bytes = temp_out.read()
+            if proc.returncode != 0:
+                if proc.stderr:
+                    logger.debug("repair_pdf_with_ghostscript: gs non-zero exit %s: %s", proc.returncode, proc.stderr[:200])
+                return input_bytes
 
-    return repaired_bytes
+            temp_out.seek(0)
+            repaired_bytes = temp_out.read()
+            if not repaired_bytes:
+                logger.warning("repair_pdf_with_ghostscript: gs produced empty output")
+                return input_bytes
+            return repaired_bytes
+    except OSError as e:
+        logger.warning("repair_pdf_with_ghostscript: temp file or read error: %s", e)
+        return input_bytes
+    except Exception as e:
+        logger.warning("repair_pdf_with_ghostscript: unexpected error: %s", e)
+        return input_bytes
+
+
+def _pdf_try_open(blob):
+    """Return True if blob can be opened as a PDF with at least one page."""
+    if blob is None or (isinstance(blob, (bytes, bytearray)) and len(blob) == 0):
+        return False
+    try:
+        buf = BytesIO(blob) if isinstance(blob, (bytes, bytearray)) else BytesIO(bytes(blob))
+    except (TypeError, ValueError):
+        return False
+    try:
+        with pdfplumber.open(buf) as pdf:
+            return bool(pdf.pages)
+    except Exception:
+        return False
 
 
 def read_potential_broken_pdf(blob):
-    def try_open(blob):
-        try:
-            with pdfplumber.open(BytesIO(blob)) as pdf:
-                if pdf.pages:
-                    return True
-        except Exception:
-            return False
-        return False
+    """
+    Return a readable PDF byte sequence, attempting Ghostscript repair if initial open fails.
 
-    if try_open(blob):
+    Robustness and edge cases:
+    - None blob returns None; empty bytes return empty bytes.
+    - Non-bytes-like blob is normalized to bytes where possible; otherwise returned unchanged.
+    - Repair is only attempted when blob is bytes-like and open fails; repair output is validated.
+    """
+    if blob is None:
+        return None
+    if isinstance(blob, (bytes, bytearray)) and len(blob) == 0:
         return blob
 
-    repaired = repair_pdf_with_ghostscript(blob)
-    if try_open(repaired):
+    try:
+        blob_bytes = bytes(blob) if not isinstance(blob, bytes) else blob
+    except (TypeError, ValueError):
+        logger.warning("read_potential_broken_pdf: blob is not bytes-like, returning as-is")
+        return blob
+
+    if _pdf_try_open(blob_bytes):
+        return blob_bytes
+
+    repaired = repair_pdf_with_ghostscript(blob_bytes)
+    if repaired is not None and repaired is not blob_bytes and _pdf_try_open(repaired):
         return repaired
 
-    return blob
+    return blob_bytes
 
 
 def sanitize_path(raw_path: str | None) -> str:
