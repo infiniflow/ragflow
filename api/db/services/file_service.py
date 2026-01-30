@@ -442,11 +442,13 @@ class FileService(CommonService):
             doc_id = file.id if hasattr(file, "id") else get_uuid()
             e, doc = DocumentService.get_by_id(doc_id)
             if e:
+                # Document exists - update content and add to files for re-parsing
                 blob = file.read()
                 settings.STORAGE_IMPL.put(kb.id, doc.location, blob, kb.tenant_id)
                 doc.size = len(blob)
                 doc = doc.to_dict()
                 DocumentService.update_by_id(doc["id"], doc)
+                files.append((doc, blob))
                 continue
             try:
                 DocumentService.check_doc_health(kb.tenant_id, file.filename)

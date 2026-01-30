@@ -646,6 +646,8 @@ class DocumentService(CommonService):
                 cls.model.kb_id,
                 cls.model.parser_id,
                 cls.model.parser_config,
+                cls.model.update_time,  # Include update_time to invalidate cache when content changes
+                cls.model.size,  # Include size as additional content change indicator
                 Knowledgebase.language,
                 Knowledgebase.embd_id,
                 Tenant.id.alias("tenant_id"),
