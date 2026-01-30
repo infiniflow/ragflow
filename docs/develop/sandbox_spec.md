@@ -145,7 +145,7 @@ Wraps the existing executor_manager implementation.
 **Security**: gVisor (runsc runtime), seccomp, read-only filesystem, memory limits
 
 **Advantages**:
-- Low latency (<90ms), data privacy, full control
+- Low latency (&lt;90ms), data privacy, full control
 - No per-execution costs
 - Supports `arguments` parameter for passing data to `main()` function
 
@@ -177,7 +177,7 @@ SaaS integration with Aliyun Function Compute Code Interpreter service using the
 **Configuration**:
 - `access_key_id`: Aliyun AccessKey ID
 - `access_key_secret`: Aliyun AccessKey Secret
-- `account_id`: Aliyun primary account ID (主账号ID) - Required for API calls
+- `account_id`: Aliyun primary account ID - Required for API calls
 - `region`: Region (cn-hangzhou, cn-beijing, cn-shanghai, cn-shenzhen, cn-guangzhou)
 - `template_name`: Optional sandbox template name for pre-configured environments
 - `timeout`: Execution timeout (max 30 seconds - hard limit)
