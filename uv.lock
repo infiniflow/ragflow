@@ -1097,6 +1097,19 @@ wheels = [
 ]
 
 [[package]]
+name = "codecov"
+version = "2.1.13"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "coverage" },
+    { name = "requests" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/2c/bb/594b26d2c85616be6195a64289c578662678afa4910cef2d3ce8417cf73e/codecov-2.1.13.tar.gz", hash = "sha256:2362b685633caeaf45b9951a9b76ce359cd3581dd515b430c6c3f5dfb4d92a8c", size = 21416, upload-time = "2023-04-17T23:11:39.779Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/af/02/18785edcdf6266cdd6c6dc7635f1cbeefd9a5b4c3bb8aff8bd681e9dd095/codecov-2.1.13-py2.py3-none-any.whl", hash = "sha256:c2ca5e51bba9ebb43644c43d0690148a55086f7f5e6fd36170858fa4206744d5", size = 16512, upload-time = "2023-04-17T23:11:37.344Z" },
+]
+
+[[package]]
 name = "cohere"
 version = "5.6.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -6223,6 +6236,7 @@ dependencies = [
 
 [package.dev-dependencies]
 test = [
+    { name = "codecov" },
     { name = "hypothesis" },
     { name = "openpyxl" },
     { name = "pillow" },
@@ -6357,6 +6371,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 test = [
+    { name = "codecov", specifier = ">=2.1.13" },
     { name = "hypothesis", specifier = ">=6.132.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pillow", specifier = ">=10.4.0,<13.0.0" },
