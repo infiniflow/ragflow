@@ -249,6 +249,8 @@ class Connector2KbService(CommonService):
 
     @classmethod
     def link_connectors(cls, kb_id:str, connectors: list[dict], tenant_id:str):
+        from common.constants import FileSource
+        
         arr = cls.query(kb_id=kb_id)
         old_conn_ids = [a.connector_id for a in arr]
         connector_ids = []
@@ -264,6 +266,17 @@ class Connector2KbService(CommonService):
                 "kb_id": kb_id,
                 "auto_parse": conn.get("auto_parse", "1")
             })
+            
+            # Check if this is a Paperless NGX connector
+            # For Paperless NGX, skip initial reindex to avoid startup sync
+            # It will sync based on polling schedule when changes are detected
+            e, connector_obj = ConnectorService.get_by_id(conn_id)
+            if e and connector_obj.source == FileSource.PAPERLESS_NGX:
+                # Skip automatic scheduling for Paperless NGX
+                # Let the regular polling mechanism handle updates
+                logging.info(f"Skipping initial reindex for Paperless NGX connector {conn_id}")
+                continue
+            
             SyncLogsService.schedule(conn_id, kb_id, reindex=True)
 
         errs = []
