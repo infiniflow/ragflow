@@ -25,7 +25,7 @@ from configs import EMAIL
 
 
 class TestGenerateUserApiKey:
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_generate_user_api_key_success(self, admin_session: requests.Session) -> None:
         """Test successfully generating API key for a user"""
         # Use the test user email (get_user_details expects email)
@@ -63,7 +63,7 @@ class TestGenerateUserApiKey:
             token_without_prefix: str = token.replace("ragflow-", "")[:32]
             assert beta != token_without_prefix, "Beta should be independently generated, not derived from token"
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_generate_user_api_key_appears_in_list(self, admin_session: requests.Session) -> None:
         """Test that generated API key appears in get_user_api_key list"""
         user_name: str = EMAIL
@@ -84,7 +84,7 @@ class TestGenerateUserApiKey:
         token_found: bool = any(key.get("token") == token for key in api_keys)
         assert token_found, "Generated API key should appear in the list"
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_generate_user_api_key_response_structure(self, admin_session: requests.Session) -> None:
         """Test that generate_user_api_key returns correct response structure"""
         user_name: str = EMAIL

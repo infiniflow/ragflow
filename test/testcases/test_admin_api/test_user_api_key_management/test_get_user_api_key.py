@@ -25,7 +25,7 @@ from configs import EMAIL
 
 
 class TestGetUserApiKey:
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_get_user_api_key_success(self, admin_session: requests.Session) -> None:
         """Test successfully getting API keys for a user with correct response structure"""
         user_name: str = EMAIL

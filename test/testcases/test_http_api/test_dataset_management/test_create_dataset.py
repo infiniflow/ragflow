@@ -151,7 +151,7 @@ class TestDatasetCreate:
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_avatar_exceeds_limit_length(self, HttpApiAuth):
         payload = {"name": "avatar_exceeds_limit_length", "avatar": "a" * 65536}
         res = create_dataset(HttpApiAuth, payload)
@@ -200,7 +200,7 @@ class TestDatasetCreate:
         assert res["code"] == 0, res
         assert res["data"]["description"] == "description", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_description_exceeds_limit_length(self, HttpApiAuth):
         payload = {"name": "description_exceeds_limit_length", "description": "a" * 65536}
         res = create_dataset(HttpApiAuth, payload)
@@ -293,7 +293,7 @@ class TestDatasetCreate:
         assert res["code"] == 0, res
         assert res["data"]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", res
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "name, permission",
         [

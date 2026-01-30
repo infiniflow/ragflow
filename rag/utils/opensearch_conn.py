@@ -72,7 +72,8 @@ class OSConnection(DocStoreConnection):
             msg = f"OpenSearch mapping file not found at {fp_mapping}"
             logger.error(msg)
             raise Exception(msg)
-        self.mapping = json.load(open(fp_mapping, "r"))
+        with open(fp_mapping, "r") as f:
+            self.mapping = json.load(f)
         logger.info(f"OpenSearch {settings.OS['hosts']} is healthy.")
 
     """

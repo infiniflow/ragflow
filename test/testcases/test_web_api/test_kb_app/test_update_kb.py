@@ -27,7 +27,7 @@ from utils.hypothesis_utils import valid_names
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
@@ -162,7 +162,7 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"]["embd_id"] == embedding_model, res
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "permission",
         [

@@ -74,7 +74,7 @@ class TestDocumentsUpload:
         assert res["data"][0]["kb_id"] == kb_id, res
         assert res["data"][0]["name"] == fp.name, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "file_type",
         ["exe", "unknown"],
@@ -113,7 +113,7 @@ class TestDocumentsUpload:
         assert res["code"] == 101, res
         assert res["message"] == "No file selected!", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_filename_exceeds_max_length(self, WebApiAuth, add_dataset_func, tmp_path):
         kb_id = add_dataset_func
         fp = create_txt_file(tmp_path / f"{'a' * (DOCUMENT_NAME_LIMIT - 4)}.txt")

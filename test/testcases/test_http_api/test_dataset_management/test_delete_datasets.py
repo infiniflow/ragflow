@@ -116,7 +116,7 @@ class TestDatasetsDelete:
         res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == remaining, res
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")
     def test_ids_empty(self, HttpApiAuth):
         payload = {"ids": []}
@@ -126,7 +126,7 @@ class TestDatasetsDelete:
         res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 1, res
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.usefixtures("add_datasets_func")
     def test_ids_none(self, HttpApiAuth):
         payload = {"ids": None}
@@ -208,7 +208,7 @@ class TestDatasetsDelete:
         assert res["code"] == 108, res
         assert "lacks permission for dataset" in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.usefixtures("add_dataset_func")
     def test_field_unsupported(self, HttpApiAuth):
         payload = {"unknown_field": "unknown_field"}

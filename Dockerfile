@@ -28,7 +28,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Setup apt
 # Python package and implicit dependencies:
 # opencv-python: libglib2.0-0 libglx-mesa0 libgl1
-# aspose-slides: pkg-config libicu-dev libgdiplus         libssl1.1_1.1.1f-1ubuntu2_amd64.deb
 # python-pptx:   default-jdk                              tika-server-standard-3.2.3.jar
 # selenium:      libatk-bridge2.0-0                       chrome-linux64-121-0-6167-85
 # Building C extensions: libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev
@@ -128,8 +127,6 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/chromedriver-l
     mv chromedriver /usr/local/bin/ && \
     rm -f /usr/bin/google-chrome
 
-# https://forum.aspose.com/t/aspose-slides-for-net-no-usable-version-of-libssl-found-with-linux-server/271344/13
-# aspose-slides on linux/arm64 is unavailable
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
     if [ "$(uname -m)" = "x86_64" ]; then \
         dpkg -i /deps/libssl1.1_1.1.1f-1ubuntu2_amd64.deb; \
