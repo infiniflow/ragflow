@@ -1,0 +1,220 @@
+// Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package nlp
+
+import (
+	"regexp"
+	"strings"
+
+	"ragflow/internal/engine/infinity"
+)
+
+// QueryBuilder provides functionality to build query expressions based on text, referencing Python's FulltextQueryer and QueryBase.
+type QueryBuilder struct {
+	queryFields []string
+}
+
+// NewQueryBuilder creates a new QueryBuilder with default query fields.
+func NewQueryBuilder() *QueryBuilder {
+	return &QueryBuilder{
+		queryFields: []string{
+			"title_tks^10",
+			"title_sm_tks^5",
+			"important_kwd^30",
+			"important_tks^20",
+			"question_tks^20",
+			"content_ltks^2",
+			"content_sm_ltks",
+		},
+	}
+}
+
+// IsChinese determines whether a line of text is primarily Chinese.
+// Algorithm: split by whitespace, if segments <=3 return true; otherwise count ratio of non-pure-alphabet segments, return true if ratio >=0.7.
+func (qb *QueryBuilder) IsChinese(line string) bool {
+	fields := strings.Fields(line)
+	if len(fields) <= 3 {
+		return true
+	}
+	nonAlpha := 0
+	for _, f := range fields {
+		matched, _ := regexp.MatchString(`^[a-zA-Z]+$`, f)
+		if !matched {
+			nonAlpha++
+		}
+	}
+	return float64(nonAlpha)/float64(len(fields)) >= 0.7
+}
+
+// SubSpecialChar escapes special characters for use in queries.
+func (qb *QueryBuilder) SubSpecialChar(line string) string {
+	// Regex matches : { } / [ ] - * " ( ) | + ~ ^ and prepends backslash
+	re := regexp.MustCompile(`([:{}/\[\]\-\*"\(\)\|\+~\^])`)
+	return re.ReplaceAllString(line, `\$1`)
+}
+
+// RmWWW removes common stop words and question words from queries.
+func (qb *QueryBuilder) RmWWW(txt string) string {
+	patterns := []struct {
+		regex string
+		repl  string
+	}{
+		// Chinese stop words
+		{`是*(怎么办|什么样的|哪家|一下|那家|请问|啥样|咋样了|什么时候|何时|何地|何人|是否|是不是|多少|哪里|怎么|哪儿|怎么样|如何|哪些|是啥|啥是|啊|吗|呢|吧|咋|什么|有没有|呀|谁|哪位|哪个)是*`, ""},
+		// English stop words (case-insensitive)
+		{`(^| )(what|who|how|which|where|why)('re|'s)? `, " "},
+		{`(^| )('s|'re|is|are|were|was|do|does|did|don't|doesn't|didn't|has|have|be|there|you|me|your|my|mine|just|please|may|i|should|would|wouldn't|will|won't|done|go|for|with|so|the|a|an|by|i'm|it's|he's|she's|they|they're|you're|as|by|on|in|at|up|out|down|of|to|or|and|if) `, " "},
+	}
+	original := txt
+	for _, p := range patterns {
+		re := regexp.MustCompile(`(?i)` + p.regex)
+		txt = re.ReplaceAllString(txt, p.repl)
+	}
+	if txt == "" {
+		txt = original
+	}
+	return txt
+}
+
+// AddSpaceBetweenEngZh adds spaces between English letters and Chinese characters to improve tokenization.
+func (qb *QueryBuilder) AddSpaceBetweenEngZh(txt string) string {
+	// (ENG/ENG+NUM) + ZH
+	re1 := regexp.MustCompile(`([A-Za-z]+[0-9]+)([\p{Han}]+)`)
+	txt = re1.ReplaceAllString(txt, `${1} ${2}`)
+	// ENG + ZH
+	re2 := regexp.MustCompile(`([A-Za-z])([\p{Han}]+)`)
+	txt = re2.ReplaceAllString(txt, `${1} ${2}`)
+	// ZH + (ENG/ENG+NUM)
+	re3 := regexp.MustCompile(`([\p{Han}]+)([A-Za-z]+[0-9]+)`)
+	txt = re3.ReplaceAllString(txt, `${1} ${2}`)
+	// ZH + ENG
+	re4 := regexp.MustCompile(`([\p{Han}]+)([A-Za-z])`)
+	txt = re4.ReplaceAllString(txt, `${1} ${2}`)
+	return txt
+}
+
+// Question builds a full-text query expression based on input text.
+// References Python FulltextQueryer.question method.
+// Currently a simplified version, returns basic MatchTextExpr; future integration of term weight and synonyms.
+func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*infinity.MatchTextExpr, []string) {
+	originalQuery := txt
+	// Add space between English and Chinese
+	txt = qb.AddSpaceBetweenEngZh(txt)
+	// Convert to lowercase and remove punctuation (simplified)
+	txt = strings.ToLower(txt)
+	// Remove stop words
+	txt = qb.RmWWW(txt)
+	// Determine if text is Chinese
+	if !qb.IsChinese(txt) {
+		// Non-Chinese processing (simplified)
+		// Could add more complex logic here, e.g., tokenization, term weight, synonym expansion
+		// Currently returns original query
+		return &infinity.MatchTextExpr{
+			Fields:       qb.queryFields,
+			MatchingText: originalQuery,
+			TopN:         100,
+		}, []string{}
+	}
+	// Chinese processing (simplified)
+	// Could also be extended
+	return &infinity.MatchTextExpr{
+		Fields:       qb.queryFields,
+		MatchingText: originalQuery,
+		TopN:         100,
+	}, []string{}
+}
+
+// Paragraph builds a query expression based on content terms and keywords.
+// References Python FulltextQueryer.paragraph method.
+func (qb *QueryBuilder) Paragraph(contentTks string, keywords []string, keywordsTopN int) *infinity.MatchTextExpr {
+	// Simplified implementation: merge keywords and content terms
+	allTerms := make([]string, 0, len(keywords))
+	for _, k := range keywords {
+		k = strings.TrimSpace(k)
+		if k != "" {
+			allTerms = append(allTerms, `"`+k+`"`)
+		}
+	}
+	// Limit number of keywords
+	if keywordsTopN > 0 && len(allTerms) > keywordsTopN {
+		allTerms = allTerms[:keywordsTopN]
+	}
+	// Could add content term processing here, e.g., tokenization, weight calculation
+	// Currently only uses keywords
+	query := strings.Join(allTerms, " ")
+	// Calculate minimum_should_match (could be used for extra_options in future)
+	_ = 3
+	if len(allTerms) > 0 {
+		calc := int(float64(len(allTerms)) / 10.0)
+		if calc < 3 {
+			calc = 3
+		}
+		_ = calc
+	}
+	return &infinity.MatchTextExpr{
+		Fields:       qb.queryFields,
+		MatchingText: query,
+		TopN:         100,
+	}
+}
+
+// Similarity calculates similarity between two term weight dictionaries.
+// Algorithm: s = sum(qtwt[k] for k in qtwt if k in dtwt) / sum(qtwt[k])
+func (qb *QueryBuilder) Similarity(qtwt map[string]float64, dtwt map[string]float64) float64 {
+	if len(qtwt) == 0 {
+		return 0.0
+	}
+	var sum float64
+	for k, v := range qtwt {
+		if _, ok := dtwt[k]; ok {
+			sum += v
+		}
+	}
+	var total float64
+	for _, v := range qtwt {
+		total += v
+	}
+	if total == 0 {
+		return 0.0
+	}
+	return sum / total
+}
+
+// TokenSimilarity calculates similarity between query terms and multiple document term sets.
+// To be implemented: requires term weight processing module.
+func (qb *QueryBuilder) TokenSimilarity(atks string, btkss []string) []float64 {
+	// Placeholder implementation, returns zero values
+	result := make([]float64, len(btkss))
+	for i := range result {
+		result[i] = 0.0
+	}
+	return result
+}
+
+// HybridSimilarity calculates weighted combination of vector similarity and term similarity.
+// To be implemented: requires vector cosine similarity calculation.
+func (qb *QueryBuilder) HybridSimilarity(avec []float64, bvecs [][]float64, atks string, btkss []string, tkweight float64, vtweight float64) ([]float64, []float64, []float64) {
+	// Placeholder implementation, returns zero values
+	n := len(btkss)
+	sims := make([]float64, n)
+	tksim := make([]float64, n)
+	vecsim := make([]float64, n)
+	return sims, tksim, vecsim
+}
+
+// SetQueryFields sets the list of query fields.
+func (qb *QueryBuilder) SetQueryFields(fields []string) {
+	qb.queryFields = fields
+}
