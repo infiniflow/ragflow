@@ -153,12 +153,17 @@ The connector handles the following error scenarios:
 - **404 Not Found**: Invalid base URL or missing documents
 - **Connection Errors**: Network issues, server down
 - **Timeout Errors**: Slow responses or large downloads
+  - Connection timeout: 10 seconds (for establishing connection)
+  - Read timeout: 60 seconds (configurable via `REQUEST_TIMEOUT_SECONDS` env var)
+
+**Fast-Fail Behavior:** The connector uses separate connect and read timeouts. Connection attempts fail within 10 seconds, preventing long delays when the server is unreachable or the URL is incorrect.
 
 ## Limitations
 
 - Documents larger than `BLOB_STORAGE_SIZE_THRESHOLD` (default: 20MB) are skipped
 - OCR content in metadata is truncated to first 500 characters
 - Tag metadata includes only tag IDs, not tag names (to avoid additional API calls)
+- Connection attempts timeout after 10 seconds maximum
 
 ## Troubleshooting
 
@@ -166,9 +171,15 @@ The connector handles the following error scenarios:
 
 If you encounter connection errors:
 
-1. Verify the `base_url` is correct and accessible
-2. Check if Paperless-ngx is running
-3. For HTTPS with self-signed certificates, set `verify_ssl: false` (development only)
+1. **Verify the URL format**: Ensure `base_url` includes the scheme (e.g., `http://` or `https://`)
+   - ✓ Correct: `http://192.168.1.6:8000` or `https://paperless.example.com`
+   - ✗ Incorrect: `http:192.168.1.6:8000` (missing `//`)
+2. Verify the `base_url` is correct and accessible from the RAGFlow container
+3. Check if Paperless-ngx is running: `curl http://your-paperless-url/api/`
+4. For HTTPS with self-signed certificates, set `verify_ssl: false` (development only)
+5. Check network connectivity and firewall rules
+
+**Note:** Connection attempts fail quickly (within 10 seconds) to prevent blocking. If you see "connection timeout" errors, verify network connectivity.
 
 ### Authentication Issues
 

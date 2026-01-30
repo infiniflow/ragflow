@@ -155,7 +155,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
         Args:
             endpoint: API endpoint
             params: Query parameters
-            timeout: Request timeout in seconds
+            timeout: Request timeout in seconds (used for both connect and read)
             
         Returns:
             JSON response as dict
@@ -164,14 +164,20 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
             ConnectorMissingCredentialError: If session not initialized
             CredentialExpiredError: If credentials are invalid
             InsufficientPermissionsError: If access is denied
+            ConnectorValidationError: If connection fails or times out
         """
         if self.session is None:
             raise ConnectorMissingCredentialError("Session not initialized")
 
         url = self._get_api_url(endpoint)
         
+        # Use tuple timeout: (connect_timeout, read_timeout)
+        # Connect timeout should be shorter to fail fast on connection issues
+        connect_timeout = min(10, timeout)  # Max 10 seconds for connection
+        request_timeout = (connect_timeout, timeout)
+        
         try:
-            response = self.session.get(url, params=params, timeout=timeout)
+            response = self.session.get(url, params=params, timeout=request_timeout)
             
             if response.status_code == 401:
                 raise CredentialExpiredError("Paperless-ngx API token is invalid or expired")
@@ -183,10 +189,15 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
             response.raise_for_status()
             return response.json()
             
-        except requests.exceptions.Timeout:
-            raise ConnectorValidationError(f"Request to {url} timed out after {timeout} seconds")
+        except requests.exceptions.Timeout as e:
+            error_msg = f"Request to {url} timed out"
+            if "connect" in str(e).lower():
+                error_msg += f" (connection timeout after {connect_timeout}s)"
+            else:
+                error_msg += f" (read timeout after {timeout}s)"
+            raise ConnectorValidationError(error_msg)
         except requests.exceptions.ConnectionError as e:
-            raise ConnectorValidationError(f"Failed to connect to Paperless-ngx server: {e}")
+            raise ConnectorValidationError(f"Failed to connect to Paperless-ngx server at {url}: {str(e)}")
         except requests.exceptions.RequestException as e:
             raise ConnectorValidationError(f"Request to Paperless-ngx API failed: {e}")
 
@@ -198,6 +209,10 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
             
         Returns:
             Document content as bytes
+            
+        Raises:
+            ConnectorMissingCredentialError: If session not initialized
+            ConnectorValidationError: If download fails
         """
         if self.session is None:
             raise ConnectorMissingCredentialError("Session not initialized")
@@ -205,10 +220,15 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
         # Use the download endpoint
         url = self._get_api_url(f"documents/{document_id}/download/")
         
+        # Use tuple timeout with shorter connect timeout
+        connect_timeout = 10  # 10 seconds for connection
+        read_timeout = REQUEST_TIMEOUT_SECONDS  # Full timeout for reading document
+        request_timeout = (connect_timeout, read_timeout)
+        
         try:
             response = self.session.get(
                 url,
-                timeout=REQUEST_TIMEOUT_SECONDS,
+                timeout=request_timeout,
                 stream=True,
             )
             response.raise_for_status()
@@ -221,7 +241,15 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
                 
             return content
             
+        except requests.exceptions.Timeout as e:
+            error_msg = f"Download of document {document_id} timed out"
+            if "connect" in str(e).lower():
+                error_msg += f" (connection timeout after {connect_timeout}s)"
+            raise ConnectorValidationError(error_msg)
+        except requests.exceptions.ConnectionError as e:
+            raise ConnectorValidationError(f"Failed to connect while downloading document {document_id}: {str(e)}")
         except requests.exceptions.RequestException as e:
+            raise ConnectorValidationError(f"Failed to download document {document_id}: {e}")
             logging.error(f"Failed to download document {document_id}: {e}")
             raise
 
