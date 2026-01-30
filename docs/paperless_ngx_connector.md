@@ -51,6 +51,11 @@ This connector integrates Paperless-ngx document management system with RAGFlow,
 
 - **base_url** (required): The base URL of your Paperless-ngx instance
   - Example: `https://paperless.example.com` or `http://localhost:8000`
+  - The connector automatically normalizes URLs:
+    - Missing `//` after scheme is fixed automatically: `http:192.168.1.6:8000` → `http://192.168.1.6:8000`
+    - Missing scheme defaults to `https://`: `paperless.example.com` → `https://paperless.example.com`
+    - Trailing slashes are removed automatically
+  - **Note**: Always include the scheme (`http://` or `https://`) for clarity
 - **verify_ssl** (optional): Whether to verify SSL certificates
   - Default: `true`
   - Set to `false` for self-signed certificates (not recommended for production)

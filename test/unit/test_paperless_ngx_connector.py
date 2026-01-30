@@ -46,6 +46,53 @@ class TestPaperlessNgxConnector:
         assert connector.session is None
         assert connector.api_token is None
 
+    def test_url_normalization_missing_double_slash(self):
+        """Test URL normalization fixes missing // after scheme"""
+        # http:hostname should become http://hostname
+        connector = PaperlessNgxConnector(base_url="http:192.168.1.6:8000")
+        assert connector.base_url == "http://192.168.1.6:8000"
+        
+        # https:hostname should become https://hostname
+        connector = PaperlessNgxConnector(base_url="https:paperless.example.com")
+        assert connector.base_url == "https://paperless.example.com"
+
+    def test_url_normalization_no_scheme(self):
+        """Test URL normalization adds https:// if no scheme provided"""
+        connector = PaperlessNgxConnector(base_url="paperless.example.com")
+        assert connector.base_url == "https://paperless.example.com"
+        
+        connector = PaperlessNgxConnector(base_url="localhost:8000")
+        assert connector.base_url == "https://localhost:8000"
+
+    def test_url_normalization_trailing_slash(self):
+        """Test URL normalization removes trailing slashes"""
+        connector = PaperlessNgxConnector(base_url="https://paperless.example.com///")
+        assert connector.base_url == "https://paperless.example.com"
+
+    def test_url_normalization_already_valid(self):
+        """Test URL normalization preserves valid URLs"""
+        # HTTP
+        connector = PaperlessNgxConnector(base_url="http://localhost:8000")
+        assert connector.base_url == "http://localhost:8000"
+        
+        # HTTPS
+        connector = PaperlessNgxConnector(base_url="https://paperless.example.com")
+        assert connector.base_url == "https://paperless.example.com"
+
+    def test_url_validation_empty_url(self):
+        """Test that empty URLs raise validation error"""
+        with pytest.raises(ConnectorValidationError, match="URL cannot be empty"):
+            PaperlessNgxConnector(base_url="")
+        
+        with pytest.raises(ConnectorValidationError, match="URL cannot be empty"):
+            PaperlessNgxConnector(base_url="   ")
+
+    def test_url_validation_invalid_url(self):
+        """Test that invalid URLs raise validation error"""
+        with pytest.raises(ConnectorValidationError, match="Invalid Paperless-ngx URL"):
+            PaperlessNgxConnector(base_url="ht!tp://invalid")
+
+
     def test_load_credentials_success(self, connector, credentials):
         """Test loading credentials successfully"""
         result = connector.load_credentials(credentials)

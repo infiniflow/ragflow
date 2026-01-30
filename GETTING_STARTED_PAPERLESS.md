@@ -39,6 +39,10 @@ The Paperless-ngx card should display:
    - **Paperless-ngx URL:** Your Paperless-ngx server URL
      - Example: `https://paperless.example.com`
      - Or for local: `http://localhost:8000`
+     - **Important**: Include `http://` or `https://` at the beginning
+     - The connector will auto-fix common mistakes:
+       - `http:192.168.1.6:8000` → `http://192.168.1.6:8000` (adds missing `//`)
+       - `paperless.example.com` → `https://paperless.example.com` (adds scheme)
    - **API Token:** Paste the token you copied from Paperless-ngx
 
    **Optional Fields:**

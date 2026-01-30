@@ -1,9 +1,10 @@
 """Paperless-ngx connector for syncing documents from Paperless-ngx instances"""
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 
@@ -39,14 +40,60 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
             base_url: Base URL of the Paperless-ngx instance (e.g., "https://paperless.example.com")
             batch_size: Number of documents per batch
             verify_ssl: Whether to verify SSL certificates (default: True)
+        
+        Raises:
+            ConnectorValidationError: If the URL is invalid
         """
-        self.base_url = base_url.rstrip("/")
+        self.base_url = self._normalize_url(base_url)
         self.batch_size = batch_size
         self.verify_ssl = verify_ssl
         self.api_token: Optional[str] = None
         self._allow_images: bool | None = None
         self.size_threshold: int | None = BLOB_STORAGE_SIZE_THRESHOLD
         self.session: Optional[requests.Session] = None
+
+    def _normalize_url(self, url: str) -> str:
+        """Normalize and validate the base URL
+        
+        Args:
+            url: The base URL to normalize
+            
+        Returns:
+            Normalized URL with proper scheme
+            
+        Raises:
+            ConnectorValidationError: If the URL is invalid
+        """
+        if not url or not url.strip():
+            raise ConnectorValidationError("Paperless-ngx URL cannot be empty")
+        
+        url = url.strip()
+        
+        # Fix common mistake: http:hostname instead of http://hostname
+        # Match patterns like http:something or https:something without //
+        if re.match(r'^(https?):[^/]', url):
+            url = re.sub(r'^(https?):', r'\1://', url)
+        
+        # Ensure URL has a scheme
+        if not url.startswith(('http://', 'https://')):
+            # Default to https if no scheme provided
+            url = 'https://' + url
+        
+        # Validate the URL structure
+        try:
+            parsed = urlparse(url)
+            if not parsed.netloc:
+                raise ConnectorValidationError(
+                    f"Invalid Paperless-ngx URL: '{url}'. "
+                    "Please provide a valid URL (e.g., 'https://paperless.example.com' or 'http://192.168.1.6:8000')"
+                )
+        except Exception as e:
+            raise ConnectorValidationError(
+                f"Invalid Paperless-ngx URL: '{url}'. Error: {str(e)}"
+            )
+        
+        # Remove trailing slashes
+        return url.rstrip("/")
 
     def set_allow_images(self, allow_images: bool) -> None:
         """Set whether to process images"""
