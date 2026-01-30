@@ -56,13 +56,13 @@ Paperless-ngx is a document management system that scans, indexes, and archives 
    - `docs/paperless_ngx_connector.md` (226 lines)
      - Overview and features
      - Configuration parameters
-     - Usage examples
+     - Usage examples in Python
      - API endpoints used
      - Error handling
      - Troubleshooting guide
    - `docs/examples/paperless_ngx_connector_config.md` (61 lines)
-     - Configuration examples
-     - API usage in multiple languages (curl, Python, JavaScript)
+     - Configuration examples in JSON
+     - API usage with curl
 
 ### Total Changes
 - **8 files** modified/created

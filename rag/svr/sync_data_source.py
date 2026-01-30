@@ -1112,15 +1112,11 @@ class PaperlessNGX(SyncBase):
             begin_info = "totally"
         else:
             poll_start = task.get("poll_range_start")
-            if poll_start is None:
-                document_generator = self.connector.load_from_state()
-                begin_info = "totally"
-            else:
-                document_generator = self.connector.poll_source(
-                    poll_start.timestamp(),
-                    datetime.now(timezone.utc).timestamp(),
-                )
-                begin_info = f"from {poll_start}"
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+            begin_info = f"from {poll_start}"
 
         logging.info(
             "Connect to Paperless-ngx: %s %s",
