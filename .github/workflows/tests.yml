@@ -1,4 +1,3 @@
-      
 name: tests
 permissions:
   contents: read
@@ -574,6 +573,7 @@ jobs:
             echo "No docker/ragflow-logs directory found; skipping log collection"
           fi
           sudo rm -rf docker/ragflow-logs || true
+
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
         run: |
@@ -583,5 +583,3 @@ jobs:
           if [[ -n ${RAGFLOW_IMAGE} ]]; then
             sudo docker rmi -f ${RAGFLOW_IMAGE}
           fi
-
-    
