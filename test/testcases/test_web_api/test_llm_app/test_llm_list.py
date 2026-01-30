@@ -26,14 +26,14 @@ INVALID_AUTH_CASES = [
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize("invalid_auth, expected_code, expected_message", INVALID_AUTH_CASES)
     def test_auth_invalid_factories(self, invalid_auth, expected_code, expected_message):
         res = llm_factories(invalid_auth)
         assert res["code"] == expected_code, res
         assert res["message"] == expected_message, res
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize("invalid_auth, expected_code, expected_message", INVALID_AUTH_CASES)
     def test_auth_invalid_list(self, invalid_auth, expected_code, expected_message):
         res = llm_list(invalid_auth)

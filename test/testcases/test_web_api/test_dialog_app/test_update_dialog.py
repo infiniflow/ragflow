@@ -21,7 +21,7 @@ from libs.auth import RAGFlowWebApiAuth
 
 @pytest.mark.usefixtures("clear_dialogs")
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
@@ -48,7 +48,7 @@ class TestDialogUpdate:
         assert res["code"] == 0, res
         assert res["data"]["name"] == new_name, res
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_update_description(self, WebApiAuth, add_dialog_func):
         _, dialog_id = add_dialog_func
         new_description = "Updated description"
