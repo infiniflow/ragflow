@@ -53,6 +53,7 @@ from common.data_source import (
     AsanaConnector,
     ImapConnector,
     ZendeskConnector,
+    PaperlessNgxConnector,
 )
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
@@ -1077,6 +1078,59 @@ class Zendesk(SyncBase):
         return wrapper()
 
 
+class PaperlessNGX(SyncBase):
+    SOURCE_NAME: str = FileSource.PAPERLESS_NGX
+
+    async def _generate(self, task: dict):
+        """
+        Sync documents from Paperless-ngx instance.
+        """
+        # Get configuration
+        base_url = self.conf.get("base_url")
+        if not base_url:
+            raise ValueError("base_url is required for Paperless-ngx connector")
+
+        verify_ssl = self.conf.get("verify_ssl", True)
+        batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+
+        self.connector = PaperlessNgxConnector(
+            base_url=base_url,
+            batch_size=batch_size,
+            verify_ssl=verify_ssl,
+        )
+
+        # Load credentials
+        credentials = self.conf.get("credentials", {})
+        if "api_token" not in credentials:
+            raise ValueError("Missing api_token in credentials for Paperless-ngx")
+
+        self.connector.load_credentials(credentials)
+
+        # Determine the time range for synchronization
+        if task.get("reindex") == "1" or not task.get("poll_range_start"):
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task.get("poll_range_start")
+            if poll_start is None:
+                document_generator = self.connector.load_from_state()
+                begin_info = "totally"
+            else:
+                document_generator = self.connector.poll_source(
+                    poll_start.timestamp(),
+                    datetime.now(timezone.utc).timestamp(),
+                )
+                begin_info = f"from {poll_start}"
+
+        logging.info(
+            "Connect to Paperless-ngx: %s %s",
+            base_url,
+            begin_info,
+        )
+
+        return document_generator
+
+
 class Gitlab(SyncBase):
     SOURCE_NAME: str = FileSource.GITLAB
 
@@ -1200,6 +1254,7 @@ func_factory = {
     FileSource.ASANA: Asana,
     FileSource.IMAP: IMAP,
     FileSource.ZENDESK: Zendesk,
+    FileSource.PAPERLESS_NGX: PaperlessNGX,
     FileSource.GITHUB: Github,
     FileSource.GITLAB: Gitlab,
     FileSource.BITBUCKET: Bitbucket,

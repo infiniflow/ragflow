@@ -39,6 +39,7 @@ from .airtable_connector import AirtableConnector
 from .asana_connector import AsanaConnector
 from .imap_connector import ImapConnector
 from .zendesk_connector import ZendeskConnector
+from .paperless_ngx_connector import PaperlessNgxConnector
 from .config import BlobType, DocumentSource
 from .models import Document, TextSection, ImageSection, BasicExpertInfo
 from .exceptions import (
@@ -77,4 +78,5 @@ __all__ = [
     "AsanaConnector",
     "ImapConnector",
     "ZendeskConnector",
+    "PaperlessNgxConnector",
 ]

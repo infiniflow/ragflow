@@ -135,6 +135,7 @@ class FileSource(StrEnum):
     IMAP = "imap"
     BITBUCKET = "bitbucket"
     ZENDESK = "zendesk"
+    PAPERLESS_NGX = "paperless_ngx"
 
 
 class PipelineTaskType(StrEnum):
