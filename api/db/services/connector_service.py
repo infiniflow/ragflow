@@ -257,9 +257,28 @@ class Connector2KbService(CommonService):
         for conn in connectors:
             conn_id = conn["id"]
             connector_ids.append(conn_id)
+            
+            # Check if this is an existing connector (integration change)
             if conn_id in old_conn_ids:
                 cls.filter_update([cls.model.connector_id==conn_id, cls.model.kb_id==kb_id], {"auto_parse": conn.get("auto_parse", "1")})
+                
+                # For Paperless NGX, trigger sync when integration is changed
+                e, connector_obj = ConnectorService.get_by_id(conn_id)
+                if e and connector_obj.source == FileSource.PAPERLESS_NGX:
+                    # Get the last task to determine poll_range_start
+                    task = SyncLogsService.get_latest_task(conn_id, kb_id)
+                    if task and task.status == TaskStatus.DONE:
+                        # Schedule incremental sync from last poll end time
+                        SyncLogsService.schedule(conn_id, kb_id, task.poll_range_end, total_docs_indexed=task.total_docs_indexed)
+                        logging.info(f"Scheduled incremental sync for Paperless NGX connector {conn_id} due to integration change")
+                    else:
+                        # No previous successful sync, schedule from beginning
+                        SyncLogsService.schedule(conn_id, kb_id, reindex=True)
+                        logging.info(f"Scheduled initial sync for Paperless NGX connector {conn_id} due to integration change")
+                
                 continue
+                
+            # New connector being linked
             cls.save(**{
                 "id": get_uuid(),
                 "connector_id": conn_id,
@@ -272,9 +291,9 @@ class Connector2KbService(CommonService):
             # It will sync based on polling schedule when changes are detected
             e, connector_obj = ConnectorService.get_by_id(conn_id)
             if e and connector_obj.source == FileSource.PAPERLESS_NGX:
-                # Skip automatic scheduling for Paperless NGX
+                # Skip automatic scheduling for Paperless NGX on initial link
                 # Let the regular polling mechanism handle updates
-                logging.info(f"Skipping initial reindex for Paperless NGX connector {conn_id}")
+                logging.info(f"Skipping initial reindex for Paperless NGX connector {conn_id} on first link")
                 continue
             
             SyncLogsService.schedule(conn_id, kb_id, reindex=True)

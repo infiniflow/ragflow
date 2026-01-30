@@ -39,10 +39,30 @@ from box_sdk_gen import BoxOAuth, OAuthConfig, GetAuthorizeUrlOptions
 @manager.route("/set", methods=["POST"])  # noqa: F821
 @login_required
 async def set_connector():
+    from common.constants import FileSource
+    from api.db.services.connector_service import Connector2KbService, SyncLogsService
+    from common.constants import TaskStatus
+    
     req = await get_request_json()
     if req.get("id"):
+        # Updating existing connector
         conn = {fld: req[fld] for fld in ["prune_freq", "refresh_freq", "config", "timeout_secs"] if fld in req}
         ConnectorService.update_by_id(req["id"], conn)
+        
+        # For Paperless NGX, trigger sync when config is changed
+        e, connector_obj = ConnectorService.get_by_id(req["id"])
+        if e and connector_obj.source == FileSource.PAPERLESS_NGX:
+            # Find all KBs linked to this connector and schedule sync for each
+            for c2k in Connector2KbService.query(connector_id=req["id"]):
+                task = SyncLogsService.get_latest_task(req["id"], c2k.kb_id)
+                if task and task.status == TaskStatus.DONE:
+                    # Schedule incremental sync from last poll end time
+                    SyncLogsService.schedule(req["id"], c2k.kb_id, task.poll_range_end, total_docs_indexed=task.total_docs_indexed)
+                    logging.info(f"Scheduled incremental sync for Paperless NGX connector {req['id']} KB {c2k.kb_id} due to config change")
+                elif not task or task.status in [TaskStatus.FAIL, TaskStatus.CANCEL]:
+                    # No previous successful sync, schedule from beginning
+                    SyncLogsService.schedule(req["id"], c2k.kb_id, reindex=True)
+                    logging.info(f"Scheduled initial sync for Paperless NGX connector {req['id']} KB {c2k.kb_id} due to config change")
     else:
         req["id"] = get_uuid()
         conn = {
