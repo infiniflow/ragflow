@@ -19,6 +19,8 @@ import (
 	"strings"
 
 	"ragflow/internal/engine/infinity"
+
+	"github.com/siongui/gojianfan"
 )
 
 // QueryBuilder provides functionality to build query expressions based on text, referencing Python's FulltextQueryer and QueryBase.
@@ -107,10 +109,10 @@ func (qb *QueryBuilder) AddSpaceBetweenEngZh(txt string) string {
 
 // StrFullWidth2HalfWidth converts full-width characters to half-width characters.
 // Algorithm: For each character:
-// - Full-width space (U+3000) is converted to half-width space (U+0020).
-// - For other characters, subtract 0xFEE0 from its code point.
-// - If the resulting code point is not in the half-width character range (0x0020 to 0x7E),
-//   the original character is kept.
+//   - Full-width space (U+3000) is converted to half-width space (U+0020).
+//   - For other characters, subtract 0xFEE0 from its code point.
+//   - If the resulting code point is not in the half-width character range (0x0020 to 0x7E),
+//     the original character is kept.
 func (qb *QueryBuilder) StrFullWidth2HalfWidth(ustring string) string {
 	var rstring strings.Builder
 	for _, uchar := range ustring {
@@ -127,6 +129,12 @@ func (qb *QueryBuilder) StrFullWidth2HalfWidth(ustring string) string {
 		}
 	}
 	return rstring.String()
+}
+
+// Traditional2Simplified converts traditional Chinese characters to simplified Chinese characters.
+// Uses gojianfan library which provides conversion similar to Python's HanziConv.
+func (qb *QueryBuilder) Traditional2Simplified(line string) string {
+	return gojianfan.T2S(line)
 }
 
 // Question builds a full-text query expression based on input text.

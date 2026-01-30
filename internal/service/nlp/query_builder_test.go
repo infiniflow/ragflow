@@ -195,6 +195,32 @@ func TestQueryBuilder_StrFullWidth2HalfWidth(t *testing.T) {
 	}
 }
 
+func TestQueryBuilder_Traditional2Simplified(t *testing.T) {
+	qb := NewQueryBuilder()
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"Empty", "", ""},
+		{"Simplified unchanged", "简体中文测试", "简体中文测试"},
+		{"Traditional conversion", "繁體中文測試", "繁体中文测试"},
+		{"Traditional sentence", "我學習中文已經三年了", "我学习中文已经三年了"},
+		{"Traditional with numbers", "電話號碼123", "电话号码123"},
+		{"Traditional with English", "Hello世界", "Hello世界"},
+		{"Traditional punctuation", "請問，你好嗎？", "请问，你好吗？"},
+		{"Mixed traditional and simplified", "這是一個简体测试", "这是一个简体测试"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := qb.Traditional2Simplified(tt.input)
+			if result != tt.expected {
+				t.Errorf("Traditional2Simplified(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestQueryBuilder_Question(t *testing.T) {
 	qb := NewQueryBuilder()
 	tests := []struct {
