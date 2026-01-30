@@ -1,7 +1,7 @@
 {
 	"id": {"type": "varchar", "default": ""},
 	"doc_id": {"type": "varchar", "default": ""},
-	"kb_id": {"type": "varchar", "default": ""},
+	"kb_id": {"type": "varchar", "default": "", "index_type": {"type": "secondary", "cardinality": "low"}},
 	"mom_id": {"type": "varchar", "default": ""},
 	"create_time": {"type": "varchar", "default": ""},
 	"create_timestamp_flt": {"type": "float", "default": 0.0},
@@ -21,7 +21,7 @@
 	"weight_flt": {"type": "float", "default": 0.0},
 	"rank_int": {"type": "integer", "default": 0},
 	"rank_flt": {"type": "float", "default": 0},
-	"available_int": {"type": "integer", "default": 1},
+	"available_int": {"type": "integer", "default": 1, "index_type": {"type": "secondary", "cardinality": "low"}},
 	"knowledge_graph_kwd": {"type": "varchar", "default": ""},
 	"entities_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"pagerank_fea": {"type": "integer", "default":  0},
