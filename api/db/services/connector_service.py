@@ -267,12 +267,16 @@ class Connector2KbService(CommonService):
                 if e and connector_obj.source == FileSource.PAPERLESS_NGX:
                     # Get the last task to determine poll_range_start
                     task = SyncLogsService.get_latest_task(conn_id, kb_id)
-                    if task and task.status == TaskStatus.DONE:
+                    
+                    # Skip if a task is already running or scheduled
+                    if task and task.status in [TaskStatus.RUNNING, TaskStatus.SCHEDULE]:
+                        logging.info(f"Skipping sync for Paperless NGX connector {conn_id} - task already {task.status}")
+                    elif task and task.status == TaskStatus.DONE:
                         # Schedule incremental sync from last poll end time
                         SyncLogsService.schedule(conn_id, kb_id, task.poll_range_end, total_docs_indexed=task.total_docs_indexed)
                         logging.info(f"Scheduled incremental sync for Paperless NGX connector {conn_id} due to integration change")
                     else:
-                        # No previous successful sync, schedule from beginning
+                        # No previous sync or failed/canceled, schedule from beginning
                         SyncLogsService.schedule(conn_id, kb_id, reindex=True)
                         logging.info(f"Scheduled initial sync for Paperless NGX connector {conn_id} due to integration change")
                 
