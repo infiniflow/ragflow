@@ -16,6 +16,7 @@ import { S3Constant } from './s3-constant';
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   S3 = 's3',
+  PAPERLESS_NGX = 'paperless_ngx',
   NOTION = 'notion',
   DISCORD = 'discord',
   GOOGLE_DRIVE = 'google_drive',
@@ -35,7 +36,6 @@ export enum DataSourceKey {
   GITHUB = 'github',
   BITBUCKET = 'bitbucket',
   ZENDESK = 'zendesk',
-  PAPERLESS_NGX = 'paperless_ngx',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -64,6 +64,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'S3',
       description: t(`setting.${DataSourceKey.S3}Description`),
       icon: <SvgIcon name={'data-source/s3'} width={38} />,
+    },
+    [DataSourceKey.PAPERLESS_NGX]: {
+      name: 'Paperless-ngx',
+      description: t(`setting.${DataSourceKey.PAPERLESS_NGX}Description`),
+      icon: <SvgIcon name={'data-source/paperless-ngx'} width={38} />,
     },
     [DataSourceKey.NOTION]: {
       name: 'Notion',
@@ -155,11 +160,6 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Zendesk',
       description: t(`setting.${DataSourceKey.ZENDESK}Description`),
       icon: <SvgIcon name={'data-source/zendesk'} width={38} />,
-    },
-    [DataSourceKey.PAPERLESS_NGX]: {
-      name: 'Paperless-ngx',
-      description: t(`setting.${DataSourceKey.PAPERLESS_NGX}Description`),
-      icon: <SvgIcon name={'data-source/paperless-ngx'} width={38} />,
     },
   };
 };
