@@ -949,6 +949,16 @@ Example: Virtual Hosted Style`,
         'Email address that has access to the Drive content being synced',
       zendeskDescription:
         'Connect your Zendesk to sync tickets, articles, and other content.',
+      paperless_ngxDescription:
+        'Connect to Paperless-ngx to sync and index your document management system.',
+      paperless_ngxBaseUrlTip:
+        'The base URL of your Paperless-ngx instance (e.g., https://paperless.example.com or http://localhost:8000)',
+      paperless_ngxApiTokenTip:
+        'Generate an API token in Paperless-ngx: Settings → API Tokens. This token is used for authentication.',
+      paperless_ngxVerifySslTip:
+        'Whether to verify SSL certificates. Disable only for self-signed certificates in development.',
+      paperless_ngxBatchSizeTip:
+        'Number of documents to process in each batch. Adjust based on system resources.',
       google_driveMyDriveEmailsTip:
         'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
