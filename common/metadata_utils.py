@@ -19,9 +19,6 @@ from typing import Any, Callable, Dict
 
 import json_repair
 
-from rag.prompts.generator import gen_meta_filter
-
-
 def convert_conditions(metadata_condition):
     if metadata_condition is None:
         metadata_condition = {}
@@ -62,9 +59,9 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
             matched = False
             try:
                 if operator == "contains":
-                    matched = input in value if not isinstance(input, list) else all(i in value for i in input)
+                    matched = str(input).find(value) >= 0 if not isinstance(input, list) else any(str(i).find(value) >= 0 for i in input)
                 elif operator == "not contains":
-                    matched = input not in value if not isinstance(input, list) else all(i not in value for i in input)
+                    matched = str(input).find(value) == -1 if not isinstance(input, list) else all(str(i).find(value) == -1 for i in input)
                 elif operator == "in":
                     matched = input in value if not isinstance(input, list) else all(i in value for i in input)
                 elif operator == "not in":
@@ -133,6 +130,8 @@ async def apply_meta_data_filter(
         list of doc_ids, ["-999"] when manual filters yield no result, or None
         when auto/semi_auto filters return empty.
     """
+    from rag.prompts.generator import gen_meta_filter # move from the top of the file to avoid circular import
+
     doc_ids = list(base_doc_ids) if base_doc_ids else []
 
     if not meta_data_filter:
