@@ -113,6 +113,7 @@ def pip_install_torch():
     subprocess.check_call([sys.executable, "-m", "pip", "install", *pkg_names])
 
 
+@once
 def _thread_pool_executor():
     max_workers_env = os.getenv("THREAD_POOL_MAX_WORKERS", "128")
     try:
