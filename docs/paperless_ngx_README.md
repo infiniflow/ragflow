@@ -31,6 +31,8 @@
 
 The Paperless-ngx connector integrates Paperless-ngx document management system with RAGFlow, enabling seamless document synchronization, indexing, and retrieval-augmented generation capabilities.
 
+> **📦 Note**: If using pre-built Docker images, you'll need to build a new image locally to see Paperless-ngx in the UI. See [Getting Started](#getting-started) for build instructions.
+
 ### Key Benefits
 
 - **Seamless Integration**: Connect your existing Paperless-ngx instance to RAGFlow
@@ -159,6 +161,34 @@ For each document, the connector extracts:
 ---
 
 ## Getting Started
+
+> **⚠️ IMPORTANT: Docker Image Build Required**
+> 
+> **If you're using a pre-built Docker image from Docker Hub**, the Paperless-ngx integration **will NOT be visible** in the UI until you build a new image locally with the latest changes.
+> 
+> **Quick Build Command:**
+> ```bash
+> cd /path/to/ragflow
+> docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:dev-paperless .
+> ```
+> 
+> Then update `docker/.env`:
+> ```bash
+> RAGFLOW_IMAGE=infiniflow/ragflow:dev-paperless
+> ```
+> 
+> And restart:
+> ```bash
+> cd docker
+> docker compose down
+> docker compose up -d
+> ```
+> 
+> 📖 **For detailed build instructions, see**: [Building RAGFlow with Paperless-ngx](#building-ragflow-with-paperless-ngx)
+> 
+> **Alternative for Development**: Run the frontend separately with `cd web && npm run dev` (backend still needs Docker)
+
+---
 
 ### Prerequisites
 
