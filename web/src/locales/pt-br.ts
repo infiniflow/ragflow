@@ -217,7 +217,7 @@ export default {
       chunkTokenNumber: 'Tamanho de bloco recomendado',
       chunkTokenNumberMessage: 'O número de tokens por fragmento é obrigatório',
       embeddingModelTip:
-        'O modelo de embedding padrão da base de conhecimento. Depois que a base de conhecimento já possui chunks, ao trocar o modelo de embedding o sistema sorteia alguns chunks para verificação de compatibilidade, os re-embebe com o novo modelo de embedding e calcula a similaridade cosseno entre os vetores novos e antigos. A troca só é permitida quando a similaridade média da amostra é ≥ 0.9. Caso contrário, é necessário excluir todos os chunks da base de conhecimento antes de poder alterar.',
+        'O modelo de embedding padrão da base de conhecimento. Não pode ser alterado uma vez que a base de conhecimento tenha chunks. Para mudar para um modelo de embedding padrão diferente, é necessário excluir todos os chunks existentes na base de conhecimento.',
       permissionsTip:
         "Se definido como 'Equipe', todos os membros da equipe poderão gerenciar a base de conhecimento.",
       chunkTokenNumberTip:
@@ -310,19 +310,6 @@ export default {
       topnTags: 'Top-N Etiquetas',
       tags: 'Etiquetas',
       addTag: 'Adicionar etiqueta',
-      paddleocrOptions: 'Opções do PaddleOCR',
-      paddleocrApiUrl: 'URL da API do PaddleOCR',
-      paddleocrApiUrlTip: 'A URL do endpoint da API para o serviço PaddleOCR',
-      paddleocrApiUrlPlaceholder: 'ex: https://servidor-paddleocr.com/api',
-      paddleocrAccessToken: 'Token de Acesso do AI Studio',
-      paddleocrAccessTokenTip:
-        'Token de acesso para a API do PaddleOCR (opcional)',
-      paddleocrAccessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
-      paddleocrAlgorithm: 'Algoritmo do PaddleOCR',
-      paddleocrAlgorithmTip:
-        'Algoritmo a ser usado para a análise do PaddleOCR',
-      paddleocrSelectAlgorithm: 'Selecionar algoritmo',
-      paddleocrModelNamePlaceholder: 'ex: paddleocr-do-ambiente-1',
     },
     chunk: {
       chunk: 'Fragmento',
@@ -413,7 +400,7 @@ export default {
         'Semelhante à penalidade de presença, isso reduz a tendência do modelo de repetir as mesmas palavras frequentemente.',
       maxTokens: 'Máximo de tokens',
       maxTokensMessage: 'O máximo de tokens é obrigatório',
-      maxTokensTip: `O tamanho máximo de contexto do modelo; um valor inválido ou incorreto causará um erro. Padrão: 512.`,
+      maxTokensTip: `Define o comprimento máximo da saída do modelo, medido pelo número de tokens (palavras ou partes de palavras). O padrão é 512. Se desativado, você remove o limite máximo de tokens, permitindo que o modelo determine o número de tokens em suas respostas.`,
       maxTokensInvalidMessage:
         'Por favor, insira um número válido para o máximo de tokens.',
       maxTokensMinMessage: 'O máximo de tokens não pode ser menor que 0.',
@@ -471,7 +458,7 @@ export default {
       profileDescription: 'Atualize sua foto e detalhes pessoais aqui.',
       maxTokens: 'Máximo de Tokens',
       maxTokensMessage: 'Máximo de Tokens é obrigatório',
-      maxTokensTip: `O tamanho máximo de contexto do modelo; um valor inválido ou incorreto causará um erro. Padrão: 512.`,
+      maxTokensTip: `Isso define o comprimento máximo da saída do modelo, medido em número de tokens (palavras ou partes de palavras). O padrão é 512. Se desativado, você remove o limite máximo de tokens, permitindo que o modelo determine o número de tokens em suas respostas.`,
       maxTokensInvalidMessage:
         'Por favor, insira um número válido para Máximo de Tokens.',
       maxTokensMinMessage: 'O Máximo de Tokens não pode ser menor que 0.',
@@ -559,18 +546,6 @@ export default {
       modelTypeMessage: 'Por favor, insira o tipo do seu modelo!',
       addLlmBaseUrl: 'URL base',
       baseUrlNameMessage: 'Por favor, insira sua URL base!',
-      paddleocr: {
-        apiUrl: 'URL da API do PaddleOCR',
-        apiUrlPlaceholder:
-          'Por exemplo: https://paddleocr-server.com/layout-parsing',
-        accessToken: 'Token de acesso do AI Studio',
-        accessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
-        algorithm: 'Algoritmo do PaddleOCR',
-        selectAlgorithm: 'Selecionar algoritmo',
-        modelNamePlaceholder: 'Por exemplo: paddleocr-from-env-1',
-        modelNameRequired: 'O nome do modelo é obrigatório',
-        apiUrlRequired: 'A URL da API do PaddleOCR é obrigatória',
-      },
       vision: 'Suporta visão?',
       ollamaLink: 'Como integrar {{name}}',
       FishAudioLink: 'Como usar FishAudio',
@@ -594,6 +569,10 @@ export default {
       'eu-central-1': 'Europa (Frankfurt)',
       'us-gov-west-1': 'AWS GovCloud (EUA-Oeste)',
       'ap-southeast-2': 'Ásia-Pacífico (Sydney)',
+      addHunyuanSID: 'Hunyuan Secret ID',
+      HunyuanSIDMessage: 'Por favor, insira seu Secret ID',
+      addHunyuanSK: 'Hunyuan Secret Key',
+      HunyuanSKMessage: 'Por favor, insira sua Secret Key',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Por favor, insira seu Secret ID',
       addTencentCloudSK: 'TencentCloud Secret Key',

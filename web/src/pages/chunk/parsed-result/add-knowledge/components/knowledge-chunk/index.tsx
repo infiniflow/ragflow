@@ -42,7 +42,7 @@ import {
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import styles from './index.module.less';
+import styles from './index.less';
 
 const Chunk = () => {
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
@@ -232,7 +232,7 @@ const Chunk = () => {
               <div className="h-[100px] flex flex-col justify-end pb-[5px]">
                 <div>
                   <h2 className="text-[24px]">{t('chunk.chunkResult')}</h2>
-                  <div className="text-[14px] text-text-secondary">
+                  <div className="text-[14px] text-[#979AAB]">
                     {t('chunk.chunkResultTip')}
                   </div>
                 </div>

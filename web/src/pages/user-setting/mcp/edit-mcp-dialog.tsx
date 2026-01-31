@@ -171,7 +171,7 @@ export function EditMcpDialog({
     <Modal
       title={id ? t('mcp.editMCP') : t('mcp.addMCP')}
       open={true}
-      onCancel={hideModal}
+      onOpenChange={hideModal}
       cancelText={t('common.cancel')}
       okText={t('common.save')}
       footer={

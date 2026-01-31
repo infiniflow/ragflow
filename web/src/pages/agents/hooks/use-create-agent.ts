@@ -71,7 +71,6 @@ export const DataflowEmptyDsl = {
   history: [],
   path: [],
   globals: {},
-  variables: [],
 };
 
 export function useCreateAgentOrPipeline() {

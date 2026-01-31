@@ -9,7 +9,7 @@ import { useIsFetching } from '@tanstack/react-query';
 import { pick } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { useParams, useSearchParams } from 'react-router';
+import { useParams, useSearchParams } from 'umi';
 import { z } from 'zod';
 import { formSchema } from './form-schema';
 
@@ -37,8 +37,7 @@ export function useHasParsedDocument(isEdit?: boolean) {
 export const useFetchKnowledgeConfigurationOnMount = (
   form: UseFormReturn<z.infer<typeof formSchema>, any, undefined>,
 ) => {
-  const { data: knowledgeDetails, loading } =
-    useFetchKnowledgeBaseConfiguration();
+  const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
 
   useEffect(() => {
     const parser_config = {
@@ -72,7 +71,7 @@ export const useFetchKnowledgeConfigurationOnMount = (
     form.reset(formValues);
   }, [form, knowledgeDetails]);
 
-  return { knowledgeDetails, loading };
+  return knowledgeDetails;
 };
 
 export const useSelectKnowledgeDetailsLoading = () =>

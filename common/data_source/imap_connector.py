@@ -12,7 +12,6 @@ from email.utils import collapse_rfc2231_value, parseaddr
 from enum import Enum
 from typing import Any
 from typing import cast
-import uuid
 
 import bs4
 from pydantic import BaseModel
@@ -636,6 +635,7 @@ def _parse_singular_addr(raw_header: str) -> tuple[str, str]:
 
 if __name__ == "__main__":
     import time
+    import uuid
     from types import TracebackType
     from common.data_source.utils import load_all_docs_from_checkpoint_connector
 

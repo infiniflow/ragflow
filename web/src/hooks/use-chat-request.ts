@@ -22,7 +22,7 @@ import { useDebounce } from 'ahooks';
 import { has } from 'lodash';
 import { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams, useSearchParams } from 'react-router';
+import { useParams, useSearchParams } from 'umi';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,

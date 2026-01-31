@@ -12,7 +12,6 @@ import {
   MenuOption,
 } from '@lexical/react/LexicalTypeaheadMenuPlugin';
 import {
-  $createLineBreakNode,
   $createParagraphNode,
   $createTextNode,
   $getRoot,
@@ -295,22 +294,27 @@ export default function VariablePickerMenuPlugin({
     [editor],
   );
 
-  // Parses a single line of text and appends nodes to the paragraph.
-  // Handles variable references in the format {variable_name}.
-  const parseLineContent = useCallback(
-    (line: string, paragraph: ReturnType<typeof $createParagraphNode>) => {
+  const parseTextToVariableNodes = useCallback(
+    (text: string) => {
+      const paragraph = $createParagraphNode();
+
+      // Regular expression to match content within {}
       const regex = /{([^}]*)}/g;
       let match;
       let lastIndex = 0;
-
-      while ((match = regex.exec(line)) !== null) {
+      while ((match = regex.exec(text)) !== null) {
         const { 1: content, index, 0: template } = match;
 
+        // Add the previous text part (if any)
         if (index > lastIndex) {
-          paragraph.append($createTextNode(line.slice(lastIndex, index)));
+          const textNode = $createTextNode(text.slice(lastIndex, index));
+
+          paragraph.append(textNode);
         }
 
+        // Add variable node or text node
         const nodeItem = findItemByValue(content);
+
         if (nodeItem) {
           paragraph.append(
             $createVariableNode(
@@ -324,34 +328,15 @@ export default function VariablePickerMenuPlugin({
           paragraph.append($createTextNode(template));
         }
 
+        // Update index
         lastIndex = regex.lastIndex;
       }
 
-      if (lastIndex < line.length) {
-        paragraph.append($createTextNode(line.slice(lastIndex)));
+      // Add the last part of text (if any)
+      if (lastIndex < text.length) {
+        const textNode = $createTextNode(text.slice(lastIndex));
+        paragraph.append(textNode);
       }
-    },
-    [findItemByValue],
-  );
-
-  // Parses text content into a single paragraph with LineBreakNodes for newlines.
-  // Using LineBreakNode ensures proper rendering and consistent serialization.
-  const parseTextToVariableNodes = useCallback(
-    (text: string) => {
-      const paragraph = $createParagraphNode();
-      const lines = text.split('\n');
-
-      lines.forEach((line, index) => {
-        // Parse the line content (text and variables)
-        if (line) {
-          parseLineContent(line, paragraph);
-        }
-
-        // Add LineBreakNode between lines (not after the last line)
-        if (index < lines.length - 1) {
-          paragraph.append($createLineBreakNode());
-        }
-      });
 
       $getRoot().clear().append(paragraph);
 
@@ -359,7 +344,7 @@ export default function VariablePickerMenuPlugin({
         $getRoot().selectEnd();
       }
     },
-    [parseLineContent],
+    [findItemByValue],
   );
 
   useEffect(() => {

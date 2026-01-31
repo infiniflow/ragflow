@@ -1,7 +1,7 @@
 import { NodeMouseHandler, useReactFlow } from '@xyflow/react';
 import { useCallback, useRef, useState } from 'react';
 
-import styles from './index.module.less';
+import styles from './index.less';
 
 export interface INodeContextMenu {
   id: string;

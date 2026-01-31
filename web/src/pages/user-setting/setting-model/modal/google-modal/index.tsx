@@ -1,15 +1,16 @@
-import {
-  DynamicForm,
-  FormFieldConfig,
-  FormFieldType,
-} from '@/components/dynamic-form';
-import { Modal } from '@/components/ui/modal/modal';
-import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
-import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { FieldValues } from 'react-hook-form';
+import { Form, Input, InputNumber, Modal, Select } from 'antd';
 import { LLMHeader } from '../../components/llm-header';
+
+type FieldType = IAddLlmRequestBody & {
+  google_project_id: string;
+  google_region: string;
+  google_service_account_key: string;
+};
+
+const { Option } = Select;
 
 const GoogleModal = ({
   visible,
@@ -18,135 +19,114 @@ const GoogleModal = ({
   loading,
   llmFactory,
 }: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
+  const [form] = Form.useForm<FieldType>();
+
   const { t } = useTranslate('setting');
-  const { t: tc } = useCommonTranslation();
-  const { buildModelTypeOptions } = useBuildModelTypeOptions();
-
-  const fields: FormFieldConfig[] = [
-    {
-      name: 'model_type',
-      label: t('modelType'),
-      type: FormFieldType.Select,
-      required: true,
-      options: buildModelTypeOptions(['chat', 'image2text']),
-      defaultValue: 'chat',
-      validation: {
-        message: t('modelTypeMessage'),
-      },
-    },
-    {
-      name: 'llm_name',
-      label: t('modelID'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('GoogleModelIDMessage'),
-      validation: {
-        message: t('GoogleModelIDMessage'),
-      },
-    },
-    {
-      name: 'google_project_id',
-      label: t('addGoogleProjectID'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('GoogleProjectIDMessage'),
-      validation: {
-        message: t('GoogleProjectIDMessage'),
-      },
-    },
-    {
-      name: 'google_region',
-      label: t('addGoogleRegion'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('GoogleRegionMessage'),
-      validation: {
-        message: t('GoogleRegionMessage'),
-      },
-    },
-    {
-      name: 'google_service_account_key',
-      label: t('addGoogleServiceAccountKey'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('GoogleServiceAccountKeyMessage'),
-      validation: {
-        message: t('GoogleServiceAccountKeyMessage'),
-      },
-    },
-    {
-      name: 'max_tokens',
-      label: t('maxTokens'),
-      type: FormFieldType.Number,
-      required: true,
-      placeholder: t('maxTokensTip'),
-      validation: {
-        min: 0,
-        message: t('maxTokensMinMessage'),
-      },
-      customValidate: (value: any) => {
-        if (value === undefined || value === null || value === '') {
-          return t('maxTokensMessage');
-        }
-        if (value < 0) {
-          return t('maxTokensMinMessage');
-        }
-        return true;
-      },
-    },
-  ];
-
-  const handleOk = async (values?: FieldValues) => {
-    if (!values) return;
+  const handleOk = async () => {
+    const values = await form.validateFields();
 
     const data = {
+      ...values,
       llm_factory: llmFactory,
-      model_type: values.model_type,
-      llm_name: values.llm_name,
-      google_project_id: values.google_project_id,
-      google_region: values.google_region,
-      google_service_account_key: values.google_service_account_key,
       max_tokens: values.max_tokens,
-    } as IAddLlmRequestBody;
+    };
 
-    await onOk?.(data);
+    onOk?.(data);
+  };
+
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
   };
 
   return (
     <Modal
       title={<LLMHeader name={llmFactory} />}
-      open={visible || false}
-      onOpenChange={(open) => !open && hideModal?.()}
-      maskClosable={false}
-      footer={<div className="p-4"></div>}
+      open={visible}
+      onOk={handleOk}
+      onCancel={hideModal}
+      okButtonProps={{ loading }}
     >
-      <DynamicForm.Root
-        fields={fields}
-        onSubmit={() => {
-          // Form submission is handled by SavingButton
-        }}
-        defaultValues={
-          {
-            model_type: 'chat',
-          } as FieldValues
-        }
-        labelClassName="font-normal"
-      >
-        <div className="absolute bottom-0 right-0 left-0 flex items-center justify-end w-full gap-2 py-6 px-6">
-          <DynamicForm.CancelButton
-            handleCancel={() => {
-              hideModal?.();
-            }}
+      <Form form={form}>
+        <Form.Item<FieldType>
+          label={t('modelType')}
+          name="model_type"
+          initialValue={'chat'}
+          rules={[{ required: true, message: t('modelTypeMessage') }]}
+        >
+          <Select placeholder={t('modelTypeMessage')}>
+            <Option value="chat">chat</Option>
+            <Option value="image2text">image2text</Option>
+          </Select>
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('modelID')}
+          name="llm_name"
+          rules={[{ required: true, message: t('GoogleModelIDMessage') }]}
+        >
+          <Input
+            placeholder={t('GoogleModelIDMessage')}
+            onKeyDown={handleKeyDown}
           />
-          <DynamicForm.SavingButton
-            submitLoading={loading || false}
-            buttonText={tc('ok')}
-            submitFunc={(values: FieldValues) => {
-              handleOk(values);
-            }}
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('addGoogleProjectID')}
+          name="google_project_id"
+          rules={[{ required: true, message: t('GoogleProjectIDMessage') }]}
+        >
+          <Input
+            placeholder={t('GoogleProjectIDMessage')}
+            onKeyDown={handleKeyDown}
           />
-        </div>
-      </DynamicForm.Root>
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('addGoogleRegion')}
+          name="google_region"
+          rules={[{ required: true, message: t('GoogleRegionMessage') }]}
+        >
+          <Input
+            placeholder={t('GoogleRegionMessage')}
+            onKeyDown={handleKeyDown}
+          />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('addGoogleServiceAccountKey')}
+          name="google_service_account_key"
+          rules={[
+            { required: true, message: t('GoogleServiceAccountKeyMessage') },
+          ]}
+        >
+          <Input
+            placeholder={t('GoogleServiceAccountKeyMessage')}
+            onKeyDown={handleKeyDown}
+          />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('maxTokens')}
+          name="max_tokens"
+          rules={[
+            { required: true, message: t('maxTokensMessage') },
+            {
+              type: 'number',
+              message: t('maxTokensInvalidMessage'),
+            },
+            ({}) => ({
+              validator(_, value) {
+                if (value < 0) {
+                  return Promise.reject(new Error(t('maxTokensMinMessage')));
+                }
+                return Promise.resolve();
+              },
+            }),
+          ]}
+        >
+          <InputNumber
+            placeholder={t('maxTokensTip')}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
+      </Form>
     </Modal>
   );
 };

@@ -17,7 +17,7 @@ import { t } from 'i18next';
 import { pick } from 'lodash';
 import { Clipboard, ClipboardPlus, FileInput, Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
-import { useSearchParams } from 'react-router';
+import { useSearchParams } from 'umi';
 import { AgentCard } from './agent-card';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
@@ -109,7 +109,7 @@ export default function Agents() {
                 <DropdownMenu>
                   <DropdownMenuTrigger>
                     <Button>
-                      <Plus className="h-4 w-4" />
+                      <Plus className="mr-2 h-4 w-4" />
                       {t('flow.createGraph')}
                     </Button>
                   </DropdownMenuTrigger>

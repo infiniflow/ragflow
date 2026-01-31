@@ -40,10 +40,8 @@ const segmentedVariants = {
     xl: 'px-6 py-2',
   },
 };
-export interface SegmentedProps extends Omit<
-  React.HTMLProps<HTMLDivElement>,
-  'onChange'
-> {
+export interface SegmentedProps
+  extends Omit<React.HTMLProps<HTMLDivElement>, 'onChange'> {
   options: SegmentedOptions;
   defaultValue?: SegmentedValue;
   value?: SegmentedValue;

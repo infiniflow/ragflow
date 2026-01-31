@@ -11,7 +11,7 @@ import { useDebounce } from 'ahooks';
 import { PaginationProps } from 'antd';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router';
+import { useSearchParams } from 'umi';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,

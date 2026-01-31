@@ -33,7 +33,6 @@ import {
   NodeHandleId,
   VariableType,
 } from '../../constant';
-import { useSaveOnBlur } from '../../hooks/use-save-on-blur';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 import { hasSubAgentOrTool, isBottomSubAgent } from '../../utils';
@@ -94,8 +93,6 @@ function AgentForm({ node }: INextOperatorForm) {
   const defaultValues = useValues(node);
 
   const { extraOptions } = useBuildPromptExtraPromptOptions(edges, node?.id);
-
-  const { handleSaveOnBlur } = useSaveOnBlur();
 
   const ExceptionMethodOptions = Object.values(AgentExceptionMethod).map(
     (x) => ({
@@ -166,7 +163,7 @@ function AgentForm({ node }: INextOperatorForm) {
             <QueryVariable
               name="visual_files_var"
               label="Visual Input File"
-              types={[VariableType.File]}
+              type={VariableType.File}
             ></QueryVariable>
           )}
           <FormField
@@ -181,7 +178,6 @@ function AgentForm({ node }: INextOperatorForm) {
                     placeholder={t('flow.messagePlaceholder')}
                     showToolbar={true}
                     extraOptions={extraOptions}
-                    onBlur={handleSaveOnBlur}
                   ></PromptEditor>
                 </FormControl>
               </FormItem>
@@ -199,7 +195,6 @@ function AgentForm({ node }: INextOperatorForm) {
                       <PromptEditor
                         {...field}
                         showToolbar={true}
-                        onBlur={handleSaveOnBlur}
                       ></PromptEditor>
                     </section>
                   </FormControl>

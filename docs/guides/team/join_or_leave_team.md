@@ -1,10 +1,8 @@
 ---
 sidebar_position: 3
 slug: /join_or_leave_team
-sidebar_custom_props: {
-  categoryIcon: LucideLogOut
-}
 ---
+
 # Join or leave a team
 
 Accept an invitation to join a team, decline an invitation, or leave a team.

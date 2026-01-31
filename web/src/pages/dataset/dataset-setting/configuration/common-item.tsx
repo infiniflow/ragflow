@@ -23,30 +23,22 @@ import { LlmModelType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
-import { history } from '@/utils/simple-history-util';
 import { t } from 'i18next';
 import { Settings } from 'lucide-react';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ControllerRenderProps,
   FieldValues,
   useFormContext,
 } from 'react-hook-form';
-import { useLocation } from 'react-router';
-import { DataSetContext } from '..';
-import { MetadataType } from '../../components/metedata/constant';
+import { useLocation } from 'umi';
 import {
+  MetadataType,
   useManageMetadata,
   util,
 } from '../../components/metedata/hooks/use-manage-modal';
-
-import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import {
-  IBuiltInMetadataItem,
-  IMetaDataReturnJSONSettings,
-} from '../../components/metedata/interface';
+import { IMetaDataReturnJSONSettings } from '../../components/metedata/interface';
 import { ManageMetadataModal } from '../../components/metedata/manage-modal';
-import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
 import {
   useHandleKbEmbedding,
   useHasParsedDocument,
@@ -379,8 +371,6 @@ export function AutoMetadata({
   // get metadata field
   const location = useLocation();
   const form = useFormContext();
-  const datasetContext = useContext(DataSetContext);
-  const { knowledgeBase } = useKnowledgeBaseContext();
   const {
     manageMetadataVisible,
     showManageMetadataModal,
@@ -391,44 +381,26 @@ export function AutoMetadata({
 
   const handleClickOpenMetadata = useCallback(() => {
     const metadata = form.getValues('parser_config.metadata');
-    const builtInMetadata = form.getValues('parser_config.built_in_metadata');
     const tableMetaData = util.metaDataSettingJSONToMetaDataTableData(metadata);
     showManageMetadataModal({
       metadata: tableMetaData,
       isCanAdd: true,
       type: type,
       record: otherData,
-      builtInMetadata,
-      secondTitle: knowledgeBase ? (
-        <div className="w-full flex items-center gap-1 text-sm text-text-secondary">
-          <RAGFlowAvatar
-            avatar={knowledgeBase.avatar}
-            name={knowledgeBase.name}
-            className="size-8"
-          ></RAGFlowAvatar>
-          <div className=" text-text-primary text-base space-y-1 overflow-hidden">
-            {knowledgeBase.name}
-          </div>
-        </div>
-      ) : (
-        <></>
-      ),
     });
-  }, [form, otherData, showManageMetadataModal, knowledgeBase, type]);
+  }, [form, otherData, showManageMetadataModal, type]);
 
   useEffect(() => {
     const locationState = location.state as
       | { openMetadata?: boolean }
       | undefined;
-    if (locationState?.openMetadata && !datasetContext?.loading) {
-      const timer = setTimeout(() => {
+    if (locationState?.openMetadata) {
+      setTimeout(() => {
         handleClickOpenMetadata();
-        clearTimeout(timer);
-      }, 0);
+      }, 100);
       locationState.openMetadata = false;
-      history.replace({ ...location }, locationState);
     }
-  }, [location, handleClickOpenMetadata, datasetContext]);
+  }, [location, handleClickOpenMetadata]);
 
   const autoMetadataField: FormFieldConfig = {
     name: 'parser_config.enable_metadata',
@@ -453,16 +425,8 @@ export function AutoMetadata({
     ),
   };
 
-  const handleSaveMetadata = (data?: {
-    metadata?: IMetaDataReturnJSONSettings;
-    builtInMetadata?: IBuiltInMetadataItem[];
-  }) => {
-    form.setValue('parser_config.metadata', data?.metadata || []);
-    form.setValue(
-      'parser_config.built_in_metadata',
-      data?.builtInMetadata || [],
-    );
-    form.setValue('parser_config.enable_metadata', true);
+  const handleSaveMetadata = (data?: IMetaDataReturnJSONSettings) => {
+    form.setValue('parser_config.metadata', data || []);
   };
   return (
     <>
@@ -492,12 +456,7 @@ export function AutoMetadata({
           isShowDescription={true}
           isShowValueSwitch={true}
           isVerticalShowValue={false}
-          builtInMetadata={metadataConfig.builtInMetadata}
-          secondTitle={metadataConfig.secondTitle}
-          success={(data?: {
-            metadata?: IMetaDataReturnJSONSettings;
-            builtInMetadata?: IBuiltInMetadataItem[];
-          }) => {
+          success={(data?: IMetaDataReturnJSONSettings) => {
             handleSaveMetadata(data);
           }}
         />
@@ -552,6 +511,7 @@ export function LLMModelItem({ line = 1, isEdit, label, name }: IProps) {
               })}
             >
               <FormLabel
+                required
                 tooltip={t('globalIndexModelTip')}
                 className={cn('text-sm  whitespace-wrap ', {
                   'w-1/4': line === 1,

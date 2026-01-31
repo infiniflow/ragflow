@@ -38,8 +38,6 @@ def get_value(d, k1, k2):
 
 
 def chunks_format(reference):
-    if not reference or not isinstance(reference, dict):
-        return []
     return [
         {
             "id": get_value(chunk, "chunk_id", "id"),
@@ -98,7 +96,6 @@ def message_fit_in(msg, max_length=4000):
 
 def kb_prompt(kbinfos, max_tokens, hash_id=False):
     from api.db.services.document_service import DocumentService
-    from api.db.services.doc_metadata_service import DocMetadataService
 
     knowledges = [get_value(ck, "content", "content_with_weight") for ck in kbinfos["chunks"]]
     kwlg_len = len(knowledges)
@@ -115,12 +112,7 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
             break
 
     docs = DocumentService.get_by_ids([get_value(ck, "doc_id", "document_id") for ck in kbinfos["chunks"][:chunks_num]])
-
-    docs_with_meta = {}
-    for d in docs:
-        meta = DocMetadataService.get_document_metadata(d.id)
-        docs_with_meta[d.id] = meta if meta else {}
-    docs = docs_with_meta
+    docs = {d.id: d.meta_fields for d in docs}
 
     def draw_node(k, line):
         if line is not None and not isinstance(line, str):
@@ -166,7 +158,6 @@ KEYWORD_PROMPT_TEMPLATE = load_prompt("keyword_prompt")
 QUESTION_PROMPT_TEMPLATE = load_prompt("question_prompt")
 VISION_LLM_DESCRIBE_PROMPT = load_prompt("vision_llm_describe_prompt")
 VISION_LLM_FIGURE_DESCRIBE_PROMPT = load_prompt("vision_llm_figure_describe_prompt")
-VISION_LLM_FIGURE_DESCRIBE_PROMPT_WITH_CONTEXT = load_prompt("vision_llm_figure_describe_prompt_with_context")
 STRUCTURED_OUTPUT_PROMPT = load_prompt("structured_output_prompt")
 
 ANALYZE_TASK_SYSTEM = load_prompt("analyze_task_system")
@@ -330,11 +321,6 @@ def vision_llm_figure_describe_prompt() -> str:
     return template.render()
 
 
-def vision_llm_figure_describe_prompt_with_context(context_above: str, context_below: str) -> str:
-    template = PROMPT_JINJA_ENV.from_string(VISION_LLM_FIGURE_DESCRIBE_PROMPT_WITH_CONTEXT)
-    return template.render(context_above=context_above, context_below=context_below)
-
-
 def tool_schema(tools_description: list[dict], complete_task=False):
     if not tools_description:
         return ""
@@ -491,26 +477,20 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str) -> dict:
     return {"conditions": []}
 
 
-async def gen_json(system_prompt: str, user_prompt: str, chat_mdl, gen_conf={}, max_retry=2):
-    from rag.graphrag.utils import get_llm_cache, set_llm_cache
+async def gen_json(system_prompt: str, user_prompt: str, chat_mdl, gen_conf=None):
+    from graphrag.utils import get_llm_cache, set_llm_cache
     cached = get_llm_cache(chat_mdl.llm_name, system_prompt, user_prompt, gen_conf)
     if cached:
         return json_repair.loads(cached)
     _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
-    err = ""
-    ans = ""
-    for _ in range(max_retry):
-        if ans and err:
-            msg[-1]["content"] += f"\nGenerated JSON is as following:\n{ans}\nBut exception while loading:\n{err}\nPlease reconsider and correct it."
-        ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:], gen_conf=gen_conf)
-        ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
-        try:
-            res = json_repair.loads(ans)
-            set_llm_cache(chat_mdl.llm_name, system_prompt, ans, user_prompt, gen_conf)
-            return res
-        except Exception as e:
-            logging.exception(f"Loading json failure: {ans}")
-            err += str(e)
+    ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:], gen_conf=gen_conf)
+    ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
+    try:
+        res = json_repair.loads(ans)
+        set_llm_cache(chat_mdl.llm_name, system_prompt, ans, user_prompt, gen_conf)
+        return res
+    except Exception:
+        logging.exception(f"Loading json failure: {ans}")
 
 
 TOC_DETECTION = load_prompt("toc_detection")
@@ -859,6 +839,8 @@ async def run_toc_from_text(chunks, chat_mdl, callback=None):
 
 TOC_RELEVANCE_SYSTEM = load_prompt("toc_relevance_system")
 TOC_RELEVANCE_USER = load_prompt("toc_relevance_user")
+
+
 async def relevant_chunks_with_toc(query: str, toc: list[dict], chat_mdl, topn: int = 6):
     import numpy as np
     try:
@@ -886,6 +868,8 @@ async def relevant_chunks_with_toc(query: str, toc: list[dict], chat_mdl, topn: 
 
 
 META_DATA = load_prompt("meta_data")
+
+
 async def gen_metadata(chat_mdl, schema: dict, content: str):
     template = PROMPT_JINJA_ENV.from_string(META_DATA)
     for k, desc in schema["properties"].items():
@@ -898,34 +882,3 @@ async def gen_metadata(chat_mdl, schema: dict, content: str):
     _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
     ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
     return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-
-
-SUFFICIENCY_CHECK = load_prompt("sufficiency_check")
-async def sufficiency_check(chat_mdl, question: str, ret_content: str):
-    try:
-        return await gen_json(
-            PROMPT_JINJA_ENV.from_string(SUFFICIENCY_CHECK).render(question=question, retrieved_docs=ret_content),
-            "Output:\n",
-            chat_mdl
-        )
-    except Exception as e:
-        logging.exception(e)
-    return {}
-
-
-MULTI_QUERIES_GEN = load_prompt("multi_queries_gen")
-async def multi_queries_gen(chat_mdl, question: str, query:str, missing_infos:list[str], ret_content: str):
-    try:
-        return await gen_json(
-            PROMPT_JINJA_ENV.from_string(MULTI_QUERIES_GEN).render(
-                original_question=question,
-                original_query=query,
-                missing_info="\n - ".join(missing_infos),
-                retrieved_docs=ret_content
-            ),
-            "Output:\n",
-            chat_mdl
-        )
-    except Exception as e:
-        logging.exception(e)
-    return {}

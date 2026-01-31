@@ -8,7 +8,7 @@ import { get } from 'lodash';
 import { memo } from 'react';
 import { LabelCard } from './card';
 import { LeftEndHandle } from './handle';
-import styles from './index.module.less';
+import styles from './index.less';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
 import { ToolBar } from './toolbar';
@@ -17,6 +17,7 @@ import { VariableDisplay } from './variable-display';
 function InnerMessageNode({ id, data, selected }: NodeProps<IMessageNode>) {
   const messages: string[] = get(data, 'form.content', []);
   const { getLabel } = useGetVariableLabelOrTypeByValue({ nodeId: id });
+
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
       <NodeWrapper selected={selected} id={id}>

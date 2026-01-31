@@ -72,7 +72,7 @@
 
 ## 💡 RAGFlow 是什麼？
 
-[RAGFlow](https://ragflow.io/) 是一款領先的開源 [RAG](https://ragflow.io/basics/what-is-rag)（Retrieval-Augmented Generation）引擎，通過融合前沿的 RAG 技術與 Agent 能力，為大型語言模型提供卓越的上下文層。它提供可適配任意規模企業的端到端 RAG 工作流，憑藉融合式[上下文引擎](https://ragflow.io/basics/what-is-agent-context-engine)與預置的 Agent 模板，助力開發者以極致效率與精度將複雜數據轉化為高可信、生產級的人工智能系統。
+[RAGFlow](https://ragflow.io/) 是一款領先的開源 RAG（Retrieval-Augmented Generation）引擎，通過融合前沿的 RAG 技術與 Agent 能力，為大型語言模型提供卓越的上下文層。它提供可適配任意規模企業的端到端 RAG 工作流，憑藉融合式上下文引擎與預置的 Agent 模板，助力開發者以極致效率與精度將複雜數據轉化為高可信、生產級的人工智能系統。
 
 ## 🎮 Demo 試用
 
@@ -191,7 +191,7 @@
 
 ```bash
    $ cd ragflow/docker
-
+   
    # git checkout v0.23.1
    # 可選：使用穩定版標籤（查看發佈：https://github.com/infiniflow/ragflow/releases）
    # 此步驟確保程式碼中的 entrypoint.sh 檔案與 Docker 映像版本一致。

@@ -225,36 +225,21 @@ class EvaluationService(CommonService):
         """
         success_count = 0
         failure_count = 0
-        case_instances = []
-        
-        if not cases:
-            return success_count, failure_count
-        
-        cur_timestamp = current_timestamp()
 
-        try:
-            for case_data in cases:
-                case_id = get_uuid()
-                case_info = {
-                    "id": case_id,
-                    "dataset_id": dataset_id,
-                    "question": case_data.get("question", ""),
-                    "reference_answer": case_data.get("reference_answer"),
-                    "relevant_doc_ids": case_data.get("relevant_doc_ids"),
-                    "relevant_chunk_ids": case_data.get("relevant_chunk_ids"),
-                    "metadata": case_data.get("metadata"),
-                    "create_time": cur_timestamp
-                }
+        for case_data in cases:
+            success, _ = cls.add_test_case(
+                dataset_id=dataset_id,
+                question=case_data.get("question", ""),
+                reference_answer=case_data.get("reference_answer"),
+                relevant_doc_ids=case_data.get("relevant_doc_ids"),
+                relevant_chunk_ids=case_data.get("relevant_chunk_ids"),
+                metadata=case_data.get("metadata")
+            )
 
-                case_instances.append(EvaluationCase(**case_info))
-            EvaluationCase.bulk_create(case_instances, batch_size=300)
-            success_count = len(case_instances)
-            failure_count = 0
-
-        except Exception as e:
-            logging.error(f"Error bulk importing test cases: {str(e)}")
-            failure_count = len(cases)
-            success_count = 0
+            if success:
+                success_count += 1
+            else:
+                failure_count += 1
 
         return success_count, failure_count
 

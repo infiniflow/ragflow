@@ -190,15 +190,10 @@ class CommonService:
             data_list (list): List of dictionaries containing record data to insert.
             batch_size (int, optional): Number of records to insert in each batch. Defaults to 100.
         """
-        current_ts = current_timestamp()
-        current_datetime = datetime_format(datetime.now())
         with DB.atomic():
             for d in data_list:
-                d["create_time"] = current_ts
-                d["create_date"] = current_datetime
-                d["update_time"] = current_ts
-                d["update_date"] = current_datetime
-
+                d["create_time"] = current_timestamp()
+                d["create_date"] = datetime_format(datetime.now())
             for i in range(0, len(data_list), batch_size):
                 cls.model.insert_many(data_list[i : i + batch_size]).execute()
 

@@ -64,12 +64,13 @@ function PDFGeneratorForm({ node }: INextOperatorForm) {
     add_timestamp: z.boolean(),
     watermark_text: z.string().optional(),
     enable_toc: z.boolean(),
-    outputs: z.object({
-      file_path: z.object({ type: z.string() }),
-      pdf_base64: z.object({ type: z.string() }),
-      download: z.object({ type: z.string() }),
-      success: z.object({ type: z.string() }),
-    }),
+    outputs: z
+      .object({
+        file_path: z.object({ type: z.string() }),
+        pdf_base64: z.object({ type: z.string() }),
+        success: z.object({ type: z.string() }),
+      })
+      .optional(),
   });
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -77,11 +78,9 @@ function PDFGeneratorForm({ node }: INextOperatorForm) {
     resolver: zodResolver(FormSchema),
   });
 
-  const formOutputs = form.watch('outputs');
-
   const outputList = useMemo(() => {
-    return transferOutputs(formOutputs ?? values.outputs);
-  }, [formOutputs, values.outputs]);
+    return transferOutputs(values.outputs);
+  }, [values.outputs]);
 
   useWatchFormChange(node?.id, form);
 

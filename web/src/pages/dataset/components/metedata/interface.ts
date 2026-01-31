@@ -1,10 +1,6 @@
 import { ReactNode } from 'react';
-import { MetadataType } from './constant';
-export type IMetaDataReturnType = Record<
-  string,
-  | { type: string; values: Array<Array<string | number>> }
-  | Array<Array<string | number>>
->;
+import { MetadataType } from './hook';
+export type IMetaDataReturnType = Record<string, Array<Array<string | number>>>;
 export type IMetaDataReturnJSONType = Record<
   string,
   Array<string | number> | string
@@ -15,48 +11,16 @@ export interface IMetaDataReturnJSONSettingItem {
   description?: string;
   enum?: string[];
 }
-export interface IMetaDataJsonSchemaProperty {
-  type?: string;
-  description?: string;
-  enum?: string[];
-  items?: {
-    type?: string;
-    enum?: string[];
-  };
-  format?: string;
-}
-export interface IMetaDataJsonSchema {
-  type?: 'object';
-  properties?: Record<string, IMetaDataJsonSchemaProperty>;
-  additionalProperties?: boolean;
-}
-export type IMetaDataReturnJSONSettings =
-  | IMetaDataJsonSchema
-  | Array<IMetaDataReturnJSONSettingItem>;
-
-export type MetadataValueType =
-  | 'string'
-  | 'list'
-  // | 'bool'
-  // | 'enum'
-  | 'time'
-  | 'number';
+export type IMetaDataReturnJSONSettings = Array<IMetaDataReturnJSONSettingItem>;
 
 export type IMetaDataTableData = {
   field: string;
   description: string;
   restrictDefinedValues?: boolean;
   values: string[];
-  valueType?: MetadataValueType;
-};
-
-export type IBuiltInMetadataItem = {
-  key: string;
-  type: MetadataValueType;
 };
 
 export type IManageModalProps = {
-  documentIds?: string[];
   title: ReactNode;
   isShowDescription?: boolean;
   isDeleteSingleValue?: boolean;
@@ -70,9 +34,7 @@ export type IManageModalProps = {
   isAddValue?: boolean;
   isShowValueSwitch?: boolean;
   isVerticalShowValue?: boolean;
-  builtInMetadata?: IBuiltInMetadataItem[];
   success?: (data: any) => void;
-  secondTitle?: ReactNode;
 };
 
 export interface IManageValuesProps {
@@ -83,32 +45,28 @@ export interface IManageValuesProps {
   isAddValue?: boolean;
   isShowDescription?: boolean;
   isShowValueSwitch?: boolean;
-  isShowType?: boolean;
   isVerticalShowValue?: boolean;
-  isAddValueMode?: boolean;
   data: IMetaDataTableData;
   type: MetadataType;
   hideModal: () => void;
   onSave: (data: IMetaDataTableData) => void;
   addUpdateValue: (
     key: string,
-    originalValue: string | undefined,
-    newValue: string | string[],
-    type?: MetadataValueType,
+    originalValue: string,
+    newValue: string,
   ) => void;
   addDeleteValue: (key: string, value: string) => void;
 }
 
-export interface DeleteOperation {
+interface DeleteOperation {
   key: string;
   value?: string;
 }
 
-export interface UpdateOperation {
+interface UpdateOperation {
   key: string;
   match: string;
-  value: string | string[];
-  valueType?: MetadataValueType;
+  value: string;
 }
 
 export interface MetadataOperations {
@@ -123,9 +81,7 @@ export type ShowManageMetadataModalProps = Partial<IManageModalProps> & {
   isCanAdd: boolean;
   type: MetadataType;
   record?: Record<string, any>;
-  builtInMetadata?: IBuiltInMetadataItem[];
   options?: ShowManageMetadataModalOptions;
   title?: ReactNode | string;
   isDeleteSingleValue?: boolean;
-  documentIds?: string[];
 };

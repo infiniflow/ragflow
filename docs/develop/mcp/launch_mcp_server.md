@@ -1,10 +1,8 @@
 ---
 sidebar_position: 1
 slug: /launch_mcp_server
-sidebar_custom_props: {
-  categoryIcon: LucideTvMinimalPlay
-}
 ---
+
 # Launch RAGFlow MCP server
 
 Launch an MCP server from source or via Docker.

@@ -540,13 +540,13 @@ const useGraphStore = create<RFState>()(
           (x) => x.component_name === name,
         );
         const lastIndex = tools.length
-          ? (tools
+          ? tools
               .map((x) => {
                 const idx = x.name.match(/(\d+)$/)?.[1];
                 return idx && isNaN(idx) ? -1 : Number(idx);
               })
               .sort((a, b) => a - b)
-              .at(-1) ?? -1)
+              .at(-1) ?? -1
           : -1;
 
         return `${name}_${lastIndex + 1}`;

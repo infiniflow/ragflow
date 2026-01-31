@@ -23,7 +23,7 @@ import {
   useHandleChunkCardClick,
   useUpdateChunk,
 } from './hooks';
-import styles from './index.module.less';
+import styles from './index.less';
 
 interface IProps {
   isChange: boolean;

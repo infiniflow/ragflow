@@ -1,10 +1,8 @@
 ---
 sidebar_position: 3
 slug: /add_google_drive
-sidebar_custom_props: {
-  categoryIcon: SiGoogledrive
-}
 ---
+
 # Add Google Drive
 
 ## 1. Create a Google Cloud Project

@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router';
+import { useParams } from 'umi';
 import AgentCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
 import { Operator } from './constant';

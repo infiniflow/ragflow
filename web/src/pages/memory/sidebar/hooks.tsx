@@ -1,6 +1,6 @@
 import { Routes } from '@/routes';
 import { useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams } from 'umi';
 
 export const useHandleMenuClick = () => {
   const navigate = useNavigate();

@@ -1,10 +1,8 @@
 ---
 sidebar_position: 25
 slug: /execute_sql
-sidebar_custom_props: {
-  categoryIcon: RagSql
-}
 ---
+
 # Execute SQL tool
 
 A tool that execute SQL queries on a specified relational database.

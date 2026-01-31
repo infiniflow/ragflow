@@ -8,7 +8,7 @@ import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { formatDate } from '@/utils/date';
 import { useDebounceEffect } from 'ahooks';
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router';
+import { useParams } from 'umi';
 import useGraphStore from '../store';
 import { useBuildDslData } from './use-build-dsl';
 

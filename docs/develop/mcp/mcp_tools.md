@@ -1,10 +1,8 @@
 ---
 sidebar_position: 2
 slug: /mcp_tools
-sidebar_custom_props: {
-  categoryIcon: LucideToolCase
-}
 ---
+
 # RAGFlow MCP tools
 
 The MCP server currently offers a specialized tool to assist users in searching for relevant information powered by RAGFlow DeepDoc technology:

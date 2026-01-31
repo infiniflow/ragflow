@@ -6,25 +6,22 @@ import { Segmented, SegmentedValue } from '@/components/ui/segmented';
 import { Routes } from '@/routes';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
+import { useNavigate } from 'umi';
 import { Agents } from './agent-list';
 import { SeeAllAppCard } from './application-card';
 import { ChatList } from './chat-list';
-import { MemoryList } from './memory-list';
 import { SearchList } from './search-list';
 
 const IconMap = {
   [Routes.Chats]: 'chats',
   [Routes.Searches]: 'searches',
   [Routes.Agents]: 'agents',
-  [Routes.Memories]: 'memory',
 };
 
 const EmptyTypeMap = {
   [Routes.Chats]: EmptyCardType.Chat,
   [Routes.Searches]: EmptyCardType.Search,
   [Routes.Agents]: EmptyCardType.Agent,
-  [Routes.Memories]: EmptyCardType.Memory,
 };
 
 export function Applications() {
@@ -50,7 +47,6 @@ export function Applications() {
       { value: Routes.Chats, label: t('chat.chatApps') },
       { value: Routes.Searches, label: t('search.searchApps') },
       { value: Routes.Agents, label: t('header.flow') },
-      { value: Routes.Memories, label: t('memories.memory') },
     ],
     [t],
   );
@@ -99,12 +95,6 @@ export function Applications() {
             setListLength={(length: number) => setListLength(length)}
             setLoading={(loading: boolean) => setLoading(loading)}
           ></SearchList>
-        )}
-        {val === Routes.Memories && (
-          <MemoryList
-            setListLength={(length: number) => setListLength(length)}
-            setLoading={(loading: boolean) => setLoading(loading)}
-          ></MemoryList>
         )}
         {listLength > 0 && (
           <SeeAllAppCard

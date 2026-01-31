@@ -1,10 +1,8 @@
 ---
 sidebar_position: -6
 slug: /auto_metadata
-sidebar_custom_props: {
-   categoryIcon: LucideFileCodeCorner
-}
 ---
+
 # Auto-extract metadata
 
 Automatically extract metadata from uploaded files.

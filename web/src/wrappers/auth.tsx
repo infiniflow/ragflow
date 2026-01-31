@@ -1,8 +1,8 @@
 import { useAuth } from '@/hooks/auth-hooks';
 import { redirectToLogin } from '@/utils/authorization-util';
-import { Outlet } from 'react-router';
+import { Outlet } from 'umi';
 
-export default function AuthWrapper() {
+export default () => {
   const { isLogin } = useAuth();
   if (isLogin === true) {
     return <Outlet />;
@@ -11,4 +11,4 @@ export default function AuthWrapper() {
   }
 
   return <></>;
-}
+};

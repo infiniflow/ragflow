@@ -14,7 +14,7 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 
 import { preprocessLaTeX } from '@/utils/chat';
 import { useIsDarkTheme } from '../theme-provider';
-import styles from './index.module.less';
+import styles from './index.less';
 
 const HighLightMarkdown = ({
   children,

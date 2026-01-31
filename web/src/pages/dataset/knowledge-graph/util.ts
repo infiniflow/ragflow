@@ -1,7 +1,6 @@
 import { isEmpty } from 'lodash';
 import { v4 as uuid } from 'uuid';
 
-export const defaultComboLabel = 'defaultCombo';
 class KeyGenerator {
   idx = 0;
   chars: string[] = [];
@@ -90,18 +89,6 @@ export const buildNodesAndCombos = (nodes: any[]) => {
       combo: combos.find((y) => y.data.label === findCombo(x?.communities))?.id,
     };
   });
-  if (!combos.length) {
-    const defaultComboId = uuid();
-    const defaultCombo = {
-      id: defaultComboId,
-      label: 'defaultCombo',
-      data: {
-        label: 'defaultCombo',
-      },
-    };
-
-    combos.push(defaultCombo);
-  }
 
   return { nodes: nextNodes, combos };
 };

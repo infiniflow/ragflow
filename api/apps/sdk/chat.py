@@ -51,9 +51,7 @@ async def create(tenant_id):
             req["llm_id"] = llm.pop("model_name")
             if req.get("llm_id") is not None:
                 llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(req["llm_id"])
-                model_type = llm.get("model_type")
-                model_type = model_type if model_type in ["chat", "image2text"] else "chat"
-                if not TenantLLMService.query(tenant_id=tenant_id, llm_name=llm_name, llm_factory=llm_factory, model_type=model_type):
+                if not TenantLLMService.query(tenant_id=tenant_id, llm_name=llm_name, llm_factory=llm_factory, model_type="chat"):
                     return get_error_data_result(f"`model_name` {req.get('llm_id')} doesn't exist")
         req["llm_setting"] = req.pop("llm")
     e, tenant = TenantService.get_by_id(tenant_id)
@@ -176,7 +174,7 @@ async def update(tenant_id, chat_id):
             req["llm_id"] = llm.pop("model_name")
             if req.get("llm_id") is not None:
                 llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(req["llm_id"])
-                model_type = llm.get("model_type")
+                model_type = llm.pop("model_type")
                 model_type = model_type if model_type in ["chat", "image2text"] else "chat"
                 if not TenantLLMService.query(tenant_id=tenant_id, llm_name=llm_name, llm_factory=llm_factory, model_type=model_type):
                     return get_error_data_result(f"`model_name` {req.get('llm_id')} doesn't exist")

@@ -14,10 +14,7 @@ type OutputProps = {
   isFormRequired?: boolean;
 } & PropsWithChildren;
 
-export function transferOutputs(outputs: Record<string, any> | undefined) {
-  if (!outputs) {
-    return [];
-  }
+export function transferOutputs(outputs: Record<string, any>) {
   return Object.entries(outputs).map(([key, value]) => ({
     title: key,
     type: value?.type,
@@ -38,7 +35,7 @@ export function Output({
       <div className="text-sm flex items-center justify-between">
         {t('flow.output')} <span>{children}</span>
       </div>
-      <ul className="space-y-1">
+      <ul>
         {list.map((x, idx) => (
           <li
             key={idx}

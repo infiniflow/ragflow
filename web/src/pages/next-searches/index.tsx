@@ -9,7 +9,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
-import { useSearchParams } from 'react-router';
+import { useSearchParams } from 'umi';
 import { useFetchSearchList, useRenameSearch } from './hooks';
 import { SearchCard } from './search-card';
 
@@ -96,7 +96,7 @@ export default function SearchList() {
                   openCreateModalFun();
                 }}
               >
-                <Plus className="h-4 w-4" />
+                <Plus className="mr-2 h-4 w-4" />
                 {t('createSearch')}
               </Button>
             </ListFilterBar>

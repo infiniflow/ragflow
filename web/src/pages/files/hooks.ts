@@ -3,7 +3,7 @@ import { useConnectToKnowledge, useRenameFile } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
 import { TableRowSelection } from 'antd/es/table/interface';
 import { useCallback, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'umi';
 
 export const useGetFolderId = () => {
   const [searchParams] = useSearchParams();

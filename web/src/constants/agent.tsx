@@ -27,7 +27,6 @@ export enum AgentGlobals {
   SysUserId = 'sys.user_id',
   SysConversationTurns = 'sys.conversation_turns',
   SysFiles = 'sys.files',
-  SysHistory = 'sys.history',
 }
 
 export const AgentGlobalsSysQueryWithBrace = `{${AgentGlobals.SysQuery}}`;

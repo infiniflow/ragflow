@@ -18,7 +18,7 @@ import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-reques
 import { IModalProps } from '@/interfaces/common';
 import { IParserConfig } from '@/interfaces/database/document';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
-import { MetadataType } from '@/pages/dataset/components/metedata/constant';
+import { MetadataType } from '@/pages/dataset/components/metedata/hooks/use-manage-modal';
 import {
   AutoMetadata,
   ChunkMethodItem,
@@ -57,10 +57,11 @@ import {
 
 const FormId = 'ChunkMethodDialogForm';
 
-interface IProps extends IModalProps<{
-  parserId: string;
-  parserConfig: IChangeParserConfigRequestBody;
-}> {
+interface IProps
+  extends IModalProps<{
+    parserId: string;
+    parserConfig: IChangeParserConfigRequestBody;
+  }> {
   loading: boolean;
   parserId: string;
   pipelineId?: string;
@@ -144,13 +145,15 @@ export function ChunkMethodDialog({
         pages: z
           .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
           .optional(),
-        metadata: z.any().optional(),
-        built_in_metadata: z
+        metadata: z
           .array(
-            z.object({
-              key: z.string().optional(),
-              type: z.string().optional(),
-            }),
+            z
+              .object({
+                key: z.string().optional(),
+                description: z.string().optional(),
+                enum: z.array(z.string().optional()).optional(),
+              })
+              .optional(),
           )
           .optional(),
         enable_metadata: z.boolean().optional(),

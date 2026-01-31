@@ -17,7 +17,6 @@ import base64
 import json
 import logging
 import os
-import re
 import shutil
 import tempfile
 import time
@@ -49,10 +48,10 @@ class TencentCloudAPIClient:
         self.secret_key = secret_key
         self.region = region
         self.outlines = []
-
+        
         # Create credentials
         self.cred = credential.Credential(secret_id, secret_key)
-
+        
         # Instantiate an http option, optional, can be skipped if no special requirements
         self.httpProfile = HttpProfile()
         self.httpProfile.endpoint = "lkeap.tencentcloudapi.com"
@@ -60,7 +59,7 @@ class TencentCloudAPIClient:
         # Instantiate a client option, optional, can be skipped if no special requirements
         self.clientProfile = ClientProfile()
         self.clientProfile.httpProfile = self.httpProfile
-
+        
         # Instantiate the client object for the product to be requested, clientProfile is optional
         self.client = lkeap_client.LkeapClient(self.cred, region, self.clientProfile)
 
@@ -69,14 +68,14 @@ class TencentCloudAPIClient:
         try:
             # Instantiate a request object, each interface corresponds to a request object
             req = models.ReconstructDocumentSSERequest()
-
+            
             # Build request parameters
             params = {
                 "FileType": file_type,
                 "FileStartPageNumber": file_start_page,
                 "FileEndPageNumber": file_end_page,
             }
-
+            
             # According to Tencent Cloud API documentation, either FileUrl or FileBase64 parameter must be provided, if both are provided only FileUrl will be used
             if file_url:
                 params["FileUrl"] = file_url
@@ -95,7 +94,7 @@ class TencentCloudAPIClient:
             # The returned resp is an instance of ReconstructDocumentSSEResponse, corresponding to the request object
             resp = self.client.ReconstructDocumentSSE(req)
             parser_result = {}
-
+            
             # Output json format string response
             if isinstance(resp, types.GeneratorType):  # Streaming response
                 logging.info("[TCADP] Detected streaming response")
@@ -105,7 +104,7 @@ class TencentCloudAPIClient:
                         try:
                             data_dict = json.loads(event['data'])
                             logging.info(f"[TCADP] Parsed data: {data_dict}")
-
+                            
                             if data_dict.get('Progress') == "100":
                                 parser_result = data_dict
                                 logging.info("[TCADP] Document parsing completed!")
@@ -119,14 +118,14 @@ class TencentCloudAPIClient:
                                     logging.warning("[TCADP] Failed parsing pages:")
                                     for page in failed_pages:
                                         logging.warning(f"[TCADP]   Page number: {page.get('PageNumber')}, Error: {page.get('ErrorMsg')}")
-
+                                
                                 # Check if there is a download link
                                 download_url = data_dict.get("DocumentRecognizeResultUrl")
                                 if download_url:
                                     logging.info(f"[TCADP] Got download link: {download_url}")
                                 else:
                                     logging.warning("[TCADP] No download link obtained")
-
+                                
                                 break  # Found final result, exit loop
                             else:
                                 # Print progress information
@@ -169,6 +168,9 @@ class TencentCloudAPIClient:
             return None
 
         try:
+            response = requests.get(download_url)
+            response.raise_for_status()
+
             # Ensure output directory exists
             os.makedirs(output_dir, exist_ok=True)
 
@@ -177,36 +179,29 @@ class TencentCloudAPIClient:
             filename = f"tcadp_result_{timestamp}.zip"
             file_path = os.path.join(output_dir, filename)
 
-            with requests.get(download_url, stream=True) as response:
-                response.raise_for_status()
-                with open(file_path, "wb") as f:
-                    response.raw.decode_content = True
-                    shutil.copyfileobj(response.raw, f)
+            # Save file
+            with open(file_path, "wb") as f:
+                f.write(response.content)
 
             logging.info(f"[TCADP] Document parsing result downloaded to: {os.path.basename(file_path)}")
             return file_path
 
-        except Exception as e:
+        except requests.exceptions.RequestException as e:
             logging.error(f"[TCADP] Failed to download file: {e}")
-            try:
-                if "file_path" in locals() and os.path.exists(file_path):
-                    os.unlink(file_path)
-            except Exception:
-                pass
             return None
 
 
 class TCADPParser(RAGFlowPdfParser):
-    def __init__(self, secret_id: str = None, secret_key: str = None, region: str = "ap-guangzhou",
+    def __init__(self, secret_id: str = None, secret_key: str = None, region: str = "ap-guangzhou", 
                  table_result_type: str = None, markdown_image_response_type: str = None):
         super().__init__()
-
+        
         # First initialize logger
         self.logger = logging.getLogger(self.__class__.__name__)
-
+        
         # Log received parameters
         self.logger.info(f"[TCADP] Initializing with parameters - table_result_type: {table_result_type}, markdown_image_response_type: {markdown_image_response_type}")
-
+        
         # Priority: read configuration from RAGFlow configuration system (service_conf.yaml)
         try:
             tcadp_parser = get_base_config("tcadp_config", {})
@@ -217,7 +212,7 @@ class TCADPParser(RAGFlowPdfParser):
                 # Set table_result_type and markdown_image_response_type from config or parameters
                 self.table_result_type = table_result_type if table_result_type is not None else tcadp_parser.get("table_result_type", "1")
                 self.markdown_image_response_type = markdown_image_response_type if markdown_image_response_type is not None else tcadp_parser.get("markdown_image_response_type", "1")
-
+                
             else:
                 self.logger.error("[TCADP] Please configure tcadp_config in service_conf.yaml first")
                 # If config file is empty, use provided parameters or defaults
@@ -242,10 +237,6 @@ class TCADPParser(RAGFlowPdfParser):
         if not self.secret_id or not self.secret_key:
             raise ValueError("[TCADP] Please set Tencent Cloud API keys, configure tcadp_config in service_conf.yaml")
 
-    @staticmethod
-    def _is_zipinfo_symlink(member: zipfile.ZipInfo) -> bool:
-        return (member.external_attr >> 16) & 0o170000 == 0o120000
-
     def check_installation(self) -> bool:
         """Check if Tencent Cloud API configuration is correct"""
         try:
@@ -264,7 +255,7 @@ class TCADPParser(RAGFlowPdfParser):
 
     def _file_to_base64(self, file_path: str, binary: bytes = None) -> str:
         """Convert file to Base64 format"""
-
+        
         if binary:
             # If binary data is directly available, convert directly
             return base64.b64encode(binary).decode('utf-8')
@@ -280,34 +271,23 @@ class TCADPParser(RAGFlowPdfParser):
 
         try:
             with zipfile.ZipFile(zip_path, "r") as zip_file:
-                members = zip_file.infolist()
-                for member in members:
-                    name = member.filename.replace("\\", "/")
-                    if member.is_dir():
-                        continue
-                    if member.flag_bits & 0x1:
-                        raise RuntimeError(f"[TCADP] Encrypted zip entry not supported: {member.filename}")
-                    if self._is_zipinfo_symlink(member):
-                        raise RuntimeError(f"[TCADP] Symlink zip entry not supported: {member.filename}")
-                    if name.startswith("/") or name.startswith("//") or re.match(r"^[A-Za-z]:", name):
-                        raise RuntimeError(f"[TCADP] Unsafe zip path (absolute): {member.filename}")
-                    parts = [p for p in name.split("/") if p not in ("", ".")]
-                    if any(p == ".." for p in parts):
-                        raise RuntimeError(f"[TCADP] Unsafe zip path (traversal): {member.filename}")
+                # Find JSON result files
+                json_files = [f for f in zip_file.namelist() if f.endswith(".json")]
 
-                    if not (name.endswith(".json") or name.endswith(".md")):
-                        continue
-
-                    with zip_file.open(member) as f:
-                        if name.endswith(".json"):
-                            data = json.load(f)
-                            if isinstance(data, list):
-                                results.extend(data)
-                            else:
-                                results.append(data)
+                for json_file in json_files:
+                    with zip_file.open(json_file) as f:
+                        data = json.load(f)
+                        if isinstance(data, list):
+                            results.extend(data)
                         else:
-                            content = f.read().decode("utf-8")
-                            results.append({"type": "text", "content": content, "file": name})
+                            results.append(data)
+
+                # Find Markdown files
+                md_files = [f for f in zip_file.namelist() if f.endswith(".md")]
+                for md_file in md_files:
+                    with zip_file.open(md_file) as f:
+                        content = f.read().decode("utf-8")
+                        results.append({"type": "text", "content": content, "file": md_file})
 
         except Exception as e:
             self.logger.error(f"[TCADP] Failed to extract ZIP file content: {e}")
@@ -415,7 +395,7 @@ class TCADPParser(RAGFlowPdfParser):
             # Convert file to Base64 format
             if callback:
                 callback(0.2, "[TCADP] Converting file to Base64 format")
-
+            
             file_base64 = self._file_to_base64(file_path, binary)
             if callback:
                 callback(0.25, f"[TCADP] File converted to Base64, size: {len(file_base64)} characters")
@@ -440,23 +420,23 @@ class TCADPParser(RAGFlowPdfParser):
                         "TableResultType": self.table_result_type,
                         "MarkdownImageResponseType": self.markdown_image_response_type
                     }
-
+                    
                     self.logger.info(f"[TCADP] API request config - TableResultType: {self.table_result_type}, MarkdownImageResponseType: {self.markdown_image_response_type}")
 
                     result = client.reconstruct_document_sse(
-                        file_type=file_type,
-                        file_base64=file_base64,
-                        file_start_page=file_start_page,
-                        file_end_page=file_end_page,
+                        file_type=file_type, 
+                        file_base64=file_base64, 
+                        file_start_page=file_start_page, 
+                        file_end_page=file_end_page, 
                         config=config
                     )
-
+                    
                     if result:
                         self.logger.info(f"[TCADP] Attempt {attempt + 1} successful")
                         break
                     else:
                         self.logger.warning(f"[TCADP] Attempt {attempt + 1} failed, result is None")
-
+                        
                 except Exception as e:
                     self.logger.error(f"[TCADP] Attempt {attempt + 1} exception: {e}")
                     if attempt == max_retries - 1:

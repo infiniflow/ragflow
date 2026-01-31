@@ -1,10 +1,8 @@
 ---
 sidebar_position: 20
 slug: /sandbox_quickstart
-sidebar_custom_props: {
-  categoryIcon: LucideCodesandbox
-}
 ---
+
 # Sandbox quickstart
 
 A secure, pluggable code execution backend designed for RAGFlow and other applications requiring isolated code execution environments.

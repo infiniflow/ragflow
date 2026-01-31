@@ -1,15 +1,16 @@
-import {
-  DynamicForm,
-  FormFieldConfig,
-  FormFieldType,
-} from '@/components/dynamic-form';
-import { Modal } from '@/components/ui/modal/modal';
-import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
-import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { FieldValues } from 'react-hook-form';
+import { Form, Input, InputNumber, Modal, Select, Switch } from 'antd';
+import omit from 'lodash/omit';
 import { LLMHeader } from '../../components/llm-header';
+
+type FieldType = IAddLlmRequestBody & {
+  api_version: string;
+  vision: boolean;
+};
+
+const { Option } = Select;
 
 const AzureOpenAIModal = ({
   visible,
@@ -18,140 +19,150 @@ const AzureOpenAIModal = ({
   loading,
   llmFactory,
 }: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
+  const [form] = Form.useForm<FieldType>();
+
   const { t } = useTranslate('setting');
-  const { t: tg } = useCommonTranslation();
-  const { buildModelTypeOptions } = useBuildModelTypeOptions();
 
-  const fields: FormFieldConfig[] = [
-    {
-      name: 'model_type',
-      label: t('modelType'),
-      type: FormFieldType.Select,
-      required: true,
-      options: buildModelTypeOptions(['chat', 'embedding', 'image2text']),
-      defaultValue: 'embedding',
-      validation: {
-        message: t('modelTypeMessage'),
-      },
-    },
-    {
-      name: 'api_base',
-      label: t('addLlmBaseUrl'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('baseUrlNameMessage'),
-      validation: {
-        message: t('baseUrlNameMessage'),
-      },
-    },
-    {
-      name: 'api_key',
-      label: t('apiKey'),
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: t('apiKeyMessage'),
-    },
-    {
-      name: 'llm_name',
-      label: t('modelName'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('modelNameMessage'),
-      defaultValue: 'gpt-3.5-turbo',
-      validation: {
-        message: t('modelNameMessage'),
-      },
-    },
-    {
-      name: 'api_version',
-      label: t('apiVersion'),
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: t('apiVersionMessage'),
-      defaultValue: '2024-02-01',
-    },
-    {
-      name: 'max_tokens',
-      label: t('maxTokens'),
-      type: FormFieldType.Number,
-      required: true,
-      placeholder: t('maxTokensTip'),
-      validation: {
-        min: 0,
-        message: t('maxTokensMessage'),
-      },
-    },
-    {
-      name: 'vision',
-      label: t('vision'),
-      type: FormFieldType.Switch,
-      defaultValue: false,
-      dependencies: ['model_type'],
-      shouldRender: (formValues: any) => {
-        return formValues?.model_type === 'chat';
-      },
-    },
-  ];
-
-  const handleOk = async (values?: FieldValues) => {
-    if (!values) return;
-
+  const handleOk = async () => {
+    const values = await form.validateFields();
     const modelType =
       values.model_type === 'chat' && values.vision
         ? 'image2text'
         : values.model_type;
 
-    const data: IAddLlmRequestBody & { api_version?: string } = {
-      llm_factory: llmFactory,
-      llm_name: values.llm_name as string,
+    const data = {
+      ...omit(values, ['vision']),
       model_type: modelType,
-      api_base: values.api_base as string,
-      api_key: values.api_key as string | undefined,
-      max_tokens: values.max_tokens as number,
-      api_version: values.api_version as string,
+      llm_factory: llmFactory,
+      max_tokens: values.max_tokens,
     };
+    console.info(data);
 
-    await onOk?.(data);
+    onOk?.(data);
+  };
+  const optionsMap = {
+    Default: [
+      { value: 'chat', label: 'chat' },
+      { value: 'embedding', label: 'embedding' },
+      { value: 'image2text', label: 'image2text' },
+    ],
+  };
+  const getOptions = () => {
+    return optionsMap.Default;
+  };
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
   };
 
   return (
     <Modal
       title={<LLMHeader name={llmFactory} />}
-      open={visible || false}
-      onOpenChange={(open) => !open && hideModal?.()}
-      maskClosable={false}
-      footer={<div className="p-4"></div>}
+      open={visible}
+      onOk={handleOk}
+      onCancel={hideModal}
+      okButtonProps={{ loading }}
     >
-      <DynamicForm.Root
-        fields={fields}
-        onSubmit={(data) => {
-          console.log(data);
-        }}
-        defaultValues={
-          {
-            model_type: 'embedding',
-            llm_name: 'gpt-3.5-turbo',
-            api_version: '2024-02-01',
-            vision: false,
-          } as FieldValues
-        }
-        labelClassName="font-normal"
+      <Form
+        name="basic"
+        style={{ maxWidth: 600 }}
+        autoComplete="off"
+        layout={'vertical'}
+        form={form}
       >
-        <div className="absolute bottom-0 right-0 left-0 flex items-center justify-end w-full gap-2 py-6 px-6">
-          <DynamicForm.CancelButton
-            handleCancel={() => {
-              hideModal?.();
-            }}
+        <Form.Item<FieldType>
+          label={t('modelType')}
+          name="model_type"
+          initialValue={'embedding'}
+          rules={[{ required: true, message: t('modelTypeMessage') }]}
+        >
+          <Select placeholder={t('modelTypeMessage')}>
+            {getOptions(llmFactory).map((option) => (
+              <Option key={option.value} value={option.value}>
+                {option.label}
+              </Option>
+            ))}
+          </Select>
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('addLlmBaseUrl')}
+          name="api_base"
+          rules={[{ required: true, message: t('baseUrlNameMessage') }]}
+        >
+          <Input
+            placeholder={t('baseUrlNameMessage')}
+            onKeyDown={handleKeyDown}
           />
-          <DynamicForm.SavingButton
-            submitLoading={loading || false}
-            buttonText={tg('ok')}
-            submitFunc={(values: FieldValues) => {
-              handleOk(values);
-            }}
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('apiKey')}
+          name="api_key"
+          rules={[{ required: false, message: t('apiKeyMessage') }]}
+        >
+          <Input placeholder={t('apiKeyMessage')} onKeyDown={handleKeyDown} />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('modelName')}
+          name="llm_name"
+          initialValue="gpt-3.5-turbo"
+          rules={[{ required: true, message: t('modelNameMessage') }]}
+        >
+          <Input
+            placeholder={t('modelNameMessage')}
+            onKeyDown={handleKeyDown}
           />
-        </div>
-      </DynamicForm.Root>
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('apiVersion')}
+          name="api_version"
+          initialValue="2024-02-01"
+          rules={[{ required: false, message: t('apiVersionMessage') }]}
+        >
+          <Input
+            placeholder={t('apiVersionMessage')}
+            onKeyDown={handleKeyDown}
+          />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('maxTokens')}
+          name="max_tokens"
+          rules={[
+            { required: true, message: t('maxTokensMessage') },
+            {
+              type: 'number',
+              message: t('maxTokensInvalidMessage'),
+            },
+            ({}) => ({
+              validator(_, value) {
+                if (value < 0) {
+                  return Promise.reject(new Error(t('maxTokensMinMessage')));
+                }
+                return Promise.resolve();
+              },
+            }),
+          ]}
+        >
+          <InputNumber
+            placeholder={t('maxTokensTip')}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
+
+        <Form.Item noStyle dependencies={['model_type']}>
+          {({ getFieldValue }) =>
+            getFieldValue('model_type') === 'chat' && (
+              <Form.Item
+                label={t('vision')}
+                valuePropName="checked"
+                name={'vision'}
+              >
+                <Switch />
+              </Form.Item>
+            )
+          }
+        </Form.Item>
+      </Form>
     </Modal>
   );
 };

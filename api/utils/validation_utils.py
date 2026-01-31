@@ -82,8 +82,6 @@ async def validate_and_parse_json_request(request: Request, validator: type[Base
         2. Extra fields added via `extras` parameter are automatically removed
            from the final output after validation
     """
-    if request.mimetype != "application/json":
-        return None, f"Unsupported content type: Expected application/json, got {request.content_type}"
     try:
         payload = await request.get_json() or {}
     except UnsupportedMediaType:

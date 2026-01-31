@@ -27,7 +27,7 @@ from utils.hypothesis_utils import valid_names
 
 
 class TestAuthorization:
-    @pytest.mark.p2
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
@@ -77,8 +77,7 @@ class TestDatasetUpdate:
     @pytest.mark.p1
     @given(name=valid_names())
     @example("a" * 128)
-    # Network-bound API call; disable Hypothesis deadline to avoid flaky timeouts.
-    @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
+    @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_name(self, WebApiAuth, add_dataset_func, name):
         dataset_id = add_dataset_func
         payload = {"name": name, "description": "", "parser_id": "naive", "kb_id": dataset_id}
@@ -162,7 +161,7 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"]["embd_id"] == embedding_model, res
 
-    @pytest.mark.p2
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "permission",
         [

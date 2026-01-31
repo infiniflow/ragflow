@@ -1,7 +1,7 @@
 import { MessageType } from '@/constants/chat';
 import { useUpdateConversation } from '@/hooks/use-chat-request';
 import { useCallback } from 'react';
-import { useParams } from 'react-router';
+import { useParams } from 'umi';
 
 export const useSetConversation = () => {
   const { id: dialogId } = useParams();

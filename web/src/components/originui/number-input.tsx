@@ -1,13 +1,5 @@
-import { isNumber, trim } from 'lodash';
 import { MinusIcon, PlusIcon } from 'lucide-react';
-import React, {
-  FocusEventHandler,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 interface NumberInputProps {
   className?: string;
@@ -26,11 +18,9 @@ const NumberInput: React.FC<NumberInputProps> = ({
   min = 0,
   max = Infinity,
 }) => {
-  const [value, setValue] = useState<number | ''>(() => {
+  const [value, setValue] = useState<number>(() => {
     return initialValue ?? 0;
   });
-
-  const valueRef = useRef<number>();
 
   useEffect(() => {
     if (initialValue !== undefined) {
@@ -39,16 +29,13 @@ const NumberInput: React.FC<NumberInputProps> = ({
   }, [initialValue]);
 
   const handleDecrement = () => {
-    if (isNumber(value) && value > min) {
+    if (value > 0) {
       setValue(value - 1);
       onChange?.(value - 1);
     }
   };
 
   const handleIncrement = () => {
-    if (!isNumber(value)) {
-      return;
-    }
     if (value > max - 1) {
       return;
     }
@@ -57,19 +44,9 @@ const NumberInput: React.FC<NumberInputProps> = ({
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const currentValue = e.target.value;
-    const newValue = Number(currentValue);
-
-    if (trim(currentValue) === '') {
-      if (isNumber(value)) {
-        valueRef.current = value;
-      }
-      setValue('');
-      return;
-    }
-
+    const newValue = Number(e.target.value);
     if (!isNaN(newValue)) {
-      if (newValue > max || newValue < min) {
+      if (newValue > max) {
         return;
       }
       setValue(newValue);
@@ -77,16 +54,12 @@ const NumberInput: React.FC<NumberInputProps> = ({
     }
   };
 
-  const handleBlur: FocusEventHandler<HTMLInputElement> = useCallback(() => {
-    if (isNumber(value)) {
-      onChange?.(value);
-    } else {
-      const previousValue = valueRef.current ?? min;
-      setValue(previousValue);
-      onChange?.(previousValue);
+  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // If the input value is not a number, the input is not allowed
+    if (!/^\d*$/.test(e.target.value)) {
+      e.preventDefault();
     }
-  }, [min, onChange, value]);
-
+  };
   const style = useMemo(
     () => ({
       height: height ? `${height.toString().replace('px', '')}px` : 'auto',
@@ -109,8 +82,8 @@ const NumberInput: React.FC<NumberInputProps> = ({
       <input
         type="text"
         value={value}
+        onInput={handleInput}
         onChange={handleChange}
-        onBlur={handleBlur}
         className="w-full flex-1 text-center bg-transparent focus:outline-none"
         style={style}
         min={min}

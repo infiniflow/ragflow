@@ -15,12 +15,12 @@ import {
 } from '@/utils/chat';
 import { getExtension } from '@/utils/document-util';
 import { InfoCircleOutlined } from '@ant-design/icons';
+import { Button, Flex, Popover, Tooltip } from 'antd';
 import classNames from 'classnames';
 import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import { omit } from 'lodash';
 import { pipe } from 'lodash/fp';
-import { Info } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Markdown from 'react-markdown';
@@ -35,11 +35,8 @@ import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { visitParents } from 'unist-util-visit-parents';
-import styles from './floating-chat-widget-markdown.module.less';
+import styles from './floating-chat-widget-markdown.less';
 import { useIsDarkTheme } from './theme-provider';
-import { Button } from './ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 const getChunkIndex = (match: string) => Number(match.replace(/\[|\]/g, ''));
 
@@ -164,19 +161,19 @@ const FloatingChatWidgetMarkdown = ({
           className="flex gap-2 widget-citation-content"
         >
           {imageId && (
-            <Popover>
-              <TooltipTrigger asChild>
-                <Image
-                  id={imageId}
-                  className="w-24 h-24 object-contain rounded m-1 cursor-pointer"
-                />
-              </TooltipTrigger>
-              <TooltipContent side="left">
+            <Popover
+              placement="left"
+              content={
                 <Image
                   id={imageId}
                   className="max-w-[80vw] max-h-[60vh] rounded"
                 />
-              </TooltipContent>
+              }
+            >
+              <Image
+                id={imageId}
+                className="w-24 h-24 object-contain rounded m-1 cursor-pointer"
+              />
             </Popover>
           )}
           <div className="space-y-2 flex-1 min-w-0">
@@ -187,7 +184,7 @@ const FloatingChatWidgetMarkdown = ({
               className="max-h-[250px] overflow-y-auto text-xs leading-relaxed p-2 bg-gray-50 dark:bg-gray-800 rounded prose-sm"
             ></div>
             {documentId && (
-              <section className="flex gap-1 justify-center">
+              <Flex gap={'small'} align="center">
                 {fileThumbnail ? (
                   <img
                     src={fileThumbnail}
@@ -197,33 +194,32 @@ const FloatingChatWidgetMarkdown = ({
                 ) : (
                   <SvgIcon name={`file-icon/${fileExtension}`} width={20} />
                 )}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size={'sm'}
-                      variant={'link'}
-                      className="p-0 text-xs break-words h-auto text-left flex-1"
-                      onClick={handleDocumentButtonClick(
-                        documentId,
-                        chunkItem,
-                        fileExtension === 'pdf',
-                        documentUrl,
-                      )}
-                      disabled={!documentUrl && fileExtension !== 'pdf'}
-                      style={{ whiteSpace: 'normal' }}
-                    >
-                      <span className="truncate">
-                        {document?.doc_name ?? 'Unnamed Document'}
-                      </span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {!documentUrl && fileExtension !== 'pdf'
+                <Tooltip
+                  title={
+                    !documentUrl && fileExtension !== 'pdf'
                       ? 'Document link unavailable'
-                      : document.doc_name}
-                  </TooltipContent>
+                      : document.doc_name
+                  }
+                >
+                  <Button
+                    type="link"
+                    size="small"
+                    className="p-0 text-xs break-words h-auto text-left flex-1"
+                    onClick={handleDocumentButtonClick(
+                      documentId,
+                      chunkItem,
+                      fileExtension === 'pdf',
+                      documentUrl,
+                    )}
+                    disabled={!documentUrl && fileExtension !== 'pdf'}
+                    style={{ whiteSpace: 'normal' }}
+                  >
+                    <span className="truncate">
+                      {document?.doc_name ?? 'Unnamed Document'}
+                    </span>
+                  </Button>
                 </Tooltip>
-              </section>
+              </Flex>
             )}
           </div>
         </div>
@@ -240,11 +236,8 @@ const FloatingChatWidgetMarkdown = ({
 
         if (!info) {
           return (
-            <Tooltip key={`err-tooltip-${i}`}>
-              <TooltipTrigger asChild>
-                <Info className={styles.referenceIcon} />
-              </TooltipTrigger>
-              <TooltipContent>Reference unavailable</TooltipContent>
+            <Tooltip key={`err-tooltip-${i}`} title="Reference unavailable">
+              <InfoCircleOutlined className={styles.referenceIcon} />
             </Tooltip>
           );
         }
@@ -269,11 +262,8 @@ const FloatingChatWidgetMarkdown = ({
         }
 
         return (
-          <Popover key={`popover-${i}`}>
-            <PopoverTrigger asChild>
-              <InfoCircleOutlined className={styles.referenceIcon} />
-            </PopoverTrigger>
-            <PopoverContent>{getPopoverContent(chunkIndex)}</PopoverContent>
+          <Popover content={getPopoverContent(chunkIndex)} key={`popover-${i}`}>
+            <InfoCircleOutlined className={styles.referenceIcon} />
           </Popover>
         );
       });

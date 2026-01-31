@@ -124,8 +124,7 @@ const multiSelectVariants = cva(
  * Props for MultiSelect component
  */
 interface MultiSelectProps
-  extends
-    React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof multiSelectVariants> {
   /**
    * An array of option objects to be displayed in the multi-select component.
@@ -290,7 +289,7 @@ export const MultiSelect = React.forwardRef<
             {...props}
             onClick={handleTogglePopover}
             className={cn(
-              'flex w-full p-1 rounded-md border border-border-button min-h-10 h-auto placeholder:text-text-disabled items-center justify-between bg-bg-input focus-visible:bg-bg-input hover:bg-bg-input [&_svg]:pointer-events-auto',
+              'flex w-full p-1 rounded-md border border-border-button min-h-10 h-auto placeholder:text-text-disabled items-center justify-between bg-bg-input hover:bg-bg-input [&_svg]:pointer-events-auto',
               className,
             )}
           >

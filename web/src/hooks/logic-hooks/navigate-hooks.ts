@@ -2,7 +2,7 @@ import { AgentCategory, AgentQuery } from '@/constants/agent';
 import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
 import { Routes } from '@/routes';
 import { useCallback } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'umi';
 
 export enum QueryStringMap {
   KnowledgeId = 'knowledgeId',

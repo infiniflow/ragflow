@@ -51,7 +51,7 @@ def list_agents(tenant_id):
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 30))
     order_by = request.args.get("orderby", "update_time")
-    if str(request.args.get("desc","false")).lower() == "false":
+    if request.args.get("desc") == "False" or request.args.get("desc") == "false":
         desc = False
     else:
         desc = True
@@ -162,7 +162,6 @@ async def webhook(agent_id: str):
         return get_data_error_result(code=RetCode.BAD_REQUEST,message="Invalid DSL format."),RetCode.BAD_REQUEST
 
     # 4. Check webhook configuration in DSL
-    webhook_cfg = {}
     components = dsl.get("components", {})
     for k, _ in components.items():
         cpn_obj = components[k]["obj"]

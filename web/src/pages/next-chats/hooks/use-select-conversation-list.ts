@@ -7,7 +7,7 @@ import {
 import { IConversation } from '@/interfaces/database/chat';
 import { generateConversationId } from '@/utils/chat';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router';
+import { useParams } from 'umi';
 import { useChatUrlParams } from './use-chat-url';
 
 export const useFindPrologueFromDialogList = () => {

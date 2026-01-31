@@ -12,7 +12,7 @@ import { RetrievalFormSchemaType } from '../../form/retrieval-form/next';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
 import { LabelCard } from './card';
 import { CommonHandle, LeftEndHandle } from './handle';
-import styles from './index.module.less';
+import styles from './index.less';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
 import { ToolBar } from './toolbar';

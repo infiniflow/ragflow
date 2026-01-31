@@ -72,7 +72,7 @@
 
 ## 💡 What is RAGFlow?
 
-[RAGFlow](https://ragflow.io/) is a leading open-source Retrieval-Augmented Generation ([RAG](https://ragflow.io/basics/what-is-rag)) engine that fuses cutting-edge RAG with Agent capabilities to create a superior context layer for LLMs. It offers a streamlined RAG workflow adaptable to enterprises of any scale. Powered by a converged [context engine](https://ragflow.io/basics/what-is-agent-context-engine) and pre-built agent templates, RAGFlow enables developers to transform complex data into high-fidelity, production-ready AI systems with exceptional efficiency and precision.
+[RAGFlow](https://ragflow.io/) is a leading open-source Retrieval-Augmented Generation (RAG) engine that fuses cutting-edge RAG with Agent capabilities to create a superior context layer for LLMs. It offers a streamlined RAG workflow adaptable to enterprises of any scale. Powered by a converged context engine and pre-built agent templates, RAGFlow enables developers to transform complex data into high-fidelity, production-ready AI systems with exceptional efficiency and precision.
 
 ## 🎮 Demo
 
@@ -192,11 +192,11 @@ releases! 🌟
 
 ```bash
    $ cd ragflow/docker
-
+  
    # git checkout v0.23.1
    # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases)
    # This step ensures the **entrypoint.sh** file in the code matches the Docker image version.
-
+   
    # Use CPU for DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
 

@@ -3,7 +3,7 @@ import { IFlow } from '@/interfaces/database/agent';
 import dataflowService from '@/services/dataflow-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router';
+import { useParams } from 'umi';
 
 export const enum DataflowApiAction {
   ListDataflow = 'listDataflow',

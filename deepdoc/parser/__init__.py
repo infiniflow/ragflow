@@ -24,6 +24,7 @@ from .pdf_parser import PlainParser
 from .pdf_parser import RAGFlowPdfParser as PdfParser
 from .ppt_parser import RAGFlowPptParser as PptParser
 from .txt_parser import RAGFlowTxtParser as TxtParser
+from .deepseek_ocr2_parser import DeepSeekOcr2Parser, DeepSeekOcr2Backend
 
 __all__ = [
     "PdfParser",
@@ -36,5 +37,7 @@ __all__ = [
     "MarkdownParser",
     "TxtParser",
     "MarkdownElementExtractor",
+    "DeepSeekOcr2Parser",
+    "DeepSeekOcr2Backend",
 ]
 

@@ -10,7 +10,7 @@ import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router';
+import { useSearchParams } from 'umi';
 import { ChatCard } from './chat-card';
 import { useRenameChat } from './hooks/use-rename-chat';
 
@@ -72,7 +72,7 @@ export default function ChatList() {
               searchString={searchString}
             >
               <Button onClick={handleShowCreateModal}>
-                <Plus className="h-4 w-4" />
+                <Plus className="size-2.5" />
                 {t('chat.createChat')}
               </Button>
             </ListFilterBar>

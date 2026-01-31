@@ -1,6 +1,6 @@
-import { useContext, useLayoutEffect, useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
+import { useNavigate } from 'umi';
 
 import {
   createColumnHelper,
@@ -43,7 +43,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -64,6 +63,7 @@ import {
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -81,10 +81,8 @@ import useCreateUserForm from './forms/user-form';
 import {
   createUser,
   deleteUser,
-  grantSuperuser,
   listRoles,
   listUsers,
-  revokeSuperuser,
   updateUserPassword,
   updateUserRole,
   updateUserStatus,
@@ -98,15 +96,8 @@ import {
   parseBooleanish,
 } from './utils';
 
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { DialogDescription } from '@radix-ui/react-dialog';
 import EnterpriseFeature from './components/enterprise-feature';
-import { CurrentUserInfoContext } from './layouts/root-layout';
 
 const columnHelper = createColumnHelper<AdminService.ListUsersItem>();
 const globalFilterFn = createFuzzySearchFn<AdminService.ListUsersItem>([
@@ -121,8 +112,6 @@ const STATUS_FILTER_OPTIONS = [
 ];
 
 function AdminUserManagement() {
-  const [{ userInfo }] = useContext(CurrentUserInfoContext);
-
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -211,22 +200,6 @@ function AdminUserManagement() {
     retry: false,
   });
 
-  const setSuperuserMutation = useMutation({
-    mutationFn: ({
-      email,
-      type,
-    }: {
-      email: string;
-      type: 'grant' | 'revoke';
-    }) => {
-      return type === 'grant' ? grantSuperuser(email) : revokeSuperuser(email);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin/listUsers'] });
-    },
-    retry: false,
-  });
-
   // Update user status mutation
   const updateUserStatusMutation = useMutation({
     mutationFn: (data: { email: string; isActive: boolean }) =>
@@ -244,6 +217,15 @@ function AdminUserManagement() {
       }),
       columnHelper.accessor('nickname', {
         header: t('admin.nickname'),
+        cell: ({ row, cell }) => (
+          <div className="flex items-center">
+            <span className="mr-2 empty:hidden">{cell.getValue()}</span>
+
+            {row.original.is_superuser ? (
+              <Badge variant="secondary">{t('admin.superuser')}</Badge>
+            ) : null}
+          </div>
+        ),
       }),
 
       ...(IS_ENTERPRISE
@@ -285,59 +267,37 @@ function AdminUserManagement() {
           ]
         : []),
 
+      columnHelper.display({
+        id: 'enable',
+        header: t('admin.enable'),
+        cell: ({ row }) => (
+          <Switch
+            checked={parseBooleanish(row.original.is_active)}
+            onCheckedChange={(checked) => {
+              updateUserStatusMutation.mutate({
+                email: row.original.email,
+                isActive: checked,
+              });
+            }}
+            disabled={updateUserStatusMutation.isPending}
+          />
+        ),
+      }),
       columnHelper.accessor('is_active', {
         header: t('admin.status'),
-        cell: ({ cell, row }) => {
-          const isMe = row.original.email === userInfo?.email;
-
-          if (isMe) {
-            return (
-              <Badge
-                variant={
-                  parseBooleanish(cell.getValue()) ? 'success' : 'destructive'
-                }
-              >
-                <LucideDot className="size-[1em] stroke-[8] mr-1" />
-                {parseBooleanish(cell.getValue())
-                  ? t('admin.active')
-                  : t('admin.inactive')}
-              </Badge>
-            );
-          }
-
-          return (
-            <Select
-              disabled={updateUserStatusMutation.isPending}
-              value={cell.getValue()}
-              onValueChange={(value) =>
-                updateUserStatusMutation.mutate({
-                  email: row.original.email,
-                  isActive: parseBooleanish(value),
-                })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-
-              <SelectContent>
-                <SelectItem value="0">
-                  <div className="flex items-center">
-                    <LucideDot className="size-[1em] stroke-[8] mr-1" />
-                    {t('admin.inactive')}
-                  </div>
-                </SelectItem>
-
-                <SelectItem value="1">
-                  <div className="flex items-center text-state-success">
-                    <LucideDot className="size-[1em] stroke-[8] mr-1" />
-                    {t('admin.active')}
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          );
-        },
+        cell: ({ cell }) => (
+          <Badge
+            variant={parseBooleanish(cell.getValue()) ? 'success' : 'secondary'}
+            className="pl-[.5em]"
+          >
+            <LucideDot className="size-[1em] stroke-[8] mr-1" />
+            {t(
+              parseBooleanish(cell.getValue())
+                ? 'admin.active'
+                : 'admin.inactive',
+            )}
+          </Badge>
+        ),
         filterFn: createColumnFilterFn(
           (row, id, filterValue) => row.getValue(id) === filterValue,
           {
@@ -347,106 +307,48 @@ function AdminUserManagement() {
           },
         ),
       }),
-
-      columnHelper.accessor('is_superuser', {
-        header: t('admin.userType'),
-        cell: ({ cell, row }) => {
-          const isMe = row.original.email === userInfo?.email;
-
-          if (isMe) {
-            return <Badge variant="secondary">{t('admin.superuser')}</Badge>;
-          }
-
-          return (
-            <Select
-              disabled={
-                setSuperuserMutation.isPending ||
-                row.original.email === userInfo?.email
-              }
-              value={cell.getValue() ? 'superuser' : 'normal'}
-              onValueChange={(value) => {
-                setSuperuserMutation.mutate({
-                  email: row.original.email,
-                  type: value === 'superuser' ? 'grant' : 'revoke',
-                });
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-
-              <SelectContent>
-                <SelectItem value="normal">{t('admin.normalUser')}</SelectItem>
-                <SelectItem value="superuser">
-                  {t('admin.superuser')}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          );
-        },
-      }),
-
       columnHelper.display({
         id: 'actions',
         header: t('admin.actions'),
-        cell: ({ row }) => {
-          const isMe = row.original.email === userInfo?.email;
-
-          return (
-            <div className="opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 transition-opacity">
-              <Button
-                variant="transparent"
-                size="icon"
-                className="border-0"
-                onClick={() =>
-                  navigate(
-                    `${Routes.AdminUserManagement}/${row.original.email}`,
-                  )
-                }
-              >
-                <LucideClipboardList />
-              </Button>
-
-              {!isMe && (
-                <>
-                  <Button
-                    variant="transparent"
-                    size="icon"
-                    className="border-0"
-                    onClick={() => {
-                      setUserToMakeAction(row.original);
-                      setPasswordModalOpen(true);
-                    }}
-                  >
-                    <LucideUserLock />
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="icon"
-                    className="border-0"
-                    onClick={() => {
-                      setUserToMakeAction(row.original);
-                      setDeleteModalOpen(true);
-                    }}
-                  >
-                    <LucideTrash2 />
-                  </Button>
-                </>
-              )}
-            </div>
-          );
-        },
+        cell: ({ row }) => (
+          <div className="opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 transition-opacity">
+            <Button
+              variant="transparent"
+              size="icon"
+              className="border-0"
+              onClick={() =>
+                navigate(`${Routes.AdminUserManagement}/${row.original.email}`)
+              }
+            >
+              <LucideClipboardList />
+            </Button>
+            <Button
+              variant="transparent"
+              size="icon"
+              className="border-0"
+              onClick={() => {
+                setUserToMakeAction(row.original);
+                setPasswordModalOpen(true);
+              }}
+            >
+              <LucideUserLock />
+            </Button>
+            <Button
+              variant="danger"
+              size="icon"
+              className="border-0"
+              onClick={() => {
+                setUserToMakeAction(row.original);
+                setDeleteModalOpen(true);
+              }}
+            >
+              <LucideTrash2 />
+            </Button>
+          </div>
+        ),
       }),
     ],
-    [
-      t,
-      roleList,
-      updateUserRoleMutation,
-      userInfo?.email,
-      updateUserStatusMutation,
-      setSuperuserMutation,
-      navigate,
-    ],
+    [t, updateUserRoleMutation, roleList, updateUserStatusMutation, navigate],
   );
 
   const table = useReactTable({
@@ -603,11 +505,11 @@ function AdminUserManagement() {
                 <col className="w-[22%]" />
 
                 <EnterpriseFeature>
-                  {() => <col className="w-24" />}
+                  {() => <col className="w-[12%]" />}
                 </EnterpriseFeature>
 
-                <col className="w-40" />
-                <col className="w-40" />
+                <col className="w-[8%]" />
+                <col className="w-[15%]" />
                 <col className="w-52" />
               </colgroup>
 

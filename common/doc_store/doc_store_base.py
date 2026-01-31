@@ -164,7 +164,7 @@ class DocStoreConnection(ABC):
     """
 
     @abstractmethod
-    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None):
+    def create_idx(self, index_name: str, dataset_id: str, vector_size: int):
         """
         Create an index with given name
         """

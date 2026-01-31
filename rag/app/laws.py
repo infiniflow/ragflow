@@ -21,7 +21,8 @@ from docx import Document
 
 from common.constants import ParserType
 from deepdoc.parser.utils import get_text
-from rag.nlp import bullets_category, remove_contents_table, make_colon_as_title, tokenize_chunks, docx_question_level, tree_merge
+from rag.nlp import bullets_category, remove_contents_table, \
+    make_colon_as_title, tokenize_chunks, docx_question_level, tree_merge
 from rag.nlp import rag_tokenizer, Node
 from deepdoc.parser import PdfParser, DocxParser, HtmlParser
 from rag.app.naive import by_plaintext, PARSERS
@@ -37,7 +38,8 @@ class Docx(DocxParser):
         return line
 
     def old_call(self, filename, binary=None, from_page=0, to_page=100000):
-        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
+        self.doc = Document(
+            filename) if not binary else Document(BytesIO(binary))
         pn = 0
         lines = []
         for p in self.doc.paragraphs:
@@ -46,15 +48,16 @@ class Docx(DocxParser):
             if from_page <= pn < to_page and p.text.strip():
                 lines.append(self.__clean(p.text))
             for run in p.runs:
-                if "lastRenderedPageBreak" in run._element.xml:
+                if 'lastRenderedPageBreak' in run._element.xml:
                     pn += 1
                     continue
-                if "w:br" in run._element.xml and 'type="page"' in run._element.xml:
+                if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
                     pn += 1
         return [line for line in lines if line]
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000):
-        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
+        self.doc = Document(
+            filename) if not binary else Document(BytesIO(binary))
         pn = 0
         lines = []
         level_set = set()
@@ -68,10 +71,10 @@ class Docx(DocxParser):
             lines.append((question_level, p_text))
             level_set.add(question_level)
             for run in p.runs:
-                if "lastRenderedPageBreak" in run._element.xml:
+                if 'lastRenderedPageBreak' in run._element.xml:
                     pn += 1
                     continue
-                if "w:br" in run._element.xml and 'type="page"' in run._element.xml:
+                if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
                     pn += 1
 
         sorted_levels = sorted(level_set)
@@ -85,12 +88,12 @@ class Docx(DocxParser):
         return [element for element in root.get_tree() if element]
 
     def __str__(self) -> str:
-        return f"""
+        return f'''
             question:{self.question},
             answer:{self.answer},
             level:{self.level},
             childs:{self.childs}
-        """
+        '''
 
 
 class Pdf(PdfParser):
@@ -98,12 +101,18 @@ class Pdf(PdfParser):
         self.model_speciess = ParserType.LAWS.value
         super().__init__()
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
+    def __call__(self, filename, binary=None, from_page=0,
+                 to_page=100000, zoomin=3, callback=None):
         from timeit import default_timer as timer
-
         start = timer()
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
+        self.__images__(
+            filename if not binary else binary,
+            zoomin,
+            from_page,
+            to_page,
+            callback
+        )
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
         start = timer()
@@ -114,15 +123,22 @@ class Pdf(PdfParser):
 
         callback(0.8, "Text extraction ({:.2f}s)".format(timer() - start))
 
-        return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], None
+        return [(b["text"], self._line_tag(b, zoomin))
+                for b in self.boxes], None
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=100000,
+          lang="Chinese", callback=None, **kwargs):
     """
-    Supported file formats are docx, pdf, txt.
+        Supported file formats are docx, pdf, txt.
     """
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
-    doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
+    parser_config = kwargs.get(
+        "parser_config", {
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+    doc = {
+        "docnm_kwd": filename,
+        "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
+    }
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     pdf_parser = None
     sections = []
@@ -136,7 +152,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         return tokenize_chunks(chunks, doc, eng, None)
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(
+            parser_config.get("layout_recognize", "DeepDOC")
+        )
 
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
@@ -155,14 +173,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             pdf_cls=Pdf,
             layout_recognizer=layout_recognizer,
             mineru_llm_name=parser_model_name,
-            paddleocr_llm_name=parser_model_name,
-            **kwargs,
+            **kwargs
         )
 
         if not raw_sections and not tables:
             return []
 
-        if name in ["tcadp", "docling", "mineru", "paddleocr"]:
+        if name in ["tcadp", "docling", "mineru"]:
             parser_config["chunk_token_num"] = 0
 
         for txt, poss in raw_sections:
@@ -193,8 +210,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         binary = BytesIO(binary)
         doc_parsed = tika_parser.from_buffer(binary)
-        if doc_parsed.get("content", None) is not None:
-            sections = doc_parsed["content"].split("\n")
+        if doc_parsed.get('content', None) is not None:
+            sections = doc_parsed['content'].split('\n')
             sections = [s for s in sections if s]
             callback(0.8, "Finish parsing.")
         else:
@@ -202,7 +219,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             logging.warning(f"tika.parser got empty content from {filename}.")
             return []
     else:
-        raise NotImplementedError("file type not supported yet(doc, docx, pdf, txt supported)")
+        raise NotImplementedError(
+            "file type not supported yet(doc, docx, pdf, txt supported)")
 
     # Remove 'Contents' part
     remove_contents_table(sections, eng)
@@ -223,7 +241,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 if __name__ == "__main__":
     import sys
 
+
     def dummy(prog=None, msg=""):
         pass
+
 
     chunk(sys.argv[1], callback=dummy)

@@ -9,7 +9,7 @@ import kbService, {
 } from '@/services/knowledge-service';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router';
+import { useParams, useSearchParams } from 'umi';
 import { LogTabs } from './dataset-common';
 import { IFileLogList, IOverviewTotal } from './interface';
 

@@ -273,17 +273,6 @@ class RedisDB:
             self.__open__()
         return None
 
-    def zremrangebyscore(self, key: str, min: float, max: float):
-        try:
-            res = self.REDIS.zremrangebyscore(key, min, max)
-            return res
-        except Exception as e:
-            logging.warning(
-                f"RedisDB.zremrangebyscore {key} got exception: {e}"
-            )
-            self.__open__()
-        return 0
-
     def incrby(self, key: str, increment: int):
         return self.REDIS.incrby(key, increment)
 

@@ -15,7 +15,7 @@ import {
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { memo, useCallback, useContext } from 'react';
-import { useParams } from 'react-router';
+import { useParams } from 'umi';
 import { AgentChatContext } from '../context';
 import DebugContent from '../debug-content';
 import { useAwaitCompentData } from '../hooks/use-chat-logic';

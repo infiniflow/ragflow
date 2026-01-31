@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SharedFrom } from '@/constants/chat';
+import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useFetchConversationList,
@@ -26,7 +27,7 @@ import { isEmpty } from 'lodash';
 import { ArrowUpRight, LogOut, Send } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router';
+import { useParams } from 'umi';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { ChatSettings } from './app-settings/chat-settings';
 import { MultipleChatBox } from './chat-box/multiple-chat-box';
@@ -47,6 +48,8 @@ export default function Chat() {
 
   const { handleConversationCardClick, controller, stopOutputMessage } =
     useHandleClickConversationCard();
+  const { visible: settingVisible, switchVisible: switchSettingVisible } =
+    useSetModalState(true);
 
   const { isDebugMode, switchDebugMode } = useSwitchDebugMode();
   const { removeChatBox, addChatBox, chatBoxIds, hasSingleChatBox } =
@@ -111,7 +114,7 @@ export default function Chat() {
   }
 
   return (
-    <section className="h-full flex flex-col">
+    <section className="h-full flex flex-col pr-5">
       <PageHeader>
         <Breadcrumb>
           <BreadcrumbList>
@@ -132,9 +135,13 @@ export default function Chat() {
         </Button>
       </PageHeader>
       <div className="flex flex-1 min-h-0 pb-9">
-        <Sessions handleConversationCardClick={handleSessionClick}></Sessions>
+        <Sessions
+          hasSingleChatBox={hasSingleChatBox}
+          handleConversationCardClick={handleSessionClick}
+          switchSettingVisible={switchSettingVisible}
+        ></Sessions>
 
-        <Card className="flex-1 min-w-0 bg-transparent border-none shadow-none h-full">
+        <Card className="flex-1 min-w-0 bg-transparent border h-full">
           <CardContent className="flex p-0 h-full">
             <Card className="flex flex-col flex-1 bg-transparent min-w-0">
               <CardHeader
@@ -155,7 +162,11 @@ export default function Chat() {
                 ></SingleChatBox>
               </CardContent>
             </Card>
-            <ChatSettings hasSingleChatBox={hasSingleChatBox}></ChatSettings>
+            {settingVisible && (
+              <ChatSettings
+                switchSettingVisible={switchSettingVisible}
+              ></ChatSettings>
+            )}
           </CardContent>
         </Card>
       </div>

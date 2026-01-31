@@ -11,7 +11,7 @@ import dataSourceService, {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { useCallback, useMemo, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router';
+import { useParams, useSearchParams } from 'umi';
 import { DataSourceKey, useDataSourceInfo } from './constant';
 import { IDataSorceInfo, IDataSource, IDataSourceBase } from './interface';
 

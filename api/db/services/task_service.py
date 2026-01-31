@@ -121,6 +121,13 @@ class TaskService(CommonService):
                 .where(cls.model.id == task_id)
         )
         docs = list(docs.dicts())
+        # Assuming docs = list(docs.dicts())
+        if docs:
+            kb_config = docs[0]['kb_parser_config']  # Dict from Knowledgebase.parser_config
+            mineru_method = kb_config.get('mineru_parse_method', 'auto')
+            mineru_formula = kb_config.get('mineru_formula_enable', True)
+            mineru_table = kb_config.get('mineru_table_enable', True)
+            print(mineru_method, mineru_formula, mineru_table)
         if not docs:
             return None
 
@@ -166,40 +173,6 @@ class TaskService(CommonService):
         tasks = (
             cls.model.select(*fields).order_by(cls.model.from_page.asc(), cls.model.create_time.desc())
             .where(cls.model.doc_id == doc_id)
-        )
-        tasks = list(tasks.dicts())
-        if not tasks:
-            return None
-        return tasks
-
-    @classmethod
-    @DB.connection_context()
-    def get_tasks_progress_by_doc_ids(cls, doc_ids: list[str]):
-        """Retrieve all tasks associated with specific documents.
-
-        This method fetches all processing tasks for given document ids, ordered by
-        creation time. It includes task progress and chunk information.
-
-        Args:
-            doc_ids (str): The unique identifier of the document.
-
-        Returns:
-            list[dict]: List of task dictionaries containing task details.
-                       Returns None if no tasks are found.
-        """
-        fields = [
-            cls.model.id,
-            cls.model.doc_id,
-            cls.model.from_page,
-            cls.model.progress,
-            cls.model.progress_msg,
-            cls.model.digest,
-            cls.model.chunk_ids,
-            cls.model.create_time
-        ]
-        tasks = (
-            cls.model.select(*fields).order_by(cls.model.create_time.desc())
-            .where(cls.model.doc_id.in_(doc_ids))
         )
         tasks = list(tasks.dicts())
         if not tasks:
@@ -522,7 +495,6 @@ def cancel_all_task_of(doc_id):
 def has_canceled(task_id):
     try:
         if REDIS_CONN.get(f"{task_id}-cancel"):
-            logging.info(f"Task: {task_id} has been canceled")
             return True
     except Exception as e:
         logging.exception(e)

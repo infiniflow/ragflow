@@ -18,8 +18,8 @@ import {
   SquareArrowOutUpRight,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router';
 import 'react18-json-view/src/style.css';
+import { useParams } from 'umi';
 import {
   isEndOutputEmpty,
   useDownloadOutput,

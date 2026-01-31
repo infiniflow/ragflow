@@ -1,10 +1,8 @@
 ---
 sidebar_position: 1
 slug: /start_chat
-sidebar_custom_props: {
-  categoryIcon: LucideBot
-}
 ---
+
 # Start AI chat
 
 Initiate an AI-powered chat with a configured chat assistant.

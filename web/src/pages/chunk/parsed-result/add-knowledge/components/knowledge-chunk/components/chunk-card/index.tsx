@@ -16,7 +16,7 @@ import DOMPurify from 'dompurify';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChunkTextMode } from '../../constant';
-import styles from './index.module.less';
+import styles from './index.less';
 
 interface IProps {
   item: IChunk;
@@ -104,7 +104,7 @@ const ChunkCard = ({
             <TooltipContent
               className="p-0"
               align={'start'}
-              side={'left'}
+              side={'right'}
               sideOffset={-20}
               tabIndex={-1}
             >

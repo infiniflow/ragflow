@@ -18,10 +18,6 @@ import asyncio
 import logging
 import os
 import sys
-
-
-from common.misc_utils import thread_pool_exec
-
 sys.path.insert(
     0,
     os.path.abspath(
@@ -68,9 +64,9 @@ def main(args):
         if limiter:
             async with limiter:
                 print(f"Task {i} use device {id}")
-                await thread_pool_exec(__ocr, i, id, img)
+                await asyncio.to_thread(__ocr, i, id, img)
         else:
-            await thread_pool_exec(__ocr, i, id, img)
+            await asyncio.to_thread(__ocr, i, id, img)
 
 
     async def __ocr_launcher():

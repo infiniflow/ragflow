@@ -3,8 +3,7 @@ import {
   INodeEvent,
   MessageEventType,
 } from '@/hooks/use-send-message';
-import { get, isEmpty } from 'lodash';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 export const ExcludeTypes = [
   MessageEventType.Message,
@@ -12,13 +11,15 @@ export const ExcludeTypes = [
 ];
 
 export function useCacheChatLog() {
+  const [eventList, setEventList] = useState<IEventList>([]);
   const [messageIdPool, setMessageIdPool] = useState<
     Record<string, IEventList>
   >({});
 
-  const [latestTaskId, setLatestTaskId] = useState('');
-
   const [currentMessageId, setCurrentMessageId] = useState('');
+  useEffect(() => {
+    setMessageIdPool((prev) => ({ ...prev, [currentMessageId]: eventList }));
+  }, [currentMessageId, eventList]);
 
   const filterEventListByMessageId = useCallback(
     (messageId: string) => {
@@ -39,26 +40,16 @@ export function useCacheChatLog() {
   );
 
   const clearEventList = useCallback(() => {
+    setEventList([]);
     setMessageIdPool({});
   }, []);
 
   const addEventList = useCallback((events: IEventList, message_id: string) => {
-    if (!isEmpty(events)) {
-      const taskId = get(events, '0.task_id');
-      setLatestTaskId(taskId);
-
-      setMessageIdPool((prev) => {
-        const list = [...(prev[message_id] ?? [])];
-
-        events.forEach((event) => {
-          if (!list.some((y) => y === event)) {
-            list.push(event);
-          }
-        });
-
-        return { ...prev, [message_id]: list };
-      });
-    }
+    setEventList((x) => {
+      const list = [...x, ...events];
+      setMessageIdPool((prev) => ({ ...prev, [message_id]: list }));
+      return list;
+    });
   }, []);
 
   const currentEventListWithoutMessage = useMemo(() => {
@@ -82,15 +73,21 @@ export function useCacheChatLog() {
     [messageIdPool],
   );
 
+  const currentTaskId = useMemo(() => {
+    return eventList.at(-1)?.task_id;
+  }, [eventList]);
+
   return {
+    eventList,
     currentEventListWithoutMessage,
     currentEventListWithoutMessageById,
+    setEventList,
     clearEventList,
     addEventList,
     filterEventListByEventType,
     filterEventListByMessageId,
     setCurrentMessageId,
     currentMessageId,
-    latestTaskId,
+    currentTaskId,
   };
 }

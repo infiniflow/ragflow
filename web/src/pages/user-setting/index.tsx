@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router';
+import { Outlet } from 'umi';
 import { SideBar } from './sidebar';
 
 import { PageHeader } from '@/components/page-header';
@@ -14,7 +14,7 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { cn } from '@/lib/utils';
 import { House } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import styles from './index.module.less';
+import styles from './index.less';
 
 const UserSetting = () => {
   const { t } = useTranslation();

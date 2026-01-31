@@ -191,6 +191,42 @@ def get_credentials_from_env(email: str, oauth: bool = False, source="drive") ->
         DB_CREDENTIALS_AUTHENTICATION_METHOD: "uploaded",
     }
 
+def sanitize_filename(name: str, extension: str = "txt") -> str:
+    """
+    Soft sanitize for MinIO/S3:
+    - Replace only prohibited characters with a space.
+    - Preserve readability (no ugly underscores).
+    - Collapse multiple spaces.
+    """
+    if name is None:
+        return f"file.{extension}"
+
+    name = str(name).strip()
+
+    # Characters that MUST NOT appear in S3/MinIO object keys
+    # Replace them with a space (not underscore)
+    forbidden = r'[\\\?\#\%\*\:\|\<\>"]'
+    name = re.sub(forbidden, " ", name)
+
+    # Replace slashes "/" (S3 interprets as folder) with space
+    name = name.replace("/", " ")
+
+    # Collapse multiple spaces into one
+    name = re.sub(r"\s+", " ", name)
+
+    # Trim both ends
+    name = name.strip()
+
+    # Enforce reasonable max length
+    if len(name) > 200:
+        base, ext = os.path.splitext(name)
+        name = base[:180].rstrip() + ext
+
+    if not os.path.splitext(name)[1]:
+        name += f".{extension}"
+
+    return name
+
 
 def clean_string(text: str | None) -> str | None:
     """

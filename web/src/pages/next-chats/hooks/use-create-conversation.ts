@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useParams } from 'react-router';
+import { useParams } from 'umi';
 import { useChatUrlParams } from './use-chat-url';
 import { useSetConversation } from './use-set-conversation';
 

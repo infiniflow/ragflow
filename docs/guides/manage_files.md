@@ -1,10 +1,8 @@
 ---
 sidebar_position: 6
 slug: /manage_files
-sidebar_custom_props: {
-  categoryIcon: LucideFolderDot
-}
 ---
+
 # Files
 
 RAGFlow's file management allows you to upload files individually or in bulk. You can then link an uploaded file to multiple target datasets. This guide showcases some basic usages of the file management feature.

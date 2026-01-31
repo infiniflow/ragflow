@@ -1,17 +1,15 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
-  $createLineBreakNode,
+  $createParagraphNode,
   $createTextNode,
   $getSelection,
   $isRangeSelection,
-  LexicalNode,
   PASTE_COMMAND,
 } from 'lexical';
 import { useEffect } from 'react';
 
 function PasteHandlerPlugin() {
   const [editor] = useLexicalComposerContext();
-
   useEffect(() => {
     const removeListener = editor.registerCommand(
       PASTE_COMMAND,
@@ -26,29 +24,40 @@ function PasteHandlerPlugin() {
           return false;
         }
 
-        // Handle text with line breaks
+        // Check if text contains line breaks
         if (text.includes('\n')) {
           editor.update(() => {
             const selection = $getSelection();
             if (selection && $isRangeSelection(selection)) {
-              // Build an array of nodes (TextNodes and LineBreakNodes).
-              // Insert nodes directly into selection to avoid creating
-              // extra paragraph boundaries which cause newline multiplication.
-              const nodes: LexicalNode[] = [];
-              const lines = text.split('\n');
+              // Normalize line breaks, merge multiple consecutive line breaks into a single line break
+              const normalizedText = text.replace(/\n{2,}/g, '\n');
 
+              // Clear current selection
+              selection.removeText();
+
+              // Create a paragraph node to contain all content
+              const paragraph = $createParagraphNode();
+
+              // Split text by line breaks
+              const lines = normalizedText.split('\n');
+
+              // Process each line
               lines.forEach((lineText, index) => {
+                // Add line text (if any)
                 if (lineText) {
-                  nodes.push($createTextNode(lineText));
+                  const textNode = $createTextNode(lineText);
+                  paragraph.append(textNode);
                 }
 
-                // Add LineBreakNode between lines (not after the last line)
+                // If not the last line, add a line break
                 if (index < lines.length - 1) {
-                  nodes.push($createLineBreakNode());
+                  const lineBreak = $createTextNode('\n');
+                  paragraph.append(lineBreak);
                 }
               });
 
-              selection.insertNodes(nodes);
+              // Insert paragraph
+              selection.insertNodes([paragraph]);
             }
           });
 

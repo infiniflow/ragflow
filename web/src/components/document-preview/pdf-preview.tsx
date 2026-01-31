@@ -14,7 +14,7 @@ import { Spin } from '@/components/ui/spin';
 import { Authorization } from '@/constants/authorization';
 import FileError from '@/pages/document-viewer/file-error';
 import { getAuthorization } from '@/utils/authorization-util';
-import styles from './index.module.less';
+import styles from './index.less';
 type PdfLoaderProps = React.ComponentProps<typeof PdfLoader> & {
   httpHeaders?: Record<string, string>;
 };

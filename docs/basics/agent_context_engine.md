@@ -1,6 +1,6 @@
 ---
 sidebar_position: 2
-slug: /what-is-agent-context-engine
+slug: /what_is_agent_context_engine
 ---
 
 # What is Agent context engine?

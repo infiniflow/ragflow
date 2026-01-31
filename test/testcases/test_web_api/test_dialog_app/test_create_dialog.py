@@ -16,17 +16,16 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
+from common import create_dialog
 from configs import CHAT_ASSISTANT_NAME_LIMIT, INVALID_API_TOKEN
 from hypothesis import example, given, settings
 from libs.auth import RAGFlowWebApiAuth
 from utils.hypothesis_utils import valid_names
 
-from common import create_dialog
-
 
 @pytest.mark.usefixtures("clear_dialogs")
 class TestAuthorization:
-    @pytest.mark.p2
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
@@ -101,7 +100,8 @@ class TestDialogCreate:
     def test_prompt_config_with_knowledge_no_kb(self, WebApiAuth):
         payload = {"name": "test_dialog", "prompt_config": {"system": "You are a helpful assistant. Use this knowledge: {knowledge}", "parameters": [{"key": "knowledge", "optional": True}]}}
         res = create_dialog(WebApiAuth, payload)
-        assert res["code"] == 0, res
+        assert res["code"] == 102, res
+        assert "Please remove `{knowledge}` in system prompt" in res["message"], res
 
     @pytest.mark.p1
     def test_prompt_config_parameter_not_used(self, WebApiAuth):

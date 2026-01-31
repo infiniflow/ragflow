@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
 import json
 import os
 import sys
@@ -53,8 +52,8 @@ class Benchmark:
         run = defaultdict(dict)
         query_list = list(qrels.keys())
         for query in query_list:
-            ranks = asyncio.run(settings.retriever.retrieval(query, self.embd_mdl, self.tenant_id, [self.kb.id], 1, 30,
-                                            0.0, self.vector_similarity_weight))
+            ranks = settings.retriever.retrieval(query, self.embd_mdl, self.tenant_id, [self.kb.id], 1, 30,
+                                            0.0, self.vector_similarity_weight)
             if len(ranks["chunks"]) == 0:
                 print(f"deleted query: {query}")
                 del qrels[query]

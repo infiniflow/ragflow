@@ -1,27 +1,21 @@
+import { Anchor } from 'antd';
+import type { AnchorLinkItemProps } from 'antd/es/anchor/Anchor';
 import React, { useEffect, useState } from 'react';
-import Anchor, { AnchorItem } from './anchor';
 
 interface MarkdownTocProps {
   content: string;
 }
 
 const MarkdownToc: React.FC<MarkdownTocProps> = ({ content }) => {
-  const [items, setItems] = useState<AnchorItem[]>([]);
+  const [items, setItems] = useState<AnchorLinkItemProps[]>([]);
 
   useEffect(() => {
     const generateTocItems = () => {
       const headings = document.querySelectorAll(
         '.wmde-markdown h2, .wmde-markdown h3',
       );
-
-      // If headings haven't rendered yet, wait for next frame
-      if (headings.length === 0) {
-        requestAnimationFrame(generateTocItems);
-        return;
-      }
-
-      const tocItems: AnchorItem[] = [];
-      let currentH2Item: AnchorItem | null = null;
+      const tocItems: AnchorLinkItemProps[] = [];
+      let currentH2Item: AnchorLinkItemProps | null = null;
 
       headings.forEach((heading) => {
         const title = heading.textContent || '';
@@ -29,7 +23,7 @@ const MarkdownToc: React.FC<MarkdownTocProps> = ({ content }) => {
         const isH2 = heading.tagName.toLowerCase() === 'h2';
 
         if (id && title) {
-          const item: AnchorItem = {
+          const item: AnchorLinkItemProps = {
             key: id,
             href: `#${id}`,
             title,
@@ -54,10 +48,7 @@ const MarkdownToc: React.FC<MarkdownTocProps> = ({ content }) => {
       setItems(tocItems.slice(1));
     };
 
-    // Use requestAnimationFrame to ensure execution after DOM rendering
-    requestAnimationFrame(() => {
-      requestAnimationFrame(generateTocItems);
-    });
+    setTimeout(generateTocItems, 100);
   }, [content]);
 
   return (
@@ -65,7 +56,7 @@ const MarkdownToc: React.FC<MarkdownTocProps> = ({ content }) => {
       className="markdown-toc bg-bg-base text-text-primary shadow shadow-text-secondary"
       style={{
         position: 'fixed',
-        right: 30,
+        right: 20,
         top: 100,
         bottom: 150,
         width: 200,
@@ -75,7 +66,7 @@ const MarkdownToc: React.FC<MarkdownTocProps> = ({ content }) => {
         zIndex: 1000,
       }}
     >
-      <Anchor items={items} />
+      <Anchor items={items} affix={false} />
     </div>
   );
 };

@@ -10,10 +10,7 @@ export const MoreButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         variant="ghost"
         size={size || 'icon'}
-        className={cn(
-          'invisible group-hover:visible size-3.5 bg-transparent group-hover:bg-transparent',
-          className,
-        )}
+        className={cn('invisible group-hover:visible size-3.5', className)}
         {...props}
       >
         <Ellipsis />

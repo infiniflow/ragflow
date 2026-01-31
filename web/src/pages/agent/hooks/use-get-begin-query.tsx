@@ -18,7 +18,6 @@ import {
   AgentVariableType,
   BeginId,
   BeginQueryType,
-  BeginQueryTypeMap,
   JsonSchemaDataType,
   Operator,
   VariableType,
@@ -464,14 +463,7 @@ export function useGetVariableLabelOrTypeByValue({
 
   const getType = useCallback(
     (val?: string) => {
-      const currentType =
-        getItem(val)?.type || findAgentStructuredOutputTypeByValue(val);
-
-      if (currentType && currentType in BeginQueryTypeMap) {
-        return BeginQueryTypeMap[currentType as BeginQueryType];
-      }
-
-      return currentType;
+      return getItem(val)?.type || findAgentStructuredOutputTypeByValue(val);
     },
     [findAgentStructuredOutputTypeByValue, getItem],
   );

@@ -1,10 +1,8 @@
 ---
 sidebar_position: 32
 slug: /chunker_token_component
-sidebar_custom_props: {
-  categoryIcon: LucideBlocks
-}
 ---
+
 # Token chunker component
 
 A component that splits texts into chunks, respecting a maximum token limit and using delimiters to find optimal breakpoints.

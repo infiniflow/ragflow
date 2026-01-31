@@ -1,10 +1,8 @@
 ---
 sidebar_position: 6
 slug: /use_tag_sets
-sidebar_custom_props: {
-  categoryIcon: LucideTags
-}
 ---
+
 # Use tag set
 
 Use a tag set to auto-tag chunks in your datasets.

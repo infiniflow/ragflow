@@ -1,10 +1,8 @@
 ---
 sidebar_position: 30
 slug: /http_request_component
-sidebar_custom_props: {
-  categoryIcon: RagHTTP
-}
 ---
+
 # HTTP request component
 
 A component that calls remote services. 

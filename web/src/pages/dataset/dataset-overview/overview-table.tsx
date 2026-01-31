@@ -42,7 +42,7 @@ import {
 import { TFunction } from 'i18next';
 import { ArrowUpDown, ClipboardList, Eye, MonitorUp } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
-import { useParams } from 'react-router';
+import { useParams } from 'umi';
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal from '../process-log-modal';
 import { LogTabs, ProcessingType, ProcessingTypeMap } from './dataset-common';

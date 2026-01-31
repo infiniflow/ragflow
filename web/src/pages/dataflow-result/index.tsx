@@ -35,7 +35,7 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import TimelineDataFlow from './components/time-line';
 import { TimelineNodeType } from './constant';
-import styles from './index.module.less';
+import styles from './index.less';
 import { IDslComponent, IPipelineFileLogDetail } from './interface';
 import ParserContainer from './parser';
 

@@ -37,9 +37,7 @@ function CategorizeForm({ node }: INextOperatorForm) {
           <QueryVariable></QueryVariable>
           <LargeModelFormField></LargeModelFormField>
         </FormContainer>
-        <MessageHistoryWindowSizeFormField
-          min={0}
-        ></MessageHistoryWindowSizeFormField>
+        <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
         <DynamicCategorize nodeId={node?.id}></DynamicCategorize>
         <Output list={outputList}></Output>
       </FormWrapper>

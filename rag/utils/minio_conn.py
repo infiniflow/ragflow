@@ -18,7 +18,7 @@ import logging
 import time
 from minio import Minio
 from minio.commonconfig import CopySource
-from minio.error import S3Error, ServerError, InvalidResponseError
+from minio.error import S3Error
 from io import BytesIO
 from common.decorator import singleton
 from common import settings
@@ -97,28 +97,19 @@ class RAGFlowMinio:
         self.conn = None
 
     def health(self):
-        """
-        Check MinIO service availability.
-        """
-        try:
-            if self.bucket:
-                # Single-bucket mode: check bucket exists only (no side effects)
-                exists = self.conn.bucket_exists(self.bucket)
-
-                # Historical:
-                # - Previously wrote "_health_check" to verify write permissions
-                # - Previously auto-created bucket if missing
-
-                return exists
-            else:
-                # Multi-bucket mode: verify MinIO service connectivity
-                self.conn.list_buckets()
-                return True
-        except (S3Error, ServerError, InvalidResponseError):
-            return False
-        except Exception as e:
-            logging.warning(f"Unexpected error in MinIO health check: {e}")
-            return False
+        bucket = self.bucket if self.bucket else "ragflow-bucket"
+        fnm = "_health_check"
+        if self.prefix_path:
+            fnm = f"{self.prefix_path}/{fnm}"
+        binary = b"_t@@@1"
+        # Don't try to create bucket - it should already exist
+        # if not self.conn.bucket_exists(bucket):
+        #     self.conn.make_bucket(bucket)
+        r = self.conn.put_object(bucket, fnm,
+                                 BytesIO(binary),
+                                 len(binary)
+                                 )
+        return r
 
     @use_default_bucket
     @use_prefix_path

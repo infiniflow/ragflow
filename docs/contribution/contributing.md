@@ -1,10 +1,8 @@
 ---
 sidebar_position: 1
 slug: /contributing
-sidebar_custom_props: {
-  categoryIcon: LucideBookA
-}
 ---
+
 # Contribution guidelines
 
 General guidelines for RAGFlow's community contributors.

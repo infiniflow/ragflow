@@ -146,6 +146,10 @@ async def add_llm():
         # Assemble ark_api_key endpoint_id into api_key
         api_key = apikey_json(["ark_api_key", "endpoint_id"])
 
+    elif factory == "Tencent Hunyuan":
+        req["api_key"] = apikey_json(["hunyuan_sid", "hunyuan_sk"])
+        return await set_api_key()
+
     elif factory == "Tencent Cloud":
         req["api_key"] = apikey_json(["tencent_cloud_sid", "tencent_cloud_sk"])
         return await set_api_key()
@@ -191,9 +195,6 @@ async def add_llm():
     elif factory == "MinerU":
         api_key = apikey_json(["api_key", "provider_order"])
 
-    elif factory == "PaddleOCR":
-        api_key = apikey_json(["api_key", "provider_order"])
-
     llm = {
         "tenant_id": current_user.id,
         "llm_factory": factory,
@@ -229,7 +230,8 @@ async def add_llm():
                 **extra,
             )
             try:
-                m, tc = await mdl.async_chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {"temperature": 0.9})
+                m, tc = await mdl.async_chat(None, [{"role": "user", "content": "Hello! How are you doing!"}],
+                                             {"temperature": 0.9})
                 if not tc and m.find("**ERROR**:") >= 0:
                     raise Exception(m)
             except Exception as e:
@@ -369,18 +371,17 @@ def my_llms():
 
 @manager.route("/list", methods=["GET"])  # noqa: F821
 @login_required
-async def list_app():
+def list_app():
     self_deployed = ["FastEmbed", "Ollama", "Xinference", "LocalAI", "LM-Studio", "GPUStack"]
     weighted = []
     model_type = request.args.get("model_type")
-    tenant_id = current_user.id
     try:
-        TenantLLMService.ensure_mineru_from_env(tenant_id)
-        objs = TenantLLMService.query(tenant_id=tenant_id)
+        TenantLLMService.ensure_mineru_from_env(current_user.id)
+        objs = TenantLLMService.query(tenant_id=current_user.id)
         facts = set([o.to_dict()["llm_factory"] for o in objs if o.api_key and o.status == StatusEnum.VALID.value])
         status = {(o.llm_name + "@" + o.llm_factory) for o in objs if o.status == StatusEnum.VALID.value}
         llms = LLMService.get_all()
-        llms = [m.to_dict() for m in llms if m.status == StatusEnum.VALID.value and m.fid not in weighted and (m.fid == "Builtin" or (m.llm_name + "@" + m.fid) in status)]
+        llms = [m.to_dict() for m in llms if m.status == StatusEnum.VALID.value and m.fid not in weighted and (m.fid == 'Builtin' or (m.llm_name + "@" + m.fid) in status)]
         for m in llms:
             m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in self_deployed
             if "tei-" in os.getenv("COMPOSE_PROFILES", "") and m["model_type"] == LLMType.EMBEDDING and m["fid"] == "Builtin" and m["llm_name"] == os.getenv("TEI_MODEL", ""):

@@ -1,7 +1,6 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { formatDate } from '@/utils/date';
-import { t } from 'i18next';
 import { ChevronRight } from 'lucide-react';
 
 type ApplicationCardProps = {
@@ -51,7 +50,7 @@ export function SeeAllAppCard({ click }: SeeAllAppCardProps) {
   return (
     <Card className="w-full min-h-[76px] cursor-pointer" onClick={click}>
       <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5 text-text-secondary">
-        {t('common.seeAll')} <ChevronRight className="size-4" />
+        See All <ChevronRight className="size-4" />
       </CardContent>
     </Card>
   );

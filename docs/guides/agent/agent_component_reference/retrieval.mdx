@@ -1,10 +1,8 @@
 ---
 sidebar_position: 3
 slug: /retrieval_component
-sidebar_custom_props: {
-  categoryIcon: LucideFolderSearch
-}
 ---
+
 # Retrieval component
 
 A component that retrieves information from specified datasets.
@@ -76,14 +74,12 @@ Select the query source for retrieval. Defaults to `sys.query`, which is the def
 
 The **Retrieval** component relies on query variables to specify its queries. All global variables defined before the **Retrieval** component can also be used as queries. Use the `(x)` button or type `/` to show all the available query variables.
 
-### Retrieval from
+### Knowledge bases 
 
-Select the dataset(s) and memory to retrieve data from.
+Select the dataset(s) to retrieve data from.
 
 - If no dataset is selected, meaning conversations with the agent will not be based on any dataset, ensure that the **Empty response** field is left blank to avoid an error.
 - If you select multiple datasets, you must ensure that the datasets you select use the same embedding model; otherwise, an error message would occur.
-
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/retrieve_from_memory.PNG)
 
 ### Similarity threshold
 

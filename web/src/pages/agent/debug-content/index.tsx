@@ -164,7 +164,7 @@ const DebugContent = ({
               render={({ field }) => (
                 <div className="space-y-6">
                   <FormItem className="w-full">
-                    <FormLabel>{props.label}</FormLabel>
+                    <FormLabel>{t('assistantAvatar')}</FormLabel>
                     <FormControl>
                       <FileUploadDirectUpload
                         value={field.value}
@@ -218,7 +218,7 @@ const DebugContent = ({
         BeginQueryTypeMap[BeginQueryType.Paragraph]
       );
     },
-    [form],
+    [form, t],
   );
 
   const onSubmit = useCallback(

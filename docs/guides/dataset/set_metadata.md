@@ -1,10 +1,8 @@
 ---
 sidebar_position: -7
 slug: /set_metadata
-sidebar_custom_props: {
-  categoryIcon: LucideCode
-}
 ---
+
 # Set metadata
 
 Manually add metadata to an uploaded file

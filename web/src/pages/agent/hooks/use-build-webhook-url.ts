@@ -1,4 +1,4 @@
-import { useParams } from 'react-router';
+import { useParams } from 'umi';
 
 export function useBuildWebhookUrl() {
   const { id } = useParams();

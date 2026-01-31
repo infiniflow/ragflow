@@ -13,8 +13,7 @@ const storage = {
     return localStorage.getItem(UserInfo);
   },
   getUserInfoObject: () => {
-    const userInfoStr = localStorage.getItem(UserInfo);
-    return userInfoStr ? JSON.parse(userInfoStr) : null;
+    return JSON.parse(localStorage.getItem('userInfo') || '');
   },
   setAuthorization: (value: string) => {
     localStorage.setItem(Authorization, value);
@@ -23,7 +22,7 @@ const storage = {
     localStorage.setItem(Token, value);
   },
   setUserInfo: (value: string | Record<string, unknown>) => {
-    const valueStr = typeof value !== 'string' ? JSON.stringify(value) : value;
+    let valueStr = typeof value !== 'string' ? JSON.stringify(value) : value;
     localStorage.setItem(UserInfo, valueStr);
   },
   setItems: (pairs: Record<string, string>) => {
@@ -60,6 +59,5 @@ export default storage;
 
 // Will not jump to the login page
 export function redirectToLogin() {
-  // const env = import.meta.env;
   window.location.href = location.origin + `/login`;
 }

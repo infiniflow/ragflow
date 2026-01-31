@@ -1,0 +1,13 @@
+# Optional dependencies for DeepSeek-OCR2 support
+# Install with: pip install -r requirements-deepseek-ocr2.txt
+
+transformers>=4.46.3
+tokenizers>=0.20.3
+torch>=2.6.0
+PyMuPDF>=1.24.0
+einops
+Pillow
+numpy
+
+# Note: flash-attn requires manual installation with CUDA:
+# pip install flash-attn==2.7.3 --no-build-isolation

@@ -1,19 +1,29 @@
-import {
-  DynamicForm,
-  FormFieldConfig,
-  FormFieldType,
-} from '@/components/dynamic-form';
-import { Modal } from '@/components/ui/modal/modal';
 import { LLMFactory } from '@/constants/llm';
-import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
-import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { useMemo } from 'react';
-import { FieldValues } from 'react-hook-form';
+import {
+  Flex,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Select,
+  Space,
+  Switch,
+} from 'antd';
+import omit from 'lodash/omit';
+import { useEffect } from 'react';
 import { LLMHeader } from '../../components/llm-header';
 
-const llmFactoryToUrlMap: Partial<Record<LLMFactory, string>> = {
+type FieldType = IAddLlmRequestBody & {
+  vision: boolean;
+  provider_order?: string;
+};
+
+const { Option } = Select;
+
+const llmFactoryToUrlMap = {
   [LLMFactory.Ollama]:
     'https://github.com/infiniflow/ragflow/blob/main/docs/guides/models/deploy_local_llm.mdx',
   [LLMFactory.Xinference]:
@@ -33,6 +43,7 @@ const llmFactoryToUrlMap: Partial<Record<LLMFactory, string>> = {
   [LLMFactory.VLLM]: 'https://docs.vllm.ai/en/latest/',
   [LLMFactory.TokenPony]: 'https://docs.tokenpony.cn/#/',
 };
+type LlmFactory = keyof typeof llmFactoryToUrlMap;
 
 const OllamaModal = ({
   visible,
@@ -42,233 +53,215 @@ const OllamaModal = ({
   llmFactory,
   editMode = false,
   initialValues,
-}: IModalProps<Partial<IAddLlmRequestBody> & { provider_order?: string }> & {
+}: IModalProps<IAddLlmRequestBody> & {
   llmFactory: string;
   editMode?: boolean;
+  initialValues?: Partial<IAddLlmRequestBody>;
 }) => {
+  const [form] = Form.useForm<FieldType>();
+
   const { t } = useTranslate('setting');
-  const { t: tc } = useCommonTranslation();
-  const { buildModelTypeOptions } = useBuildModelTypeOptions();
 
-  const optionsMap: Partial<
-    Record<LLMFactory, { label: string; value: string }[]>
-  > & {
-    Default: { label: string; value: string }[];
-  } = {
-    [LLMFactory.HuggingFace]: buildModelTypeOptions([
-      'embedding',
-      'chat',
-      'rerank',
-    ]),
-    [LLMFactory.LMStudio]: buildModelTypeOptions([
-      'chat',
-      'embedding',
-      'image2text',
-    ]),
-    [LLMFactory.Xinference]: buildModelTypeOptions([
-      'chat',
-      'embedding',
-      'rerank',
-      'image2text',
-      'speech2text',
-      'tts',
-    ]),
-    [LLMFactory.ModelScope]: buildModelTypeOptions(['chat']),
-    [LLMFactory.GPUStack]: buildModelTypeOptions([
-      'chat',
-      'embedding',
-      'rerank',
-      'speech2text',
-      'tts',
-    ]),
-    [LLMFactory.OpenRouter]: buildModelTypeOptions(['chat', 'image2text']),
-    Default: buildModelTypeOptions([
-      'chat',
-      'embedding',
-      'rerank',
-      'image2text',
-    ]),
-  };
-
-  const url =
-    llmFactoryToUrlMap[llmFactory as LLMFactory] ||
-    'https://github.com/infiniflow/ragflow/blob/main/docs/guides/models/deploy_local_llm.mdx';
-
-  const fields = useMemo<FormFieldConfig[]>(() => {
-    const getOptions = (factory: string) => {
-      return optionsMap[factory as LLMFactory] || optionsMap.Default;
-    };
-
-    const baseFields: FormFieldConfig[] = [
-      {
-        name: 'model_type',
-        label: t('modelType'),
-        type: FormFieldType.Select,
-        required: true,
-        options: getOptions(llmFactory),
-        validation: {
-          message: t('modelTypeMessage'),
-        },
-      },
-      {
-        name: 'llm_name',
-        label: t(llmFactory === 'Xinference' ? 'modelUid' : 'modelName'),
-        type: FormFieldType.Text,
-        required: true,
-        placeholder: t('modelNameMessage'),
-        validation: {
-          message: t('modelNameMessage'),
-        },
-      },
-      {
-        name: 'api_base',
-        label: t('addLlmBaseUrl'),
-        type: FormFieldType.Text,
-        required: true,
-        placeholder: t('baseUrlNameMessage'),
-        validation: {
-          message: t('baseUrlNameMessage'),
-        },
-      },
-      {
-        name: 'api_key',
-        label: t('apiKey'),
-        type: FormFieldType.Text,
-        required: false,
-        placeholder: t('apiKeyMessage'),
-      },
-      {
-        name: 'max_tokens',
-        label: t('maxTokens'),
-        type: FormFieldType.Number,
-        required: true,
-        placeholder: t('maxTokensTip'),
-        validation: {
-          message: t('maxTokensMessage'),
-        },
-        customValidate: (value: any) => {
-          if (value !== undefined && value !== null && value !== '') {
-            if (typeof value !== 'number') {
-              return t('maxTokensInvalidMessage');
-            }
-            if (value < 0) {
-              return t('maxTokensMinMessage');
-            }
-          }
-          return true;
-        },
-      },
-    ];
-
-    // Add provider_order field only for OpenRouter
-    if (llmFactory === 'OpenRouter') {
-      baseFields.push({
-        name: 'provider_order',
-        label: 'Provider Order',
-        type: FormFieldType.Text,
-        required: false,
-        tooltip: 'Comma-separated provider list, e.g. Groq,Fireworks',
-        placeholder: 'Groq,Fireworks',
-      });
-    }
-
-    // Add vision switch (conditional on model_type === 'chat')
-    baseFields.push({
-      name: 'vision',
-      label: t('vision'),
-      type: FormFieldType.Switch,
-      required: false,
-      dependencies: ['model_type'],
-      shouldRender: (formValues: any) => {
-        return formValues?.model_type === 'chat';
-      },
-    });
-
-    return baseFields;
-  }, [llmFactory, t]);
-
-  const defaultValues: FieldValues = useMemo(() => {
-    if (editMode && initialValues) {
-      return {
-        llm_name: initialValues.llm_name || '',
-        model_type: initialValues.model_type || 'chat',
-        api_base: initialValues.api_base || '',
-        max_tokens: initialValues.max_tokens || 8192,
-        api_key: '',
-        vision: initialValues.model_type === 'image2text',
-        provider_order: initialValues.provider_order || '',
-      };
-    }
-    return {
-      model_type:
-        llmFactory in optionsMap
-          ? optionsMap[llmFactory as LLMFactory]?.at(0)?.value
-          : 'embedding',
-      vision: false,
-    };
-  }, [editMode, initialValues, llmFactory]);
-
-  const handleOk = async (values?: FieldValues) => {
-    if (!values) return;
-
+  const handleOk = async () => {
+    const values = await form.validateFields();
     const modelType =
       values.model_type === 'chat' && values.vision
         ? 'image2text'
         : values.model_type;
 
-    const data: IAddLlmRequestBody & { provider_order?: string } = {
-      llm_factory: llmFactory,
-      llm_name: values.llm_name as string,
+    const data = {
+      ...omit(values, ['vision']),
       model_type: modelType,
-      api_base: values.api_base as string,
-      api_key: values.api_key as string,
-      max_tokens: values.max_tokens as number,
+      llm_factory: llmFactory,
+      max_tokens: values.max_tokens,
     };
+    console.info(data);
 
-    // Add provider_order only if it exists (for OpenRouter)
-    if (values.provider_order) {
-      data.provider_order = values.provider_order as string;
-    }
-
-    await onOk?.(data);
+    onOk?.(data);
   };
 
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
+  };
+
+  useEffect(() => {
+    if (visible && editMode && initialValues) {
+      const formValues = {
+        llm_name: initialValues.llm_name,
+        model_type: initialValues.model_type,
+        api_base: initialValues.api_base,
+        max_tokens: initialValues.max_tokens || 8192,
+        api_key: '',
+        ...initialValues,
+      };
+      form.setFieldsValue(formValues);
+    } else if (visible && !editMode) {
+      form.resetFields();
+    }
+  }, [visible, editMode, initialValues, form]);
+
+  const url =
+    llmFactoryToUrlMap[llmFactory as LlmFactory] ||
+    'https://github.com/infiniflow/ragflow/blob/main/docs/guides/models/deploy_local_llm.mdx';
+  const optionsMap = {
+    [LLMFactory.HuggingFace]: [
+      { value: 'embedding', label: 'embedding' },
+      { value: 'chat', label: 'chat' },
+      { value: 'rerank', label: 'rerank' },
+    ],
+    [LLMFactory.LMStudio]: [
+      { value: 'chat', label: 'chat' },
+      { value: 'embedding', label: 'embedding' },
+      { value: 'image2text', label: 'image2text' },
+    ],
+    [LLMFactory.Xinference]: [
+      { value: 'chat', label: 'chat' },
+      { value: 'embedding', label: 'embedding' },
+      { value: 'rerank', label: 'rerank' },
+      { value: 'image2text', label: 'image2text' },
+      { value: 'speech2text', label: 'sequence2text' },
+      { value: 'tts', label: 'tts' },
+    ],
+    [LLMFactory.ModelScope]: [{ value: 'chat', label: 'chat' }],
+    [LLMFactory.GPUStack]: [
+      { value: 'chat', label: 'chat' },
+      { value: 'embedding', label: 'embedding' },
+      { value: 'rerank', label: 'rerank' },
+      { value: 'speech2text', label: 'sequence2text' },
+      { value: 'tts', label: 'tts' },
+    ],
+    [LLMFactory.OpenRouter]: [
+      { value: 'chat', label: 'chat' },
+      { value: 'image2text', label: 'image2text' },
+    ],
+    Default: [
+      { value: 'chat', label: 'chat' },
+      { value: 'embedding', label: 'embedding' },
+      { value: 'rerank', label: 'rerank' },
+      { value: 'image2text', label: 'image2text' },
+    ],
+  };
+  const getOptions = (factory: string) => {
+    return optionsMap[factory as keyof typeof optionsMap] || optionsMap.Default;
+  };
   return (
     <Modal
       title={<LLMHeader name={llmFactory} />}
-      open={visible || false}
-      onOpenChange={(open) => !open && hideModal?.()}
-      maskClosable={false}
-      footer={<></>}
-      footerClassName="py-1"
+      open={visible}
+      onOk={handleOk}
+      onCancel={hideModal}
+      okButtonProps={{ loading }}
+      footer={(originNode: React.ReactNode) => {
+        return (
+          <Flex justify={'space-between'}>
+            <a href={url} target="_blank" rel="noreferrer">
+              {t('ollamaLink', { name: llmFactory })}
+            </a>
+            <Space>{originNode}</Space>
+          </Flex>
+        );
+      }}
     >
-      <DynamicForm.Root
-        key={`${visible}-${llmFactory}`}
-        fields={fields}
-        onSubmit={() => {}}
-        defaultValues={defaultValues}
-        labelClassName="font-normal"
+      <Form
+        name="basic"
+        style={{ maxWidth: 600 }}
+        autoComplete="off"
+        layout={'vertical'}
+        form={form}
       >
-        <div className="flex items-center justify-between w-full gap-2 ">
-          <a href={url} target="_blank" rel="noreferrer" className="text-sm">
-            {t('ollamaLink', { name: llmFactory })}
-          </a>
-          <div className="flex gap-2">
-            <DynamicForm.CancelButton
-              handleCancel={() => {
-                hideModal?.();
-              }}
-            />
-            <DynamicForm.SavingButton
-              submitLoading={loading || false}
-              buttonText={tc('ok')}
-              submitFunc={(values: FieldValues) => {
-                handleOk(values);
-              }}
-            />
-          </div>
-        </div>
-      </DynamicForm.Root>
+        <Form.Item<FieldType>
+          label={t('modelType')}
+          name="model_type"
+          initialValue={'embedding'}
+          rules={[{ required: true, message: t('modelTypeMessage') }]}
+        >
+          <Select placeholder={t('modelTypeMessage')}>
+            {getOptions(llmFactory).map((option) => (
+              <Option key={option.value} value={option.value}>
+                {option.label}
+              </Option>
+            ))}
+          </Select>
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t(llmFactory === 'Xinference' ? 'modelUid' : 'modelName')}
+          name="llm_name"
+          rules={[{ required: true, message: t('modelNameMessage') }]}
+        >
+          <Input
+            placeholder={t('modelNameMessage')}
+            onKeyDown={handleKeyDown}
+          />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('addLlmBaseUrl')}
+          name="api_base"
+          rules={[{ required: true, message: t('baseUrlNameMessage') }]}
+        >
+          <Input
+            placeholder={t('baseUrlNameMessage')}
+            onKeyDown={handleKeyDown}
+          />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('apiKey')}
+          name="api_key"
+          rules={[{ required: false, message: t('apiKeyMessage') }]}
+        >
+          <Input placeholder={t('apiKeyMessage')} onKeyDown={handleKeyDown} />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('maxTokens')}
+          name="max_tokens"
+          rules={[
+            { required: true, message: t('maxTokensMessage') },
+            {
+              type: 'number',
+              message: t('maxTokensInvalidMessage'),
+            },
+            ({}) => ({
+              validator(_, value) {
+                if (value < 0) {
+                  return Promise.reject(new Error(t('maxTokensMinMessage')));
+                }
+                return Promise.resolve();
+              },
+            }),
+          ]}
+        >
+          <InputNumber
+            placeholder={t('maxTokensTip')}
+            style={{ width: '100%' }}
+            onKeyDown={handleKeyDown}
+          />
+        </Form.Item>
+        {llmFactory === LLMFactory.OpenRouter && (
+          <Form.Item<FieldType>
+            label="Provider Order"
+            name="provider_order"
+            tooltip="Comma-separated provider list, e.g. Groq,Fireworks"
+            rules={[]}
+          >
+            <Input placeholder="Groq,Fireworks" onKeyDown={handleKeyDown} />
+          </Form.Item>
+        )}
+
+        <Form.Item noStyle dependencies={['model_type']}>
+          {({ getFieldValue }) =>
+            getFieldValue('model_type') === 'chat' && (
+              <Form.Item
+                label={t('vision')}
+                valuePropName="checked"
+                name={'vision'}
+              >
+                <Switch />
+              </Form.Item>
+            )
+          }
+        </Form.Item>
+      </Form>
     </Modal>
   );
 };

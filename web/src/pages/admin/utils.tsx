@@ -77,4 +77,4 @@ export function getSortIcon(sorting: false | SortDirection) {
 export const PERMISSION_TYPES = ['enable', 'read', 'write', 'share'] as const;
 export const EMPTY_DATA = Object.freeze<any[]>([]) as any[];
 export const IS_ENTERPRISE =
-  import.meta.env.VITE_RAGFLOW_ENTERPRISE === 'RAGFLOW_ENTERPRISE';
+  process.env.UMI_APP_RAGFLOW_ENTERPRISE === 'RAGFLOW_ENTERPRISE';

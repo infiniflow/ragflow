@@ -6,7 +6,7 @@ import { get } from 'lodash';
 import { memo } from 'react';
 import { LLMLabelCard } from './card';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
-import styles from './index.module.less';
+import styles from './index.less';
 import NodeHeader from './node-header';
 
 export function InnerKeywordNode({

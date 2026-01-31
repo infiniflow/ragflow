@@ -11,7 +11,7 @@ import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router';
+import { useSearchParams } from 'umi';
 import { DatasetCard } from './dataset-card';
 import { DatasetCreatingDialog } from './dataset-creating-dialog';
 import { useSaveKnowledge } from './hooks';
@@ -95,7 +95,7 @@ export default function Datasets() {
               icon={'datasets'}
             >
               <Button onClick={showModal}>
-                <Plus className="h-4 w-4" />
+                <Plus className=" size-2.5" />
                 {t('knowledgeList.createKnowledgeBase')}
               </Button>
             </ListFilterBar>

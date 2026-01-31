@@ -1,10 +1,8 @@
 ---
 sidebar_position: -10
 slug: /configure_knowledge_base
-sidebar_custom_props: {
-  categoryIcon: LucideCog
-}
 ---
+
 # Configure dataset
 
 Most of RAGFlow's chat assistants and Agents are based on datasets. Each of RAGFlow's datasets serves as a knowledge source, *parsing* files uploaded from your local machine and file references generated in RAGFlow's File system into the real 'knowledge' for future AI chats. This guide demonstrates some basic usages of the dataset feature, covering the following topics:

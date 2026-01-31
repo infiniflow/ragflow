@@ -1,20 +1,19 @@
-import {
-  DynamicForm,
-  FormFieldConfig,
-  FormFieldType,
-} from '@/components/dynamic-form';
-import { Modal } from '@/components/ui/modal/modal';
-import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
-import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { FieldValues } from 'react-hook-form';
+import { Flex, Form, Input, InputNumber, Modal, Select, Space } from 'antd';
+import omit from 'lodash/omit';
 import { LLMHeader } from '../../components/llm-header';
 
-type VolcEngineLlmRequest = IAddLlmRequestBody & {
+type FieldType = IAddLlmRequestBody & {
+  vision: boolean;
+  volc_ak: string;
+  volc_sk: string;
   endpoint_id: string;
   ark_api_key: string;
 };
+
+const { Option } = Select;
 
 const VolcEngineModal = ({
   visible,
@@ -23,119 +22,115 @@ const VolcEngineModal = ({
   loading,
   llmFactory,
 }: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
+  const [form] = Form.useForm<FieldType>();
+
   const { t } = useTranslate('setting');
-  const { t: tc } = useCommonTranslation();
-  const { buildModelTypeOptions } = useBuildModelTypeOptions();
 
-  const fields: FormFieldConfig[] = [
-    {
-      name: 'model_type',
-      label: t('modelType'),
-      type: FormFieldType.Select,
-      required: true,
-      options: buildModelTypeOptions(['chat', 'embedding', 'image2text']),
-      defaultValue: 'chat',
-    },
-    {
-      name: 'llm_name',
-      label: t('modelName'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('volcModelNameMessage'),
-    },
-    {
-      name: 'endpoint_id',
-      label: t('addEndpointID'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('endpointIDMessage'),
-    },
-    {
-      name: 'ark_api_key',
-      label: t('addArkApiKey'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('ArkApiKeyMessage'),
-    },
-    {
-      name: 'max_tokens',
-      label: t('maxTokens'),
-      type: FormFieldType.Number,
-      required: true,
-      placeholder: t('maxTokensTip'),
-      validation: {
-        min: 0,
-      },
-    },
-  ];
-
-  const handleOk = async (values?: FieldValues) => {
-    if (!values) return;
-
+  const handleOk = async () => {
+    const values = await form.validateFields();
     const modelType =
       values.model_type === 'chat' && values.vision
         ? 'image2text'
         : values.model_type;
 
-    const data: VolcEngineLlmRequest = {
-      llm_factory: llmFactory,
-      llm_name: values.llm_name as string,
+    const data = {
+      ...omit(values, ['vision']),
       model_type: modelType,
-      endpoint_id: values.endpoint_id as string,
-      ark_api_key: values.ark_api_key as string,
-      max_tokens: values.max_tokens as number,
+      llm_factory: llmFactory,
+      max_tokens: values.max_tokens,
     };
-
     console.info(data);
 
-    await onOk?.(data);
+    onOk?.(data);
   };
 
   return (
     <Modal
       title={<LLMHeader name={llmFactory} />}
-      open={visible || false}
-      onOpenChange={(open) => !open && hideModal?.()}
-      maskClosable={false}
-      footer={<div className="p-4"></div>}
+      open={visible}
+      onOk={handleOk}
+      onCancel={hideModal}
+      okButtonProps={{ loading }}
+      footer={(originNode: React.ReactNode) => {
+        return (
+          <Flex justify={'space-between'}>
+            <a
+              href="https://www.volcengine.com/docs/82379/1302008"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t('ollamaLink', { name: llmFactory })}
+            </a>
+            <Space>{originNode}</Space>
+          </Flex>
+        );
+      }}
     >
-      <DynamicForm.Root
-        fields={fields}
-        onSubmit={(data) => {
-          console.log(data);
-        }}
-        defaultValues={
-          {
-            model_type: 'chat',
-            vision: false,
-          } as FieldValues
-        }
-        labelClassName="font-normal"
+      <Form
+        name="basic"
+        style={{ maxWidth: 600 }}
+        autoComplete="off"
+        layout={'vertical'}
+        form={form}
       >
-        <div className="absolute bottom-0 right-0 left-0 flex items-center justify-between w-full py-6 px-6">
-          <a
-            href="https://www.volcengine.com/docs/82379/1302008"
-            target="_blank"
-            rel="noreferrer"
-          >
-            {t('ollamaLink', { name: llmFactory })}
-          </a>
-          <div className="flex gap-2">
-            <DynamicForm.CancelButton
-              handleCancel={() => {
-                hideModal?.();
-              }}
-            />
-            <DynamicForm.SavingButton
-              submitLoading={loading || false}
-              buttonText={tc('ok')}
-              submitFunc={(values: FieldValues) => {
-                handleOk(values);
-              }}
-            />
-          </div>
-        </div>
-      </DynamicForm.Root>
+        <Form.Item<FieldType>
+          label={t('modelType')}
+          name="model_type"
+          initialValue={'chat'}
+          rules={[{ required: true, message: t('modelTypeMessage') }]}
+        >
+          <Select placeholder={t('modelTypeMessage')}>
+            <Option value="chat">chat</Option>
+            <Option value="embedding">embedding</Option>
+            <Option value="image2text">image2text</Option>
+          </Select>
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('modelName')}
+          name="llm_name"
+          rules={[{ required: true, message: t('volcModelNameMessage') }]}
+        >
+          <Input placeholder={t('volcModelNameMessage')} />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('addEndpointID')}
+          name="endpoint_id"
+          rules={[{ required: true, message: t('endpointIDMessage') }]}
+        >
+          <Input placeholder={t('endpointIDMessage')} />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('addArkApiKey')}
+          name="ark_api_key"
+          rules={[{ required: true, message: t('ArkApiKeyMessage') }]}
+        >
+          <Input placeholder={t('ArkApiKeyMessage')} />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('maxTokens')}
+          name="max_tokens"
+          rules={[
+            { required: true, message: t('maxTokensMessage') },
+            {
+              type: 'number',
+              message: t('maxTokensInvalidMessage'),
+            },
+            ({}) => ({
+              validator(_, value) {
+                if (value < 0) {
+                  return Promise.reject(new Error(t('maxTokensMinMessage')));
+                }
+                return Promise.resolve();
+              },
+            }),
+          ]}
+        >
+          <InputNumber
+            placeholder={t('maxTokensTip')}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
+      </Form>
     </Modal>
   );
 };

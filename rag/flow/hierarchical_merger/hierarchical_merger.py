@@ -143,6 +143,8 @@ class HierarchicalMerger(ProcessBase):
                 if depth == self._param.hierarchy:
                     all_pathes.append(_path)
 
+        for i in range(len(lines)):
+            print(i, lines[i])
         dfs(root, [], 0)
 
         if root["texts"]:

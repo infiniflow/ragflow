@@ -98,8 +98,8 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
     () =>
       Boolean(
         parsed?.access_token ||
-        parsed?.refresh_token ||
-        parsed?.authorization_code,
+          parsed?.refresh_token ||
+          parsed?.authorization_code,
       ),
     [parsed],
   );
@@ -131,6 +131,7 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
 
           const finalValue: Record<string, any> = {
             ...rest,
+            // 确保客户端配置字段有值（优先后端返回，其次当前输入）
             client_id: rest.client_id ?? clientId.trim(),
             client_secret: rest.client_secret ?? clientSecret.trim(),
           };
@@ -144,6 +145,8 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
           if (code) {
             finalValue.authorization_code = code;
           }
+
+          // access_token / refresh_token 由后端返回，已在 ...rest 中带上，无需额外 state
 
           onChange(JSON.stringify(finalValue));
           message.success('Box authorization completed.');

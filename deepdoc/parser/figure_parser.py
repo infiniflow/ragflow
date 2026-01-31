@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import logging
 
 from PIL import Image
 
@@ -22,10 +21,9 @@ from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from common.connection_utils import timeout
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
-from rag.prompts.generator import vision_llm_figure_describe_prompt, vision_llm_figure_describe_prompt_with_context
-from rag.nlp import append_context2table_image4pdf
+from rag.prompts.generator import vision_llm_figure_describe_prompt
 
-# need to delete before pr
+
 def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
     if not figures_data_without_positions:
         return []
@@ -37,6 +35,7 @@ def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
         for figure_data in figures_data_without_positions
         if isinstance(figure_data[1], Image.Image)
     ]
+
 
 def vision_figure_parser_docx_wrapper(sections, tbls, callback=None,**kwargs):
     if not sections:
@@ -85,36 +84,20 @@ def vision_figure_parser_figure_xlsx_wrapper(images,callback=None, **kwargs):
 def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
     if not tbls:
         return []
-    sections = kwargs.get("sections")
-    parser_config = kwargs.get("parser_config", {})
-    context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
     try:
         vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
         callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
     except Exception:
         vision_model = None
     if vision_model:
-
         def is_figure_item(item):
-            return isinstance(item[0][0], Image.Image) and isinstance(item[0][1], list)
-
+            return (
+                isinstance(item[0][0], Image.Image) and
+                isinstance(item[0][1], list)
+            )
         figures_data = [item for item in tbls if is_figure_item(item)]
-        figure_contexts = []
-        if sections and figures_data and context_size > 0:
-            figure_contexts = append_context2table_image4pdf(
-                sections,
-                figures_data,
-                context_size,
-                return_context=True,
-            )
         try:
-            docx_vision_parser = VisionFigureParser(
-                vision_model=vision_model,
-                figures_data=figures_data,
-                figure_contexts=figure_contexts,
-                context_size=context_size,
-                **kwargs,
-            )
+            docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
             boosted_figures = docx_vision_parser(callback=callback)
             tbls = [item for item in tbls if not is_figure_item(item)]
             tbls.extend(boosted_figures)
@@ -123,57 +106,12 @@ def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
     return tbls
 
 
-def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, **kwargs):
-    if not chunks:
-        return []
-    try:
-        vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
-        callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
-    except Exception:
-        vision_model = None
-    if vision_model:
-        @timeout(30, 3)
-        def worker(idx, ck):
-            context_above = ck.get("context_above", "")
-            context_below = ck.get("context_below", "")
-            if context_above or context_below:
-                prompt = vision_llm_figure_describe_prompt_with_context(
-                    # context_above + caption if any
-                    context_above=ck.get("context_above") + ck.get("text", ""),
-                    context_below=ck.get("context_below"),
-                )
-                logging.info(f"[VisionFigureParser] figure={idx} context_above_len={len(context_above)} context_below_len={len(context_below)} prompt=with_context")
-                logging.info(f"[VisionFigureParser] figure={idx} context_above_snippet={context_above[:512]}")
-                logging.info(f"[VisionFigureParser] figure={idx} context_below_snippet={context_below[:512]}")
-            else:
-                prompt = vision_llm_figure_describe_prompt()
-                logging.info(f"[VisionFigureParser] figure={idx} context_len=0 prompt=default")
+shared_executor = ThreadPoolExecutor(max_workers=10)
 
-            description_text = picture_vision_llm_chunk(
-                binary=ck.get("image"),
-                vision_model=vision_model,
-                prompt=prompt,
-                callback=callback,
-            )
-            return idx, description_text
-
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [
-                executor.submit(worker, idx, chunks[idx])
-                for idx in idx_lst
-            ]
-
-            for future in as_completed(futures):
-                idx, description = future.result()
-                chunks[idx]['text'] += description
-    
-shared_executor = ThreadPoolExecutor(max_workers=10)    
 
 class VisionFigureParser:
     def __init__(self, vision_model, figures_data, *args, **kwargs):
         self.vision_model = vision_model
-        self.figure_contexts = kwargs.get("figure_contexts") or []
-        self.context_size = max(0, int(kwargs.get("context_size", 0) or 0))
         self._extract_figures_info(figures_data)
         assert len(self.figures) == len(self.descriptions)
         assert not self.positions or (len(self.figures) == len(self.positions))
@@ -218,25 +156,10 @@ class VisionFigureParser:
 
         @timeout(30, 3)
         def process(figure_idx, figure_binary):
-            context_above = ""
-            context_below = ""
-            if figure_idx < len(self.figure_contexts):
-                context_above, context_below = self.figure_contexts[figure_idx]
-            if context_above or context_below:
-                prompt = vision_llm_figure_describe_prompt_with_context(
-                    context_above=context_above,
-                    context_below=context_below,
-                )
-                logging.info(f"[VisionFigureParser] figure={figure_idx} context_size={self.context_size} context_above_len={len(context_above)} context_below_len={len(context_below)} prompt=with_context")
-                logging.info(f"[VisionFigureParser] figure={figure_idx} context_above_snippet={context_above[:512]}")
-                logging.info(f"[VisionFigureParser] figure={figure_idx} context_below_snippet={context_below[:512]}")
-            else:
-                prompt = vision_llm_figure_describe_prompt()
-                logging.info(f"[VisionFigureParser] figure={figure_idx} context_size={self.context_size} context_len=0 prompt=default")
             description_text = picture_vision_llm_chunk(
                 binary=figure_binary,
                 vision_model=self.vision_model,
-                prompt=prompt,
+                prompt=vision_llm_figure_describe_prompt(),
                 callback=callback,
             )
             return figure_idx, description_text

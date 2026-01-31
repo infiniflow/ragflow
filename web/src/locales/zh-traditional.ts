@@ -202,9 +202,6 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文檔不能被刪除',
     },
     knowledgeConfiguration: {
-      settings: '設置',
-      autoMetadataTip:
-        '自動生成元數據。適用於解析新文件。現有文件需要重新解析才能更新（ chunk 將保留）。請注意，配置中指定的索引模型將消耗額外的 Token。',
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
       imageTableContextWindow: '影像與表格上下文視窗',
       imageTableContextWindowTip:
@@ -221,7 +218,7 @@ export default {
       chunkTokenNumber: '建議文本塊大小',
       chunkTokenNumberMessage: '塊Token數是必填項',
       embeddingModelTip:
-        '知識庫採用的默認嵌入模型。一旦知識庫內已經產生了文本塊，更換嵌入模型時，系統將隨機抽取若干 chunk 進行兼容性校驗，使用新嵌入模型重新編碼並計算新舊向量的餘弦相似度，樣本平均相似度需 ≥ 0.9 方可切換。否則，必須刪除知識庫內的所有文本塊後才能更改。',
+        '知識庫的預設嵌入模型。一旦知識庫已有資料區塊，則無法更改。若要切換到不同的預設嵌入模型，必須刪除知識庫中所有現有的資料區塊。',
       permissionsTip: '如果權限是“團隊”，則所有團隊成員都可以操作知識庫。',
       chunkTokenNumberTip:
         '建議的生成文本塊的 token 數閾值。如果切分得到的小文本段 token 數達不到這一閾值，系統就會不斷與之後的文本段合併，直至再合併下一個文本段會超過這一閾值為止，此時產生一個最終文本塊。如果系統在切分文本段時始終沒有遇到文本分段標識符，即便文本段 token 數已經超過這一閾值，系統也不會生成新文本塊。',
@@ -370,18 +367,6 @@ export default {
  `,
       tags: '標籤',
       addTag: '增加標籤',
-      paddleocrOptions: 'PaddleOCR 選項',
-      paddleocrApiUrl: 'PaddleOCR API URL',
-      paddleocrApiUrlTip: 'PaddleOCR 服務的 API 端點 URL',
-      paddleocrApiUrlPlaceholder:
-        '例如：https://paddleocr-server.com/layout-parsing',
-      paddleocrAccessToken: 'AI Studio 訪問令牌',
-      paddleocrAccessTokenTip: 'PaddleOCR API 的訪問令牌（可選）',
-      paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可選）',
-      paddleocrAlgorithm: 'PaddleOCR 算法',
-      paddleocrAlgorithmTip: '用於 PaddleOCR 解析的算法',
-      paddleocrSelectAlgorithm: '選擇算法',
-      paddleocrModelNamePlaceholder: '例如：paddleocr-環境-1',
       useGraphRag: '提取知識圖譜',
       useGraphRagTip:
         '基於知識庫內所有切好的文本塊構建知識圖譜，用以提升多跳和複雜問題回答的正確率。請注意：構建知識圖譜將消耗大量 token 和時間。詳見 https://ragflow.io/docs/dev/construct_knowledge_graph。',
@@ -492,7 +477,8 @@ export default {
         '與存在懲罰類似，這減少了模型頻繁重複相同單詞的傾向。',
       maxTokens: '最大token數',
       maxTokensMessage: '最大token數是必填項',
-      maxTokensTip: `模型的最大上下文大小；無效或不正確的值會導致錯誤。預設為 512。`,
+      maxTokensTip:
+        '這設置了模型輸出的最大長度，以標記（單詞或單詞片段）的數量來衡量。',
       maxTokensInvalidMessage: '請輸入有效的最大標記數。',
       maxTokensMinMessage: '最大標記數不能小於 0。',
       quote: '顯示引文',
@@ -576,7 +562,8 @@ export default {
         '選擇此模式後，EC2 執行個體將使用其既有的 IAM Role 存取 AWS 服務，無需額外憑證。',
       maxTokens: '最大token數',
       maxTokensMessage: '最大token數是必填項',
-      maxTokensTip: `模型的最大上下文大小；無效或不正確的值會導致錯誤。預設為 512。`,
+      maxTokensTip:
+        '這設置了模型輸出的最大長度，以標記（單詞或單詞片段）的數量來衡量。',
       maxTokensInvalidMessage: '請輸入有效的最大標記數。',
       maxTokensMinMessage: '最大標記數不能小於 0。',
       password: '密碼',
@@ -657,17 +644,6 @@ export default {
       modelNameMessage: '請輸入模型名稱！',
       modelTypeMessage: '請輸入模型類型！',
       baseUrlNameMessage: '請輸入基礎 Url！',
-      paddleocr: {
-        apiUrl: 'PaddleOCR API URL',
-        apiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
-        accessToken: 'AI Studio 存取權杖',
-        accessTokenPlaceholder: '您的 AI Studio 權杖（選填）',
-        algorithm: 'PaddleOCR 演算法',
-        selectAlgorithm: '選擇演算法',
-        modelNamePlaceholder: '例如：paddleocr-from-env-1',
-        modelNameRequired: '模型名稱為必填項目',
-        apiUrlRequired: 'PaddleOCR API URL 為必填項目',
-      },
       ollamaLink: '如何集成 {{name}}',
       FishAudioLink: '如何使用Fish Audio',
       TencentCloudLink: '如何使用騰訊雲語音識別',
@@ -690,6 +666,10 @@ export default {
       'eu-central-1': '歐洲 (法蘭克福)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       'ap-southeast-2': '亞太地區 (雪梨)',
+      addHunyuanSID: '混元 Secret ID',
+      HunyuanSIDMessage: '請輸入 Secret ID',
+      addHunyuanSK: '混元 Secret Key',
+      HunyuanSKMessage: '請輸入 Secret Key',
       addTencentCloudSID: '騰訊雲 Secret ID',
       TencentCloudSIDMessage: '請輸入 Secret ID',
       addTencentCloudSK: '騰訊雲 Secret Key',
@@ -746,16 +726,6 @@ export default {
       view: '查看',
       modelsToBeAddedTooltip:
         '若您的模型供應商未列於此處，但宣稱與 OpenAI 相容，可透過選擇「OpenAI-API-compatible」卡片來設定相關模型。',
-      dropboxDescription: '連接 Dropbox，同步指定帳號下的文件與文件夾。',
-      bitbucketDescription: '連接 Bitbucket，同步 PR 內容。',
-      zendeskDescription: '連接 Zendesk，同步工單、文章及其他內容。',
-      bitbucketTopWorkspaceTip:
-        '要索引的 Bitbucket 工作區（例如：https://bitbucket.org/atlassian/workspace 中的 "atlassian"）',
-      bitbucketWorkspaceTip: '此連接器將索引工作區下的所有倉庫。',
-      bitbucketRepositorySlugsTip:
-        '以英文逗號分隔的倉庫 slug，例如：repo-one,repo-two',
-      bitbucketProjectsTip: '以英文逗號分隔的項目鍵，例如：PROJ1,PROJ2',
-      connectorNameTip: '為連接器填寫一個有意義的名稱',
     },
     message: {
       registered: '註冊成功',

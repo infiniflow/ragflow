@@ -97,7 +97,6 @@ export interface FormFieldConfig {
   schema?: ZodSchema;
   shouldRender?: (formValues: any) => boolean;
   labelClassName?: string;
-  className?: string;
   disabled?: boolean;
 }
 
@@ -188,23 +187,20 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
 
     // Handle required fields
     if (field.required) {
-      const requiredMessage =
-        field.validation?.message || `${field.label} is required`;
-
       if (field.type === FormFieldType.Checkbox) {
         fieldSchema = (fieldSchema as z.ZodBoolean).refine(
           (val) => val === true,
           {
-            message: requiredMessage,
+            message: `${field.label} is required`,
           },
         );
       } else if (field.type === FormFieldType.Tag) {
         fieldSchema = (fieldSchema as z.ZodArray<z.ZodString>).min(1, {
-          message: requiredMessage,
+          message: `${field.label} is required`,
         });
       } else {
         fieldSchema = (fieldSchema as z.ZodString).min(1, {
-          message: requiredMessage,
+          message: `${field.label} is required`,
         });
       }
     }
@@ -834,7 +830,6 @@ const DynamicForm = {
       useImperativeHandle(
         ref,
         () => ({
-          form: form,
           submit: () => {
             form.handleSubmit((values) => {
               const filteredValues = filterActiveValues(values);
@@ -939,6 +934,7 @@ const DynamicForm = {
   ) as <T extends FieldValues>(
     props: DynamicFormProps<T> & { ref?: React.Ref<DynamicFormRef> },
   ) => React.ReactElement,
+
   SavingButton: ({
     submitLoading,
     buttonText,
@@ -956,8 +952,8 @@ const DynamicForm = {
         onClick={() => {
           (async () => {
             try {
-              let beValid = await form.trigger();
-              console.log('form valid', beValid, form);
+              let beValid = await form.formControl.trigger();
+              console.log('form valid', beValid, form, form.formControl);
               // if (beValid) {
               //   form.handleSubmit(async (values) => {
               //     console.log('form values', values);
@@ -1014,7 +1010,5 @@ const DynamicForm = {
     );
   },
 };
-
-DynamicForm.Root.displayName = 'DynamicFormRoot';
 
 export { DynamicForm };

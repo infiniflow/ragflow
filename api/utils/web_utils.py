@@ -86,9 +86,6 @@ CONTENT_TYPE_MAP = {
     "ico": "image/x-icon",
     "avif": "image/avif",
     "heic": "image/heic",
-    # PPTX
-    "ppt": "application/vnd.ms-powerpoint",
-    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
 
 

@@ -41,7 +41,6 @@ export const BasicInfo = () => {
         label={t('memory.config.description')}
         required={false}
         horizontal={true}
-        className="!items-start"
         // tooltip={field.tooltip}
         // labelClassName={labelClassName || field.labelClassName}
       >

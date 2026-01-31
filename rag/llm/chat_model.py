@@ -34,7 +34,8 @@ from common.token_utils import num_tokens_from_string, total_token_count_from_re
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
 
-from common.misc_utils import thread_pool_exec
+
+# Error message constants
 class LLMErrorCode(StrEnum):
     ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
     ERROR_AUTHENTICATION = "AUTH_ERROR"
@@ -99,12 +100,6 @@ class Base(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        model_name_lower = (self.model_name or "").lower()
-        # gpt-5 and gpt-5.1 endpoints have inconsistent parameter support, clear custom generation params to prevent unexpected issues
-        if "gpt-5" in model_name_lower:
-            gen_conf = {}
-            return gen_conf
-
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
 
@@ -132,6 +127,12 @@ class Base(ABC):
         }
 
         gen_conf = {k: v for k, v in gen_conf.items() if k in allowed_conf}
+
+        model_name_lower = (self.model_name or "").lower()
+        # gpt-5 and gpt-5.1 endpoints have inconsistent parameter support, clear custom generation params to prevent unexpected issues
+        if "gpt-5" in model_name_lower:
+            gen_conf = {}
+
         return gen_conf
 
     async def _async_chat_streamly(self, history, gen_conf, **kwargs):
@@ -308,7 +309,7 @@ class Base(ABC):
                         name = tool_call.function.name
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
-                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
+                            tool_response = await asyncio.to_thread(self.toolcall_session.tool_call, name, args)
                             history = self._append_history(history, tool_call, tool_response)
                             ans += self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
@@ -401,7 +402,7 @@ class Base(ABC):
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
                             yield self._verbose_tool_use(name, args, "Begin to call...")
-                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
+                            tool_response = await asyncio.to_thread(self.toolcall_session.tool_call, name, args)
                             history = self._append_history(history, tool_call, tool_response)
                             yield self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
@@ -791,6 +792,84 @@ class ReplicateChat(Base):
         yield num_tokens_from_string(ans)
 
 
+class HunyuanChat(Base):
+    _FACTORY_NAME = "Tencent Hunyuan"
+
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
+
+        from tencentcloud.common import credential
+        from tencentcloud.hunyuan.v20230901 import hunyuan_client
+
+        key = json.loads(key)
+        sid = key.get("hunyuan_sid", "")
+        sk = key.get("hunyuan_sk", "")
+        cred = credential.Credential(sid, sk)
+        self.model_name = model_name
+        self.client = hunyuan_client.HunyuanClient(cred, "")
+
+    def _clean_conf(self, gen_conf):
+        _gen_conf = {}
+        if "temperature" in gen_conf:
+            _gen_conf["Temperature"] = gen_conf["temperature"]
+        if "top_p" in gen_conf:
+            _gen_conf["TopP"] = gen_conf["top_p"]
+        return _gen_conf
+
+    def _chat(self, history, gen_conf={}, **kwargs):
+        from tencentcloud.hunyuan.v20230901 import models
+
+        hist = [{k.capitalize(): v for k, v in item.items()} for item in history]
+        req = models.ChatCompletionsRequest()
+        params = {"Model": self.model_name, "Messages": hist, **gen_conf}
+        req.from_json_string(json.dumps(params))
+        response = self.client.ChatCompletions(req)
+        ans = response.Choices[0].Message.Content
+        return ans, response.Usage.TotalTokens
+
+    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+        from tencentcloud.common.exception.tencent_cloud_sdk_exception import (
+            TencentCloudSDKException,
+        )
+        from tencentcloud.hunyuan.v20230901 import models
+
+        _gen_conf = {}
+        _history = [{k.capitalize(): v for k, v in item.items()} for item in history]
+        if system and history and history[0].get("role") != "system":
+            _history.insert(0, {"Role": "system", "Content": system})
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
+        if "temperature" in gen_conf:
+            _gen_conf["Temperature"] = gen_conf["temperature"]
+        if "top_p" in gen_conf:
+            _gen_conf["TopP"] = gen_conf["top_p"]
+        req = models.ChatCompletionsRequest()
+        params = {
+            "Model": self.model_name,
+            "Messages": _history,
+            "Stream": True,
+            **_gen_conf,
+        }
+        req.from_json_string(json.dumps(params))
+        ans = ""
+        total_tokens = 0
+        try:
+            response = self.client.ChatCompletions(req)
+            for resp in response:
+                resp = json.loads(resp["data"])
+                if not resp["Choices"] or not resp["Choices"][0]["Delta"]["Content"]:
+                    continue
+                ans = resp["Choices"][0]["Delta"]["Content"]
+                total_tokens += 1
+
+                yield ans
+
+        except TencentCloudSDKException as e:
+            yield ans + "\n**ERROR**: " + str(e)
+
+        yield total_tokens
+
+
 class SparkChat(Base):
     _FACTORY_NAME = "XunFei Spark"
 
@@ -799,8 +878,7 @@ class SparkChat(Base):
             base_url = "https://spark-api-open.xf-yun.com/v1"
         model2version = {
             "Spark-Max": "generalv3.5",
-            "Spark-Max-32K": "max-32k",
-            "Spark-Lite": "lite",
+            "Spark-Lite": "general",
             "Spark-Pro": "generalv3",
             "Spark-Pro-128K": "pro-128k",
             "Spark-4.0-Ultra": "4.0Ultra",
@@ -1087,15 +1165,6 @@ class TokenPonyChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class N1nChat(Base):
-    _FACTORY_NAME = "n1n"
-
-    def __init__(self, key, model_name, base_url="https://api.n1n.ai/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.n1n.ai/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1130,7 +1199,6 @@ class LiteLLMBase(ABC):
         "GPUStack",
         "OpenAI",
         "Azure-OpenAI",
-        "Tencent Hunyuan",
     ]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
@@ -1181,30 +1249,8 @@ class LiteLLMBase(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        gen_conf = deepcopy(gen_conf) if gen_conf else {}
-
-        if self.provider == SupportedLiteLLMProvider.HunYuan:
-            unsupported = ["presence_penalty", "frequency_penalty"]
-            for key in unsupported:
-                gen_conf.pop(key, None)
-
-        elif "kimi-k2.5" in self.model_name.lower():
-            reasoning = gen_conf.pop("reasoning", None) # will never get one here, handle this later
-            thinking = {"type": "enabled"} # enable thinking by default
-            if reasoning is not None:
-                thinking = {"type": "enabled"} if reasoning else {"type": "disabled"}
-            elif not isinstance(thinking, dict) or thinking.get("type") not in {"enabled", "disabled"}:
-                thinking = {"type": "disabled"}
-            gen_conf["thinking"] = thinking
-
-            thinking_enabled = thinking.get("type") == "enabled"
-            gen_conf["temperature"] = 1.0 if thinking_enabled else 0.6
-            gen_conf["top_p"] = 0.95
-            gen_conf["n"] = 1
-            gen_conf["presence_penalty"] = 0.0
-            gen_conf["frequency_penalty"] = 0.0
-
-        gen_conf.pop("max_tokens", None)
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
         return gen_conf
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
@@ -1217,7 +1263,7 @@ class LiteLLMBase(ABC):
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
 
-        completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **{**gen_conf, **kwargs})
+        completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **gen_conf)
 
         for attempt in range(self.max_retries + 1):
             try:
@@ -1407,7 +1453,7 @@ class LiteLLMBase(ABC):
                         name = tool_call.function.name
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
-                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
+                            tool_response = await asyncio.to_thread(self.toolcall_session.tool_call, name, args)
                             history = self._append_history(history, tool_call, tool_response)
                             ans += self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
@@ -1507,7 +1553,7 @@ class LiteLLMBase(ABC):
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
                             yield self._verbose_tool_use(name, args, "Begin to call...")
-                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
+                            tool_response = await asyncio.to_thread(self.toolcall_session.tool_call, name, args)
                             history = self._append_history(history, tool_call, tool_response)
                             yield self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
@@ -1586,22 +1632,25 @@ class LiteLLMBase(ABC):
                 raise ValueError("Bedrock auth_mode must be provided in the key")
 
             bedrock_region = bedrock_key.get("bedrock_region")
+            bedrock_credentials = {"bedrock_region": bedrock_region}
 
             if mode == "access_key_secret":
-                completion_args.update({"aws_region_name": bedrock_region})
-                completion_args.update({"aws_access_key_id": bedrock_key.get("bedrock_ak")})
-                completion_args.update({"aws_secret_access_key": bedrock_key.get("bedrock_sk")})
+                bedrock_credentials["aws_access_key_id"] = bedrock_key.get("bedrock_ak")
+                bedrock_credentials["aws_secret_access_key"] = bedrock_key.get("bedrock_sk")
             elif mode == "iam_role":
                 aws_role_arn = bedrock_key.get("aws_role_arn")
                 sts_client = boto3.client("sts", region_name=bedrock_region)
                 resp = sts_client.assume_role(RoleArn=aws_role_arn, RoleSessionName="BedrockSession")
                 creds = resp["Credentials"]
-                completion_args.update({"aws_region_name": bedrock_region})
-                completion_args.update({"aws_access_key_id": creds["AccessKeyId"]})
-                completion_args.update({"aws_secret_access_key": creds["SecretAccessKey"]})
-                completion_args.update({"aws_session_token": creds["SessionToken"]})
-            else:  # assume_role - use default credential chain (IRSA, instance profile, etc.)
-                completion_args.update({"aws_region_name": bedrock_region})
+                bedrock_credentials["aws_access_key_id"] = creds["AccessKeyId"]
+                bedrock_credentials["aws_secret_access_key"] = creds["SecretAccessKey"]
+                bedrock_credentials["aws_session_token"] = creds["SessionToken"]
+
+            completion_args.update(
+                {
+                    "bedrock_credentials": bedrock_credentials,
+                }
+            )
 
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:
             if self.provider_order:
@@ -1648,4 +1697,3 @@ class LiteLLMBase(ABC):
         if extra_headers:
             completion_args["extra_headers"] = extra_headers
         return completion_args
-

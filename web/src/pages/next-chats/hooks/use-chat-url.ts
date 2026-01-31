@@ -3,7 +3,7 @@ import { useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { IMessage } from '@/interfaces/database/chat';
 import { generateConversationId } from '@/utils/chat';
 import { useCallback, useMemo } from 'react';
-import { useSearchParams } from 'react-router';
+import { useSearchParams } from 'umi';
 import { useSetConversation } from './use-set-conversation';
 
 /**

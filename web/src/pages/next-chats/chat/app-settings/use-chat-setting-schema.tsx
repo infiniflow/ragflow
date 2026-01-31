@@ -24,14 +24,12 @@ export function useChatSettingSchema() {
     system: z.string().min(1, { message: t('systemMessage') }),
     refine_multiturn: z.boolean(),
     use_kg: z.boolean(),
-    parameters: z
-      .array(
-        z.object({
-          key: z.string(),
-          optional: z.boolean(),
-        }),
-      )
-      .optional(),
+    parameters: z.array(
+      z.object({
+        key: z.string(),
+        optional: z.boolean(),
+      }),
+    ),
     tavily_api_key: z.string().optional(),
     reasoning: z.boolean().optional(),
     cross_languages: z.array(z.string()).optional(),

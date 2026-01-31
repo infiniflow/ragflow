@@ -92,4 +92,4 @@ function Calendar({
   );
 }
 
-export { Calendar, type DateRange };
+export { Calendar, DateRange };

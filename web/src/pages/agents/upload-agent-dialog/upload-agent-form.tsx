@@ -41,7 +41,7 @@ export function UploadAgentForm({ hideModal, onOk }: IModalProps<any>) {
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="space-y-6"
+        className="space-y-6 w-full text-ellipsis overflow-hidden"
         id={TagRenameId}
       >
         <NameFormField></NameFormField>
@@ -53,7 +53,7 @@ export function UploadAgentForm({ hideModal, onOk }: IModalProps<any>) {
               <FormLabel required>DSL</FormLabel>
               <FormControl>
                 <FileUploader
-                  className="text-ellipsis overflow-hidden"
+                  className="w-[calc(100%-40px)] text-ellipsis overflow-hidden"
                   value={field.value}
                   onValueChange={field.onChange}
                   maxFileCount={1}

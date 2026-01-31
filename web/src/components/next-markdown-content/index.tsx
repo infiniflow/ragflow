@@ -35,7 +35,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '../ui/hover-card';
-import styles from './index.module.less';
+import styles from './index.less';
 
 const getChunkIndex = (match: string) => Number(match);
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.

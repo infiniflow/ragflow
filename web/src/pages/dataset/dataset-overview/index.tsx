@@ -267,7 +267,7 @@ const FileLogsPage: FC = () => {
               {topAllData.totalFiles.precent}%{' '}
             </span>
             <span className="font-normal text-text-secondary text-xs">
-              {t('knowledgeConfiguration.lastWeek')}
+              from last week
             </span>
           </div>
         </StatCard>

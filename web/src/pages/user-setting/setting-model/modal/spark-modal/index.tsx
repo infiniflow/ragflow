@@ -1,16 +1,19 @@
-import {
-  DynamicForm,
-  FormFieldConfig,
-  FormFieldType,
-} from '@/components/dynamic-form';
-import { Modal } from '@/components/ui/modal/modal';
-import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
-import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { Form, Input, InputNumber, Modal, Select } from 'antd';
 import omit from 'lodash/omit';
-import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
+
+type FieldType = IAddLlmRequestBody & {
+  vision: boolean;
+  spark_api_password: string;
+  spark_app_id: string;
+  spark_api_secret: string;
+  spark_api_key: string;
+};
+
+const { Option } = Select;
 
 const SparkModal = ({
   visible,
@@ -19,100 +22,12 @@ const SparkModal = ({
   loading,
   llmFactory,
 }: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
+  const [form] = Form.useForm<FieldType>();
+
   const { t } = useTranslate('setting');
-  const { t: tc } = useCommonTranslation();
-  const { buildModelTypeOptions } = useBuildModelTypeOptions();
 
-  const fields: FormFieldConfig[] = [
-    {
-      name: 'model_type',
-      label: t('modelType'),
-      type: FormFieldType.Select,
-      required: true,
-      options: buildModelTypeOptions(['chat', 'tts']),
-      defaultValue: 'chat',
-      validation: {
-        message: t('modelTypeMessage'),
-      },
-    },
-    {
-      name: 'llm_name',
-      label: t('modelName'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('modelNameMessage'),
-      validation: {
-        message: t('SparkModelNameMessage'),
-      },
-    },
-    {
-      name: 'spark_api_password',
-      label: t('addSparkAPIPassword'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('SparkAPIPasswordMessage'),
-      validation: {
-        message: t('SparkAPIPasswordMessage'),
-      },
-    },
-    {
-      name: 'spark_app_id',
-      label: t('addSparkAPPID'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('SparkAPPIDMessage'),
-      validation: {
-        message: t('SparkAPPIDMessage'),
-      },
-      dependencies: ['model_type'],
-      shouldRender: (formValues: any) => {
-        return formValues?.model_type === 'tts';
-      },
-    },
-    {
-      name: 'spark_api_secret',
-      label: t('addSparkAPISecret'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('SparkAPISecretMessage'),
-      validation: {
-        message: t('SparkAPISecretMessage'),
-      },
-      dependencies: ['model_type'],
-      shouldRender: (formValues: any) => {
-        return formValues?.model_type === 'tts';
-      },
-    },
-    {
-      name: 'spark_api_key',
-      label: t('addSparkAPIKey'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('SparkAPIKeyMessage'),
-      validation: {
-        message: t('SparkAPIKeyMessage'),
-      },
-      dependencies: ['model_type'],
-      shouldRender: (formValues: any) => {
-        return formValues?.model_type === 'tts';
-      },
-    },
-    {
-      name: 'max_tokens',
-      label: t('maxTokens'),
-      type: FormFieldType.Number,
-      required: true,
-      placeholder: t('maxTokensTip'),
-      validation: {
-        min: 0,
-        message: t('maxTokensInvalidMessage'),
-      },
-    },
-  ];
-
-  const handleOk = async (values?: FieldValues) => {
-    if (!values) return;
-
+  const handleOk = async () => {
+    const values = await form.validateFields();
     const modelType =
       values.model_type === 'chat' && values.vision
         ? 'image2text'
@@ -124,46 +39,124 @@ const SparkModal = ({
       llm_factory: llmFactory,
       max_tokens: values.max_tokens,
     };
+    console.info(data);
 
-    await onOk?.(data as IAddLlmRequestBody);
+    onOk?.(data);
+  };
+
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
   };
 
   return (
     <Modal
       title={<LLMHeader name={llmFactory} />}
-      open={visible || false}
-      onOpenChange={(open) => !open && hideModal?.()}
-      maskClosable={false}
-      footer={<div className="p-4"></div>}
+      open={visible}
+      onOk={handleOk}
+      onCancel={hideModal}
+      okButtonProps={{ loading }}
+      confirmLoading={loading}
     >
-      <DynamicForm.Root
-        fields={fields}
-        onSubmit={(data) => {
-          console.log(data);
-        }}
-        defaultValues={
-          {
-            model_type: 'chat',
-            vision: false,
-          } as FieldValues
-        }
-        labelClassName="font-normal"
-      >
-        <div className="absolute bottom-0 right-0 left-0 flex items-center justify-end w-full gap-2 py-6 px-6">
-          <DynamicForm.CancelButton
-            handleCancel={() => {
-              hideModal?.();
-            }}
+      <Form>
+        <Form.Item<FieldType>
+          label={t('modelType')}
+          name="model_type"
+          initialValue={'chat'}
+          rules={[{ required: true, message: t('modelTypeMessage') }]}
+        >
+          <Select placeholder={t('modelTypeMessage')}>
+            <Option value="chat">chat</Option>
+            <Option value="tts">tts</Option>
+          </Select>
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('modelName')}
+          name="llm_name"
+          rules={[{ required: true, message: t('SparkModelNameMessage') }]}
+        >
+          <Input
+            placeholder={t('modelNameMessage')}
+            onKeyDown={handleKeyDown}
           />
-          <DynamicForm.SavingButton
-            submitLoading={loading || false}
-            buttonText={tc('ok')}
-            submitFunc={(values: FieldValues) => {
-              handleOk(values);
-            }}
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('addSparkAPIPassword')}
+          name="spark_api_password"
+          rules={[{ required: true, message: t('SparkAPIPasswordMessage') }]}
+        >
+          <Input
+            placeholder={t('SparkAPIPasswordMessage')}
+            onKeyDown={handleKeyDown}
           />
-        </div>
-      </DynamicForm.Root>
+        </Form.Item>
+        <Form.Item noStyle dependencies={['model_type']}>
+          {({ getFieldValue }) =>
+            getFieldValue('model_type') === 'tts' && (
+              <Form.Item<FieldType>
+                label={t('addSparkAPPID')}
+                name="spark_app_id"
+                rules={[{ required: true, message: t('SparkAPPIDMessage') }]}
+              >
+                <Input placeholder={t('SparkAPPIDMessage')} />
+              </Form.Item>
+            )
+          }
+        </Form.Item>
+        <Form.Item noStyle dependencies={['model_type']}>
+          {({ getFieldValue }) =>
+            getFieldValue('model_type') === 'tts' && (
+              <Form.Item<FieldType>
+                label={t('addSparkAPISecret')}
+                name="spark_api_secret"
+                rules={[
+                  { required: true, message: t('SparkAPISecretMessage') },
+                ]}
+              >
+                <Input placeholder={t('SparkAPISecretMessage')} />
+              </Form.Item>
+            )
+          }
+        </Form.Item>
+        <Form.Item noStyle dependencies={['model_type']}>
+          {({ getFieldValue }) =>
+            getFieldValue('model_type') === 'tts' && (
+              <Form.Item<FieldType>
+                label={t('addSparkAPIKey')}
+                name="spark_api_key"
+                rules={[{ required: true, message: t('SparkAPIKeyMessage') }]}
+              >
+                <Input placeholder={t('SparkAPIKeyMessage')} />
+              </Form.Item>
+            )
+          }
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('maxTokens')}
+          name="max_tokens"
+          rules={[
+            { required: true, message: t('maxTokensMessage') },
+            {
+              type: 'number',
+              message: t('maxTokensInvalidMessage'),
+            },
+            ({}) => ({
+              validator(_, value) {
+                if (value < 0) {
+                  return Promise.reject(new Error(t('maxTokensMinMessage')));
+                }
+                return Promise.resolve();
+              },
+            }),
+          ]}
+        >
+          <InputNumber
+            placeholder={t('maxTokensTip')}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
+      </Form>
     </Modal>
   );
 };

@@ -3,7 +3,7 @@ import { useSendMessageBySSE } from '@/hooks/use-send-message';
 import api from '@/utils/api';
 import { get } from 'lodash';
 import { useCallback, useState } from 'react';
-import { useParams } from 'react-router';
+import { useParams } from 'umi';
 import { UseFetchLogReturnType } from './use-fetch-pipeline-log';
 import { useSaveGraph } from './use-save-graph';
 

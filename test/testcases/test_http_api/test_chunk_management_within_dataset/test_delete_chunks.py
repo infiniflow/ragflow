@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import batch_add_chunks, delete_chunks, list_chunks
-from configs import INVALID_API_TOKEN, INVALID_ID_32
+from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -45,7 +45,12 @@ class TestChunksDeletion:
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
-            (INVALID_ID_32, 102, f"You don't own the dataset {INVALID_ID_32}."),
+            ("", 100, "<NotFound '404: Not Found'>"),
+            (
+                "invalid_dataset_id",
+                102,
+                "You don't own the dataset invalid_dataset_id.",
+            ),
         ],
     )
     def test_invalid_dataset_id(self, HttpApiAuth, add_chunks_func, dataset_id, expected_code, expected_message):
@@ -58,7 +63,8 @@ class TestChunksDeletion:
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
-            (INVALID_ID_32, 100, f"""LookupError("Can't find the document with ID {INVALID_ID_32}!")"""),
+            ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
+            ("invalid_document_id", 100, """LookupError("Can't find the document with ID invalid_document_id!")"""),
         ],
     )
     def test_invalid_document_id(self, HttpApiAuth, add_chunks_func, document_id, expected_code, expected_message):

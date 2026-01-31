@@ -20,7 +20,8 @@ import re
 
 from common.constants import ParserType
 from io import BytesIO
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level, attach_media_context
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, \
+    docx_question_level, attach_media_context
 from common.token_utils import num_tokens_from_string
 from deepdoc.parser import PdfParser, DocxParser
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper, vision_figure_parser_docx_wrapper
@@ -35,12 +36,18 @@ class Pdf(PdfParser):
         self.model_speciess = ParserType.MANUAL.value
         super().__init__()
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
+    def __call__(self, filename, binary=None, from_page=0,
+                 to_page=100000, zoomin=3, callback=None):
         from timeit import default_timer as timer
-
         start = timer()
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
+        self.__images__(
+            filename if not binary else binary,
+            zoomin,
+            from_page,
+            to_page,
+            callback
+        )
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
         logging.debug("OCR: {}".format(timer() - start))
 
@@ -64,7 +71,8 @@ class Pdf(PdfParser):
         for b in self.boxes:
             b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
 
-        return [(b["text"], b.get("layoutno", ""), self.get_position(b, zoomin)) for i, b in enumerate(self.boxes)], tbls
+        return [(b["text"], b.get("layoutno", ""), self.get_position(b, zoomin))
+                for i, b in enumerate(self.boxes)], tbls
 
 
 class Docx(DocxParser):
@@ -72,12 +80,12 @@ class Docx(DocxParser):
         pass
 
     def get_picture(self, document, paragraph):
-        img = paragraph._element.xpath(".//pic:pic")
+        img = paragraph._element.xpath('.//pic:pic')
         if not img:
             return None
         try:
             img = img[0]
-            embed = img.xpath(".//a:blip/@r:embed")[0]
+            embed = img.xpath('.//a:blip/@r:embed')[0]
             related_part = document.part.related_parts[embed]
             image = related_part.image
             if image is not None:
@@ -103,7 +111,7 @@ class Docx(DocxParser):
 
         new_width = max(width1, width2)
         new_height = height1 + height2
-        new_image = Image.new("RGB", (new_width, new_height))
+        new_image = Image.new('RGB', (new_width, new_height))
 
         new_image.paste(img1, (0, 0))
         new_image.paste(img2, (0, height1))
@@ -111,7 +119,8 @@ class Docx(DocxParser):
         return new_image
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, callback=None):
-        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
+        self.doc = Document(
+            filename) if not binary else Document(BytesIO(binary))
         pn = 0
         last_answer, last_image = "", None
         question_stack, level_stack = [], []
@@ -119,19 +128,19 @@ class Docx(DocxParser):
         for p in self.doc.paragraphs:
             if pn > to_page:
                 break
-            question_level, p_text = 0, ""
+            question_level, p_text = 0, ''
             if from_page <= pn < to_page and p.text.strip():
                 question_level, p_text = docx_question_level(p)
             if not question_level or question_level > 6:  # not a question
-                last_answer = f"{last_answer}\n{p_text}"
+                last_answer = f'{last_answer}\n{p_text}'
                 current_image = self.get_picture(self.doc, p)
                 last_image = self.concat_img(last_image, current_image)
             else:  # is a question
                 if last_answer or last_image:
-                    sum_question = "\n".join(question_stack)
+                    sum_question = '\n'.join(question_stack)
                     if sum_question:
-                        ti_list.append((f"{sum_question}\n{last_answer}", last_image))
-                    last_answer, last_image = "", None
+                        ti_list.append((f'{sum_question}\n{last_answer}', last_image))
+                    last_answer, last_image = '', None
 
                 i = question_level
                 while question_stack and i <= level_stack[-1]:
@@ -140,15 +149,15 @@ class Docx(DocxParser):
                 question_stack.append(p_text)
                 level_stack.append(question_level)
             for run in p.runs:
-                if "lastRenderedPageBreak" in run._element.xml:
+                if 'lastRenderedPageBreak' in run._element.xml:
                     pn += 1
                     continue
-                if "w:br" in run._element.xml and 'type="page"' in run._element.xml:
+                if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
                     pn += 1
         if last_answer:
-            sum_question = "\n".join(question_stack)
+            sum_question = '\n'.join(question_stack)
             if sum_question:
-                ti_list.append((f"{sum_question}\n{last_answer}", last_image))
+                ti_list.append((f'{sum_question}\n{last_answer}', last_image))
 
         tbls = []
         for tb in self.doc.tables:
@@ -173,19 +182,26 @@ class Docx(DocxParser):
         return ti_list, tbls
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=100000,
+          lang="Chinese", callback=None, **kwargs):
     """
-    Only pdf is supported.
+        Only pdf is supported.
     """
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+    parser_config = kwargs.get(
+        "parser_config", {
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     pdf_parser = None
-    doc = {"docnm_kwd": filename}
+    doc = {
+        "docnm_kwd": filename
+    }
     doc["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", doc["docnm_kwd"]))
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     # is it English
     eng = lang.lower() == "english"  # pdf_parser.is_english
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(
+            parser_config.get("layout_recognize", "DeepDOC")
+        )
 
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
@@ -206,9 +222,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             pdf_cls=Pdf,
             layout_recognizer=layout_recognizer,
             mineru_llm_name=parser_model_name,
-            paddleocr_llm_name=parser_model_name,
             parse_method="manual",
-            **kwargs,
+            **kwargs
         )
 
         def _normalize_section(section):
@@ -237,7 +252,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         if not sections and not tbls:
             return []
 
-        if name in ["tcadp", "docling", "mineru", "paddleocr"]:
+        if name in ["tcadp", "docling", "mineru"]:
             parser_config["chunk_token_num"] = 0
 
         callback(0.8, "Finish parsing.")
@@ -249,7 +264,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             for txt, _, _ in sections:
                 for t, lvl in pdf_parser.outlines:
                     tks = set([t[i] + t[i + 1] for i in range(len(t) - 1)])
-                    tks_ = set([txt[i] + txt[i + 1] for i in range(min(len(t), len(txt) - 1))])
+                    tks_ = set([txt[i] + txt[i + 1]
+                                for i in range(min(len(t), len(txt) - 1))])
                     if len(set(tks & tks_)) / max([len(tks), len(tks_), 1]) > 0.8:
                         levels.append(lvl)
                         break
@@ -258,7 +274,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         else:
             bull = bullets_category([txt for txt, _, _ in sections])
-            most_level, levels = title_frequency(bull, [(txt, lvl) for txt, lvl, _ in sections])
+            most_level, levels = title_frequency(
+                bull, [(txt, lvl) for txt, lvl, _ in sections])
 
         assert len(sections) == len(levels)
         sec_ids = []
@@ -268,21 +285,25 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 sid += 1
             sec_ids.append(sid)
 
-        sections = [(txt, sec_ids[i], poss) for i, (txt, _, poss) in enumerate(sections)]
+        sections = [(txt, sec_ids[i], poss)
+                    for i, (txt, _, poss) in enumerate(sections)]
         for (img, rows), poss in tbls:
             if not rows:
                 continue
-            sections.append((rows if isinstance(rows, str) else rows[0], -1, [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
+            sections.append((rows if isinstance(rows, str) else rows[0], -1,
+                             [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
 
         def tag(pn, left, right, top, bottom):
             if pn + left + right + top + bottom == 0:
                 return ""
-            return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(pn, left, right, top, bottom)
+            return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##" \
+                .format(pn, left, right, top, bottom)
 
         chunks = []
         last_sid = -2
         tk_cnt = 0
-        for txt, sec_id, poss in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1])):
+        for txt, sec_id, poss in sorted(sections, key=lambda x: (
+                x[-1][0][0], x[-1][0][3], x[-1][0][1])):
             poss = "\t".join([tag(*pos) for pos in poss])
             if tk_cnt < 32 or (tk_cnt < 1024 and (sec_id == last_sid or sec_id == -1)):
                 if chunks:
@@ -293,12 +314,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             tk_cnt = num_tokens_from_string(txt)
             if sec_id > -1:
                 last_sid = sec_id
-        tbls = vision_figure_parser_pdf_wrapper(
-            tbls=tbls,
-            sections=sections,
-            callback=callback,
-            **kwargs,
-        )
+        tbls = vision_figure_parser_pdf_wrapper(tbls=tbls, callback=callback, **kwargs)
         res = tokenize_table(tbls, doc, eng)
         res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
         table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
@@ -309,13 +325,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     elif re.search(r"\.docx?$", filename, re.IGNORECASE):
         docx_parser = Docx()
-        ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=10000, callback=callback)
+        ti_list, tbls = docx_parser(filename, binary,
+                                    from_page=0, to_page=10000, callback=callback)
         tbls = vision_figure_parser_docx_wrapper(sections=ti_list, tbls=tbls, callback=callback, **kwargs)
         res = tokenize_table(tbls, doc, eng)
         for text, image in ti_list:
             d = copy.deepcopy(doc)
             if image:
-                d["image"] = image
+                d['image'] = image
                 d["doc_type_kwd"] = "image"
             tokenize(d, text, eng)
             res.append(d)
@@ -331,7 +348,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 if __name__ == "__main__":
     import sys
 
+
     def dummy(prog=None, msg=""):
         pass
+
 
     chunk(sys.argv[1], callback=dummy)

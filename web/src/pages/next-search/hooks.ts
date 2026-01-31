@@ -29,7 +29,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useSearchParams } from 'react-router';
+import { useSearchParams } from 'umi';
 import { ISearchAppDetailProps } from '../next-searches/hooks';
 import { useClickDrawer } from './document-preview-modal/hooks';
 

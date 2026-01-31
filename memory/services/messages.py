@@ -17,7 +17,6 @@ import sys
 from typing import List
 
 from common import settings
-from common.constants import MemoryType
 from common.doc_store.doc_store_base import OrderByExpr, MatchExpr
 
 
@@ -70,16 +69,15 @@ class MessageService:
             filter_dict["agent_id"] = agent_ids
         if keywords:
             filter_dict["session_id"] = keywords
-        select_fields = [
-            "message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at",
-            "invalid_at", "forget_at", "status"
-        ]
         order_by = OrderByExpr()
         order_by.desc("valid_at")
         res, total_count = settings.msgStoreConn.search(
-            select_fields=select_fields,
+            select_fields=[
+                "message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at",
+                "invalid_at", "forget_at", "status"
+            ],
             highlight_fields=[],
-            condition={**filter_dict, "message_type": MemoryType.RAW.name.lower()},
+            condition=filter_dict,
             match_expressions=[], order_by=order_by,
             offset=(page-1)*page_size, limit=page_size,
             index_names=index, memory_ids=[memory_id], agg_fields=[], hide_forgotten=False
@@ -90,30 +88,12 @@ class MessageService:
             "total_count": 0
         }
 
-        raw_msg_mapping = settings.msgStoreConn.get_fields(res, select_fields)
-        raw_messages = list(raw_msg_mapping.values())
-        extract_filter = {"source_id": [r["message_id"] for r in raw_messages]}
-        extract_res, _ = settings.msgStoreConn.search(
-            select_fields=select_fields,
-            highlight_fields=[],
-            condition=extract_filter,
-            match_expressions=[], order_by=order_by,
-            offset=0, limit=512,
-            index_names=index, memory_ids=[memory_id], agg_fields=[], hide_forgotten=False
-        )
-        extract_msg = settings.msgStoreConn.get_fields(extract_res, select_fields)
-        grouped_extract_msg = {}
-        for msg in extract_msg.values():
-            if grouped_extract_msg.get(msg["source_id"]):
-                grouped_extract_msg[msg["source_id"]].append(msg)
-            else:
-                grouped_extract_msg[msg["source_id"]] = [msg]
-
-        for raw_msg in raw_messages:
-            raw_msg["extract"] = grouped_extract_msg.get(raw_msg["message_id"], [])
-
+        doc_mapping = settings.msgStoreConn.get_fields(res, [
+            "message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id",
+            "valid_at", "invalid_at", "forget_at", "status"
+        ])
         return {
-            "message_list": raw_messages,
+            "message_list": list(doc_mapping.values()),
             "total_count": total_count
         }
 
@@ -246,21 +226,6 @@ class MessageService:
             else:
                 return ids_to_remove, current_size
         return ids_to_remove, current_size
-
-    @classmethod
-    def get_missing_field_messages(cls, memory_id: str, uid: str, field_name: str):
-        select_fields = ["message_id", "content"]
-        _index_name = index_name(uid)
-        res = settings.msgStoreConn.get_missing_field_message(
-            select_fields=select_fields,
-            index_name=_index_name,
-            memory_id=memory_id,
-            field_name=field_name
-        )
-        if not res:
-            return []
-        docs = settings.msgStoreConn.get_fields(res, select_fields)
-        return list(docs.values())
 
     @classmethod
     def get_by_message_id(cls, memory_id: str, message_id: int, uid: str):

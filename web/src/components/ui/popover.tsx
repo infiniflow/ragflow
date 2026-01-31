@@ -5,32 +5,20 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
-interface PopoverProps extends PopoverPrimitive.PopoverProps {
-  disableOutsideClick?: boolean;
-}
-
-const Popover = ({
-  children,
-  open: openState,
-  onOpenChange,
-  disableOutsideClick = false,
-}: PopoverProps) => {
+const Popover = (props: PopoverPrimitive.PopoverProps) => {
+  const { children, open: openState, onOpenChange } = props;
   const [open, setOpen] = React.useState(true);
   React.useEffect(() => {
     setOpen(!!openState);
   }, [openState]);
   const handleOnOpenChange = React.useCallback(
     (e: boolean) => {
-      if (disableOutsideClick && !e) {
-        return;
-      }
-
       if (onOpenChange) {
         onOpenChange?.(e);
       }
       setOpen(e);
     },
-    [onOpenChange, disableOutsideClick],
+    [onOpenChange],
   );
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={handleOnOpenChange}>

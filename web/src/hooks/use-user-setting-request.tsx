@@ -18,13 +18,13 @@ import userService, {
   listTenant,
   listTenantUser,
 } from '@/services/user-service';
-import { history } from '@/utils/simple-history-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Modal } from 'antd';
 import DOMPurify from 'dompurify';
 import { isEmpty } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { history } from 'umi';
 
 export const enum UserSettingApiAction {
   UserInfo = 'userInfo',
@@ -112,23 +112,6 @@ export const useFetchTenantInfo = (
   return { data, loading };
 };
 
-const DEFAULT_PARSERS = [
-  { value: 'naive', label: 'General' },
-  { value: 'qa', label: 'Q&A' },
-  { value: 'resume', label: 'Resume' },
-  { value: 'manual', label: 'Manual' },
-  { value: 'table', label: 'Table' },
-  { value: 'paper', label: 'Paper' },
-  { value: 'book', label: 'Book' },
-  { value: 'laws', label: 'Laws' },
-  { value: 'presentation', label: 'Presentation' },
-  { value: 'picture', label: 'Picture' },
-  { value: 'one', label: 'One' },
-  { value: 'audio', label: 'Audio' },
-  { value: 'email', label: 'Email' },
-  { value: 'tag', label: 'Tag' },
-];
-
 export const useSelectParserList = (): Array<{
   value: string;
   label: string;
@@ -137,13 +120,7 @@ export const useSelectParserList = (): Array<{
 
   const parserList = useMemo(() => {
     const parserArray: Array<string> = tenantInfo?.parser_ids?.split(',') ?? [];
-    const filteredArray = parserArray.filter((x) => x.trim() !== '');
-
-    if (filteredArray.length === 0) {
-      return DEFAULT_PARSERS;
-    }
-
-    return filteredArray.map((x) => {
+    return parserArray.map((x) => {
       const arr = x.split(':');
       return { value: arr[0], label: arr[1] };
     });

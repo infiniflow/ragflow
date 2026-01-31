@@ -1,15 +1,16 @@
-import {
-  DynamicForm,
-  FormFieldConfig,
-  FormFieldType,
-} from '@/components/dynamic-form';
-import { Modal } from '@/components/ui/modal/modal';
-import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
-import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { FieldValues } from 'react-hook-form';
+import { Flex, Form, Input, InputNumber, Modal, Select, Space } from 'antd';
+import omit from 'lodash/omit';
 import { LLMHeader } from '../../components/llm-header';
+
+type FieldType = IAddLlmRequestBody & {
+  fish_audio_ak: string;
+  fish_audio_refid: string;
+};
+
+const { Option } = Select;
 
 const FishAudioModal = ({
   visible,
@@ -18,107 +19,107 @@ const FishAudioModal = ({
   loading,
   llmFactory,
 }: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
+  const [form] = Form.useForm<FieldType>();
+
   const { t } = useTranslate('setting');
-  const { t: tc } = useCommonTranslation();
-  const { buildModelTypeOptions } = useBuildModelTypeOptions();
 
-  const fields: FormFieldConfig[] = [
-    {
-      name: 'model_type',
-      label: t('modelType'),
-      type: FormFieldType.Select,
-      required: true,
-      options: buildModelTypeOptions(['tts']),
-      defaultValue: 'tts',
-      validation: { message: t('modelTypeMessage') },
-    },
-    {
-      name: 'llm_name',
-      label: t('modelName'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('FishAudioModelNameMessage'),
-      validation: { message: t('FishAudioModelNameMessage') },
-    },
-    {
-      name: 'fish_audio_ak',
-      label: t('addFishAudioAK'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('FishAudioAKMessage'),
-      validation: { message: t('FishAudioAKMessage') },
-    },
-    {
-      name: 'fish_audio_refid',
-      label: t('addFishAudioRefID'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('FishAudioRefIDMessage'),
-      validation: { message: t('FishAudioRefIDMessage') },
-    },
-    {
-      name: 'max_tokens',
-      label: t('maxTokens'),
-      type: FormFieldType.Number,
-      required: true,
-      placeholder: t('maxTokensTip'),
-      validation: {
-        min: 0,
-        message: t('maxTokensInvalidMessage'),
-      },
-    },
-  ];
+  const handleOk = async () => {
+    const values = await form.validateFields();
+    const modelType = values.model_type;
 
-  const handleOk = async (values?: FieldValues) => {
-    if (!values) return;
-
-    const data: Record<string, any> = {
+    const data = {
+      ...omit(values),
+      model_type: modelType,
       llm_factory: llmFactory,
-      llm_name: values.llm_name as string,
-      model_type: values.model_type,
-      fish_audio_ak: values.fish_audio_ak,
-      fish_audio_refid: values.fish_audio_refid,
-      max_tokens: values.max_tokens as number,
+      max_tokens: values.max_tokens,
     };
-
     console.info(data);
-    await onOk?.(data as IAddLlmRequestBody);
+
+    onOk?.(data);
   };
 
   return (
     <Modal
       title={<LLMHeader name={llmFactory} />}
-      open={visible || false}
-      onOpenChange={(open) => !open && hideModal?.()}
-      maskClosable={false}
-      footerClassName="py-1"
-      footer={<div className="py-0"></div>}
+      open={visible}
+      onOk={handleOk}
+      onCancel={hideModal}
+      okButtonProps={{ loading }}
+      footer={(originNode: React.ReactNode) => {
+        return (
+          <Flex justify={'space-between'}>
+            <a href={`https://fish.audio`} target="_blank" rel="noreferrer">
+              {t('FishAudioLink')}
+            </a>
+            <Space>{originNode}</Space>
+          </Flex>
+        );
+      }}
+      confirmLoading={loading}
     >
-      <DynamicForm.Root
-        fields={fields}
-        onSubmit={(data) => console.log(data)}
-        defaultValues={{ model_type: 'tts' }}
-        labelClassName="font-normal"
+      <Form
+        name="basic"
+        style={{ maxWidth: 600 }}
+        autoComplete="off"
+        layout={'vertical'}
+        form={form}
       >
-        <div className="flex items-center justify-between w-full">
-          <a
-            href="https://fish.audio"
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm text-text-secondary hover:text-primary"
-          >
-            {t('FishAudioLink')}
-          </a>
-          <div className="flex gap-2">
-            <DynamicForm.CancelButton handleCancel={() => hideModal?.()} />
-            <DynamicForm.SavingButton
-              submitLoading={loading || false}
-              buttonText={tc('ok')}
-              submitFunc={(values: FieldValues) => handleOk(values)}
-            />
-          </div>
-        </div>
-      </DynamicForm.Root>
+        <Form.Item<FieldType>
+          label={t('modelType')}
+          name="model_type"
+          initialValue={'tts'}
+          rules={[{ required: true, message: t('modelTypeMessage') }]}
+        >
+          <Select placeholder={t('modelTypeMessage')}>
+            <Option value="tts">tts</Option>
+          </Select>
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('modelName')}
+          name="llm_name"
+          rules={[{ required: true, message: t('FishAudioModelNameMessage') }]}
+        >
+          <Input placeholder={t('FishAudioModelNameMessage')} />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('addFishAudioAK')}
+          name="fish_audio_ak"
+          rules={[{ required: true, message: t('FishAudioAKMessage') }]}
+        >
+          <Input placeholder={t('FishAudioAKMessage')} />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('addFishAudioRefID')}
+          name="fish_audio_refid"
+          rules={[{ required: true, message: t('FishAudioRefIDMessage') }]}
+        >
+          <Input placeholder={t('FishAudioRefIDMessage')} />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('maxTokens')}
+          name="max_tokens"
+          rules={[
+            { required: true, message: t('maxTokensMessage') },
+            {
+              type: 'number',
+              message: t('maxTokensInvalidMessage'),
+            },
+            ({}) => ({
+              validator(_, value) {
+                if (value < 0) {
+                  return Promise.reject(new Error(t('maxTokensMinMessage')));
+                }
+                return Promise.resolve();
+              },
+            }),
+          ]}
+        >
+          <InputNumber
+            placeholder={t('maxTokensTip')}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
+      </Form>
     </Modal>
   );
 };

@@ -1,10 +1,8 @@
 ---
 sidebar_position: -3
 slug: /select_pdf_parser
-sidebar_custom_props: {
-  categoryIcon: LucideFileText
-}
 ---
+
 # Select PDF parser
 
 Select a visual model for parsing your PDFs.

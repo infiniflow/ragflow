@@ -12,7 +12,7 @@ import { t } from 'i18next';
 import { camelCase, upperFirst } from 'lodash';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
-import { useParams, useSearchParams } from 'react-router';
+import { useParams, useSearchParams } from 'umi';
 import { ITimelineNodeObj, TimelineNodeObj } from './components/time-line';
 import {
   ChunkTextMode,

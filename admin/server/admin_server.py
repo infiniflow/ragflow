@@ -14,12 +14,10 @@
 #  limitations under the License.
 #
 
-import time
-start_ts = time.time()
-
 import os
 import signal
 import logging
+import time
 import threading
 import traceback
 import faulthandler
@@ -68,7 +66,7 @@ if __name__ == '__main__':
     SERVICE_CONFIGS.configs = load_configurations(SERVICE_CONF)
 
     try:
-        logging.info(f"RAGFlow admin is ready after {time.time() - start_ts}s initialization.")
+        logging.info("RAGFlow Admin service start...")
         run_simple(
             hostname="0.0.0.0",
             port=9381,

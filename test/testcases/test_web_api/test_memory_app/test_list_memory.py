@@ -21,7 +21,7 @@ from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
 class TestAuthorization:
-    @pytest.mark.p2
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
@@ -47,12 +47,12 @@ class TestCapability:
 
 @pytest.mark.usefixtures("add_memory_func")
 class TestMemoryList:
-    @pytest.mark.p2
+    @pytest.mark.p1
     def test_params_unset(self, WebApiAuth):
         res  = list_memory(WebApiAuth, None)
         assert res["code"] == 0, res
 
-    @pytest.mark.p2
+    @pytest.mark.p1
     def test_params_empty(self, WebApiAuth):
         res = list_memory(WebApiAuth, {})
         assert res["code"] == 0, res

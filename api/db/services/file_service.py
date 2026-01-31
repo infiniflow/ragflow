@@ -439,15 +439,6 @@ class FileService(CommonService):
 
         err, files = [], []
         for file in file_objs:
-            doc_id = file.id if hasattr(file, "id") else get_uuid()
-            e, doc = DocumentService.get_by_id(doc_id)
-            if e:
-                blob = file.read()
-                settings.STORAGE_IMPL.put(kb.id, doc.location, blob, kb.tenant_id)
-                doc.size = len(blob)
-                doc = doc.to_dict()
-                DocumentService.update_by_id(doc["id"], doc)
-                continue
             try:
                 DocumentService.check_doc_health(kb.tenant_id, file.filename)
                 filename = duplicate_name(DocumentService.query, name=file.filename, kb_id=kb.id)
@@ -464,6 +455,7 @@ class FileService(CommonService):
                     blob = read_potential_broken_pdf(blob)
                 settings.STORAGE_IMPL.put(kb.id, location, blob)
 
+                doc_id = get_uuid()
 
                 img = thumbnail_img(filename, blob)
                 thumbnail_location = ""

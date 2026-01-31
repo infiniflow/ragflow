@@ -1,0 +1,89 @@
+import { useTranslate } from '@/hooks/common-hooks';
+import { IModalProps } from '@/interfaces/common';
+import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { Form, Input, Modal } from 'antd';
+import omit from 'lodash/omit';
+import { LLMHeader } from '../../components/llm-header';
+
+type FieldType = IAddLlmRequestBody & {
+  vision: boolean;
+  hunyuan_sid: string;
+  hunyuan_sk: string;
+};
+
+const HunyuanModal = ({
+  visible,
+  hideModal,
+  onOk,
+  loading,
+  llmFactory,
+}: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
+  const [form] = Form.useForm<FieldType>();
+
+  const { t } = useTranslate('setting');
+
+  const handleOk = async () => {
+    const values = await form.validateFields();
+    const modelType =
+      values.model_type === 'chat' && values.vision
+        ? 'image2text'
+        : values.model_type;
+
+    const data = {
+      ...omit(values, ['vision']),
+      model_type: modelType,
+      llm_factory: llmFactory,
+    };
+    console.info(data);
+
+    onOk?.(data);
+  };
+
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
+  };
+
+  return (
+    <Modal
+      title={<LLMHeader name={llmFactory} />}
+      open={visible}
+      onOk={handleOk}
+      onCancel={hideModal}
+      okButtonProps={{ loading }}
+      confirmLoading={loading}
+    >
+      <Form
+        name="basic"
+        style={{ maxWidth: 600 }}
+        autoComplete="off"
+        layout={'vertical'}
+        form={form}
+      >
+        <Form.Item<FieldType>
+          label={t('addHunyuanSID')}
+          name="hunyuan_sid"
+          rules={[{ required: true, message: t('HunyuanSIDMessage') }]}
+        >
+          <Input
+            placeholder={t('HunyuanSIDMessage')}
+            onKeyDown={handleKeyDown}
+          />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('addHunyuanSK')}
+          name="hunyuan_sk"
+          rules={[{ required: true, message: t('HunyuanSKMessage') }]}
+        >
+          <Input
+            placeholder={t('HunyuanSKMessage')}
+            onKeyDown={handleKeyDown}
+          />
+        </Form.Item>
+      </Form>
+    </Modal>
+  );
+};
+
+export default HunyuanModal;

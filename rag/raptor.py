@@ -25,14 +25,13 @@ from api.db.services.task_service import has_canceled
 from common.connection_utils import timeout
 from common.exceptions import TaskCanceledException
 from common.token_utils import truncate
-from rag.graphrag.utils import (
+from graphrag.utils import (
     chat_limiter,
     get_embed_cache,
     get_llm_cache,
     set_embed_cache,
     set_llm_cache,
 )
-from common.misc_utils import thread_pool_exec
 
 
 class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
@@ -54,16 +53,10 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         self._max_token = max_token
         self._max_errors = max(1, max_errors)
         self._error_count = 0
-        
-    def _check_task_canceled(self, task_id: str, message: str = ""):
-        if task_id and has_canceled(task_id):
-            log_msg = f"Task {task_id} cancelled during RAPTOR {message}."
-            logging.info(log_msg)
-            raise TaskCanceledException(f"Task {task_id} was cancelled")
 
     @timeout(60 * 20)
     async def _chat(self, system, history, gen_conf):
-        cached = await thread_pool_exec(get_llm_cache, self._llm_model.llm_name, system, history, gen_conf)
+        cached = await asyncio.to_thread(get_llm_cache, self._llm_model.llm_name, system, history, gen_conf)
         if cached:
             return cached
 
@@ -74,7 +67,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
                 if response.find("**ERROR**") >= 0:
                     raise Exception(response)
-                await thread_pool_exec(set_llm_cache,self._llm_model.llm_name,system,response,history,gen_conf)
+                await asyncio.to_thread(set_llm_cache,self._llm_model.llm_name,system,response,history,gen_conf)
                 return response
             except Exception as exc:
                 last_exc = exc
@@ -86,14 +79,14 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
     @timeout(20)
     async def _embedding_encode(self, txt):
-        response = await thread_pool_exec(get_embed_cache, self._embd_model.llm_name, txt)
+        response = await asyncio.to_thread(get_embed_cache, self._embd_model.llm_name, txt)
         if response is not None:
             return response
-        embds, _ = await thread_pool_exec(self._embd_model.encode, [txt])
+        embds, _ = await asyncio.to_thread(self._embd_model.encode, [txt])
         if len(embds) < 1 or len(embds[0]) < 1:
             raise Exception("Embedding error: ")
         embds = embds[0]
-        await thread_pool_exec(set_embed_cache, self._embd_model.llm_name, txt, embds)
+        await asyncio.to_thread(set_embed_cache, self._embd_model.llm_name, txt, embds)
         return embds
 
     def _get_optimal_clusters(self, embeddings: np.ndarray, random_state: int, task_id: str = ""):
@@ -101,7 +94,10 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         n_clusters = np.arange(1, max_clusters)
         bics = []
         for n in n_clusters:
-            self._check_task_canceled(task_id, "get optimal clusters")
+            if task_id:
+                if has_canceled(task_id):
+                    logging.info(f"Task {task_id} cancelled during get optimal clusters.")
+                    raise TaskCanceledException(f"Task {task_id} was cancelled")
 
             gm = GaussianMixture(n_components=n, random_state=random_state)
             gm.fit(embeddings)
@@ -120,14 +116,19 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         async def summarize(ck_idx: list[int]):
             nonlocal chunks
 
-            self._check_task_canceled(task_id, "summarization")
+            if task_id:
+                if has_canceled(task_id):
+                    logging.info(f"Task {task_id} cancelled during RAPTOR summarization.")
+                    raise TaskCanceledException(f"Task {task_id} was cancelled")
 
             texts = [chunks[i][0] for i in ck_idx]
             len_per_chunk = int((self._llm_model.max_length - self._max_token) / len(texts))
             cluster_content = "\n".join([truncate(t, max(1, len_per_chunk)) for t in texts])
             try:
                 async with chat_limiter:
-                    self._check_task_canceled(task_id, "before LLM call")
+                    if task_id and has_canceled(task_id):
+                        logging.info(f"Task {task_id} cancelled before RAPTOR LLM call.")
+                        raise TaskCanceledException(f"Task {task_id} was cancelled")
 
                     cnt = await self._chat(
                         "You're a helpful assistant.",
@@ -146,7 +147,9 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     )
                     logging.debug(f"SUM: {cnt}")
 
-                    self._check_task_canceled(task_id, "before embedding")
+                    if task_id and has_canceled(task_id):
+                        logging.info(f"Task {task_id} cancelled before RAPTOR embedding.")
+                        raise TaskCanceledException(f"Task {task_id} was cancelled")
 
                     embds = await self._embedding_encode(cnt)
                     chunks.append((cnt, embds))
@@ -163,7 +166,10 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
         labels = []
         while end - start > 1:
-            self._check_task_canceled(task_id, "layer processing")
+            if task_id:
+                if has_canceled(task_id):
+                    logging.info(f"Task {task_id} cancelled during RAPTOR layer processing.")
+                    raise TaskCanceledException(f"Task {task_id} was cancelled")
 
             embeddings = [embd for _, embd in chunks[start:end]]
             if len(embeddings) == 2:
@@ -196,7 +202,9 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             for c in range(n_clusters):
                 ck_idx = [i + start for i in range(len(lbls)) if lbls[i] == c]
                 assert len(ck_idx) > 0
-                self._check_task_canceled(task_id, "before cluster processing")
+                if task_id and has_canceled(task_id):
+                    logging.info(f"Task {task_id} cancelled before RAPTOR cluster processing.")
+                    raise TaskCanceledException(f"Task {task_id} was cancelled")
                 tasks.append(asyncio.create_task(summarize(ck_idx)))
             try:
                 await asyncio.gather(*tasks, return_exceptions=False)

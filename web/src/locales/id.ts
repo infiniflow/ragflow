@@ -179,7 +179,7 @@ export default {
       chunkTokenNumber: 'Ukuran potongan yang disarankan',
       chunkTokenNumberMessage: 'Jumlah token potongan diperlukan',
       embeddingModelTip:
-        'Model embedding default untuk basis pengetahuan. Setelah basis pengetahuan memiliki chunk, saat mengganti model embedding sistem akan mengambil beberapa chunk secara acak untuk pemeriksaan kompatibilitas, meng-encode ulang dengan model embedding baru, dan menghitung kemiripan kosinus antara vektor baru dan vektor lama. Pergantian hanya diizinkan jika rata-rata kemiripan sampel ≥ 0.9. Jika tidak, Anda harus menghapus semua chunk di basis pengetahuan sebelum dapat mengubahnya.',
+        'Model embedding default dari basis pengetahuan. Tidak dapat diubah setelah basis pengetahuan memiliki potongan data (chunks). Untuk beralih ke model embedding default yang berbeda, Anda harus menghapus semua potongan data yang ada di basis pengetahuan.',
       permissionsTip:
         "Jika izinnya 'Tim', semua anggota tim dapat memanipulasi basis pengetahuan.",
       chunkTokenNumberTip:
@@ -316,19 +316,6 @@ export default {
       randomSeed: 'Benih acak',
       randomSeedMessage: 'Benih acak diperlukan',
       entityTypes: 'Jenis entitas',
-      paddleocrOptions: 'Opsi PaddleOCR',
-      paddleocrApiUrl: 'URL API PaddleOCR',
-      paddleocrApiUrlTip: 'URL endpoint API layanan PaddleOCR',
-      paddleocrApiUrlPlaceholder:
-        'Contoh: https://paddleocr-server.com/layout-parsing',
-      paddleocrAccessToken: 'Token Akses AI Studio',
-      paddleocrAccessTokenTip: 'Token akses untuk API PaddleOCR (opsional)',
-      paddleocrAccessTokenPlaceholder: 'Token AI Studio Anda (opsional)',
-      paddleocrAlgorithm: 'Algoritma PaddleOCR',
-      paddleocrAlgorithmTip:
-        'Algoritma yang digunakan untuk pemrosesan PaddleOCR',
-      paddleocrSelectAlgorithm: 'Pilih algoritma',
-      paddleocrModelNamePlaceholder: 'Contoh: paddleocr-lingkungan-1',
     },
     chunk: {
       chunk: 'Potongan',
@@ -418,7 +405,8 @@ export default {
         'Mirip dengan penalti kehadiran, ini mengurangi kecenderungan model untuk mengulangi kata yang sama secara sering.',
       maxTokens: 'Token Maksimum',
       maxTokensMessage: 'Token Maksimum diperlukan',
-      maxTokensTip: `Ukuran konteks maksimum model; nilai yang tidak valid atau salah akan menyebabkan kesalahan. Default 512.`,
+      maxTokensTip:
+        'Ini menetapkan panjang maksimum keluaran model, diukur dalam jumlah token (kata atau potongan kata).',
       maxTokensInvalidMessage:
         'Silakan masukkan angka yang valid untuk Max Tokens.',
       maxTokensMinMessage: 'Max Tokens tidak boleh kurang dari 0.',
@@ -475,7 +463,8 @@ export default {
       profileDescription: 'Perbarui foto dan detail pribadi Anda di sini.',
       maxTokens: 'Token Maksimum',
       maxTokensMessage: 'Token Maksimum diperlukan',
-      maxTokensTip: `Ukuran konteks maksimum model; nilai yang tidak valid atau salah akan menyebabkan kesalahan. Default 512.`,
+      maxTokensTip:
+        'Ini menetapkan panjang maksimum keluaran model, diukur dalam jumlah token (kata atau potongan kata).',
       maxTokensInvalidMessage:
         'Silakan masukkan angka yang valid untuk Max Tokens.',
       maxTokensMinMessage: 'Max Tokens tidak boleh kurang dari 0.',
@@ -564,18 +553,6 @@ export default {
       modelTypeMessage: 'Silakan masukkan jenis model Anda!',
       addLlmBaseUrl: 'Base url',
       baseUrlNameMessage: 'Silakan masukkan base url Anda!',
-      paddleocr: {
-        apiUrl: 'URL API PaddleOCR',
-        apiUrlPlaceholder:
-          'Contoh: https://paddleocr-server.com/layout-parsing',
-        accessToken: 'Token Akses AI Studio',
-        accessTokenPlaceholder: 'Token AI Studio Anda (opsional)',
-        algorithm: 'Algoritma PaddleOCR',
-        selectAlgorithm: 'Pilih algoritma',
-        modelNamePlaceholder: 'Contoh: paddleocr-from-env-1',
-        modelNameRequired: 'Nama model wajib diisi',
-        apiUrlRequired: 'URL API PaddleOCR wajib diisi',
-      },
       vision: 'Apakah mendukung Vision?',
       ollamaLink: 'Cara mengintegrasikan {{name}}',
       FishAudioLink: 'Cara menggunakan FishAudio',
@@ -627,6 +604,10 @@ export default {
       'sa-east-1': 'South America (São Paulo)',
       'us-gov-east-1': 'AWS GovCloud (US-East)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
+      addHunyuanSID: 'Hunyuan Secret ID',
+      HunyuanSIDMessage: 'Silakan masukkan Secret ID Anda',
+      addHunyuanSK: 'Hunyuan Secret Key',
+      HunyuanSKMessage: 'Silakan masukkan Secret Key Anda',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Silakan masukkan Secret ID Anda',
       addTencentCloudSK: 'TencentCloud Secret Key',

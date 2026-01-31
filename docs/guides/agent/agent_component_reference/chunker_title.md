@@ -1,10 +1,8 @@
 ---
 sidebar_position: 31
 slug: /chunker_title_component
-sidebar_custom_props: {
-  categoryIcon: LucideBlocks
-}
 ---
+
 # Title chunker component
 
 A component that splits texts into chunks by heading level.

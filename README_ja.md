@@ -53,7 +53,7 @@
 
 ## 💡 RAGFlow とは？
 
-[RAGFlow](https://ragflow.io/) は、先進的な[RAG](https://ragflow.io/basics/what-is-rag)（Retrieval-Augmented Generation）技術と Agent 機能を融合し、大規模言語モデル（LLM）に優れたコンテキスト層を構築する最先端のオープンソース RAG エンジンです。あらゆる規模の企業に対応可能な合理化された RAG ワークフローを提供し、統合型[コンテキストエンジン](https://ragflow.io/basics/what-is-agent-context-engine)と事前構築されたAgentテンプレートにより、開発者が複雑なデータを驚異的な効率性と精度で高精細なプロダクションレディAIシステムへ変換することを可能にします。
+[RAGFlow](https://ragflow.io/) は、先進的なRAG（Retrieval-Augmented Generation）技術と Agent 機能を融合し、大規模言語モデル（LLM）に優れたコンテキスト層を構築する最先端のオープンソース RAG エンジンです。あらゆる規模の企業に対応可能な合理化された RAG ワークフローを提供し、統合型コンテキストエンジンと事前構築されたAgentテンプレートにより、開発者が複雑なデータを驚異的な効率性と精度で高精細なプロダクションレディAIシステムへ変換することを可能にします。
 
 ## 🎮 Demo
 
@@ -194,8 +194,8 @@
 
 > `v0.22.0` 以降、当プロジェクトでは slim エディションのみを提供し、イメージタグに **-slim** サフィックスを付けなくなりました。
 
-   1. サーバーを立ち上げた後、サーバーの状態を確認する:
-
+   1. サーバーを立ち上げた後、サーバーの状態を確認する:   
+   
    ```bash
    $ docker logs -f docker-ragflow-cpu-1
    ```

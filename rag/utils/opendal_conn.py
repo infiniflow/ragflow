@@ -1,7 +1,6 @@
 import opendal
 import logging
 import pymysql
-import re
 from urllib.parse import quote_plus
 
 from common.config_utils import get_base_config
@@ -56,6 +55,12 @@ def get_opendal_config():
             "has_credentials": any(k in kwargs for k in ("password", "connection_string")),
         }
         logging.info("Loaded OpenDAL configuration (non sensitive fields only): %s", safe_log_info)
+
+        # For safety, explicitly remove sensitive keys from kwargs after use
+        if "password" in kwargs:
+            del kwargs["password"]
+        if "connection_string" in kwargs:
+            del kwargs["connection_string"]
         return kwargs
     except Exception as e:
         logging.error("Failed to load OpenDAL configuration from yaml: %s", str(e))
@@ -105,8 +110,7 @@ class OpenDALStorage:
             )
             cursor = conn.cursor()
             max_packet = self._kwargs.get('max_allowed_packet', 4194304)  # Default to 4MB if not specified
-            # Ensure max_packet is a valid integer to prevent SQL injection
-            cursor.execute(SET_MAX_ALLOWED_PACKET_SQL.format(int(max_packet)))
+            cursor.execute(SET_MAX_ALLOWED_PACKET_SQL.format(max_packet))
             conn.commit()
             cursor.close()
             conn.close()
@@ -116,11 +120,6 @@ class OpenDALStorage:
             raise
 
     def init_opendal_mysql_table(self):
-        table_name = self._kwargs['table']
-        # Validate table name to prevent SQL injection
-        if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
-            raise ValueError(f"Invalid table name: {table_name}")
-
         conn = pymysql.connect(
             host=self._kwargs['host'],
             port=int(self._kwargs['port']),
@@ -129,8 +128,8 @@ class OpenDALStorage:
             database=self._kwargs['database']
         )
         cursor = conn.cursor()
-        cursor.execute(CREATE_TABLE_SQL.format(table_name))
+        cursor.execute(CREATE_TABLE_SQL.format(self._kwargs['table']))
         conn.commit()
         cursor.close()
         conn.close()
-        logging.info(f"Table `{table_name}` initialized.")
+        logging.info(f"Table `{self._kwargs['table']}` initialized.")

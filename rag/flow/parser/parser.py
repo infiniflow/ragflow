@@ -40,10 +40,6 @@ from rag.llm.cv_model import Base as VLM
 from rag.utils.base64_image import image2id
 
 
-
-
-from common.misc_utils import thread_pool_exec
-
 class ParserParam(ProcessParamBase):
     def __init__(self):
         super().__init__()
@@ -65,7 +61,7 @@ class ParserParam(ProcessParamBase):
                 "json",
             ],
             "image": [
-                "json",
+                "text",
             ],
             "email": [
                 "text",
@@ -124,7 +120,7 @@ class ParserParam(ProcessParamBase):
                 "lang": "Chinese",
                 "system_prompt": "",
                 "suffix": ["jpg", "jpeg", "png", "gif"],
-                "output_format": "json",
+                "output_format": "text",
             },
             "email": {
                 "suffix": [
@@ -170,7 +166,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "tcadp parser", "paddleocr"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "tcadp parser"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -236,9 +232,6 @@ class Parser(ProcessBase):
             if lowered.endswith("@mineru"):
                 parser_model_name = raw_parse_method.rsplit("@", 1)[0]
                 parse_method = "MinerU"
-            elif lowered.endswith("@paddleocr"):
-                parser_model_name = raw_parse_method.rsplit("@", 1)[0]
-                parse_method = "PaddleOCR"
 
         if parse_method.lower() == "deepdoc":
             bboxes = RAGFlowPdfParser().parse_into_bboxes(blob, callback=self.callback)
@@ -246,7 +239,6 @@ class Parser(ProcessBase):
             lines, _ = PlainParser()(blob)
             bboxes = [{"text": t} for t, _ in lines]
         elif parse_method.lower() == "mineru":
-
             def resolve_mineru_llm_name():
                 configured = parser_model_name or conf.get("mineru_llm_name")
                 if configured:
@@ -328,50 +320,6 @@ class Parser(ProcessBase):
                         bboxes.append({"text": section})
                 else:
                     bboxes.append({"text": section})
-        elif parse_method.lower() == "paddleocr":
-
-            def resolve_paddleocr_llm_name():
-                configured = parser_model_name or conf.get("paddleocr_llm_name")
-                if configured:
-                    return configured
-
-                tenant_id = self._canvas._tenant_id
-                if not tenant_id:
-                    return None
-
-                from api.db.services.tenant_llm_service import TenantLLMService
-
-                env_name = TenantLLMService.ensure_paddleocr_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="PaddleOCR", model_type=LLMType.OCR.value)
-                if candidates:
-                    return candidates[0].llm_name
-                return env_name
-
-            parser_model_name = resolve_paddleocr_llm_name()
-            if not parser_model_name:
-                raise RuntimeError("PaddleOCR model not configured. Please add PaddleOCR in Model Providers or set PADDLEOCR_* env.")
-
-            tenant_id = self._canvas._tenant_id
-            ocr_model = LLMBundle(tenant_id, LLMType.OCR, llm_name=parser_model_name)
-            pdf_parser = ocr_model.mdl
-
-            lines, _ = pdf_parser.parse_pdf(
-                filepath=name,
-                binary=blob,
-                callback=self.callback,
-                parse_method=conf.get("paddleocr_parse_method", "raw"),
-            )
-            bboxes = []
-            for t, poss in lines:
-                # Get cropped image and positions
-                cropped_image, positions = pdf_parser.crop(poss, need_position=True)
-
-                box = {
-                    "text": t,
-                    "image": cropped_image,
-                    "positions": positions,
-                }
-                bboxes.append(box)
         else:
             vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("parse_method"), lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
@@ -646,12 +594,7 @@ class Parser(ProcessBase):
             else:
                 txt = cv_model.describe(img_binary.read())
 
-        json_result = [{
-            "text": txt,
-            "image": img,
-            "doc_type_kwd": "image",
-        }]
-        self.set_output("json", json_result)
+        self.set_output("text", txt)
 
     def _audio(self, name, blob):
         import os
@@ -849,7 +792,7 @@ class Parser(ProcessBase):
         for p_type, conf in self._param.setups.items():
             if from_upstream.name.split(".")[-1].lower() not in conf.get("suffix", []):
                 continue
-            await thread_pool_exec(function_map[p_type], name, blob)
+            await asyncio.to_thread(function_map[p_type], name, blob)
             done = True
             break
 
@@ -859,7 +802,7 @@ class Parser(ProcessBase):
         outs = self.output()
         tasks = []
         for d in outs.get("json", []):
-            tasks.append(asyncio.create_task(image2id(d, partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())))
+            tasks.append(asyncio.create_task(image2id(d,partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id),get_uuid())))
 
         try:
             await asyncio.gather(*tasks, return_exceptions=False)

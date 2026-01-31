@@ -60,9 +60,7 @@ export function useDynamicSVGImport(
     setLoading(true);
     const importIcon = async (): Promise<void> => {
       try {
-        ImportedIconRef.current = (
-          await import(/* @vite-ignore */ name)
-        ).ReactComponent;
+        ImportedIconRef.current = (await import(name)).ReactComponent;
         onCompleted?.(name, ImportedIconRef.current);
       } catch (err: any) {
         onError?.(err);

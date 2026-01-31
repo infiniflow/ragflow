@@ -68,9 +68,8 @@ const FloatingChatWidget = () => {
   // Play sound when opening
   const playNotificationSound = useCallback(() => {
     try {
-      const audioContext = new (
-        window.AudioContext || (window as any).webkitAudioContext
-      )();
+      const audioContext = new (window.AudioContext ||
+        (window as any).webkitAudioContext)();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
 
@@ -96,9 +95,8 @@ const FloatingChatWidget = () => {
   // Play sound for AI responses (Intercom-style)
   const playResponseSound = useCallback(() => {
     try {
-      const audioContext = new (
-        window.AudioContext || (window as any).webkitAudioContext
-      )();
+      const audioContext = new (window.AudioContext ||
+        (window as any).webkitAudioContext)();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
 
@@ -268,7 +266,7 @@ const FloatingChatWidget = () => {
 
     // Wait for state to update, then send
     setTimeout(() => {
-      handlePressEnter({ enableThinking: false, enableInternet: false });
+      handlePressEnter([]);
       // Clear our local input after sending
       setInputValue('');
     }, 50);

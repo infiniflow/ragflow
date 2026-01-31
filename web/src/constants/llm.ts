@@ -61,8 +61,6 @@ export enum LLMFactory {
   JiekouAI = 'Jiekou.AI',
   Builtin = 'Builtin',
   MinerU = 'MinerU',
-  PaddleOCR = 'PaddleOCR',
-  N1n = 'n1n',
 }
 
 // Please lowercase the file name
@@ -129,8 +127,6 @@ export const IconMap = {
   [LLMFactory.JiekouAI]: 'jiekouai',
   [LLMFactory.Builtin]: 'builtin',
   [LLMFactory.MinerU]: 'mineru',
-  [LLMFactory.PaddleOCR]: 'paddleocr',
-  [LLMFactory.N1n]: 'n1n',
 };
 
 export const APIMapUrl = {
@@ -145,8 +141,7 @@ export const APIMapUrl = {
   [LLMFactory.HuggingFace]: 'https://huggingface.co/settings/tokens',
   [LLMFactory.Mistral]: 'https://console.mistral.ai/api-keys/',
   [LLMFactory.Cohere]: 'https://dashboard.cohere.com/api-keys',
-  [LLMFactory.BaiduYiYan]:
-    'https://console.bce.baidu.com/qianfan/ais/console/apiKey',
+  [LLMFactory.BaiduYiYan]: 'https://wenxin.baidu.com/user/key',
   [LLMFactory.Meituan]: 'https://longcat.chat/platform/api_keys',
   [LLMFactory.Bedrock]:
     'https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-2#/users',
@@ -182,6 +177,4 @@ export const APIMapUrl = {
   [LLMFactory.DeerAPI]: 'https://api.deerapi.com/token',
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
-  [LLMFactory.PaddleOCR]: 'https://www.paddleocr.ai/latest/',
-  [LLMFactory.N1n]: 'https://docs.n1n.ai',
 };

@@ -3,7 +3,7 @@ import {
   KnowledgeSearchParams,
 } from '@/constants/knowledge';
 import { useCallback } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'umi';
 
 export enum SegmentIndex {
   Second = '2',

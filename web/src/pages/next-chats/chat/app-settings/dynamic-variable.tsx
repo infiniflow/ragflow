@@ -22,7 +22,6 @@ export function DynamicVariableForm() {
   const { fields, remove, append } = useFieldArray({
     name,
     control: form.control,
-    shouldUnregister: false,
   });
 
   const add = useCallback(() => {

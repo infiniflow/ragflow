@@ -9,14 +9,7 @@ import {
   useSetDocumentStatus,
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import {
-  Ban,
-  CircleCheck,
-  CircleX,
-  Cylinder,
-  Play,
-  Trash2,
-} from 'lucide-react';
+import { Ban, CircleCheck, CircleX, Play, Trash2 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -146,11 +139,6 @@ export function useBulkOperateDataset({
           setRowSelection({});
         }
       },
-    },
-    {
-      id: 'batch-metadata',
-      label: t('knowledgeDetails.metadata.metadata'),
-      icon: <Cylinder />,
     },
   ];
 

@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import add_chunk, delete_documents, list_chunks
-from configs import INVALID_API_TOKEN, INVALID_ID_32
+from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -152,7 +152,12 @@ class TestAddChunk:
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
-            (INVALID_ID_32, 102, f"You don't own the dataset {INVALID_ID_32}."),
+            ("", 100, "<NotFound '404: Not Found'>"),
+            (
+                "invalid_dataset_id",
+                102,
+                "You don't own the dataset invalid_dataset_id.",
+            ),
         ],
     )
     def test_invalid_dataset_id(
@@ -172,10 +177,11 @@ class TestAddChunk:
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
+            ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
             (
-                INVALID_ID_32,
+                "invalid_document_id",
                 102,
-                f"You don't own the document {INVALID_ID_32}.",
+                "You don't own the document invalid_document_id.",
             ),
         ],
     )
@@ -209,7 +215,7 @@ class TestAddChunk:
             assert False, res
         assert res["data"]["doc"]["chunk_count"] == chunks_count + 2
 
-    @pytest.mark.p3
+    @pytest.mark.p2
     def test_add_chunk_to_deleted_document(self, HttpApiAuth, add_document):
         dataset_id, document_id = add_document
         delete_documents(HttpApiAuth, dataset_id, {"ids": [document_id]})

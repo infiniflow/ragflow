@@ -16,6 +16,7 @@
 import logging
 from typing import List
 
+from api.db.services.task_service import TaskService
 from common import settings
 from common.time_utils import current_timestamp, timestamp_to_date, format_iso_8601_to_ymd_hms
 from common.constants import MemoryType, LLMType
@@ -23,7 +24,6 @@ from common.doc_store.doc_store_base import FusionExpr
 from common.misc_utils import get_uuid
 from api.db.db_utils import bulk_insert_into_db
 from api.db.db_models import Task
-from api.db.services.task_service import TaskService
 from api.db.services.memory_service import MemoryService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.llm_service import LLMBundle
@@ -90,19 +90,13 @@ async def save_to_memory(memory_id: str, message_dict: dict):
     return await embed_and_save(memory, message_list)
 
 
-async def save_extracted_to_memory_only(memory_id: str, message_dict, source_message_id: int, task_id: str=None):
+async def save_extracted_to_memory_only(memory_id: str, message_dict, source_message_id: int):
     memory = MemoryService.get_by_memory_id(memory_id)
     if not memory:
-        msg = f"Memory '{memory_id}' not found."
-        if task_id:
-            TaskService.update_progress(task_id, {"progress": -1, "progress_msg": timestamp_to_date(current_timestamp())+ " " + msg})
-        return False, msg
+        return False, f"Memory '{memory_id}' not found."
 
     if memory.memory_type == MemoryType.RAW.value:
-        msg = f"Memory '{memory_id}' don't need to extract."
-        if task_id:
-            TaskService.update_progress(task_id, {"progress": 1.0, "progress_msg": timestamp_to_date(current_timestamp())+ " " + msg})
-        return True, msg
+        return True, f"Memory '{memory_id}' don't need to extract."
 
     tenant_id = memory.tenant_id
     extracted_content = await extract_by_llm(
@@ -111,8 +105,7 @@ async def save_extracted_to_memory_only(memory_id: str, message_dict, source_mes
         {"temperature": memory.temperature},
         get_memory_type_human(memory.memory_type),
         message_dict.get("user_input", ""),
-        message_dict.get("agent_response", ""),
-        task_id=task_id
+        message_dict.get("agent_response", "")
     )
     message_list = [{
         "message_id": REDIS_CONN.generate_auto_increment_id(namespace="memory"),
@@ -129,18 +122,13 @@ async def save_extracted_to_memory_only(memory_id: str, message_dict, source_mes
         "status": True
     } for content in extracted_content]
     if not message_list:
-        msg = "No memory extracted from raw message."
-        if task_id:
-            TaskService.update_progress(task_id, {"progress": 1.0, "progress_msg": timestamp_to_date(current_timestamp())+ " " + msg})
-        return True, msg
+        return True, "No memory extracted from raw message."
 
-    if task_id:
-        TaskService.update_progress(task_id, {"progress": 0.5, "progress_msg": timestamp_to_date(current_timestamp())+ " " + f"Extracted {len(message_list)} messages from raw dialogue."})
-    return await embed_and_save(memory, message_list, task_id)
+    return await embed_and_save(memory, message_list)
 
 
 async def extract_by_llm(tenant_id: str, llm_id: str, extract_conf: dict, memory_type: List[str], user_input: str,
-                         agent_response: str, system_prompt: str = "", user_prompt: str="", task_id: str=None) -> List[dict]:
+                         agent_response: str, system_prompt: str = "", user_prompt: str="") -> List[dict]:
     llm_type = TenantLLMService.llm_id2llm_type(llm_id)
     if not llm_type:
         raise RuntimeError(f"Unknown type of LLM '{llm_id}'")
@@ -155,12 +143,8 @@ async def extract_by_llm(tenant_id: str, llm_id: str, extract_conf: dict, memory
     else:
         user_prompts.append({"role": "user", "content": PromptAssembler.assemble_user_prompt(conversation_content, conversation_time, conversation_time)})
     llm = LLMBundle(tenant_id, llm_type, llm_id)
-    if task_id:
-        TaskService.update_progress(task_id, {"progress": 0.15, "progress_msg": timestamp_to_date(current_timestamp())+ " " + "Prepared prompts and LLM."})
     res = await llm.async_chat(system_prompt, user_prompts, extract_conf)
     res_json = get_json_result_from_llm_response(res)
-    if task_id:
-        TaskService.update_progress(task_id, {"progress": 0.35, "progress_msg": timestamp_to_date(current_timestamp())+ " " + "Get extracted result from LLM."})
     return [{
         "content": extracted_content["content"],
         "valid_at": format_iso_8601_to_ymd_hms(extracted_content["valid_at"]),
@@ -169,23 +153,16 @@ async def extract_by_llm(tenant_id: str, llm_id: str, extract_conf: dict, memory
     } for message_type, extracted_content_list in res_json.items() for extracted_content in extracted_content_list]
 
 
-async def embed_and_save(memory, message_list: list[dict], task_id: str=None):
+async def embed_and_save(memory, message_list: list[dict]):
     embedding_model = LLMBundle(memory.tenant_id, llm_type=LLMType.EMBEDDING, llm_name=memory.embd_id)
-    if task_id:
-        TaskService.update_progress(task_id, {"progress": 0.65, "progress_msg": timestamp_to_date(current_timestamp())+ " " + "Prepared embedding model."})
     vector_list, _ = embedding_model.encode([msg["content"] for msg in message_list])
     for idx, msg in enumerate(message_list):
         msg["content_embed"] = vector_list[idx]
-    if task_id:
-        TaskService.update_progress(task_id, {"progress": 0.85, "progress_msg": timestamp_to_date(current_timestamp())+ " " + "Embedded extracted content."})
     vector_dimension = len(vector_list[0])
     if not MessageService.has_index(memory.tenant_id, memory.id):
         created = MessageService.create_index(memory.tenant_id, memory.id, vector_size=vector_dimension)
         if not created:
-            error_msg = "Failed to create message index."
-            if task_id:
-                TaskService.update_progress(task_id, {"progress": -1, "progress_msg": timestamp_to_date(current_timestamp())+ " " + error_msg})
-            return False, error_msg
+            return False, "Failed to create message index."
 
     new_msg_size = sum([MessageService.calculate_message_size(m) for m in message_list])
     current_memory_size = get_memory_size_cache(memory.tenant_id, memory.id)
@@ -197,19 +174,11 @@ async def embed_and_save(memory, message_list: list[dict], task_id: str=None):
             MessageService.delete_message({"message_id": message_ids_to_delete}, memory.tenant_id, memory.id)
             decrease_memory_size_cache(memory.id, delete_size)
         else:
-            error_msg = "Failed to insert message into memory. Memory size reached limit and cannot decide which to delete."
-            if task_id:
-                TaskService.update_progress(task_id, {"progress": -1, "progress_msg": timestamp_to_date(current_timestamp())+ " " + error_msg})
-            return False, error_msg
+            return False, "Failed to insert message into memory. Memory size reached limit and cannot decide which to delete."
     fail_cases = MessageService.insert_message(message_list, memory.tenant_id, memory.id)
     if fail_cases:
-        error_msg = "Failed to insert message into memory. Details: " + "; ".join(fail_cases)
-        if task_id:
-            TaskService.update_progress(task_id, {"progress": -1, "progress_msg": timestamp_to_date(current_timestamp())+ " " + error_msg})
-        return False, error_msg
+        return False, "Failed to insert message into memory. Details: " + "; ".join(fail_cases)
 
-    if task_id:
-        TaskService.update_progress(task_id, {"progress": 0.95, "progress_msg": timestamp_to_date(current_timestamp())+ " " + "Saved messages to storage."})
     increase_memory_size_cache(memory.id, new_msg_size)
     return True, "Message saved successfully."
 
@@ -304,24 +273,6 @@ def init_memory_size_cache():
         for m in memory_list:
             get_memory_size_cache(m.id, m.tenant_id)
         logging.info("Memory size cache init done.")
-
-
-def fix_missing_tokenized_memory():
-    if settings.DOC_ENGINE != "elasticsearch":
-        logging.info("Not using elasticsearch as doc engine, no need to fix missing tokenized memory.")
-        return
-    memory_list = MemoryService.get_all_memory()
-    if not memory_list:
-        logging.info("No memory found, no need to fix missing tokenized memory.")
-    else:
-        for m in memory_list:
-            message_list = MessageService.get_missing_field_messages(m.id, m.tenant_id, "tokenized_content_ltks")
-            for msg in message_list:
-                # update content to refresh tokenized field
-                MessageService.update_message({"message_id": msg["message_id"], "memory_id": m.id}, {"content": msg["content"]}, m.tenant_id, m.id)
-            if message_list:
-                logging.info(f"Fixed {len(message_list)} messages missing tokenized field in memory: {m.name}.")
-        logging.info("Fix missing tokenized memory done.")
 
 
 def judge_system_prompt_is_default(system_prompt: str, memory_type: int|list[str]):
@@ -428,11 +379,11 @@ async def handle_save_to_memory_task(task_param: dict):
     memory_id = task_param["memory_id"]
     source_id = task_param["source_id"]
     message_dict = task_param["message_dict"]
-    success, msg = await save_extracted_to_memory_only(memory_id, message_dict, source_id, task.id)
+    success, msg = await save_extracted_to_memory_only(memory_id, message_dict, source_id)
     if success:
-        TaskService.update_progress(task.id, {"progress": 1.0,  "progress_msg": timestamp_to_date(current_timestamp())+ " " + msg})
+        TaskService.update_progress(task.id, {"progress": 1.0,  "progress_msg": msg})
         return True, msg
 
     logging.error(msg)
-    TaskService.update_progress(task.id, {"progress": -1, "progress_msg": timestamp_to_date(current_timestamp())+ " " + msg})
+    TaskService.update_progress(task.id, {"progress": -1, "progress_msg": None})
     return False, msg

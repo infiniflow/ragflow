@@ -1,11 +1,10 @@
 import dayjs from 'dayjs';
 
-export function formatDate(date: any, format?: string) {
-  const thisFormat = format || 'DD/MM/YYYY HH:mm:ss';
+export function formatDate(date: any) {
   if (!date) {
     return '';
   }
-  return dayjs(date).format(thisFormat);
+  return dayjs(date).format('DD/MM/YYYY HH:mm:ss');
 }
 
 export function formatTime(date: any) {

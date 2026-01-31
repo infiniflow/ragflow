@@ -19,7 +19,7 @@ from github.PaginatedList import PaginatedList
 from github.PullRequest import PullRequest
 from pydantic import BaseModel
 from typing_extensions import override
-from common.data_source.utils import sanitize_filename
+from common.data_source.google_util.util import sanitize_filename
 from common.data_source.config import DocumentSource, GITHUB_CONNECTOR_BASE_URL
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,

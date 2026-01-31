@@ -166,7 +166,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             pdf_parser = Pdf()
             paper = pdf_parser(filename if not binary else binary,
                                from_page=from_page, to_page=to_page, callback=callback)
-            sections = paper.get("sections", [])
         else:
             kwargs.pop("parse_method", None)
             kwargs.pop("mineru_llm_name", None)
@@ -193,12 +192,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             }
 
         tbls = paper["tables"]
-        tbls = vision_figure_parser_pdf_wrapper(
-            tbls=tbls,
-            sections=sections,
-            callback=callback,
-            **kwargs,
-        )
+        tbls = vision_figure_parser_pdf_wrapper(tbls=tbls, callback=callback, **kwargs)
         paper["tables"] = tbls
     else:
         raise NotImplementedError("file type not supported yet(pdf supported)")

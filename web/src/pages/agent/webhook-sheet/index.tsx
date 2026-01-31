@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 import { upperFirst } from 'lodash';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router';
+import { useParams } from 'umi';
 import { BeginId } from '../constant';
 import { JsonViewer } from '../form/components/json-viewer';
 import { WorkFlowTimeline } from './timeline';

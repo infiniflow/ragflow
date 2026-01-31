@@ -17,7 +17,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import sys
 import tempfile
 import threading
@@ -139,58 +138,39 @@ class MinerUParser(RAGFlowPdfParser):
         self.outlines = []
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    @staticmethod
-    def _is_zipinfo_symlink(member: zipfile.ZipInfo) -> bool:
-        return (member.external_attr >> 16) & 0o170000 == 0o120000
-
     def _extract_zip_no_root(self, zip_path, extract_to, root_dir):
         self.logger.info(f"[MinerU] Extract zip: zip_path={zip_path}, extract_to={extract_to}, root_hint={root_dir}")
-        base_dir = Path(extract_to).resolve()
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            members = zip_ref.infolist()
             if not root_dir:
-                if members and members[0].filename.endswith("/"):
-                    root_dir = members[0].filename
+                files = zip_ref.namelist()
+                if files and files[0].endswith("/"):
+                    root_dir = files[0]
                 else:
                     root_dir = None
-            if root_dir:
-                root_dir = root_dir.replace("\\", "/")
-                if not root_dir.endswith("/"):
-                    root_dir += "/"
 
-            for member in members:
-                if member.flag_bits & 0x1:
-                    raise RuntimeError(f"[MinerU] Encrypted zip entry not supported: {member.filename}")
-                if self._is_zipinfo_symlink(member):
-                    raise RuntimeError(f"[MinerU] Symlink zip entry not supported: {member.filename}")
+            if not root_dir or not root_dir.endswith("/"):
+                self.logger.info(f"[MinerU] No root directory found, extracting all (root_hint={root_dir})")
+                zip_ref.extractall(extract_to)
+                return
 
-                name = member.filename.replace("\\", "/")
-                if root_dir and name == root_dir:
+            root_len = len(root_dir)
+            for member in zip_ref.infolist():
+                filename = member.filename
+                if filename == root_dir:
                     self.logger.info("[MinerU] Ignore root folder...")
                     continue
-                if root_dir and name.startswith(root_dir):
-                    name = name[len(root_dir) :]
-                if not name:
-                    continue
-                if name.startswith("/") or name.startswith("//") or re.match(r"^[A-Za-z]:", name):
-                    raise RuntimeError(f"[MinerU] Unsafe zip path (absolute): {member.filename}")
 
-                parts = [p for p in name.split("/") if p not in ("", ".")]
-                if any(p == ".." for p in parts):
-                    raise RuntimeError(f"[MinerU] Unsafe zip path (traversal): {member.filename}")
+                path = filename
+                if path.startswith(root_dir):
+                    path = path[root_len:]
 
-                rel_path = os.path.join(*parts) if parts else ""
-                dest_path = (Path(extract_to) / rel_path).resolve(strict=False)
-                if dest_path != base_dir and base_dir not in dest_path.parents:
-                    raise RuntimeError(f"[MinerU] Unsafe zip path (escape): {member.filename}")
-
+                full_path = os.path.join(extract_to, path)
                 if member.is_dir():
-                    os.makedirs(dest_path, exist_ok=True)
-                    continue
-
-                os.makedirs(dest_path.parent, exist_ok=True)
-                with zip_ref.open(member) as src, open(dest_path, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
+                    os.makedirs(full_path, exist_ok=True)
+                else:
+                    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                    with open(full_path, "wb") as f:
+                        f.write(zip_ref.read(filename))
 
     @staticmethod
     def _is_http_endpoint_valid(url, timeout=5):
@@ -257,6 +237,8 @@ class MinerUParser(RAGFlowPdfParser):
         output_path = tempfile.mkdtemp(prefix=f"{pdf_file_name}_{options.method}_", dir=str(output_dir))
         output_zip_path = os.path.join(str(output_dir), f"{Path(output_path).name}.zip")
 
+        files = {"files": (pdf_file_name + ".pdf", open(pdf_file_path, "rb"), "application/pdf")}
+
         data = {
             "output_dir": "./output",
             "lang_list": options.lang,
@@ -288,35 +270,26 @@ class MinerUParser(RAGFlowPdfParser):
             self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')}")
             if callback:
                 callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/file_parse")
-            with open(pdf_file_path, "rb") as pdf_file:
-                files = {"files": (pdf_file_name + ".pdf", pdf_file, "application/pdf")}
-                with requests.post(
-                    url=f"{self.mineru_api}/file_parse",
-                    files=files,
-                    data=data,
-                    headers=headers,
-                    timeout=1800,
-                    stream=True,
-                ) as response:
-                    response.raise_for_status()
-                    content_type = response.headers.get("Content-Type", "")
-                    if content_type.startswith("application/zip"):
-                        self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
+            response = requests.post(url=f"{self.mineru_api}/file_parse", files=files, data=data, headers=headers,
+                                     timeout=1800)
 
-                        if callback:
-                            callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
+            response.raise_for_status()
+            if response.headers.get("Content-Type") == "application/zip":
+                self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
 
-                        with open(output_zip_path, "wb") as f:
-                            response.raw.decode_content = True
-                            shutil.copyfileobj(response.raw, f)
+                if callback:
+                    callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
 
-                        self.logger.info(f"[MinerU] Unzip to {output_path}...")
-                        self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
+                with open(output_zip_path, "wb") as f:
+                    f.write(response.content)
 
-                        if callback:
-                            callback(0.40, f"[MinerU] Unzip to {output_path}...")
-                    else:
-                        self.logger.warning(f"[MinerU] not zip returned from api: {content_type}")
+                self.logger.info(f"[MinerU] Unzip to {output_path}...")
+                self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
+
+                if callback:
+                    callback(0.40, f"[MinerU] Unzip to {output_path}...")
+            else:
+                self.logger.warning(f"[MinerU] not zip returned from api: {response.headers.get('Content-Type')}")
         except Exception as e:
             raise RuntimeError(f"[MinerU] api failed with exception {e}")
         self.logger.info("[MinerU] Api completed successfully.")

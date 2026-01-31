@@ -33,7 +33,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '../ui/hover-card';
-import styles from './index.module.less';
+import styles from './index.less';
 
 const getChunkIndex = (match: string) => Number(match);
 

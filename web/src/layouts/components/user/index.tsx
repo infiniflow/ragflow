@@ -1,9 +1,9 @@
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
-import { history } from '@/utils/simple-history-util';
 import { Avatar } from 'antd';
 import React from 'react';
+import { history } from 'umi';
 
-import styles from '../../index.module.less';
+import styles from '../../index.less';
 
 const App: React.FC = () => {
   const { data: userInfo } = useFetchUserInfo();
