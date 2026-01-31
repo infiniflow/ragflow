@@ -70,7 +70,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         last_exc = None
         for attempt in range(3):
             try:
-                response = await self._llm_model.async_chat(system, history, gen_conf)
+                response, _ = await self._llm_model.async_chat(system, history, gen_conf)
                 response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
                 if response.find("**ERROR**") >= 0:
                     raise Exception(response)
