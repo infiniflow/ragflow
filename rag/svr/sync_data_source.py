@@ -1084,6 +1084,8 @@ class PaperlessNGX(SyncBase):
     async def _generate(self, task: dict):
         """
         Sync documents from Paperless-ngx instance.
+        
+        Uses OCR content from Paperless API first, downloads PDF only as fallback.
         """
         # Get configuration
         base_url = self.conf.get("base_url")
@@ -1092,11 +1094,13 @@ class PaperlessNGX(SyncBase):
 
         verify_ssl = self.conf.get("verify_ssl", True)
         batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        min_content_length = self.conf.get("min_content_length", 100)
 
         self.connector = PaperlessNgxConnector(
             base_url=base_url,
             batch_size=batch_size,
             verify_ssl=verify_ssl,
+            min_content_length=min_content_length,
         )
 
         # Load credentials

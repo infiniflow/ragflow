@@ -33,6 +33,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
         base_url: str,
         batch_size: int = INDEX_BATCH_SIZE,
         verify_ssl: bool = True,
+        min_content_length: int = 100,
     ) -> None:
         """Initialize Paperless-ngx connector
         
@@ -40,6 +41,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
             base_url: Base URL of the Paperless-ngx instance (e.g., "https://paperless.example.com")
             batch_size: Number of documents per batch
             verify_ssl: Whether to verify SSL certificates (default: True)
+            min_content_length: Minimum OCR content length to use instead of downloading PDF (default: 100)
         
         Raises:
             ConnectorValidationError: If the URL is invalid
@@ -47,6 +49,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
         self.base_url = self._normalize_url(base_url)
         self.batch_size = batch_size
         self.verify_ssl = verify_ssl
+        self.min_content_length = min_content_length
         self.api_token: Optional[str] = None
         self._allow_images: bool | None = None
         self.size_threshold: int | None = BLOB_STORAGE_SIZE_THRESHOLD
@@ -314,6 +317,10 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
     ) -> GenerateDocumentsOutput:
         """Generate documents from Paperless-ngx
         
+        Strategy: Use OCR content from API first, download PDF only as fallback
+        - If content exists and length >= min_content_length: use OCR text
+        - Otherwise: download PDF (for re-OCR, attachments, or when content insufficient)
+        
         Args:
             start: Start datetime for filtering
             end: End datetime for filtering
@@ -351,16 +358,34 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
             file_ext = get_file_ext(original_filename)
             
             try:
-                # Download document content
-                logging.debug(f"Downloading document: {doc_id} - {title}")
-                blob = self._download_document(doc_id)
+                # Get OCR content from API
+                ocr_content = doc_meta.get("content", "")
+                use_ocr_content = ocr_content and len(ocr_content) >= self.min_content_length
                 
-                if not blob or len(blob) == 0:
-                    logging.warning(f"Downloaded content is empty for document {doc_id}")
-                    continue
+                if use_ocr_content:
+                    # Use OCR content from Paperless API (95% of cases)
+                    logging.debug(f"Using OCR content for document {doc_id} - {title} (length: {len(ocr_content)} chars)")
+                    
+                    # Create a text blob from OCR content
+                    blob = ocr_content.encode('utf-8')
+                    size_bytes = len(blob)
+                    
+                    # Override extension to .txt since we're using text content
+                    file_ext = ".txt"
+                else:
+                    # Fallback: Download PDF for re-OCR, attachments, or when content too short
+                    reason = "empty" if not ocr_content else f"too short ({len(ocr_content)} < {self.min_content_length})"
+                    logging.info(f"Downloading PDF for document {doc_id} - {title} (OCR content {reason})")
+                    
+                    blob = self._download_document(doc_id)
+                    
+                    if not blob or len(blob) == 0:
+                        logging.warning(f"Downloaded content is empty for document {doc_id}")
+                        continue
+                    
+                    size_bytes = len(blob)
                 
                 # Check size threshold
-                size_bytes = len(blob)
                 if (
                     self.size_threshold is not None
                     and size_bytes > self.size_threshold
@@ -374,6 +399,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
                 metadata = {
                     "title": title,
                     "original_filename": original_filename,
+                    "source_type": "ocr_content" if use_ocr_content else "pdf_download",
                 }
                 
                 # Add optional metadata fields
@@ -386,9 +412,9 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
                     metadata["tags"] = ",".join(str(t) for t in doc_meta["tags"])
                 if doc_meta.get("created"):
                     metadata["created"] = doc_meta["created"]
-                if doc_meta.get("content"):
-                    # Paperless-ngx provides OCR'd content
-                    metadata["ocr_content"] = doc_meta["content"][:500]  # First 500 chars
+                if ocr_content and not use_ocr_content:
+                    # Store truncated content for reference even when downloading PDF
+                    metadata["ocr_content_preview"] = ocr_content[:500]
                 
                 batch.append(
                     Document(
@@ -491,6 +517,7 @@ if __name__ == "__main__":
     connector = PaperlessNgxConnector(
         base_url=os.environ.get("PAPERLESS_BASE_URL", "http://localhost:8000"),
         verify_ssl=False,  # For local testing
+        min_content_length=100,  # Use OCR content if >= 100 characters
     )
 
     try:
