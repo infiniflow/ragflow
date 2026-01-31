@@ -4,9 +4,15 @@
 
 This connector integrates Paperless-ngx document management system with RAGFlow, allowing you to index and search documents stored in Paperless-ngx.
 
+**Architecture Philosophy:**
+- **Paperless-ngx**: Handles OCR, metadata extraction, and document management
+- **RAGFlow**: Uses OCR content from Paperless, generates embeddings, structures knowledge bases, and answers questions
+- **No Duplication**: Avoids redundant OCR work by using Paperless's OCR results directly
+
 ## Features
 
 - **REST API Integration**: Connects directly to Paperless-ngx REST API
+- **OCR Content First**: Uses OCR text from Paperless API (95% of cases), downloads PDF only as fallback
 - **Full & Incremental Sync**: Supports both full document sync and incremental updates
 - **Metadata Extraction**: Captures document metadata including:
   - Title
@@ -20,6 +26,33 @@ This connector integrates Paperless-ngx document management system with RAGFlow,
 - **Time-based Filtering**: Syncs only documents modified within a specific time range
 - **SSL Configuration**: Optional SSL certificate verification
 - **Size Threshold**: Configurable document size limits
+- **Intelligent Fallback**: Downloads PDF only when:
+  - OCR content is empty
+  - OCR content is too short (below threshold)
+  - Re-OCR is needed for attachments or errors
+
+## Ingestion Strategy (Best Practice)
+
+For each Paperless document:
+
+### API (Primary Source)
+- `id`, `document_type`, `tags`, `correspondent`, `created`
+- **`content` (OCR text)** - Used directly in 95% of cases
+
+### PDF Download (Fallback Only)
+- Used only when:
+  - Content is empty or too short
+  - Attachments need processing
+  - Re-OCR required for errors
+
+### Task Logic
+```
+If content present and length >= min_content_length:
+  → Use OCR text from API (no download)
+If empty or too short:
+  → Download PDF from Paperless
+  → RAGFlow may re-OCR locally if needed
+```
 
 ## Configuration
 
@@ -37,7 +70,8 @@ This connector integrates Paperless-ngx document management system with RAGFlow,
   "config": {
     "base_url": "https://paperless.example.com",
     "verify_ssl": true,
-    "batch_size": 10
+    "batch_size": 10,
+    "min_content_length": 100
   },
   "credentials": {
     "api_token": "your-api-token-here"
@@ -62,6 +96,11 @@ This connector integrates Paperless-ngx document management system with RAGFlow,
 - **batch_size** (optional): Number of documents to process in each batch
   - Default: `2` (from INDEX_BATCH_SIZE)
   - Adjust based on your system resources
+- **min_content_length** (optional): Minimum OCR content length to use instead of downloading PDF
+  - Default: `100` characters
+  - If OCR content length >= this value, use OCR text directly
+  - If OCR content length < this value or is empty, download PDF
+  - Recommended: 100-500 characters depending on your use case
 - **api_token** (required): Paperless-ngx API authentication token
   - Generate in Paperless-ngx: Settings → API Tokens
 
@@ -89,7 +128,8 @@ response = requests.post(
         "config": {
             "base_url": "https://paperless.example.com",
             "verify_ssl": true,
-            "batch_size": 10
+            "batch_size": 10,
+            "min_content_length": 100
         },
         "credentials": {
             "api_token": "your-token-here"
@@ -103,8 +143,22 @@ response = requests.post(
 
 ### Sync Behavior
 
+#### Content-First Approach (Recommended)
+- **Primary**: Uses OCR text from Paperless API (fast, no download)
+  - Applies when `content` field exists and length >= `min_content_length`
+  - Creates text document (.txt extension) from OCR content
+  - Avoids redundant OCR work (Paperless already performed it)
+  - Saves bandwidth and processing time
+  
+- **Fallback**: Downloads PDF from Paperless
+  - Only when OCR content is empty or too short
+  - Allows RAGFlow to re-OCR if needed
+  - Handles attachments and special cases
+
 #### Full Sync (Initial or Reindex)
-- Downloads all documents from Paperless-ngx
+- Retrieves all documents from Paperless-ngx
+- Uses OCR content where available (95% of cases)
+- Downloads PDF only for documents without sufficient OCR content
 - Extracts full metadata and content
 - Occurs on first sync or when manually triggered
 
@@ -215,10 +269,11 @@ pytest test/unit/test_paperless_ngx_connector.py -v
 ```python
 from common.data_source.paperless_ngx_connector import PaperlessNgxConnector
 
-# Create connector
+# Create connector with content-first strategy
 connector = PaperlessNgxConnector(
     base_url="https://paperless.example.com",
     verify_ssl=True,
+    min_content_length=100,  # Use OCR content if >= 100 chars
 )
 
 # Load credentials

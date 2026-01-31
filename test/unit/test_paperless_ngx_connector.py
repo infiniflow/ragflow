@@ -302,6 +302,124 @@ class TestPaperlessNgxConnector:
         assert call_args[1].year == 2024
         assert call_args[1].month == 12
 
+    def test_init_with_min_content_length(self):
+        """Test connector initialization with custom min_content_length"""
+        connector = PaperlessNgxConnector(
+            base_url="https://paperless.example.com",
+            batch_size=10,
+            verify_ssl=True,
+            min_content_length=200,
+        )
+        assert connector.min_content_length == 200
+
+    def test_default_min_content_length(self):
+        """Test connector initialization with default min_content_length"""
+        connector = PaperlessNgxConnector(
+            base_url="https://paperless.example.com"
+        )
+        assert connector.min_content_length == 100  # Default value
+
+    @patch("common.data_source.paperless_ngx_connector.PaperlessNgxConnector._list_documents")
+    def test_ocr_content_preferred_over_download(self, mock_list, connector, credentials):
+        """Test that OCR content is used when sufficient length"""
+        connector.load_credentials(credentials)
+        
+        # Mock document with sufficient OCR content
+        mock_list.return_value = [{
+            "id": 1,
+            "title": "Test Document",
+            "original_file_name": "test.pdf",
+            "modified": "2024-01-01T00:00:00Z",
+            "content": "A" * 150,  # 150 chars, above default threshold of 100
+            "correspondent": "Test Corp",
+            "document_type": "Invoice",
+            "tags": [1, 2],
+            "created": "2024-01-01T00:00:00Z",
+        }]
+        
+        generator = connector._yield_paperless_documents(
+            datetime(2024, 1, 1, tzinfo=timezone.utc),
+            datetime(2024, 12, 31, tzinfo=timezone.utc)
+        )
+        
+        batches = list(generator)
+        assert len(batches) == 1
+        docs = batches[0]
+        assert len(docs) == 1
+        
+        doc = docs[0]
+        # Should use OCR content, not download PDF
+        assert doc.extension == ".txt"  # Text file from OCR content
+        assert doc.blob == ("A" * 150).encode('utf-8')
+        assert doc.metadata["source_type"] == "ocr_content"
+
+    @patch("common.data_source.paperless_ngx_connector.PaperlessNgxConnector._list_documents")
+    @patch("common.data_source.paperless_ngx_connector.PaperlessNgxConnector._download_document")
+    def test_pdf_download_when_content_too_short(self, mock_download, mock_list, connector, credentials):
+        """Test that PDF is downloaded when OCR content is too short"""
+        connector.load_credentials(credentials)
+        
+        # Mock document with insufficient OCR content
+        mock_list.return_value = [{
+            "id": 1,
+            "title": "Test Document",
+            "original_file_name": "test.pdf",
+            "modified": "2024-01-01T00:00:00Z",
+            "content": "Short",  # Only 5 chars, below threshold of 100
+        }]
+        
+        mock_download.return_value = b"PDF content bytes"
+        
+        generator = connector._yield_paperless_documents(
+            datetime(2024, 1, 1, tzinfo=timezone.utc),
+            datetime(2024, 12, 31, tzinfo=timezone.utc)
+        )
+        
+        batches = list(generator)
+        assert len(batches) == 1
+        docs = batches[0]
+        assert len(docs) == 1
+        
+        # Verify PDF was downloaded
+        mock_download.assert_called_once_with(1)
+        
+        doc = docs[0]
+        assert doc.blob == b"PDF content bytes"
+        assert doc.metadata["source_type"] == "pdf_download"
+        # Should store preview of short content
+        assert "ocr_content_preview" in doc.metadata
+
+    @patch("common.data_source.paperless_ngx_connector.PaperlessNgxConnector._list_documents")
+    @patch("common.data_source.paperless_ngx_connector.PaperlessNgxConnector._download_document")
+    def test_pdf_download_when_content_empty(self, mock_download, mock_list, connector, credentials):
+        """Test that PDF is downloaded when OCR content is empty"""
+        connector.load_credentials(credentials)
+        
+        # Mock document with no OCR content
+        mock_list.return_value = [{
+            "id": 1,
+            "title": "Test Document",
+            "original_file_name": "test.pdf",
+            "modified": "2024-01-01T00:00:00Z",
+            "content": "",  # Empty content
+        }]
+        
+        mock_download.return_value = b"PDF content bytes"
+        
+        generator = connector._yield_paperless_documents(
+            datetime(2024, 1, 1, tzinfo=timezone.utc),
+            datetime(2024, 12, 31, tzinfo=timezone.utc)
+        )
+        
+        batches = list(generator)
+        
+        # Verify PDF was downloaded
+        mock_download.assert_called_once_with(1)
+        
+        doc = batches[0][0]
+        assert doc.blob == b"PDF content bytes"
+        assert doc.metadata["source_type"] == "pdf_download"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
