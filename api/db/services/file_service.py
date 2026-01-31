@@ -437,7 +437,7 @@ class FileService(CommonService):
 
         safe_parent_path = sanitize_path(parent_path)
 
-        err, files = [], []
+        err, files, updated_docs = [], [], []
         for file in file_objs:
             doc_id = file.id if hasattr(file, "id") else get_uuid()
             e, doc = DocumentService.get_by_id(doc_id)
@@ -447,6 +447,8 @@ class FileService(CommonService):
                 doc.size = len(blob)
                 doc = doc.to_dict()
                 DocumentService.update_by_id(doc["id"], doc)
+                # Track updated documents for re-parsing
+                updated_docs.append((doc, blob))
                 continue
             try:
                 DocumentService.check_doc_health(kb.tenant_id, file.filename)
@@ -493,7 +495,7 @@ class FileService(CommonService):
             except Exception as e:
                 err.append(file.filename + ": " + str(e))
 
-        return err, files
+        return err, files, updated_docs
 
     @classmethod
     @DB.connection_context()

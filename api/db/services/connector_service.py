@@ -212,7 +212,7 @@ class SyncLogsService(CommonService):
         errs = []
         files = [FileObj(id=d["id"], filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""), blob=d["blob"]) for d in docs]
         doc_ids = []
-        err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
+        err, doc_blob_pairs, updated_doc_pairs = FileService.upload_document(kb, files, tenant_id, src)
         errs.extend(err)
 
         # Create a mapping from filename to metadata for later use
@@ -223,6 +223,7 @@ class SyncLogsService(CommonService):
                 metadata_map[filename] = d["metadata"]
 
         kb_table_num_map = {}
+        # Process new documents
         for doc, _ in doc_blob_pairs:
             doc_ids.append(doc["id"])
             
@@ -232,6 +233,19 @@ class SyncLogsService(CommonService):
             
             if not auto_parse or auto_parse == "0":
                 continue
+            DocumentService.run(tenant_id, doc, kb_table_num_map)
+
+        # Process updated documents - re-parse them to update chunks
+        for doc, _ in updated_doc_pairs:
+            doc_ids.append(doc["id"])
+            
+            # Set metadata if available for this document
+            if doc["name"] in metadata_map:
+                DocMetadataService.update_document_metadata(doc["id"], metadata_map[doc["name"]])
+            
+            if not auto_parse or auto_parse == "0":
+                continue
+            # Re-parse updated document to regenerate chunks
             DocumentService.run(tenant_id, doc, kb_table_num_map)
 
         return errs, doc_ids
