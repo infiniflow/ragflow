@@ -39,6 +39,9 @@ oceanbase:
     password: '${OCEANBASE_PASSWORD:-infini_rag_flow}'
     host: '${OCEANBASE_HOST:-oceanbase}'
     port: ${OCEANBASE_PORT:-2881}
+    max_connections: ${OCEANBASE_MAX_CONNECTIONS:-300}
+    stale_timeout: ${OCEANBASE_STALE_TIMEOUT:-300}
+    max_allowed_packet: ${OCEANBASE_MAX_PACKET:-1073741824}
 seekdb:
   scheme: 'oceanbase' # SeekDB is the lite version of OceanBase
   config:

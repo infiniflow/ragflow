@@ -39,6 +39,9 @@ oceanbase:
     password: 'infini_rag_flow'
     host: 'localhost'
     port: 2881
+    max_connections: 300
+    stale_timeout: 300
+    max_allowed_packet: 1073741824
 redis:
   db: 1
   username: ''

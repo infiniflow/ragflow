@@ -49,6 +49,7 @@ AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {"create", "start", "end", "update", "read_ac
 class TextFieldType(Enum):
     MYSQL = "LONGTEXT"
     POSTGRES = "TEXT"
+    OCEANBASE = "LONGTEXT"
 
 
 class LongTextField(TextField):
@@ -383,14 +384,20 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
         return None
 
 
+class PooledOceanBaseDatabase(RetryingPooledMySQLDatabase):
+    pass
+
+
 class PooledDatabase(Enum):
     MYSQL = RetryingPooledMySQLDatabase
     POSTGRES = RetryingPooledPostgresqlDatabase
+    OCEANBASE = PooledOceanBaseDatabase
 
 
 class DatabaseMigrator(Enum):
     MYSQL = MySQLMigrator
     POSTGRES = PostgresqlMigrator
+    OCEANBASE = MySQLMigrator
 
 
 @singleton
@@ -549,6 +556,7 @@ class MysqlDatabaseLock:
 class DatabaseLock(Enum):
     MYSQL = MysqlDatabaseLock
     POSTGRES = PostgresDatabaseLock
+    OCEANBASE = MysqlDatabaseLock
 
 
 DB = BaseDataBase().database_connection

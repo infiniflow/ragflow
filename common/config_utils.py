@@ -140,6 +140,17 @@ def decrypt_database_config(database=None, passwd_key="password", name="database
     if not database:
         database = get_base_config(name, {})
 
+    # Support nested configs (e.g., oceanbase: {scheme, config: {db_name, user, password...}})
+    if isinstance(database, dict) and passwd_key not in database and "config" in database:
+        config = database.get("config") or {}
+        if isinstance(config, dict):
+            if "db_name" in config and "name" not in config:
+                config = config.copy()
+                config["name"] = config.pop("db_name")
+            if passwd_key in config:
+                config[passwd_key] = decrypt_database_password(config[passwd_key])
+            return config
+
     database[passwd_key] = decrypt_database_password(database[passwd_key])
     return database
 
