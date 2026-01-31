@@ -218,7 +218,7 @@ async def collect():
     if not task or canceled:
         state = "is unknown" if not task else "has been cancelled"
         FAILED_TASKS += 1
-        logging.warning(f"collect task {msg['id']} {state}")
+        logging.debug(f"collect task {msg['id']} {state}")
         redis_msg.ack()
         return None, None
 
