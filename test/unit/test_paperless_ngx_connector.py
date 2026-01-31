@@ -278,9 +278,10 @@ class TestPaperlessNgxConnector:
         generator = connector.load_from_state()
         list(generator)  # Consume the generator
         
-        # Verify it was called with full date range
+        # Verify it was called with None for both start and end (no time filters)
         call_args = mock_yield.call_args[0]
-        assert call_args[0].year == 1970
+        assert call_args[0] is None  # start should be None
+        assert call_args[1] is None  # end should be None
 
     @patch("common.data_source.paperless_ngx_connector.PaperlessNgxConnector._yield_paperless_documents")
     def test_poll_source(self, mock_yield, connector, credentials):
@@ -317,7 +318,7 @@ class TestPaperlessNgxConnector:
         connector = PaperlessNgxConnector(
             base_url="https://paperless.example.com"
         )
-        assert connector.min_content_length == 100  # Default value
+        assert connector.min_content_length == 1  # Default value
 
     @patch("common.data_source.paperless_ngx_connector.PaperlessNgxConnector._list_documents")
     def test_ocr_content_preferred_over_download(self, mock_list, connector, credentials):
@@ -419,6 +420,73 @@ class TestPaperlessNgxConnector:
         doc = batches[0][0]
         assert doc.blob == b"PDF content bytes"
         assert doc.metadata["source_type"] == "pdf_download"
+
+    @patch("common.data_source.paperless_ngx_connector.PaperlessNgxConnector._make_request")
+    def test_pagination_continues_after_error(self, mock_make_request, connector, credentials):
+        """Test that pagination continues after an error on one page"""
+        connector.load_credentials(credentials)
+        
+        # Simulate error on page 2, but success on pages 1 and 3
+        mock_make_request.side_effect = [
+            # Page 1: Success
+            {
+                "count": 250,
+                "results": [{"id": 1, "title": "Doc 1"}],
+                "next": "https://paperless.example.com/api/documents/?page=2",
+            },
+            # Page 2: Error
+            Exception("Network timeout"),
+            # Page 3: Success (should still be attempted)
+            {
+                "count": 250,
+                "results": [{"id": 3, "title": "Doc 3"}],
+                "next": None,
+            },
+        ]
+        
+        docs = connector._list_documents()
+        # Should have docs from page 1 and page 3, skipping page 2
+        assert len(docs) == 2
+        assert docs[0]["id"] == 1
+        assert docs[1]["id"] == 3
+
+    @patch("common.data_source.paperless_ngx_connector.PaperlessNgxConnector._make_request")
+    def test_document_count_mismatch_warning(self, mock_make_request, connector, credentials, caplog):
+        """Test that a warning is logged when document count doesn't match"""
+        connector.load_credentials(credentials)
+        
+        # API reports 100 documents, but we only get 50
+        mock_make_request.side_effect = [
+            {
+                "count": 100,  # API says there are 100 documents
+                "results": [{"id": i, "title": f"Doc {i}"} for i in range(50)],  # But we only get 50
+                "next": None,
+            },
+        ]
+        
+        with caplog.at_level("WARNING"):
+            docs = connector._list_documents()
+        
+        assert len(docs) == 50
+        # Check that warning was logged
+        assert any("count mismatch" in record.message.lower() for record in caplog.records)
+        assert any("100" in record.message and "50" in record.message for record in caplog.records)
+
+    @patch("common.data_source.paperless_ngx_connector.PaperlessNgxConnector._make_request")
+    def test_list_documents_without_time_filters(self, mock_make_request, connector, credentials):
+        """Test document listing without time filters (None parameters)"""
+        connector.load_credentials(credentials)
+        
+        mock_make_request.return_value = {"count": 0, "results": [], "next": None}
+        
+        # Call with None for both start and end
+        connector._list_documents(start_time=None, end_time=None)
+        
+        # Check that the request was made WITHOUT time filters
+        call_args = mock_make_request.call_args
+        params = call_args[1]["params"]
+        assert "modified__gte" not in params
+        assert "modified__lte" not in params
 
 
 if __name__ == "__main__":

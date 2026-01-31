@@ -33,7 +33,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
         base_url: str,
         batch_size: int = INDEX_BATCH_SIZE,
         verify_ssl: bool = True,
-        min_content_length: int = 100,
+        min_content_length: int = 1,
     ) -> None:
         """Initialize Paperless-ngx connector
         
@@ -41,7 +41,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
             base_url: Base URL of the Paperless-ngx instance (e.g., "https://paperless.example.com")
             batch_size: Number of documents per batch
             verify_ssl: Whether to verify SSL certificates (default: True)
-            min_content_length: Minimum OCR content length to use instead of downloading PDF (default: 100)
+            min_content_length: Minimum OCR content length to use instead of downloading PDF (default: 1)
         
         Raises:
             ConnectorValidationError: If the URL is invalid
@@ -264,8 +264,8 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
         """List documents from Paperless-ngx with optional time filtering
         
         Args:
-            start_time: Filter documents modified after this time
-            end_time: Filter documents modified before this time
+            start_time: Filter documents modified after this time (None = no filter)
+            end_time: Filter documents modified before this time (None = no filter)
             
         Returns:
             List of document metadata dictionaries
@@ -273,6 +273,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
         all_docs = []
         page = 1
         page_size = 100  # Paperless-ngx default page size
+        total_count = None  # Track total count from API
         
         while True:
             params = {
@@ -280,16 +281,20 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
                 "page_size": page_size,
             }
             
-            # Add time filters if provided
+            # Add time filters only if provided (not None)
             # Paperless-ngx uses 'modified__gte' and 'modified__lte' for filtering
-            if start_time:
+            if start_time is not None:
                 # Format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS
                 params["modified__gte"] = start_time.strftime("%Y-%m-%dT%H:%M:%S")
-            if end_time:
+            if end_time is not None:
                 params["modified__lte"] = end_time.strftime("%Y-%m-%dT%H:%M:%S")
             
             try:
                 response = self._make_request("documents/", params=params)
+                
+                # Store total count from first response
+                if total_count is None and "count" in response:
+                    total_count = response["count"]
                 
                 results = response.get("results", [])
                 if not results:
@@ -305,15 +310,25 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
                 
             except Exception as e:
                 logging.error(f"Error listing documents (page {page}): {e}")
-                break
+                # Continue to next page instead of breaking
+                page += 1
+                continue
         
-        logging.info(f"Found {len(all_docs)} documents in Paperless-ngx")
+        # Log results and warn if counts don't match
+        logging.info(f"Paperless-ngx API reports count={total_count}, loaded={len(all_docs)} documents")
+        
+        if total_count is not None and total_count != len(all_docs):
+            logging.warning(
+                f"⚠️ Document count mismatch! API reported {total_count} documents "
+                f"but only loaded {len(all_docs)}. Some documents may be missing."
+            )
+        
         return all_docs
 
     def _yield_paperless_documents(
         self,
-        start: datetime,
-        end: datetime,
+        start: Optional[datetime],
+        end: Optional[datetime],
     ) -> GenerateDocumentsOutput:
         """Generate documents from Paperless-ngx
         
@@ -322,8 +337,8 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
         - Otherwise: download PDF (for re-OCR, attachments, or when content insufficient)
         
         Args:
-            start: Start datetime for filtering
-            end: End datetime for filtering
+            start: Start datetime for filtering (None = no start filter)
+            end: End datetime for filtering (None = no end filter)
             
         Yields:
             Batches of documents
@@ -441,15 +456,15 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
             yield batch
 
     def load_from_state(self) -> GenerateDocumentsOutput:
-        """Load all documents from Paperless-ngx
+        """Load all documents from Paperless-ngx (full import without time filters)
         
         Yields:
             Batches of documents
         """
         logging.debug(f"Loading all documents from Paperless-ngx server {self.base_url}")
         return self._yield_paperless_documents(
-            start=datetime(1970, 1, 1, tzinfo=timezone.utc),
-            end=datetime.now(timezone.utc),
+            start=None,
+            end=None,
         )
 
     def poll_source(
@@ -517,7 +532,7 @@ if __name__ == "__main__":
     connector = PaperlessNgxConnector(
         base_url=os.environ.get("PAPERLESS_BASE_URL", "http://localhost:8000"),
         verify_ssl=False,  # For local testing
-        min_content_length=100,  # Use OCR content if >= 100 characters
+        min_content_length=1,  # Use OCR content if >= 1 character (default)
     )
 
     try:
