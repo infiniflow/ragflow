@@ -170,7 +170,7 @@ class DocMetadataService:
 
         # Check if metadata index exists before searching to avoid 404 errors
         if not settings.docStoreConn.index_exist(index_name, ""):
-            logging.debug(f"Metadata index {index_name} does not exist, returning empty results")
+            logging.debug(f"Metadata index {index_name} does not exist, returning None")
             return None
 
         if condition is None:
