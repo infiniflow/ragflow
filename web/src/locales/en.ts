@@ -959,6 +959,8 @@ Example: Virtual Hosted Style`,
         'Whether to verify SSL certificates. Disable only for self-signed certificates in development.',
       paperless_ngxBatchSizeTip:
         'Number of documents to process in each batch. Adjust based on system resources.',
+      paperless_ngxOriginalsPathTip:
+        'Optional: Local filesystem path where Paperless-ngx originals are mounted (e.g., /mnt/paperless/originals). When configured, documents are read directly from the filesystem instead of downloading via API, improving performance.',
       google_driveMyDriveEmailsTip:
         'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:

@@ -853,6 +853,14 @@ export const DataSourceFormFields = {
       placeholder: 'Defaults to 2',
       tooltip: t('setting.paperless_ngxBatchSizeTip'),
     },
+    {
+      label: 'Originals Mount Path',
+      name: 'config.originals_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '/mnt/paperless/originals',
+      tooltip: t('setting.paperless_ngxOriginalsPathTip'),
+    },
   ],
 };
 
@@ -1142,6 +1150,7 @@ export const DataSourceFormDefaultValues = {
       base_url: '',
       verify_ssl: true,
       batch_size: 2,
+      originals_path: '',
       credentials: {
         api_token: '',
       },
