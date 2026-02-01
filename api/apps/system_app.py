@@ -35,7 +35,7 @@ from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
 from quart import jsonify
-from api.utils.health_utils import run_health_checks
+from api.utils.health_utils import run_health_checks, get_oceanbase_status
 from common import settings
 
 
@@ -180,6 +180,42 @@ def healthz():
 @manager.route("/ping", methods=["GET"])  # noqa: F821
 async def ping():
     return "pong", 200
+
+
+@manager.route("/oceanbase/status", methods=["GET"])  # noqa: F821
+@login_required
+def oceanbase_status():
+    """
+    Get OceanBase health status and performance metrics.
+    ---
+    tags:
+      - System
+    security:
+      - ApiKeyAuth: []
+    responses:
+      200:
+        description: OceanBase status retrieved successfully.
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              description: Status (alive/timeout).
+            message:
+              type: object
+              description: Detailed status information including health and performance metrics.
+    """
+    try:
+        status_info = get_oceanbase_status()
+        return get_json_result(data=status_info)
+    except Exception as e:
+        return get_json_result(
+            data={
+                "status": "error",
+                "message": f"Failed to get OceanBase status: {str(e)}"
+            },
+            code=500
+        )
 
 
 @manager.route("/new_token", methods=["POST"])  # noqa: F821

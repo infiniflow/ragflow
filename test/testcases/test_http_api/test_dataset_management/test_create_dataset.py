@@ -53,7 +53,7 @@ class TestRquest:
         BAD_CONTENT_TYPE = "text/xml"
         res = create_dataset(HttpApiAuth, {"name": "bad_content_type"}, headers={"Content-Type": BAD_CONTENT_TYPE})
         assert res["code"] == 101, res
-        assert "Field: <name>" in res["message"], res
+        assert res["message"] == f"Unsupported content type: Expected application/json, got {BAD_CONTENT_TYPE}", res
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -151,7 +151,7 @@ class TestDatasetCreate:
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_avatar_exceeds_limit_length(self, HttpApiAuth):
         payload = {"name": "avatar_exceeds_limit_length", "avatar": "a" * 65536}
         res = create_dataset(HttpApiAuth, payload)
@@ -200,7 +200,7 @@ class TestDatasetCreate:
         assert res["code"] == 0, res
         assert res["data"]["description"] == "description", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_description_exceeds_limit_length(self, HttpApiAuth):
         payload = {"name": "description_exceeds_limit_length", "description": "a" * 65536}
         res = create_dataset(HttpApiAuth, payload)
@@ -293,7 +293,7 @@ class TestDatasetCreate:
         assert res["code"] == 0, res
         assert res["data"]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", res
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "name, permission",
         [

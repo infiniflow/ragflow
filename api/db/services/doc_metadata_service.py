@@ -28,6 +28,8 @@ from typing import Dict, List, Optional
 from api.db.db_models import DB, Document
 from common import settings
 from common.metadata_utils import dedupe_list
+from api.db.db_models import Knowledgebase
+from common.doc_store.doc_store_base import OrderByExpr
 
 
 class DocMetadataService:
@@ -57,7 +59,7 @@ class DocMetadataService:
         Returns:
             Simple metadata dictionary
         """
-        if not flat_meta:
+        if not flat_meta or not isinstance(flat_meta, dict):
             return {}
 
         meta_fields = flat_meta.get('meta_fields')
@@ -158,9 +160,6 @@ class DocMetadataService:
         Returns:
             Search results from ES/Infinity
         """
-        from api.db.db_models import Knowledgebase
-        from common.doc_store.doc_store_base import OrderByExpr
-
         kb = Knowledgebase.get_by_id(kb_id)
         if not kb:
             return None
@@ -252,8 +251,6 @@ class DocMetadataService:
             True if successful, False otherwise
         """
         try:
-            from api.db.db_models import Knowledgebase
-
             # Get document with tenant_id (need to join with Knowledgebase)
             doc_query = Document.select(Document, Knowledgebase.tenant_id).join(
                 Knowledgebase, on=(Knowledgebase.id == Document.kb_id)
@@ -309,7 +306,14 @@ class DocMetadataService:
             if result:
                 logging.error(f"Failed to insert metadata for document {doc_id}: {result}")
                 return False
-
+            # Force ES refresh to make metadata immediately available for search
+            if not settings.DOC_ENGINE_INFINITY:
+                try:
+                    settings.docStoreConn.es.indices.refresh(index=index_name)
+                    logging.debug(f"Refreshed metadata index: {index_name}")
+                except Exception as e:
+                    logging.warning(f"Failed to refresh metadata index {index_name}: {e}")
+            
             logging.debug(f"Successfully inserted metadata for document {doc_id}")
             return True
 
@@ -334,8 +338,6 @@ class DocMetadataService:
             True if successful, False otherwise
         """
         try:
-            from api.db.db_models import Knowledgebase
-
             # Get document with tenant_id
             doc_query = Document.select(Document, Knowledgebase.tenant_id).join(
                 Knowledgebase, on=(Knowledgebase.id == Document.kb_id)
@@ -399,10 +401,7 @@ class DocMetadataService:
             True if successful (or no metadata to delete), False otherwise
         """
         try:
-            from api.db.db_models import Knowledgebase
-
             logging.debug(f"[METADATA DELETE] Starting metadata deletion for document: {doc_id}")
-
             # Get document with tenant_id
             doc_query = Document.select(Document, Knowledgebase.tenant_id).join(
                 Knowledgebase, on=(Knowledgebase.id == Document.kb_id)
@@ -499,8 +498,6 @@ class DocMetadataService:
             except Exception as e:
                 logging.warning(f"[DROP EMPTY TABLE] Count API failed, falling back to search: {e}")
                 # Fallback to search if count fails
-                from common.doc_store.doc_store_base import OrderByExpr
-
                 results = settings.docStoreConn.search(
                     select_fields=["id"],
                     highlight_fields=[],
@@ -569,8 +566,6 @@ class DocMetadataService:
             Metadata dictionary, empty dict if not found
         """
         try:
-            from api.db.db_models import Knowledgebase
-
             # Get document with tenant_id
             doc_query = Document.select(Document, Knowledgebase.tenant_id).join(
                 Knowledgebase, on=(Knowledgebase.id == Document.kb_id)
@@ -623,9 +618,6 @@ class DocMetadataService:
             Metadata dictionary in format: {field_name: {value: [doc_ids]}}
         """
         try:
-            from api.db.db_models import Knowledgebase
-            from common.doc_store.doc_store_base import OrderByExpr
-
             # Get tenant_id from first KB
             kb = Knowledgebase.get_by_id(kb_ids[0])
             if not kb:
@@ -702,9 +694,6 @@ class DocMetadataService:
             Metadata dictionary in format: {field_name: {value: [doc_ids]}}
         """
         try:
-            from api.db.db_models import Knowledgebase
-            from common.doc_store.doc_store_base import OrderByExpr
-
             # Get tenant_id from first KB
             kb = Knowledgebase.get_by_id(kb_ids[0])
             if not kb:
