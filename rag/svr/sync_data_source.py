@@ -1095,9 +1095,11 @@ class PaperlessNGX(SyncBase):
         verify_ssl = self.conf.get("verify_ssl", True)
         batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
         min_content_length = self.conf.get("min_content_length", 100)
+        originals_path = self.conf.get("originals_path")
 
         self.connector = PaperlessNgxConnector(
             base_url=base_url,
+            originals_path=originals_path,
             batch_size=batch_size,
             verify_ssl=verify_ssl,
             min_content_length=min_content_length,
