@@ -175,11 +175,16 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        selectFiles: '已选择 {{count}} 个文件',
+        type: '类型',
+        fieldNameInvalid: '字段名称只能包含字母或下划线。',
+        builtIn: '内置',
+        generation: '生成',
         toMetadataSettingTip: '在配置中设置自动元数据',
         toMetadataSetting: '生成设置',
         descriptionTip:
           '提供描述或示例来指导大语言模型为此字段提取值。如果留空，将依赖字段名称。',
-        restrictTDefinedValuesTip:
+        restrictDefinedValuesTip:
           '枚举模式：限制大语言模型提取的值只能匹配预设值。在下方定义值。',
         valueExists: '值已存在。确认合并重复项并组合所有关联文件。',
         fieldNameExists: '字段名已存在。确认合并重复项并组合所有关联文件。',
@@ -188,10 +193,10 @@ export default {
         fieldExists: '字段名已存在。',
         fieldSetting: '字段设置',
         changesAffectNewParses: '更改仅影响新的解析。',
-        editMetadataForDataset: '查看和编辑元数据 ',
+        // editMetadataForDataset: '查看和编辑元数据 ',
         restrictDefinedValues: '限制为已定义的值',
         metadataGenerationSettings: '元数据生成设置',
-        manageMetadataForDataset: '管理此数据集的元数据',
+        // manageMetadataForDataset: '管理此数据集的元数据',
         manageMetadata: '管理元数据',
         metadata: '元数据',
         values: '值',
@@ -377,6 +382,8 @@ export default {
     },
     knowledgeConfiguration: {
       settings: '设置',
+      autoMetadataTip:
+        '自动生成元数据。适用于解析新文件。现有文件需要重新解析才能更新（chunk将保留）。请注意，配置中指定的索引模型将消耗额外的 Token。',
       imageTableContextWindow: '图像与表格上下文窗口',
       imageTableContextWindowTip:
         '抓取图像与表格上下方的 N 个 token，为该 chunk 提供更丰富的背景上下文。',
@@ -393,7 +400,8 @@ export default {
       paddleocrOptions: 'PaddleOCR 选项',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'PaddleOCR 服务的 API 端点 URL',
-      paddleocrApiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
+      paddleocrApiUrlPlaceholder:
+        '例如：https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio 访问令牌',
       paddleocrAccessTokenTip: 'PaddleOCR API 的访问令牌（可选）',
       paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可选）',
@@ -742,8 +750,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '与存在惩罚类似，这减少了模型频繁重复相同单词的倾向。',
       maxTokens: '最大token数',
       maxTokensMessage: '最大token数是必填项',
-      maxTokensTip:
-        '这设置了模型输出的最大长度，以标记（单词或单词片段）的数量来衡量。',
+      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       quote: '显示引文',
@@ -823,7 +830,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       avatarHidden: '隐藏头像',
       locale: '地区',
       tocEnhance: '目录增强',
-      tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
+      tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
+      batchDeleteSessions: '批量删除',
+      deleteSelectedConfirm: '删除选中的 {count} 个会话？',
     },
     setting: {
       deleteModel: '删除模型',
@@ -925,8 +934,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       profileDescription: '在此更新您的照片和个人详细信息。',
       maxTokens: '最大token数',
       maxTokensMessage: '最大token数是必填项',
-      maxTokensTip:
-        '这设置了模型输出的最大长度，以标记（单词或单词片段）的数量来衡量。',
+      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       password: '密码',
@@ -1041,10 +1049,6 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       'eu-central-1': '欧洲 (法兰克福)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       'ap-southeast-2': '亚太地区 (悉尼)',
-      addHunyuanSID: '混元 Secret ID',
-      HunyuanSIDMessage: '请输入 Secret ID',
-      addHunyuanSK: '混元 Secret Key',
-      HunyuanSKMessage: '请输入 Secret Key',
       addTencentCloudSID: '腾讯云 Secret ID',
       TencentCloudSIDMessage: '请输入 Secret ID',
       addTencentCloudSK: '腾讯云 Secret Key',
@@ -1133,7 +1137,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         selectAlgorithm: '选择算法',
         modelNamePlaceholder: '例如：paddleocr-from-env-1',
         modelNameRequired: '模型名称为必填项',
-        apiUrlRequired: 'PaddleOCR API URL 为必填项'
+        apiUrlRequired: 'PaddleOCR API URL 为必填项',
       },
     },
     message: {

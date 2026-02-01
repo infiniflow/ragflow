@@ -21,7 +21,7 @@ import re
 from abc import ABC
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.constants import LLMType
-from api.db.services.document_service import DocumentService
+from api.db.services.doc_metadata_service import DocMetadataService
 from common.metadata_utils import apply_meta_data_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
@@ -125,7 +125,7 @@ class Retrieval(ToolBase, ABC):
 
         doc_ids = []
         if self._param.meta_data_filter != {}:
-            metas = DocumentService.get_meta_by_kbs(kb_ids)
+            metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
 
             def _resolve_manual_filter(flt: dict) -> dict:
                 pat = re.compile(self.variable_ref_patt)
@@ -174,7 +174,7 @@ class Retrieval(ToolBase, ABC):
 
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
-            kbinfos = settings.retriever.retrieval(
+            kbinfos = await settings.retriever.retrieval(
                 query,
                 embd_mdl,
                 [kb.tenant_id for kb in kbs],

@@ -275,7 +275,15 @@ export const useSendMessageWithSse = (
                 const d = val?.data;
                 if (typeof d !== 'boolean') {
                   setAnswer((prev) => {
-                    let newAnswer = (prev.answer || '') + (d.answer || '');
+                    const prevAnswer = prev.answer || '';
+                    const currentAnswer = d.answer || '';
+
+                    let newAnswer: string;
+                    if (prevAnswer && currentAnswer.startsWith(prevAnswer)) {
+                      newAnswer = currentAnswer;
+                    } else {
+                      newAnswer = prevAnswer + currentAnswer;
+                    }
 
                     if (d.start_to_think === true) {
                       newAnswer = newAnswer + '<think>';
@@ -400,7 +408,7 @@ export const useScrollToBottom = (
       const container = containerRef.current;
       container.scrollTo({
         top: container.scrollHeight - container.clientHeight,
-        behavior: 'smooth',
+        behavior: 'auto',
       });
     }
   }, [containerRef]);
@@ -536,6 +544,30 @@ export const useSelectDerivedMessages = () => {
     });
   }, []);
 
+  const addPrologue = useCallback((prologue: string) => {
+    setDerivedMessages((pre) => {
+      if (pre.length > 0) {
+        return [
+          {
+            ...pre[0],
+            content: prologue,
+          },
+          ...pre.slice(1),
+        ];
+      }
+
+      return [
+        {
+          role: MessageType.Assistant,
+          content: prologue,
+          id: buildMessageUuid({
+            role: MessageType.Assistant,
+          }),
+        },
+      ];
+    });
+  }, []);
+
   const removeLatestMessage = useCallback(() => {
     setDerivedMessages((pre) => {
       const nextMessages = pre?.slice(0, -2) ?? [];
@@ -607,6 +639,7 @@ export const useSelectDerivedMessages = () => {
     removeAllMessages,
     scrollToBottom,
     removeAllMessagesExceptFirst,
+    addPrologue,
   };
 };
 
