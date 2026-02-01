@@ -100,12 +100,12 @@ class PipelineOperationLogService(CommonService):
             referred_document_id = fake_document_ids[0]
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
-            logging.warning(f"Document for referred_document_id {referred_document_id} not found")
+            logging.debug(f"Document for referred_document_id {referred_document_id} not found")
             return None
         DocumentService.update_progress_immediately([document.to_dict()])
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
-            logging.warning(f"Document for referred_document_id {referred_document_id} not found")
+            logging.debug(f"Document for referred_document_id {referred_document_id} not found")
             return None
         if document.progress not in [1, -1]:
             return None

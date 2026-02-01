@@ -168,6 +168,11 @@ class DocMetadataService:
         tenant_id = kb.tenant_id
         index_name = cls._get_doc_meta_index_name(tenant_id)
 
+        # Check if metadata index exists before searching to avoid 404 errors
+        if not settings.docStoreConn.index_exist(index_name, ""):
+            logging.debug(f"Metadata index {index_name} does not exist, returning None")
+            return None
+
         if condition is None:
             condition = {"kb_id": kb_id}
 
