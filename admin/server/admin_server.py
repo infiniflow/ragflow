@@ -36,6 +36,7 @@ from config import load_configurations, SERVICE_CONFIGS
 from auth import init_default_admin, setup_auth
 from flask_session import Session
 from common.versions import get_ragflow_version
+from api.db.db_models import init_database_tables as init_web_db
 
 stop_event = threading.Event()
 
@@ -64,6 +65,8 @@ if __name__ == '__main__':
     login_manager.init_app(app)
     settings.init_settings()
     setup_auth(login_manager)
+    # Initialize database tables before querying them
+    init_web_db()
     init_default_admin()
     SERVICE_CONFIGS.configs = load_configurations(SERVICE_CONF)
 
