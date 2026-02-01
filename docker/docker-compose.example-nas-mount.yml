@@ -1,0 +1,154 @@
+# Example Docker Compose Configuration with NAS Paperless Document Mounting
+#
+# This file demonstrates how to add NAS storage mounts to RAGFlow
+# for accessing Paperless documents or other external document repositories.
+#
+# USAGE:
+# 1. First, mount your NAS on the host system (see docs/guides/mount_nas_storage.md)
+# 2. Copy relevant sections from this example to your docker-compose.yml
+# 3. Adjust paths to match your NAS mount points
+# 4. Restart RAGFlow: docker compose down && docker compose up -d
+
+include:
+  - ./docker-compose-base.yml
+
+services:
+  ragflow-cpu:
+    depends_on:
+      mysql:
+        condition: service_healthy
+    profiles:
+      - cpu
+    image: ${RAGFLOW_IMAGE}
+    command:
+      - --enable-adminserver
+    ports:
+      - ${SVR_WEB_HTTP_PORT}:80
+      - ${SVR_WEB_HTTPS_PORT}:443
+      - ${SVR_HTTP_PORT}:9380
+      - ${ADMIN_SVR_HTTP_PORT}:9381
+      - ${SVR_MCP_PORT}:9382
+    volumes:
+      # ===== STANDARD RAGFLOW VOLUMES =====
+      - ./ragflow-logs:/ragflow/logs
+      - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
+      - ./nginx/proxy.conf:/etc/nginx/proxy.conf
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
+      - ./entrypoint.sh:/ragflow/entrypoint.sh
+
+      # ===== NAS PAPERLESS DOCUMENT MOUNTS =====
+      # 
+      # OPTION 1: Mount entire Paperless directory
+      # Uncomment the line below and adjust the path on the left side
+      # - /mnt/nas-paperless:/ragflow/paperless:ro
+      #
+      # OPTION 2: Mount specific Paperless subdirectories
+      # Typical Paperless-ngx structure has:
+      #   - media/documents/ - Organized processed documents
+      #   - archive/ - Original document files
+      #   - export/ - Exported documents
+      #
+      # Uncomment and adjust paths as needed:
+      # - /mnt/nas-paperless/media/documents:/ragflow/paperless/media:ro
+      # - /mnt/nas-paperless/archive:/ragflow/paperless/archive:ro
+      # - /mnt/nas-paperless/export:/ragflow/paperless/export:ro
+      #
+      # OPTION 3: Mount any other network storage
+      # You can mount any NFS or SMB share that contains documents
+      # - /mnt/network-drive/documents:/ragflow/documents:ro
+      # - /mnt/shared-folder/pdfs:/ragflow/pdfs:ro
+      #
+      # Notes:
+      # - The path on the LEFT is on your HOST system
+      # - The path on the RIGHT is INSIDE the Docker container
+      # - ":ro" makes the mount read-only (recommended for safety)
+      # - Remove ":ro" if RAGFlow needs write access
+
+    env_file: .env
+    networks:
+      - ragflow
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  ragflow-gpu:
+    depends_on:
+      mysql:
+        condition: service_healthy
+    profiles:
+      - gpu
+    image: ${RAGFLOW_IMAGE}
+    command:
+      - --enable-adminserver
+    ports:
+      - ${SVR_WEB_HTTP_PORT}:80
+      - ${SVR_WEB_HTTPS_PORT}:443
+      - ${SVR_HTTP_PORT}:9380
+      - ${ADMIN_SVR_HTTP_PORT}:9381
+      - ${SVR_MCP_PORT}:9382
+    volumes:
+      # ===== STANDARD RAGFLOW VOLUMES =====
+      - ./ragflow-logs:/ragflow/logs
+      - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
+      - ./nginx/proxy.conf:/etc/nginx/proxy.conf
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
+      - ./entrypoint.sh:/ragflow/entrypoint.sh
+
+      # ===== NAS PAPERLESS DOCUMENT MOUNTS =====
+      # Same options as above - adjust according to your needs
+      # - /mnt/nas-paperless:/ragflow/paperless:ro
+
+    env_file: .env
+    networks:
+      - ragflow
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+# ===== ALTERNATIVE: DIRECT NFS VOLUME MOUNT =====
+# If you prefer to mount NFS directly in Docker (advanced):
+#
+# volumes:
+#   paperless-nfs:
+#     driver: local
+#     driver_opts:
+#       type: nfs
+#       o: addr=192.168.1.100,ro,nfsvers=4
+#       device: ":/volume1/paperless/media"
+#
+# Then in the service volumes section, use:
+#   - paperless-nfs:/ragflow/paperless:ro
+
+# ===== QUICK START CHECKLIST =====
+# 
+# [ ] 1. Mount your NAS on the host:
+#        sudo mkdir -p /mnt/nas-paperless
+#        sudo mount -t nfs <NAS_IP>:/path/to/paperless /mnt/nas-paperless
+#        OR
+#        sudo mount -t cifs //<NAS_IP>/paperless /mnt/nas-paperless -o username=<USER>,password=<PASS>
+#
+# [ ] 2. Verify the mount:
+#        ls -la /mnt/nas-paperless
+#
+# [ ] 3. Add volume mount to this file (uncomment one of the options above)
+#
+# [ ] 4. Restart RAGFlow:
+#        docker compose down
+#        docker compose up -d
+#
+# [ ] 5. Verify access from container:
+#        docker exec -it ragflow-cpu ls -la /ragflow/paperless
+#
+# [ ] 6. In RAGFlow UI, navigate to Knowledge Base and you can now
+#        access files from /ragflow/paperless directory
+
+# For more details, see: docs/guides/mount_nas_storage.md
