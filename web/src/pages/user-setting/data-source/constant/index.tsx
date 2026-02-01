@@ -16,6 +16,7 @@ import { S3Constant } from './s3-constant';
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   S3 = 's3',
+  PAPERLESS_NGX = 'paperless_ngx',
   NOTION = 'notion',
   DISCORD = 'discord',
   GOOGLE_DRIVE = 'google_drive',
@@ -63,6 +64,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'S3',
       description: t(`setting.${DataSourceKey.S3}Description`),
       icon: <SvgIcon name={'data-source/s3'} width={38} />,
+    },
+    [DataSourceKey.PAPERLESS_NGX]: {
+      name: 'Paperless-ngx',
+      description: t(`setting.${DataSourceKey.PAPERLESS_NGX}Description`),
+      icon: <SvgIcon name={'data-source/paperless-ngx'} width={38} />,
     },
     [DataSourceKey.NOTION]: {
       name: 'Notion',
@@ -815,6 +821,39 @@ export const DataSourceFormFields = {
       ],
     },
   ],
+  [DataSourceKey.PAPERLESS_NGX]: [
+    {
+      label: 'Paperless-ngx URL',
+      name: 'config.base_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://paperless.example.com',
+      tooltip: t('setting.paperless_ngxBaseUrlTip'),
+    },
+    {
+      label: 'API Token',
+      name: 'config.credentials.api_token',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.paperless_ngxApiTokenTip'),
+    },
+    {
+      label: 'Verify SSL',
+      name: 'config.verify_ssl',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+      tooltip: t('setting.paperless_ngxVerifySslTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: 'Defaults to 2',
+      tooltip: t('setting.paperless_ngxBatchSizeTip'),
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -1093,6 +1132,18 @@ export const DataSourceFormDefaultValues = {
         zendesk_subdomain: '',
         zendesk_email: '',
         zendesk_token: '',
+      },
+    },
+  },
+  [DataSourceKey.PAPERLESS_NGX]: {
+    name: '',
+    source: DataSourceKey.PAPERLESS_NGX,
+    config: {
+      base_url: '',
+      verify_ssl: true,
+      batch_size: 2,
+      credentials: {
+        api_token: '',
       },
     },
   },

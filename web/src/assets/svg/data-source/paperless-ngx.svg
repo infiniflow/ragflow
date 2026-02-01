@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+  <!-- Document stack icon representing paperless document management -->
+  <path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" opacity="0.3"/>
+  <path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm0 2v16h10V4H7z"/>
+  <path d="M9 7h6v2H9V7zm0 4h6v2H9v-2zm0 4h4v2H9v-2z"/>
+  <!-- Small "ngx" badge -->
+  <circle cx="19" cy="19" r="3.5" fill="#22c55e"/>
+  <text x="19" y="20.5" font-family="Arial, sans-serif" font-size="3.5" font-weight="bold" fill="white" text-anchor="middle">ngx</text>
+</svg>

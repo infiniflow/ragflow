@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paperless-ngx UI Mockup - RAGFlow</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 40px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: #1a1a1a;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        /* Data Source List */
+        .datasource-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        
+        .datasource-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        
+        .datasource-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: translateY(-2px);
+        }
+        
+        .datasource-card.highlighted {
+            border-color: #22c55e;
+        }
+        
+        .datasource-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .datasource-icon {
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .paperless-icon {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            border-radius: 6px;
+            color: white;
+            font-weight: bold;
+            font-size: 10px;
+            padding: 4px 6px;
+        }
+        
+        .datasource-name {
+            font-weight: 600;
+            font-size: 16px;
+            color: #1a1a1a;
+        }
+        
+        .datasource-description {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .modal {
+            background: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        .modal-header {
+            padding: 24px;
+            border-bottom: 1px solid #e5e5e5;
+        }
+        
+        .modal-title-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+        
+        .modal-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+        
+        .modal-body {
+            padding: 24px;
+            max-height: calc(90vh - 180px);
+            overflow-y: auto;
+        }
+        
+        .form-field {
+            margin-bottom: 24px;
+        }
+        
+        .form-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #1a1a1a;
+            margin-bottom: 8px;
+        }
+        
+        .required {
+            color: #ef4444;
+        }
+        
+        .tooltip-icon {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #e5e5e5;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #666;
+            cursor: help;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d4d4d4;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: #22c55e;
+            box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1);
+        }
+        
+        .form-input::placeholder {
+            color: #a3a3a3;
+        }
+        
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .checkbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        
+        .checkbox-label {
+            font-size: 14px;
+            color: #1a1a1a;
+            cursor: pointer;
+        }
+        
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid #e5e5e5;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+        }
+        
+        .btn-cancel {
+            background: #f5f5f5;
+            color: #1a1a1a;
+        }
+        
+        .btn-cancel:hover {
+            background: #e5e5e5;
+        }
+        
+        .btn-confirm {
+            background: #22c55e;
+            color: white;
+        }
+        
+        .btn-confirm:hover {
+            background: #16a34a;
+        }
+        
+        .info-box {
+            background: #f0fdf4;
+            border: 1px solid #22c55e;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 30px;
+        }
+        
+        .info-box h3 {
+            color: #16a34a;
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+        
+        .info-box p {
+            color: #166534;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Paperless-ngx UI Integration - Visual Mockup</h1>
+        <p class="subtitle">This mockup demonstrates how the Paperless-ngx data source appears in RAGFlow</p>
+        
+        <h2 style="margin: 30px 0 20px 0;">1. Data Source Selection Screen</h2>
+        <div class="datasource-grid">
+            <!-- Existing connectors -->
+            <div class="datasource-card">
+                <div class="datasource-header">
+                    <div class="datasource-icon">
+                        <svg width="38" height="38" viewBox="0 0 24 24" fill="currentColor" style="color: #e67e22;">
+                            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                            <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+                        </svg>
+                    </div>
+                    <div class="datasource-name">S3</div>
+                </div>
+                <div class="datasource-description">Connect to Amazon S3 or compatible storage to sync files.</div>
+            </div>
+            
+            <div class="datasource-card">
+                <div class="datasource-header">
+                    <div class="datasource-icon">
+                        <svg width="38" height="38" viewBox="0 0 24 24" fill="currentColor" style="color: #3498db;">
+                            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+                        </svg>
+                    </div>
+                    <div class="datasource-name">Notion</div>
+                </div>
+                <div class="datasource-description">Connect your Notion workspace to sync pages and databases.</div>
+            </div>
+            
+            <!-- Paperless-ngx - HIGHLIGHTED -->
+            <div class="datasource-card highlighted">
+                <div class="datasource-header">
+                    <div class="datasource-icon">
+                        <div class="paperless-icon">📄 ngx</div>
+                    </div>
+                    <div class="datasource-name">Paperless-ngx</div>
+                </div>
+                <div class="datasource-description">Connect to Paperless-ngx to sync and index your document management system.</div>
+            </div>
+            
+            <div class="datasource-card">
+                <div class="datasource-header">
+                    <div class="datasource-icon">
+                        <svg width="38" height="38" viewBox="0 0 24 24" fill="currentColor" style="color: #9b59b6;">
+                            <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/>
+                        </svg>
+                    </div>
+                    <div class="datasource-name">Google Drive</div>
+                </div>
+                <div class="datasource-description">Connect your Google Drive via OAuth and sync specific folders.</div>
+            </div>
+        </div>
+        
+        <h2 style="margin: 40px 0 20px 0;">2. Configuration Modal</h2>
+        <div class="modal-overlay" style="position: relative; background: transparent;">
+            <div class="modal">
+                <div class="modal-header">
+                    <div class="modal-title-group">
+                        <div class="paperless-icon">📄 ngx</div>
+                        <div class="modal-title">Add Paperless-ngx Data Source</div>
+                    </div>
+                </div>
+                
+                <div class="modal-body">
+                    <div class="form-field">
+                        <label class="form-label">
+                            Name <span class="required">*</span>
+                        </label>
+                        <input type="text" class="form-input" value="My Paperless Documents" placeholder="Enter a name for this connector">
+                    </div>
+                    
+                    <div class="form-field">
+                        <label class="form-label">
+                            Paperless-ngx URL <span class="required">*</span>
+                            <span class="tooltip-icon" title="The base URL of your Paperless-ngx instance">ⓘ</span>
+                        </label>
+                        <input type="text" class="form-input" value="https://paperless.example.com" placeholder="https://paperless.example.com">
+                    </div>
+                    
+                    <div class="form-field">
+                        <label class="form-label">
+                            API Token <span class="required">*</span>
+                            <span class="tooltip-icon" title="Generate an API token in Paperless-ngx: Settings → API Tokens">ⓘ</span>
+                        </label>
+                        <input type="password" class="form-input" value="••••••••••••••••" placeholder="Enter your API token">
+                    </div>
+                    
+                    <div class="form-field">
+                        <div class="checkbox-wrapper">
+                            <input type="checkbox" class="checkbox" id="verify-ssl" checked>
+                            <label class="checkbox-label" for="verify-ssl">
+                                Verify SSL
+                                <span class="tooltip-icon" title="Disable only for self-signed certificates in development">ⓘ</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="form-field">
+                        <label class="form-label">
+                            Batch Size
+                            <span class="tooltip-icon" title="Number of documents to process in each batch">ⓘ</span>
+                        </label>
+                        <input type="number" class="form-input" value="10" placeholder="Defaults to 2">
+                    </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button class="btn btn-cancel">Cancel</button>
+                    <button class="btn btn-confirm">Confirm</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="info-box">
+            <h3>✅ UI Integration Complete</h3>
+            <p>
+                The Paperless-ngx data source is now fully integrated into RAGFlow's UI. Users can:
+                <br>• Select Paperless-ngx from the data sources list
+                <br>• Configure connection settings with an intuitive form
+                <br>• See helpful tooltips for each field
+                <br>• Validate inputs before saving
+                <br>• Start syncing documents immediately after setup
+            </p>
+        </div>
+    </div>
+</body>
+</html>

@@ -25,9 +25,9 @@ from quart import request, make_response
 from google_auth_oauthlib.flow import Flow
 
 from api.db import InputType
-from api.db.services.connector_service import ConnectorService, SyncLogsService
+from api.db.services.connector_service import ConnectorService, SyncLogsService, Connector2KbService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
-from common.constants import RetCode, TaskStatus
+from common.constants import RetCode, TaskStatus, FileSource
 from common.data_source.config import GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI, GMAIL_WEB_OAUTH_REDIRECT_URI, BOX_WEB_OAUTH_REDIRECT_URI, DocumentSource
 from common.data_source.google_util.constant import WEB_OAUTH_POPUP_TEMPLATE, GOOGLE_SCOPES
 from common.misc_utils import get_uuid
@@ -41,8 +41,30 @@ from box_sdk_gen import BoxOAuth, OAuthConfig, GetAuthorizeUrlOptions
 async def set_connector():
     req = await get_request_json()
     if req.get("id"):
+        # Updating existing connector
         conn = {fld: req[fld] for fld in ["prune_freq", "refresh_freq", "config", "timeout_secs"] if fld in req}
         ConnectorService.update_by_id(req["id"], conn)
+        
+        # For Paperless NGX, trigger sync when config is changed
+        e, connector_obj = ConnectorService.get_by_id(req["id"])
+        if e and connector_obj.source == FileSource.PAPERLESS_NGX:
+            # Find all KBs linked to this connector and schedule sync for each
+            for c2k in Connector2KbService.query(connector_id=req["id"]):
+                task = SyncLogsService.get_latest_task(req["id"], c2k.kb_id)
+                
+                # Skip if a task is already running or scheduled
+                if task and task.status in [TaskStatus.RUNNING, TaskStatus.SCHEDULE]:
+                    logging.info(f"Skipping sync for Paperless NGX connector {req['id']} KB {c2k.kb_id} - task already {task.status}")
+                    continue
+                
+                if task and task.status == TaskStatus.DONE:
+                    # Schedule incremental sync from last poll end time
+                    SyncLogsService.schedule(req["id"], c2k.kb_id, task.poll_range_end, total_docs_indexed=task.total_docs_indexed)
+                    logging.info(f"Scheduled incremental sync for Paperless NGX connector {req['id']} KB {c2k.kb_id} due to config change")
+                else:
+                    # No previous sync or failed/canceled, schedule from beginning
+                    SyncLogsService.schedule(req["id"], c2k.kb_id, reindex=True)
+                    logging.info(f"Scheduled initial sync for Paperless NGX connector {req['id']} KB {c2k.kb_id} due to config change")
     else:
         req["id"] = get_uuid()
         conn = {
