@@ -31,6 +31,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
     def __init__(
         self,
         base_url: str,
+        originals_path: Optional[str] = None,
         batch_size: int = INDEX_BATCH_SIZE,
         verify_ssl: bool = True,
         min_content_length: int = 1,
@@ -50,6 +51,15 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
         self.batch_size = batch_size
         self.verify_ssl = verify_ssl
         self.min_content_length = min_content_length
+
+        from pathlib import Path
+        self.originals_path = Path(originals_path) if originals_path else None
+        if self.originals_path:
+            if self.originals_path.exists():
+                logging.info(f"✓ Originals mount available: {self.originals_path}")
+            else:
+                logging.warning(f"⚠️ Originals path not found: {self.originals_path}")
+        
         self.api_token: Optional[str] = None
         self._allow_images: bool | None = None
         self.size_threshold: int | None = BLOB_STORAGE_SIZE_THRESHOLD
@@ -255,6 +265,56 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
             raise ConnectorValidationError(f"Failed to download document {document_id}: {e}")
             logging.error(f"Failed to download document {document_id}: {e}")
             raise
+            
+    def _get_pdf_from_mount(self, doc_id: int, original_filename: str) -> Optional[bytes]:
+        """Get PDF from mounted filesystem (fast, no network)
+    
+        Paperless stores originals as: /originals/<doc_id>.pdf
+    
+        Args:
+            doc_id: Paperless document ID
+            original_filename: Original filename from API metadata
+        
+        Returns:
+            PDF bytes if found on filesystem, None if not found
+        """
+        from pathlib import Path
+    
+        # Check if mount is configured and exists
+        if not self.originals_path or not self.originals_path.exists():
+            return None
+        
+        # Paperless naming convention: <id>.pdf or <id>.<ext>
+        possible_paths = [
+            self.originals_path / f"{doc_id}.pdf",
+            self.originals_path / f"{doc_id}.PDF",
+        ]
+    
+        # Also try with original extension if different
+        if original_filename:
+            ext = get_file_ext(original_filename)
+            if ext and ext.lower() != ".pdf":
+                possible_paths.append(self.originals_path / f"{doc_id}{ext}")
+    
+        # Try each possible path
+        for pdf_path in possible_paths:
+            if pdf_path.exists():
+                try:
+                    with open(pdf_path, 'rb') as f:
+                        content = f.read()
+                
+                    logging.debug(
+                        f"✓ Mount: Loaded doc {doc_id} from {pdf_path.name} ({len(content)} bytes)"
+                    )
+                    return content
+                
+                except Exception as e:
+                    logging.warning(f"Failed to read {pdf_path}: {e}")
+                    continue
+    
+        # Not found on filesystem
+        logging.debug(f"Doc {doc_id} not in mount, will use API")
+        return None
 
     def _list_documents(
         self,
@@ -378,26 +438,35 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
                 use_ocr_content = ocr_content and len(ocr_content) >= self.min_content_length
                 
                 if use_ocr_content:
-                    # Use OCR content from Paperless API (95% of cases)
+                    # Use OCR content from Paperless API
                     logging.debug(f"Using OCR content for document {doc_id} - {title} (length: {len(ocr_content)} chars)")
-                    
-                    # Create a text blob from OCR content
+    
                     blob = ocr_content.encode('utf-8')
                     size_bytes = len(blob)
-                    
-                    # Override extension to .txt since we're using text content
                     file_ext = ".txt"
+                    source_type = "api_ocr"  # ← NEU
                 else:
-                    # Fallback: Download PDF for re-OCR, attachments, or when content too short
-                    reason = "empty" if not ocr_content else f"too short ({len(ocr_content)} < {self.min_content_length})"
-                    logging.info(f"Downloading PDF for document {doc_id} - {title} (OCR content {reason})")
-                    
-                    blob = self._download_document(doc_id)
-                    
+                    # Try mount first, then API fallback
+                    blob = self._get_pdf_from_mount(doc_id, original_filename)  # ← NEU!
+    
+                    if blob:
+                        # Got from mount - fast!
+                        logging.debug(f"Using PDF from mount for {doc_id}")
+                        file_ext = get_file_ext(original_filename)
+                        source_type = "mount_pdf"  # ← NEU
+                    else:
+                        # API fallback
+                        reason = "empty" if not ocr_content else f"too short ({len(ocr_content)} < {self.min_content_length})"
+                        logging.info(f"Downloading PDF via API for {doc_id} (OCR {reason})")
+        
+                        blob = self._download_document(doc_id)
+                        file_ext = get_file_ext(original_filename)
+                        source_type = "api_download"  # ← NEU
+    
                     if not blob or len(blob) == 0:
                         logging.warning(f"Downloaded content is empty for document {doc_id}")
                         continue
-                    
+    
                     size_bytes = len(blob)
                 
                 # Check size threshold
@@ -414,7 +483,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
                 metadata = {
                     "title": title,
                     "original_filename": original_filename,
-                    "source_type": "ocr_content" if use_ocr_content else "pdf_download",
+                    "source_type": source_type,
                 }
                 
                 # Add optional metadata fields
@@ -531,6 +600,7 @@ if __name__ == "__main__":
 
     connector = PaperlessNgxConnector(
         base_url=os.environ.get("PAPERLESS_BASE_URL", "http://localhost:8000"),
+        originals_path="/mnt/nas-docker/paperless/data/media/documents/originals",
         verify_ssl=False,  # For local testing
         min_content_length=1,  # Use OCR content if >= 1 character (default)
     )
