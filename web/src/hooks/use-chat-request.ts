@@ -29,6 +29,43 @@ import {
 } from './logic-hooks';
 import { useHandleSearchStrChange } from './logic-hooks/use-change-search';
 
+const removeKnowledgePlaceholderLine = (text: string) => {
+  if (!text?.includes('{knowledge}')) return text;
+  const lines = text.split(/\r?\n/);
+  const filtered = lines.filter((line) => !line.includes('{knowledge}'));
+  return filtered
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
+};
+
+const sanitizeDialogPayload = (params: Partial<IDialog>) => {
+  const promptConfig = params.prompt_config;
+  if (!promptConfig) return params;
+
+  const kbIds = params.kb_ids ?? [];
+  const hasKb = Array.isArray(kbIds) && kbIds.length > 0;
+  const hasTavily = !!promptConfig.tavily_api_key;
+  const systemText = promptConfig.system ?? '';
+
+  if (!hasKb && !hasTavily && systemText.includes('{knowledge}')) {
+    const nextParameters = Array.isArray(promptConfig.parameters)
+      ? promptConfig.parameters.filter((p) => p?.key !== 'knowledge')
+      : promptConfig.parameters;
+
+    return {
+      ...params,
+      prompt_config: {
+        ...promptConfig,
+        system: removeKnowledgePlaceholderLine(systemText),
+        parameters: nextParameters?.length ? nextParameters : [],
+      },
+    };
+  }
+
+  return params;
+};
+
 export const enum ChatApiAction {
   FetchDialogList = 'fetchDialogList',
   RemoveDialog = 'removeDialog',
@@ -150,7 +187,9 @@ export const useSetDialog = () => {
   } = useMutation({
     mutationKey: [ChatApiAction.SetDialog],
     mutationFn: async (params: Partial<IDialog>) => {
-      const { data } = await chatService.setDialog(params);
+      const { data } = await chatService.setDialog(
+        sanitizeDialogPayload(params),
+      );
       if (data.code === 0) {
         queryClient.invalidateQueries({
           exact: false,
