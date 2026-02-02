@@ -71,6 +71,11 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
         self.size_threshold: int | None = BLOB_STORAGE_SIZE_THRESHOLD
         self.session: Optional[requests.Session] = None
 
+        # Cache for tag and document_type lookups
+        self._tag_cache: dict[int, str] = {}  # {tag_id: tag_name}
+        self._document_type_cache: dict[int, str] = {}  # {type_id: type_name}
+        self._correspondent_cache: dict[int, str] = {}  # {correspondent_id: correspondent_name}
+
     def _normalize_url(self, url: str) -> str:
         """Normalize and validate the base URL
         
@@ -271,7 +276,115 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
             raise ConnectorValidationError(f"Failed to download document {document_id}: {e}")
             logging.error(f"Failed to download document {document_id}: {e}")
             raise
-            
+    # ← NEU HINZUGEFÜGT
+    def _load_tag_cache(self) -> None:
+        """Load all tags from Paperless-ngx API and populate cache"""
+        if self._tag_cache:
+            return  # Already loaded
+    
+        try:
+            logging.debug("Loading tag cache from Paperless-ngx API...")
+            response = self._make_request("tags/", params={"page_size": 1000})
+        
+            for tag in response.get("results", []):
+                tag_id = tag.get("id")
+                tag_name = tag.get("name")
+                if tag_id and tag_name:
+                    self._tag_cache[tag_id] = tag_name
+        
+            logging.info(f"✓ Loaded {len(self._tag_cache)} tags into cache")
+        except Exception as e:
+            logging.warning(f"Could not load tag cache: {e}")
+
+    def _load_document_type_cache(self) -> None:
+        """Load all document types from Paperless-ngx API and populate cache"""
+        if self._document_type_cache:
+            return  # Already loaded
+    
+        try:
+            logging.debug("Loading document type cache from Paperless-ngx API...")
+            response = self._make_request("document_types/", params={"page_size": 1000})
+        
+            for doc_type in response.get("results", []):
+                type_id = doc_type.get("id")
+                type_name = doc_type.get("name")
+                if type_id and type_name:
+                    self._document_type_cache[type_id] = type_name
+        
+            logging.info(f"✓ Loaded {len(self._document_type_cache)} document types into cache")
+        except Exception as e:
+            logging.warning(f"Could not load document type cache: {e}")
+    def _load_correspondent_cache(self) -> None:
+        """Load all correspondents from Paperless-ngx API and populate cache"""
+        if self._correspondent_cache:
+            return  # Already loaded
+    
+        try:
+            logging.debug("Loading correspondent cache from Paperless-ngx API...")
+            response = self._make_request("correspondents/", params={"page_size": 1000})
+        
+            for correspondent in response.get("results", []):
+                corr_id = correspondent.get("id")
+                corr_name = correspondent.get("name")
+                if corr_id and corr_name:
+                    self._correspondent_cache[corr_id] = corr_name
+        
+            logging.info(f"✓ Loaded {len(self._correspondent_cache)} correspondents into cache")
+        except Exception as e:
+            logging.warning(f"Could not load correspondent cache: {e}")
+
+    def _get_tag_names(self, tag_ids: list[int]) -> str:
+        """Convert tag IDs to comma-separated tag names using cache"""
+        if not tag_ids:
+            return ""
+    
+        # Load cache if not already loaded
+        self._load_tag_cache()
+    
+        tag_names = []
+        for tag_id in tag_ids:
+            name = self._tag_cache.get(tag_id)
+            if name:
+                tag_names.append(name)
+            else:
+                logging.warning(f"Tag ID {tag_id} not found in cache")
+    
+        return ",".join(tag_names)
+
+    def _get_document_type_name(self, type_id: int) -> str:
+        """Convert document type ID to name using cache"""
+        if not type_id:
+            return ""
+    
+        # Load cache if not already loaded
+        self._load_document_type_cache()
+    
+        name = self._document_type_cache.get(type_id)
+        if not name:
+            logging.warning(f"Document type ID {type_id} not found in cache")
+            return ""
+    
+        return name 
+    def _get_correspondent_name(self, correspondent_id: int) -> str:
+        """Convert correspondent ID to name using cache    
+        Args:
+            correspondent_id: Correspondent ID        
+        Returns:
+            Correspondent name, or empty string if not found
+        """
+        if not correspondent_id:
+            return ""
+    
+        # Load cache if not already loaded
+        self._load_correspondent_cache()
+        
+        name = self._correspondent_cache.get(correspondent_id)
+        if not name:
+            logging.warning(f"Correspondent ID {correspondent_id} not found in cache")
+            return ""
+    
+        return name
+
     def _get_pdf_from_mount(self, doc_id: int, original_filename: str) -> Optional[bytes]:
         """Get PDF from mounted filesystem (fast, no network)
     
@@ -495,17 +608,29 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
                 # Add optional metadata fields
                 if doc_meta.get("correspondent"):
                     metadata["correspondent"] = str(doc_meta["correspondent"])
+                # Add document_type NAME (not ID)
                 if doc_meta.get("document_type"):
-                    metadata["document_type"] = str(doc_meta["document_type"])
+                    doc_type_id = doc_meta["document_type"]
+                    doc_type_name = self._get_document_type_name(doc_type_id)
+                    if doc_type_name:
+                        metadata["document_type"] = doc_type_name
+                    else:
+                        metadata["document_type"] = str(doc_type_id)  # Fallback to ID
+                # Add tag NAMES (not IDs)
                 if doc_meta.get("tags"):
-                    # Tags is a list of IDs, could fetch tag names but keep it simple
-                    metadata["tags"] = ",".join(str(t) for t in doc_meta["tags"])
+                    tag_ids = doc_meta["tags"]
+                    tag_names = self._get_tag_names(tag_ids)
+                    if tag_names:
+                        metadata["tags"] = tag_names
+                    else:
+                        # Fallback to IDs if no names found
+                        metadata["tags"] = ",".join(str(t) for t in tag_ids)
                 if doc_meta.get("created"):
                     metadata["created"] = doc_meta["created"]
                 if ocr_content and not use_ocr_content:
                     # Store truncated content for reference even when downloading PDF
                     metadata["ocr_content_preview"] = ocr_content[:500]
-                
+
                 batch.append(
                     Document(
                         id=f"paperless_ngx:{self.base_url}:{doc_id}",
