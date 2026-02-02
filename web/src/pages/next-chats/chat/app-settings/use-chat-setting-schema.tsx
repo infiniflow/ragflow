@@ -38,23 +38,38 @@ export function useChatSettingSchema() {
     toc_enhance: z.boolean().optional(),
   });
 
-  const formSchema = z.object({
-    name: z.string().min(1, { message: t('assistantNameMessage') }),
-    icon: z.string(),
-    description: z.string().optional(),
-    kb_ids: z.array(z.string()).min(0, {
-      message: t('knowledgeBasesMessage'),
-    }),
-    prompt_config: promptConfigSchema,
-    ...rerankFormSchema,
-    llm_setting: z.object(LlmSettingFieldSchema),
-    ...LlmSettingEnabledSchema,
-    llm_id: z.string().optional(),
-    ...vectorSimilarityWeightSchema,
-    ...similarityThresholdSchema,
-    ...topnSchema,
-    ...MetadataFilterSchema,
-  });
+  const formSchema = z
+    .object({
+      name: z.string().min(1, { message: t('assistantNameMessage') }),
+      icon: z.string(),
+      description: z.string().optional(),
+      kb_ids: z.array(z.string()).min(0, {
+        message: t('knowledgeBasesMessage'),
+      }),
+      prompt_config: promptConfigSchema,
+      ...rerankFormSchema,
+      llm_setting: z.object(LlmSettingFieldSchema),
+      ...LlmSettingEnabledSchema,
+      llm_id: z.string().optional(),
+      ...vectorSimilarityWeightSchema,
+      ...similarityThresholdSchema,
+      ...topnSchema,
+      ...MetadataFilterSchema,
+    })
+    .superRefine((values, ctx) => {
+      const systemPrompt = values.prompt_config?.system ?? '';
+      const hasKnowledgePlaceholder = systemPrompt.includes('{knowledge}');
+      const hasKb = (values.kb_ids ?? []).length > 0;
+      const hasTavily = !!values.prompt_config?.tavily_api_key;
+
+      if (hasKnowledgePlaceholder && !hasKb && !hasTavily) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: t('knowledgeBasesMessage'),
+          path: ['kb_ids'],
+        });
+      }
+    });
 
   return formSchema;
 }
