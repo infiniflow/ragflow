@@ -549,7 +549,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
                 modified = datetime.now(timezone.utc)
             
             # Get file extension from original filename
-            file_ext = get_file_ext(original_filename)
+            file_ext = get_file_ext(original_filename) if original_filename else ".pdf"
             
             try:
                 # Get OCR content from API
