@@ -79,7 +79,7 @@ export const AvailableModels: FC<{
   };
 
   return (
-    <div className=" text-text-primary h-full p-4">
+    <div className=" text-text-primary h-full p-4" data-testid="available-models-section">
       <div className="text-text-primary text-base mb-4">
         {t('availableModels')}
       </div>
@@ -134,6 +134,8 @@ export const AvailableModels: FC<{
             key={model.name}
             className=" border border-border-button rounded-lg p-3 hover:bg-bg-input transition-colors group"
             onClick={() => handleAddModel(model.name)}
+            data-testid="available-model-card"
+            data-provider={model.name}
           >
             <div className="flex items-center space-x-3 mb-3">
               <LlmIcon name={model.name} imgClass="h-8 w-8 text-text-primary" />

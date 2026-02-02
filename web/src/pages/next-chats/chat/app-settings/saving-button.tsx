@@ -12,7 +12,7 @@ export function SavingButton({ loading }: SaveButtonProps) {
     <ButtonLoading
       type="submit"
       loading={loading}
-      data-testid="dialog-set-save"
+      data-testid="chat-settings-save"
     >
       {t('common.save')}
     </ButtonLoading>

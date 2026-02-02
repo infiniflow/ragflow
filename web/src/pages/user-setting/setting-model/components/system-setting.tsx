@@ -74,7 +74,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
         options: modelOptions as SelectWithSearchFlagOptionType[],
         tooltip: t('chatModelTip'),
         triggerTestId: 'default-llm-combobox',
-        listTestId: 'combobox-options',
+        listTestId: 'default-llm-options',
         optionTestId: 'combobox-option',
       },
       {
@@ -86,7 +86,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
         ] as SelectWithSearchFlagOptionType[],
         tooltip: t('embeddingModelTip'),
         triggerTestId: 'default-embedding-combobox',
-        listTestId: 'combobox-options',
+        listTestId: 'default-embedding-options',
         optionTestId: 'combobox-option',
       },
       {

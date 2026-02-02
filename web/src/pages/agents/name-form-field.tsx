@@ -20,7 +20,7 @@ export function NameFormField() {
       <Input
         placeholder={t('common.namePlaceholder')}
         autoComplete="off"
-        data-testid="app-name-input"
+        data-testid="agent-name-input"
       />
     </RAGFlowFormItem>
   );

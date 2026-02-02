@@ -131,7 +131,7 @@ export function KnowledgeBaseFormField({
               maxCount={100}
               defaultValue={field.value}
               showSelectAll={false}
-              data-testid="datasets-combobox"
+              data-testid="chat-datasets-combobox"
               optionsTestId="datasets-options"
               optionTestId="datasets-option"
               optionTestIdPrefix="datasets-option-"

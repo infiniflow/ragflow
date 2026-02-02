@@ -30,7 +30,7 @@ export function UploadAgentDialog({
             type="submit"
             form={TagRenameId}
             loading={loading}
-            data-testid="app-save"
+            data-testid="agent-import-save"
           >
             {t('common.save')}
           </ButtonLoading>

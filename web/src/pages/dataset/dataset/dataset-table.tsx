@@ -153,6 +153,8 @@ export function DatasetTable({
                 key={row.id}
                 data-state={row.getIsSelected() && 'selected'}
                 className="group"
+                data-testid="document-row"
+                data-doc-name={row.original?.name}
               >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell

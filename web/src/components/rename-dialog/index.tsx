@@ -25,7 +25,7 @@ export function RenameDialog({
     <Dialog open onOpenChange={hideModal}>
       <DialogContent
         className="sm:max-w-[425px]"
-        data-testid="create-app-modal"
+        data-testid="rename-modal"
       >
         <DialogHeader>
           <DialogTitle>{title || t('common.rename')}</DialogTitle>
@@ -40,7 +40,7 @@ export function RenameDialog({
             type="submit"
             form={TagRenameId}
             loading={loading}
-            data-testid="app-save"
+            data-testid="rename-save"
           >
             {t('common.save')}
           </ButtonLoading>
