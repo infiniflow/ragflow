@@ -36,7 +36,6 @@ from deepdoc.parser.figure_parser import adv_vision_figure_parser_wrapper, visio
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
-from common.float_utils import normalize_overlapped_percent
 from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import (
     concat_img,
