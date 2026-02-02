@@ -158,14 +158,19 @@ class DocMetadataService:
             limit: Max results to return
 
         Returns:
-            Search results from ES/Infinity
+            Search results from ES/Infinity, or empty list if index doesn't exist
         """
         kb = Knowledgebase.get_by_id(kb_id)
         if not kb:
-            return None
+            return []
 
         tenant_id = kb.tenant_id
         index_name = cls._get_doc_meta_index_name(tenant_id)
+
+        # Check if metadata index exists before searching
+        if not settings.docStoreConn.index_exist(index_name, ""):
+            logging.debug(f"Metadata index {index_name} does not exist, returning empty results")
+            return []
 
         if condition is None:
             condition = {"kb_id": kb_id}
@@ -288,6 +293,9 @@ class DocMetadataService:
                 # Both ES and Infinity now use per-tenant metadata tables
                 result = settings.docStoreConn.create_doc_meta_idx(index_name)
                 logging.debug(f"Table creation result: {result}")
+                if result is False:
+                    logging.error(f"Failed to create metadata table {index_name}")
+                    return False
             else:
                 logging.debug(f"Metadata table already exists: {index_name}")
 
