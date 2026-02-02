@@ -2,9 +2,8 @@
 Tests for migration verification.
 """
 
-import json
 import pytest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 from es_ob_migration.verify import MigrationVerifier, VerificationResult
 
