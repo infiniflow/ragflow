@@ -48,6 +48,9 @@ export type SelectWithSearchFlagProps = {
   disabled?: boolean;
   placeholder?: string;
   emptyData?: string;
+  triggerTestId?: string;
+  listTestId?: string;
+  optionTestId?: string;
 };
 
 function findLabelWithoutOptions(
@@ -80,6 +83,9 @@ export const SelectWithSearch = forwardRef<
       disabled = false,
       placeholder = t('common.selectPlaceholder'),
       emptyData = t('common.noDataFound'),
+      triggerTestId,
+      listTestId,
+      optionTestId,
     },
     ref,
   ) => {
@@ -158,6 +164,7 @@ export const SelectWithSearch = forwardRef<
               '!bg-bg-input hover:bg-background border-border-button w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto group',
               triggerClassName,
             )}
+            data-testid={triggerTestId}
           >
             {value ? (
               <span className="flex min-w-0 options-center gap-2">
@@ -198,7 +205,7 @@ export const SelectWithSearch = forwardRef<
                 className=" placeholder:text-text-disabled"
               />
             )}
-            <CommandList className="mt-2 outline-none">
+            <CommandList className="mt-2 outline-none" data-testid={listTestId}>
               <CommandEmpty>
                 <div dangerouslySetInnerHTML={{ __html: emptyData }}></div>
               </CommandEmpty>
@@ -216,6 +223,8 @@ export const SelectWithSearch = forwardRef<
                             className={
                               value === option.value ? 'bg-bg-card' : ''
                             }
+                            data-testid={optionTestId}
+                            data-value={option.value}
                           >
                             <span className="leading-none">{option.label}</span>
 
@@ -229,15 +238,17 @@ export const SelectWithSearch = forwardRef<
                   );
                 } else {
                   return (
-                    <CommandItem
-                      key={group.value}
-                      value={group.value}
-                      disabled={group.disabled}
-                      onSelect={handleSelect}
-                      className={cn('mb-1 min-h-10 ', {
-                        'bg-bg-card ': value === group.value,
-                      })}
-                    >
+                  <CommandItem
+                    key={group.value}
+                    value={group.value}
+                    disabled={group.disabled}
+                    onSelect={handleSelect}
+                    className={cn('mb-1 min-h-10 ', {
+                      'bg-bg-card ': value === group.value,
+                    })}
+                    data-testid={optionTestId}
+                    data-value={group.value}
+                  >
                       <span className="leading-none">{group.label}</span>
 
                       {value === group.value && (

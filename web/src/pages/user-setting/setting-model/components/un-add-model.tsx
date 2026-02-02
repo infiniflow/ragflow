@@ -91,6 +91,7 @@ export const AvailableModels: FC<{
           placeholder={t('search')}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
+          data-testid="model-providers-search"
           className="w-full px-4 py-2 pl-10 bg-bg-input border border-border-default rounded-lg focus:outline-none focus:ring-1 focus:ring-border-button transition-colors"
         />
         {/* <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-text-secondary" /> */}

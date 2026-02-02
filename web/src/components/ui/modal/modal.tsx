@@ -29,6 +29,9 @@ export interface ModalProps {
   onCancel?: () => void;
   okButtonClassName?: string;
   cancelButtonClassName?: string;
+  contentTestId?: string;
+  okButtonTestId?: string;
+  cancelButtonTestId?: string;
   disabled?: boolean;
   style?: React.CSSProperties;
   zIndex?: number;
@@ -62,6 +65,9 @@ const Modal: ModalType = ({
   okText,
   okButtonClassName,
   cancelButtonClassName,
+  contentTestId,
+  okButtonTestId,
+  cancelButtonTestId,
   disabled = false,
   style,
   zIndex = 50,
@@ -123,6 +129,7 @@ const Modal: ModalType = ({
               'px-2 py-1 border border-border-button rounded-md hover:bg-bg-card hover:text-text-primary ',
               cancelButtonClassName,
             )}
+            data-testid={cancelButtonTestId}
           >
             {cancelText ?? t('modal.cancelText')}
           </button>
@@ -135,6 +142,7 @@ const Modal: ModalType = ({
               { 'cursor-not-allowed': disabled },
               okButtonClassName,
             )}
+            data-testid={okButtonTestId}
           >
             {confirmLoading && (
               <Loader className="inline-block mr-2 h-4 w-4 animate-spin" />
@@ -183,6 +191,7 @@ const Modal: ModalType = ({
             )}
             style={style}
             onClick={(e) => e.stopPropagation()}
+            data-testid={contentTestId}
           >
             {/* title */}
             {title && (

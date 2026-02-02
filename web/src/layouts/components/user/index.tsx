@@ -16,6 +16,7 @@ const App: React.FC = () => {
     <Avatar
       size={32}
       onClick={toSetting}
+      data-testid="settings-entrypoint"
       className={styles.clickAvailable}
       src={
         userInfo.avatar ??

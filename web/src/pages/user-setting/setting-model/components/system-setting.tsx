@@ -73,6 +73,9 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
         value: formData.llm_id,
         options: modelOptions as SelectWithSearchFlagOptionType[],
         tooltip: t('chatModelTip'),
+        triggerTestId: 'default-llm-combobox',
+        listTestId: 'combobox-options',
+        optionTestId: 'combobox-option',
       },
       {
         id: 'embd_id',
@@ -82,6 +85,9 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
           LlmModelType.Embedding
         ] as SelectWithSearchFlagOptionType[],
         tooltip: t('embeddingModelTip'),
+        triggerTestId: 'default-embedding-combobox',
+        listTestId: 'combobox-options',
+        optionTestId: 'combobox-option',
       },
       {
         id: 'img2txt_id',
@@ -129,6 +135,9 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
     tooltip,
     id,
     isRequired,
+    triggerTestId,
+    listTestId,
+    optionTestId,
   }: {
     id: string;
     label: string;
@@ -136,6 +145,9 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
     options: SelectWithSearchFlagOptionType[];
     tooltip?: string;
     isRequired?: boolean;
+    triggerTestId?: string;
+    listTestId?: string;
+    optionTestId?: string;
   }) => {
     return (
       <div className="flex gap-3">
@@ -162,20 +174,26 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
           onChange={(value) => handleFieldChange(id, value)}
           placeholder={t('selectModelPlaceholder')}
           emptyData={t('modelEmptyTip')}
+          triggerTestId={triggerTestId}
+          listTestId={listTestId}
+          optionTestId={optionTestId}
         />
       </div>
     );
   };
 
   return (
-    <div className="rounded-lg w-full">
+    <div className="rounded-lg w-full" data-testid="model-defaults-section">
       <div className="flex flex-col py-4">
         <div className="text-2xl font-medium">{t('systemModelSettings')}</div>
         <div className="text-sm text-text-secondary">
           {t('systemModelDescription')}
         </div>
       </div>
-      <div className="px-7 py-6 space-y-6 max-h-[70vh] overflow-y-auto border border-border-button rounded-lg">
+      <div
+        className="px-7 py-6 space-y-6 max-h-[70vh] overflow-y-auto border border-border-button rounded-lg"
+        data-testid="tenant-defaults-save"
+      >
         {llmList.map((item) => (
           <Items key={item.id} {...item} />
         ))}
