@@ -987,6 +987,16 @@ Example: Virtual Hosted Style`,
         'The base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
       moodleTokenTip:
         'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
+      seafileDescription:
+        'Connect to your SeaFile server to sync files and documents from your libraries.',
+      seafileUrlTip:
+        'The base URL of your SeaFile server (e.g., https://seafile.example.com). Do not include /api2 or other paths.',
+      seafileTokenTip:
+        'Generate an API token in SeaFile: Go to Settings → API Token → Generate Token. The token provides access to all libraries visible to your account.',
+      seafileIncludeSharedTip:
+        'When enabled, libraries shared with you by other users will also be synced.',
+      seafileBatchSizeTip:
+        'Number of documents to process per batch. Higher values may improve performance but use more memory. Default: 100.',
       jiraDescription:
         'Connect your Jira workspace to sync issues, comments, and attachments.',
       jiraBaseUrlTip:
