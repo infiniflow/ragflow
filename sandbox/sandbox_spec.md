@@ -1623,8 +1623,6 @@ PROVIDER_CLASSES = {
 
 ### References
 
-- [Current Sandbox Implementation](../sandbox/README.md)
-- [RAGFlow Admin System](../CONTRIBUTING.md)
 - [Daytona Documentation](https://daytona.dev/docs)
 - [Aliyun Code Interpreter](https://help.aliyun.com/...)
 - [E2B Documentation](https://e2b.dev/docs)
