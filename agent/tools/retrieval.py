@@ -27,6 +27,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.memory_service import MemoryService
 from api.db.joint_services import memory_message_service
+from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from common import settings
 from common.connection_utils import timeout
 from rag.app.tag import label_question
@@ -113,11 +114,14 @@ class Retrieval(ToolBase, ABC):
 
         embd_mdl = None
         if embd_nms:
-            embd_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.EMBEDDING, embd_nms[0])
+            tenant_id = self._canvas.get_tenant_id()
+            embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_nms[0])
+            embd_mdl = LLMBundle(tenant_id, embd_model_config)
 
         rerank_mdl = None
         if self._param.rerank_id:
-            rerank_mdl = LLMBundle(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
+            rerank_model_config = get_model_config_by_type_and_name(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
+            rerank_mdl = LLMBundle(kbs[0].tenant_id, rerank_model_config)
 
         vars = self.get_input_elements_from_text(query_text)
         vars = {k: o["value"] for k, o in vars.items()}
@@ -158,7 +162,9 @@ class Retrieval(ToolBase, ABC):
 
             chat_mdl = None
             if self._param.meta_data_filter.get("method") in ["auto", "semi_auto"]:
-                chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT)
+                tenant_id = self._canvas.get_tenant_id()
+                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+                chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
             doc_ids = await apply_meta_data_filter(
                 self._param.meta_data_filter,
@@ -192,7 +198,9 @@ class Retrieval(ToolBase, ABC):
                 return
 
             if self._param.toc_enhance:
-                chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT)
+                tenant_id = self._canvas._tenant_id
+                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+                chat_mdl = LLMBundle(tenant_id, chat_model_config)
                 cks = await settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs],
                                                           chat_mdl, self._param.top_n)
                 if self.check_if_canceled("Retrieval processing"):
@@ -202,11 +210,13 @@ class Retrieval(ToolBase, ABC):
             kbinfos["chunks"] = settings.retriever.retrieval_by_children(kbinfos["chunks"],
                                                                          [kb.tenant_id for kb in kbs])
             if self._param.use_kg:
+                tenant_id = self._canvas.get_tenant_id()
+                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
                 ck = await settings.kg_retriever.retrieval(query,
                                                      [kb.tenant_id for kb in kbs],
                                                      kb_ids,
                                                      embd_mdl,
-                                                     LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT))
+                                                     LLMBundle(tenant_id, chat_model_config))
                 if self.check_if_canceled("Retrieval processing"):
                     return
                 if ck["content_with_weight"]:
@@ -215,8 +225,9 @@ class Retrieval(ToolBase, ABC):
             kbinfos = {"chunks": [], "doc_aggs": []}
 
         if self._param.use_kg and kbs:
+            chat_model_config = get_tenant_default_model_by_type(kbs[0].tenant_id, LLMType.CHAT)
             ck = await settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl,
-                                                 LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
+                                                 LLMBundle(kbs[0].tenant_id, chat_model_config))
             if self.check_if_canceled("Retrieval processing"):
                 return
             if ck["content_with_weight"]:

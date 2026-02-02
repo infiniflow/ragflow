@@ -22,6 +22,7 @@ import os
 from abc import abstractmethod
 
 from elasticsearch import NotFoundError
+from elasticsearch._async.client import IndicesClient
 from elasticsearch_dsl import Index
 from elastic_transport import ConnectionTimeout
 from common.file_utils import get_project_base_directory

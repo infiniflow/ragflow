@@ -30,6 +30,7 @@ from api.db.services.file_service import FileService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.user_service import TenantService, UserTenantService
+from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_model_config_by_id
 from api.utils.api_utils import (
     get_error_data_result,
     server_error_response,
@@ -942,12 +943,18 @@ async def check_embedding():
         return s if s else "None"
     req = await get_request_json()
     kb_id = req.get("kb_id", "")
+    tenant_embd_id = req.get("tenant_embd_id")
     embd_id = req.get("embd_id", "")
     n = int(req.get("check_num", 5))
     _, kb = KnowledgebaseService.get_by_id(kb_id)
     tenant_id = kb.tenant_id
-
-    emb_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embd_id)
+    if tenant_embd_id:
+        embd_model_config = get_model_config_by_id(tenant_embd_id)
+    elif embd_id:
+        embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_id)
+    else:
+        return get_error_data_result("`tenant_embd_id` or `embd_id` is required.")
+    emb_mdl = LLMBundle(tenant_id, embd_model_config)
     samples = sample_random_chunks_with_vectors(settings.docStoreConn, tenant_id=tenant_id, kb_id=kb_id, n=n)
 
     results, eff_sims = [], []

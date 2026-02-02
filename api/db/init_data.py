@@ -32,6 +32,7 @@ from api.db.services.llm_service import LLMService, LLMBundle, get_init_tenant_l
 from api.db.services.user_service import TenantService, UserTenantService
 from api.db.services.system_settings_service import SystemSettingsService
 from api.db.joint_services.memory_message_service import init_message_id_sequence, init_memory_size_cache, fix_missing_tokenized_memory
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from common.constants import LLMType
 from common.file_utils import get_project_base_directory
 from common import settings
@@ -77,15 +78,16 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
     TenantLLMService.insert_many(tenant_llm)
     logging.info(
         f"Super user initialized. email: {email},A default password has been set; changing the password after login is strongly recommended.")
-
-    chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
+    chat_model_config = get_tenant_default_model_by_type(tenant["id"], LLMType.CHAT)
+    chat_mdl = LLMBundle(tenant["id"], chat_model_config)
     msg = asyncio.run(chat_mdl.async_chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={}))
     if msg.find("ERROR: ") == 0:
         logging.error(
             "'{}' doesn't work. {}".format(
                 tenant["llm_id"],
                 msg))
-    embd_mdl = LLMBundle(tenant["id"], LLMType.EMBEDDING, tenant["embd_id"])
+    embd_model_config = get_tenant_default_model_by_type(tenant["id"], LLMType.EMBEDDING)
+    embd_mdl = LLMBundle(tenant["id"], embd_model_config)
     v, c = embd_mdl.encode(["Hello!"])
     if c == 0:
         logging.error(
