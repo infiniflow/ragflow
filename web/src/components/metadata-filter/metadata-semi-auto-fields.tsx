@@ -108,7 +108,7 @@ export function MetadataSemiAutoFields({
                 variant={'ghost'}
                 size="icon"
                 onClick={() => remove(index)}
-                className="mt-0"
+                className="mt-0 h-8 w-10"
               >
                 <X className="size-4 text-text-sub-title-invert" />
               </Button>
