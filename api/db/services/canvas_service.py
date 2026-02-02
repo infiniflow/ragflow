@@ -146,7 +146,6 @@ class UserCanvasService(CommonService):
             cls.model.id,
             cls.model.avatar,
             cls.model.title,
-            cls.model.dsl,
             cls.model.description,
             cls.model.permission,
             cls.model.user_id.alias("tenant_id"),
