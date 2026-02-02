@@ -2,8 +2,8 @@ name: Build ARM64 Ragflow (development)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ "development" ]
+#  push:
+    #branches: [ "development" ]
 
 jobs:
   build-ragflow-arm64:

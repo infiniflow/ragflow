@@ -2,7 +2,7 @@ name: Build Multi-Arch Ragflow (development)
 
 on:
   workflow_dispatch:
-  push:
+#  push:
     #branches: [ "development" ]
 
 jobs:
@@ -54,13 +54,13 @@ jobs:
             --platform linux/amd64,linux/arm64 \
             -f Dockerfile.deps \
             -t infiniflow/ragflow_deps:latest \
-            --push .
+            . --load
 
       # 4) Build & push Ragflow (single generic tag)
       - name: Build & Push Ragflow (multi-arch)
         run: |
           docker buildx build \
-            --platform linux/amd64,linux/arm64 \
+            --platform linux/arm64 \
             -f Dockerfile \
             -t eurodoc/medlibre-ragflow:dev \
-            --push .
+            . --push
