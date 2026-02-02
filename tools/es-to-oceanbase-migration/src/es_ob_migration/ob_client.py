@@ -4,15 +4,14 @@ OceanBase Client for RAGFlow data migration.
 This client is specifically designed for RAGFlow's data structure.
 """
 
-import json
 import logging
 from typing import Any
 
 from pyobvector import ObVecClient, FtsIndexParam, FtsParser, VECTOR, ARRAY
-from sqlalchemy import Column, String, Integer, Float, JSON, Text, text, Double
+from sqlalchemy import Column, String, Integer, Float, JSON, Double
 from sqlalchemy.dialects.mysql import LONGTEXT, TEXT as MYSQL_TEXT
 
-from .schema import RAGFLOW_COLUMNS, ARRAY_COLUMNS, FTS_COLUMNS_TKS
+from .schema import RAGFLOW_COLUMNS, FTS_COLUMNS_TKS
 
 logger = logging.getLogger(__name__)
 

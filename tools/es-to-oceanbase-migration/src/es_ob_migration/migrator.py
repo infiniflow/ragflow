@@ -18,7 +18,7 @@ from rich.progress import (
 
 from .es_client import ESClient
 from .ob_client import OBClient
-from .schema import RAGFlowSchemaConverter, RAGFlowDataConverter, VECTOR_FIELD_PATTERN
+from .schema import RAGFlowSchemaConverter, RAGFlowDataConverter
 from .progress import ProgressManager, MigrationProgress
 from .verify import MigrationVerifier
 
