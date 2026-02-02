@@ -1103,7 +1103,30 @@ class RAGFlowPdfParser:
 
         def cropout(bxs, ltype, poss):
             nonlocal ZM
-            pn = set([b["page_number"] - 1 for b in bxs])
+            max_page_index = len(self.page_images) - 1
+
+            def local_page_index(page_number):
+                idx = page_number - 1
+                if idx > max_page_index and self.page_from:
+                    idx = page_number - 1 - self.page_from
+                return idx
+
+            pn = set()
+            for b in bxs:
+                idx = local_page_index(b["page_number"])
+                if 0 <= idx <= max_page_index:
+                    pn.add(idx)
+                else:
+                    logging.warning(
+                        "Skip out-of-range page_number %s (page_from=%s, pages=%s)",
+                        b.get("page_number"),
+                        self.page_from,
+                        len(self.page_images),
+                    )
+
+            if not pn:
+                return None
+
             if len(pn) < 2:
                 pn = list(pn)[0]
                 ht = self.page_cum_height[pn]
@@ -1122,12 +1145,16 @@ class RAGFlowPdfParser:
                 return self.page_images[pn].crop((left * ZM, top * ZM, right * ZM, bott * ZM))
             pn = {}
             for b in bxs:
-                p = b["page_number"] - 1
-                if p not in pn:
-                    pn[p] = []
-                pn[p].append(b)
+                p = local_page_index(b["page_number"])
+                if 0 <= p <= max_page_index:
+                    if p not in pn:
+                        pn[p] = []
+                    pn[p].append(b)
             pn = sorted(pn.items(), key=lambda x: x[0])
             imgs = [cropout(arr, ltype, poss) for p, arr in pn]
+            imgs = [img for img in imgs if img is not None]
+            if not imgs:
+                return None
             pic = Image.new("RGB", (int(np.max([i.size[0] for i in imgs])), int(np.sum([m.size[1] for m in imgs]))), (245, 245, 245))
             height = 0
             for img in imgs:
@@ -1148,10 +1175,16 @@ class RAGFlowPdfParser:
             poss = []
 
             if separate_tables_figures:
-                figure_results.append((cropout(bxs, "figure", poss), [txt]))
+                img = cropout(bxs, "figure", poss)
+                if img is None:
+                    continue
+                figure_results.append((img, [txt]))
                 figure_positions.append(poss)
             else:
-                res.append((cropout(bxs, "figure", poss), [txt]))
+                img = cropout(bxs, "figure", poss)
+                if img is None:
+                    continue
+                res.append((img, [txt]))
                 positions.append(poss)
 
         for k, bxs in tables.items():
@@ -1161,7 +1194,10 @@ class RAGFlowPdfParser:
 
             poss = []
 
-            res.append((cropout(bxs, "table", poss), self.tbl_det.construct_table(bxs, html=return_html, is_english=self.is_english)))
+            img = cropout(bxs, "table", poss)
+            if img is None:
+                continue
+            res.append((img, self.tbl_det.construct_table(bxs, html=return_html, is_english=self.is_english)))
             positions.append(poss)
 
         if separate_tables_figures:
