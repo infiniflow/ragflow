@@ -18,7 +18,6 @@
 Unit tests for OceanBase connection utility functions.
 """
 
-import pytest
 from rag.utils.ob_conn import get_value_str, get_metadata_filter_expression
 
 
