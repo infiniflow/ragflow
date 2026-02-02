@@ -9,7 +9,7 @@ from typing import Any
 
 from .es_client import ESClient
 from .ob_client import OBClient
-from .schema import RAGFLOW_COLUMNS, ARRAY_COLUMNS, JSON_COLUMNS
+from .schema import ARRAY_COLUMNS, JSON_COLUMNS
 
 logger = logging.getLogger(__name__)
 

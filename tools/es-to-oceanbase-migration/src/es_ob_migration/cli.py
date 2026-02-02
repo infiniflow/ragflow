@@ -15,7 +15,6 @@ from .es_client import ESClient
 from .ob_client import OBClient
 from .migrator import ESToOceanBaseMigrator
 from .verify import MigrationVerifier
-from .schema import RAGFLOW_COLUMNS
 
 console = Console()
 
@@ -115,7 +114,7 @@ def migrate(
             indices_to_migrate = [(index, table if table else index)]
         else:
             # Auto-discover all ragflow_* indices
-            console.print(f"\n[cyan]Discovering RAGFlow indices...[/]")
+            console.print("\n[cyan]Discovering RAGFlow indices...[/]")
             ragflow_indices = es_client.list_ragflow_indices()
             
             if not ragflow_indices:
@@ -166,7 +165,7 @@ def migrate(
         # Summary for multiple indices
         if len(indices_to_migrate) > 1:
             console.print(f"\n[bold]{'='*60}[/]")
-            console.print(f"[bold]Migration Summary[/]")
+            console.print("[bold]Migration Summary[/]")
             console.print(f"[bold]{'='*60}[/]")
             console.print(f"  Total indices: {len(indices_to_migrate)}")
             console.print(f"  [green]Successful: {total_success}[/]")
@@ -232,13 +231,13 @@ def schema(ctx, es_host, es_port, es_user, es_password, index, output):
         
         # Vector fields
         if analysis['vector_fields']:
-            console.print(f"\n[cyan]Vector fields detected:[/]")
+            console.print("\n[cyan]Vector fields detected:[/]")
             for vf in analysis['vector_fields']:
                 console.print(f"  - {vf['name']} (dimension: {vf['dimension']})")
         
         # Unknown fields
         if analysis['unknown_fields']:
-            console.print(f"\n[yellow]Unknown fields (will be stored in 'extra'):[/]")
+            console.print("\n[yellow]Unknown fields (will be stored in 'extra'):[/]")
             for uf in analysis['unknown_fields']:
                 console.print(f"  - {uf}")
 

@@ -7,7 +7,6 @@ import os
 import tempfile
 import pytest
 from pathlib import Path
-from datetime import datetime
 
 from es_ob_migration.progress import MigrationProgress, ProgressManager
 
@@ -90,7 +89,7 @@ class TestProgressManager:
     def test_create_progress_manager_creates_dir(self, temp_dir):
         """Test that progress manager creates directory."""
         new_dir = os.path.join(temp_dir, "new_progress")
-        manager = ProgressManager(progress_dir=new_dir)
+        ProgressManager(progress_dir=new_dir)
         assert Path(new_dir).exists()
 
     def test_create_progress(self, manager):
@@ -225,7 +224,7 @@ class TestProgressManager:
 
     def test_can_resume_running(self, manager):
         """Test can_resume for running migration."""
-        progress = manager.create_progress(
+        manager.create_progress(
             es_index="ragflow_resume_running",
             ob_table="ragflow_resume_running",
             total_documents=1000,
@@ -291,7 +290,7 @@ class TestProgressManager:
 
     def test_progress_file_path(self, manager):
         """Test progress file naming."""
-        progress = manager.create_progress(
+        manager.create_progress(
             es_index="ragflow_abc123",
             ob_table="ragflow_abc123",
             total_documents=100,

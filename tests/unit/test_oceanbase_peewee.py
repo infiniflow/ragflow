@@ -3,7 +3,6 @@ Tests for OceanBase Peewee ORM support.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
 from api.db.db_models import (
     RetryingPooledOceanBaseDatabase,
     PooledDatabase,

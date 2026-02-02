@@ -4,7 +4,6 @@ Progress tracking and resume capability for migration.
 
 import json
 import logging
-import os
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path

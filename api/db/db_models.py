@@ -50,7 +50,6 @@ class TextFieldType(Enum):
     MYSQL = "LONGTEXT"
     OCEANBASE = "LONGTEXT"
     POSTGRES = "TEXT"
-    POSTGRES = "TEXT"
 
 
 class LongTextField(TextField):
