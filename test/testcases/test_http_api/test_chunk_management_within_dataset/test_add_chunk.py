@@ -209,7 +209,7 @@ class TestAddChunk:
             assert False, res
         assert res["data"]["doc"]["chunk_count"] == chunks_count + 2
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_add_chunk_to_deleted_document(self, HttpApiAuth, add_document):
         dataset_id, document_id = add_document
         delete_documents(HttpApiAuth, dataset_id, {"ids": [document_id]})

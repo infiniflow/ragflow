@@ -22,35 +22,12 @@ from io import BytesIO
 from PIL import Image
 from PyPDF2 import PdfReader as pdf2_read
 
-from deepdoc.parser import PdfParser, PptParser, PlainParser
+from deepdoc.parser import PdfParser, PlainParser
+from deepdoc.parser.ppt_parser import RAGFlowPptParser
 from rag.app.naive import by_plaintext, PARSERS
 from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import rag_tokenizer
-from rag.nlp import tokenize, is_english
-
-
-class Ppt(PptParser):
-    def __call__(self, fnm, from_page, to_page, callback=None):
-        txts = super().__call__(fnm, from_page, to_page)
-
-        callback(0.5, "Text extraction finished.")
-        import aspose.slides as slides
-        import aspose.pydrawing as drawing
-
-        imgs = []
-        with slides.Presentation(BytesIO(fnm)) as presentation:
-            for i, slide in enumerate(presentation.slides[from_page:to_page]):
-                try:
-                    with BytesIO() as buffered:
-                        slide.get_thumbnail(0.1, 0.1).save(buffered, drawing.imaging.ImageFormat.jpeg)
-                        buffered.seek(0)
-                        imgs.append(Image.open(buffered).copy())
-                except RuntimeError as e:
-                    raise RuntimeError(f"ppt parse error at page {i + 1}, original error: {str(e)}") from e
-        assert len(imgs) == len(txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
-        callback(0.9, "Image extraction finished")
-        self.is_english = is_english(txts)
-        return [(txts[i], imgs[i]) for i in range(len(txts))]
+from rag.nlp import tokenize
 
 
 class Pdf(PdfParser):
@@ -159,15 +136,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     res = []
     if re.search(r"\.pptx?$", filename, re.IGNORECASE):
-        ppt_parser = Ppt()
-        for pn, (txt, img) in enumerate(ppt_parser(filename if not binary else binary, from_page, 1000000, callback)):
+        ppt_parser = RAGFlowPptParser()
+        for pn, txt in enumerate(ppt_parser(filename if not binary else binary, from_page, 1000000, callback)):
             d = copy.deepcopy(doc)
             pn += from_page
-            d["image"] = img
             d["doc_type_kwd"] = "image"
             d["page_num_int"] = [pn + 1]
             d["top_int"] = [0]
-            d["position_int"] = [(pn + 1, 0, img.size[0], 0, img.size[1])]
+            d["position_int"] = [(pn + 1, 0, 0, 0, 0)]
             tokenize(d, txt, eng)
             res.append(d)
         return res

@@ -1,5 +1,5 @@
 ---
-sidebar_position: 3
+sidebar_position: 30
 slug: /embed_agent_into_webpage
 sidebar_custom_props: {
   categoryIcon: LucideMonitorDot
