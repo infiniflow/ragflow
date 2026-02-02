@@ -1,0 +1,66 @@
+name: Build Multi-Arch Ragflow (development)
+
+on:
+  workflow_dispatch:
+  push:
+    #branches: [ "development" ]
+
+jobs:
+  build-ragflow:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 1) Prepare Python env and download deps
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Python deps for download_deps.py
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install huggingface_hub nltk tiktoken requests
+          fi
+
+      - name: Run download_deps.py
+        run: |
+          python download_deps.py
+
+      # 2) Enable multi-arch builds
+      - name: Set up QEMU (amd64 + arm64)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: amd64,arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 3) Build & push deps as multi-arch
+      - name: Build & Push ragflow_deps (multi-arch)
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            -f Dockerfile.deps \
+            -t infiniflow/ragflow_deps:latest \
+            --push .
+
+      # 4) Build & push Ragflow (single generic tag)
+      - name: Build & Push Ragflow (multi-arch)
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            -f Dockerfile \
+            -t eurodoc/medlibre-ragflow:dev \
+            --push .
