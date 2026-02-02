@@ -49,6 +49,7 @@ logger = logging.getLogger('ragflow.ob_conn')
 column_order_id = Column("_order_id", Integer, nullable=True, comment="chunk order id for maintaining sequence")
 column_group_id = Column("group_id", String(256), nullable=True, comment="group id for external retrieval")
 column_mom_id = Column("mom_id", String(256), nullable=True, comment="parent chunk id")
+column_chunk_data = Column("chunk_data", JSON, nullable=True, comment="table parser row data")
 
 column_definitions: list[Column] = [
     Column("id", String(256), primary_key=True, comment="chunk id"),
@@ -89,6 +90,7 @@ column_definitions: list[Column] = [
     Column("rank_flt", Double, nullable=True, comment="rank of this entity"),
     Column("removed_kwd", String(256), nullable=True, index=True, server_default="'N'",
            comment="whether it has been deleted"),
+    column_chunk_data,
     Column("metadata", JSON, nullable=True, comment="metadata for this chunk"),
     Column("extra", JSON, nullable=True, comment="extra information of non-general chunk"),
     column_order_id,
@@ -329,6 +331,14 @@ def _try_with_lock(lock_name: str, process_func, check_func, timeout: int = None
             try:
                 process_func()
                 return
+            except Exception as e:
+                if "Duplicate" in str(e):
+                    # In some cases, the schema may change after the lock is acquired, so if the error message
+                    # indicates that the column or index is duplicated, it should be assumed that 'process_func'
+                    # has been executed correctly.
+                    logger.warning(f"Skip processing {lock_name} due to duplication: {str(e)}")
+                    return
+                raise
             finally:
                 lock.release()
 
@@ -503,10 +513,201 @@ class OBConnection(DocStoreConnection):
         return "oceanbase"
 
     def health(self) -> dict:
-        return {
-            "uri": self.uri,
-            "version_comment": self._get_variable_value("version_comment")
+        """
+        Check OceanBase health status with basic connection information.
+        
+        Returns:
+            dict: Health status with URI and version information
+        """
+        try:
+            return {
+                "uri": self.uri,
+                "version_comment": self._get_variable_value("version_comment"),
+                "status": "healthy",
+                "connection": "connected"
+            }
+        except Exception as e:
+            return {
+                "uri": self.uri,
+                "status": "unhealthy",
+                "connection": "disconnected",
+                "error": str(e)
+            }
+    
+    def get_performance_metrics(self) -> dict:
+        """
+        Get comprehensive performance metrics for OceanBase.
+        
+        Returns:
+            dict: Performance metrics including latency, storage, QPS, and slow queries
+        """
+        metrics = {
+            "connection": "connected",
+            "latency_ms": 0.0,
+            "storage_used": "0B",
+            "storage_total": "0B",
+            "query_per_second": 0,
+            "slow_queries": 0,
+            "active_connections": 0,
+            "max_connections": 0
         }
+        
+        try:
+            # Measure connection latency
+            import time
+            start_time = time.time()
+            self.client.perform_raw_text_sql("SELECT 1").fetchone()
+            metrics["latency_ms"] = round((time.time() - start_time) * 1000, 2)
+            
+            # Get storage information
+            try:
+                storage_info = self._get_storage_info()
+                metrics.update(storage_info)
+            except Exception as e:
+                logger.warning(f"Failed to get storage info: {str(e)}")
+            
+            # Get connection pool statistics
+            try:
+                pool_stats = self._get_connection_pool_stats()
+                metrics.update(pool_stats)
+            except Exception as e:
+                logger.warning(f"Failed to get connection pool stats: {str(e)}")
+            
+            # Get slow query statistics
+            try:
+                slow_queries = self._get_slow_query_count()
+                metrics["slow_queries"] = slow_queries
+            except Exception as e:
+                logger.warning(f"Failed to get slow query count: {str(e)}")
+            
+            # Get QPS (Queries Per Second) - approximate from processlist
+            try:
+                qps = self._estimate_qps()
+                metrics["query_per_second"] = qps
+            except Exception as e:
+                logger.warning(f"Failed to estimate QPS: {str(e)}")
+                
+        except Exception as e:
+            metrics["connection"] = "disconnected"
+            metrics["error"] = str(e)
+            logger.error(f"Failed to get OceanBase performance metrics: {str(e)}")
+        
+        return metrics
+    
+    def _get_storage_info(self) -> dict:
+        """
+        Get storage space usage information.
+        
+        Returns:
+            dict: Storage information with used and total space
+        """
+        try:
+            # Get database size
+            result = self.client.perform_raw_text_sql(
+                f"SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'size_mb' "
+                f"FROM information_schema.tables WHERE table_schema = '{self.db_name}'"
+            ).fetchone()
+            
+            size_mb = float(result[0]) if result and result[0] else 0.0
+            
+            # Try to get total available space (may not be available in all OceanBase versions)
+            try:
+                result = self.client.perform_raw_text_sql(
+                    "SELECT ROUND(SUM(total_size) / 1024 / 1024 / 1024, 2) AS 'total_gb' "
+                    "FROM oceanbase.__all_disk_stat"
+                ).fetchone()
+                total_gb = float(result[0]) if result and result[0] else None
+            except Exception:
+                # Fallback: estimate total space (100GB default if not available)
+                total_gb = 100.0
+            
+            return {
+                "storage_used": f"{size_mb:.2f}MB",
+                "storage_total": f"{total_gb:.2f}GB" if total_gb else "N/A"
+            }
+        except Exception as e:
+            logger.warning(f"Failed to get storage info: {str(e)}")
+            return {
+                "storage_used": "N/A",
+                "storage_total": "N/A"
+            }
+    
+    def _get_connection_pool_stats(self) -> dict:
+        """
+        Get connection pool statistics.
+        
+        Returns:
+            dict: Connection pool statistics
+        """
+        try:
+            # Get active connections from processlist
+            result = self.client.perform_raw_text_sql("SHOW PROCESSLIST")
+            active_connections = len(list(result.fetchall()))
+            
+            # Get max_connections setting
+            max_conn_result = self.client.perform_raw_text_sql(
+                "SHOW VARIABLES LIKE 'max_connections'"
+            ).fetchone()
+            max_connections = int(max_conn_result[1]) if max_conn_result and max_conn_result[1] else 0
+            
+            # Get pool size from client if available
+            pool_size = getattr(self.client, 'pool_size', None) or 0
+            
+            return {
+                "active_connections": active_connections,
+                "max_connections": max_connections if max_connections > 0 else pool_size,
+                "pool_size": pool_size
+            }
+        except Exception as e:
+            logger.warning(f"Failed to get connection pool stats: {str(e)}")
+            return {
+                "active_connections": 0,
+                "max_connections": 0,
+                "pool_size": 0
+            }
+    
+    def _get_slow_query_count(self, threshold_seconds: int = 1) -> int:
+        """
+        Get count of slow queries (queries taking longer than threshold).
+        
+        Args:
+            threshold_seconds: Threshold in seconds for slow queries (default: 1)
+            
+        Returns:
+            int: Number of slow queries
+        """
+        try:
+            result = self.client.perform_raw_text_sql(
+                f"SELECT COUNT(*) FROM information_schema.processlist "
+                f"WHERE time > {threshold_seconds} AND command != 'Sleep'"
+            ).fetchone()
+            return int(result[0]) if result and result[0] else 0
+        except Exception as e:
+            logger.warning(f"Failed to get slow query count: {str(e)}")
+            return 0
+    
+    def _estimate_qps(self) -> int:
+        """
+        Estimate queries per second from processlist.
+        
+        Returns:
+            int: Estimated queries per second
+        """
+        try:
+            # Count active queries (non-Sleep commands)
+            result = self.client.perform_raw_text_sql(
+                "SELECT COUNT(*) FROM information_schema.processlist WHERE command != 'Sleep'"
+            ).fetchone()
+            active_queries = int(result[0]) if result and result[0] else 0
+            
+            # Rough estimate: assume average query takes 0.1 seconds
+            # This is a simplified estimation
+            estimated_qps = max(0, active_queries * 10)
+            
+            return estimated_qps
+        except Exception as e:
+            logger.warning(f"Failed to estimate QPS: {str(e)}")
+            return 0
 
     def _get_variable_value(self, var_name: str) -> Any:
         rows = self.client.perform_raw_text_sql(f"SHOW VARIABLES LIKE '{var_name}'")
@@ -555,7 +756,7 @@ class OBConnection(DocStoreConnection):
     Table operations
     """
 
-    def create_idx(self, indexName: str, knowledgebaseId: str, vectorSize: int):
+    def create_idx(self, indexName: str, knowledgebaseId: str, vectorSize: int, parser_id: str = None):
         vector_field_name = f"q_{vectorSize}_vec"
         vector_index_name = f"{vector_field_name}_idx"
 
@@ -594,7 +795,7 @@ class OBConnection(DocStoreConnection):
             )
 
             # new columns migration
-            for column in [column_order_id, column_group_id, column_mom_id]:
+            for column in [column_chunk_data, column_order_id, column_group_id, column_mom_id]:
                 _try_with_lock(
                     lock_name=f"ob_add_{column.name}_{indexName}",
                     check_func=lambda: self._column_exist(indexName, column.name),
@@ -920,8 +1121,14 @@ class OBConnection(DocStoreConnection):
 
                 # adjust the weight to 0~1
                 weight_sum = sum(fulltext_search_weight.values())
-                for column_name in fulltext_search_weight.keys():
-                    fulltext_search_weight[column_name] = fulltext_search_weight[column_name] / weight_sum
+                n = len(fulltext_search_weight)
+                if weight_sum <= 0 and n > 0:
+                    # All weights are 0 (e.g. "col^0"); use equal weights to avoid ZeroDivisionError
+                    for column_name in fulltext_search_weight:
+                        fulltext_search_weight[column_name] = 1.0 / n
+                else:
+                    for column_name in fulltext_search_weight:
+                        fulltext_search_weight[column_name] = fulltext_search_weight[column_name] / weight_sum
 
             elif isinstance(m, MatchDenseExpr):
                 assert m.embedding_data_type == "float", f"embedding data type '{m.embedding_data_type}' is not float."
@@ -1621,6 +1828,66 @@ class OBConnection(DocStoreConnection):
     SQL
     """
 
-    def sql(sql: str, fetch_size: int, format: str):
-        # TODO: execute the sql generated by text-to-sql
-        return None
+    def sql(self, sql: str, fetch_size: int = 1024, format: str = "json"):
+        logger.debug("OBConnection.sql get sql: %s", sql)
+
+        def normalize_sql(sql_text: str) -> str:
+            cleaned = sql_text.strip().rstrip(";")
+            cleaned = re.sub(r"[`]+", "", cleaned)
+            cleaned = re.sub(
+                r"json_extract_string\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)",
+                r"JSON_UNQUOTE(JSON_EXTRACT(\1, \2))",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+            cleaned = re.sub(
+                r"json_extract_isnull\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)",
+                r"(JSON_EXTRACT(\1, \2) IS NULL)",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+            return cleaned
+
+        def coerce_value(value: Any) -> Any:
+            if isinstance(value, np.generic):
+                return value.item()
+            if isinstance(value, bytes):
+                return value.decode("utf-8", errors="ignore")
+            return value
+
+        sql_text = normalize_sql(sql)
+        if fetch_size and fetch_size > 0:
+            sql_lower = sql_text.lstrip().lower()
+            if re.match(r"^(select|with)\b", sql_lower) and not re.search(r"\blimit\b", sql_lower):
+                sql_text = f"{sql_text} LIMIT {int(fetch_size)}"
+
+        logger.debug("OBConnection.sql to ob: %s", sql_text)
+
+        try:
+            res = self.client.perform_raw_text_sql(sql_text)
+        except Exception:
+            logger.exception("OBConnection.sql got exception")
+            raise
+
+        if res is None:
+            return None
+
+        columns = list(res.keys()) if hasattr(res, "keys") else []
+        try:
+            rows = res.fetchmany(fetch_size) if fetch_size and fetch_size > 0 else res.fetchall()
+        except Exception:
+            rows = res.fetchall()
+
+        rows_list = [[coerce_value(v) for v in list(row)] for row in rows]
+        result = {
+            "columns": [{"name": col, "type": "text"} for col in columns],
+            "rows": rows_list,
+        }
+
+        if format == "markdown":
+            header = "|" + "|".join(columns) + "|" if columns else ""
+            separator = "|" + "|".join(["---" for _ in columns]) + "|" if columns else ""
+            body = "\n".join(["|" + "|".join([str(v) for v in row]) + "|" for row in rows_list])
+            result["markdown"] = "\n".join([line for line in [header, separator, body] if line])
+
+        return result

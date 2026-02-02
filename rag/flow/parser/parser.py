@@ -40,6 +40,10 @@ from rag.llm.cv_model import Base as VLM
 from rag.utils.base64_image import image2id
 
 
+
+
+from common.misc_utils import thread_pool_exec
+
 class ParserParam(ProcessParamBase):
     def __init__(self):
         super().__init__()
@@ -851,7 +855,7 @@ class Parser(ProcessBase):
         for p_type, conf in self._param.setups.items():
             if from_upstream.name.split(".")[-1].lower() not in conf.get("suffix", []):
                 continue
-            await asyncio.to_thread(function_map[p_type], name, blob)
+            await thread_pool_exec(function_map[p_type], name, blob)
             done = True
             break
 

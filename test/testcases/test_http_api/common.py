@@ -49,6 +49,11 @@ def update_dataset(auth, dataset_id, payload=None, *, headers=HEADERS, data=None
 
 
 def delete_datasets(auth, payload=None, *, headers=HEADERS, data=None):
+    """
+    Delete datasets.
+    The endpoint is DELETE /api/{VERSION}/datasets with payload {"ids": [...]}
+    This is the standard SDK REST API endpoint for dataset deletion.
+    """
     res = requests.delete(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
@@ -300,12 +305,6 @@ def metadata_summary(auth, dataset_id, params=None):
 
 
 # CHAT COMPLETIONS AND RELATED QUESTIONS
-def chat_completions(auth, chat_assistant_id, payload=None):
-    url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}/{chat_assistant_id}/completions"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
-    return res.json()
-
-
 def related_questions(auth, payload=None):
     url = f"{HOST_ADDRESS}/api/{VERSION}/sessions/related_questions"
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
@@ -353,5 +352,44 @@ def delete_agent_sessions(auth, agent_id, payload=None):
 
 def agent_completions(auth, agent_id, payload=None):
     url = f"{HOST_ADDRESS}{AGENT_API_URL}/{agent_id}/completions"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def chat_completions(auth, chat_id, payload=None):
+    """
+    Send a question/message to a chat assistant and get completion.
+
+    Args:
+        auth: Authentication object
+        chat_id: Chat assistant ID
+        payload: Dictionary containing:
+            - question: str (required) - The question to ask
+            - stream: bool (optional) - Whether to stream responses, default False
+            - session_id: str (optional) - Session ID for conversation context
+
+    Returns:
+        Response JSON with answer data
+    """
+    url = f"{HOST_ADDRESS}/api/{VERSION}/chats/{chat_id}/completions"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def chat_completions_openai(auth, chat_id, payload=None):
+    """
+    Send a request to the OpenAI-compatible chat completions endpoint.
+
+    Args:
+        auth: Authentication object
+        chat_id: Chat assistant ID
+        payload: Dictionary in OpenAI chat completions format containing:
+            - messages: list (required) - List of message objects with 'role' and 'content'
+            - stream: bool (optional) - Whether to stream responses, default False
+
+    Returns:
+        Response JSON in OpenAI chat completions format with usage information
+    """
+    url = f"{HOST_ADDRESS}/api/{VERSION}/chats_openai/{chat_id}/chat/completions"
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()

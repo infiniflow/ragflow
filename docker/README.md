@@ -52,6 +52,8 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `MYSQL_PASSWORD`  
   The password for MySQL.
 - `MYSQL_PORT`  
+  The port to connect to MySQL from RAGFlow container. Defaults to `3306`. Change this if you use an external MySQL.
+- `EXPOSE_MYSQL_PORT`  
   The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `5455`.
 
 ### MinIO
