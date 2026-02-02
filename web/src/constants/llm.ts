@@ -168,8 +168,7 @@ export const APIMapUrl = {
   [LLMFactory.ModelScope]: 'https://modelscope.cn/my/myaccesstoken',
   [LLMFactory.GoogleCloud]: 'https://console.cloud.google.com/apis/credentials',
   [LLMFactory.FishAudio]: 'https://fish.audio/app/api-keys/',
-  [LLMFactory.GiteeAI]:
-    'https://ai.gitee.com/hhxzgrjn/dashboard/settings/tokens',
+  [LLMFactory.GiteeAI]: 'https://ai.gitee.com/dashboard/settings/tokens',
   [LLMFactory.StepFun]: 'https://platform.stepfun.com/interface-key',
   [LLMFactory.BaiChuan]: 'https://platform.baichuan-ai.com/console/apikey',
   [LLMFactory.PPIO]: 'https://ppio.com/settings/key-management',
