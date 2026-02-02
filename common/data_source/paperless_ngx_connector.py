@@ -35,6 +35,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
         batch_size: int = INDEX_BATCH_SIZE,
         verify_ssl: bool = True,
         min_content_length: int = 1,
+        ignore_time_filter: bool = False,
     ) -> None:
         """Initialize Paperless-ngx connector
         
@@ -43,6 +44,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
             batch_size: Number of documents per batch
             verify_ssl: Whether to verify SSL certificates (default: True)
             min_content_length: Minimum OCR content length to use instead of downloading PDF (default: 1)
+            ignore_time_filter: If True, always load ALL documents regardless of time filters (default: False)
         
         Raises:
             ConnectorValidationError: If the URL is invalid
@@ -51,6 +53,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
         self.batch_size = batch_size
         self.verify_ssl = verify_ssl
         self.min_content_length = min_content_length
+        self.ignore_time_filter = ignore_time_filter
 
         from pathlib import Path
         self.originals_path = Path(originals_path) if originals_path else None
@@ -59,6 +62,9 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
                 logging.info(f"✓ Originals mount available: {self.originals_path}")
             else:
                 logging.warning(f"⚠️ Originals path not found: {self.originals_path}")
+        
+        if self.ignore_time_filter:
+            logging.info(f"⚠️ ignore_time_filter=True - Will always load ALL documents!")
         
         self.api_token: Optional[str] = None
         self._allow_images: bool | None = None
@@ -530,7 +536,7 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
         Yields:
             Batches of documents
         """
-        logging.debug(f"Loading all documents from Paperless-ngx server {self.base_url}")
+        logging.info(f"🟢 load_from_state() called - FULL IMPORT (no time filter)")
         return self._yield_paperless_documents(
             start=None,
             end=None,
@@ -554,8 +560,16 @@ class PaperlessNgxConnector(LoadConnector, PollConnector):
         start_datetime = datetime.fromtimestamp(start, tz=timezone.utc)
         end_datetime = datetime.fromtimestamp(end, tz=timezone.utc)
 
-        for batch in self._yield_paperless_documents(start_datetime, end_datetime):
-            yield batch
+        # Option to ignore time filter and always load all documents
+        if self.ignore_time_filter:
+            logging.info(f"🟡 poll_source() called but ignore_time_filter=True - loading ALL documents")
+            logging.info(f"   (Original filter would have been: {start_datetime} to {end_datetime})")
+            for batch in self._yield_paperless_documents(start=None, end=None):
+                yield batch
+        else:
+            logging.info(f"🔵 poll_source() called with filter: {start_datetime} to {end_datetime}")
+            for batch in self._yield_paperless_documents(start_datetime, end_datetime):
+                yield batch
 
     def validate_connector_settings(self) -> None:
         """Validate Paperless-ngx connector settings
@@ -603,6 +617,7 @@ if __name__ == "__main__":
         originals_path="/mnt/nas-docker/paperless/data/media/documents/originals",
         verify_ssl=False,  # For local testing
         min_content_length=1,  # Use OCR content if >= 1 character (default)
+        ignore_time_filter=True,  # ← WICHTIG: Ignoriert Zeitfilter, lädt ALLE Dokumente
     )
 
     try:
