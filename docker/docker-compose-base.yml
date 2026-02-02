@@ -319,6 +319,10 @@ volumes:
     driver: local
   kibana_data:
     driver: local
+  # Named volume to persist Python packages installed at runtime (e.g., torch for GPU mode).
+  # This prevents re-downloading large packages (~920MB+) on every container restart.
+  ragflow_venv:
+    driver: local
 
 networks:
   ragflow:

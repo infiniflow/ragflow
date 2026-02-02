@@ -81,6 +81,14 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `RAGFLOW-IMAGE`  
   The Docker image edition. Defaults to `infiniflow/ragflow:v0.23.1`. The RAGFlow Docker image does not include embedding models.
 
+### GPU Mode
+
+- `DEVICE`  
+  The device on which deepdoc inference runs. Defaults to `cpu`. Set to `gpu` to enable GPU acceleration.
+  
+  > [!NOTE]
+  > When using GPU mode (`DEVICE=gpu`), PyTorch and CUDA dependencies (~920MB+) are installed at runtime on the first container startup. A named Docker volume (`ragflow_venv`) is configured to persist these packages, preventing re-downloads on subsequent restarts. The first startup may take 20-40 minutes depending on your network speed, but subsequent startups will be fast.
+
   
 > [!TIP]  
 > If you cannot download the RAGFlow Docker image, try the following mirrors.  
