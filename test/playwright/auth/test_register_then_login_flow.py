@@ -8,12 +8,6 @@ from playwright.sync_api import expect
 RESULT_TIMEOUT_MS = 15000
 
 
-def _antd_error_notification_locator(page):
-    return page.locator(
-        ".ant-notification-notice.ant-notification-notice-error"
-    )
-
-
 def _capture_register_response(page, trigger, timeout_ms: int = RESULT_TIMEOUT_MS) -> dict:
     def predicate(resp):
         return resp.request.method == "POST" and "/v1/user/register" in resp.url
@@ -80,10 +74,10 @@ def _wait_for_login_outcome(page, post_login_path: str | None, timeout_ms: int =
             const rect = el.getBoundingClientRect();
             return rect.width > 0 && rect.height > 0;
           };
-          const errorToast = Array.from(
-            document.querySelectorAll('[data-sonner-toast], .toaster .toast, .ant-notification-notice, [role="alert"]')
-          ).find(isVisible);
-          if (errorToast) return { state: 'error' };
+          const authStatus = document.querySelector('[data-testid="auth-status"]');
+          const statusState = authStatus ? authStatus.getAttribute('data-state') : '';
+          if (statusState === 'error') return { state: 'error' };
+          if (statusState === 'success') return { state: 'success' };
 
           const path = window.location.pathname || '';
           const successByUrl = postLoginPath
@@ -123,7 +117,7 @@ def test_register_then_login_flow(
     snap("open")
 
     form, card = active_auth_context()
-    toggle_button = card.locator("form + div button")
+    toggle_button = card.locator("[data-testid='auth-toggle-register']")
     if toggle_button.count() == 0:
         pytest.skip("Register toggle not present; registerEnabled may be disabled.")
 
@@ -132,13 +126,17 @@ def test_register_then_login_flow(
         toggle_button.click()
 
     form, _ = active_auth_context()
-    nickname_input = form.locator("input[autocomplete='username']")
+    nickname_input = form.locator("[data-testid='auth-nickname']")
     expect(nickname_input).to_have_count(1)
     expect(nickname_input).to_be_visible()
     snap("register_toggled")
 
-    email_input = form.locator("input[autocomplete='email']")
-    password_input = form.locator("input[type='password']")
+    email_input = form.locator(
+        "input[data-testid='auth-email'], [data-testid='auth-email'] input"
+    )
+    password_input = form.locator(
+        "input[data-testid='auth-password'], [data-testid='auth-password'] input"
+    )
 
     with step("fill registration form"):
         expect(email_input).to_have_count(1)
@@ -151,7 +149,9 @@ def test_register_then_login_flow(
     snap("register_filled")
 
     with step("submit registration and wait for response"):
-        submit_button = form.locator("button[type='submit']")
+        submit_button = form.locator(
+            "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
+        )
         expect(submit_button).to_have_count(1)
         try:
             response_info = _capture_register_response(
@@ -171,29 +171,28 @@ def test_register_then_login_flow(
 
     if response_info.get("code") != 0:
         snap("register_error_response")
-        toast_text = ""
-        error_locator = _antd_error_notification_locator(page)
-        if error_locator.count() > 0:
-            toast_text = error_locator.first.inner_text().strip()[:200]
         snap("register_failure")
         raise AssertionError(
             "Registration error detected. "
             f"url={response_info.get('__url__')} status={response_info.get('__status__')} "
-            f"code={response_info.get('code')} message={response_info.get('message')} "
-            f"antd_snippet={toast_text}"
+            f"code={response_info.get('code')} message={response_info.get('message')}"
         )
 
     snap("register_success_response")
     form, _ = active_auth_context()
-    nickname_input = form.locator("input[autocomplete='username']")
+    nickname_input = form.locator("[data-testid='auth-nickname']")
     expect(nickname_input).to_have_count(0, timeout=RESULT_TIMEOUT_MS)
     snap("register_success")
     print(f"REGISTERED_EMAIL={reg_email}", flush=True)
 
     with step("fill login form"):
         form, _ = active_auth_context()
-        email_input = form.locator("input[autocomplete='email']")
-        password_input = form.locator("input[type='password']")
+        email_input = form.locator(
+            "input[data-testid='auth-email'], [data-testid='auth-email'] input"
+        )
+        password_input = form.locator(
+            "input[data-testid='auth-password'], [data-testid='auth-password'] input"
+        )
         expect(email_input).to_have_count(1)
         expect(password_input).to_have_count(1)
         email_input.fill(reg_email)
@@ -203,7 +202,9 @@ def test_register_then_login_flow(
     snap("login_filled")
 
     with step("submit login"):
-        submit_button = form.locator("button[type='submit']")
+        submit_button = form.locator(
+            "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
+        )
         expect(submit_button).to_have_count(1)
         auth_click(submit_button, "submit_login")
     snap("login_submitted")
@@ -222,13 +223,9 @@ def test_register_then_login_flow(
     login_outcome = login_result.json_value()
     if login_outcome.get("state") == "error":
         snap("login_error")
-        toast_text = ""
-        error_locator = _antd_error_notification_locator(page)
-        if error_locator.count() > 0:
-            toast_text = error_locator.first.inner_text().strip()[:200]
         snap("login_failure")
         raise AssertionError(
-            f"Login error detected. url={page.url} toast_snippet={toast_text}"
+            f"Login error detected. url={page.url}"
         )
 
     path = urlparse(page.url).path

@@ -41,7 +41,12 @@ def ensure_authed(
 
     try:
         if "/login" not in page.url:
-            if page.locator("input[autocomplete='email']").count() == 0:
+            if (
+                page.locator(
+                    "input[data-testid='auth-email'], [data-testid='auth-email'] input"
+                ).count()
+                == 0
+            ):
                 try:
                     page.wait_for_function(token_wait_js, timeout=2000)
                     return
@@ -53,19 +58,25 @@ def ensure_authed(
     page.goto(login_url, wait_until="domcontentloaded")
 
     form, _ = active_auth_context()
-    email_input = form.locator("input[autocomplete='email']")
-    password_input = form.locator("input[type='password']")
+    email_input = form.locator(
+        "input[data-testid='auth-email'], [data-testid='auth-email'] input"
+    )
+    password_input = form.locator(
+        "input[data-testid='auth-password'], [data-testid='auth-password'] input"
+    )
     expect(email_input).to_have_count(1)
     expect(password_input).to_have_count(1)
     email_input.fill(email)
     password_input.fill(password)
     password_input.blur()
 
-    submit_button = form.locator("button[type='submit']")
+    submit_button = form.locator(
+        "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
+    )
     expect(submit_button).to_have_count(1)
     auth_click(submit_button, "submit_login")
 
     _wait_for_login_complete(page, timeout_ms=timeout_ms)
-    expect(page.locator("form:visible input[autocomplete='email']")).to_have_count(
+    expect(page.locator("form[data-testid='auth-form'][data-active='true']")).to_have_count(
         0, timeout=timeout_ms
     )

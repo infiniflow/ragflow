@@ -78,8 +78,12 @@ def test_login_success_optional(
     snap("open")
 
     form, _ = active_auth_context()
-    email_input = form.locator("input[autocomplete='email']")
-    password_input = form.locator("input[type='password']")
+    email_input = form.locator(
+        "input[data-testid='auth-email'], [data-testid='auth-email'] input"
+    )
+    password_input = form.locator(
+        "input[data-testid='auth-password'], [data-testid='auth-password'] input"
+    )
 
     with step("fill credentials"):
         expect(email_input).to_have_count(1)
@@ -91,14 +95,13 @@ def test_login_success_optional(
     snap("filled")
 
     with step("submit login"):
-        submit_button = form.locator("button[type='submit']")
+        submit_button = form.locator(
+            "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
+        )
         expect(submit_button).to_have_count(1)
         auth_click(submit_button, "submit_login")
     snap("submitted")
 
-    error_locator = page.locator(
-        "[data-sonner-toast], .toaster .toast, [role='alert'], .ant-notification-notice-error"
-    )
     post_login_path_js = json.dumps(post_login_path)
     wait_js = """
         () => {{
@@ -119,10 +122,10 @@ def test_login_success_optional(
           const successMarker = document.querySelector(
             "a[href*='github.com/infiniflow/ragflow'], a[href*='discord.com/invite']"
           );
-          const errorToast = Array.from(
-            document.querySelectorAll('[data-sonner-toast], .toaster .toast, [role="alert"], .ant-notification-notice-error')
-          ).find(isVisible);
-          if (errorToast) return {{ state: 'error' }};
+          const authStatus = document.querySelector('[data-testid="auth-status"]');
+          const statusState = authStatus ? authStatus.getAttribute('data-state') : '';
+          if (statusState === 'error') return {{ state: 'error' }};
+          if (statusState === 'success') return {{ state: 'success' }};
           if (successByUrl || successMarker) return {{ state: 'success' }};
           return false;
         }}
@@ -145,14 +148,11 @@ def test_login_success_optional(
         outcome = result.json_value()
         if outcome.get("state") == "error":
             snap("error")
-            toast_text = ""
-            if error_locator.count() > 0:
-                toast_text = error_locator.first.inner_text().strip()[:200]
             snap("failure")
             _debug_login_state(page, "login_error")
             raise AssertionError(
                 "Login error detected. "
-                f"url={page.url} error_found={error_locator.count() > 0} toast_snippet={toast_text}"
+                f"url={page.url}"
             )
         path = urlparse(page.url).path
         if post_login_path:
@@ -185,9 +185,9 @@ def test_login_success_optional(
                 f"Auth tokens not found after login. url={page.url}"
             ) from exc
         try:
-            expect(page.locator("form:visible input[autocomplete='email']")).to_have_count(
-                0, timeout=15000
-            )
+            expect(
+                page.locator("form[data-testid='auth-form'][data-active='true']")
+            ).to_have_count(0, timeout=15000)
         except AssertionError as exc:
             snap("failure")
             _debug_login_state(page, "login_form_still_visible")

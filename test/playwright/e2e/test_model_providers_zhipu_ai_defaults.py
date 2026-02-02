@@ -142,16 +142,19 @@ def _select_cmdk_option_by_value_prefix(
     combobox,
     value_prefix: str,
     option_text: str,
+    list_testid: str,
     fallback_to_first: bool = False,
 ) -> tuple[str, str | None]:
     combobox.click()
     page.wait_for_selector(
-        "[data-testid='combobox-options']:visible [data-testid='combobox-option']",
+        f"[data-testid='{list_testid}']:visible [data-testid='combobox-option']",
         timeout=RESULT_TIMEOUT_MS,
     )
     options_container = page.locator(
-        "[data-testid='combobox-options']:visible"
-    ).last
+        f"[data-testid='{list_testid}']:visible"
+    )
+    expect(options_container).to_have_count(1, timeout=RESULT_TIMEOUT_MS)
+    options_container = options_container.first
 
     escaped_prefix = value_prefix.replace("'", "\\'")
     value_selector = (
@@ -219,6 +222,7 @@ def _select_default_model(
     combobox,
     value_prefix: str,
     option_text: str,
+    list_testid: str,
     fallback_to_first: bool = False,
 ) -> tuple[str, str | None]:
     if not _needs_selection(combobox, option_text):
@@ -237,6 +241,7 @@ def _select_default_model(
             combobox,
             value_prefix,
             option_text,
+            list_testid,
             fallback_to_first=fallback_to_first,
         )
 
@@ -313,11 +318,18 @@ def test_add_zhipu_ai_set_defaults_persist(
         search_input = page.locator("[data-testid='model-providers-search']")
         expect(search_input).to_have_count(1)
         search_input.first.fill("zhipu")
-        available_section = page.locator("text=Available models").first.locator("xpath=..")
-        provider = available_section.locator("text=ZHIPU-AI").first
+        available_section = page.locator("[data-testid='available-models-section']")
+        provider = available_section.locator(
+            "[data-testid='available-model-card'][data-provider='ZHIPU-AI']"
+        ).first
         if provider.count() == 0:
-            added_section = page.locator("text=Added models").first.locator("xpath=..")
-            if added_section.locator("text=ZHIPU-AI").count() == 0:
+            added_section = page.locator("[data-testid='added-models-section']")
+            if (
+                added_section.locator(
+                    "[data-testid='added-model-card'][data-provider='ZHIPU-AI']"
+                ).count()
+                == 0
+            ):
                 raise AssertionError("ZHIPU-AI provider not found in available or added models.")
         else:
             expect(provider).to_be_visible()
@@ -327,11 +339,10 @@ def test_add_zhipu_ai_set_defaults_persist(
         if provider.count() > 0:
             provider.click()
         else:
-            added_section = page.locator("text=Added models").first.locator("xpath=..")
+            added_section = page.locator("[data-testid='added-models-section']")
             card = added_section.locator(
-                "div",
-                has=page.locator("text=ZHIPU-AI"),
-            ).filter(has=page.locator("button", has_text=re.compile("API-?Key", re.I))).first
+                "[data-testid='added-model-card'][data-provider='ZHIPU-AI']"
+            ).first
             api_key_button = card.locator("button", has_text=re.compile("API-?Key", re.I)).first
             expect(api_key_button).to_be_visible()
             api_key_button.click()
@@ -368,13 +379,20 @@ def test_add_zhipu_ai_set_defaults_persist(
         llm_combo = page.locator("[data-testid='default-llm-combobox']").first
         emb_combo = page.locator("[data-testid='default-embedding-combobox']").first
 
-        _select_default_model(page, llm_combo, "glm-4-flash", "glm-4-flash")
+        _select_default_model(
+            page,
+            llm_combo,
+            "glm-4-flash",
+            "glm-4-flash",
+            list_testid="default-llm-options",
+        )
         # Embedding availability varies by provider; fallback to first available if embedding-2 is absent.
         selected_emb_text, selected_emb_value = _select_default_model(
             page,
             emb_combo,
             "embedding-2",
             "embedding-2",
+            list_testid="default-embedding-options",
             fallback_to_first=True,
         )
 
@@ -387,7 +405,11 @@ def test_add_zhipu_ai_set_defaults_persist(
         emb_combo = page.locator("[data-testid='default-embedding-combobox']").first
         expect(llm_combo).to_contain_text("glm-4-flash")
         expect(emb_combo).to_contain_text(selected_emb_text or "embedding-2")
-        added_section = page.locator("text=Added models").first.locator("xpath=..")
-        expect(added_section.locator("text=ZHIPU-AI")).to_be_visible()
+        added_section = page.locator("[data-testid='added-models-section']")
+        expect(
+            added_section.locator(
+                "[data-testid='added-model-card'][data-provider='ZHIPU-AI']"
+            )
+        ).to_be_visible()
     snap("defaults_persisted")
     snap("success")

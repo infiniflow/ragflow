@@ -7,12 +7,6 @@ from playwright.sync_api import expect
 RESULT_TIMEOUT_MS = 15000
 
 
-def _antd_error_notification_locator(page):
-    return page.locator(
-        ".ant-notification-notice.ant-notification-notice-error"
-    )
-
-
 def _capture_register_response(page, trigger, timeout_ms: int = RESULT_TIMEOUT_MS) -> dict:
     def predicate(resp):
         return resp.request.method == "POST" and "/v1/user/register" in resp.url
@@ -71,23 +65,13 @@ def _is_already_registered(toast_text: str) -> bool:
     return "already" in text and ("register" in text or "registered" in text)
 
 
-def _wait_for_toast_clear(page, timeout_ms: int = 5000) -> None:
+def _wait_for_auth_not_loading(page, timeout_ms: int = 5000) -> None:
     page.wait_for_function(
         """
         () => {
-          const isVisible = (el) => {
-            if (!el) return false;
-            const style = window.getComputedStyle(el);
-            if (style && (style.visibility === 'hidden' || style.display === 'none')) {
-              return false;
-            }
-            const rect = el.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0;
-          };
-          const errorToast = Array.from(
-            document.querySelectorAll('[data-sonner-toast], .toaster .toast, .ant-notification-notice, [role="alert"]')
-          ).find(isVisible);
-          return !errorToast;
+          const status = document.querySelector('[data-testid="auth-status"]');
+          if (!status) return true;
+          return status.getAttribute('data-state') !== 'loading';
         }
         """,
         timeout=timeout_ms,
@@ -115,7 +99,7 @@ def test_register_success_optional(
     snap("open")
 
     form, card = active_auth_context()
-    toggle_button = card.locator("form + div button")
+    toggle_button = card.locator("[data-testid='auth-toggle-register']")
     if toggle_button.count() == 0:
         pytest.skip("Register toggle not present; registerEnabled may be disabled.")
 
@@ -124,13 +108,17 @@ def test_register_success_optional(
         toggle_button.click()
 
     form, _ = active_auth_context()
-    nickname_input = form.locator("input[autocomplete='username']")
+    nickname_input = form.locator("[data-testid='auth-nickname']")
     expect(nickname_input).to_have_count(1)
     expect(nickname_input).to_be_visible()
     snap("toggled_register")
 
-    email_input = form.locator("input[autocomplete='email']")
-    password_input = form.locator("input[type='password']")
+    email_input = form.locator(
+        "input[data-testid='auth-email'], [data-testid='auth-email'] input"
+    )
+    password_input = form.locator(
+        "input[data-testid='auth-password'], [data-testid='auth-password'] input"
+    )
 
     current_email = reg_email
     with step("fill registration form"):
@@ -147,7 +135,9 @@ def test_register_success_optional(
     while True:
         with step("submit registration and wait for response"):
             form, _ = active_auth_context()
-            submit_button = form.locator("button[type='submit']")
+            submit_button = form.locator(
+                "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
+            )
             expect(submit_button).to_have_count(1)
             if not retried:
                 snap("before_submit_click")
@@ -175,23 +165,20 @@ def test_register_success_optional(
         if response_info.get("code") == 0:
             snap("registered_success_response")
             form, _ = active_auth_context()
-            nickname_input = form.locator("input[autocomplete='username']")
+            nickname_input = form.locator("[data-testid='auth-nickname']")
             expect(nickname_input).to_have_count(0, timeout=RESULT_TIMEOUT_MS)
             break
 
         snap("registered_error_response")
-        toast_text = ""
-        error_locator = _antd_error_notification_locator(page)
-        if error_locator.count() > 0:
-            toast_text = error_locator.first.inner_text().strip()[:200]
-
-        message_text = response_info.get("message", "") or toast_text
+        message_text = response_info.get("message", "") or ""
         if _is_already_registered(message_text) and not retried:
             retried = True
             with step("retry registration with new email"):
-                _wait_for_toast_clear(page)
+                _wait_for_auth_not_loading(page)
                 form, _ = active_auth_context()
-                email_input = form.locator("input[autocomplete='email']")
+                email_input = form.locator(
+                    "input[data-testid='auth-email'], [data-testid='auth-email'] input"
+                )
                 expect(email_input).to_have_count(1)
                 current_email = reg_email_generator(force_unique=True)
                 email_input.fill(current_email)
@@ -203,7 +190,7 @@ def test_register_success_optional(
             "Registration error detected. "
             f"url={response_info.get('__url__')} status={response_info.get('__status__')} "
             f"code={response_info.get('code')} message={response_info.get('message')} "
-            f"email={current_email} antd_snippet={toast_text}"
+            f"email={current_email}"
         )
 
     snap("success")

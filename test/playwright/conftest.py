@@ -23,6 +23,17 @@ REG_NICKNAME_DEFAULT = "qa"
 REG_PASSWORD_DEFAULT = "123"
 REG_EMAIL_LOCAL_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 REG_EMAIL_BACKEND_RE = re.compile(r"^[\w\._-]{1,}@([\w_-]+\.)+[\w-]{2,}$")
+AUTH_FORM_SELECTOR = "form[data-testid='auth-form']"
+AUTH_ACTIVE_FORM_SELECTOR = "form[data-testid='auth-form'][data-active='true']"
+AUTH_EMAIL_INPUT_SELECTOR = (
+    "input[data-testid='auth-email'], [data-testid='auth-email'] input"
+)
+AUTH_PASSWORD_INPUT_SELECTOR = (
+    "input[data-testid='auth-password'], [data-testid='auth-password'] input"
+)
+AUTH_SUBMIT_SELECTOR = (
+    "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
+)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -403,7 +414,8 @@ def _debug_dump_auth_state(page, label: str, submit_locator=None) -> None:
             const flip = getFlip(face);
             return {
               index: idx,
-              isActive: form.getAttribute('data-qa-active') === 'true',
+              authMode: form.getAttribute('data-auth-mode') || '',
+              isActive: form.getAttribute('data-active') === 'true',
               rect: {
                 x: rect.x,
                 y: rect.y,
@@ -585,14 +597,22 @@ def _write_auth_ready_diagnostics(page, request, reason: str) -> None:
 
 def _wait_for_auth_ui_ready(page, request) -> None:
     timeout_ms = _env_int("AUTH_READY_TIMEOUT_MS", AUTH_READY_TIMEOUT_MS_DEFAULT)
-    email_selector = (
-        "input[autocomplete='email'], input[type='email'], input[name*='email' i]"
-    )
-    visible_forms = page.locator("form:visible")
-    ready_forms = (
-        visible_forms.filter(has=page.locator("input[type='password']")).filter(
-            has=page.locator(email_selector)
-        )
+    email_selector = AUTH_EMAIL_INPUT_SELECTOR
+    password_selector = AUTH_PASSWORD_INPUT_SELECTOR
+    submit_selector = AUTH_SUBMIT_SELECTOR
+    active_forms = page.locator(AUTH_ACTIVE_FORM_SELECTOR)
+    try:
+        expect(active_forms).to_have_count(1, timeout=timeout_ms)
+    except AssertionError as exc:
+        _write_auth_ready_diagnostics(page, request, "auth active form not unique")
+        raise AssertionError(
+            "Auth UI not ready within "
+            f"{timeout_ms}ms. Expected a single active auth form."
+        ) from exc
+    ready_forms = active_forms.filter(
+        has=page.locator(password_selector)
+    ).filter(has=page.locator(email_selector)).filter(
+        has=page.locator(submit_selector)
     )
     try:
         expect(ready_forms).not_to_have_count(0, timeout=timeout_ms)
@@ -606,15 +626,66 @@ def _wait_for_auth_ui_ready(page, request) -> None:
 
 def _wait_for_active_form_clickable(page, request, form) -> None:
     timeout_ms = _env_int("AUTH_READY_TIMEOUT_MS", AUTH_READY_TIMEOUT_MS_DEFAULT)
-    submit_button = form.locator("button[type='submit']")
+    active_forms = page.locator(AUTH_ACTIVE_FORM_SELECTOR)
+    submit_buttons = form.locator(AUTH_SUBMIT_SELECTOR)
     try:
-        expect(submit_button).to_have_count(1, timeout=timeout_ms)
-        expect(submit_button).to_be_visible()
+        expect(active_forms).to_have_count(1, timeout=timeout_ms)
+        expect(submit_buttons).to_have_count(1, timeout=timeout_ms)
+        expect(submit_buttons).to_be_visible()
+        expect(submit_buttons).to_be_enabled()
+        status = page.locator("[data-testid='auth-status']")
+        if status.count() > 0:
+            expect(status).not_to_have_attribute("data-state", "loading")
     except AssertionError as exc:
+        try:
+            total_forms = page.locator(AUTH_FORM_SELECTOR).count()
+            active_form_count = active_forms.count()
+            forms_info = []
+            for idx in range(min(total_forms, 5)):
+                form_node = page.locator(AUTH_FORM_SELECTOR).nth(idx)
+                try:
+                    info = form_node.evaluate(
+                        """
+                        (el) => {
+                          const submit = el.querySelector("button[type='submit'], [data-testid='auth-submit']");
+                          const isVisible = (node) => {
+                            const style = window.getComputedStyle(node);
+                            if (style && (style.visibility === 'hidden' || style.display === 'none')) {
+                              return false;
+                            }
+                            const rect = node.getBoundingClientRect();
+                            return rect.width > 0 && rect.height > 0;
+                          };
+                          return {
+                            authMode: el.getAttribute('data-auth-mode') || '',
+                            active: el.getAttribute('data-active') || '',
+                            submit: submit
+                              ? {
+                                  tag: submit.tagName,
+                                  type: submit.getAttribute('type'),
+                                  text: (submit.innerText || '').trim(),
+                                  testid: submit.getAttribute('data-testid'),
+                                  visible: isVisible(submit),
+                                  enabled: !submit.disabled,
+                                }
+                              : null,
+                          };
+                        }
+                        """
+                    )
+                except Exception as inner_exc:
+                    info = {"error": str(inner_exc)}
+                forms_info.append(info)
+            print(
+                f"[auth-debug] forms total={total_forms} active_forms={active_form_count} details={forms_info}",
+                flush=True,
+            )
+        except Exception:
+            pass
         _write_auth_ready_diagnostics(
             page, request, "active auth form submit not clickable"
         )
-        _debug_dump_auth_state(page, "active_form_not_clickable", submit_button)
+        _debug_dump_auth_state(page, "active_form_not_clickable", submit_buttons)
         raise AssertionError(
             "Active auth form submit button not clickable within "
             f"{timeout_ms}ms. The flip animation may still be in progress."
@@ -667,8 +738,8 @@ def active_auth_context(page, request):
             page.wait_for_function(
                 """
                 () => {
-                  const forms = Array.from(document.querySelectorAll('form'))
-                    .filter((el) => el.querySelector('input[autocomplete="email"]'));
+                  const forms = Array.from(document.querySelectorAll("form[data-testid='auth-form']"))
+                    .filter((el) => el.querySelector("[data-testid='auth-email']"));
                   const getFace = (el) => {
                     let node = el;
                     while (node && node !== document.body) {
@@ -762,7 +833,7 @@ def active_auth_context(page, request):
                   forms.forEach((el) => el.removeAttribute('data-qa-active'));
                   if (!pick || !pick.el) return false;
                   pick.el.setAttribute('data-qa-active', 'true');
-                  const submit = pick.el.querySelector('button[type="submit"]');
+                  const submit = pick.el.querySelector("[data-testid='auth-submit']");
                   return Boolean(submit) && pick.facing > 0;
                 }
                 """,
@@ -780,8 +851,8 @@ def active_auth_context(page, request):
 
     def _get():
         _wait_for_auth_ui_ready(page, request)
-        _mark_active_form()
-        form = page.locator("form[data-qa-active='true']")
+        card = page.locator("[data-testid='auth-card-active']")
+        form = page.locator(AUTH_ACTIVE_FORM_SELECTOR)
         timeout_ms = _env_int("AUTH_READY_TIMEOUT_MS", AUTH_READY_TIMEOUT_MS_DEFAULT)
         try:
             expect(form).to_have_count(1, timeout=timeout_ms)
@@ -793,7 +864,6 @@ def active_auth_context(page, request):
                 "Active auth form not found. The login card may not be visible or the DOM changed."
             ) from exc
         _wait_for_active_form_clickable(page, request, form)
-        card = form.locator("xpath=..")
         return form, card
 
     return _get

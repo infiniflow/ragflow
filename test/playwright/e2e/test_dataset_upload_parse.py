@@ -101,7 +101,8 @@ def _wait_for_dataset_detail_ready(page, timeout_ms: int = RESULT_TIMEOUT_MS) ->
 
 
 def _upload_file(page, dialog, file_path: str) -> None:
-    dropzone = dialog.locator("text=Drag and drop your file here to upload").first
+    dropzone = dialog.locator("[data-testid='dataset-upload-dropzone']").first
+    expect(dropzone).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     if hasattr(page, "expect_file_chooser"):
         with page.expect_file_chooser() as chooser_info:
             dropzone.click()
@@ -114,30 +115,11 @@ def _upload_file(page, dialog, file_path: str) -> None:
 
 
 def _wait_for_success_dot(page, file_name: str, timeout_ms: int = RESULT_TIMEOUT_MS) -> None:
-    name_json = json.dumps(file_name)
-    wait_js = f"""
-        () => {{
-          const name = {name_json};
-          const rows = Array.from(document.querySelectorAll('tbody tr'));
-          const row = rows.find((r) => r.innerText && r.innerText.includes(name));
-          if (!row) return false;
-          const dot = row.querySelector('span.size-1.inline-block.rounded');
-          if (!dot) return false;
-          const style = window.getComputedStyle(dot);
-          const color = (style.backgroundColor || '').replace(/\\s+/g, '').toLowerCase();
-          const token = (window.getComputedStyle(document.documentElement).getPropertyValue('--state-success') || '').trim();
-          const normalizedToken = token.replace(/\\s+/g, '');
-          const candidates = new Set();
-          if (normalizedToken) {{
-            candidates.add('rgb(' + normalizedToken + ')');
-            candidates.add('rgba(' + normalizedToken + ')');
-          }}
-          candidates.add('rgb(59,160,92)');
-          candidates.add('rgba(59,160,92,1)');
-          return candidates.has(color);
-        }}
-        """
-    page.wait_for_function(wait_js, timeout=timeout_ms)
+    name_selector = f"[data-doc-name={json.dumps(file_name)}]"
+    row = page.locator(f"[data-testid='document-row']{name_selector}")
+    expect(row).to_be_visible(timeout=timeout_ms)
+    status = row.locator("[data-testid='document-parse-status']")
+    expect(status).to_have_attribute("data-state", "success", timeout=timeout_ms)
 
 
 def _dump_clickable_candidates(page) -> None:
@@ -159,12 +141,7 @@ def _dump_clickable_candidates(page) -> None:
 
 
 def _get_upload_modal(page):
-    modal = page.locator("[role='dialog']").filter(
-        has=page.locator("text=/drag and drop your file here to upload/i")
-    )
-    if modal.count() == 0:
-        modal = page.locator("[role='dialog']").filter(has_text=re.compile(r"upload", re.I))
-    return modal
+    return page.locator("[data-testid='dataset-upload-modal']")
 
 
 def _ensure_upload_modal_open(page, auth_click, timeout_ms: int = RESULT_TIMEOUT_MS):
@@ -179,22 +156,13 @@ def _ensure_upload_modal_open(page, auth_click, timeout_ms: int = RESULT_TIMEOUT
 
 
 def _ensure_parse_on(upload_modal) -> None:
-    parse_label = upload_modal.locator(
-        "label", has_text=re.compile("parse on creation", re.I)
-    ).first
-    expect(parse_label).to_be_visible()
-    parse_row = parse_label.locator("xpath=..")
-    parse_switch = parse_row.locator("[role='switch'], button").first
-    state = parse_switch.get_attribute("aria-checked")
-    if state is None:
-        state = parse_switch.get_attribute("data-state")
-    if state in ("true", "checked"):
+    parse_switch = upload_modal.locator("[data-testid='parse-on-creation-toggle']").first
+    expect(parse_switch).to_be_visible()
+    state = parse_switch.get_attribute("data-state")
+    if state == "checked":
         return
     parse_switch.click()
-    if parse_switch.get_attribute("aria-checked") is not None:
-        expect(parse_switch).to_have_attribute("aria-checked", "true")
-    else:
-        expect(parse_switch).to_have_attribute("data-state", "checked")
+    expect(parse_switch).to_have_attribute("data-state", "checked")
 
 
 def _open_upload_modal_from_dataset_detail(page, auth_click, timeout_ms: int = RESULT_TIMEOUT_MS):
@@ -353,13 +321,7 @@ def _open_upload_modal_from_dataset_detail(page, auth_click, timeout_ms: int = R
     except Exception:
         pass
 
-    upload_modal = page.locator("[role='dialog']").filter(
-        has=page.locator("text=/drag and drop your file here to upload/i")
-    )
-    if upload_modal.count() == 0:
-        upload_modal = page.locator("[role='dialog']").filter(
-            has_text=re.compile(r"upload", re.I)
-        )
+    upload_modal = page.locator("[data-testid='dataset-upload-modal']")
     expect(upload_modal).to_be_visible(timeout=timeout_ms)
     return upload_modal
 
@@ -666,50 +628,41 @@ def test_dataset_upload_parse_and_delete(
             expect(upload_modal).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
         snap(f"upload_{filename}_submitted")
 
-        row = page.locator("tbody tr", has_text=filename).first
+        row = page.locator(
+            f"[data-testid='document-row'][data-doc-name={json.dumps(filename)}]"
+        )
         expect(row).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
         with step(f"wait for parse success {filename}"):
             _wait_for_success_dot(page, filename, timeout_ms=RESULT_TIMEOUT_MS)
-            dot_button = row.locator(
-                "button", has=row.locator("span.size-1.inline-block.rounded")
-            ).first
-            if dot_button.count() > 0:
-                dot_button.click()
-                dialog = page.locator("[role='dialog']").filter(
-                    has_text=re.compile("status", re.I)
-                )
-                dialog_visible = True
-                try:
-                    expect(dialog).to_be_visible(timeout=5000)
-                except PlaywrightTimeoutError:
-                    dialog_visible = False
-                if dialog_visible:
-                    if dialog.locator("text=Success").count() > 0:
-                        expect(dialog.locator("text=Success")).to_be_visible()
-                    close_button = dialog.locator(
-                        "button", has_text=re.compile("close", re.I)
-                    )
-                    if close_button.count() > 0:
-                        close_button.first.click()
         snap(f"parse_{filename}_success")
 
     delete_filename = "Doc3.pdf"
     with step(f"delete uploaded file {delete_filename}"):
-        row = page.locator("tbody tr", has_text=delete_filename).first
+        row = page.locator(
+            f"[data-testid='document-row'][data-doc-name={json.dumps(delete_filename)}]"
+        )
         expect(row).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-        row.hover()
-        delete_button = row.locator("td").last.locator("button").last
+        delete_button = row.locator("[data-testid='document-delete']")
+        expect(delete_button).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         delete_button.click()
         confirm = page.locator("[role='alertdialog']")
         expect(confirm).to_be_visible()
         confirm.locator("button", has_text=re.compile("^delete$", re.I)).first.click()
         expect(row).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
     snap("file_deleted_doc3")
-    expect(page.locator("tbody tr", has_text="Doc1.pdf").first).to_be_visible(
+    expect(
+        page.locator(
+            f"[data-testid='document-row'][data-doc-name={json.dumps('Doc1.pdf')}]"
+        )
+    ).to_be_visible(
         timeout=RESULT_TIMEOUT_MS
     )
-    expect(page.locator("tbody tr", has_text="Doc2.pdf").first).to_be_visible(
+    expect(
+        page.locator(
+            f"[data-testid='document-row'][data-doc-name={json.dumps('Doc2.pdf')}]"
+        )
+    ).to_be_visible(
         timeout=RESULT_TIMEOUT_MS
     )
     snap("success")

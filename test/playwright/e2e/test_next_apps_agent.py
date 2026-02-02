@@ -59,8 +59,19 @@ def test_agent_create_then_import_json_then_run_and_wait_idle(
 
     first_name = _unique_name("qa-agent")
     with step("create first agent"):
-        _open_create_from_list(page, "agents-empty-create", "create-agent")
-        _fill_and_save_create_modal(page, first_name)
+        _open_create_from_list(
+            page,
+            "agents-empty-create",
+            "create-agent",
+            modal_testid="agent-create-modal",
+        )
+        _fill_and_save_create_modal(
+            page,
+            first_name,
+            modal_testid="agent-create-modal",
+            name_input_testid="agent-name-input",
+            save_testid="agent-save",
+        )
         expect(page.locator("[data-testid='agents-list']")).to_be_visible(
             timeout=RESULT_TIMEOUT_MS
         )
@@ -83,10 +94,10 @@ def test_agent_create_then_import_json_then_run_and_wait_idle(
         snap("agent_import_modal")
 
         _set_import_file(modal, str(dv_path))
-        name_input = modal.locator("[data-testid='app-name-input']")
+        name_input = modal.locator("[data-testid='agent-name-input']")
         expect(name_input).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         name_input.fill(second_name)
-        save_button = modal.locator("[data-testid='app-save']")
+        save_button = modal.locator("[data-testid='agent-import-save']")
         expect(save_button).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         save_button.click()
         expect(modal).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)

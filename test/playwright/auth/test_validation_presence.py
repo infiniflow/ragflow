@@ -9,10 +9,16 @@ def test_validation_presence(login_url, page, active_auth_context, step, auth_cl
         page.goto(login_url, wait_until="domcontentloaded")
 
     form, _ = active_auth_context()
-    expect(form.locator("input[autocomplete='email']")).to_have_count(1)
+    expect(
+        form.locator(
+            "input[data-testid='auth-email'], [data-testid='auth-email'] input"
+        )
+    ).to_have_count(1)
 
     with step("submit empty login form"):
-        submit_button = form.locator("button[type='submit']")
+        submit_button = form.locator(
+            "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
+        )
         expect(submit_button).to_have_count(1)
         auth_click(submit_button, "submit_validation")
 

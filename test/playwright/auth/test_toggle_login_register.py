@@ -9,7 +9,7 @@ def test_toggle_login_register(login_url, page, active_auth_context, step):
         page.goto(login_url, wait_until="domcontentloaded")
 
     form, card = active_auth_context()
-    toggle_button = card.locator("form + div button")
+    toggle_button = card.locator("[data-testid='auth-toggle-register']")
     if toggle_button.count() == 0:
         pytest.skip("Register toggle not present; registerEnabled may be disabled.")
 
@@ -18,16 +18,15 @@ def test_toggle_login_register(login_url, page, active_auth_context, step):
         toggle_button.click()
 
     form, _ = active_auth_context()
-    nickname_input = form.locator("input[autocomplete='username']")
+    nickname_input = form.locator("[data-testid='auth-nickname']")
     expect(nickname_input).to_have_count(1)
     expect(nickname_input).to_be_visible()
 
     with step("switch back to login"):
-        _, card = active_auth_context()
-        toggle_back = card.locator("form + div button")
+        toggle_back = card.locator("[data-testid='auth-toggle-login']")
         expect(toggle_back).to_have_count(1)
         toggle_back.click()
 
     form, _ = active_auth_context()
-    nickname_input = form.locator("input[autocomplete='username']")
+    nickname_input = form.locator("[data-testid='auth-nickname']")
     expect(nickname_input).to_have_count(0)

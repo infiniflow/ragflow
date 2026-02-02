@@ -31,7 +31,12 @@ def _nav_click(page, testid: str) -> None:
     locator.click()
 
 
-def _open_create_from_list(page, empty_testid: str, create_btn_testid: str):
+def _open_create_from_list(
+    page,
+    empty_testid: str,
+    create_btn_testid: str,
+    modal_testid: str = "rename-modal",
+):
     empty = page.locator(f"[data-testid='{empty_testid}']")
     if empty.count() > 0 and empty.is_visible():
         empty.click()
@@ -39,18 +44,24 @@ def _open_create_from_list(page, empty_testid: str, create_btn_testid: str):
         create_btn = page.locator(f"[data-testid='{create_btn_testid}']")
         expect(create_btn).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         create_btn.click()
-    modal = page.locator("[data-testid='create-app-modal']")
+    modal = page.locator(f"[data-testid='{modal_testid}']")
     expect(modal).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     return modal
 
 
-def _fill_and_save_create_modal(page, name: str) -> None:
-    modal = page.locator("[data-testid='create-app-modal']")
+def _fill_and_save_create_modal(
+    page,
+    name: str,
+    modal_testid: str = "rename-modal",
+    name_input_testid: str = "rename-name-input",
+    save_testid: str = "rename-save",
+) -> None:
+    modal = page.locator(f"[data-testid='{modal_testid}']")
     expect(modal).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-    name_input = modal.locator("[data-testid='app-name-input']")
+    name_input = modal.locator(f"[data-testid='{name_input_testid}']")
     expect(name_input).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     name_input.fill(name)
-    save_button = modal.locator("[data-testid='app-save']")
+    save_button = modal.locator(f"[data-testid='{save_testid}']")
     expect(save_button).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     save_button.click()
     expect(modal).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
@@ -84,7 +95,33 @@ def _select_first_dataset_and_save(
     response_timeout_ms: int = 30000,
     post_save_ready_locator=None,
 ) -> None:
-    combobox = page.locator("[data-testid='datasets-combobox']")
+    chat_root = page.locator("[data-testid='chat-detail']")
+    search_root = page.locator("[data-testid='search-detail']")
+    scope_root = None
+    combobox_testid = None
+    save_testid = None
+    try:
+        if chat_root.count() > 0 and chat_root.is_visible():
+            scope_root = chat_root
+            combobox_testid = "chat-datasets-combobox"
+            save_testid = "chat-settings-save"
+    except Exception:
+        pass
+    if scope_root is None:
+        try:
+            if search_root.count() > 0 and search_root.is_visible():
+                scope_root = search_root
+                combobox_testid = "search-datasets-combobox"
+                save_testid = "search-settings-save"
+        except Exception:
+            pass
+    if scope_root is None:
+        scope_root = page
+        combobox_testid = "search-datasets-combobox"
+        save_testid = "search-settings-save"
+
+    combobox = scope_root.locator(f"[data-testid='{combobox_testid}']")
+    expect(combobox).to_have_count(1, timeout=timeout_ms)
     expect(combobox).to_be_visible(timeout=timeout_ms)
     combo_text = ""
     try:
@@ -98,6 +135,11 @@ def _select_first_dataset_and_save(
 
     options = page.locator("[data-testid='datasets-options']")
     expect(options).to_be_visible(timeout=timeout_ms)
+    try:
+        expect(options).to_have_count(1, timeout=timeout_ms)
+        options = options.first
+    except AssertionError:
+        pass
 
     option = options.locator("[data-testid='datasets-option-0']")
     if option.count() == 0:
@@ -107,11 +149,13 @@ def _select_first_dataset_and_save(
     expect(option).to_be_visible(timeout=timeout_ms)
     option.click()
 
-    save_button = page.locator("[data-testid='dialog-set-save']")
+    save_button = scope_root.locator(f"[data-testid='{save_testid}']")
     if save_button.count() == 0:
-        save_button = page.locator(
+        save_button = scope_root.locator(
             "button[type='submit']", has_text=re.compile(r"^save$", re.I)
         ).first
+    else:
+        expect(save_button).to_have_count(1, timeout=timeout_ms)
 
     def trigger():
         save_button.click()
