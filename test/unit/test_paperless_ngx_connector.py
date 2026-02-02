@@ -524,10 +524,13 @@ class TestIgnoreTimeFilter:
         end_timestamp = datetime(2024, 12, 31, tzinfo=timezone.utc).timestamp()
         list(connector.poll_source(start_timestamp, end_timestamp))
         
-        # When ignore_time_filter is True, _yield_paperless_documents should be called with None, None
-        call_args = mock_yield.call_args[1]
-        assert call_args.get("start") is None
-        assert call_args.get("end") is None
+        # When ignore_time_filter is True, _yield_paperless_documents is called with keyword args (start=None, end=None)
+        call_args = mock_yield.call_args
+        # Check both positional and keyword arguments for None values
+        start_val = call_args.kwargs.get("start") if call_args.kwargs else call_args.args[0] if call_args.args else None
+        end_val = call_args.kwargs.get("end") if call_args.kwargs else call_args.args[1] if len(call_args.args) > 1 else None
+        assert start_val is None
+        assert end_val is None
 
     @patch("common.data_source.paperless_ngx_connector.PaperlessNgxConnector._yield_paperless_documents")
     def test_poll_source_with_ignore_time_filter_false(self, mock_yield):
@@ -546,12 +549,15 @@ class TestIgnoreTimeFilter:
         end_timestamp = datetime(2024, 12, 31, tzinfo=timezone.utc).timestamp()
         list(connector.poll_source(start_timestamp, end_timestamp))
         
-        # When ignore_time_filter is False, _yield_paperless_documents should be called with actual dates
-        call_args = mock_yield.call_args[0]
-        assert call_args[0] is not None  # start datetime
-        assert call_args[1] is not None  # end datetime
-        assert call_args[0].year == 2024
-        assert call_args[0].month == 1
+        # When ignore_time_filter is False, _yield_paperless_documents is called with positional args (datetime, datetime)
+        call_args = mock_yield.call_args
+        # Check both positional and keyword arguments for actual date values
+        start_val = call_args.args[0] if call_args.args else call_args.kwargs.get("start")
+        end_val = call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs.get("end")
+        assert start_val is not None  # start datetime
+        assert end_val is not None  # end datetime
+        assert start_val.year == 2024
+        assert start_val.month == 1
 
 
 if __name__ == "__main__":
