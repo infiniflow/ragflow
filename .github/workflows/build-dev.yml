@@ -2,8 +2,8 @@ name: Build Multi-Arch Ragflow (development)
 
 on:
   workflow_dispatch:
-#  push:
-    #branches: [ "development" ]
+  push:
+    branches: [ "development" ]
 
 jobs:
   build-ragflow:
