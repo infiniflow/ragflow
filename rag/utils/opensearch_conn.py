@@ -72,7 +72,8 @@ class OSConnection(DocStoreConnection):
             msg = f"OpenSearch mapping file not found at {fp_mapping}"
             logger.error(msg)
             raise Exception(msg)
-        self.mapping = json.load(open(fp_mapping, "r"))
+        with open(fp_mapping, "r") as f:
+            self.mapping = json.load(f)
         logger.info(f"OpenSearch {settings.OS['hosts']} is healthy.")
 
     """
@@ -91,7 +92,7 @@ class OSConnection(DocStoreConnection):
     Table operations
     """
 
-    def create_idx(self, indexName: str, knowledgebaseId: str, vectorSize: int):
+    def create_idx(self, indexName: str, knowledgebaseId: str, vectorSize: int, parser_id: str = None):
         if self.index_exist(indexName, knowledgebaseId):
             return True
         try:

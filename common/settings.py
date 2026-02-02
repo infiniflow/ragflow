@@ -79,6 +79,7 @@ FEISHU_OAUTH = None
 OAUTH_CONFIG = None
 DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
 DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
+DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
 
 
 docStoreConn = None
@@ -241,9 +242,10 @@ def init_settings():
     FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, DOC_ENGINE_INFINITY, docStoreConn, ES, OB, OS, INFINITY
+    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, docStoreConn, ES, OB, OS, INFINITY
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
     DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
+    DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
     lower_case_doc_engine = DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
         ES = get_base_config("es", {})
@@ -317,7 +319,7 @@ def init_settings():
 
     global retriever, kg_retriever
     retriever = search.Dealer(docStoreConn)
-    from graphrag import search as kg_search
+    from rag.graphrag import search as kg_search
 
     kg_retriever = kg_search.KGSearch(docStoreConn)
 

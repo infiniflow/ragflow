@@ -35,7 +35,7 @@ from api.db.services.conversation_service import ConversationService
 from api.db.services.conversation_service import async_iframe_completion as iframe_completion
 from api.db.services.conversation_service import async_completion as rag_completion
 from api.db.services.dialog_service import DialogService, async_ask, async_chat, gen_mindmap
-from api.db.services.document_service import DocumentService
+from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter, convert_conditions, meta_filter
@@ -147,7 +147,7 @@ async def chat_completion(tenant_id, chat_id):
         return get_error_data_result(message="metadata_condition must be an object.")
 
     if metadata_condition and req.get("question"):
-        metas = DocumentService.get_meta_by_kbs(dia.kb_ids or [])
+        metas = DocMetadataService.get_flatted_meta_by_kbs(dia.kb_ids or [])
         filtered_doc_ids = meta_filter(
             metas,
             convert_conditions(metadata_condition),
@@ -279,7 +279,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 
     doc_ids_str = None
     if metadata_condition:
-        metas = DocumentService.get_meta_by_kbs(dia.kb_ids or [])
+        metas = DocMetadataService.get_flatted_meta_by_kbs(dia.kb_ids or [])
         filtered_doc_ids = meta_filter(
             metas,
             convert_conditions(metadata_condition),
@@ -1084,7 +1084,7 @@ async def retrieval_test_embedded():
                 chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
 
         if meta_data_filter:
-            metas = DocumentService.get_meta_by_kbs(kb_ids)
+            metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
             local_doc_ids = await apply_meta_data_filter(meta_data_filter, metas, _question, chat_mdl, local_doc_ids)
 
         tenants = UserTenantService.query(user_id=tenant_id)
