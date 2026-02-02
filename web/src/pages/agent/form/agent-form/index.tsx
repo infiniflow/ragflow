@@ -162,7 +162,7 @@ function AgentForm({ node }: INextOperatorForm) {
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
           <LargeModelFormField showSpeech2TextModel></LargeModelFormField>
-          {findLlmByUuid(llmId)?.model_type === LlmModelType.Image2text && (
+          {findLlmByUuid(llmId)?.tags?.includes('IMAGE2TEXT') && (
             <QueryVariable
               name="visual_files_var"
               label="Visual Input File"
