@@ -442,13 +442,20 @@ class FileService(CommonService):
             doc_id = file.id if hasattr(file, "id") else get_uuid()
             e, doc = DocumentService.get_by_id(doc_id)
             if e:
-                # Document exists - update content and add to files for re-parsing
-                blob = file.read()
-                settings.STORAGE_IMPL.put(kb.id, doc.location, blob, kb.tenant_id)
-                doc.size = len(blob)
-                doc = doc.to_dict()
-                DocumentService.update_by_id(doc["id"], doc)
-                files.append((doc, blob))
+                # Document exists - update content and trigger re-parsing to refresh chunks
+                try:
+                    blob = file.read()
+                    old_size = doc.size
+                    settings.STORAGE_IMPL.put(kb.id, doc.location, blob, kb.tenant_id)
+                    doc.size = len(blob)
+                    doc = doc.to_dict()
+                    DocumentService.update_by_id(doc["id"], doc)
+                    # Add to files list to trigger re-parsing and update vector database
+                    files.append((doc, blob))
+                    logging.info(f"Document '{doc['name']}' (id={doc['id']}) content updated: {old_size} -> {doc['size']} bytes, queued for re-chunking")
+                except Exception as e:
+                    logging.exception(f"Failed to update document {doc_id}: {e}")
+                    err.append(file.filename + ": " + str(e))
                 continue
             try:
                 DocumentService.check_doc_health(kb.tenant_id, file.filename)
