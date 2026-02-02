@@ -781,6 +781,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     table_context_size = max(0, int(parser_config.get("table_context_size", 0) or 0))
     image_context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
 
+    overlapped_percent = int(parser_config.get("overlapped_percent", 0))
+    overlapped_percent = max(0, min(overlapped_percent, 90))
+
     # Document-level tokens for title-aware chunking.
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
