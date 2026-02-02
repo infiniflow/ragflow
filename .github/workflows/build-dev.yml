@@ -13,10 +13,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 1) Prepare Python env and download deps so COPY/mount works
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Install Python deps for download_deps.py
         run: |
@@ -30,14 +31,18 @@ jobs:
       - name: Run download_deps.py
         run: |
           python download_deps.py
+          ls -R
 
-      - name: Set up QEMU (amd64 + arm64)
+      # 2) Enable cross-build
+      - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
-          platforms: amd64,arm64
+          platforms: arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -45,20 +50,48 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Build deps as multi-arch and PUSH (cannot --load multi-arch)
-      - name: Build & Push ragflow_deps (multi-arch)
+      # ---------- AMD64 ----------
+      - name: Build ragflow_deps (AMD64) locally
         run: |
           docker buildx build \
-            --platform linux/amd64,linux/arm64 \
+            --platform linux/amd64 \
             -f Dockerfile.deps \
-            -t eurodoc/ragflow_deps:latest \
+            -t infiniflow/ragflow_deps:latest \
+            . --load
+
+      - name: Build & Push Ragflow (AMD64)
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -f Dockerfile \
+            -t eurodoc/medlibre-ragflow:amd64-dev \
             --push .
 
-      # Build final image as multi-arch and push ONE generic tag
-      - name: Build & Push Ragflow (multi-arch)
+      # ---------- ARM64 ----------
+      - name: Build ragflow_deps (ARM64) locally
         run: |
           docker buildx build \
-            --platform linux/amd64,linux/arm64 \
+            --platform linux/arm64 \
+            -f Dockerfile.deps \
+            -t infiniflow/ragflow_deps:latest \
+            . --load
+
+      - name: Build & Push Ragflow (ARM64)
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
             -f Dockerfile \
-            -t eurodoc/medlibre-ragflow:dev \
+            -t eurodoc/medlibre-ragflow:arm64-dev \
             --push .
+
+      # ---------- MANIFEST (generic tag) ----------
+      - name: Create & Push multi-arch manifest eurodoc/medlibre-ragflow:dev
+        run: |
+          docker buildx imagetools create \
+            -t eurodoc/medlibre-ragflow:dev \
+            eurodoc/medlibre-ragflow:amd64-dev \
+            eurodoc/medlibre-ragflow:arm64-dev
+
+      - name: Inspect manifest
+        run: |
+          docker buildx imagetools inspect eurodoc/medlibre-ragflow:dev
