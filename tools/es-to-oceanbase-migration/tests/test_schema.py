@@ -9,7 +9,6 @@ This module tests:
 """
 
 import json
-import pytest
 from es_ob_migration.schema import (
     RAGFlowSchemaConverter,
     RAGFlowDataConverter,
