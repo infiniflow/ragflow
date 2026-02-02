@@ -13,7 +13,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1) Prepare Python env and download deps
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -32,7 +31,6 @@ jobs:
         run: |
           python download_deps.py
 
-      # 2) Enable multi-arch builds
       - name: Set up QEMU (amd64 + arm64)
         uses: docker/setup-qemu-action@v3
         with:
@@ -47,20 +45,20 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 3) Build & push deps as multi-arch
+      # Build deps as multi-arch and PUSH (cannot --load multi-arch)
       - name: Build & Push ragflow_deps (multi-arch)
         run: |
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             -f Dockerfile.deps \
-            -t infiniflow/ragflow_deps:latest \
-            . --load
+            -t eurodoc/ragflow_deps:latest \
+            --push .
 
-      # 4) Build & push Ragflow (single generic tag)
+      # Build final image as multi-arch and push ONE generic tag
       - name: Build & Push Ragflow (multi-arch)
         run: |
           docker buildx build \
-            --platform linux/arm64 \
+            --platform linux/amd64,linux/arm64 \
             -f Dockerfile \
             -t eurodoc/medlibre-ragflow:dev \
-            . --push
+            --push .
