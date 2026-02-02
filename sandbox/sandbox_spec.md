@@ -1630,7 +1630,7 @@ PROVIDER_CLASSES = {
 ---
 
 **Document version**: 1.0
-**Last updated**: 2025-01-26
+**Last updated**: 2026-01-26
 **Author**: RAGFlow Team
 **Status**: Design Specification - Ready for Review
 
