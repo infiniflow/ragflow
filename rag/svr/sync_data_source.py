@@ -1096,6 +1096,10 @@ class PaperlessNGX(SyncBase):
         batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
         min_content_length = self.conf.get("min_content_length", 100)
         originals_path = self.conf.get("originals_path")
+        
+        # Import mode: 'full' ignores time filters, 'date_range' uses time filters
+        import_mode = self.conf.get("import_mode", "full")
+        ignore_time_filter = (import_mode == "full")
 
         self.connector = PaperlessNgxConnector(
             base_url=base_url,
@@ -1103,6 +1107,7 @@ class PaperlessNGX(SyncBase):
             batch_size=batch_size,
             verify_ssl=verify_ssl,
             min_content_length=min_content_length,
+            ignore_time_filter=ignore_time_filter,
         )
 
         # Load credentials
@@ -1125,9 +1130,10 @@ class PaperlessNGX(SyncBase):
             begin_info = f"from {poll_start}"
 
         logging.info(
-            "Connect to Paperless-ngx: %s %s",
+            "Connect to Paperless-ngx: %s %s (import_mode=%s)",
             base_url,
             begin_info,
+            import_mode,
         )
 
         return document_generator

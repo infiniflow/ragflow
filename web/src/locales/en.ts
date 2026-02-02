@@ -961,6 +961,8 @@ Example: Virtual Hosted Style`,
         'Number of documents to process in each batch. Adjust based on system resources.',
       paperless_ngxOriginalsPathTip:
         'Optional: Local filesystem path where Paperless-ngx originals are mounted (e.g., /mnt/paperless/originals). When configured, documents are read directly from the filesystem instead of downloading via API, improving performance.',
+      paperless_ngxImportModeTip:
+        'Select "Full Import" to import all documents from Paperless-ngx (ignores time filters). Select "Date Range" to only import documents modified within the polling date range.',
       google_driveMyDriveEmailsTip:
         'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:

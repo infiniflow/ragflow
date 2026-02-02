@@ -489,5 +489,76 @@ class TestPaperlessNgxConnector:
         assert "modified__lte" not in params
 
 
+class TestIgnoreTimeFilter:
+    """Test suite for ignore_time_filter functionality"""
+
+    def test_init_with_ignore_time_filter_true(self):
+        """Test connector initialization with ignore_time_filter=True"""
+        connector = PaperlessNgxConnector(
+            base_url="https://paperless.example.com",
+            ignore_time_filter=True,
+        )
+        assert connector.ignore_time_filter is True
+
+    def test_init_with_ignore_time_filter_false(self):
+        """Test connector initialization with ignore_time_filter=False (default)"""
+        connector = PaperlessNgxConnector(
+            base_url="https://paperless.example.com",
+        )
+        assert connector.ignore_time_filter is False
+
+    @patch("common.data_source.paperless_ngx_connector.PaperlessNgxConnector._yield_paperless_documents")
+    def test_poll_source_with_ignore_time_filter_true(self, mock_yield):
+        """Test poll_source ignores time filter when ignore_time_filter=True"""
+        connector = PaperlessNgxConnector(
+            base_url="https://paperless.example.com",
+            ignore_time_filter=True,
+        )
+        credentials = {"api_token": "test-token"}
+        connector.load_credentials(credentials)
+        
+        mock_yield.return_value = iter([[]])
+        
+        # Call poll_source with specific time range
+        start_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp()
+        end_timestamp = datetime(2024, 12, 31, tzinfo=timezone.utc).timestamp()
+        list(connector.poll_source(start_timestamp, end_timestamp))
+        
+        # When ignore_time_filter is True, _yield_paperless_documents is called with keyword args (start=None, end=None)
+        call_args = mock_yield.call_args
+        # Check both positional and keyword arguments for None values
+        start_val = call_args.kwargs.get("start") if call_args.kwargs else call_args.args[0] if call_args.args else None
+        end_val = call_args.kwargs.get("end") if call_args.kwargs else call_args.args[1] if len(call_args.args) > 1 else None
+        assert start_val is None
+        assert end_val is None
+
+    @patch("common.data_source.paperless_ngx_connector.PaperlessNgxConnector._yield_paperless_documents")
+    def test_poll_source_with_ignore_time_filter_false(self, mock_yield):
+        """Test poll_source uses time filter when ignore_time_filter=False"""
+        connector = PaperlessNgxConnector(
+            base_url="https://paperless.example.com",
+            ignore_time_filter=False,
+        )
+        credentials = {"api_token": "test-token"}
+        connector.load_credentials(credentials)
+        
+        mock_yield.return_value = iter([[]])
+        
+        # Call poll_source with specific time range
+        start_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp()
+        end_timestamp = datetime(2024, 12, 31, tzinfo=timezone.utc).timestamp()
+        list(connector.poll_source(start_timestamp, end_timestamp))
+        
+        # When ignore_time_filter is False, _yield_paperless_documents is called with positional args (datetime, datetime)
+        call_args = mock_yield.call_args
+        # Check both positional and keyword arguments for actual date values
+        start_val = call_args.args[0] if call_args.args else call_args.kwargs.get("start")
+        end_val = call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs.get("end")
+        assert start_val is not None  # start datetime
+        assert end_val is not None  # end datetime
+        assert start_val.year == 2024
+        assert start_val.month == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -861,6 +861,18 @@ export const DataSourceFormFields = {
       placeholder: '/mnt/paperless/originals',
       tooltip: t('setting.paperless_ngxOriginalsPathTip'),
     },
+    {
+      label: 'Import Mode',
+      name: 'config.import_mode',
+      type: FormFieldType.Segmented,
+      required: false,
+      defaultValue: 'full',
+      options: [
+        { label: 'Full Import', value: 'full' },
+        { label: 'Date Range', value: 'date_range' },
+      ],
+      tooltip: t('setting.paperless_ngxImportModeTip'),
+    },
   ],
 };
 
@@ -1151,6 +1163,7 @@ export const DataSourceFormDefaultValues = {
       verify_ssl: true,
       batch_size: 2,
       originals_path: '',
+      import_mode: 'full',
       credentials: {
         api_token: '',
       },
