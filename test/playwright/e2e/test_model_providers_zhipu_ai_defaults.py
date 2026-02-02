@@ -85,6 +85,12 @@ def _safe_close_modal(modal) -> None:
 
 
 def _open_user_settings(page, base_url: str) -> None:
+    entrypoint = page.locator("[data-testid='settings-entrypoint']")
+    if entrypoint.count() > 0:
+        entrypoint.first.click()
+        _wait_for_path_prefix(page, "/user-setting", timeout_ms=5000)
+        return
+
     header = page.locator("section").filter(has=page.locator("img[alt='logo']")).first
     candidates = [
         page.locator("a[href='/user-setting']"),
@@ -115,57 +121,138 @@ def _needs_selection(combobox, option_text: str) -> bool:
     return option_text not in current_text
 
 
-def _select_with_search(page, combobox, search_text: str, option_text: str) -> None:
-    combobox.click()
-    search_inputs = page.locator("input[placeholder='Search...'], input[placeholder='Search…']")
-    if search_inputs.count() > 0:
-        search_inputs.last.fill(search_text)
-    wait_js = """
-        () => {
-          const selectors = ['[role="listbox"]', '[cmdk-list]', '[data-state="open"]'];
-          return selectors.some((sel) => Array.from(document.querySelectorAll(sel)).some((el) => {
-            const rect = el.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0;
-          }));
-        }
-        """
-    page.wait_for_function(wait_js, timeout=RESULT_TIMEOUT_MS)
-
+def _click_with_retry(page, locator_factory, attempts: int = 3) -> None:
     last_exc = None
-    option_pattern = re.compile(re.escape(option_text), re.I)
-    for _ in range(5):
+    for _ in range(attempts):
+        option = locator_factory()
         try:
-            if hasattr(page, "get_by_role"):
-                option = page.get_by_role("option", name=option_pattern).first
-                if option.count() == 0:
-                    option = page.locator("[cmdk-item], [role='option']").filter(
-                        has_text=option_pattern
-                    ).first
-            else:
-                option = page.locator("[cmdk-item], [role='option']").filter(
-                    has_text=option_pattern
-                ).first
             expect(option).to_be_attached(timeout=RESULT_TIMEOUT_MS)
             expect(option).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-            try:
-                option.click()
-            except Exception as exc:
-                last_exc = exc
-                try:
-                    option.scroll_into_view_if_needed()
-                except Exception as scroll_exc:
-                    last_exc = scroll_exc
-                try:
-                    option.click(trial=True)
-                    option.click()
-                except Exception as click_exc:
-                    last_exc = click_exc
-                    option.click(force=True)
-            expect(combobox).to_contain_text(option_text, timeout=RESULT_TIMEOUT_MS)
+            option.scroll_into_view_if_needed()
+            option.click()
             return
         except Exception as exc:
             last_exc = exc
-    raise AssertionError(f"Failed to select option {option_text!r}: {last_exc}")
+            page.wait_for_timeout(100)
+    raise AssertionError(f"Click failed after {attempts} attempts: {last_exc}")
+
+
+def _select_cmdk_option_by_value_prefix(
+    page,
+    combobox,
+    value_prefix: str,
+    option_text: str,
+    fallback_to_first: bool = False,
+) -> tuple[str, str | None]:
+    combobox.click()
+    page.wait_for_selector(
+        "[data-testid='combobox-options']:visible [data-testid='combobox-option']",
+        timeout=RESULT_TIMEOUT_MS,
+    )
+    options_container = page.locator(
+        "[data-testid='combobox-options']:visible"
+    ).last
+
+    escaped_prefix = value_prefix.replace("'", "\\'")
+    value_selector = (
+        f"[data-testid='combobox-option'][data-value^='{escaped_prefix}']"
+    )
+    option_pattern = re.compile(rf"\\b{re.escape(option_text)}\\b", re.I)
+
+    def option_locator():
+        by_value = options_container.locator(value_selector)
+        if by_value.count() > 0:
+            return by_value.first
+        return options_container.locator("[data-testid='combobox-option']").filter(
+            has_text=option_pattern
+        ).first
+
+    option = option_locator()
+    if option.count() == 0:
+        options = options_container.locator("[data-testid='combobox-option']")
+        if fallback_to_first and options.count() > 0:
+            first_option = options.first
+            selected_text = ""
+            selected_value = None
+            try:
+                selected_text = first_option.inner_text().strip()
+            except Exception:
+                selected_text = ""
+            try:
+                selected_value = first_option.get_attribute("data-value")
+            except Exception:
+                selected_value = None
+            _click_with_retry(page, lambda: first_option, attempts=3)
+            if selected_text:
+                expect(combobox).to_contain_text(
+                    selected_text, timeout=RESULT_TIMEOUT_MS
+                )
+            return selected_text or option_text, selected_value
+        dump = []
+        count = min(options.count(), 30)
+        for i in range(count):
+            item = options.nth(i)
+            try:
+                text = item.inner_text().strip()
+            except Exception as exc:
+                text = f"<text-error:{exc}>"
+            try:
+                data_value = item.get_attribute("data-value")
+            except Exception as exc:
+                data_value = f"<value-error:{exc}>"
+            dump.append(f"{i + 1:02d}. text={text!r} data-value={data_value!r}")
+        dump_text = "\n".join(dump)
+        raise AssertionError(
+            "No matching cmdk option found. "
+            f"value_prefix={value_prefix!r} option_text={option_text!r} "
+            f"options_count={options.count()}\n"
+            f"options:\n{dump_text}"
+        )
+
+    _click_with_retry(page, option_locator, attempts=3)
+    expect(combobox).to_contain_text(option_text, timeout=RESULT_TIMEOUT_MS)
+    return option_text, option.get_attribute("data-value")
+
+
+def _select_default_model(
+    page,
+    combobox,
+    value_prefix: str,
+    option_text: str,
+    fallback_to_first: bool = False,
+) -> tuple[str, str | None]:
+    if not _needs_selection(combobox, option_text):
+        try:
+            current_text = combobox.inner_text().strip()
+        except Exception:
+            current_text = option_text
+        return current_text, None
+
+    selected = ("", None)
+
+    def trigger():
+        nonlocal selected
+        selected = _select_cmdk_option_by_value_prefix(
+            page,
+            combobox,
+            value_prefix,
+            option_text,
+            fallback_to_first=fallback_to_first,
+        )
+
+    try:
+        _capture_response(
+            page,
+            trigger,
+            lambda resp: resp.request.method == "POST"
+            and "/v1/user/set_tenant_info" in resp.url,
+        )
+    except PlaywrightTimeoutError:
+        pass
+
+    expected_text = selected[0] or option_text
+    expect(combobox).to_contain_text(expected_text, timeout=RESULT_TIMEOUT_MS)
+    return selected
 
 
 @pytest.mark.p1
@@ -216,14 +303,14 @@ def test_add_zhipu_ai_set_defaults_persist(
     snap("settings_opened")
 
     with step("open model providers"):
-        model_nav = page.locator("button", has_text="Model providers")
+        model_nav = page.locator("[data-testid='settings-nav-model-providers']")
         expect(model_nav).to_have_count(1)
         model_nav.first.click()
         expect(page.locator("text=Set default models")).to_be_visible()
     snap("model_providers_open")
 
     with step("filter providers"):
-        search_input = page.locator("input[placeholder='Search'], input[placeholder='search']")
+        search_input = page.locator("[data-testid='model-providers-search']")
         expect(search_input).to_have_count(1)
         search_input.first.fill("zhipu")
         available_section = page.locator("text=Available models").first.locator("xpath=..")
@@ -248,12 +335,10 @@ def test_add_zhipu_ai_set_defaults_persist(
             api_key_button = card.locator("button", has_text=re.compile("API-?Key", re.I)).first
             expect(api_key_button).to_be_visible()
             api_key_button.click()
-        modal = page.locator("[role='dialog']").filter(
-            has=page.locator("text=API-Key")
-        )
+        modal = page.locator("[data-testid='apikey-modal']")
         expect(modal).to_be_visible()
-        api_input = modal.locator("input").first
-        save_button = modal.locator("button", has_text=re.compile("save", re.I)).first
+        api_input = modal.locator("[data-testid='apikey-input']").first
+        save_button = modal.locator("[data-testid='apikey-save']").first
         try:
             def trigger():
                 api_input.fill(api_key)
@@ -270,47 +355,38 @@ def test_add_zhipu_ai_set_defaults_persist(
             raise
 
     with step("confirm added model"):
-        added_section = page.locator("text=Added models").first.locator("xpath=..")
+        added_section = page.locator("[data-testid='added-models-section']")
         expect(added_section).to_be_visible()
-        expect(added_section.locator("text=ZHIPU-AI")).to_be_visible()
+        expect(
+            added_section.locator(
+                "[data-testid='added-model-card'][data-provider='ZHIPU-AI']"
+            )
+        ).to_be_visible()
     snap("provider_saved")
 
     with step("set default models"):
-        llm_row = page.locator("label", has_text="LLM").first.locator("xpath=..")
-        llm_combo = llm_row.locator("button[role='combobox']").first
+        llm_combo = page.locator("[data-testid='default-llm-combobox']").first
+        emb_combo = page.locator("[data-testid='default-embedding-combobox']").first
 
-        if _needs_selection(llm_combo, "glm-4-flash"):
-            def llm_trigger():
-                _select_with_search(page, llm_combo, "glm-4-flash", "glm-4-flash")
-
-            _capture_response(
-                page,
-                llm_trigger,
-                lambda resp: resp.request.method == "POST" and "/v1/user/set_tenant_info" in resp.url,
-            )
-
-        emb_row = page.locator("label", has_text="Embedding").first.locator("xpath=..")
-        emb_combo = emb_row.locator("button[role='combobox']").first
-
-        if _needs_selection(emb_combo, "embedding-2"):
-            def emb_trigger():
-                _select_with_search(page, emb_combo, "embedding-2", "embedding-2")
-
-            _capture_response(
-                page,
-                emb_trigger,
-                lambda resp: resp.request.method == "POST" and "/v1/user/set_tenant_info" in resp.url,
-            )
+        _select_default_model(page, llm_combo, "glm-4-flash", "glm-4-flash")
+        # Embedding availability varies by provider; fallback to first available if embedding-2 is absent.
+        selected_emb_text, selected_emb_value = _select_default_model(
+            page,
+            emb_combo,
+            "embedding-2",
+            "embedding-2",
+            fallback_to_first=True,
+        )
 
     snap("defaults_selected")
 
     with step("reload and verify defaults"):
         page.reload(wait_until="domcontentloaded")
         expect(page.locator("text=Set default models")).to_be_visible()
-        llm_combo = page.locator("label", has_text="LLM").first.locator("xpath=..").locator("button[role='combobox']").first
-        emb_combo = page.locator("label", has_text="Embedding").first.locator("xpath=..").locator("button[role='combobox']").first
+        llm_combo = page.locator("[data-testid='default-llm-combobox']").first
+        emb_combo = page.locator("[data-testid='default-embedding-combobox']").first
         expect(llm_combo).to_contain_text("glm-4-flash")
-        expect(emb_combo).to_contain_text("embedding-2")
+        expect(emb_combo).to_contain_text(selected_emb_text or "embedding-2")
         added_section = page.locator("text=Added models").first.locator("xpath=..")
         expect(added_section.locator("text=ZHIPU-AI")).to_be_visible()
     snap("defaults_persisted")

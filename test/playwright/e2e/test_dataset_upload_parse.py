@@ -199,6 +199,20 @@ def _ensure_parse_on(upload_modal) -> None:
 
 def _open_upload_modal_from_dataset_detail(page, auth_click, timeout_ms: int = RESULT_TIMEOUT_MS):
     _wait_for_dataset_detail_ready(page, timeout_ms=timeout_ms)
+    page.wait_for_selector("button", timeout=timeout_ms)
+
+    if hasattr(page, "get_by_role"):
+        tab_locator = page.get_by_role(
+            "tab", name=re.compile(r"^(files|documents|file)$", re.I)
+        )
+        if tab_locator.count() > 0:
+            tab = tab_locator.first
+            try:
+                if tab.is_visible():
+                    tab.click()
+                    page.wait_for_timeout(250)
+            except Exception:
+                pass
 
     candidate_names = re.compile(
         r"(upload file|upload|add file|add document|add|new)", re.I
@@ -224,9 +238,56 @@ def _open_upload_modal_from_dataset_detail(page, auth_click, timeout_ms: int = R
                 continue
 
     if trigger is None:
+        aria_candidates = page.locator(
+            "button[aria-label], button[title], [role='button'][aria-label], [role='button'][title]"
+        )
+        limit = min(aria_candidates.count(), 10)
+        for idx in range(limit):
+            candidate = aria_candidates.nth(idx)
+            try:
+                if not candidate.is_visible():
+                    continue
+                aria_label = candidate.get_attribute("aria-label") or ""
+                title = candidate.get_attribute("title") or ""
+                if candidate_names.search(aria_label) or candidate_names.search(title):
+                    trigger = candidate
+                    break
+            except Exception:
+                continue
+
+    if trigger is None:
         if _env_bool("PW_DEBUG_DUMP"):
             _debug("[dataset] upload_trigger_not_found initial scan")
-        raise AssertionError("Upload entrypoint not found on dataset detail page.")
+        button_dump = []
+        buttons = page.locator("button")
+        total = buttons.count()
+        limit = min(total, 20)
+        for idx in range(limit):
+            item = buttons.nth(idx)
+            try:
+                if not item.is_visible():
+                    continue
+            except Exception:
+                continue
+            try:
+                text = item.inner_text().strip()
+            except Exception as exc:
+                text = f"<text-error:{exc}>"
+            try:
+                aria_label = item.get_attribute("aria-label")
+            except Exception as exc:
+                aria_label = f"<aria-error:{exc}>"
+            try:
+                title = item.get_attribute("title")
+            except Exception as exc:
+                title = f"<title-error:{exc}>"
+            button_dump.append(
+                {"text": text, "aria_label": aria_label, "title": title}
+            )
+        raise AssertionError(
+            "Upload entrypoint not found on dataset detail page. "
+            f"visible_buttons={button_dump}"
+        )
 
     try:
         if trigger.evaluate("el => el.tagName.toLowerCase() === 'button'"):
