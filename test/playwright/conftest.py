@@ -1,4 +1,6 @@
+import base64
 import faulthandler
+import json
 import os
 import re
 import secrets
@@ -6,14 +8,17 @@ import signal
 import time
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
+from urllib.request import Request, urlopen
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect, sync_playwright
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = Path(__file__).resolve().parent / "artifacts"
-BASE_URL_DEFAULT = "http://localhost:9222"
+BASE_URL_DEFAULT = "http://127.0.0.1"
 LOGIN_PATH_DEFAULT = "/login"
 DEFAULT_TIMEOUT_MS = 15000
 DEFAULT_HANG_TIMEOUT_S = 120
@@ -35,6 +40,13 @@ AUTH_SUBMIT_SELECTOR = (
     "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
 )
 
+_PUBLIC_KEY_CACHE = None
+_RSA_CIPHER_CACHE = None
+
+
+class _RegisterDisabled(RuntimeError):
+    pass
+
 
 def _env_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
@@ -51,6 +63,8 @@ def _env_int(name: str, default: int) -> int:
         return int(value)
     except ValueError:
         return default
+
+
 
 
 def _failure_text(req) -> str:
@@ -133,6 +147,223 @@ def _assert_reg_email(email: str) -> None:
         raise AssertionError(f"Registration email fails backend regex: {email}")
 
 
+def _api_post_json(url: str, payload: dict, timeout_s: int = 10) -> tuple[int, dict | None]:
+    data = json.dumps(payload).encode("utf-8")
+    req = Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=timeout_s) as resp:
+            body = resp.read()
+            if body:
+                try:
+                    return resp.status, json.loads(body.decode("utf-8"))
+                except Exception:
+                    return resp.status, None
+            return resp.status, None
+    except HTTPError as exc:
+        body = exc.read()
+        parsed = None
+        if body:
+            try:
+                parsed = json.loads(body.decode("utf-8"))
+            except Exception:
+                parsed = None
+        raise RuntimeError(f"HTTPError {exc.code}: {parsed or body!r}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"URLError: {exc}") from exc
+
+
+def _rsa_encrypt_password(password: str) -> str:
+    global _PUBLIC_KEY_CACHE
+    global _RSA_CIPHER_CACHE
+    try:
+        from Cryptodome.PublicKey import RSA
+        from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
+    except Exception as exc:
+        raise RuntimeError(
+            "Cryptodome is required to encrypt passwords for API seeding. "
+            "Set RAGFLOW_SEEDING_MODE=ui to skip API seeding."
+        ) from exc
+    if _PUBLIC_KEY_CACHE is None:
+        public_key_path = ROOT_DIR / "conf" / "public.pem"
+        if not public_key_path.exists():
+            raise RuntimeError(f"Missing RSA public key at {public_key_path}")
+        _PUBLIC_KEY_CACHE = public_key_path.read_text(encoding="utf-8")
+    if _RSA_CIPHER_CACHE is None:
+        rsa_key = RSA.importKey(_PUBLIC_KEY_CACHE, "Welcome")
+        _RSA_CIPHER_CACHE = Cipher_pkcs1_v1_5.new(rsa_key)
+    password_base64 = base64.b64encode(password.encode("utf-8")).decode("utf-8")
+    encrypted_password = _RSA_CIPHER_CACHE.encrypt(password_base64.encode("utf-8"))
+    return base64.b64encode(encrypted_password).decode("utf-8")
+
+
+def _is_register_disabled_message(message: str) -> bool:
+    lowered = (message or "").lower()
+    return "registration is disabled" in lowered or "register disabled" in lowered
+
+
+def _api_register_user(base_url: str, email: str, password: str, nickname: str) -> None:
+    url = _build_url(base_url, "/v1/user/register")
+    encrypted_password = _rsa_encrypt_password(password)
+    status, payload = _api_post_json(
+        url,
+        {"email": email, "password": encrypted_password, "nickname": nickname},
+        timeout_s=10,
+    )
+    if status >= 400:
+        raise RuntimeError(f"register failed status={status}")
+    if isinstance(payload, dict) and payload.get("code") not in (0, None):
+        message = str(payload.get("message") or payload)
+        if _is_register_disabled_message(message):
+            raise _RegisterDisabled(message)
+        raise RuntimeError(f"register failed payload={payload}")
+
+
+def _api_login_user(base_url: str, email: str, password: str) -> None:
+    url = _build_url(base_url, "/v1/user/login")
+    encrypted_password = _rsa_encrypt_password(password)
+    status, payload = _api_post_json(
+        url,
+        {"email": email, "password": encrypted_password},
+        timeout_s=10,
+    )
+    if status >= 400:
+        raise RuntimeError(f"login failed status={status}")
+    if isinstance(payload, dict) and payload.get("code") not in (0, None):
+        raise RuntimeError(f"login failed payload={payload}")
+
+
+def _generate_seeded_email(base_email: str) -> str:
+    local, domain = _split_email_base(base_email)
+    if "+" in local:
+        local = local.split("+", 1)[0]
+    suffix = f"{int(time.time() * 1000)}_{secrets.token_hex(3)}"
+    return f"{local}_{suffix}@{domain}"
+
+
+def _auth_form_locator(card, require_nickname: bool = False):
+    form = card.locator("form[data-testid='auth-form']")
+    form = form.filter(has=card.locator("[data-testid='auth-email']"))
+    form = form.filter(has=card.locator("[data-testid='auth-submit']"))
+    if require_nickname:
+        form = form.filter(has=card.locator("[data-testid='auth-nickname']"))
+    return form
+
+
+def _describe_auth_ui(page, card, register_toggle) -> str:
+    lines = []
+    if card is None:
+        lines.append("auth_card_count=unavailable")
+    else:
+        try:
+            lines.append(f"auth_card_count={card.count()}")
+        except Exception as exc:
+            lines.append(f"auth_card_count_error={exc}")
+    if register_toggle is None:
+        lines.append("register_toggle_count=unavailable")
+    else:
+        try:
+            toggle_count = register_toggle.count()
+            toggle_visible = False
+            if toggle_count:
+                try:
+                    toggle_visible = register_toggle.first.is_visible()
+                except Exception:
+                    toggle_visible = False
+            lines.append(f"register_toggle_count={toggle_count}")
+            lines.append(f"register_toggle_visible={toggle_visible}")
+        except Exception as exc:
+            lines.append(f"register_toggle_error={exc}")
+    try:
+        summary = _auth_ready_summary(page)
+        lines.append(_format_auth_ready_summary(summary).strip())
+    except Exception as exc:
+        lines.append(f"auth_summary_error={exc}")
+    return "\n".join(line for line in lines if line)
+
+
+def _wait_for_auth_success(page, card, form) -> None:
+    timeout_ms = _env_int("AUTH_READY_TIMEOUT_MS", AUTH_READY_TIMEOUT_MS_DEFAULT)
+    status_marker = page.locator("[data-testid='auth-status']")
+    if status_marker.count() > 0:
+        try:
+            expect(status_marker).to_have_attribute(
+                "data-state", "success", timeout=timeout_ms
+            )
+            return
+        except AssertionError:
+            pass
+    try:
+        page.wait_for_function(
+            "() => Boolean(localStorage.getItem('token') || localStorage.getItem('Authorization'))",
+            timeout=timeout_ms,
+        )
+        return
+    except PlaywrightTimeoutError:
+        pass
+    try:
+        expect(card.locator("[data-testid='auth-nickname']")).to_have_count(
+            0, timeout=timeout_ms
+        )
+    except AssertionError as exc:
+        raise RuntimeError(
+            "Auth success marker not detected after registration."
+        ) from exc
+
+
+def _ui_register_user(
+    browser,
+    login_url: str,
+    email: str,
+    password: str,
+    nickname: str,
+) -> None:
+    context_instance = browser.new_context(ignore_https_errors=True)
+    page = _configure_page(context_instance.new_page())
+    card = None
+    register_toggle = None
+    try:
+        page.goto(login_url, wait_until="domcontentloaded")
+        card = page.locator("[data-testid='auth-card-active']")
+        expect(card).to_have_count(1, timeout=AUTH_READY_TIMEOUT_MS_DEFAULT)
+        register_toggle = card.locator("[data-testid='auth-toggle-register']")
+        if register_toggle.count() == 0:
+            raise _RegisterDisabled("Register toggle not found; registration disabled?")
+        register_toggle.first.click()
+        register_form = _auth_form_locator(card, require_nickname=True)
+        expect(register_form).to_have_count(1, timeout=AUTH_READY_TIMEOUT_MS_DEFAULT)
+        nickname_input = register_form.locator("[data-testid='auth-nickname']")
+        email_input = register_form.locator("[data-testid='auth-email']")
+        password_input = register_form.locator("[data-testid='auth-password']")
+        expect(nickname_input).to_have_count(1, timeout=AUTH_READY_TIMEOUT_MS_DEFAULT)
+        expect(email_input).to_have_count(1, timeout=AUTH_READY_TIMEOUT_MS_DEFAULT)
+        expect(password_input).to_have_count(1, timeout=AUTH_READY_TIMEOUT_MS_DEFAULT)
+        nickname_input.fill(nickname)
+        email_input.fill(email)
+        password_input.fill(password)
+        password_input.blur()
+        submit_button = register_form.locator(AUTH_SUBMIT_SELECTOR)
+        expect(submit_button).to_have_count(1, timeout=AUTH_READY_TIMEOUT_MS_DEFAULT)
+        submit_button.click()
+        _wait_for_auth_success(page, card, register_form)
+    except _RegisterDisabled:
+        raise
+    except Exception as exc:
+        diagnostics = _describe_auth_ui(page, card, register_toggle)
+        if diagnostics:
+            print(f"[seeded-ui-register] diagnostics:\n{diagnostics}", flush=True)
+        raise
+    finally:
+        try:
+            page.close()
+        finally:
+            context_instance.close()
+
+
 def _make_reg_email(base: str, unique: bool) -> str:
     if not unique:
         email = base
@@ -182,9 +413,44 @@ def pytest_sessionfinish(session, exitstatus):
         pass
 
 
+def pytest_collection_modifyitems(session, config, items):
+    ordered_paths = [
+        "test/playwright/auth/test_smoke_auth_page.py",
+        "test/playwright/auth/test_toggle_login_register.py",
+        "test/playwright/auth/test_validation_presence.py",
+        "test/playwright/auth/test_sso_optional.py",
+        "test/playwright/auth/test_register_success_optional.py",
+        "test/playwright/auth/test_login_success_optional.py",
+        "test/playwright/e2e/test_model_providers_zhipu_ai_defaults.py",
+        "test/playwright/e2e/test_dataset_upload_parse.py",
+        "test/playwright/e2e/test_next_apps_chat.py",
+        "test/playwright/e2e/test_next_apps_search.py",
+        "test/playwright/e2e/test_next_apps_agent.py",
+    ]
+    order_map = {path: idx for idx, path in enumerate(ordered_paths)}
+
+    def _rel_path(item) -> str:
+        try:
+            return Path(str(item.fspath)).resolve().relative_to(ROOT_DIR).as_posix()
+        except Exception:
+            return str(item.fspath)
+
+    indexed = list(enumerate(items))
+
+    def _sort_key(entry):
+        orig_idx, item = entry
+        rel_path = _rel_path(item)
+        order_idx = order_map.get(rel_path)
+        if order_idx is not None:
+            return (0, order_idx, orig_idx)
+        return (1, rel_path, item.name, orig_idx)
+
+    items[:] = [item for _, item in sorted(indexed, key=_sort_key)]
+
+
 @pytest.fixture(scope="session")
 def base_url() -> str:
-    value = os.getenv("BASE_URL")
+    value = os.getenv("RAGFLOW_BASE_URL") or os.getenv("BASE_URL")
     if not value:
         value = BASE_URL_DEFAULT
     return value.rstrip("/")
@@ -247,10 +513,8 @@ def context(browser):
         context_instance.close()
 
 
-@pytest.fixture
-def page(context, request):
+def _configure_page(page_instance):
     timeout_ms = _env_int("PW_TIMEOUT_MS", DEFAULT_TIMEOUT_MS)
-    page_instance = context.new_page()
     page_instance.set_default_timeout(timeout_ms)
     page_instance.set_default_navigation_timeout(timeout_ms)
     page_instance._diag = {
@@ -290,12 +554,59 @@ def page(context, request):
     page_instance.on("console", on_console)
     page_instance.on("pageerror", on_page_error)
     page_instance.on("requestfailed", on_request_failed)
+    return page_instance
+
+
+@pytest.fixture
+def page(context, request):
+    page_instance = _configure_page(context.new_page())
 
     try:
         yield page_instance
     finally:
         _write_artifacts_if_failed(page_instance, context, request)
         page_instance.close()
+
+
+@pytest.fixture(scope="module")
+def flow_context(browser, request):
+    try:
+        browser_context_args = request.getfixturevalue("browser_context_args")
+    except Exception:
+        browser_context_args = {}
+    if browser_context_args is None:
+        browser_context_args = {}
+    args = dict(browser_context_args)
+    args.setdefault("ignore_https_errors", True)
+    ctx = browser.new_context(**args)
+    yield ctx
+    ctx.close()
+
+
+@pytest.fixture(scope="module")
+def flow_page(flow_context):
+    page_instance = _configure_page(flow_context.new_page())
+    yield page_instance
+    page_instance.close()
+
+
+@pytest.fixture(scope="module")
+def flow_state():
+    return {}
+
+
+@pytest.fixture(autouse=True)
+def _flow_artifacts(request):
+    if "flow_page" not in request.fixturenames:
+        yield
+        return
+    yield
+    try:
+        page_instance = request.getfixturevalue("flow_page")
+        context = request.getfixturevalue("flow_context")
+    except Exception:
+        return
+    _write_artifacts_if_failed(page_instance, context, request)
 
 
 @pytest.fixture
@@ -337,6 +648,78 @@ def reg_password() -> str:
     return REG_PASSWORD_DEFAULT
 
 
+@pytest.fixture(scope="session")
+def seeded_user_credentials(base_url: str, login_url: str, browser) -> tuple[str, str]:
+    env_email = os.getenv("SEEDED_USER_EMAIL")
+    env_password = os.getenv("SEEDED_USER_PASSWORD")
+    if env_email and env_password:
+        return env_email, env_password
+
+    seeding_mode = os.getenv("RAGFLOW_SEEDING_MODE", "auto").strip().lower()
+    if seeding_mode not in {"auto", "api", "ui"}:
+        if _env_bool("PW_FIXTURE_DEBUG", False):
+            print(
+                f"[seeded] Unknown RAGFLOW_SEEDING_MODE={seeding_mode!r}; using auto.",
+                flush=True,
+            )
+        seeding_mode = "auto"
+
+    base_email = os.getenv("REG_EMAIL_BASE", REG_EMAIL_BASE_DEFAULT)
+    password = os.getenv("SEEDED_USER_PASSWORD") or REG_PASSWORD_DEFAULT
+    nickname = os.getenv("REG_NICKNAME", REG_NICKNAME_DEFAULT)
+    email = _generate_seeded_email(base_email)
+    _assert_reg_email(email)
+
+    seed_errors = []
+    seeded_via = None
+    if seeding_mode in {"auto", "api"}:
+        seeded_via = "api"
+        try:
+            _api_register_user(base_url, email, password, nickname)
+            try:
+                _api_login_user(base_url, email, password)
+            except Exception as exc:
+                if _env_bool("PW_FIXTURE_DEBUG", False):
+                    print(f"[seeded] api login verification failed: {exc}", flush=True)
+        except _RegisterDisabled as exc:
+            seed_errors.append(f"api: {exc}")
+            seeded_via = None
+        except Exception as exc:
+            seed_errors.append(f"api: {exc}")
+            seeded_via = None
+            if seeding_mode == "api":
+                details = "; ".join(seed_errors)
+                raise RuntimeError(
+                    f"Failed to seed user via API registration. {details}"
+                ) from exc
+
+    if seeded_via is None and seeding_mode in {"auto", "ui"}:
+        seeded_via = "ui"
+        try:
+            _ui_register_user(browser, login_url, email, password, nickname)
+        except _RegisterDisabled as exc:
+            seed_errors.append(f"ui: {exc}")
+            default_email = os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
+            default_password = os.getenv("DEFAULT_SUPERUSER_PASSWORD", "admin")
+            raise RuntimeError(
+                "User registration is disabled and no default account is available. "
+                f"Known superuser defaults ({default_email}) cannot be used with the "
+                "normal login endpoint. Enable registration or seed a test account."
+            ) from exc
+        except Exception as ui_exc:
+            seed_errors.append(f"ui: {ui_exc}")
+            details = "; ".join(seed_errors)
+            raise RuntimeError(
+                f"Failed to seed user via API or UI registration. {details}"
+            ) from ui_exc
+
+    os.environ["SEEDED_USER_EMAIL"] = email
+    os.environ["SEEDED_USER_PASSWORD"] = password
+    if _env_bool("PW_FIXTURE_DEBUG", False):
+        print(f"[seeded] created user via {seeded_via}: {email}", flush=True)
+    return email, password
+
+
 @pytest.fixture
 def reg_nickname() -> str:
     return REG_NICKNAME_DEFAULT
@@ -344,6 +727,8 @@ def reg_nickname() -> str:
 
 @pytest.fixture
 def snap(page, request):
+    if "flow_page" in request.fixturenames:
+        page = request.getfixturevalue("flow_page")
     base_dir = ARTIFACTS_DIR / _sanitize_filename(request.node.nodeid)
     base_dir.mkdir(parents=True, exist_ok=True)
     counter = {"value": 0}
@@ -463,7 +848,9 @@ def _debug_dump_auth_state(page, label: str, submit_locator=None) -> None:
 
 
 @pytest.fixture
-def auth_debug_dump(page):
+def auth_debug_dump(page, request):
+    if "flow_page" in request.fixturenames:
+        page = request.getfixturevalue("flow_page")
     def _dump(label: str, submit_locator=None) -> None:
         _debug_dump_auth_state(page, label, submit_locator)
 
@@ -732,6 +1119,8 @@ def auth_click():
 
 @pytest.fixture
 def active_auth_context(page, request):
+    if "flow_page" in request.fixturenames:
+        page = request.getfixturevalue("flow_page")
     def _mark_active_form() -> None:
         timeout_ms = _env_int("AUTH_READY_TIMEOUT_MS", AUTH_READY_TIMEOUT_MS_DEFAULT)
         try:
