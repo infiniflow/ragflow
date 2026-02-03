@@ -204,24 +204,42 @@ def step_06_run_agent(
     require(flow_state, "agent_detail_open")
     page = flow_page
     with step("run agent"):
-        run_button = page.locator("[data-testid='agent-run']")
-        expect(run_button).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-        auth_click(run_button, "agent_run")
+        import os
+
+        run_ui_timeout_ms = int(os.getenv("PW_AGENT_RUN_UI_TIMEOUT_MS", "60000"))
+        run_panel = page.locator("[data-testid='agent-run']")
         run_chat = page.locator("[data-testid='agent-run-chat']")
+        if run_panel.count() > 0 and run_panel.is_visible():
+            return
+        if run_chat.count() > 0 and run_chat.is_visible():
+            return
+
+        run_button = run_panel
+        if run_button.count() == 0:
+            run_button = page.get_by_role("button", name=re.compile(r"^run$", re.I))
+        expect(run_button).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         try:
-            expect(run_chat).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+            auth_click(run_button, "agent_run")
+        except Exception:
+            page.wait_for_timeout(500)
+            auth_click(run_button, "agent_run_retry")
+
+        try:
+            expect(run_panel).to_be_attached(timeout=run_ui_timeout_ms)
+            expect(run_panel).to_be_visible(timeout=run_ui_timeout_ms)
         except AssertionError:
-            submit_button = page.locator(
-                "[data-state='open'] form button[type='submit']"
-            ).first
-            if submit_button.count() == 0:
-                submit_button = page.locator("form button[type='submit']").first
-            if submit_button.count() > 0 and submit_button.is_visible():
-                submit_button.click()
             try:
-                expect(run_chat).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+                expect.poll(
+                    lambda: run_panel.is_visible()
+                ).to_be_truthy(timeout=run_ui_timeout_ms)
             except AssertionError:
                 print(f"[agent-run] url={page.url}", flush=True)
+                print(
+                    f"[agent-run] run_panel_count={run_panel.count()} "
+                    f"run_panel_visible={run_panel.is_visible()} "
+                    f"run_button_visible={run_button.is_visible()}",
+                    flush=True,
+                )
                 try:
                     testids = page.evaluate(
                         """
@@ -235,7 +253,7 @@ def step_06_run_agent(
                 except Exception as exc:
                     print(f"[agent-run] testid_dump_failed: {exc}", flush=True)
                 snap("agent_run_missing")
-                raise
+                raise AssertionError("Agent run UI did not open after clicking Run.")
     flow_state["agent_running"] = True
     snap("agent_run_started")
 

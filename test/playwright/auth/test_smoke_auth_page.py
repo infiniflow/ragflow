@@ -1,20 +1,21 @@
 import pytest
 
+from helpers.flow_context import FlowContext
 from test.playwright.helpers.flow_steps import flow_params, require
 
 
-def step_01_open_login(flow_page, flow_state, smoke_login_url, step):
-    page = flow_page
+def step_01_open_login(ctx: FlowContext, step, snap):
+    page = ctx.page
     with step("navigate to login page"):
-        response = page.goto(smoke_login_url, wait_until="domcontentloaded")
-    flow_state["smoke_opened"] = True
-    flow_state["smoke_response"] = response
+        response = page.goto(ctx.smoke_login_url, wait_until="domcontentloaded")
+    ctx.state["smoke_opened"] = True
+    ctx.state["smoke_response"] = response
 
 
-def step_02_validate_page(flow_page, flow_state, smoke_login_url, step):
-    require(flow_state, "smoke_opened")
-    page = flow_page
-    response = flow_state.get("smoke_response")
+def step_02_validate_page(ctx: FlowContext, step, snap):
+    require(ctx.state, "smoke_opened")
+    page = ctx.page
+    response = ctx.state.get("smoke_response")
     content = page.content()
     content_type = ""
     status = None
@@ -51,8 +52,17 @@ STEPS = [
 @pytest.mark.p0
 @pytest.mark.auth
 @pytest.mark.parametrize("step_fn", flow_params(STEPS))
-def test_auth_page_smoke_flow(step_fn, flow_page, flow_state, smoke_login_url, step):
-    step_fn(flow_page, flow_state, smoke_login_url, step)
+def test_auth_page_smoke_flow(
+    step_fn, flow_page, flow_state, base_url, smoke_login_url, step, snap
+):
+    ctx = FlowContext(
+        page=flow_page,
+        state=flow_state,
+        base_url=base_url,
+        login_url=smoke_login_url,
+        smoke_login_url=smoke_login_url,
+    )
+    step_fn(ctx, step, snap)
 
 
 def _format_diag(page, response, reason: str) -> str:
