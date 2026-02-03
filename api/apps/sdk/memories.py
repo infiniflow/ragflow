@@ -27,6 +27,7 @@ from api.db.services.task_service import TaskService
 from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
 from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
+from api.utils.tenant_utils import add_tenant_model_id_for_params
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
 from memory.services.messages import MessageService
 from memory.utils.prompt_util import PromptAssembler
@@ -40,9 +41,10 @@ async def create_memory():
     timing_enabled = os.getenv("RAGFLOW_API_TIMING")
     t_start = time.perf_counter() if timing_enabled else None
     req = await get_request_json()
+    memory_info = add_tenant_model_id_for_params(current_user.id, req)
     t_parsed = time.perf_counter() if timing_enabled else None
     # check name length
-    name = req["name"]
+    name = memory_info["name"]
     memory_name = name.strip()
     if len(memory_name) == 0:
         if timing_enabled:
@@ -63,7 +65,7 @@ async def create_memory():
             )
         return get_error_argument_result(f"Memory name '{memory_name}' exceeds limit of {MEMORY_NAME_LIMIT}.")
     # check memory_type valid
-    if not isinstance(req["memory_type"], list):
+    if not isinstance(memory_info["memory_type"], list):
         if timing_enabled:
             logging.info(
                 "api_timing create_memory invalid_memory_type parse_ms=%.2f total_ms=%.2f path=%s",
@@ -72,7 +74,7 @@ async def create_memory():
                 request.path,
             )
         return get_error_argument_result("Memory type must be a list.")
-    memory_type = set(req["memory_type"])
+    memory_type = set(memory_info["memory_type"])
     invalid_type = memory_type - {e.name.lower() for e in MemoryType}
     if invalid_type:
         if timing_enabled:
@@ -91,8 +93,8 @@ async def create_memory():
             tenant_id=current_user.id,
             name=memory_name,
             memory_type=memory_type,
-            embd_id=req["embd_id"],
-            llm_id=req["llm_id"]
+            embd_id=memory_info["embd_id"],
+            llm_id=memory_info["llm_id"]
         )
         if timing_enabled:
             logging.info(
