@@ -65,6 +65,8 @@ const DebugContent = ({
           value = false;
         } else if (type === BeginQueryType.Integer || type === 'float') {
           fieldSchema = z.coerce.number();
+        } else if (type === BeginQueryType.File) {
+          fieldSchema = z.array(z.record(z.any())).min(1);
         } else {
           fieldSchema = z.record(z.any());
         }
