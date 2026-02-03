@@ -896,7 +896,7 @@ Success:
             "vector_similarity_weight": 0.3
         }
     ],
-    "total": 1
+    "total_datasets": 1
 }
 ```
 

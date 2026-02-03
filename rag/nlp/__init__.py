@@ -1168,6 +1168,8 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         cks, result_images, tk_nums = [], [], []
         for text, image in zip(texts, images):
             text_str = text[0] if isinstance(text, tuple) else text
+            if text_str is None:
+                text_str = ""
             text_pos = text[1] if isinstance(text, tuple) and len(text) > 1 else ""
             split_sec = re.split(r"(%s)" % custom_pattern, text_str)
             for sub_sec in split_sec:
@@ -1187,11 +1189,11 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
     for text, image in zip(texts, images):
         # if text is tuple, unpack it
         if isinstance(text, tuple):
-            text_str = text[0]
+            text_str = text[0] if text[0] is not None else ""
             text_pos = text[1] if len(text) > 1 else ""
             add_chunk("\n" + text_str, image, text_pos)
         else:
-            add_chunk("\n" + text, image)
+            add_chunk("\n" + (text or ""), image)
 
     return cks, result_images
 
