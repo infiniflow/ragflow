@@ -93,18 +93,16 @@ def init_default_admin():
     else:
         default_admin_rows = [u for u in users if u.email == "admin@ragflow.io"]
         if default_admin_rows:
-            default_admin = default_admin_rows[0]
-            default_admin_tenant = TenantService.get_by_id(default_admin["id"])
-            if not default_admin_tenant:
+            default_admin = default_admin_rows[0].to_dict()
+            exist, default_admin_tenant = TenantService.get_by_id(default_admin["id"])
+            if not exist:
                 add_tenant_for_admin(default_admin, UserTenantRole.OWNER)
 
 
 def add_tenant_for_admin(user_info: dict, role: str):
-    import asyncio
-    from common.constants import LLMType
     from api.db.services.user_service import TenantService, UserTenantService
     from api.db.services.tenant_llm_service import TenantLLMService
-    from api.db.services.llm_service import LLMBundle, get_init_tenant_llm
+    from api.db.services.llm_service import get_init_tenant_llm
 
     tenant = {
         "id": user_info["id"],
@@ -127,21 +125,7 @@ def add_tenant_for_admin(user_info: dict, role: str):
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
     logging.info(
-        f"Super user initialized. email: {user_info['email']},A default password has been set; changing the password after login is strongly recommended.")
-
-    chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
-    msg = asyncio.run(chat_mdl.async_chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={}))
-    if msg.find("ERROR: ") == 0:
-        logging.error(
-            "'{}' doesn't work. {}".format(
-                tenant["llm_id"],
-                msg))
-    embd_mdl = LLMBundle(tenant["id"], LLMType.EMBEDDING, tenant["embd_id"])
-    v, c = embd_mdl.encode(["Hello!"])
-    if c == 0:
-        logging.error(
-            "'{}' doesn't work!".format(
-                tenant["embd_id"]))
+        f"Added tenant for email: {user_info['email']}, A default tenant has been set; changing the default models after login is strongly recommended.")
 
 
 def check_admin_auth(func):
