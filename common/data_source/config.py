@@ -63,6 +63,7 @@ class DocumentSource(str, Enum):
     IMAP = "imap"
     BITBUCKET = "bitbucket"
     ZENDESK = "zendesk"
+    SEAFILE = "seafile" 
 
 
 class FileOrigin(str, Enum):

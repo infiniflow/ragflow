@@ -53,6 +53,7 @@ from common.data_source import (
     AsanaConnector,
     ImapConnector,
     ZendeskConnector,
+    SeaFileConnector,
 )
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
@@ -1178,6 +1179,40 @@ class Bitbucket(SyncBase):
 
         return wrapper()
 
+class SeaFile(SyncBase):
+    SOURCE_NAME: str = FileSource.SEAFILE
+
+    async def _generate(self, task: dict):
+        self.connector = SeaFileConnector(
+            seafile_url=self.conf["seafile_url"],
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            include_shared=self.conf.get("include_shared", True)
+        )
+
+        self.connector.load_credentials(self.conf["credentials"])
+
+        # Determine the time range for synchronization based on reindex or poll_range_start
+        poll_start = task.get("poll_range_start")
+
+        if task["reindex"] == "1" or poll_start is None:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+            begin_info = f"from {poll_start}"
+
+        logging.info(
+            "Connect to SeaFile: {} (include_shared: {}) {}".format(
+                self.conf["seafile_url"],
+                self.conf.get("include_shared", True),
+                begin_info
+            )
+        )
+        return document_generator
+
 func_factory = {
     FileSource.S3: S3,
     FileSource.R2: R2,
@@ -1203,6 +1238,7 @@ func_factory = {
     FileSource.GITHUB: Github,
     FileSource.GITLAB: Gitlab,
     FileSource.BITBUCKET: Bitbucket,
+    FileSource.SEAFILE: SeaFile, 
 }
 
 

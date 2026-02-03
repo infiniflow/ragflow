@@ -35,6 +35,7 @@ export enum DataSourceKey {
   GITHUB = 'github',
   BITBUCKET = 'bitbucket',
   ZENDESK = 'zendesk',
+  SEAFILE = 'seafile',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -154,6 +155,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Zendesk',
       description: t(`setting.${DataSourceKey.ZENDESK}Description`),
       icon: <SvgIcon name={'data-source/zendesk'} width={38} />,
+    },
+    [DataSourceKey.SEAFILE]: {
+      name: 'SeaFile',
+      description: t(`setting.${DataSourceKey.SEAFILE}Description`),
+      icon: <SvgIcon name={'data-source/seafile'} width={38} />,
     },
   };
 };
@@ -815,6 +821,39 @@ export const DataSourceFormFields = {
       ],
     },
   ],
+  [DataSourceKey.SEAFILE]: [
+    {
+      label: 'SeaFile Server URL',
+      name: 'config.seafile_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://seafile.example.com',
+      tooltip: t('setting.seafileUrlTip'),
+    },
+    {
+      label: 'API Token',
+      name: 'config.credentials.seafile_token',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.seafileTokenTip'),
+    },
+    {
+      label: 'Include Shared Libraries',
+      name: 'config.include_shared',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+      tooltip: t('setting.seafileIncludeSharedTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '100',
+      tooltip: t('setting.seafileBatchSizeTip'),
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -1093,6 +1132,19 @@ export const DataSourceFormDefaultValues = {
         zendesk_subdomain: '',
         zendesk_email: '',
         zendesk_token: '',
+      },
+    },
+  },
+
+  [DataSourceKey.SEAFILE]: {
+    name: '',
+    source: DataSourceKey.SEAFILE,
+    config: {
+      seafile_url: '',
+      include_shared: true,
+      batch_size: 100,
+      credentials: {
+        seafile_token: '',
       },
     },
   },
