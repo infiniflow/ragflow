@@ -17,7 +17,6 @@
 import logging
 import re
 import os
-from functools import reduce
 from io import BytesIO
 from timeit import default_timer as timer
 from docx import Document
@@ -28,27 +27,25 @@ from docx.text.paragraph import Paragraph
 from docx.opc.oxml import parse_xml
 from markdown import markdown
 from PIL import Image
-from common.token_utils import num_tokens_from_string
 
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
-from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
-from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
+from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser,PdfParser, TxtParser ,MarkdownParser, MarkdownElementExtractor
+from deepdoc.parser.figure_parser import adv_vision_figure_parser_wrapper, vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
-from common.float_utils import normalize_overlapped_percent
 from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import (
     concat_img,
     find_codec,
     naive_merge,
     naive_merge_with_images,
-    naive_merge_docx,
+    adv_naive_merge,
     rag_tokenizer,
     tokenize_chunks,
-    doc_tokenize_chunks_with_images,
+    adv_tokenize_chunks,
     tokenize_table,
     append_context2table_image4pdf,
     tokenize_chunks_with_images,
@@ -601,84 +598,106 @@ class Markdown(MarkdownParser):
         if soup:
             return set([a.get("href") for a in soup.find_all("a") if a.get("href")])
         return []
+    
 
-    def extract_image_urls_with_lines(self, text):
-        md_img_re = re.compile(r"!\[[^\]]*\]\(([^)\s]+)")
-        html_img_re = re.compile(r'src=["\\\']([^"\\\'>\\s]+)', re.IGNORECASE)
-        urls = []
-        seen = set()
-        lines = text.splitlines()
-        for idx, line in enumerate(lines):
-            for url in md_img_re.findall(line):
-                if (url, idx) not in seen:
-                    urls.append({"url": url, "line": idx})
-                    seen.add((url, idx))
-            for url in html_img_re.findall(line):
-                if (url, idx) not in seen:
-                    urls.append({"url": url, "line": idx})
-                    seen.add((url, idx))
+    def extract_image_urls_with_lines(self, segments):
+        """
+        Input: segments: List[Tuple[str, Any]]
+        Output: List[Tuple[str, Any]]
+        - Iterate original segments in order.
+        - For non-text: append as-is.
+        - For ("text", content): split by markdown/html image syntaxes, emitting:
+                ("text", before), ("image", url), ("text", after) ...
+        preserving the exact order.
+        - Image segment payload is the extracted URL (string).
+        """
+        import re
 
-        # cross-line
-        try:
-            from bs4 import BeautifulSoup
+        # Markdown image: ![alt](url)
+        md_img_re = re.compile(r"!\[[^\]]*\]\(([^)\s]+)\)")
 
-            soup = BeautifulSoup(text, "html.parser")
-            newline_offsets = [m.start() for m in re.finditer(r"\n", text)] + [len(text)]
-            for img_tag in soup.find_all("img"):
-                src = img_tag.get("src")
-                if not src:
+        # HTML image: <img ... src="url" ...>
+        html_img_tag_re = re.compile(
+            r"<img\b[^>]*\bsrc\s*=\s*(['\"])([^'\"\s>]+)\1[^>]*>",
+            re.IGNORECASE | re.DOTALL,
+        )
+
+        out = []
+
+        def split_text_keep_url(text: str):
+            if text is None:
+                text = ""
+
+            matches = []
+
+            # Markdown matches
+            for m in md_img_re.finditer(text):
+                matches.append((m.start(), m.end(), m.group(1)))  # url
+
+            # HTML matches
+            for m in html_img_tag_re.finditer(text):
+                matches.append((m.start(), m.end(), m.group(2)))  # url
+
+            if not matches:
+                return [("text", text)]
+
+            matches.sort(key=lambda x: x[0])
+
+            res = []
+            cursor = 0
+            for s, e, url in matches:
+                if s < cursor:
                     continue
 
-                tag_str = str(img_tag)
-                pos = text.find(tag_str)
-                if pos == -1:
-                    # fallback
-                    pos = max(text.find(src), 0)
-                line_no = 0
-                for i, off in enumerate(newline_offsets):
-                    if pos <= off:
-                        line_no = i
-                        break
-                if (src, line_no) not in seen:
-                    urls.append({"url": src, "line": line_no})
-                    seen.add((src, line_no))
-        except Exception as e:
-            logging.error("Failed to extract image urls: {}".format(e))
-            pass
+                if s > cursor:
+                    res.append(("text", text[cursor:s]))
 
-        return urls
+                res.append(("image", url))
+                cursor = e
 
-    def load_images_from_urls(self, urls, cache=None):
+            if cursor < len(text):
+                res.append(("text", text[cursor:]))
+
+            return res
+
+        for seg_type, seg_content in segments:
+            if seg_type != "text":
+                out.append((seg_type, seg_content))
+                continue
+
+            out.extend(split_text_keep_url(seg_content))
+
+        return out
+
+
+    def load_images_from_urls(self, url, cache=None):
         import requests
         from pathlib import Path
 
         cache = cache or {}
-        images = []
-        for url in urls:
-            if url in cache:
-                if cache[url]:
-                    images.append(cache[url])
-                continue
-            img_obj = None
-            try:
-                if url.startswith(("http://", "https://")):
-                    response = requests.get(url, stream=True, timeout=30)
-                    if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
-                        img_obj = Image.open(BytesIO(response.content)).convert("RGB")
+        if url in cache:
+            if cache[url]:
+                return cache[url], cache
+        img_obj = None
+        try:
+            #TODO： headers={'User-Agent': 'MyCustomAgent/1.0'}
+            if url.startswith(("http://", "https://")):
+                response = requests.get(url, stream=True, timeout=30)
+                if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
+                    img_obj = Image.open(BytesIO(response.content)).convert("RGB")
+            else:
+                local_path = Path(url)
+                if local_path.exists():
+                    img_obj = Image.open(url).convert("RGB")
                 else:
-                    local_path = Path(url)
-                    if local_path.exists():
-                        img_obj = Image.open(url).convert("RGB")
-                    else:
-                        logging.warning(f"Local image file not found: {url}")
-            except Exception as e:
-                logging.error(f"Failed to download/open image from {url}: {e}")
-            cache[url] = img_obj
-            if img_obj:
-                images.append(img_obj)
-        return images, cache
+                    logging.warning(f"Local image file not found: {url}")
+        except Exception as e:
+            logging.error(f"Failed to download/open image from {url}: {e}")
+        cache[url] = img_obj
+        return img_obj, cache
 
-    def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
+
+    def __call__(self, filename, binary=None, delimiter=None):
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
@@ -686,37 +705,30 @@ class Markdown(MarkdownParser):
             with open(filename, "r") as f:
                 txt = f.read()
 
-        remainder, tables = self.extract_tables_and_remainder(f"{txt}\n", separate_tables=separate_tables)
-        # To eliminate duplicate tables in chunking result, uncomment code below and set separate_tables to True in line 410.
-        # extractor = MarkdownElementExtractor(remainder)
-        extractor = MarkdownElementExtractor(txt)
-        image_refs = self.extract_image_urls_with_lines(txt)
-        element_sections = extractor.extract_elements(delimiter, include_meta=True)
+        # 1) Raw markdown → segments (text / table)
+        segments = self.extract_table_segments(f"{txt}\n")
+
+        # 2) Split images from text → segments (text / image / table)
+        segments = self.extract_image_urls_with_lines(segments)
+
+        # 3) Split text into markdown blocks (text only; others passthrough)
+        extractor = MarkdownElementExtractor(segments)
+        segments = extractor.extract_elements(delimiter, include_meta=True)
 
         sections = []
-        section_images = []
         image_cache = {}
-        for element in element_sections:
-            content = element["content"]
-            start_line = element["start_line"]
-            end_line = element["end_line"]
-            urls_in_section = [ref["url"] for ref in image_refs if start_line <= ref["line"] <= end_line]
-            imgs = []
-            if urls_in_section:
-                imgs, image_cache = self.load_images_from_urls(urls_in_section, image_cache)
-            combined_image = None
-            if imgs:
-                combined_image = reduce(concat_img, imgs) if len(imgs) > 1 else imgs[0]
-            sections.append((content, ""))
-            section_images.append(combined_image)
+        for seg in segments:
+            seg_type, seg_content = seg
+            if seg_type == "text":
+                sections.append((seg_content, "", ""))
+            elif seg_type == "image":
+                imgs, image_cache = self.load_images_from_urls(seg_content, image_cache)
+                sections.append(("", imgs, ""))
+            elif seg_type == "table":
+                sections.append(("","",markdown(seg_content, extensions=["markdown.extensions.tables"])))
 
-        tbls = []
-        for table in tables:
-            tbls.append(((None, markdown(table, extensions=["markdown.extensions.tables"])), ""))
-        if return_section_images:
-            return sections, tbls, section_images
-        return sections, tbls
-
+        return sections
+    
 
 def load_from_xml_v2(baseURI, rels_item_xml):
     """
@@ -745,9 +757,19 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     url_res = []
 
     is_english = lang.lower() == "english"  # is_english(cks)
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
+    parser_config = kwargs.get(
+        "parser_config",
+        {
+            "chunk_token_num": 512,
+            "delimiter": "\n!?。；！？",
+            "layout_recognize": "DeepDOC",
+            "analyze_hyperlink": True,
+        },
+    )
 
-    child_deli = (parser_config.get("children_delimiter") or "").encode("utf-8").decode("unicode_escape").encode("latin1").decode("utf-8")
+    # Normalize children delimiters and preserve custom tokens wrapped by backticks.
+    raw_child_deli = parser_config.get("children_delimiter") or ""
+    child_deli = raw_child_deli.encode("utf-8").decode("unicode_escape").encode("latin1").decode("utf-8")
     cust_child_deli = re.findall(r"`([^`]+)`", child_deli)
     child_deli = "|".join(re.sub(r"`([^`]+)`", "", child_deli))
     if cust_child_deli:
@@ -759,6 +781,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     table_context_size = max(0, int(parser_config.get("table_context_size", 0) or 0))
     image_context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
 
+    overlapped_percent = int(parser_config.get("overlapped_percent", 0))
+    overlapped_percent = max(0, min(overlapped_percent, 90))
+
+    # Document-level tokens for title-aware chunking.
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     res = []
@@ -768,7 +794,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     is_root = kwargs.get("is_root", True)
     embed_res = []
     if is_root:
-        # Only extract embedded files at the root call
+        # Only extract embedded files once, then merge their chunking results.
         embeds = []
         if binary is not None:
             embeds = extract_embed_file(binary)
@@ -810,14 +836,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         # chunks list[dict]
         # images list - index of image chunk in chunks
-        chunks, images = naive_merge_docx(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), table_context_size, image_context_size)
+        chunks, images = adv_naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), table_context_size, image_context_size)
 
-        vision_figure_parser_docx_wrapper_naive(chunks=chunks, idx_lst=images, callback=callback, **kwargs)
+        adv_vision_figure_parser_wrapper(chunks=chunks, idx_lst=images, callback=callback, **kwargs)
 
         callback(0.8, "Finish parsing.")
         st = timer()
 
-        res.extend(doc_tokenize_chunks_with_images(chunks, doc, is_english, child_delimiters_pattern=child_deli))
+        res.extend(adv_tokenize_chunks(chunks, doc, is_english, child_delimiters_pattern=child_deli))
         logging.info("naive_merge({}): {}".format(filename, timer() - st))
         res.extend(embed_res)
         res.extend(url_res)
@@ -898,52 +924,26 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     elif re.search(r"\.(md|markdown|mdx)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
-        sections, tables, section_images = markdown_parser(
+        sections = markdown_parser(
             filename,
             binary,
-            separate_tables=False,
             delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
-            return_section_images=True,
         )
 
         is_markdown = True
 
-        try:
-            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
-            callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
-        except Exception as e:
-            logging.warning(f"Failed to detect figure extraction: {e}")
-            vision_model = None
-
-        if vision_model:
-            # Process images for each section
-            for idx, (section_text, _) in enumerate(sections):
-                images = []
-                if section_images and len(section_images) > idx and section_images[idx] is not None:
-                    images.append(section_images[idx])
-
-                if images and len(images) > 0:
-                    # If multiple images found, combine them using concat_img
-                    combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
-                    if section_images:
-                        section_images[idx] = combined_image
-                    else:
-                        section_images = [None] * len(sections)
-                        section_images[idx] = combined_image
-                    markdown_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=[((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])], **kwargs)
-                    boosted_figures = markdown_vision_parser(callback=callback)
-                    sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boosted_figures]), sections[idx][1])
-
-        else:
-            logging.warning("No visual model detected. Skipping figure parsing enhancement.")
+        chunks, images = adv_naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), "\n。；！？", table_context_size, image_context_size)
+        
+        adv_vision_figure_parser_wrapper(chunks=chunks, idx_lst=images, callback=callback, **kwargs)
 
         if parser_config.get("hyperlink_urls", False) and is_root:
             for idx, (section_text, _) in enumerate(sections):
                 soup = markdown_parser.md_to_html(section_text)
                 hyperlink_urls = markdown_parser.get_hyperlink_urls(soup)
                 urls.update(hyperlink_urls)
-        res = tokenize_table(tables, doc, is_english)
+
         callback(0.8, "Finish parsing.")
+        res.extend(adv_tokenize_chunks(chunks, doc, is_english, child_delimiters_pattern=child_deli))
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
@@ -984,54 +984,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         raise NotImplementedError("file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
 
     st = timer()
-    overlapped_percent = normalize_overlapped_percent(parser_config.get("overlapped_percent", 0))
-    if is_markdown:
-        merged_chunks = []
-        merged_images = []
-        chunk_limit = max(0, int(parser_config.get("chunk_token_num", 128)))
-
-        current_text = ""
-        current_tokens = 0
-        current_image = None
-
-        for idx, sec in enumerate(sections):
-            text = sec[0] if isinstance(sec, tuple) else sec
-            sec_tokens = num_tokens_from_string(text)
-            sec_image = section_images[idx] if section_images and idx < len(section_images) else None
-
-            if current_text and current_tokens + sec_tokens > chunk_limit:
-                merged_chunks.append(current_text)
-                merged_images.append(current_image)
-                overlap_part = ""
-                if overlapped_percent > 0:
-                    overlap_len = int(len(current_text) * overlapped_percent / 100)
-                    if overlap_len > 0:
-                        overlap_part = current_text[-overlap_len:]
-                current_text = overlap_part
-                current_tokens = num_tokens_from_string(current_text)
-                current_image = current_image if overlap_part else None
-
-            if current_text:
-                current_text += "\n" + text
-            else:
-                current_text = text
-            current_tokens += sec_tokens
-
-            if sec_image:
-                current_image = concat_img(current_image, sec_image) if current_image else sec_image
-
-        if current_text:
-            merged_chunks.append(current_text)
-            merged_images.append(current_image)
-
-        chunks = merged_chunks
-        has_images = merged_images and any(img is not None for img in merged_images)
-
-        if has_images:
-            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images, child_delimiters_pattern=child_deli))
-        else:
-            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
-    else:
+    if not is_markdown:
         if section_images:
             if all(image is None for image in section_images):
                 section_images = None
