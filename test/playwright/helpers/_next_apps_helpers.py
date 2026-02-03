@@ -5,6 +5,8 @@ from urllib.parse import urljoin
 
 from playwright.sync_api import expect
 
+from helpers.response_capture import capture_response
+
 RESULT_TIMEOUT_MS = 15000
 
 
@@ -65,28 +67,6 @@ def _fill_and_save_create_modal(
     expect(save_button).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     save_button.click()
     expect(modal).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
-
-
-def _capture_response(
-    page,
-    trigger_fn: Callable[[], None],
-    predicate: Callable,
-    timeout_ms: int = RESULT_TIMEOUT_MS,
-):
-    if hasattr(page, "expect_response"):
-        with page.expect_response(predicate, timeout=timeout_ms) as response_info:
-            trigger_fn()
-        return response_info.value
-    if hasattr(page, "expect_event"):
-        with page.expect_event(
-            "response", predicate=predicate, timeout=timeout_ms
-        ) as response_info:
-            trigger_fn()
-        return response_info.value
-    if hasattr(page, "wait_for_event"):
-        trigger_fn()
-        return page.wait_for_event("response", predicate=predicate, timeout=timeout_ms)
-    raise RuntimeError("Playwright Page lacks expect_response/expect_event/wait_for_event.")
 
 
 def _select_first_dataset_and_save(
@@ -161,7 +141,7 @@ def _select_first_dataset_and_save(
         save_button.click()
 
     try:
-        _capture_response(
+        capture_response(
             page,
             trigger,
             lambda resp: "/v1/dialog/set" in resp.url

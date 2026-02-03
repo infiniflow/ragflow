@@ -206,9 +206,36 @@ def step_06_run_agent(
     with step("run agent"):
         run_button = page.locator("[data-testid='agent-run']")
         expect(run_button).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-        run_button.click()
+        auth_click(run_button, "agent_run")
         run_chat = page.locator("[data-testid='agent-run-chat']")
-        expect(run_chat).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        try:
+            expect(run_chat).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        except AssertionError:
+            submit_button = page.locator(
+                "[data-state='open'] form button[type='submit']"
+            ).first
+            if submit_button.count() == 0:
+                submit_button = page.locator("form button[type='submit']").first
+            if submit_button.count() > 0 and submit_button.is_visible():
+                submit_button.click()
+            try:
+                expect(run_chat).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+            except AssertionError:
+                print(f"[agent-run] url={page.url}", flush=True)
+                try:
+                    testids = page.evaluate(
+                        """
+                        () => Array.from(document.querySelectorAll('[data-testid]'))
+                          .map((el) => el.getAttribute('data-testid'))
+                          .filter((val) => val && /agent|run/i.test(val))
+                          .slice(0, 40)
+                        """
+                    )
+                    print(f"[agent-run] testids={testids}", flush=True)
+                except Exception as exc:
+                    print(f"[agent-run] testid_dump_failed: {exc}", flush=True)
+                snap("agent_run_missing")
+                raise
     flow_state["agent_running"] = True
     snap("agent_run_started")
 

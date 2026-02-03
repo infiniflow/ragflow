@@ -1,5 +1,4 @@
 import json
-import os
 import re
 import time
 from pathlib import Path
@@ -10,48 +9,12 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from test.playwright.helpers.flow_steps import flow_params, require
+from helpers.auth_waits import wait_for_login_complete
+from helpers.debug_utils import debug
+from helpers.env_utils import env_bool
+from helpers.response_capture import capture_response
 
 RESULT_TIMEOUT_MS = 15000
-
-
-def _env_bool(name: str) -> bool:
-    value = os.getenv(name)
-    if not value:
-        return False
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _debug(msg: str) -> None:
-    if _env_bool("PW_DEBUG_DUMP"):
-        print(msg, flush=True)
-
-
-def _capture_response(page, trigger, predicate, timeout_ms: int = RESULT_TIMEOUT_MS):
-    if hasattr(page, "expect_response"):
-        with page.expect_response(predicate, timeout=timeout_ms) as response_info:
-            trigger()
-        return response_info.value
-    if hasattr(page, "expect_event"):
-        with page.expect_event("response", predicate=predicate, timeout=timeout_ms) as response_info:
-            trigger()
-        return response_info.value
-    if hasattr(page, "wait_for_event"):
-        trigger()
-        return page.wait_for_event("response", predicate=predicate, timeout=timeout_ms)
-    raise RuntimeError("Playwright Page lacks expect_response/expect_event/wait_for_event.")
-
-
-def _wait_for_login_complete(page, timeout_ms: int = RESULT_TIMEOUT_MS) -> None:
-    wait_js = """
-        () => {
-          const path = window.location.pathname || '';
-          if (path.includes('/login')) return false;
-          const token = localStorage.getItem('Token');
-          const auth = localStorage.getItem('Authorization');
-          return Boolean((token && token.length) || (auth && auth.length));
-        }
-        """
-    page.wait_for_function(wait_js, timeout=timeout_ms)
 
 
 def _wait_for_dataset_detail(page, timeout_ms: int = RESULT_TIMEOUT_MS) -> None:
@@ -89,16 +52,16 @@ def _wait_for_dataset_detail_ready(page, timeout_ms: int = RESULT_TIMEOUT_MS) ->
             return
         expect(anchor).to_be_visible(timeout=timeout_ms)
     except AssertionError:
-        if _env_bool("PW_DEBUG_DUMP"):
+        if env_bool("PW_DEBUG_DUMP"):
             url = page.url
             button_count = page.locator("button, [role='button']").count()
             body_text = page.evaluate(
                 "(() => (document.body && document.body.innerText) || '')()"
             )
-            _debug(
+            debug(
                 f"[dataset] detail_ready_failed url={url} button_count={button_count}"
             )
-            _debug(f"[dataset] body_text_snippet={body_text[:200]!r}")
+            debug(f"[dataset] body_text_snippet={body_text[:200]!r}")
         raise
 
 
@@ -139,7 +102,7 @@ def _dump_clickable_candidates(page) -> None:
             continue
         if text:
             lines.append(text[:80])
-    _debug(f"[dataset] clickable_candidates={total} visible_sample={lines}")
+    debug(f"[dataset] clickable_candidates={total} visible_sample={lines}")
 
 
 def _get_upload_modal(page):
@@ -226,8 +189,8 @@ def _open_upload_modal_from_dataset_detail(page, auth_click, timeout_ms: int = R
                 continue
 
     if trigger is None:
-        if _env_bool("PW_DEBUG_DUMP"):
-            _debug("[dataset] upload_trigger_not_found initial scan")
+        if env_bool("PW_DEBUG_DUMP"):
+            debug("[dataset] upload_trigger_not_found initial scan")
         button_dump = []
         buttons = page.locator("button")
         total = buttons.count()
@@ -295,7 +258,7 @@ def _open_upload_modal_from_dataset_detail(page, auth_click, timeout_ms: int = R
 
     clicked_item = _click_upload_file_popover_item()
     if not clicked_item:
-        if _env_bool("PW_DEBUG_DUMP"):
+        if env_bool("PW_DEBUG_DUMP"):
             try:
                 button_texts = page.evaluate(
                     """
@@ -312,8 +275,8 @@ def _open_upload_modal_from_dataset_detail(page, auth_click, timeout_ms: int = R
             except Exception:
                 button_texts = []
             has_upload_text = page.locator("text=/upload file/i").count() > 0
-            _debug(f"[dataset] upload_item_missing has_upload_text={has_upload_text}")
-            _debug(f"[dataset] visible_button_texts={button_texts}")
+            debug(f"[dataset] upload_item_missing has_upload_text={has_upload_text}")
+            debug(f"[dataset] visible_button_texts={button_texts}")
         raise AssertionError(
             "Upload file popover item not found after clicking Add trigger."
         )
@@ -349,19 +312,19 @@ def _select_chunking_method_general(page, modal) -> None:
             ).first
 
     if trigger_locator.count() == 0 and trigger_handle is None:
-        if _env_bool("PW_DEBUG_DUMP"):
+        if env_bool("PW_DEBUG_DUMP"):
             modal_text = modal.inner_text()
             button_count = modal.locator("button").count()
             label_count = modal.locator(
                 "text=/please select a chunking method\\./i"
             ).count()
-            _debug(
+            debug(
                 "[dataset] chunking_trigger_missing "
                 f"button_count={button_count} label_count={label_count} "
                 f"trigger_locator_count={trigger_locator.count()} "
                 f"trigger_handle_found={trigger_handle is not None}"
             )
-            _debug(f"[dataset] modal_text_snippet={modal_text[:300]!r}")
+            debug(f"[dataset] modal_text_snippet={modal_text[:300]!r}")
         raise AssertionError("Chunking method dropdown trigger not found.")
 
     trigger_for_assert = None
@@ -384,7 +347,7 @@ def _select_chunking_method_general(page, modal) -> None:
         option = listbox.locator(
             "div", has=page.locator("span", has_text=re.compile(r"^General$", re.I))
         ).first
-    if option.count() == 0 and _env_bool("PW_DEBUG_DUMP"):
+    if option.count() == 0 and env_bool("PW_DEBUG_DUMP"):
         try:
             listbox_text = listbox.inner_text()
         except Exception:
@@ -392,11 +355,11 @@ def _select_chunking_method_general(page, modal) -> None:
         span_count = listbox.locator(
             "span", has_text=re.compile(r"^General$", re.I)
         ).count()
-        _debug(
+        debug(
             "[dataset] general_option_missing "
             f"listbox_count={listbox.count()} span_count={span_count}"
         )
-        _debug(f"[dataset] listbox_text_snippet={listbox_text[:300]!r}")
+        debug(f"[dataset] listbox_text_snippet={listbox_text[:300]!r}")
     expect(option).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     option.click()
     if trigger_for_assert is not None:
@@ -416,23 +379,23 @@ def _open_create_dataset_modal(page):
     try:
         page.wait_for_function(wait_js, timeout=RESULT_TIMEOUT_MS)
     except PlaywrightTimeoutError:
-        if _env_bool("PW_DEBUG_DUMP"):
+        if env_bool("PW_DEBUG_DUMP"):
             url = page.url
             body_text = page.evaluate(
                 "(() => (document.body && document.body.innerText) || '')()"
             )
             lines = body_text.splitlines()
             snippet = "\n".join(lines[:20])[:500]
-            _debug(f"[dataset] entrypoint_wait_timeout url={url} snippet={snippet!r}")
+            debug(f"[dataset] entrypoint_wait_timeout url={url} snippet={snippet!r}")
         raise
 
     empty_text = page.locator("text=/no dataset created yet/i").first
     if empty_text.count() > 0:
-        _debug("[dataset] using empty-state entrypoint")
+        debug("[dataset] using empty-state entrypoint")
         expect(empty_text).to_be_visible(timeout=5000)
         element_handle = empty_text.element_handle()
         if element_handle is None:
-            _debug("[dataset] empty-state text element handle not available")
+            debug("[dataset] empty-state text element handle not available")
             _dump_clickable_candidates(page)
             raise AssertionError("Empty-state text element not available for click.")
         handle = page.evaluate_handle(
@@ -463,12 +426,12 @@ def _open_create_dataset_modal(page):
         )
         element = handle.as_element()
         if element is None:
-            _debug("[dataset] empty-state clickable ancestor not found")
+            debug("[dataset] empty-state clickable ancestor not found")
             _dump_clickable_candidates(page)
             raise AssertionError("No clickable ancestor found for empty dataset state.")
         element.click()
     else:
-        _debug("[dataset] using create button entrypoint")
+        debug("[dataset] using create button entrypoint")
         create_btn = None
         if hasattr(page, "get_by_role"):
             create_btn = page.get_by_role(
@@ -479,28 +442,28 @@ def _open_create_dataset_modal(page):
                 "button", has_text=re.compile(r"create dataset", re.I)
             ).first
         if create_btn.count() == 0:
-            if _env_bool("PW_DEBUG_DUMP"):
+            if env_bool("PW_DEBUG_DUMP"):
                 url = page.url
                 body_text = page.evaluate(
                     "(() => (document.body && document.body.innerText) || '')()"
                 )
                 lines = body_text.splitlines()
                 snippet = "\n".join(lines[:20])[:500]
-                _debug(f"[dataset] entrypoint_not_found url={url} snippet={snippet!r}")
+                debug(f"[dataset] entrypoint_not_found url={url} snippet={snippet!r}")
                 _dump_clickable_candidates(page)
             raise AssertionError("No dataset entrypoint found after readiness wait.")
-        _debug(f"[dataset] create_button_count={create_btn.count()}")
+        debug(f"[dataset] create_button_count={create_btn.count()}")
         try:
             expect(create_btn).to_be_visible(timeout=5000)
         except AssertionError:
-            if _env_bool("PW_DEBUG_DUMP"):
+            if env_bool("PW_DEBUG_DUMP"):
                 url = page.url
                 body_text = page.evaluate(
                     "(() => (document.body && document.body.innerText) || '')()"
                 )
                 lines = body_text.splitlines()
                 snippet = "\n".join(lines[:20])[:500]
-                _debug(f"[dataset] entrypoint_not_found url={url} snippet={snippet!r}")
+                debug(f"[dataset] entrypoint_not_found url={url} snippet={snippet!r}")
             raise
         create_btn.click()
 
@@ -557,7 +520,7 @@ def step_01_login(
         auth_click(submit_button, "submit_login")
 
     with step("wait for login"):
-        _wait_for_login_complete(flow_page)
+        wait_for_login_complete(flow_page, timeout_ms=RESULT_TIMEOUT_MS)
     flow_state["logged_in"] = True
     snap("login_complete")
 
@@ -675,7 +638,7 @@ def step_04_upload_files(
             def trigger():
                 save_button.click()
 
-            _capture_response(
+            capture_response(
                 page,
                 trigger,
                 lambda resp: resp.request.method == "POST"

@@ -7,20 +7,14 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from test.playwright.helpers.flow_steps import flow_params, require
+from helpers.env_utils import env_bool
 
 DEMO_EMAIL = "qa@infiniflow.com"
 DEMO_PASSWORD = "123"
 
 
-def _env_bool(name: str) -> bool:
-    value = os.getenv(name)
-    if not value:
-        return False
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _resolve_creds():
-    if _env_bool("DEMO_CREDS"):
+    if env_bool("DEMO_CREDS"):
         return DEMO_EMAIL, DEMO_PASSWORD, "demo"
     email = os.getenv("SEEDED_USER_EMAIL")
     password = os.getenv("SEEDED_USER_PASSWORD")
@@ -30,7 +24,7 @@ def _resolve_creds():
 
 
 def _debug_login_state(page, label: str) -> None:
-    if not _env_bool("PW_DEBUG_DUMP"):
+    if not env_bool("PW_DEBUG_DUMP"):
         return
     try:
         title = page.title()

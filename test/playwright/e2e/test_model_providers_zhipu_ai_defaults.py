@@ -1,55 +1,17 @@
 import json
-import os
 import re
 from urllib.parse import urljoin
-
+import os
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from test.playwright.helpers.flow_steps import flow_params, require
+from helpers.auth_waits import wait_for_login_complete
+from helpers.debug_utils import debug
+from helpers.response_capture import capture_response
 
 RESULT_TIMEOUT_MS = 15000
-
-
-def _env_bool(name: str) -> bool:
-    value = os.getenv(name)
-    if not value:
-        return False
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _debug(msg: str) -> None:
-    if _env_bool("PW_DEBUG_DUMP"):
-        print(msg, flush=True)
-
-
-def _capture_response(page, trigger, predicate, timeout_ms: int = RESULT_TIMEOUT_MS):
-    if hasattr(page, "expect_response"):
-        with page.expect_response(predicate, timeout=timeout_ms) as response_info:
-            trigger()
-        return response_info.value
-    if hasattr(page, "expect_event"):
-        with page.expect_event("response", predicate=predicate, timeout=timeout_ms) as response_info:
-            trigger()
-        return response_info.value
-    if hasattr(page, "wait_for_event"):
-        trigger()
-        return page.wait_for_event("response", predicate=predicate, timeout=timeout_ms)
-    raise RuntimeError("Playwright Page lacks expect_response/expect_event/wait_for_event.")
-
-
-def _wait_for_login_complete(page, timeout_ms: int = RESULT_TIMEOUT_MS) -> None:
-    wait_js = """
-        () => {
-          const path = window.location.pathname || '';
-          if (path.includes('/login')) return false;
-          const token = localStorage.getItem('Token');
-          const auth = localStorage.getItem('Authorization');
-          return Boolean((token && token.length) || (auth && auth.length));
-        }
-        """
-    page.wait_for_function(wait_js, timeout=timeout_ms)
 
 
 def _wait_for_path_prefix(page, prefix: str, timeout_ms: int = RESULT_TIMEOUT_MS) -> None:
@@ -70,20 +32,20 @@ def _safe_close_modal(modal) -> None:
         if api_input.count() > 0:
             api_input.fill("")
     except Exception as exc:
-        _debug(f"[model-providers] failed to clear api input: {exc}")
+        debug(f"[model-providers] failed to clear api input: {exc}")
     try:
         cancel_button = modal.locator("button", has_text=re.compile("cancel", re.I))
         if cancel_button.count() > 0:
             cancel_button.first.click()
             return
     except Exception as exc:
-        _debug(f"[model-providers] cancel modal click failed: {exc}")
+        debug(f"[model-providers] cancel modal click failed: {exc}")
     try:
         close_button = modal.locator("button", has=modal.locator("svg")).first
         if close_button.count() > 0:
             close_button.click()
     except Exception as exc:
-        _debug(f"[model-providers] close modal click failed: {exc}")
+        debug(f"[model-providers] close modal click failed: {exc}")
 
 
 def _open_user_settings(page, base_url: str) -> None:
@@ -101,7 +63,7 @@ def _open_user_settings(page, base_url: str) -> None:
     ]
 
     for candidate in candidates:
-        _debug(f"[model-providers] settings candidate count={candidate.count()}")
+        debug(f"[model-providers] settings candidate count={candidate.count()}")
         if candidate.count() == 0:
             continue
         try:
@@ -111,7 +73,7 @@ def _open_user_settings(page, base_url: str) -> None:
         except PlaywrightTimeoutError:
             continue
         except Exception as exc:
-            _debug(f"[model-providers] settings click failed: {exc}")
+            debug(f"[model-providers] settings click failed: {exc}")
 
     fallback_url = urljoin(base_url.rstrip("/") + "/", "/user-setting")
     page.goto(fallback_url, wait_until="domcontentloaded")
@@ -248,7 +210,7 @@ def _select_default_model(
         )
 
     try:
-        _capture_response(
+        capture_response(
             page,
             trigger,
             lambda resp: resp.request.method == "POST"
@@ -322,7 +284,7 @@ def step_02_login(
         auth_click(submit_button, "submit_login")
 
     with step("wait for login"):
-        _wait_for_login_complete(page)
+        wait_for_login_complete(page, timeout_ms=RESULT_TIMEOUT_MS)
 
     flow_state["logged_in"] = True
     snap("home_loaded")
@@ -443,7 +405,7 @@ def step_06_add_api_key(
                 api_input.fill(flow_state["api_key"])
                 save_button.click()
 
-            _capture_response(
+            capture_response(
                 page,
                 trigger,
                 lambda resp: resp.request.method == "POST" and "/v1/llm/set_api_key" in resp.url,

@@ -5,41 +5,11 @@ import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
+from helpers.response_capture import capture_response_json
+
 from test.playwright.helpers.flow_steps import flow_params, require
 
 RESULT_TIMEOUT_MS = 15000
-
-
-def _capture_register_response(page, trigger, timeout_ms: int = RESULT_TIMEOUT_MS) -> dict:
-    def predicate(resp):
-        return resp.request.method == "POST" and "/v1/user/register" in resp.url
-
-    if hasattr(page, "expect_response"):
-        with page.expect_response(predicate, timeout=timeout_ms) as response_info:
-            trigger()
-        response = response_info.value
-    elif hasattr(page, "expect_event"):
-        with page.expect_event("response", predicate=predicate, timeout=timeout_ms) as response_info:
-            trigger()
-        response = response_info.value
-    elif hasattr(page, "wait_for_event"):
-        trigger()
-        response = page.wait_for_event("response", predicate=predicate, timeout=timeout_ms)
-    else:
-        raise RuntimeError(
-            "Playwright Page lacks expect_response/expect_event/wait_for_event."
-        )
-
-    info: dict = {"__url__": response.url, "__status__": response.status}
-    try:
-        data = response.json()
-        if isinstance(data, dict):
-            info.update(data)
-        else:
-            info["__parse_error__"] = "non-dict response body"
-    except Exception as exc:
-        info["__parse_error__"] = str(exc)
-    return info
 
 
 def _debug_register_response(page, response_info: dict) -> None:
@@ -190,12 +160,15 @@ def step_03_register_user(
         )
         expect(submit_button).to_have_count(1)
         try:
-            response_info = _capture_register_response(
+            response_info = capture_response_json(
                 page,
                 lambda: (
                     auth_click(submit_button, "submit_register"),
                     snap("register_submitted"),
                 ),
+                lambda resp: resp.request.method == "POST"
+                and "/v1/user/register" in resp.url,
+                timeout_ms=RESULT_TIMEOUT_MS,
             )
         except PlaywrightTimeoutError as exc:
             snap("register_failure")
