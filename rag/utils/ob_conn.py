@@ -236,7 +236,7 @@ def get_metadata_filter_expression(metadata_filtering_conditions: dict) -> str:
             continue
 
         expr = f"JSON_EXTRACT(metadata, '$.{name}')"
-        value_str = get_value_str(value) if value else ""
+        value_str = get_value_str(value)
 
         # Convert comparison operator to MySQL JSON path syntax
         if comparison_operator == "is":
