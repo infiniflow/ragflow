@@ -167,10 +167,14 @@ class DocMetadataService:
         tenant_id = kb.tenant_id
         index_name = cls._get_doc_meta_index_name(tenant_id)
 
-        # Check if metadata index exists before searching
+        # Check if metadata index exists, create if it doesn't
         if not settings.docStoreConn.index_exist(index_name, ""):
-            logging.debug(f"Metadata index {index_name} does not exist, returning empty results")
-            return []
+            logging.debug(f"Metadata index {index_name} does not exist, creating it")
+            result = settings.docStoreConn.create_doc_meta_idx(index_name)
+            if result is False:
+                logging.error(f"Failed to create metadata index {index_name}")
+                return []
+            logging.debug(f"Successfully created metadata index {index_name}")
 
         if condition is None:
             condition = {"kb_id": kb_id}
