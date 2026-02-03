@@ -137,6 +137,11 @@ export function useBulkOperateDataset({
       onClick: handleCancelClick,
     },
     {
+      id: 'batch-metadata',
+      label: t('knowledgeDetails.metadata.metadata'),
+      icon: <Cylinder />,
+    },
+    {
       id: 'delete',
       label: t('common.delete'),
       icon: <Trash2 />,
@@ -146,11 +151,6 @@ export function useBulkOperateDataset({
           setRowSelection({});
         }
       },
-    },
-    {
-      id: 'batch-metadata',
-      label: t('knowledgeDetails.metadata.metadata'),
-      icon: <Cylinder />,
     },
   ];
 
