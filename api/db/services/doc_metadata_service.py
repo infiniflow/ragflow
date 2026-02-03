@@ -22,6 +22,7 @@ This is the SOLE source of truth for document metadata - MySQL meta_fields colum
 
 import json
 import logging
+import re
 from copy import deepcopy
 from typing import Dict, List, Optional
 
@@ -208,8 +209,6 @@ class DocMetadataService:
         Returns:
             Processed metadata with split values
         """
-        import re
-
         if not meta_fields or not isinstance(meta_fields, dict):
             return meta_fields
 
@@ -812,11 +811,17 @@ class DocMetadataService:
             Dictionary with metadata field statistics in format:
             {
                 "field_name": {
-                    "type": "string" | "number" | "list",
+                    "type": "string" | "number" | "list" | "time",
                     "values": [("value1", count1), ("value2", count2), ...]  # sorted by count desc
                 }
             }
         """
+        def _is_time_string(value: str) -> bool:
+            """Check if a string value is an ISO 8601 datetime (e.g., '2026-02-03T00:00:00')."""
+            if not isinstance(value, str):
+                return False
+            return bool(re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$', value))
+
         def _meta_value_type(value):
             """Determine the type of a metadata value."""
             if value is None:
@@ -827,6 +832,8 @@ class DocMetadataService:
                 return "string"
             if isinstance(value, (int, float)):
                 return "number"
+            if isinstance(value, str) and _is_time_string(value):
+                return "time"
             return "string"
 
         try:
@@ -862,7 +869,7 @@ class DocMetadataService:
                     # Aggregate value counts
                     values = v if isinstance(v, list) else [v]
                     for vv in values:
-                        if not vv:
+                        if vv is None:
                             continue
                         sv = str(vv)
                         if k not in summary:
