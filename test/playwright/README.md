@@ -24,8 +24,8 @@ uv run pytest -q test/playwright -m smoke
 
 Required/optional:
 
-- `BASE_URL` (default: `http://localhost:9222`)
-  - From `web/README.md` the dev UI runs on `http://localhost:9222`.
+- `BASE_URL` (default: `http://127.0.0.1`)
+  - Example dev UI: `http://localhost:9222`.
   - For Docker (`SVR_WEB_HTTP_PORT=80`), set `BASE_URL=http://localhost`.
 - `LOGIN_PATH` (default: `/login`)
 - `SEEDED_USER_EMAIL` and `SEEDED_USER_PASSWORD` (optional; enables login success test)
@@ -42,9 +42,13 @@ Diagnostics and debugging:
 - `PW_TRACE=1` save a Playwright trace on failure
 - `PW_BROWSER` (default: `chromium`)
 - `PW_HEADLESS` (default: `1`, set `0` to see the browser)
-- `PW_TIMEOUT_MS` (default: `15000`)
+- `PLAYWRIGHT_ACTION_TIMEOUT_MS` (default: `30000`)
+  - Legacy: `PW_TIMEOUT_MS`
 - `PW_SLOWMO_MS` (default: `0`)
-- `HANG_TIMEOUT_S` (default: `120`, set `0` to disable)
+- `PLAYWRIGHT_HANG_TIMEOUT_S` (default: `1800`, set `0` to disable)
+  - Legacy: `HANG_TIMEOUT_S`
+- `PLAYWRIGHT_AUTH_READY_TIMEOUT_MS` (default: `15000`)
+  - Legacy: `AUTH_READY_TIMEOUT_MS`
 
 ## What runs without credentials
 
@@ -114,5 +118,5 @@ On failure, the suite writes:
 
 ## Hang investigation
 
-- Automatic stack dump after `HANG_TIMEOUT_S` seconds.
+- Automatic stack dump after `PLAYWRIGHT_HANG_TIMEOUT_S` seconds.
 - Manual dump: `kill -USR1 <pytest_pid>` (writes traceback to stderr).

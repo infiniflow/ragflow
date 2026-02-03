@@ -1,228 +1,19 @@
-import json
 import re
-from urllib.parse import urljoin
 import os
 import pytest
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from test.playwright.helpers.flow_steps import flow_params, require
 from test.playwright.helpers.auth_selectors import EMAIL_INPUT, PASSWORD_INPUT, SUBMIT_BUTTON
 from test.playwright.helpers.auth_waits import wait_for_login_complete
-from test.playwright.helpers.debug_utils import debug
 from test.playwright.helpers.response_capture import capture_response
+from test.playwright.helpers.model_providers import (
+    open_user_settings,
+    safe_close_modal,
+    select_default_model,
+)
 
 RESULT_TIMEOUT_MS = 15000
-
-
-def _wait_for_path_prefix(page, prefix: str, timeout_ms: int = RESULT_TIMEOUT_MS) -> None:
-    prefix_json = json.dumps(prefix)
-    wait_js = f"""
-        () => {{
-          const prefix = {prefix_json};
-          const path = window.location.pathname || '';
-          return path.startsWith(prefix);
-        }}
-        """
-    page.wait_for_function(wait_js, timeout=timeout_ms)
-
-
-def _safe_close_modal(modal) -> None:
-    try:
-        api_input = modal.locator("input").first
-        if api_input.count() > 0:
-            api_input.fill("")
-    except Exception as exc:
-        debug(f"[model-providers] failed to clear api input: {exc}")
-    try:
-        cancel_button = modal.locator("button", has_text=re.compile("cancel", re.I))
-        if cancel_button.count() > 0:
-            cancel_button.first.click()
-            return
-    except Exception as exc:
-        debug(f"[model-providers] cancel modal click failed: {exc}")
-    try:
-        close_button = modal.locator("button", has=modal.locator("svg")).first
-        if close_button.count() > 0:
-            close_button.click()
-    except Exception as exc:
-        debug(f"[model-providers] close modal click failed: {exc}")
-
-
-def _open_user_settings(page, base_url: str) -> None:
-    entrypoint = page.locator("[data-testid='settings-entrypoint']")
-    if entrypoint.count() > 0:
-        entrypoint.first.click()
-        _wait_for_path_prefix(page, "/user-setting", timeout_ms=5000)
-        return
-
-    header = page.locator("section").filter(has=page.locator("img[alt='logo']")).first
-    candidates = [
-        page.locator("a[href='/user-setting']"),
-        page.locator("text=User settings"),
-        header.locator("img:not([alt='logo'])"),
-    ]
-
-    for candidate in candidates:
-        debug(f"[model-providers] settings candidate count={candidate.count()}")
-        if candidate.count() == 0:
-            continue
-        try:
-            candidate.first.click()
-            _wait_for_path_prefix(page, "/user-setting", timeout_ms=5000)
-            return
-        except PlaywrightTimeoutError:
-            continue
-        except Exception as exc:
-            debug(f"[model-providers] settings click failed: {exc}")
-
-    fallback_url = urljoin(base_url.rstrip("/") + "/", "/user-setting")
-    page.goto(fallback_url, wait_until="domcontentloaded")
-    _wait_for_path_prefix(page, "/user-setting")
-
-
-def _needs_selection(combobox, option_text: str) -> bool:
-    current_text = combobox.inner_text().strip()
-    return option_text not in current_text
-
-
-def _click_with_retry(page, locator_factory, attempts: int = 3) -> None:
-    last_exc = None
-    for _ in range(attempts):
-        option = locator_factory()
-        try:
-            expect(option).to_be_attached(timeout=RESULT_TIMEOUT_MS)
-            expect(option).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-            option.scroll_into_view_if_needed()
-            option.click()
-            return
-        except Exception as exc:
-            last_exc = exc
-            page.wait_for_timeout(100)
-    raise AssertionError(f"Click failed after {attempts} attempts: {last_exc}")
-
-
-def _select_cmdk_option_by_value_prefix(
-    page,
-    combobox,
-    value_prefix: str,
-    option_text: str,
-    list_testid: str,
-    fallback_to_first: bool = False,
-) -> tuple[str, str | None]:
-    combobox.click()
-    page.wait_for_selector(
-        f"[data-testid='{list_testid}']:visible [data-testid='combobox-option']",
-        timeout=RESULT_TIMEOUT_MS,
-    )
-    options_container = page.locator(
-        f"[data-testid='{list_testid}']:visible"
-    )
-    expect(options_container).to_have_count(1, timeout=RESULT_TIMEOUT_MS)
-    options_container = options_container.first
-
-    escaped_prefix = value_prefix.replace("'", "\\'")
-    value_selector = (
-        f"[data-testid='combobox-option'][data-value^='{escaped_prefix}']"
-    )
-    option_pattern = re.compile(rf"\\b{re.escape(option_text)}\\b", re.I)
-
-    def option_locator():
-        by_value = options_container.locator(value_selector)
-        if by_value.count() > 0:
-            return by_value.first
-        return options_container.locator("[data-testid='combobox-option']").filter(
-            has_text=option_pattern
-        ).first
-
-    option = option_locator()
-    if option.count() == 0:
-        options = options_container.locator("[data-testid='combobox-option']")
-        if fallback_to_first and options.count() > 0:
-            first_option = options.first
-            selected_text = ""
-            selected_value = None
-            try:
-                selected_text = first_option.inner_text().strip()
-            except Exception:
-                selected_text = ""
-            try:
-                selected_value = first_option.get_attribute("data-value")
-            except Exception:
-                selected_value = None
-            _click_with_retry(page, lambda: first_option, attempts=3)
-            if selected_text:
-                expect(combobox).to_contain_text(
-                    selected_text, timeout=RESULT_TIMEOUT_MS
-                )
-            return selected_text or option_text, selected_value
-        dump = []
-        count = min(options.count(), 30)
-        for i in range(count):
-            item = options.nth(i)
-            try:
-                text = item.inner_text().strip()
-            except Exception as exc:
-                text = f"<text-error:{exc}>"
-            try:
-                data_value = item.get_attribute("data-value")
-            except Exception as exc:
-                data_value = f"<value-error:{exc}>"
-            dump.append(f"{i + 1:02d}. text={text!r} data-value={data_value!r}")
-        dump_text = "\n".join(dump)
-        raise AssertionError(
-            "No matching cmdk option found. "
-            f"value_prefix={value_prefix!r} option_text={option_text!r} "
-            f"options_count={options.count()}\n"
-            f"options:\n{dump_text}"
-        )
-
-    _click_with_retry(page, option_locator, attempts=3)
-    expect(combobox).to_contain_text(option_text, timeout=RESULT_TIMEOUT_MS)
-    return option_text, option.get_attribute("data-value")
-
-
-def _select_default_model(
-    page,
-    combobox,
-    value_prefix: str,
-    option_text: str,
-    list_testid: str,
-    fallback_to_first: bool = False,
-) -> tuple[str, str | None]:
-    if not _needs_selection(combobox, option_text):
-        try:
-            current_text = combobox.inner_text().strip()
-        except Exception:
-            current_text = option_text
-        return current_text, None
-
-    selected = ("", None)
-
-    def trigger():
-        nonlocal selected
-        selected = _select_cmdk_option_by_value_prefix(
-            page,
-            combobox,
-            value_prefix,
-            option_text,
-            list_testid,
-            fallback_to_first=fallback_to_first,
-        )
-
-    try:
-        capture_response(
-            page,
-            trigger,
-            lambda resp: resp.request.method == "POST"
-            and "/v1/user/set_tenant_info" in resp.url,
-        )
-    except PlaywrightTimeoutError:
-        pass
-
-    expected_text = selected[0] or option_text
-    expect(combobox).to_contain_text(expected_text, timeout=RESULT_TIMEOUT_MS)
-    return selected
 
 
 def step_01_open_login(
@@ -301,7 +92,7 @@ def step_03_open_settings(
     require(flow_state, "logged_in")
     page = flow_page
     with step("open settings"):
-        _open_user_settings(page, base_url)
+        open_user_settings(page, base_url)
     flow_state["settings_open"] = True
     snap("settings_opened")
 
@@ -409,7 +200,7 @@ def step_06_add_api_key(
             )
             expect(modal).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
         except Exception:
-            _safe_close_modal(modal)
+            safe_close_modal(modal)
             raise
 
     with step("confirm added model"):
@@ -441,20 +232,25 @@ def step_07_set_defaults(
         llm_combo = page.locator("[data-testid='default-llm-combobox']").first
         emb_combo = page.locator("[data-testid='default-embedding-combobox']").first
 
-        _select_default_model(
+        select_default_model(
             page,
+            expect,
             llm_combo,
             "glm-4-flash",
             "glm-4-flash",
             list_testid="default-llm-options",
+            fallback_to_first=False,
+            timeout_ms=RESULT_TIMEOUT_MS,
         )
-        selected_emb_text, _ = _select_default_model(
+        selected_emb_text, _ = select_default_model(
             page,
+            expect,
             emb_combo,
             "embedding-2",
             "embedding-2",
             list_testid="default-embedding-options",
             fallback_to_first=True,
+            timeout_ms=RESULT_TIMEOUT_MS,
         )
     flow_state["selected_emb_text"] = selected_emb_text
     flow_state["defaults_set"] = True
