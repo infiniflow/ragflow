@@ -41,6 +41,7 @@ from rag.nlp import search
 
 import memory.utils.es_conn as memory_es_conn
 import memory.utils.infinity_conn as memory_infinity_conn
+import memory.utils.ob_conn as memory_ob_conn
 
 LLM = None
 LLM_FACTORY = None
@@ -281,6 +282,8 @@ def init_settings():
             "db_name": "default_db"
         })
         msgStoreConn = memory_infinity_conn.InfinityConnection()
+    elif lower_case_doc_engine in ["oceanbase", "seekdb"]:
+        msgStoreConn = memory_ob_conn.OBConnection()
 
     global AZURE, S3, MINIO, OSS, GCS
     if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
