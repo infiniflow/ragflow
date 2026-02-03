@@ -33,7 +33,7 @@ from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, Order
 
 
 class InfinityConnectionBase(DocStoreConnection):
-    def __init__(self, mapping_file_name: str="infinity_mapping.json", logger_name: str="ragflow.infinity_conn"):
+    def __init__(self, mapping_file_name: str = "infinity_mapping.json", logger_name: str = "ragflow.infinity_conn"):
         from common.doc_store.infinity_conn_pool import INFINITY_CONN
 
         self.dbName = settings.INFINITY.get("db_name", "default_db")
@@ -73,7 +73,8 @@ class InfinityConnectionBase(DocStoreConnection):
         fp_mapping = os.path.join(get_project_base_directory(), "conf", self.mapping_file_name)
         if not os.path.exists(fp_mapping):
             raise Exception(f"Mapping file not found at {fp_mapping}")
-        schema = json.load(open(fp_mapping))
+        with open(fp_mapping) as f:
+            schema = json.load(f)
         table_names = inf_db.list_tables().table_names
         for table_name in table_names:
             inf_table = inf_db.get_table(table_name)
@@ -84,22 +85,43 @@ class InfinityConnectionBase(DocStoreConnection):
             column_names = inf_table.show_columns()["name"]
             column_names = set(column_names)
             for field_name, field_info in schema.items():
-                if field_name in column_names:
-                    continue
-                res = inf_table.add_columns({field_name: field_info})
-                assert res.error_code == infinity.ErrorCode.OK
-                self.logger.info(f"INFINITY added following column to table {table_name}: {field_name} {field_info}")
-                if field_info["type"] != "varchar" or "analyzer" not in field_info:
-                    continue
-                analyzers = field_info["analyzer"]
-                if isinstance(analyzers, str):
-                    analyzers = [analyzers]
-                for analyzer in analyzers:
-                    inf_table.create_index(
-                        f"ft_{re.sub(r'[^a-zA-Z0-9]', '_', field_name)}_{re.sub(r'[^a-zA-Z0-9]', '_', analyzer)}",
-                        IndexInfo(field_name, IndexType.FullText, {"ANALYZER": analyzer}),
-                        ConflictType.Ignore,
-                    )
+                is_new_column = field_name not in column_names
+                if is_new_column:
+                    res = inf_table.add_columns({field_name: field_info})
+                    assert res.error_code == infinity.ErrorCode.OK
+                    self.logger.info(f"INFINITY added following column to table {table_name}: {field_name} {field_info}")
+
+                if field_info["type"] == "varchar" and "analyzer" in field_info:
+                    analyzers = field_info["analyzer"]
+                    if isinstance(analyzers, str):
+                        analyzers = [analyzers]
+                    for analyzer in analyzers:
+                        inf_table.create_index(
+                            f"ft_{re.sub(r'[^a-zA-Z0-9]', '_', field_name)}_{re.sub(r'[^a-zA-Z0-9]', '_', analyzer)}",
+                            IndexInfo(field_name, IndexType.FullText, {"ANALYZER": analyzer}),
+                            ConflictType.Ignore,
+                        )
+
+                if "index_type" in field_info:
+                    index_config = field_info["index_type"]
+                    if isinstance(index_config, str) and index_config == "secondary":
+                        inf_table.create_index(
+                            f"sec_{field_name}",
+                            IndexInfo(field_name, IndexType.Secondary),
+                            ConflictType.Ignore,
+                        )
+                        self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name}")
+                    elif isinstance(index_config, dict):
+                        if index_config.get("type") == "secondary":
+                            params = {}
+                            if "cardinality" in index_config:
+                                params = {"cardinality": index_config["cardinality"]}
+                            inf_table.create_index(
+                                f"sec_{field_name}",
+                                IndexInfo(field_name, IndexType.Secondary, params),
+                                ConflictType.Ignore,
+                            )
+                            self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name} with params {params}")
 
     """
     Dataframe and fields convert
@@ -243,6 +265,7 @@ class InfinityConnectionBase(DocStoreConnection):
 
         if parser_id is not None:
             from common.constants import ParserType
+
             if parser_id == ParserType.TABLE.value:
                 # Table parser: add chunk_data JSON column to store table-specific fields
                 schema["chunk_data"] = {"type": "json", "default": "{}"}
@@ -281,12 +304,95 @@ class InfinityConnectionBase(DocStoreConnection):
                     IndexInfo(field_name, IndexType.FullText, {"ANALYZER": analyzer}),
                     ConflictType.Ignore,
                 )
+
+        # Create secondary indexes for fields with index_type
+        for field_name, field_info in schema.items():
+            if "index_type" not in field_info:
+                continue
+            index_config = field_info["index_type"]
+            if isinstance(index_config, str) and index_config == "secondary":
+                inf_table.create_index(
+                    f"sec_{field_name}",
+                    IndexInfo(field_name, IndexType.Secondary),
+                    ConflictType.Ignore,
+                )
+                self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name}")
+            elif isinstance(index_config, dict):
+                if index_config.get("type") == "secondary":
+                    params = {}
+                    if "cardinality" in index_config:
+                        params = {"cardinality": index_config["cardinality"]}
+                    inf_table.create_index(
+                        f"sec_{field_name}",
+                        IndexInfo(field_name, IndexType.Secondary, params),
+                        ConflictType.Ignore,
+                    )
+                    self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name} with params {params}")
+
         self.connPool.release_conn(inf_conn)
         self.logger.info(f"INFINITY created table {table_name}, vector size {vector_size}")
         return True
 
+    def create_doc_meta_idx(self, index_name: str):
+        """
+        Create a document metadata table.
+
+        Table name pattern: ragflow_doc_meta_{tenant_id}
+        - Per-tenant metadata table for storing document metadata fields
+        """
+        table_name = index_name
+        inf_conn = self.connPool.get_conn()
+        inf_db = inf_conn.create_database(self.dbName, ConflictType.Ignore)
+        try:
+            fp_mapping = os.path.join(get_project_base_directory(), "conf", "doc_meta_infinity_mapping.json")
+            if not os.path.exists(fp_mapping):
+                self.logger.error(f"Document metadata mapping file not found at {fp_mapping}")
+                return False
+            with open(fp_mapping) as f:
+                schema = json.load(f)
+            inf_db.create_table(
+                table_name,
+                schema,
+                ConflictType.Ignore,
+            )
+
+            # Create secondary indexes on id and kb_id for better query performance
+            inf_table = inf_db.get_table(table_name)
+
+            try:
+                inf_table.create_index(
+                    f"idx_{table_name}_id",
+                    IndexInfo("id", IndexType.Secondary),
+                    ConflictType.Ignore,
+                )
+                self.logger.debug(f"INFINITY created secondary index on id for table {table_name}")
+            except Exception as e:
+                self.logger.warning(f"Failed to create index on id for {table_name}: {e}")
+
+            try:
+                inf_table.create_index(
+                    f"idx_{table_name}_kb_id",
+                    IndexInfo("kb_id", IndexType.Secondary),
+                    ConflictType.Ignore,
+                )
+                self.logger.debug(f"INFINITY created secondary index on kb_id for table {table_name}")
+            except Exception as e:
+                self.logger.warning(f"Failed to create index on kb_id for {table_name}: {e}")
+
+            self.connPool.release_conn(inf_conn)
+            self.logger.debug(f"INFINITY created document metadata table {table_name} with secondary indexes")
+            return True
+
+        except Exception as e:
+            self.connPool.release_conn(inf_conn)
+            self.logger.exception(f"Error creating document metadata table {table_name}: {e}")
+            return False
+
     def delete_idx(self, index_name: str, dataset_id: str):
-        table_name = f"{index_name}_{dataset_id}"
+        if index_name.startswith("ragflow_doc_meta_"):
+            table_name = index_name
+        else:
+            table_name = f"{index_name}_{dataset_id}"
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
         db_instance.drop_table(table_name, ConflictType.Ignore)
@@ -294,7 +400,10 @@ class InfinityConnectionBase(DocStoreConnection):
         self.logger.info(f"INFINITY dropped table {table_name}")
 
     def index_exist(self, index_name: str, dataset_id: str) -> bool:
-        table_name = f"{index_name}_{dataset_id}"
+        if index_name.startswith("ragflow_doc_meta_"):
+            table_name = index_name
+        else:
+            table_name = f"{index_name}_{dataset_id}"
         try:
             inf_conn = self.connPool.get_conn()
             db_instance = inf_conn.get_database(self.dbName)
@@ -341,7 +450,10 @@ class InfinityConnectionBase(DocStoreConnection):
     def delete(self, condition: dict, index_name: str, dataset_id: str) -> int:
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
-        table_name = f"{index_name}_{dataset_id}"
+        if index_name.startswith("ragflow_doc_meta_"):
+            table_name = index_name
+        else:
+            table_name = f"{index_name}_{dataset_id}"
         try:
             table_instance = db_instance.get_table(table_name)
         except Exception:
@@ -484,7 +596,8 @@ class InfinityConnectionBase(DocStoreConnection):
             reverse_mapping = {}
             fp_mapping = os.path.join(get_project_base_directory(), "conf", self.mapping_file_name)
             if os.path.exists(fp_mapping):
-                schema = json.load(open(fp_mapping))
+                with open(fp_mapping) as f:
+                    schema = json.load(f)
                 for field_name, field_info in schema.items():
                     if "comment" in field_info:
                         # Parse comma-separated aliases from comment
@@ -502,50 +615,27 @@ class InfinityConnectionBase(DocStoreConnection):
 
                 # Apply field transformations
                 for alias, actual in field_mapping.items():
-                    select_clause = re.sub(
-                        rf'(^|[, ]){alias}([, ]|$)',
-                        rf'\1{actual}\2',
-                        select_clause
-                    )
+                    select_clause = re.sub(rf"(^|[, ]){alias}([, ]|$)", rf"\1{actual}\2", select_clause)
 
-                sql = select_clause + from_clause + sql[select_match.end():]
+                sql = select_clause + from_clause + sql[select_match.end() :]
 
             # Also replace field names in WHERE, ORDER BY, GROUP BY, and HAVING clauses
             for alias, actual in field_mapping.items():
                 # Transform in WHERE clause
-                sql = re.sub(
-                    rf'(\bwhere\s+[^;]*?)(\b){re.escape(alias)}\b',
-                    rf'\1{actual}',
-                    sql,
-                    flags=re.IGNORECASE
-                )
+                sql = re.sub(rf"(\bwhere\s+[^;]*?)(\b){re.escape(alias)}\b", rf"\1{actual}", sql, flags=re.IGNORECASE)
                 # Transform in ORDER BY clause
-                sql = re.sub(
-                    rf'(\border by\s+[^;]*?)(\b){re.escape(alias)}\b',
-                    rf'\1{actual}',
-                    sql,
-                    flags=re.IGNORECASE
-                )
+                sql = re.sub(rf"(\border by\s+[^;]*?)(\b){re.escape(alias)}\b", rf"\1{actual}", sql, flags=re.IGNORECASE)
                 # Transform in GROUP BY clause
-                sql = re.sub(
-                    rf'(\bgroup by\s+[^;]*?)(\b){re.escape(alias)}\b',
-                    rf'\1{actual}',
-                    sql,
-                    flags=re.IGNORECASE
-                )
+                sql = re.sub(rf"(\bgroup by\s+[^;]*?)(\b){re.escape(alias)}\b", rf"\1{actual}", sql, flags=re.IGNORECASE)
                 # Transform in HAVING clause
-                sql = re.sub(
-                    rf'(\bhaving\s+[^;]*?)(\b){re.escape(alias)}\b',
-                    rf'\1{actual}',
-                    sql,
-                    flags=re.IGNORECASE
-                )
+                sql = re.sub(rf"(\bhaving\s+[^;]*?)(\b){re.escape(alias)}\b", rf"\1{actual}", sql, flags=re.IGNORECASE)
 
             self.logger.debug(f"InfinityConnection.sql to execute: {sql}")
 
             # Get connection parameters from the Infinity connection pool wrapper
             # We need to use INFINITY_CONN singleton, not the raw ConnectionPool
             from common.doc_store.infinity_conn_pool import INFINITY_CONN
+
             conn_info = INFINITY_CONN.get_conn_uri()
 
             # Parse host and port from conn_info
@@ -573,6 +663,7 @@ class InfinityConnectionBase(DocStoreConnection):
             psql_path = "/usr/bin/psql"
             # Check if psql exists at expected location, otherwise try to find it
             import shutil
+
             psql_from_path = shutil.which("psql")
             if psql_from_path:
                 psql_path = psql_from_path
@@ -580,9 +671,12 @@ class InfinityConnectionBase(DocStoreConnection):
             # Execute SQL with psql to get both column names and data in one call
             psql_cmd = [
                 psql_path,
-                "-h", host,
-                "-p", port,
-                "-c", sql,
+                "-h",
+                host,
+                "-p",
+                port,
+                "-c",
+                sql,
             ]
 
             self.logger.debug(f"Executing psql command: {' '.join(psql_cmd)}")
@@ -591,7 +685,7 @@ class InfinityConnectionBase(DocStoreConnection):
                 psql_cmd,
                 capture_output=True,
                 text=True,
-                timeout=10  # 10 second timeout
+                timeout=10,  # 10 second timeout
             )
 
             if result.returncode != 0:
@@ -602,10 +696,7 @@ class InfinityConnectionBase(DocStoreConnection):
             output = result.stdout.strip()
             if not output:
                 # No results
-                return {
-                    "columns": [],
-                    "rows": []
-                } if format == "json" else []
+                return {"columns": [], "rows": []} if format == "json" else []
 
             # Parse psql table output which has format:
             #  col1 | col2 | col3
@@ -638,16 +729,13 @@ class InfinityConnectionBase(DocStoreConnection):
                     rows.append(row)
                 elif len(row) > len(columns):
                     # Row has more cells than columns - truncate
-                    rows.append(row[:len(columns)])
+                    rows.append(row[: len(columns)])
                 elif len(row) < len(columns):
                     # Row has fewer cells - pad with empty strings
                     rows.append(row + [""] * (len(columns) - len(row)))
 
             if format == "json":
-                result = {
-                    "columns": columns,
-                    "rows": rows[:fetch_size] if fetch_size > 0 else rows
-                }
+                result = {"columns": columns, "rows": rows[:fetch_size] if fetch_size > 0 else rows}
             else:
                 result = rows[:fetch_size] if fetch_size > 0 else rows
 

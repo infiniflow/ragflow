@@ -1,3 +1,4 @@
+import { BulkOperateBar } from '@/components/bulk-operate-bar';
 import {
   ConfirmDeleteDialog,
   ConfirmDeleteDialogNode,
@@ -5,7 +6,6 @@ import {
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -18,9 +18,8 @@ import {
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { Routes } from '@/routes';
+import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import {
-  ColumnDef,
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -28,28 +27,25 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import {
-  ListChevronsDownUp,
-  ListChevronsUpDown,
-  Plus,
-  Settings,
-  Trash2,
-} from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from '../../sidebar/hooks';
 import {
-  MetadataDeleteMap,
-  MetadataType,
   getMetadataValueTypeLabel,
-  isMetadataValueTypeWithEnum,
+  MetadataType,
+  metadataValueTypeEnum,
+} from './constant';
+import {
   useManageMetaDataModal,
+  useOperateData,
 } from './hooks/use-manage-modal';
 import {
   IBuiltInMetadataItem,
   IManageModalProps,
   IMetaDataTableData,
 } from './interface';
+import { useMetadataColumns } from './manage-modal-column';
 import { ManageValuesModal } from './manage-values-modal';
 
 type MetadataSettingsTab = 'generation' | 'built-in';
@@ -71,34 +67,22 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     isVerticalShowValue = true,
     builtInMetadata,
     success,
+    documentIds,
+    secondTitle,
   } = props;
   const { t } = useTranslation();
   const [valueData, setValueData] = useState<IMetaDataTableData>({
     field: '',
     description: '',
     values: [],
-    valueType: 'string',
+    valueType: metadataValueTypeEnum.string,
   });
 
-  const [expanded, setExpanded] = useState(true);
   const [activeTab, setActiveTab] = useState<MetadataSettingsTab>('generation');
   const [currentValueIndex, setCurrentValueIndex] = useState<number>(0);
   const [builtInSelection, setBuiltInSelection] = useState<
     IBuiltInMetadataItem[]
   >([]);
-  const [deleteDialogContent, setDeleteDialogContent] = useState({
-    visible: false,
-    title: '',
-    name: '',
-    warnText: '',
-    onOk: () => {},
-    onCancel: () => {},
-  });
-  const [editingValue, setEditingValue] = useState<{
-    field: string;
-    value: string;
-    newValue: string;
-  } | null>(null);
 
   const {
     tableData,
@@ -108,28 +92,32 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     handleSave,
     addUpdateValue,
     addDeleteValue,
-  } = useManageMetaDataModal(originalTableData, metadataType, otherData);
+    handleDeleteBatchRow,
+  } = useManageMetaDataModal(
+    originalTableData,
+    metadataType,
+    otherData,
+    documentIds,
+  );
   const { handleMenuClick } = useHandleMenuClick();
   const [shouldSave, setShouldSave] = useState(false);
+  const [isAddValueMode, setIsAddValueMode] = useState(false);
   const {
     visible: manageValuesVisible,
     showModal: showManageValuesModal,
     hideModal: hideManageValuesModal,
   } = useSetModalState();
-  const hideDeleteModal = () => {
-    setDeleteDialogContent({
-      visible: false,
-      title: '',
-      name: '',
-      warnText: '',
-      onOk: () => {},
-      onCancel: () => {},
-    });
+
+  const hideManageValuesModalFunc = () => {
+    setIsAddValueMode(false);
+    hideManageValuesModal();
   };
 
   const isSettingsMode =
     metadataType === MetadataType.Setting ||
-    metadataType === MetadataType.SingleFileSetting;
+    metadataType === MetadataType.SingleFileSetting ||
+    metadataType === MetadataType.UpdateSingle;
+
   const showTypeColumn = isSettingsMode;
   const builtInRows = useMemo(
     () => [
@@ -183,39 +171,19 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     [builtInSelection],
   );
 
-  const handleEditValue = (field: string, value: string) => {
-    setEditingValue({ field, value, newValue: value });
-  };
-
-  const saveEditedValue = useCallback(() => {
-    if (editingValue) {
-      setTableData((prev) => {
-        return prev.map((row) => {
-          if (row.field === editingValue.field) {
-            const updatedValues = row.values.map((v) =>
-              v === editingValue.value ? editingValue.newValue : v,
-            );
-            return { ...row, values: updatedValues };
-          }
-          return row;
-        });
-      });
-      setEditingValue(null);
-      setShouldSave(true);
-    }
-  }, [editingValue, setTableData]);
-
-  const cancelEditValue = () => {
-    setEditingValue(null);
-  };
   const handAddValueRow = () => {
     setValueData({
       field: '',
       description: '',
-      values: [],
-      valueType: 'string',
+      values:
+        metadataType === MetadataType.Setting ||
+        metadataType === MetadataType.SingleFileSetting
+          ? []
+          : [''],
+      valueType: metadataValueTypeEnum.string,
     });
     setCurrentValueIndex(tableData.length || 0);
+    setIsAddValueMode(true);
     showManageValuesModal();
   };
   const handleEditValueRow = useCallback(
@@ -226,229 +194,19 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     },
     [showManageValuesModal],
   );
-
-  const columns: ColumnDef<IMetaDataTableData>[] = useMemo(() => {
-    const cols: ColumnDef<IMetaDataTableData>[] = [
-      {
-        accessorKey: 'field',
-        header: () => <span>{t('knowledgeDetails.metadata.field')}</span>,
-        cell: ({ row }) => (
-          <div className="text-sm text-accent-primary">
-            {row.getValue('field')}
-          </div>
-        ),
-      },
-      ...(showTypeColumn
-        ? ([
-            {
-              accessorKey: 'valueType',
-              header: () => <span>Type</span>,
-              cell: ({ row }) => (
-                <div className="text-sm">
-                  {getMetadataValueTypeLabel(
-                    row.original.valueType as IMetaDataTableData['valueType'],
-                  )}
-                </div>
-              ),
-            },
-          ] as ColumnDef<IMetaDataTableData>[])
-        : []),
-      {
-        accessorKey: 'description',
-        header: () => <span>{t('knowledgeDetails.metadata.description')}</span>,
-        cell: ({ row }) => (
-          <div className="text-sm truncate max-w-32">
-            {row.getValue('description')}
-          </div>
-        ),
-      },
-      {
-        accessorKey: 'values',
-        header: () => (
-          <div className="flex items-center">
-            <span>{t('knowledgeDetails.metadata.values')}</span>
-            <div
-              className="ml-2 p-1 cursor-pointer"
-              onClick={() => {
-                setExpanded(!expanded);
-              }}
-            >
-              {expanded ? (
-                <ListChevronsDownUp size={14} />
-              ) : (
-                <ListChevronsUpDown size={14} />
-              )}
-              {expanded}
-            </div>
-          </div>
-        ),
-        cell: ({ row }) => {
-          const values = row.getValue('values') as Array<string>;
-          const supportsEnum = isMetadataValueTypeWithEnum(
-            row.original.valueType,
-          );
-
-          if (!supportsEnum || !Array.isArray(values) || values.length === 0) {
-            return <div></div>;
-          }
-
-          const displayedValues = expanded ? values : values.slice(0, 2);
-          const hasMore = Array.isArray(values) && values.length > 2;
-
-          return (
-            <div className="flex flex-col gap-1">
-              <div className="flex flex-wrap gap-1">
-                {displayedValues?.map((value: string) => {
-                  const isEditing =
-                    editingValue &&
-                    editingValue.field === row.getValue('field') &&
-                    editingValue.value === value;
-
-                  return isEditing ? (
-                    <div key={value}>
-                      <Input
-                        type="text"
-                        value={editingValue.newValue}
-                        onChange={(e) =>
-                          setEditingValue({
-                            ...editingValue,
-                            newValue: e.target.value,
-                          })
-                        }
-                        onBlur={saveEditedValue}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            saveEditedValue();
-                          } else if (e.key === 'Escape') {
-                            cancelEditValue();
-                          }
-                        }}
-                        autoFocus
-                        // className="text-sm min-w-20 max-w-32 outline-none bg-transparent px-1 py-0.5"
-                      />
-                    </div>
-                  ) : (
-                    <Button
-                      key={value}
-                      variant={'ghost'}
-                      className="border border-border-button"
-                      onClick={() =>
-                        handleEditValue(row.getValue('field'), value)
-                      }
-                      aria-label="Edit"
-                    >
-                      <div className="flex gap-1 items-center">
-                        <div className="text-sm truncate max-w-24">{value}</div>
-                        {isDeleteSingleValue && (
-                          <Button
-                            variant={'delete'}
-                            className="p-0 bg-transparent"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteDialogContent({
-                                visible: true,
-                                title:
-                                  t('common.delete') +
-                                  ' ' +
-                                  t('knowledgeDetails.metadata.value'),
-                                name: value,
-                                warnText:
-                                  MetadataDeleteMap(t)[
-                                    metadataType as MetadataType
-                                  ].warnValueText,
-                                onOk: () => {
-                                  hideDeleteModal();
-                                  handleDeleteSingleValue(
-                                    row.getValue('field'),
-                                    value,
-                                  );
-                                },
-                                onCancel: () => {
-                                  hideDeleteModal();
-                                },
-                              });
-                            }}
-                          >
-                            <Trash2 />
-                          </Button>
-                        )}
-                      </div>
-                    </Button>
-                  );
-                })}
-                {hasMore && !expanded && (
-                  <div className="text-text-secondary self-end">...</div>
-                )}
-              </div>
-            </div>
-          );
-        },
-      },
-      {
-        accessorKey: 'action',
-        header: () => <span>{t('knowledgeDetails.metadata.action')}</span>,
-        meta: {
-          cellClassName: 'w-12',
-        },
-        cell: ({ row }) => (
-          <div className=" flex opacity-0 group-hover:opacity-100 gap-2">
-            <Button
-              variant={'ghost'}
-              className="bg-transparent px-1 py-0"
-              onClick={() => {
-                handleEditValueRow(row.original, row.index);
-              }}
-            >
-              <Settings />
-            </Button>
-            <Button
-              variant={'delete'}
-              className="p-0 bg-transparent"
-              onClick={() => {
-                setDeleteDialogContent({
-                  visible: true,
-                  title:
-                    // t('common.delete') +
-                    // ' ' +
-                    // t('knowledgeDetails.metadata.metadata')
-                    MetadataDeleteMap(t)[metadataType as MetadataType].title,
-                  name: row.getValue('field'),
-                  warnText:
-                    MetadataDeleteMap(t)[metadataType as MetadataType]
-                      .warnFieldText,
-                  onOk: () => {
-                    hideDeleteModal();
-                    handleDeleteSingleRow(row.getValue('field'));
-                  },
-                  onCancel: () => {
-                    hideDeleteModal();
-                  },
-                });
-              }}
-            >
-              <Trash2 />
-            </Button>
-          </div>
-        ),
-      },
-    ];
-    if (!isShowDescription) {
-      return cols.filter((col) => col.accessorKey !== 'description');
-    }
-    return cols;
-  }, [
-    handleDeleteSingleRow,
-    t,
-    handleDeleteSingleValue,
-    isShowDescription,
-    isDeleteSingleValue,
-    handleEditValueRow,
+  const { rowSelection, rowSelectionIsEmpty, setRowSelection, selectedCount } =
+    useRowSelection();
+  const { columns, deleteDialogContent } = useMetadataColumns({
+    isDeleteSingleValue: !!isDeleteSingleValue,
     metadataType,
-    expanded,
-    editingValue,
-    saveEditedValue,
+    setTableData,
+    handleDeleteSingleValue,
+    handleDeleteSingleRow,
+    handleEditValueRow,
+    isShowDescription,
     showTypeColumn,
-  ]);
+    setShouldSave,
+  });
 
   const table = useReactTable({
     data: tableData as IMetaDataTableData[],
@@ -457,7 +215,11 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    onRowSelectionChange: setRowSelection,
     manualPagination: true,
+    state: {
+      rowSelection,
+    },
   });
 
   const handleSaveValues = (data: IMetaDataTableData) => {
@@ -498,6 +260,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       return Array.from(fieldMap.values());
     });
     setShouldSave(true);
+    setIsAddValueMode(false);
   };
 
   useEffect(() => {
@@ -506,7 +269,6 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
         handleSave({ callback: () => {}, builtInMetadata: builtInSelection });
         setShouldSave(false);
       }, 0);
-
       return () => clearTimeout(timer);
     }
   }, [tableData, shouldSave, handleSave, builtInSelection]);
@@ -515,6 +277,26 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     return tableData.map((item) => item.field);
   }, [tableData]);
 
+  const { handleDelete } = useOperateData({
+    rowSelection,
+    list: tableData,
+    handleDeleteBatchRow,
+  });
+
+  const operateList = [
+    {
+      id: 'delete',
+      label: t('common.delete'),
+      icon: <Trash2 />,
+      onClick: async () => {
+        await handleDelete();
+        setRowSelection({});
+        // if (code === 0) {
+        //   setRowSelection({});
+        // }
+      },
+    },
+  ];
   return (
     <>
       <Modal
@@ -528,46 +310,60 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
             callback: hideModal,
             builtInMetadata: builtInSelection,
           });
-          console.log('data', res);
           success?.(res);
         }}
       >
         <>
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <div>{t('knowledgeDetails.metadata.metadata')}</div>
-              {metadataType === MetadataType.Manage && (
-                <Button
-                  variant={'ghost'}
-                  className="border border-border-button"
-                  type="button"
-                  onClick={handleMenuClick(Routes.DataSetSetting, {
-                    openMetadata: true,
-                  })}
-                >
-                  {t('knowledgeDetails.metadata.toMetadataSetting')}
-                </Button>
-              )}
-              {isCanAdd && activeTab !== 'built-in' && (
-                <Button
-                  variant={'ghost'}
-                  className="border border-border-button"
-                  type="button"
-                  onClick={handAddValueRow}
-                >
-                  <Plus />
-                </Button>
-              )}
+              <div className="w-1/2">
+                {secondTitle || t('knowledgeDetails.metadata.metadata')}
+              </div>
+              <div>
+                {/* {metadataType === MetadataType.Manage && (
+                  <Button
+                    variant={'ghost'}
+                    className="border border-border-button"
+                    type="button"
+                    onClick={handleMenuClick(Routes.DataSetSetting, {
+                      openMetadata: true,
+                    })}
+                  >
+                    {t('knowledgeDetails.metadata.toMetadataSetting')}
+                  </Button>
+                )} */}
+                {isCanAdd && activeTab !== 'built-in' && (
+                  <Button
+                    variant={'ghost'}
+                    className="border border-border-button"
+                    type="button"
+                    onClick={handAddValueRow}
+                  >
+                    <Plus />
+                    {t('common.add')}
+                  </Button>
+                )}
+              </div>
             </div>
-            {metadataType === MetadataType.Setting ? (
+
+            {rowSelectionIsEmpty || (
+              <BulkOperateBar
+                list={operateList}
+                count={selectedCount}
+              ></BulkOperateBar>
+            )}
+            {metadataType === MetadataType.Setting ||
+            metadataType === MetadataType.SingleFileSetting ? (
               <Tabs
                 value={activeTab}
                 onValueChange={(v) => setActiveTab(v as MetadataSettingsTab)}
               >
                 <TabsList className="w-fit">
-                  <TabsTrigger value="generation">Generation</TabsTrigger>
+                  <TabsTrigger value="generation">
+                    {t('knowledgeDetails.metadata.generation')}
+                  </TabsTrigger>
                   <TabsTrigger value="built-in">
-                    {t('knowledgeConfiguration.builtIn')}
+                    {t('knowledgeDetails.metadata.builtIn')}
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value="generation">
@@ -762,17 +558,18 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
           type={metadataType}
           existsKeys={existsKeys}
           visible={manageValuesVisible}
-          hideModal={hideManageValuesModal}
+          hideModal={hideManageValuesModalFunc}
           data={valueData}
           onSave={handleSaveValues}
           addUpdateValue={addUpdateValue}
           addDeleteValue={addDeleteValue}
-          isEditField={isEditField || isCanAdd}
-          isAddValue={isAddValue || isCanAdd}
+          isEditField={isEditField || isAddValueMode}
+          isAddValue={isAddValue || isAddValueMode}
           isShowDescription={isShowDescription}
           isShowValueSwitch={isShowValueSwitch}
-          isShowType={isSettingsMode}
+          isShowType={true}
           isVerticalShowValue={isVerticalShowValue}
+          isAddValueMode={isAddValueMode}
           //   handleDeleteSingleValue={handleDeleteSingleValue}
           //   handleDeleteSingleRow={handleDeleteSingleRow}
         />

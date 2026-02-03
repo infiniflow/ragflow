@@ -78,13 +78,14 @@ class Graph:
         }
         """
 
-    def __init__(self, dsl: str, tenant_id=None, task_id=None):
+    def __init__(self, dsl: str, tenant_id=None, task_id=None, custom_header=None):
         self.path = []
         self.components = {}
         self.error = ""
         self.dsl = json.loads(dsl)
         self._tenant_id = tenant_id
         self.task_id = task_id if task_id else get_uuid()
+        self.custom_header = custom_header
         self._thread_pool = ThreadPoolExecutor(max_workers=5)
         self.load()
 
@@ -94,6 +95,7 @@ class Graph:
         for k, cpn in self.components.items():
             cpn_nms.add(cpn["obj"]["component_name"])
             param = component_class(cpn["obj"]["component_name"] + "Param")()
+            cpn["obj"]["params"]["custom_header"] = self.custom_header
             param.update(cpn["obj"]["params"])
             try:
                 param.check()
@@ -278,15 +280,16 @@ class Graph:
 
 class Canvas(Graph):
 
-    def __init__(self, dsl: str, tenant_id=None, task_id=None, canvas_id=None):
+    def __init__(self, dsl: str, tenant_id=None, task_id=None, canvas_id=None, custom_header=None):
         self.globals = {
             "sys.query": "",
             "sys.user_id": tenant_id,
             "sys.conversation_turns": 0,
-            "sys.files": []
+            "sys.files": [],
+            "sys.history": []
         }
         self.variables = {}
-        super().__init__(dsl, tenant_id, task_id)
+        super().__init__(dsl, tenant_id, task_id, custom_header=custom_header)
         self._id = canvas_id
 
     def load(self):
@@ -294,12 +297,15 @@ class Canvas(Graph):
         self.history = self.dsl["history"]
         if "globals" in self.dsl:
             self.globals = self.dsl["globals"]
+            if "sys.history" not in self.globals:
+                self.globals["sys.history"] = []
         else:
             self.globals = {
             "sys.query": "",
             "sys.user_id": "",
             "sys.conversation_turns": 0,
-            "sys.files": []
+            "sys.files": [],
+            "sys.history": []
         }
         if "variables" in self.dsl:
             self.variables = self.dsl["variables"]
@@ -340,21 +346,23 @@ class Canvas(Graph):
                 key = k[4:]
                 if key in self.variables:
                     variable = self.variables[key]
-                    if variable["value"]:
-                        self.globals[k] = variable["value"]
+                    if variable["type"] == "string":
+                        self.globals[k] = ""
+                        variable["value"] = ""
+                    elif variable["type"] == "number":
+                        self.globals[k] = 0
+                        variable["value"] = 0
+                    elif variable["type"] == "boolean":
+                        self.globals[k] = False
+                        variable["value"] = False
+                    elif variable["type"] == "object":
+                        self.globals[k] = {}
+                        variable["value"] = {}
+                    elif variable["type"].startswith("array"):
+                        self.globals[k] = []
+                        variable["value"] = []
                     else:
-                        if variable["type"] == "string":
-                            self.globals[k] = ""
-                        elif variable["type"] == "number":
-                            self.globals[k] = 0
-                        elif variable["type"] == "boolean":
-                            self.globals[k] = False
-                        elif variable["type"] == "object":
-                            self.globals[k] = {}
-                        elif variable["type"].startswith("array"):
-                            self.globals[k] = []
-                        else:
-                            self.globals[k] = ""
+                        self.globals[k] = ""
                 else:
                     self.globals[k] = ""
 
@@ -419,9 +427,15 @@ class Canvas(Graph):
 
             loop = asyncio.get_running_loop()
             tasks = []
+            max_concurrency = getattr(self._thread_pool, "_max_workers", 5)
+            sem = asyncio.Semaphore(max_concurrency)
 
-            def _run_async_in_thread(coro_func, **call_kwargs):
-                return asyncio.run(coro_func(**call_kwargs))
+            async def _invoke_one(cpn_obj, sync_fn, call_kwargs, use_async: bool):
+                async with sem:
+                    if use_async:
+                        await cpn_obj.invoke_async(**(call_kwargs or {}))
+                        return
+                    await loop.run_in_executor(self._thread_pool, partial(sync_fn, **(call_kwargs or {})))
 
             i = f
             while i < t:
@@ -447,11 +461,9 @@ class Canvas(Graph):
                 if task_fn is None:
                     continue
 
-                invoke_async = getattr(cpn, "invoke_async", None)
-                if invoke_async and asyncio.iscoroutinefunction(invoke_async):
-                    tasks.append(loop.run_in_executor(self._thread_pool, partial(_run_async_in_thread, invoke_async, **(call_kwargs or {}))))
-                else:
-                    tasks.append(loop.run_in_executor(self._thread_pool, partial(task_fn, **(call_kwargs or {}))))
+                fn_invoke_async = getattr(cpn, "_invoke_async", None)
+                use_async = (fn_invoke_async and asyncio.iscoroutinefunction(fn_invoke_async)) or asyncio.iscoroutinefunction(getattr(cpn, "_invoke", None))
+                tasks.append(asyncio.create_task(_invoke_one(cpn, task_fn, call_kwargs, use_async)))
 
             if tasks:
                 await asyncio.gather(*tasks)
@@ -638,6 +650,7 @@ class Canvas(Graph):
                            "created_at": st,
                        })
             self.history.append(("assistant", self.get_component_obj(self.path[-1]).output()))
+            self.globals["sys.history"].append(f"{self.history[-1][0]}: {self.history[-1][1]}")
         elif "Task has been canceled" in self.error:
             yield decorate("workflow_finished",
                        {
@@ -715,6 +728,7 @@ class Canvas(Graph):
 
     def add_user_input(self, question):
         self.history.append(("user", question))
+        self.globals["sys.history"].append(f"{self.history[-1][0]}: {self.history[-1][1]}")
 
     def get_prologue(self):
         return self.components["begin"]["obj"]._param.prologue
@@ -740,13 +754,16 @@ class Canvas(Graph):
         def image_to_base64(file):
             return "data:{};base64,{}".format(file["mime_type"],
                                         base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
+        def parse_file(file):
+            blob = FileService.get_blob(file["created_by"], file["id"])
+            return FileService.parse(file["name"], blob, True, file["created_by"])
         loop = asyncio.get_running_loop()
         tasks = []
         for file in files:
             if file["mime_type"].find("image") >=0:
                 tasks.append(loop.run_in_executor(self._thread_pool, image_to_base64, file))
                 continue
-            tasks.append(loop.run_in_executor(self._thread_pool, FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"]))
+            tasks.append(loop.run_in_executor(self._thread_pool, parse_file, file))
         return await asyncio.gather(*tasks)
 
     def get_files(self, files: Union[None, list[dict]]) -> list[str]:

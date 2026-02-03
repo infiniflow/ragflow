@@ -23,7 +23,7 @@ from ragflow_sdk import RAGFlow
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
@@ -79,7 +79,7 @@ class TestDatasetsDelete:
         datasets = client.list_datasets()
         assert len(datasets) == remaining, str(datasets)
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")
     def test_ids_empty(self, client):
         payload = {"ids": []}
@@ -88,7 +88,7 @@ class TestDatasetsDelete:
         datasets = client.list_datasets()
         assert len(datasets) == 1, str(datasets)
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.usefixtures("add_datasets_func")
     def test_ids_none(self, client):
         payload = {"ids": None}
@@ -167,7 +167,7 @@ class TestDatasetsDelete:
             client.delete_datasets(**payload)
         assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.usefixtures("add_dataset_func")
     def test_field_unsupported(self, client):
         payload = {"unknown_field": "unknown_field"}

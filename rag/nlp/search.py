@@ -20,7 +20,6 @@ import math
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 
-from rag.prompts.generator import relevant_chunks_with_toc
 from rag.nlp import rag_tokenizer, query
 import numpy as np
 from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByExpr, DocStoreConnection
@@ -591,6 +590,7 @@ class Dealer:
         return {a.replace(".", "_"): max(1, c) for a, c in tag_fea}
 
     async def retrieval_by_toc(self, query: str, chunks: list[dict], tenant_ids: list[str], chat_mdl, topn: int = 6):
+        from rag.prompts.generator import relevant_chunks_with_toc # moved from the top of the file to avoid circular import
         if not chunks:
             return []
         idx_nms = [index_name(tid) for tid in tenant_ids]

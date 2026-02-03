@@ -18,12 +18,14 @@ import logging
 import random
 import re
 
+from common.metadata_utils import turn2jsonschema
 from quart import request
 import numpy as np
 
 from api.db.services.connector_service import Connector2KbService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
+from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
@@ -218,6 +220,8 @@ def detail():
                 message="Can't find this dataset!")
         kb["size"] = DocumentService.get_total_size_by_kb_id(kb_id=kb["id"],keywords="", run_status=[], types=[])
         kb["connectors"] = Connector2KbService.list_connectors(kb_id)
+        if kb["parser_config"].get("metadata"):
+            kb["parser_config"]["metadata"] = turn2jsonschema(kb["parser_config"]["metadata"])
 
         for key in ["graphrag_task_finish_at", "raptor_task_finish_at", "mindmap_task_finish_at"]:
             if finish_at := kb.get(key):
@@ -464,7 +468,7 @@ def get_meta():
                 message='No authorization.',
                 code=RetCode.AUTHENTICATION_ERROR
             )
-    return get_json_result(data=DocumentService.get_meta_by_kbs(kb_ids))
+    return get_json_result(data=DocMetadataService.get_flatted_meta_by_kbs(kb_ids))
 
 
 @manager.route("/basic_info", methods=["GET"])  # noqa: F821

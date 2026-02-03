@@ -1,4 +1,7 @@
-import { BulkOperateBar } from '@/components/bulk-operate-bar';
+import {
+  BulkOperateBar,
+  BulkOperateItemType,
+} from '@/components/bulk-operate-bar';
 import { FileUploadDialog } from '@/components/file-upload-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
@@ -13,13 +16,11 @@ import {
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import { Pen, Upload } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  MetadataType,
-  useManageMetadata,
-} from '../components/metedata/hooks/use-manage-modal';
+import { MetadataType } from '../components/metedata/constant';
+import { useManageMetadata } from '../components/metedata/hooks/use-manage-modal';
 import { ManageMetadataModal } from '../components/metedata/manage-modal';
 import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import { DatasetTable } from './dataset-table';
@@ -95,6 +96,45 @@ export default function Dataset() {
     rowSelection,
     setRowSelection,
   });
+
+  const handleAddMetadataWithDocuments = () => {
+    showManageMetadataModal({
+      type: MetadataType.Manage,
+      isCanAdd: true,
+      isEditField: false,
+      isDeleteSingleValue: true,
+      isAddValue: true,
+      secondTitle: (
+        <>
+          {t('knowledgeDetails.metadata.selectFiles', {
+            count: documents.length,
+          })}
+        </>
+      ),
+      title: (
+        <div className="flex flex-col gap-2">
+          <div className="text-base font-normal">
+            {t('knowledgeDetails.metadata.manageMetadata')}
+          </div>
+          {/* <div className="text-sm text-text-secondary">
+            {t('knowledgeDetails.metadata.manageMetadataForDataset')}
+          </div> */}
+        </div>
+      ),
+      documentIds: documents.map((doc) => doc.id),
+    });
+  };
+
+  const updatedList = list.map((item) => {
+    if (item.id === 'batch-metadata') {
+      return {
+        ...item,
+        onClick: handleAddMetadataWithDocuments,
+      };
+    }
+    return item;
+  });
+
   return (
     <>
       <div className="absolute top-4 right-5">
@@ -118,37 +158,37 @@ export default function Dataset() {
               </div>
             </div>
           }
-          preChildren={
-            <Button
-              variant={'ghost'}
-              className="border border-border-button"
-              onClick={() =>
-                showManageMetadataModal({
-                  type: MetadataType.Manage,
-                  isCanAdd: false,
-                  isEditField: true,
-                  isDeleteSingleValue: true,
-                  title: (
-                    <div className="flex flex-col gap-2">
-                      <div className="text-base font-normal">
-                        {t('knowledgeDetails.metadata.manageMetadata')}
-                      </div>
-                      <div className="text-sm text-text-secondary">
-                        {t(
-                          'knowledgeDetails.metadata.manageMetadataForDataset',
-                        )}
-                      </div>
-                    </div>
-                  ),
-                })
-              }
-            >
-              <div className="flex gap-1 items-center">
-                <Pen size={14} />
-                {t('knowledgeDetails.metadata.metadata')}
-              </div>
-            </Button>
-          }
+          // preChildren={
+          //   <Button
+          //     variant={'ghost'}
+          //     className="border border-border-button"
+          //     onClick={() =>
+          //       showManageMetadataModal({
+          //         type: MetadataType.Manage,
+          //         isCanAdd: false,
+          //         isEditField: false,
+          //         isDeleteSingleValue: true,
+          //         title: (
+          //           <div className="flex flex-col gap-2">
+          //             <div className="text-base font-normal">
+          //               {t('knowledgeDetails.metadata.manageMetadata')}
+          //             </div>
+          //             <div className="text-sm text-text-secondary">
+          //               {t(
+          //                 'knowledgeDetails.metadata.manageMetadataForDataset',
+          //               )}
+          //             </div>
+          //           </div>
+          //         ),
+          //       })
+          //     }
+          //   >
+          //     <div className="flex gap-1 items-center">
+          //       <Pen size={14} />
+          //       {t('knowledgeDetails.metadata.metadata')}
+          //     </div>
+          //   </Button>
+          // }
         >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -169,7 +209,10 @@ export default function Dataset() {
           </DropdownMenu>
         </ListFilterBar>
         {rowSelectionIsEmpty || (
-          <BulkOperateBar list={list} count={selectedCount}></BulkOperateBar>
+          <BulkOperateBar
+            list={updatedList as BulkOperateItemType[]}
+            count={selectedCount}
+          ></BulkOperateBar>
         )}
         <DatasetTable
           documents={documents}
@@ -204,20 +247,27 @@ export default function Dataset() {
                   <div className="text-base font-normal">
                     {t('knowledgeDetails.metadata.manageMetadata')}
                   </div>
-                  <div className="text-sm text-text-secondary">
+                  {/* <div className="text-sm text-text-secondary">
                     {t('knowledgeDetails.metadata.manageMetadataForDataset')}
-                  </div>
+                  </div> */}
                 </div>
               )
             }
             visible={manageMetadataVisible}
-            hideModal={hideManageMetadataModal}
+            hideModal={() => {
+              setRowSelection({});
+              hideManageMetadataModal();
+            }}
             // selectedRowKeys={selectedRowKeys}
             tableData={tableData}
             isCanAdd={metadataConfig.isCanAdd}
+            isAddValue={metadataConfig.isAddValue}
+            isVerticalShowValue={metadataConfig.isVerticalShowValue}
             isEditField={metadataConfig.isEditField}
             isDeleteSingleValue={metadataConfig.isDeleteSingleValue}
+            secondTitle={metadataConfig.secondTitle}
             type={metadataConfig.type}
+            documentIds={metadataConfig.documentIds}
             otherData={metadataConfig.record}
           />
         )}
