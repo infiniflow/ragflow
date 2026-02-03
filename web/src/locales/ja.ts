@@ -178,7 +178,7 @@ export default {
         'ナレッジベースの設定、特にチャンク方法をここで更新してください。',
       name: 'ナレッジベース名',
       photo: 'ナレッジベース写真',
-      photoTip: '4MBのファイルをアップロードできます',
+      photoTip: '4 MB までの画像をアップロードできます。す',
       description: '説明',
       language: '言語',
       languageMessage: '言語を入力してください',

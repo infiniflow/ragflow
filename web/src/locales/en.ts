@@ -501,7 +501,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Update your memory configuration here, particularly the LLM and prompts.',
       name: 'Knowledge base name',
       photo: 'Knowledge base photo',
-      photoTip: 'You can upload a file with 4 MB',
+      photoTip: 'You can upload an image up to 4 MB.',
       description: 'Description',
       language: 'Document language',
       languageMessage: 'Please input your language!',
@@ -2013,7 +2013,7 @@ This process aggregates variables from multiple branches into a single variable 
       conversational: 'Conversational',
       task: 'Task',
       beginInputTip:
-        'By defining input parameters, this content can be accessed by other components in subsequent processes.',
+        'Input parameters defined here can be accessed by components in the downstream workflow.',
       query: 'Query variables',
       switchPromptMessage:
         'The prompt words will change. Please confirm whether you want to discard the existing prompt words?',
