@@ -508,7 +508,7 @@ class Parser(ProcessBase):
             tbls = []
             for text, image, html in main_sections:
                 sections.append((text, image))
-                tbls.append((None, html), "")
+                tbls.append(((None, html), ""))
 
             sections = [{"text": section[0], "image": section[1]} for section in sections if section]
             sections.extend([{"text": tb, "image": None, "doc_type_kwd": "table"} for ((_, tb), _) in tbls])
