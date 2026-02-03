@@ -13,6 +13,7 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { IMessage } from '@/interfaces/database/chat';
+import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import React, { ReactNode, useCallback, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
@@ -36,6 +37,8 @@ interface IProps {
   loading?: boolean;
   submitButtonDisabled?: boolean;
   btnText?: ReactNode;
+  className?: string;
+  maxHeight?: string;
 }
 
 const DebugContent = ({
@@ -46,6 +49,8 @@ const DebugContent = ({
   loading = false,
   submitButtonDisabled = false,
   btnText,
+  className,
+  maxHeight,
 }: IProps) => {
   const { t } = useTranslation();
 
@@ -234,7 +239,7 @@ const DebugContent = ({
   );
   return (
     <>
-      <section>
+      <section className={className}>
         {message?.data?.tips && (
           <div className="mb-2">
             <MarkdownContent
@@ -244,11 +249,15 @@ const DebugContent = ({
           </div>
         )}
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            {parameters.map((x, idx) => {
-              return <div key={idx}>{renderWidget(x, idx.toString())}</div>;
-            })}
-            <div>
+          <form onSubmit={form.handleSubmit(onSubmit)}>
+            <section
+              className={cn('overflow-auto px-2 space-y-4 pb-4', maxHeight)}
+            >
+              {parameters.map((x, idx) => {
+                return <div key={idx}>{renderWidget(x, idx.toString())}</div>;
+              })}
+            </section>
+            <div className="px-2">
               <ButtonLoading
                 type="submit"
                 loading={loading}
