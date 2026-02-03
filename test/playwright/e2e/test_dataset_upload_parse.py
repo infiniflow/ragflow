@@ -9,10 +9,11 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from test.playwright.helpers.flow_steps import flow_params, require
-from helpers.auth_waits import wait_for_login_complete
-from helpers.debug_utils import debug
-from helpers.env_utils import env_bool
-from helpers.response_capture import capture_response
+from test.playwright.helpers.auth_selectors import EMAIL_INPUT, PASSWORD_INPUT, SUBMIT_BUTTON
+from test.playwright.helpers.auth_waits import wait_for_login_complete
+from test.playwright.helpers.debug_utils import debug
+from test.playwright.helpers.env_utils import env_bool
+from test.playwright.helpers.response_capture import capture_response
 
 RESULT_TIMEOUT_MS = 15000
 
@@ -501,10 +502,8 @@ def step_01_login(
         flow_page.goto(login_url, wait_until="domcontentloaded")
 
     form, _ = active_auth_context()
-    email_input = form.locator("input[data-testid='auth-email'], [data-testid='auth-email'] input")
-    password_input = form.locator(
-        "input[data-testid='auth-password'], [data-testid='auth-password'] input"
-    )
+    email_input = form.locator(EMAIL_INPUT)
+    password_input = form.locator(PASSWORD_INPUT)
     with step("fill credentials"):
         expect(email_input).to_have_count(1)
         expect(password_input).to_have_count(1)
@@ -513,9 +512,7 @@ def step_01_login(
         password_input.blur()
 
     with step("submit login"):
-        submit_button = form.locator(
-            "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
-        )
+        submit_button = form.locator(SUBMIT_BUTTON)
         expect(submit_button).to_have_count(1)
         auth_click(submit_button, "submit_login")
 

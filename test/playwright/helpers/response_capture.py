@@ -1,6 +1,6 @@
 
 try:
-    from helpers._auth_helpers import RESULT_TIMEOUT_MS as DEFAULT_TIMEOUT_MS
+    from test.playwright.helpers._auth_helpers import RESULT_TIMEOUT_MS as DEFAULT_TIMEOUT_MS
 except Exception:
     # Fallback for standalone usage when helper constants are unavailable.
     DEFAULT_TIMEOUT_MS = 30_000

@@ -6,8 +6,16 @@ import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
+from test.playwright.helpers.auth_selectors import (
+    AUTH_ACTIVE_FORM,
+    AUTH_STATUS,
+    EMAIL_INPUT,
+    PASSWORD_INPUT,
+    SUBMIT_BUTTON,
+)
+from test.playwright.helpers.auth_waits import wait_for_login_complete
+from test.playwright.helpers.env_utils import env_bool
 from test.playwright.helpers.flow_steps import flow_params, require
-from helpers.env_utils import env_bool
 
 DEMO_EMAIL = "qa@infiniflow.com"
 DEMO_PASSWORD = "123"
@@ -33,11 +41,10 @@ def _debug_login_state(page, label: str) -> None:
     try:
         storage_flags = page.evaluate(
             """
-            () => ({
-              hasToken: Boolean(localStorage.getItem('Token')),
-              hasAuth: Boolean(localStorage.getItem('Authorization')),
-              hasUserInfo: Boolean(localStorage.getItem('UserInfo')),
-            })
+            () => Array.from(document.querySelectorAll('[data-testid]'))
+              .map((el) => el.getAttribute('data-testid'))
+              .filter((val) => val && /auth/i.test(val))
+              .slice(0, 30)
             """
         )
     except Exception as exc:
@@ -93,12 +100,8 @@ def step_02_submit_login(
 ):
     require(flow_state, "login_opened", "seeded_email", "seeded_password")
     form, _ = active_auth_context()
-    email_input = form.locator(
-        "input[data-testid='auth-email'], [data-testid='auth-email'] input"
-    )
-    password_input = form.locator(
-        "input[data-testid='auth-password'], [data-testid='auth-password'] input"
-    )
+    email_input = form.locator(EMAIL_INPUT)
+    password_input = form.locator(PASSWORD_INPUT)
 
     with step("fill credentials"):
         expect(email_input).to_have_count(1)
@@ -110,9 +113,7 @@ def step_02_submit_login(
     snap("filled")
 
     with step("submit login"):
-        submit_button = form.locator(
-            "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
-        )
+        submit_button = form.locator(SUBMIT_BUTTON)
         expect(submit_button).to_have_count(1)
         auth_click(submit_button, "submit_login")
     flow_state["login_submitted"] = True
@@ -133,6 +134,7 @@ def step_03_verify_login(
     page = flow_page
     post_login_path = os.getenv("POST_LOGIN_PATH")
     post_login_path_js = json.dumps(post_login_path)
+    auth_status_selector = json.dumps(AUTH_STATUS)
     wait_js = """
         () => {{
           const postLoginPath = {post_login_path};
@@ -152,14 +154,17 @@ def step_03_verify_login(
           const successMarker = document.querySelector(
             "a[href*='github.com/infiniflow/ragflow'], a[href*='discord.com/invite']"
           );
-          const authStatus = document.querySelector('[data-testid=\"auth-status\"]');
+          const authStatus = document.querySelector({auth_status_selector});
           const statusState = authStatus ? authStatus.getAttribute('data-state') : '';
           if (statusState === 'error') return {{ state: 'error' }};
           if (statusState === 'success') return {{ state: 'success' }};
           if (successByUrl || successMarker) return {{ state: 'success' }};
           return false;
         }}
-        """.format(post_login_path=post_login_path_js)
+        """.format(
+            post_login_path=post_login_path_js,
+            auth_status_selector=auth_status_selector,
+        )
 
     with step("wait for success or error"):
         try:
@@ -197,48 +202,16 @@ def step_03_verify_login(
             _debug_login_state(page, "still_on_login_path")
             raise AssertionError(f"URL still on login after submit. url={page.url}")
 
-    token_wait_js = """
-        () => {
-          const token = localStorage.getItem('Token');
-          const auth = localStorage.getItem('Authorization');
-          return Boolean((token && token.length) || (auth && auth.length));
-        }
-        """
-
     with step("verify auth tokens and login form hidden"):
+        wait_for_login_complete(page, timeout_ms=15000)
         try:
-            page.wait_for_function(token_wait_js, timeout=15000)
-        except PlaywrightTimeoutError as exc:
-            snap("failure")
-            _debug_login_state(page, "token_wait_timeout")
-            raise AssertionError(
-                f"Auth tokens not found after login. url={page.url}"
-            ) from exc
-        try:
-            expect(
-                page.locator("form[data-testid='auth-form'][data-active='true']")
-            ).to_have_count(0, timeout=15000)
+            expect(page.locator(AUTH_ACTIVE_FORM)).to_have_count(0, timeout=15000)
         except AssertionError as exc:
             snap("failure")
             _debug_login_state(page, "login_form_still_visible")
             raise AssertionError(
                 f"Login form still visible after login. url={page.url}"
             ) from exc
-        values = page.evaluate(
-            """
-            () => ({
-              hasToken: Boolean(localStorage.getItem('Token')),
-              hasAuth: Boolean(localStorage.getItem('Authorization')),
-            })
-            """
-        )
-        if not any(values.values()):
-            snap("failure")
-            _debug_login_state(page, "token_missing_after_wait")
-            raise AssertionError(
-                "No auth tokens found in localStorage after login. "
-                "Expected Token or Authorization."
-            )
     snap("success")
 
 

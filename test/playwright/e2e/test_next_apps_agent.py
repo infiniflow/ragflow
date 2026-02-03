@@ -17,6 +17,47 @@ from test.playwright.helpers._next_apps_helpers import (
 )
 
 
+def _visible_testids(page, limit: int = 80):
+    try:
+        return page.evaluate(
+            """
+            (limit) => {
+              const elements = Array.from(document.querySelectorAll('[data-testid]'));
+              const visible = elements.filter((el) => {
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+                  return false;
+                }
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+              });
+              const values = Array.from(
+                new Set(
+                  visible.map((el) => el.getAttribute('data-testid')).filter(Boolean),
+                ),
+              );
+              values.sort();
+              return values.slice(0, limit);
+            }
+            """,
+            limit,
+        )
+    except Exception as exc:
+        return [f"<testid_dump_failed: {exc}>"]
+
+
+def _raise_with_diagnostics(page, message: str, snap=None, snap_name: str = "") -> None:
+    testids = _visible_testids(page)
+    if snap is not None and snap_name:
+        try:
+            snap(snap_name)
+        except Exception:
+            pass
+    details = f"{message} url={page.url} testids={testids}"
+    print(details, flush=True)
+    raise AssertionError(details)
+
+
 def _set_import_file(modal, file_path: str) -> None:
     upload_target = modal.locator("[data-testid='agent-import-file']").first
     if upload_target.count() == 0:
@@ -207,16 +248,26 @@ def step_06_run_agent(
         import os
 
         run_ui_timeout_ms = int(os.getenv("PW_AGENT_RUN_UI_TIMEOUT_MS", "60000"))
-        run_panel = page.locator("[data-testid='agent-run']")
-        run_chat = page.locator("[data-testid='agent-run-chat']")
-        if run_panel.count() > 0 and run_panel.is_visible():
-            return
-        if run_chat.count() > 0 and run_chat.is_visible():
-            return
+        run_root = page.locator("[data-testid='agent-run']")
+        run_ui_selector = (
+            "[data-testid='agent-run-chat'], "
+            "[data-testid='chat-textarea'], "
+            "[data-testid='agent-run-idle']"
+        )
+        run_ui_locator = page.locator(run_ui_selector)
 
-        run_button = run_panel
-        if run_button.count() == 0:
+        try:
+            if run_ui_locator.count() > 0 and run_ui_locator.first.is_visible():
+                flow_state["agent_running"] = True
+                snap("agent_run_already_open")
+                return
+        except Exception:
+            pass
+
+        if run_root.count() == 0:
             run_button = page.get_by_role("button", name=re.compile(r"^run$", re.I))
+        else:
+            run_button = run_root
         expect(run_button).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         try:
             auth_click(run_button, "agent_run")
@@ -225,37 +276,18 @@ def step_06_run_agent(
             auth_click(run_button, "agent_run_retry")
 
         try:
-            expect(run_panel).to_be_attached(timeout=run_ui_timeout_ms)
-            expect(run_panel).to_be_visible(timeout=run_ui_timeout_ms)
-        except AssertionError:
-            try:
-                expect.poll(
-                    lambda: run_panel.is_visible()
-                ).to_be_truthy(timeout=run_ui_timeout_ms)
-            except AssertionError:
-                print(f"[agent-run] url={page.url}", flush=True)
-                print(
-                    f"[agent-run] run_panel_count={run_panel.count()} "
-                    f"run_panel_visible={run_panel.is_visible()} "
-                    f"run_button_visible={run_button.is_visible()}",
-                    flush=True,
-                )
-                try:
-                    testids = page.evaluate(
-                        """
-                        () => Array.from(document.querySelectorAll('[data-testid]'))
-                          .map((el) => el.getAttribute('data-testid'))
-                          .filter((val) => val && /agent|run/i.test(val))
-                          .slice(0, 40)
-                        """
-                    )
-                    print(f"[agent-run] testids={testids}", flush=True)
-                except Exception as exc:
-                    print(f"[agent-run] testid_dump_failed: {exc}", flush=True)
-                snap("agent_run_missing")
-                raise AssertionError("Agent run UI did not open after clicking Run.")
-    flow_state["agent_running"] = True
-    snap("agent_run_started")
+            run_ui_locator.first.wait_for(state="visible", timeout=run_ui_timeout_ms)
+        except Exception:
+            _raise_with_diagnostics(
+                page,
+                "Agent run UI did not open after clicking Run.",
+                snap=snap,
+                snap_name="agent_run_missing",
+            )
+
+        flow_state["agent_running"] = True
+        snap("agent_run_started")
+        return
 
 
 def step_07_send_chat(
@@ -272,12 +304,49 @@ def step_07_send_chat(
     require(flow_state, "agent_running")
     page = flow_page
     with step("send agent chat"):
+        dataset_combobox = page.locator("[data-testid='chat-datasets-combobox']")
+        if dataset_combobox.count() > 0:
+            try:
+                if dataset_combobox.is_visible():
+                    dataset_combobox.click()
+                    options = page.locator("[data-testid='datasets-options']")
+                    expect(options).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+                    option = page.locator("[data-testid='datasets-option-0']")
+                    if option.count() == 0:
+                        option = page.locator("[data-testid^='datasets-option-']").first
+                    if option.count() > 0 and option.is_visible():
+                        try:
+                            flow_state["dataset_label"] = option.inner_text()
+                        except Exception:
+                            flow_state["dataset_label"] = ""
+                        option.click()
+                        flow_state["dataset_selected"] = True
+            except Exception:
+                pass
+
         textarea = page.locator("[data-testid='chat-textarea']")
-        expect(textarea).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        idle_marker = page.locator("[data-testid='agent-run-idle']")
+        try:
+            expect(textarea).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        except AssertionError:
+            _raise_with_diagnostics(
+                page,
+                "Chat textarea not visible in agent run UI.",
+                snap=snap,
+                snap_name="agent_run_chat_missing",
+            )
+
         textarea.fill("say hello")
         textarea.press("Enter")
-        idle_marker = page.locator("[data-testid='agent-run-idle']")
-        expect(idle_marker).to_be_visible(timeout=60000)
+        try:
+            expect(idle_marker).to_be_visible(timeout=60000)
+        except AssertionError:
+            _raise_with_diagnostics(
+                page,
+                "Agent run chat did not return to idle state after sending message.",
+                snap=snap,
+                snap_name="agent_run_idle_missing",
+            )
     snap("agent_run_idle_restored")
 
 

@@ -1,6 +1,7 @@
 import pytest
 from playwright.sync_api import expect
 
+from test.playwright.helpers.auth_selectors import EMAIL_INPUT, SUBMIT_BUTTON
 from test.playwright.helpers.flow_steps import flow_params, require
 
 
@@ -19,16 +20,10 @@ def step_02_submit_empty(
 ):
     require(flow_state, "login_opened")
     form, _ = active_auth_context()
-    expect(
-        form.locator(
-            "input[data-testid='auth-email'], [data-testid='auth-email'] input"
-        )
-    ).to_have_count(1)
+    expect(form.locator(EMAIL_INPUT)).to_have_count(1)
 
     with step("submit empty login form"):
-        submit_button = form.locator(
-            "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
-        )
+        submit_button = form.locator(SUBMIT_BUTTON)
         expect(submit_button).to_have_count(1)
         auth_click(submit_button, "submit_validation")
     flow_state["submitted_empty"] = True

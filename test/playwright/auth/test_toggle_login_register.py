@@ -1,6 +1,7 @@
 import pytest
 from playwright.sync_api import expect
 
+from test.playwright.helpers.auth_selectors import LOGIN_TAB, NICKNAME_INPUT, REGISTER_TAB
 from test.playwright.helpers.flow_steps import flow_params, require
 
 
@@ -17,7 +18,7 @@ def step_02_switch_to_register(
 ):
     require(flow_state, "login_opened")
     form, card = active_auth_context()
-    toggle_button = card.locator("[data-testid='auth-toggle-register']")
+    toggle_button = card.locator(REGISTER_TAB)
     if toggle_button.count() == 0:
         flow_state["register_toggle_available"] = False
         pytest.skip("Register toggle not present; registerEnabled may be disabled.")
@@ -33,7 +34,7 @@ def step_03_assert_register_visible(
 ):
     require(flow_state, "login_opened", "register_toggle_available")
     form, _ = active_auth_context()
-    nickname_input = form.locator("[data-testid='auth-nickname']")
+    nickname_input = form.locator(NICKNAME_INPUT)
     expect(nickname_input).to_have_count(1)
     expect(nickname_input).to_be_visible()
     snap("register_visible")
@@ -44,7 +45,7 @@ def step_04_switch_back_to_login(
 ):
     require(flow_state, "login_opened", "register_toggle_available")
     form, card = active_auth_context()
-    toggle_back = card.locator("[data-testid='auth-toggle-login']")
+    toggle_back = card.locator(LOGIN_TAB)
     expect(toggle_back).to_have_count(1)
     toggle_back.click()
     flow_state["login_toggled_back"] = True
@@ -56,7 +57,7 @@ def step_05_assert_login_visible(
 ):
     require(flow_state, "login_opened", "login_toggled_back")
     form, _ = active_auth_context()
-    nickname_input = form.locator("[data-testid='auth-nickname']")
+    nickname_input = form.locator(NICKNAME_INPUT)
     expect(nickname_input).to_have_count(0)
     snap("login_visible")
 

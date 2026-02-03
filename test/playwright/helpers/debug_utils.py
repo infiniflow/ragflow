@@ -1,4 +1,4 @@
-from helpers.env_utils import env_bool
+from test.playwright.helpers.env_utils import env_bool
 
 
 def debug(msg: str) -> None:

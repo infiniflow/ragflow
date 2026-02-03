@@ -1,12 +1,20 @@
+import json
 import os
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
-from helpers.response_capture import capture_response_json
-
+from test.playwright.helpers.auth_selectors import (
+    AUTH_STATUS,
+    EMAIL_INPUT,
+    NICKNAME_INPUT,
+    PASSWORD_INPUT,
+    REGISTER_TAB,
+    SUBMIT_BUTTON,
+)
 from test.playwright.helpers.flow_steps import flow_params, require
+from test.playwright.helpers.response_capture import capture_response_json
 
 RESULT_TIMEOUT_MS = 15000
 
@@ -38,14 +46,15 @@ def _is_already_registered(toast_text: str) -> bool:
 
 
 def _wait_for_auth_not_loading(page, timeout_ms: int = 5000) -> None:
+    auth_status_selector = json.dumps(AUTH_STATUS)
     page.wait_for_function(
         """
         () => {
-          const status = document.querySelector('[data-testid="auth-status"]');
+          const status = document.querySelector(%s);
           if (!status) return true;
           return status.getAttribute('data-state') !== 'loading';
         }
-        """,
+        """ % auth_status_selector,
         timeout=timeout_ms,
     )
 
@@ -89,7 +98,7 @@ def step_02_switch_to_register(
 ):
     require(flow_state, "login_opened")
     form, card = active_auth_context()
-    toggle_button = card.locator("[data-testid='auth-toggle-register']")
+    toggle_button = card.locator(REGISTER_TAB)
     if toggle_button.count() == 0:
         flow_state["register_toggle_available"] = False
         pytest.skip("Register toggle not present; registerEnabled may be disabled.")
@@ -119,16 +128,12 @@ def step_03_submit_registration(
     require(flow_state, "login_opened", "register_toggle_available")
     page = flow_page
     form, _ = active_auth_context()
-    nickname_input = form.locator("[data-testid='auth-nickname']")
+    nickname_input = form.locator(NICKNAME_INPUT)
     if nickname_input.count() == 0:
         pytest.skip("Register form not active; cannot submit registration.")
 
-    email_input = form.locator(
-        "input[data-testid='auth-email'], [data-testid='auth-email'] input"
-    )
-    password_input = form.locator(
-        "input[data-testid='auth-password'], [data-testid='auth-password'] input"
-    )
+    email_input = form.locator(EMAIL_INPUT)
+    password_input = form.locator(PASSWORD_INPUT)
 
     current_email = reg_email
     with step("fill registration form"):
@@ -145,9 +150,7 @@ def step_03_submit_registration(
     while True:
         with step("submit registration and wait for response"):
             form, _ = active_auth_context()
-            submit_button = form.locator(
-                "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
-            )
+            submit_button = form.locator(SUBMIT_BUTTON)
             expect(submit_button).to_have_count(1)
             if not retried:
                 snap("before_submit_click")
@@ -178,7 +181,7 @@ def step_03_submit_registration(
         if response_info.get("code") == 0:
             snap("registered_success_response")
             form, _ = active_auth_context()
-            nickname_input = form.locator("[data-testid='auth-nickname']")
+            nickname_input = form.locator(NICKNAME_INPUT)
             expect(nickname_input).to_have_count(0, timeout=RESULT_TIMEOUT_MS)
             break
 
@@ -189,9 +192,7 @@ def step_03_submit_registration(
             with step("retry registration with new email"):
                 _wait_for_auth_not_loading(page)
                 form, _ = active_auth_context()
-                email_input = form.locator(
-                    "input[data-testid='auth-email'], [data-testid='auth-email'] input"
-                )
+                email_input = form.locator(EMAIL_INPUT)
                 expect(email_input).to_have_count(1)
                 current_email = reg_email_generator(force_unique=True)
                 email_input.fill(current_email)

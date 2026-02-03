@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 
 from playwright.sync_api import expect
 
-from helpers.response_capture import capture_response
+from test.playwright.helpers.response_capture import capture_response
 
 RESULT_TIMEOUT_MS = 15000
 

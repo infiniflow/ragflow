@@ -1,3 +1,4 @@
+import json
 import os
 from urllib.parse import urlparse
 
@@ -5,9 +6,16 @@ import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
-from helpers.response_capture import capture_response_json
-
+from test.playwright.helpers.auth_selectors import (
+    AUTH_STATUS,
+    EMAIL_INPUT,
+    NICKNAME_INPUT,
+    PASSWORD_INPUT,
+    REGISTER_TAB,
+    SUBMIT_BUTTON,
+)
 from test.playwright.helpers.flow_steps import flow_params, require
+from test.playwright.helpers.response_capture import capture_response_json
 
 RESULT_TIMEOUT_MS = 15000
 
@@ -33,7 +41,10 @@ def _debug_register_response(page, response_info: dict) -> None:
         print(f"[auth-debug] sonner_toast_dump_failed: {exc}", flush=True)
 
 
-def _wait_for_login_outcome(page, post_login_path: str | None, timeout_ms: int = RESULT_TIMEOUT_MS):
+def _wait_for_login_outcome(
+    page, post_login_path: str | None, timeout_ms: int = RESULT_TIMEOUT_MS
+):
+    auth_status_selector = json.dumps(AUTH_STATUS)
     return page.wait_for_function(
         """
         (postLoginPath) => {
@@ -46,7 +57,7 @@ def _wait_for_login_outcome(page, post_login_path: str | None, timeout_ms: int =
             const rect = el.getBoundingClientRect();
             return rect.width > 0 && rect.height > 0;
           };
-          const authStatus = document.querySelector('[data-testid="auth-status"]');
+          const authStatus = document.querySelector(%s);
           const statusState = authStatus ? authStatus.getAttribute('data-state') : '';
           if (statusState === 'error') return { state: 'error' };
           if (statusState === 'success') return { state: 'success' };
@@ -61,7 +72,7 @@ def _wait_for_login_outcome(page, post_login_path: str | None, timeout_ms: int =
           if (successByUrl || successMarker) return { state: 'success' };
           return false;
         }
-        """,
+        """ % auth_status_selector,
         post_login_path,
         timeout=timeout_ms,
     )
@@ -105,7 +116,7 @@ def step_02_switch_to_register(
         pytest.skip("Set REG_EMAIL_UNIQUE=1 for deterministic register→login flow.")
     flow_state["reg_email_unique"] = True
     form, card = active_auth_context()
-    toggle_button = card.locator("[data-testid='auth-toggle-register']")
+    toggle_button = card.locator(REGISTER_TAB)
     if toggle_button.count() == 0:
         flow_state["register_toggle_available"] = False
         pytest.skip("Register toggle not present; registerEnabled may be disabled.")
@@ -133,16 +144,12 @@ def step_03_register_user(
     require(flow_state, "login_opened", "register_toggle_available", "reg_email_unique")
     page = flow_page
     form, _ = active_auth_context()
-    nickname_input = form.locator("[data-testid='auth-nickname']")
+    nickname_input = form.locator(NICKNAME_INPUT)
     expect(nickname_input).to_have_count(1)
     expect(nickname_input).to_be_visible()
 
-    email_input = form.locator(
-        "input[data-testid='auth-email'], [data-testid='auth-email'] input"
-    )
-    password_input = form.locator(
-        "input[data-testid='auth-password'], [data-testid='auth-password'] input"
-    )
+    email_input = form.locator(EMAIL_INPUT)
+    password_input = form.locator(PASSWORD_INPUT)
 
     with step("fill registration form"):
         expect(email_input).to_have_count(1)
@@ -155,9 +162,7 @@ def step_03_register_user(
     snap("register_filled")
 
     with step("submit registration and wait for response"):
-        submit_button = form.locator(
-            "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
-        )
+        submit_button = form.locator(SUBMIT_BUTTON)
         expect(submit_button).to_have_count(1)
         try:
             response_info = capture_response_json(
@@ -189,7 +194,7 @@ def step_03_register_user(
 
     snap("register_success_response")
     form, _ = active_auth_context()
-    nickname_input = form.locator("[data-testid='auth-nickname']")
+    nickname_input = form.locator(NICKNAME_INPUT)
     expect(nickname_input).to_have_count(0, timeout=RESULT_TIMEOUT_MS)
     snap("register_success")
     flow_state["registered_email"] = reg_email
@@ -214,12 +219,8 @@ def step_04_login_user(
     require(flow_state, "register_complete", "registered_email", "registered_password")
     form, _ = active_auth_context()
     with step("fill login form"):
-        email_input = form.locator(
-            "input[data-testid='auth-email'], [data-testid='auth-email'] input"
-        )
-        password_input = form.locator(
-            "input[data-testid='auth-password'], [data-testid='auth-password'] input"
-        )
+        email_input = form.locator(EMAIL_INPUT)
+        password_input = form.locator(PASSWORD_INPUT)
         expect(email_input).to_have_count(1)
         expect(password_input).to_have_count(1)
         email_input.fill(flow_state["registered_email"])
@@ -229,9 +230,7 @@ def step_04_login_user(
     snap("login_filled")
 
     with step("submit login"):
-        submit_button = form.locator(
-            "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
-        )
+        submit_button = form.locator(SUBMIT_BUTTON)
         expect(submit_button).to_have_count(1)
         auth_click(submit_button, "submit_login")
     snap("login_submitted")

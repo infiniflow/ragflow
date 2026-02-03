@@ -1,7 +1,7 @@
 import pytest
 from playwright.sync_api import expect
 
-from helpers.flow_context import FlowContext
+from test.playwright.helpers.flow_context import FlowContext
 from test.playwright.helpers._auth_helpers import ensure_authed
 from test.playwright.helpers.flow_steps import flow_params, require
 from test.playwright.helpers._next_apps_helpers import (
