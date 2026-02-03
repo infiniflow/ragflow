@@ -105,7 +105,7 @@ class TestDatasetUpdate:
         retrieved_dataset = client.get_dataset(name=dataset.name)
         assert retrieved_dataset.avatar == avatar_data, str(retrieved_dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_avatar_exceeds_limit_length(self, add_dataset_func):
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
@@ -148,7 +148,7 @@ class TestDatasetUpdate:
         retrieved_dataset = client.get_dataset(name=dataset.name)
         assert retrieved_dataset.description == "description", str(retrieved_dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_description_exceeds_limit_length(self, add_dataset_func):
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
@@ -235,7 +235,7 @@ class TestDatasetUpdate:
         retrieved_dataset = client.get_dataset(name=dataset.name)
         assert retrieved_dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(retrieved_dataset)
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "permission",
         [
@@ -663,6 +663,8 @@ class TestDatasetUpdate:
             {
                 "raptor": {"use_raptor": False},
                 "graphrag": {"use_graphrag": False},
+                "image_context_size": 0,
+                "table_context_size": 0,
             },
         )
         dataset.update({"chunk_method": "qa", "parser_config": {}})
@@ -679,6 +681,8 @@ class TestDatasetUpdate:
             {
                 "raptor": {"use_raptor": False},
                 "graphrag": {"use_graphrag": False},
+                "image_context_size": 0,
+                "table_context_size": 0,
             },
         )
         dataset.update({"chunk_method": "qa"})
@@ -695,6 +699,8 @@ class TestDatasetUpdate:
             {
                 "raptor": {"use_raptor": False},
                 "graphrag": {"use_graphrag": False},
+                "image_context_size": 0,
+                "table_context_size": 0,
             },
         )
         dataset.update({"chunk_method": "qa", "parser_config": None})

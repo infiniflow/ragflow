@@ -1,8 +1,10 @@
 ---
 sidebar_position: 1
 slug: /admin_ui
+sidebar_custom_props: {
+  categoryIcon: LucidePalette
+}
 ---
-
 # Admin UI
 
 The RAGFlow Admin UI is a web-based interface that provides comprehensive system status monitoring and user management capabilities.

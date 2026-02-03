@@ -1,8 +1,10 @@
 ---
 sidebar_position: 7
 slug: /enable_raptor
+sidebar_custom_props: {
+  categoryIcon: LucideNetwork
+}
 ---
-
 # Enable RAPTOR
 
 A recursive abstractive method used in long-context knowledge retrieval and summarization, balancing broad semantic understanding with fine details.

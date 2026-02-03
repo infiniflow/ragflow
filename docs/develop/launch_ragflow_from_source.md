@@ -1,8 +1,10 @@
 ---
 sidebar_position: 2
 slug: /launch_ragflow_from_source
+sidebar_custom_props: {
+  categoryIcon: LucideMonitorPlay
+}
 ---
-
 # Launch service from source
 
 A guide explaining how to set up a RAGFlow service from its source code. By following this guide, you'll be able to debug using the source code.
@@ -114,10 +116,10 @@ docker compose -f docker/docker-compose-base.yml up -d
    npm install
    ```
 
-2. Update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:
+2. Update `server.proxy.target` in **vite.config.ts** to `http://127.0.0.1:9380`:
 
    ```bash
-   vim .umirc.ts
+   vim vite.config.ts
    ```
 
 3. Start up the RAGFlow frontend service:

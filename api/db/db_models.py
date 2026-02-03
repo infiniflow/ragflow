@@ -48,6 +48,7 @@ AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {"create", "start", "end", "update", "read_ac
 
 class TextFieldType(Enum):
     MYSQL = "LONGTEXT"
+    OCEANBASE = "LONGTEXT"
     POSTGRES = "TEXT"
 
 
@@ -281,7 +282,11 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
         except Exception as e:
             logging.error(f"Failed to reconnect: {e}")
             time.sleep(0.1)
-            self.connect()
+            try:
+                self.connect()
+            except Exception as e2:
+                logging.error(f"Failed to reconnect on second attempt: {e2}")
+                raise
 
     def begin(self):
         for attempt in range(self.max_retries + 1):
@@ -352,7 +357,11 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
         except Exception as e:
             logging.error(f"Failed to reconnect to PostgreSQL: {e}")
             time.sleep(0.1)
-            self.connect()
+            try:
+                self.connect()
+            except Exception as e2:
+                logging.error(f"Failed to reconnect to PostgreSQL on second attempt: {e2}")
+                raise
 
     def begin(self):
         for attempt in range(self.max_retries + 1):
@@ -375,13 +384,95 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
         return None
 
 
+class RetryingPooledOceanBaseDatabase(PooledMySQLDatabase):
+    """Pooled OceanBase database with retry mechanism.
+
+    OceanBase is compatible with MySQL protocol, so we inherit from PooledMySQLDatabase.
+    This class provides connection pooling and automatic retry for connection issues.
+    """
+    def __init__(self, *args, **kwargs):
+        self.max_retries = kwargs.pop("max_retries", 5)
+        self.retry_delay = kwargs.pop("retry_delay", 1)
+        super().__init__(*args, **kwargs)
+
+    def execute_sql(self, sql, params=None, commit=True):
+        for attempt in range(self.max_retries + 1):
+            try:
+                return super().execute_sql(sql, params, commit)
+            except (OperationalError, InterfaceError) as e:
+                # OceanBase/MySQL specific error codes
+                # 2013: Lost connection to MySQL server during query
+                # 2006: MySQL server has gone away
+                error_codes = [2013, 2006]
+                error_messages = ['', 'Lost connection', 'gone away']
+
+                should_retry = (
+                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
+                    any(msg in str(e).lower() for msg in error_messages) or
+                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
+                )
+
+                if should_retry and attempt < self.max_retries:
+                    logging.warning(
+                        f"OceanBase connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
+                    )
+                    self._handle_connection_loss()
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    logging.error(f"OceanBase execution failure: {e}")
+                    raise
+        return None
+
+    def _handle_connection_loss(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+        try:
+            self.connect()
+        except Exception as e:
+            logging.error(f"Failed to reconnect to OceanBase: {e}")
+            time.sleep(0.1)
+            try:
+                self.connect()
+            except Exception as e2:
+                logging.error(f"Failed to reconnect to OceanBase on second attempt: {e2}")
+                raise
+
+    def begin(self):
+        for attempt in range(self.max_retries + 1):
+            try:
+                return super().begin()
+            except (OperationalError, InterfaceError) as e:
+                error_codes = [2013, 2006]
+                error_messages = ['', 'Lost connection']
+
+                should_retry = (
+                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
+                    (str(e) in error_messages) or
+                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
+                )
+
+                if should_retry and attempt < self.max_retries:
+                    logging.warning(
+                        f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries})"
+                    )
+                    self._handle_connection_loss()
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    raise
+        return None
+
+
 class PooledDatabase(Enum):
     MYSQL = RetryingPooledMySQLDatabase
+    OCEANBASE = RetryingPooledOceanBaseDatabase
     POSTGRES = RetryingPooledPostgresqlDatabase
 
 
 class DatabaseMigrator(Enum):
     MYSQL = MySQLMigrator
+    OCEANBASE = MySQLMigrator
     POSTGRES = PostgresqlMigrator
 
 
@@ -540,6 +631,7 @@ class MysqlDatabaseLock:
 
 class DatabaseLock(Enum):
     MYSQL = MysqlDatabaseLock
+    OCEANBASE = MysqlDatabaseLock
     POSTGRES = PostgresDatabaseLock
 
 
@@ -787,7 +879,6 @@ class Document(DataBaseModel):
     progress_msg = TextField(null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True, index=True)
     process_duration = FloatField(default=0)
-    meta_fields = JSONField(null=True, default={})
     suffix = CharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
 
     run = CharField(max_length=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0", index=True)
@@ -1201,227 +1292,90 @@ class SystemSettings(DataBaseModel):
     name = CharField(max_length=128, primary_key=True)
     source = CharField(max_length=32, null=False, index=False)
     data_type = CharField(max_length=32, null=False, index=False)
-    value = CharField(max_length=1024, null=False, index=False)
+    value = TextField(null=False, help_text="Configuration value (JSON, string, etc.)")
     class Meta:
         db_table = "system_settings"
+
+def alter_db_add_column(migrator, table_name, column_name, column_type):
+    try:
+        migrate(migrator.add_column(table_name, column_name, column_type))
+    except OperationalError as ex:
+        error_codes = [1060]
+        error_messages = ['Duplicate column name']
+
+        should_skip_error = (
+                (hasattr(ex, 'args') and ex.args and ex.args[0] in error_codes) or
+                (str(ex) in error_messages)
+        )
+
+        if not should_skip_error:
+            logging.critical(f"Failed to add {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name}, operation error: {ex}")
+
+    except Exception as ex:
+        logging.critical(f"Failed to add {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name}, error: {ex}")
+        pass
+
+def alter_db_column_type(migrator, table_name, column_name, new_column_type):
+    try:
+        migrate(migrator.alter_column_type(table_name, column_name, new_column_type))
+    except Exception as ex:
+        logging.critical(f"Failed to alter {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name} type, error: {ex}")
+        pass
+
+def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
+    try:
+        migrate(migrator.rename_column(table_name, old_column_name, new_column_name))
+    except Exception:
+        # rename fail will lead to a weired error.
+        # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
+        pass
 
 def migrate_db():
     logging.disable(logging.ERROR)
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
-    try:
-        migrate(migrator.add_column("file", "source_type", CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("tenant", "rerank_id", CharField(max_length=128, null=False, default="BAAI/bge-reranker-v2-m3", help_text="default rerank model ID")))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("dialog", "rerank_id", CharField(max_length=128, null=False, default="", help_text="default rerank model ID")))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("dialog", "top_k", IntegerField(default=1024)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.alter_column_type("tenant_llm", "api_key", CharField(max_length=2048, null=True, help_text="API KEY", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("api_token", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("tenant", "tts_id", CharField(max_length=256, null=True, help_text="default tts model ID", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("api_4_conversation", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("task", "retry_count", IntegerField(default=0)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.alter_column_type("api_token", "dialog_id", CharField(max_length=32, null=True, index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("tenant_llm", "max_tokens", IntegerField(default=8192, index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("api_4_conversation", "dsl", JSONField(null=True, default={})))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("knowledgebase", "pagerank", IntegerField(default=0, index=False)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("api_token", "beta", CharField(max_length=255, null=True, index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("task", "digest", TextField(null=True, help_text="task digest", default="")))
-    except Exception:
-        pass
-
-    try:
-        migrate(migrator.add_column("task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default="")))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("conversation", "user_id", CharField(max_length=255, null=True, help_text="user_id", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("document", "meta_fields", JSONField(null=True, default={})))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("task", "task_type", CharField(max_length=32, null=False, default="")))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("task", "priority", IntegerField(default=0)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=dict)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.rename_column("task", "process_duation", "process_duration"))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.rename_column("document", "process_duation", "process_duration"))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("api_4_conversation", "errors", TextField(null=True, help_text="errors")))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("dialog", "meta_data_filter", JSONField(null=True, default={})))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.alter_column_type("canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title")))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.alter_column_type("canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description")))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("user_canvas", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("canvas_template", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("knowledgebase", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("document", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Gragh RAG task ID", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("knowledgebase", "raptor_task_id", CharField(max_length=32, null=True, help_text="RAPTOR task ID", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("knowledgebase", "graphrag_task_finish_at", DateTimeField(null=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("knowledgebase", "raptor_task_finish_at", CharField(null=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("knowledgebase", "mindmap_task_id", CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("knowledgebase", "mindmap_task_finish_at", CharField(null=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.alter_column_type("tenant_llm", "api_key", TextField(null=True, help_text="API KEY")))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("llm_factories", "rank", IntegerField(default=0, index=False)))
-    except Exception:
-        pass
-
-    # RAG Evaluation tables
-    try:
-        migrate(migrator.add_column("evaluation_datasets", "id", CharField(max_length=32, primary_key=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("evaluation_datasets", "tenant_id", CharField(max_length=32, null=False, index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("evaluation_datasets", "name", CharField(max_length=255, null=False, index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("evaluation_datasets", "description", TextField(null=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("evaluation_datasets", "kb_ids", JSONField(null=False)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("evaluation_datasets", "created_by", CharField(max_length=32, null=False, index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("evaluation_datasets", "create_time", BigIntegerField(null=False, index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("evaluation_datasets", "update_time", BigIntegerField(null=False)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("evaluation_datasets", "status", IntegerField(null=False, default=1)))
-    except Exception:
-        pass
-
+    alter_db_add_column(migrator, "file", "source_type", CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True))
+    alter_db_add_column(migrator, "tenant", "rerank_id", CharField(max_length=128, null=False, default="BAAI/bge-reranker-v2-m3", help_text="default rerank model ID"))
+    alter_db_add_column(migrator, "dialog", "rerank_id", CharField(max_length=128, null=False, default="", help_text="default rerank model ID"))
+    alter_db_column_type(migrator, "dialog", "top_k", IntegerField(default=1024))
+    alter_db_add_column(migrator, "tenant_llm", "api_key", CharField(max_length=2048, null=True, help_text="API KEY", index=True))
+    alter_db_add_column(migrator, "api_token", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True))
+    alter_db_add_column(migrator, "tenant", "tts_id", CharField(max_length=256, null=True, help_text="default tts model ID", index=True))
+    alter_db_add_column(migrator, "api_4_conversation", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True))
+    alter_db_add_column(migrator, "task", "retry_count", IntegerField(default=0))
+    alter_db_column_type(migrator, "api_token", "dialog_id", CharField(max_length=32, null=True, index=True))
+    alter_db_add_column(migrator, "tenant_llm", "max_tokens", IntegerField(default=8192, index=True))
+    alter_db_add_column(migrator, "api_4_conversation", "dsl", JSONField(null=True, default={}))
+    alter_db_add_column(migrator, "knowledgebase", "pagerank", IntegerField(default=0, index=False))
+    alter_db_add_column(migrator, "api_token", "beta", CharField(max_length=255, null=True, index=True))
+    alter_db_add_column(migrator, "task", "digest", TextField(null=True, help_text="task digest", default=""))
+    alter_db_add_column(migrator, "task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default=""))
+    alter_db_add_column(migrator, "conversation", "user_id", CharField(max_length=255, null=True, help_text="user_id", index=True))
+    alter_db_add_column(migrator, "task", "task_type", CharField(max_length=32, null=False, default=""))
+    alter_db_add_column(migrator, "task", "priority", IntegerField(default=0))
+    alter_db_add_column(migrator, "user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True))
+    alter_db_add_column(migrator, "llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False))
+    alter_db_add_column(migrator, "mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=dict))
+    alter_db_rename_column(migrator, "task", "process_duation", "process_duration")
+    alter_db_rename_column(migrator, "document", "process_duation", "process_duration")
+    alter_db_add_column(migrator, "document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True))
+    alter_db_add_column(migrator, "api_4_conversation", "errors", TextField(null=True, help_text="errors"))
+    alter_db_add_column(migrator, "dialog", "meta_data_filter", JSONField(null=True, default={}))
+    alter_db_column_type(migrator, "canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title"))
+    alter_db_column_type(migrator, "canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description"))
+    alter_db_add_column(migrator, "user_canvas", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
+    alter_db_add_column(migrator, "canvas_template", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
+    alter_db_add_column(migrator, "document", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Gragh RAG task ID", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "raptor_task_id", CharField(max_length=32, null=True, help_text="RAPTOR task ID", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "graphrag_task_finish_at", DateTimeField(null=True))
+    alter_db_add_column(migrator, "knowledgebase", "raptor_task_finish_at", CharField(null=True))
+    alter_db_add_column(migrator, "knowledgebase", "mindmap_task_id", CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "mindmap_task_finish_at", CharField(null=True))
+    alter_db_column_type(migrator, "tenant_llm", "api_key", TextField(null=True, help_text="API KEY"))
+    alter_db_add_column(migrator, "tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
+    alter_db_add_column(migrator, "connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False))
+    alter_db_add_column(migrator, "llm_factories", "rank", IntegerField(default=0, index=False))
+    # Migrate system_settings.value from CharField to TextField for longer sandbox configs
+    alter_db_column_type(migrator, "system_settings", "value", TextField(null=False, help_text="Configuration value (JSON, string, etc.)"))
     logging.disable(logging.NOTSET)

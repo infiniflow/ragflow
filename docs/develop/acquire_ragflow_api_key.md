@@ -1,8 +1,10 @@
 ---
 sidebar_position: 4
 slug: /acquire_ragflow_api_key
+sidebar_custom_props: {
+  categoryIcon: LucideKey
+}
 ---
-
 # Acquire RAGFlow API key
 
 An API key is required for the RAGFlow server to authenticate your HTTP/Python or MCP requests. This documents provides instructions on obtaining a RAGFlow API key.

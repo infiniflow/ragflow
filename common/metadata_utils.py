@@ -19,9 +19,6 @@ from typing import Any, Callable, Dict
 
 import json_repair
 
-from rag.prompts.generator import gen_meta_filter
-
-
 def convert_conditions(metadata_condition):
     if metadata_condition is None:
         metadata_condition = {}
@@ -62,9 +59,9 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
             matched = False
             try:
                 if operator == "contains":
-                    matched = input in value if not isinstance(input, list) else all(i in value for i in input)
+                    matched = str(input).find(value) >= 0 if not isinstance(input, list) else any(str(i).find(value) >= 0 for i in input)
                 elif operator == "not contains":
-                    matched = input not in value if not isinstance(input, list) else all(i not in value for i in input)
+                    matched = str(input).find(value) == -1 if not isinstance(input, list) else all(str(i).find(value) == -1 for i in input)
                 elif operator == "in":
                     matched = input in value if not isinstance(input, list) else all(i in value for i in input)
                 elif operator == "not in":
@@ -106,10 +103,10 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
             else:
                 if logic == "and":
                     doc_ids = doc_ids & set(ids)
+                    if not doc_ids:
+                        return []
                 else:
                     doc_ids = doc_ids | set(ids)
-            if not doc_ids:
-                return []
     return list(doc_ids)
 
 
@@ -133,6 +130,8 @@ async def apply_meta_data_filter(
         list of doc_ids, ["-999"] when manual filters yield no result, or None
         when auto/semi_auto filters return empty.
     """
+    from rag.prompts.generator import gen_meta_filter # move from the top of the file to avoid circular import
+
     doc_ids = list(base_doc_ids) if base_doc_ids else []
 
     if not meta_data_filter:
@@ -212,7 +211,7 @@ def update_metadata_to(metadata, meta):
     return metadata
 
 
-def metadata_schema(metadata: list|None) -> Dict[str, Any]:
+def metadata_schema(metadata: dict|list|None) -> Dict[str, Any]:
     if not metadata:
         return {}
     properties = {}
@@ -238,3 +237,47 @@ def metadata_schema(metadata: list|None) -> Dict[str, Any]:
 
     json_schema["additionalProperties"] = False
     return json_schema
+
+
+def _is_json_schema(obj: dict) -> bool:
+    if not isinstance(obj, dict):
+        return False
+    if "$schema" in obj:
+        return True
+    return obj.get("type") == "object" and isinstance(obj.get("properties"), dict)
+
+
+def _is_metadata_list(obj: list) -> bool:
+    if not isinstance(obj, list) or not obj:
+        return False
+    for item in obj:
+        if not isinstance(item, dict):
+            return False
+        key = item.get("key")
+        if not isinstance(key, str) or not key:
+            return False
+        if "enum" in item and not isinstance(item["enum"], list):
+            return False
+        if "description" in item and not isinstance(item["description"], str):
+            return False
+        if "descriptions" in item and not isinstance(item["descriptions"], str):
+            return False
+    return True
+
+
+def turn2jsonschema(obj: dict | list) -> Dict[str, Any]:
+    if isinstance(obj, dict) and _is_json_schema(obj):
+        return obj
+    if isinstance(obj, list) and _is_metadata_list(obj):
+        normalized = []
+        for item in obj:
+            description = item.get("description", item.get("descriptions", ""))
+            normalized_item = {
+                "key": item.get("key"),
+                "description": description,
+            }
+            if "enum" in item:
+                normalized_item["enum"] = item["enum"]
+            normalized.append(normalized_item)
+        return metadata_schema(normalized)
+    return {}

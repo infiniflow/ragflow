@@ -1,8 +1,10 @@
 ---
 sidebar_position: 2
 slug: /release_notes
+sidebar_custom_props: {
+  sidebarIcon: LucideClipboardPenLine
+}
 ---
-
 # Releases
 
 Key features, improvements and bug fixes in the latest releases.

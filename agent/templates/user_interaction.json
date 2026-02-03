@@ -2,10 +2,12 @@
     "id": 27,
     "title": {
         "en": "Interactive Agent",
+        "de": "Interaktiver Agent",
         "zh": "可交互的 Agent"
     },
     "description": {
         "en": "During the Agent’s execution, users can actively intervene and interact with the Agent to adjust or guide its output, ensuring the final result aligns with their intentions.",
+        "de": "Wahrend der Ausführung des Agenten können Benutzer aktiv eingreifen und mit dem Agenten interagieren, um dessen Ausgabe zu steuern, sodass das Endergebnis ihren Vorstellungen entspricht.",
         "zh": "在 Agent 的运行过程中，用户可以随时介入，与 Agent 进行交互，以调整或引导生成结果，使最终输出更符合预期。"
     },
     "canvas_type": "Agent",

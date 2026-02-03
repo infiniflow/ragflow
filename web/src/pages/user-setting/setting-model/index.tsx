@@ -12,9 +12,9 @@ import {
   useSubmitBedrock,
   useSubmitFishAudio,
   useSubmitGoogle,
-  useSubmitHunyuan,
   useSubmitMinerU,
   useSubmitOllama,
+  useSubmitPaddleOCR,
   useSubmitSpark,
   useSubmitSystemModelSetting,
   useSubmitTencentCloud,
@@ -26,10 +26,10 @@ import AzureOpenAIModal from './modal/azure-openai-modal';
 import BedrockModal from './modal/bedrock-modal';
 import FishAudioModal from './modal/fish-audio-modal';
 import GoogleModal from './modal/google-modal';
-import HunyuanModal from './modal/hunyuan-modal';
 import MinerUModal from './modal/mineru-modal';
 import TencentCloudModal from './modal/next-tencent-modal';
 import OllamaModal from './modal/ollama-modal';
+import PaddleOCRModal from './modal/paddleocr-modal';
 import SparkModal from './modal/spark-modal';
 import VolcEngineModal from './modal/volcengine-modal';
 import YiyanModal from './modal/yiyan-modal';
@@ -65,14 +65,6 @@ const ModelProviders = () => {
     onVolcAddingOk,
     volcAddingLoading,
   } = useSubmitVolcEngine();
-
-  const {
-    HunyuanAddingVisible,
-    hideHunyuanAddingModal,
-    showHunyuanAddingModal,
-    onHunyuanAddingOk,
-    HunyuanAddingLoading,
-  } = useSubmitHunyuan();
 
   const {
     GoogleAddingVisible,
@@ -138,11 +130,18 @@ const ModelProviders = () => {
     mineruLoading,
   } = useSubmitMinerU();
 
+  const {
+    paddleocrVisible,
+    hidePaddleOCRModal,
+    showPaddleOCRModal,
+    onPaddleOCROk,
+    paddleocrLoading,
+  } = useSubmitPaddleOCR();
+
   const ModalMap = useMemo(
     () => ({
       [LLMFactory.Bedrock]: showBedrockAddingModal,
       [LLMFactory.VolcEngine]: showVolcAddingModal,
-      [LLMFactory.TencentHunYuan]: showHunyuanAddingModal,
       [LLMFactory.XunFeiSpark]: showSparkAddingModal,
       [LLMFactory.BaiduYiYan]: showyiyanAddingModal,
       [LLMFactory.FishAudio]: showFishAudioAddingModal,
@@ -150,11 +149,11 @@ const ModelProviders = () => {
       [LLMFactory.GoogleCloud]: showGoogleAddingModal,
       [LLMFactory.AzureOpenAI]: showAzureAddingModal,
       [LLMFactory.MinerU]: showMineruModal,
+      [LLMFactory.PaddleOCR]: showPaddleOCRModal,
     }),
     [
       showBedrockAddingModal,
       showVolcAddingModal,
-      showHunyuanAddingModal,
       showSparkAddingModal,
       showyiyanAddingModal,
       showFishAudioAddingModal,
@@ -162,6 +161,7 @@ const ModelProviders = () => {
       showGoogleAddingModal,
       showAzureAddingModal,
       showMineruModal,
+      showPaddleOCRModal,
     ],
   );
 
@@ -229,15 +229,17 @@ const ModelProviders = () => {
         onOk={onApiKeySavingOk}
         llmFactory={llmFactory}
       ></ApiKeyModal>
-      <OllamaModal
-        visible={llmAddingVisible}
-        hideModal={hideLlmAddingModal}
-        onOk={onLlmAddingOk}
-        loading={llmAddingLoading}
-        editMode={llmEditMode}
-        initialValues={llmInitialValues}
-        llmFactory={selectedLlmFactory}
-      ></OllamaModal>
+      {llmAddingVisible && (
+        <OllamaModal
+          visible={llmAddingVisible}
+          hideModal={hideLlmAddingModal}
+          onOk={onLlmAddingOk}
+          loading={llmAddingLoading}
+          editMode={llmEditMode}
+          initialValues={llmInitialValues}
+          llmFactory={selectedLlmFactory}
+        ></OllamaModal>
+      )}
       <VolcEngineModal
         visible={volcAddingVisible}
         hideModal={hideVolcAddingModal}
@@ -245,13 +247,6 @@ const ModelProviders = () => {
         loading={volcAddingLoading}
         llmFactory={LLMFactory.VolcEngine}
       ></VolcEngineModal>
-      <HunyuanModal
-        visible={HunyuanAddingVisible}
-        hideModal={hideHunyuanAddingModal}
-        onOk={onHunyuanAddingOk}
-        loading={HunyuanAddingLoading}
-        llmFactory={LLMFactory.TencentHunYuan}
-      ></HunyuanModal>
       <GoogleModal
         visible={GoogleAddingVisible}
         hideModal={hideGoogleAddingModal}
@@ -307,6 +302,12 @@ const ModelProviders = () => {
         onOk={onMineruOk}
         loading={mineruLoading}
       ></MinerUModal>
+      <PaddleOCRModal
+        visible={paddleocrVisible}
+        hideModal={hidePaddleOCRModal}
+        onOk={onPaddleOCROk}
+        loading={paddleocrLoading}
+      ></PaddleOCRModal>
     </div>
   );
 };

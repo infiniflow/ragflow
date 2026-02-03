@@ -1,8 +1,10 @@
 ---
 sidebar_position: 4
 slug: /set_chat_variables
+sidebar_custom_props: {
+  categoryIcon: LucideVariable
+}
 ---
-
 # Set variables
 
 Set variables to be used together with the system prompt for your LLM.
@@ -17,7 +19,7 @@ In RAGFlow, variables are closely linked with the system prompt. When you add a 
 
 ## Where to set variables
 
-![set_variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_variables.jpg)
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_variables.jpg)
 
 ## 1. Manage variables
 

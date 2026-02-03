@@ -18,8 +18,13 @@ import copy
 import re
 import time
 
-import tiktoken
+import os
+import tempfile
+import logging
+
 from quart import Response, jsonify, request
+
+from common.token_utils import num_tokens_from_string
 
 from agent.canvas import Canvas
 from api.db.db_models import APIToken
@@ -30,12 +35,12 @@ from api.db.services.conversation_service import ConversationService
 from api.db.services.conversation_service import async_iframe_completion as iframe_completion
 from api.db.services.conversation_service import async_completion as rag_completion
 from api.db.services.dialog_service import DialogService, async_ask, async_chat, gen_mindmap
-from api.db.services.document_service import DocumentService
+from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter, convert_conditions, meta_filter
 from api.db.services.search_service import SearchService
-from api.db.services.user_service import UserTenantService
+from api.db.services.user_service import TenantService,UserTenantService
 from common.misc_utils import get_uuid
 from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, \
     get_result, get_request_json, server_error_response, token_required, validate_request
@@ -142,7 +147,7 @@ async def chat_completion(tenant_id, chat_id):
         return get_error_data_result(message="metadata_condition must be an object.")
 
     if metadata_condition and req.get("question"):
-        metas = DocumentService.get_meta_by_kbs(dia.kb_ids or [])
+        metas = DocMetadataService.get_flatted_meta_by_kbs(dia.kb_ids or [])
         filtered_doc_ids = meta_filter(
             metas,
             convert_conditions(metadata_condition),
@@ -261,7 +266,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 
     prompt = messages[-1]["content"]
     # Treat context tokens as reasoning tokens
-    context_token_used = sum(len(message["content"]) for message in messages)
+    context_token_used = sum(num_tokens_from_string(message["content"]) for message in messages)
 
     dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
     if not dia:
@@ -274,7 +279,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 
     doc_ids_str = None
     if metadata_condition:
-        metas = DocumentService.get_meta_by_kbs(dia.kb_ids or [])
+        metas = DocMetadataService.get_flatted_meta_by_kbs(dia.kb_ids or [])
         filtered_doc_ids = meta_filter(
             metas,
             convert_conditions(metadata_condition),
@@ -304,9 +309,12 @@ async def chat_completion_openai_like(tenant_id, chat_id):
         # The choices field on the last chunk will always be an empty array [].
         async def streamed_response_generator(chat_id, dia, msg):
             token_used = 0
-            answer_cache = ""
-            reasoning_cache = ""
             last_ans = {}
+            full_content = ""
+            full_reasoning = ""
+            final_answer = None
+            final_reference = None
+            in_think = False
             response = {
                 "id": f"chatcmpl-{chat_id}",
                 "choices": [
@@ -336,47 +344,30 @@ async def chat_completion_openai_like(tenant_id, chat_id):
                     chat_kwargs["doc_ids"] = doc_ids_str
                 async for ans in async_chat(dia, msg, True, **chat_kwargs):
                     last_ans = ans
-                    answer = ans["answer"]
-
-                    reasoning_match = re.search(r"<think>(.*?)</think>", answer, flags=re.DOTALL)
-                    if reasoning_match:
-                        reasoning_part = reasoning_match.group(1)
-                        content_part = answer[reasoning_match.end() :]
-                    else:
-                        reasoning_part = ""
-                        content_part = answer
-
-                    reasoning_incremental = ""
-                    if reasoning_part:
-                        if reasoning_part.startswith(reasoning_cache):
-                            reasoning_incremental = reasoning_part.replace(reasoning_cache, "", 1)
-                        else:
-                            reasoning_incremental = reasoning_part
-                        reasoning_cache = reasoning_part
-
-                    content_incremental = ""
-                    if content_part:
-                        if content_part.startswith(answer_cache):
-                            content_incremental = content_part.replace(answer_cache, "", 1)
-                    else:
-                        content_incremental = content_part
-                    answer_cache = content_part
-
-                    token_used += len(reasoning_incremental) + len(content_incremental)
-
-                    if not any([reasoning_incremental, content_incremental]):
+                    if ans.get("final"):
+                        if ans.get("answer"):
+                            full_content = ans["answer"]
+                        final_answer = ans.get("answer") or full_content
+                        final_reference = ans.get("reference", {})
                         continue
-
-                    if reasoning_incremental:
-                        response["choices"][0]["delta"]["reasoning_content"] = reasoning_incremental
-                    else:
-                        response["choices"][0]["delta"]["reasoning_content"] = None
-
-                    if content_incremental:
-                        response["choices"][0]["delta"]["content"] = content_incremental
-                    else:
+                    if ans.get("start_to_think"):
+                        in_think = True
+                        continue
+                    if ans.get("end_to_think"):
+                        in_think = False
+                        continue
+                    delta = ans.get("answer") or ""
+                    if not delta:
+                        continue
+                    token_used += num_tokens_from_string(delta)
+                    if in_think:
+                        full_reasoning += delta
+                        response["choices"][0]["delta"]["reasoning_content"] = delta
                         response["choices"][0]["delta"]["content"] = None
-
+                    else:
+                        full_content += delta
+                        response["choices"][0]["delta"]["content"] = delta
+                        response["choices"][0]["delta"]["reasoning_content"] = None
                     yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
             except Exception as e:
                 response["choices"][0]["delta"]["content"] = "**ERROR**: " + str(e)
@@ -386,10 +377,12 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             response["choices"][0]["delta"]["content"] = None
             response["choices"][0]["delta"]["reasoning_content"] = None
             response["choices"][0]["finish_reason"] = "stop"
-            response["usage"] = {"prompt_tokens": len(prompt), "completion_tokens": token_used, "total_tokens": len(prompt) + token_used}
+            prompt_tokens = num_tokens_from_string(prompt)
+            response["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": token_used, "total_tokens": prompt_tokens + token_used}
             if need_reference:
-                response["choices"][0]["delta"]["reference"] = chunks_format(last_ans.get("reference", []))
-                response["choices"][0]["delta"]["final_content"] = last_ans.get("answer", "")
+                reference_payload = final_reference if final_reference is not None else last_ans.get("reference", [])
+                response["choices"][0]["delta"]["reference"] = chunks_format(reference_payload)
+                response["choices"][0]["delta"]["final_content"] = final_answer if final_answer is not None else full_content
             yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
             yield "data:[DONE]\n\n"
 
@@ -416,12 +409,12 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             "created": int(time.time()),
             "model": req.get("model", ""),
             "usage": {
-                "prompt_tokens": len(prompt),
-                "completion_tokens": len(content),
-                "total_tokens": len(prompt) + len(content),
+                "prompt_tokens": num_tokens_from_string(prompt),
+                "completion_tokens": num_tokens_from_string(content),
+                "total_tokens": num_tokens_from_string(prompt) + num_tokens_from_string(content),
                 "completion_tokens_details": {
                     "reasoning_tokens": context_token_used,
-                    "accepted_prediction_tokens": len(content),
+                    "accepted_prediction_tokens": num_tokens_from_string(content),
                     "rejected_prediction_tokens": 0,  # 0 for simplicity
                 },
             },
@@ -438,7 +431,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             ],
         }
         if need_reference:
-            response["choices"][0]["message"]["reference"] = chunks_format(answer.get("reference", []))
+            response["choices"][0]["message"]["reference"] = chunks_format(answer.get("reference", {}))
 
         return jsonify(response)
 
@@ -448,7 +441,6 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 @token_required
 async def agents_completion_openai_compatibility(tenant_id, agent_id):
     req = await get_request_json()
-    tiktoken_encode = tiktoken.get_encoding("cl100k_base")
     messages = req.get("messages", [])
     if not messages:
         return get_error_data_result("You must provide at least one message.")
@@ -456,7 +448,7 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
         return get_error_data_result(f"You don't own the agent {agent_id}")
 
     filtered_messages = [m for m in messages if m["role"] in ["user", "assistant"]]
-    prompt_tokens = sum(len(tiktoken_encode.encode(m["content"])) for m in filtered_messages)
+    prompt_tokens = sum(num_tokens_from_string(m["content"]) for m in filtered_messages)
     if not filtered_messages:
         return jsonify(
             get_data_openai(
@@ -464,7 +456,7 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
                 content="No valid messages found (user or assistant).",
                 finish_reason="stop",
                 model=req.get("model", ""),
-                completion_tokens=len(tiktoken_encode.encode("No valid messages found (user or assistant).")),
+                completion_tokens=num_tokens_from_string("No valid messages found (user or assistant)."),
                 prompt_tokens=prompt_tokens,
             )
         )
@@ -943,6 +935,7 @@ async def chatbots_inputs(dialog_id):
             "title": dialog.name,
             "avatar": dialog.icon,
             "prologue": dialog.prompt_config.get("prologue", ""),
+            "has_tavily_key": bool(dialog.prompt_config.get("tavily_api_key", "").strip()),
         }
     )
 
@@ -1058,11 +1051,13 @@ async def retrieval_test_embedded():
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
     langs = req.get("cross_languages", [])
+    rerank_id = req.get("rerank_id", "")
     tenant_id = objs[0].tenant_id
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
 
     async def _retrieval():
+        nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id
         local_doc_ids = list(doc_ids) if doc_ids else []
         tenant_ids = []
         _question = question
@@ -1074,13 +1069,22 @@ async def retrieval_test_embedded():
             meta_data_filter = search_config.get("meta_data_filter", {})
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
+            # Apply search_config settings if not explicitly provided in request
+            if not req.get("similarity_threshold"):
+                similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
+            if not req.get("vector_similarity_weight"):
+                vector_similarity_weight = float(search_config.get("vector_similarity_weight", vector_similarity_weight))
+            if not req.get("top_k"):
+                top = int(search_config.get("top_k", top))
+            if not req.get("rerank_id"):
+                rerank_id = search_config.get("rerank_id", "")
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
 
         if meta_data_filter:
-            metas = DocumentService.get_meta_by_kbs(kb_ids)
+            metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
             local_doc_ids = await apply_meta_data_filter(meta_data_filter, metas, _question, chat_mdl, local_doc_ids)
 
         tenants = UserTenantService.query(user_id=tenant_id)
@@ -1103,15 +1107,15 @@ async def retrieval_test_embedded():
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
         rerank_mdl = None
-        if req.get("rerank_id"):
-            rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK.value, llm_name=req["rerank_id"])
+        if rerank_id:
+            rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK.value, llm_name=rerank_id)
 
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
-        ranks = settings.retriever.retrieval(
+        ranks = await settings.retriever.retrieval(
             _question, embd_mdl, tenant_ids, kb_ids, page, size, similarity_threshold, vector_similarity_weight, top,
             local_doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"), rank_feature=labels
         )
@@ -1233,3 +1237,93 @@ async def mindmap():
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)
+
+@manager.route("/sequence2txt", methods=["POST"])  # noqa: F821
+@token_required
+async def sequence2txt(tenant_id):
+    req = await request.form
+    stream_mode = req.get("stream", "false").lower() == "true"
+    files = await request.files
+    if "file" not in files:
+        return get_error_data_result(message="Missing 'file' in multipart form-data")
+
+    uploaded = files["file"]
+
+    ALLOWED_EXTS = {
+        ".wav", ".mp3", ".m4a", ".aac",
+        ".flac", ".ogg", ".webm",
+        ".opus", ".wma"
+    }
+
+    filename = uploaded.filename or ""
+    suffix = os.path.splitext(filename)[-1].lower()
+    if suffix not in ALLOWED_EXTS:
+        return get_error_data_result(message=
+            f"Unsupported audio format: {suffix}. "
+            f"Allowed: {', '.join(sorted(ALLOWED_EXTS))}"
+        )
+    fd, temp_audio_path = tempfile.mkstemp(suffix=suffix)
+    os.close(fd)
+    await uploaded.save(temp_audio_path)
+
+    tenants = TenantService.get_info_by(tenant_id)
+    if not tenants:
+        return get_error_data_result(message="Tenant not found!")
+
+    asr_id = tenants[0]["asr_id"]
+    if not asr_id:
+        return get_error_data_result(message="No default ASR model is set")
+
+    asr_mdl=LLMBundle(tenants[0]["tenant_id"], LLMType.SPEECH2TEXT, asr_id)
+    if not stream_mode:
+        text = asr_mdl.transcription(temp_audio_path)
+        try:
+            os.remove(temp_audio_path)
+        except Exception as e:
+            logging.error(f"Failed to remove temp audio file: {str(e)}")
+        return get_json_result(data={"text": text})
+    async def event_stream():
+        try:
+            for evt in asr_mdl.stream_transcription(temp_audio_path):
+                yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            err = {"event": "error", "text": str(e)}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+        finally:
+            try:
+                os.remove(temp_audio_path)
+            except Exception as e:
+                logging.error(f"Failed to remove temp audio file: {str(e)}")
+
+    return Response(event_stream(), content_type="text/event-stream")
+
+@manager.route("/tts", methods=["POST"])  # noqa: F821
+@token_required
+async def tts(tenant_id):
+    req = await get_request_json()
+    text = req["text"]
+
+    tenants = TenantService.get_info_by(tenant_id)
+    if not tenants:
+        return get_error_data_result(message="Tenant not found!")
+
+    tts_id = tenants[0]["tts_id"]
+    if not tts_id:
+        return get_error_data_result(message="No default TTS model is set")
+
+    tts_mdl = LLMBundle(tenants[0]["tenant_id"], LLMType.TTS, tts_id)
+
+    def stream_audio():
+        try:
+            for txt in re.split(r"[，。/《》？；：！\n\r:;]+", text):
+                for chunk in tts_mdl.tts(txt):
+                    yield chunk
+        except Exception as e:
+            yield ("data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e)}}, ensure_ascii=False)).encode("utf-8")
+
+    resp = Response(stream_audio(), mimetype="audio/mpeg")
+    resp.headers.add_header("Cache-Control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+
+    return resp
