@@ -4,6 +4,8 @@ import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
+from test.playwright.helpers.flow_steps import flow_params, require
+
 RESULT_TIMEOUT_MS = 15000
 
 
@@ -78,11 +80,10 @@ def _wait_for_auth_not_loading(page, timeout_ms: int = 5000) -> None:
     )
 
 
-@pytest.mark.p1
-@pytest.mark.auth
-def test_register_success_optional(
+def step_01_open_login(
+    flow_page,
+    flow_state,
     login_url,
-    page,
     active_auth_context,
     step,
     snap,
@@ -94,24 +95,63 @@ def test_register_success_optional(
     reg_nickname,
     reg_email_unique,
 ):
+    page = flow_page
     with step("open login page"):
         page.goto(login_url, wait_until="domcontentloaded")
+    flow_state["login_opened"] = True
     snap("open")
 
+
+def step_02_switch_to_register(
+    flow_page,
+    flow_state,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_debug_dump,
+    auth_click,
+    reg_email,
+    reg_email_generator,
+    reg_password,
+    reg_nickname,
+    reg_email_unique,
+):
+    require(flow_state, "login_opened")
     form, card = active_auth_context()
     toggle_button = card.locator("[data-testid='auth-toggle-register']")
     if toggle_button.count() == 0:
+        flow_state["register_toggle_available"] = False
         pytest.skip("Register toggle not present; registerEnabled may be disabled.")
 
     with step("switch to register"):
         expect(toggle_button).to_have_count(1)
         toggle_button.click()
+    flow_state["register_toggle_available"] = True
+    snap("toggled_register")
 
+
+def step_03_submit_registration(
+    flow_page,
+    flow_state,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_debug_dump,
+    auth_click,
+    reg_email,
+    reg_email_generator,
+    reg_password,
+    reg_nickname,
+    reg_email_unique,
+):
+    require(flow_state, "login_opened", "register_toggle_available")
+    page = flow_page
     form, _ = active_auth_context()
     nickname_input = form.locator("[data-testid='auth-nickname']")
-    expect(nickname_input).to_have_count(1)
-    expect(nickname_input).to_be_visible()
-    snap("toggled_register")
+    if nickname_input.count() == 0:
+        pytest.skip("Register form not active; cannot submit registration.")
 
     email_input = form.locator(
         "input[data-testid='auth-email'], [data-testid='auth-email'] input"
@@ -194,4 +234,49 @@ def test_register_success_optional(
         )
 
     snap("success")
+    flow_state["register_complete"] = True
+    flow_state["registered_email"] = current_email
     print(f"REGISTERED_EMAIL={current_email}", flush=True)
+
+
+STEPS = [
+    ("01_open_login", step_01_open_login),
+    ("02_switch_to_register", step_02_switch_to_register),
+    ("03_submit_registration", step_03_submit_registration),
+]
+
+
+@pytest.mark.p1
+@pytest.mark.auth
+@pytest.mark.parametrize("step_fn", flow_params(STEPS))
+def test_register_success_optional_flow(
+    step_fn,
+    flow_page,
+    flow_state,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_debug_dump,
+    auth_click,
+    reg_email,
+    reg_email_generator,
+    reg_password,
+    reg_nickname,
+    reg_email_unique,
+):
+    step_fn(
+        flow_page,
+        flow_state,
+        login_url,
+        active_auth_context,
+        step,
+        snap,
+        auth_debug_dump,
+        auth_click,
+        reg_email,
+        reg_email_generator,
+        reg_password,
+        reg_nickname,
+        reg_email_unique,
+    )

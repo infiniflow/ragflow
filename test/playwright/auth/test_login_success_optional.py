@@ -6,6 +6,8 @@ import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
+from test.playwright.helpers.flow_steps import flow_params, require
+
 DEMO_EMAIL = "qa@infiniflow.com"
 DEMO_PASSWORD = "123"
 
@@ -52,11 +54,17 @@ def _debug_login_state(page, label: str) -> None:
     )
 
 
-@pytest.mark.p1
-@pytest.mark.auth
-def test_login_success_optional(
-    login_url, page, active_auth_context, step, snap, auth_click
+def step_01_open_login(
+    flow_page,
+    flow_state,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
 ):
+    _ = seeded_user_credentials
     creds = _resolve_creds()
     if not creds:
         pytest.skip("SEEDED_USER_EMAIL/SEEDED_USER_PASSWORD not set and DEMO_CREDS=1 not enabled")
@@ -70,13 +78,26 @@ def test_login_success_optional(
                 "Set valid credentials or use DEMO_CREDS=1 for demo mode."
             )
     print(f"[AUTH] using email: {seeded_email} (source={source})", flush=True)
-
-    post_login_path = os.getenv("POST_LOGIN_PATH")
+    flow_state["seeded_email"] = seeded_email
+    flow_state["seeded_password"] = seeded_password
+    flow_state["login_opened"] = True
 
     with step("open login page"):
-        page.goto(login_url, wait_until="domcontentloaded")
+        flow_page.goto(login_url, wait_until="domcontentloaded")
     snap("open")
 
+
+def step_02_submit_login(
+    flow_page,
+    flow_state,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "login_opened", "seeded_email", "seeded_password")
     form, _ = active_auth_context()
     email_input = form.locator(
         "input[data-testid='auth-email'], [data-testid='auth-email'] input"
@@ -88,8 +109,8 @@ def test_login_success_optional(
     with step("fill credentials"):
         expect(email_input).to_have_count(1)
         expect(password_input).to_have_count(1)
-        email_input.fill(seeded_email)
-        password_input.fill(seeded_password)
+        email_input.fill(flow_state["seeded_email"])
+        password_input.fill(flow_state["seeded_password"])
         expect(password_input).to_have_attribute("type", "password")
         password_input.blur()
     snap("filled")
@@ -100,8 +121,23 @@ def test_login_success_optional(
         )
         expect(submit_button).to_have_count(1)
         auth_click(submit_button, "submit_login")
+    flow_state["login_submitted"] = True
     snap("submitted")
 
+
+def step_03_verify_login(
+    flow_page,
+    flow_state,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "login_submitted")
+    page = flow_page
+    post_login_path = os.getenv("POST_LOGIN_PATH")
     post_login_path_js = json.dumps(post_login_path)
     wait_js = """
         () => {{
@@ -122,7 +158,7 @@ def test_login_success_optional(
           const successMarker = document.querySelector(
             "a[href*='github.com/infiniflow/ragflow'], a[href*='discord.com/invite']"
           );
-          const authStatus = document.querySelector('[data-testid="auth-status"]');
+          const authStatus = document.querySelector('[data-testid=\"auth-status\"]');
           const statusState = authStatus ? authStatus.getAttribute('data-state') : '';
           if (statusState === 'error') return {{ state: 'error' }};
           if (statusState === 'success') return {{ state: 'success' }};
@@ -210,3 +246,36 @@ def test_login_success_optional(
                 "Expected Token or Authorization."
             )
     snap("success")
+
+
+STEPS = [
+    ("01_open_login", step_01_open_login),
+    ("02_submit_login", step_02_submit_login),
+    ("03_verify_login", step_03_verify_login),
+]
+
+
+@pytest.mark.p1
+@pytest.mark.auth
+@pytest.mark.parametrize("step_fn", flow_params(STEPS))
+def test_login_success_optional_flow(
+    step_fn,
+    flow_page,
+    flow_state,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    step_fn(
+        flow_page,
+        flow_state,
+        login_url,
+        active_auth_context,
+        step,
+        snap,
+        auth_click,
+        seeded_user_credentials,
+    )

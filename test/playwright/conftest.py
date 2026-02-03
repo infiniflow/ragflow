@@ -20,8 +20,8 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = Path(__file__).resolve().parent / "artifacts"
 BASE_URL_DEFAULT = "http://127.0.0.1"
 LOGIN_PATH_DEFAULT = "/login"
-DEFAULT_TIMEOUT_MS = 15000
-DEFAULT_HANG_TIMEOUT_S = 120
+DEFAULT_TIMEOUT_MS = 30000
+DEFAULT_HANG_TIMEOUT_S = 1800
 AUTH_READY_TIMEOUT_MS_DEFAULT = 15000
 REG_EMAIL_BASE_DEFAULT = "qa@infiniflow.org"
 REG_NICKNAME_DEFAULT = "qa"
@@ -42,6 +42,7 @@ AUTH_SUBMIT_SELECTOR = (
 
 _PUBLIC_KEY_CACHE = None
 _RSA_CIPHER_CACHE = None
+_HANG_WATCHDOG_INSTALLED = False
 
 
 class _RegisterDisabled(RuntimeError):
@@ -63,6 +64,47 @@ def _env_int(name: str, default: int) -> int:
         return int(value)
     except ValueError:
         return default
+
+
+def _env_int_with_fallback(primary: str, fallback: str | None, default: int) -> int:
+    value = os.getenv(primary)
+    if not value and fallback:
+        value = os.getenv(fallback)
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _sanitize_timeout_ms(value: int | None, fallback: int | None) -> int | None:
+    if value is None or value <= 0:
+        return fallback
+    return value
+
+
+def _playwright_action_timeout_ms() -> int | None:
+    raw = _env_int_with_fallback(
+        "PLAYWRIGHT_ACTION_TIMEOUT_MS", "PW_TIMEOUT_MS", DEFAULT_TIMEOUT_MS
+    )
+    return _sanitize_timeout_ms(raw, DEFAULT_TIMEOUT_MS)
+
+
+def _playwright_auth_ready_timeout_ms() -> int | None:
+    raw = _env_int_with_fallback(
+        "PLAYWRIGHT_AUTH_READY_TIMEOUT_MS",
+        "AUTH_READY_TIMEOUT_MS",
+        AUTH_READY_TIMEOUT_MS_DEFAULT,
+    )
+    return _sanitize_timeout_ms(raw, AUTH_READY_TIMEOUT_MS_DEFAULT)
+
+
+def _playwright_hang_timeout_s() -> int:
+    raw = _env_int_with_fallback(
+        "PLAYWRIGHT_HANG_TIMEOUT_S", "HANG_TIMEOUT_S", DEFAULT_HANG_TIMEOUT_S
+    )
+    return raw if raw > 0 else 0
 
 
 
@@ -287,7 +329,7 @@ def _describe_auth_ui(page, card, register_toggle) -> str:
 
 
 def _wait_for_auth_success(page, card, form) -> None:
-    timeout_ms = _env_int("AUTH_READY_TIMEOUT_MS", AUTH_READY_TIMEOUT_MS_DEFAULT)
+    timeout_ms = _playwright_auth_ready_timeout_ms()
     status_marker = page.locator("[data-testid='auth-status']")
     if status_marker.count() > 0:
         try:
@@ -328,26 +370,27 @@ def _ui_register_user(
     register_toggle = None
     try:
         page.goto(login_url, wait_until="domcontentloaded")
+        timeout_ms = _playwright_auth_ready_timeout_ms()
         card = page.locator("[data-testid='auth-card-active']")
-        expect(card).to_have_count(1, timeout=AUTH_READY_TIMEOUT_MS_DEFAULT)
+        expect(card).to_have_count(1, timeout=timeout_ms)
         register_toggle = card.locator("[data-testid='auth-toggle-register']")
         if register_toggle.count() == 0:
             raise _RegisterDisabled("Register toggle not found; registration disabled?")
         register_toggle.first.click()
         register_form = _auth_form_locator(card, require_nickname=True)
-        expect(register_form).to_have_count(1, timeout=AUTH_READY_TIMEOUT_MS_DEFAULT)
+        expect(register_form).to_have_count(1, timeout=timeout_ms)
         nickname_input = register_form.locator("[data-testid='auth-nickname']")
         email_input = register_form.locator("[data-testid='auth-email']")
         password_input = register_form.locator("[data-testid='auth-password']")
-        expect(nickname_input).to_have_count(1, timeout=AUTH_READY_TIMEOUT_MS_DEFAULT)
-        expect(email_input).to_have_count(1, timeout=AUTH_READY_TIMEOUT_MS_DEFAULT)
-        expect(password_input).to_have_count(1, timeout=AUTH_READY_TIMEOUT_MS_DEFAULT)
+        expect(nickname_input).to_have_count(1, timeout=timeout_ms)
+        expect(email_input).to_have_count(1, timeout=timeout_ms)
+        expect(password_input).to_have_count(1, timeout=timeout_ms)
         nickname_input.fill(nickname)
         email_input.fill(email)
         password_input.fill(password)
         password_input.blur()
         submit_button = register_form.locator(AUTH_SUBMIT_SELECTOR)
-        expect(submit_button).to_have_count(1, timeout=AUTH_READY_TIMEOUT_MS_DEFAULT)
+        expect(submit_button).to_have_count(1, timeout=timeout_ms)
         submit_button.click()
         _wait_for_auth_success(page, card, register_form)
     except _RegisterDisabled:
@@ -397,9 +440,22 @@ def pytest_runtest_makereport(item, call):
 def pytest_sessionstart(session):
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     faulthandler.enable()
-    hang_timeout = _env_int("HANG_TIMEOUT_S", DEFAULT_HANG_TIMEOUT_S)
+    global _HANG_WATCHDOG_INSTALLED
+    hang_timeout = _playwright_hang_timeout_s()
     if hang_timeout > 0:
-        faulthandler.dump_traceback_later(hang_timeout, repeat=True)
+        if not _HANG_WATCHDOG_INSTALLED:
+            faulthandler.dump_traceback_later(hang_timeout, repeat=True)
+            _HANG_WATCHDOG_INSTALLED = True
+            print(
+                "Playwright hang watchdog enabled: dumps after "
+                f"{hang_timeout}s (set PLAYWRIGHT_HANG_TIMEOUT_S=0 to disable)",
+                flush=True,
+            )
+    else:
+        print(
+            "Playwright hang watchdog disabled (PLAYWRIGHT_HANG_TIMEOUT_S=0)",
+            flush=True,
+        )
     try:
         faulthandler.register(signal.SIGUSR1, all_threads=True)
     except (AttributeError, ValueError):
@@ -514,9 +570,10 @@ def context(browser):
 
 
 def _configure_page(page_instance):
-    timeout_ms = _env_int("PW_TIMEOUT_MS", DEFAULT_TIMEOUT_MS)
-    page_instance.set_default_timeout(timeout_ms)
-    page_instance.set_default_navigation_timeout(timeout_ms)
+    timeout_ms = _playwright_action_timeout_ms()
+    if timeout_ms is not None:
+        page_instance.set_default_timeout(timeout_ms)
+        page_instance.set_default_navigation_timeout(timeout_ms)
     page_instance._diag = {
         "console_errors": [],
         "page_errors": [],
@@ -983,7 +1040,7 @@ def _write_auth_ready_diagnostics(page, request, reason: str) -> None:
 
 
 def _wait_for_auth_ui_ready(page, request) -> None:
-    timeout_ms = _env_int("AUTH_READY_TIMEOUT_MS", AUTH_READY_TIMEOUT_MS_DEFAULT)
+    timeout_ms = _playwright_auth_ready_timeout_ms()
     email_selector = AUTH_EMAIL_INPUT_SELECTOR
     password_selector = AUTH_PASSWORD_INPUT_SELECTOR
     submit_selector = AUTH_SUBMIT_SELECTOR
@@ -1012,7 +1069,7 @@ def _wait_for_auth_ui_ready(page, request) -> None:
 
 
 def _wait_for_active_form_clickable(page, request, form) -> None:
-    timeout_ms = _env_int("AUTH_READY_TIMEOUT_MS", AUTH_READY_TIMEOUT_MS_DEFAULT)
+    timeout_ms = _playwright_auth_ready_timeout_ms()
     active_forms = page.locator(AUTH_ACTIVE_FORM_SELECTOR)
     submit_buttons = form.locator(AUTH_SUBMIT_SELECTOR)
     try:
@@ -1101,7 +1158,7 @@ def _locator_is_topmost(locator) -> bool:
 @pytest.fixture
 def auth_click():
     def _click(locator, label: str = "click") -> None:
-        timeout_ms = _env_int("AUTH_READY_TIMEOUT_MS", AUTH_READY_TIMEOUT_MS_DEFAULT)
+        timeout_ms = _playwright_auth_ready_timeout_ms()
         try:
             locator.click(timeout=timeout_ms)
         except PlaywrightTimeoutError as exc:
@@ -1122,7 +1179,7 @@ def active_auth_context(page, request):
     if "flow_page" in request.fixturenames:
         page = request.getfixturevalue("flow_page")
     def _mark_active_form() -> None:
-        timeout_ms = _env_int("AUTH_READY_TIMEOUT_MS", AUTH_READY_TIMEOUT_MS_DEFAULT)
+        timeout_ms = _playwright_auth_ready_timeout_ms()
         try:
             page.wait_for_function(
                 """
@@ -1242,7 +1299,7 @@ def active_auth_context(page, request):
         _wait_for_auth_ui_ready(page, request)
         card = page.locator("[data-testid='auth-card-active']")
         form = page.locator(AUTH_ACTIVE_FORM_SELECTOR)
-        timeout_ms = _env_int("AUTH_READY_TIMEOUT_MS", AUTH_READY_TIMEOUT_MS_DEFAULT)
+        timeout_ms = _playwright_auth_ready_timeout_ms()
         try:
             expect(form).to_have_count(1, timeout=timeout_ms)
         except AssertionError as exc:

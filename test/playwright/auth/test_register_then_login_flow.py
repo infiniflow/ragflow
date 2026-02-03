@@ -5,6 +5,8 @@ import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
+from test.playwright.helpers.flow_steps import flow_params, require
+
 RESULT_TIMEOUT_MS = 15000
 
 
@@ -95,11 +97,10 @@ def _wait_for_login_outcome(page, post_login_path: str | None, timeout_ms: int =
     )
 
 
-@pytest.mark.p0
-@pytest.mark.auth
-def test_register_then_login_flow(
+def step_01_open_login(
+    flow_page,
+    flow_state,
     login_url,
-    page,
     active_auth_context,
     step,
     snap,
@@ -109,27 +110,62 @@ def test_register_then_login_flow(
     reg_nickname,
     reg_email_unique,
 ):
-    if not reg_email_unique:
-        pytest.skip("Set REG_EMAIL_UNIQUE=1 for deterministic register→login flow.")
-
     with step("open login page"):
-        page.goto(login_url, wait_until="domcontentloaded")
+        flow_page.goto(login_url, wait_until="domcontentloaded")
+    flow_state["login_opened"] = True
     snap("open")
 
+
+def step_02_switch_to_register(
+    flow_page,
+    flow_state,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    reg_email,
+    reg_password,
+    reg_nickname,
+    reg_email_unique,
+):
+    require(flow_state, "login_opened")
+    if not reg_email_unique:
+        flow_state["reg_email_unique"] = False
+        pytest.skip("Set REG_EMAIL_UNIQUE=1 for deterministic register→login flow.")
+    flow_state["reg_email_unique"] = True
     form, card = active_auth_context()
     toggle_button = card.locator("[data-testid='auth-toggle-register']")
     if toggle_button.count() == 0:
+        flow_state["register_toggle_available"] = False
         pytest.skip("Register toggle not present; registerEnabled may be disabled.")
 
     with step("switch to register"):
         expect(toggle_button).to_have_count(1)
         toggle_button.click()
+    flow_state["register_toggle_available"] = True
+    snap("register_toggled")
 
+
+def step_03_register_user(
+    flow_page,
+    flow_state,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    reg_email,
+    reg_password,
+    reg_nickname,
+    reg_email_unique,
+):
+    require(flow_state, "login_opened", "register_toggle_available", "reg_email_unique")
+    page = flow_page
     form, _ = active_auth_context()
     nickname_input = form.locator("[data-testid='auth-nickname']")
     expect(nickname_input).to_have_count(1)
     expect(nickname_input).to_be_visible()
-    snap("register_toggled")
 
     email_input = form.locator(
         "input[data-testid='auth-email'], [data-testid='auth-email'] input"
@@ -183,10 +219,28 @@ def test_register_then_login_flow(
     nickname_input = form.locator("[data-testid='auth-nickname']")
     expect(nickname_input).to_have_count(0, timeout=RESULT_TIMEOUT_MS)
     snap("register_success")
+    flow_state["registered_email"] = reg_email
+    flow_state["registered_password"] = reg_password
+    flow_state["register_complete"] = True
     print(f"REGISTERED_EMAIL={reg_email}", flush=True)
 
+
+def step_04_login_user(
+    flow_page,
+    flow_state,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    reg_email,
+    reg_password,
+    reg_nickname,
+    reg_email_unique,
+):
+    require(flow_state, "register_complete", "registered_email", "registered_password")
+    form, _ = active_auth_context()
     with step("fill login form"):
-        form, _ = active_auth_context()
         email_input = form.locator(
             "input[data-testid='auth-email'], [data-testid='auth-email'] input"
         )
@@ -195,8 +249,8 @@ def test_register_then_login_flow(
         )
         expect(email_input).to_have_count(1)
         expect(password_input).to_have_count(1)
-        email_input.fill(reg_email)
-        password_input.fill(reg_password)
+        email_input.fill(flow_state["registered_email"])
+        password_input.fill(flow_state["registered_password"])
         expect(password_input).to_have_attribute("type", "password")
         password_input.blur()
     snap("login_filled")
@@ -209,6 +263,22 @@ def test_register_then_login_flow(
         auth_click(submit_button, "submit_login")
     snap("login_submitted")
 
+
+def step_05_verify_login(
+    flow_page,
+    flow_state,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    reg_email,
+    reg_password,
+    reg_nickname,
+    reg_email_unique,
+):
+    require(flow_state, "register_complete")
+    page = flow_page
     post_login_path = os.getenv("POST_LOGIN_PATH")
 
     with step("wait for login outcome"):
@@ -224,9 +294,7 @@ def test_register_then_login_flow(
     if login_outcome.get("state") == "error":
         snap("login_error")
         snap("login_failure")
-        raise AssertionError(
-            f"Login error detected. url={page.url}"
-        )
+        raise AssertionError(f"Login error detected. url={page.url}")
 
     path = urlparse(page.url).path
     if post_login_path:
@@ -240,3 +308,44 @@ def test_register_then_login_flow(
         raise AssertionError(f"URL still on login after submit. url={page.url}")
 
     snap("login_success")
+
+
+STEPS = [
+    ("01_open_login", step_01_open_login),
+    ("02_switch_to_register", step_02_switch_to_register),
+    ("03_register_user", step_03_register_user),
+    ("04_login_user", step_04_login_user),
+    ("05_verify_login", step_05_verify_login),
+]
+
+
+@pytest.mark.p0
+@pytest.mark.auth
+@pytest.mark.parametrize("step_fn", flow_params(STEPS))
+def test_register_then_login_flow(
+    step_fn,
+    flow_page,
+    flow_state,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    reg_email,
+    reg_password,
+    reg_nickname,
+    reg_email_unique,
+):
+    step_fn(
+        flow_page,
+        flow_state,
+        login_url,
+        active_auth_context,
+        step,
+        snap,
+        auth_click,
+        reg_email,
+        reg_password,
+        reg_nickname,
+        reg_email_unique,
+    )

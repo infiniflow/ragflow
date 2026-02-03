@@ -9,6 +9,8 @@ import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
+from test.playwright.helpers.flow_steps import flow_params, require
+
 RESULT_TIMEOUT_MS = 15000
 
 
@@ -507,21 +509,18 @@ def _open_create_dataset_modal(page):
     return modal
 
 
-@pytest.mark.p1
-@pytest.mark.auth
-def test_dataset_upload_parse_and_delete(
+def step_01_login(
+    flow_page,
+    flow_state,
     base_url,
     login_url,
-    page,
     active_auth_context,
     step,
     snap,
     auth_click,
+    seeded_user_credentials,
 ):
-    email = os.getenv("SEEDED_USER_EMAIL")
-    password = os.getenv("SEEDED_USER_PASSWORD")
-    if not email or not password:
-        pytest.skip("SEEDED_USER_EMAIL/SEEDED_USER_PASSWORD not set.")
+    email, password = seeded_user_credentials
 
     repo_root = Path(__file__).resolve().parents[3]
     file_paths = [
@@ -532,13 +531,17 @@ def test_dataset_upload_parse_and_delete(
     for path in file_paths:
         if not path.is_file():
             pytest.fail(f"Missing upload fixture: {path}")
+    flow_state["file_paths"] = [str(path) for path in file_paths]
+    flow_state["filenames"] = [path.name for path in file_paths]
 
     with step("open login page"):
-        page.goto(login_url, wait_until="domcontentloaded")
+        flow_page.goto(login_url, wait_until="domcontentloaded")
 
     form, _ = active_auth_context()
-    email_input = form.locator("input[autocomplete='email']")
-    password_input = form.locator("input[type='password']")
+    email_input = form.locator("input[data-testid='auth-email'], [data-testid='auth-email'] input")
+    password_input = form.locator(
+        "input[data-testid='auth-password'], [data-testid='auth-password'] input"
+    )
     with step("fill credentials"):
         expect(email_input).to_have_count(1)
         expect(password_input).to_have_count(1)
@@ -547,22 +550,57 @@ def test_dataset_upload_parse_and_delete(
         password_input.blur()
 
     with step("submit login"):
-        submit_button = form.locator("button[type='submit']")
+        submit_button = form.locator(
+            "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
+        )
         expect(submit_button).to_have_count(1)
         auth_click(submit_button, "submit_login")
 
     with step("wait for login"):
-        _wait_for_login_complete(page)
+        _wait_for_login_complete(flow_page)
+    flow_state["logged_in"] = True
+    snap("login_complete")
 
+
+def step_02_open_datasets(
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "logged_in")
+    page = flow_page
     with step("open datasets"):
         page.goto(urljoin(base_url.rstrip("/") + "/", "/"), wait_until="domcontentloaded")
         nav_button = page.locator("button", has_text=re.compile(r"^Dataset$", re.I))
         if nav_button.count() > 0:
             nav_button.first.click()
         else:
-            page.goto(urljoin(base_url.rstrip("/") + "/", "/datasets"), wait_until="domcontentloaded")
+            page.goto(
+                urljoin(base_url.rstrip("/") + "/", "/datasets"),
+                wait_until="domcontentloaded",
+            )
     snap("datasets_open")
 
+
+def step_03_create_dataset(
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "logged_in")
+    page = flow_page
     with step("open create dataset modal"):
         modal = _open_create_dataset_modal(page)
     snap("dataset_modal_open")
@@ -589,10 +627,28 @@ def test_dataset_upload_parse_and_delete(
         expect(modal).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
         _wait_for_dataset_detail(page)
         _wait_for_dataset_detail_ready(page)
+    flow_state["dataset_name"] = dataset_name
     snap("dataset_created")
     snap("dataset_detail_ready")
 
-    filenames = [path.name for path in file_paths]
+
+def step_04_upload_files(
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "dataset_name", "file_paths")
+    page = flow_page
+    file_paths = [Path(path) for path in flow_state["file_paths"]]
+    filenames = flow_state.get("filenames") or [path.name for path in file_paths]
+    flow_state["filenames"] = filenames
+
     for idx, file_path in enumerate(file_paths):
         filename = file_path.name
         with step(f"open upload modal for {filename}"):
@@ -633,10 +689,42 @@ def test_dataset_upload_parse_and_delete(
         )
         expect(row).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
+    flow_state["uploads_done"] = True
+
+
+def step_05_wait_parse_success(
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "uploads_done", "filenames")
+    page = flow_page
+    for filename in flow_state["filenames"]:
         with step(f"wait for parse success {filename}"):
             _wait_for_success_dot(page, filename, timeout_ms=RESULT_TIMEOUT_MS)
         snap(f"parse_{filename}_success")
+    flow_state["parse_complete"] = True
 
+
+def step_06_delete_one_file(
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "parse_complete", "filenames")
+    page = flow_page
     delete_filename = "Doc3.pdf"
     with step(f"delete uploaded file {delete_filename}"):
         row = page.locator(
@@ -655,14 +743,48 @@ def test_dataset_upload_parse_and_delete(
         page.locator(
             f"[data-testid='document-row'][data-doc-name={json.dumps('Doc1.pdf')}]"
         )
-    ).to_be_visible(
-        timeout=RESULT_TIMEOUT_MS
-    )
+    ).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     expect(
         page.locator(
             f"[data-testid='document-row'][data-doc-name={json.dumps('Doc2.pdf')}]"
         )
-    ).to_be_visible(
-        timeout=RESULT_TIMEOUT_MS
-    )
+    ).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     snap("success")
+
+
+STEPS = [
+    ("01_login", step_01_login),
+    ("02_open_datasets", step_02_open_datasets),
+    ("03_create_dataset", step_03_create_dataset),
+    ("04_upload_files", step_04_upload_files),
+    ("05_wait_parse_success", step_05_wait_parse_success),
+    ("06_delete_one_file", step_06_delete_one_file),
+]
+
+
+@pytest.mark.p1
+@pytest.mark.auth
+@pytest.mark.parametrize("step_fn", flow_params(STEPS))
+def test_dataset_upload_parse_and_delete_flow(
+    step_fn,
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    step_fn(
+        flow_page,
+        flow_state,
+        base_url,
+        login_url,
+        active_auth_context,
+        step,
+        snap,
+        auth_click,
+        seeded_user_credentials,
+    )

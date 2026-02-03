@@ -24,10 +24,14 @@ def ensure_authed(
     login_url: str,
     active_auth_context,
     auth_click,
+    seeded_user_credentials=None,
     timeout_ms: int = RESULT_TIMEOUT_MS,
 ) -> None:
-    email = os.getenv("SEEDED_USER_EMAIL")
-    password = os.getenv("SEEDED_USER_PASSWORD")
+    if seeded_user_credentials:
+        email, password = seeded_user_credentials
+    else:
+        email = os.getenv("SEEDED_USER_EMAIL")
+        password = os.getenv("SEEDED_USER_PASSWORD")
     if not email or not password:
         pytest.skip("SEEDED_USER_EMAIL/SEEDED_USER_PASSWORD not set.")
 

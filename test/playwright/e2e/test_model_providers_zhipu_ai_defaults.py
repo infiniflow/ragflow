@@ -7,6 +7,8 @@ import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
+from test.playwright.helpers.flow_steps import flow_params, require
+
 RESULT_TIMEOUT_MS = 15000
 
 
@@ -260,60 +262,126 @@ def _select_default_model(
     return selected
 
 
-@pytest.mark.p1
-@pytest.mark.auth
-def test_add_zhipu_ai_set_defaults_persist(
+def step_01_open_login(
+    flow_page,
+    flow_state,
     base_url,
     login_url,
-    page,
     active_auth_context,
     step,
     snap,
     auth_click,
+    seeded_user_credentials,
 ):
     api_key = os.getenv("ZHIPU_AI_API_KEY")
     if not api_key:
         pytest.skip("ZHIPU_AI_API_KEY not set; skipping model providers test.")
 
-    email = os.getenv("SEEDED_USER_EMAIL")
-    password = os.getenv("SEEDED_USER_PASSWORD")
-    if not email or not password:
-        pytest.skip("SEEDED_USER_EMAIL/SEEDED_USER_PASSWORD not set.")
+    email, password = seeded_user_credentials
+
+    flow_state["api_key"] = api_key
+    flow_state["email"] = email
+    flow_state["password"] = password
 
     with step("open login page"):
-        page.goto(login_url, wait_until="domcontentloaded")
+        flow_page.goto(login_url, wait_until="domcontentloaded")
+    flow_state["login_opened"] = True
+    snap("login_opened")
 
+
+def step_02_login(
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "login_opened", "email", "password")
+    page = flow_page
     form, _ = active_auth_context()
-    email_input = form.locator("input[autocomplete='email']")
-    password_input = form.locator("input[type='password']")
+    email_input = form.locator("input[data-testid='auth-email'], [data-testid='auth-email'] input")
+    password_input = form.locator(
+        "input[data-testid='auth-password'], [data-testid='auth-password'] input"
+    )
     with step("fill credentials"):
         expect(email_input).to_have_count(1)
         expect(password_input).to_have_count(1)
-        email_input.fill(email)
-        password_input.fill(password)
+        email_input.fill(flow_state["email"])
+        password_input.fill(flow_state["password"])
         password_input.blur()
 
     with step("submit login"):
-        submit_button = form.locator("button[type='submit']")
+        submit_button = form.locator(
+            "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
+        )
         expect(submit_button).to_have_count(1)
         auth_click(submit_button, "submit_login")
 
     with step("wait for login"):
         _wait_for_login_complete(page)
 
+    flow_state["logged_in"] = True
     snap("home_loaded")
 
+
+def step_03_open_settings(
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "logged_in")
+    page = flow_page
     with step("open settings"):
         _open_user_settings(page, base_url)
+    flow_state["settings_open"] = True
     snap("settings_opened")
 
+
+def step_04_open_model_providers(
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "settings_open")
+    page = flow_page
     with step("open model providers"):
         model_nav = page.locator("[data-testid='settings-nav-model-providers']")
         expect(model_nav).to_have_count(1)
         model_nav.first.click()
         expect(page.locator("text=Set default models")).to_be_visible()
+    flow_state["model_providers_open"] = True
     snap("model_providers_open")
 
+
+def step_05_filter_zhipu(
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "model_providers_open")
+    page = flow_page
     with step("filter providers"):
         search_input = page.locator("[data-testid='model-providers-search']")
         expect(search_input).to_have_count(1)
@@ -333,7 +401,27 @@ def test_add_zhipu_ai_set_defaults_persist(
                 raise AssertionError("ZHIPU-AI provider not found in available or added models.")
         else:
             expect(provider).to_be_visible()
+    flow_state["provider_filtered"] = True
     snap("provider_filtered")
+
+
+def step_06_add_api_key(
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "provider_filtered", "api_key")
+    page = flow_page
+    available_section = page.locator("[data-testid='available-models-section']")
+    provider = available_section.locator(
+        "[data-testid='available-model-card'][data-provider='ZHIPU-AI']"
+    ).first
 
     with step("add ZHIPU-AI api key"):
         if provider.count() > 0:
@@ -352,7 +440,7 @@ def test_add_zhipu_ai_set_defaults_persist(
         save_button = modal.locator("[data-testid='apikey-save']").first
         try:
             def trigger():
-                api_input.fill(api_key)
+                api_input.fill(flow_state["api_key"])
                 save_button.click()
 
             _capture_response(
@@ -373,8 +461,23 @@ def test_add_zhipu_ai_set_defaults_persist(
                 "[data-testid='added-model-card'][data-provider='ZHIPU-AI']"
             )
         ).to_be_visible()
+    flow_state["provider_added"] = True
     snap("provider_saved")
 
+
+def step_07_set_defaults(
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "provider_added")
+    page = flow_page
     with step("set default models"):
         llm_combo = page.locator("[data-testid='default-llm-combobox']").first
         emb_combo = page.locator("[data-testid='default-embedding-combobox']").first
@@ -386,8 +489,7 @@ def test_add_zhipu_ai_set_defaults_persist(
             "glm-4-flash",
             list_testid="default-llm-options",
         )
-        # Embedding availability varies by provider; fallback to first available if embedding-2 is absent.
-        selected_emb_text, selected_emb_value = _select_default_model(
+        selected_emb_text, _ = _select_default_model(
             page,
             emb_combo,
             "embedding-2",
@@ -395,16 +497,31 @@ def test_add_zhipu_ai_set_defaults_persist(
             list_testid="default-embedding-options",
             fallback_to_first=True,
         )
-
+    flow_state["selected_emb_text"] = selected_emb_text
+    flow_state["defaults_set"] = True
     snap("defaults_selected")
 
+
+def step_08_verify_persist(
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "defaults_set")
+    page = flow_page
     with step("reload and verify defaults"):
         page.reload(wait_until="domcontentloaded")
         expect(page.locator("text=Set default models")).to_be_visible()
         llm_combo = page.locator("[data-testid='default-llm-combobox']").first
         emb_combo = page.locator("[data-testid='default-embedding-combobox']").first
         expect(llm_combo).to_contain_text("glm-4-flash")
-        expect(emb_combo).to_contain_text(selected_emb_text or "embedding-2")
+        expect(emb_combo).to_contain_text(flow_state.get("selected_emb_text") or "embedding-2")
         added_section = page.locator("[data-testid='added-models-section']")
         expect(
             added_section.locator(
@@ -413,3 +530,43 @@ def test_add_zhipu_ai_set_defaults_persist(
         ).to_be_visible()
     snap("defaults_persisted")
     snap("success")
+
+
+STEPS = [
+    ("01_open_login", step_01_open_login),
+    ("02_login", step_02_login),
+    ("03_open_settings", step_03_open_settings),
+    ("04_open_model_providers", step_04_open_model_providers),
+    ("05_filter_zhipu", step_05_filter_zhipu),
+    ("06_add_api_key", step_06_add_api_key),
+    ("07_set_defaults", step_07_set_defaults),
+    ("08_verify_persist", step_08_verify_persist),
+]
+
+
+@pytest.mark.p1
+@pytest.mark.auth
+@pytest.mark.parametrize("step_fn", flow_params(STEPS))
+def test_add_zhipu_ai_set_defaults_persist_flow(
+    step_fn,
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    step_fn(
+        flow_page,
+        flow_state,
+        base_url,
+        login_url,
+        active_auth_context,
+        step,
+        snap,
+        auth_click,
+        seeded_user_credentials,
+    )

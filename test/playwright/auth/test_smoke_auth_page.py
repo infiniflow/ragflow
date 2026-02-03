@@ -1,13 +1,20 @@
 import pytest
 
+from test.playwright.helpers.flow_steps import flow_params, require
 
-@pytest.mark.smoke
-@pytest.mark.p0
-@pytest.mark.auth
-def test_auth_page_smoke(smoke_login_url, page, step):
+
+def step_01_open_login(flow_page, flow_state, smoke_login_url, step):
+    page = flow_page
     with step("navigate to login page"):
         response = page.goto(smoke_login_url, wait_until="domcontentloaded")
+    flow_state["smoke_opened"] = True
+    flow_state["smoke_response"] = response
 
+
+def step_02_validate_page(flow_page, flow_state, smoke_login_url, step):
+    require(flow_state, "smoke_opened")
+    page = flow_page
+    response = flow_state.get("smoke_response")
     content = page.content()
     content_type = ""
     status = None
@@ -32,6 +39,20 @@ def test_auth_page_smoke(smoke_login_url, page, step):
         raise AssertionError(
             _format_diag(page, response, "No SPA root, inputs, or logo found")
         )
+
+
+STEPS = [
+    ("01_open_login", step_01_open_login),
+    ("02_validate_page", step_02_validate_page),
+]
+
+
+@pytest.mark.smoke
+@pytest.mark.p0
+@pytest.mark.auth
+@pytest.mark.parametrize("step_fn", flow_params(STEPS))
+def test_auth_page_smoke_flow(step_fn, flow_page, flow_state, smoke_login_url, step):
+    step_fn(flow_page, flow_state, smoke_login_url, step)
 
 
 def _format_diag(page, response, reason: str) -> str:
