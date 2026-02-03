@@ -33,7 +33,7 @@ from common.decorator import singleton
 from common.doc_store.doc_store_base import MatchExpr, OrderByExpr, FusionExpr, MatchTextExpr, MatchDenseExpr
 from common.doc_store.ob_conn_base import (
     OBConnectionBase, get_value_str,
-    fulltext_search_template, vector_search_template, vector_column_pattern,
+    vector_search_template, vector_column_pattern,
     fulltext_index_name_template,
 )
 from common.float_utils import get_float
