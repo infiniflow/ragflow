@@ -100,7 +100,6 @@ def init_default_admin():
 
 
 def add_tenant_for_admin(user_info: dict, role: str):
-    from api.db.services.user_service import TenantService, UserTenantService
     from api.db.services.tenant_llm_service import TenantLLMService
     from api.db.services.llm_service import get_init_tenant_llm
 
