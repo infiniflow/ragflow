@@ -1242,49 +1242,105 @@ def _build_cks(sections, delimiter):
     tables = []
     images = []
 
+    # extract custom delimiters wrapped by backticks: `##`, `---`, etc.
     custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
     has_custom = bool(custom_delimiters)
 
     if has_custom:
+        # escape delimiters and build alternation pattern, longest first
         custom_pattern = "|".join(
             re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True)
         )
+        # capture delimiters so they appear in re.split results
         pattern = r"(%s)" % custom_pattern
 
+    seg = ""
     for text, image, table in sections:
-        # normalize text
+        # normalize text: ensure string and prepend newline for continuity
         if not text:
-            text = "\n"
+            text = ""
         else:
             text = "\n" + str(text)
 
         if table:
-            # table ck
+            # table chunk
             ck_text = text + str(table)
             idx = len(cks)
-            cks.append({"text": ck_text, "image": image, "ck_type": "table", "tk_nums": num_tokens_from_string(ck_text)})
+            cks.append({
+                "text": ck_text,
+                "image": image,
+                "ck_type": "table",
+                "tk_nums": num_tokens_from_string(ck_text),
+            })
             tables.append(idx)
             continue
 
         if image:
-            # image ck (text can be kept as-is; depends on your downstream)
+            # image chunk (text kept as-is for context)
             idx = len(cks)
-            cks.append({"text": text, "image": image, "ck_type": "image", "tk_nums": num_tokens_from_string(text)})
+            cks.append({
+                "text": text,
+                "image": image,
+                "ck_type": "image",
+                "tk_nums": num_tokens_from_string(text),
+            })
             images.append(idx)
             continue
 
-        # pure text ck(s)
+        # pure text chunk(s)
         if has_custom:
             split_sec = re.split(pattern, text)
             for sub_sec in split_sec:
-                if not sub_sec or re.fullmatch(custom_pattern, sub_sec):
+                # ① empty or whitespace-only segment → flush current buffer
+                if not sub_sec or not sub_sec.strip():
+                    if seg and seg.strip():
+                        s = seg.strip()
+                        cks.append({
+                            "text": s,
+                            "image": None,
+                            "ck_type": "text",
+                            "tk_nums": num_tokens_from_string(s),
+                        })
+                    seg = ""
                     continue
-                seg = "\n" + sub_sec if not sub_sec.startswith("\n") else sub_sec
-                cks.append({"text": seg, "image": None, "ck_type": "text", "tk_nums": num_tokens_from_string(seg)})
-        else:
-            cks.append({"text": text, "image": None, "ck_type": "text", "tk_nums": num_tokens_from_string(text)})
 
-    return cks, tables, images
+                # ② matched custom delimiter (allow surrounding whitespace)
+                if re.fullmatch(custom_pattern, sub_sec.strip()):
+                    if seg and seg.strip():
+                        s = seg.strip()
+                        cks.append({
+                            "text": s,
+                            "image": None,
+                            "ck_type": "text",
+                            "tk_nums": num_tokens_from_string(s),
+                        })
+                    seg = ""
+                    continue
+
+                # ③ normal text content → accumulate
+                seg += sub_sec
+        else:
+            # no custom delimiter: emit the text as a single chunk
+            if text and text.strip():
+                t = text.strip()
+                cks.append({
+                    "text": t,
+                    "image": None,
+                    "ck_type": "text",
+                    "tk_nums": num_tokens_from_string(t),
+                })
+
+    # final flush after loop (only when custom delimiters are used)
+    if has_custom and seg and seg.strip():
+        s = seg.strip()
+        cks.append({
+            "text": s,
+            "image": None,
+            "ck_type": "text",
+            "tk_nums": num_tokens_from_string(s),
+        })
+
+    return cks, tables, images, has_custom
 
 
 def _add_context(cks, idx, context_size):
@@ -1363,7 +1419,7 @@ def _add_context(cks, idx, context_size):
     cks[idx]["context_below"] = "".join(parts_below) if parts_below else ""
 
 
-def _merge_cks(cks, chunk_token_num):
+def _merge_cks(cks, chunk_token_num, has_custom):
     merged = []
     image_idxs = []
     prev_text_ck = -1
@@ -1377,8 +1433,7 @@ def _merge_cks(cks, chunk_token_num):
                 image_idxs.append(len(merged) - 1)
             continue
 
-
-        if prev_text_ck<0 or merged[prev_text_ck]["tk_nums"] >= chunk_token_num:
+        if prev_text_ck<0 or merged[prev_text_ck]["tk_nums"] >= chunk_token_num or has_custom:
             merged.append(cks[i])
             prev_text_ck = len(merged) - 1
             continue
@@ -1399,7 +1454,7 @@ def naive_merge_docx(
     if not sections:
         return [], []
 
-    cks, tables, images = _build_cks(sections, delimiter)
+    cks, tables, images, has_custom = _build_cks(sections, delimiter)
 
     if table_context_size > 0:
         for i in tables:
@@ -1408,8 +1463,8 @@ def naive_merge_docx(
     if image_context_size > 0:
         for i in images:
             _add_context(cks, i, image_context_size)
-
-    merged_cks, merged_image_idx = _merge_cks(cks, chunk_token_num)
+    
+    merged_cks, merged_image_idx = _merge_cks(cks, chunk_token_num, has_custom)
 
     return merged_cks, merged_image_idx
 

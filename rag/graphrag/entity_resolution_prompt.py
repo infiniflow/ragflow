@@ -51,7 +51,7 @@ Example 2:
 Question:
 When determining whether two toponym are the same, you should only focus on critical properties and overlook noisy factors. 
 
-Demonstration 1: name of toponym A is : "nanjing", name of toponym B is :"nanjing city"  No, toponym A and toponym B are same toponym.
+Demonstration 1: name of toponym A is : "nanjing", name of toponym B is :"nanjing city"  Yes, toponym A and toponym B are same toponym.
 Question 1: name of toponym A is : "Chicago", name of toponym B is :"ChiTown"  
 Question 2: name of toponym A is : "Shanghai", name of toponym B is :"Zhengzhou"  
 Question 3: name of toponym A is : "Beijing", name of toponym B is :"Peking"
