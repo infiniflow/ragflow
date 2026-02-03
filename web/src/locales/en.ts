@@ -129,6 +129,17 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       delMemoryWarn: `After deletion, all messages in this memory will be deleted and cannot be retrieved by agents.`,
     },
     memory: {
+      taskLogDialog: {
+        title: 'Memory',
+        startTime: 'Start time',
+        status: 'Status',
+        details: 'Details',
+
+        success: 'Success',
+        running: 'Running',
+        failed: 'Failed',
+      },
+
       messages: {
         forget: 'Forget',
         forgetMessageTip: 'Are you sure you want to forget?',
