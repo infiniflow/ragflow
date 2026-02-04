@@ -7,7 +7,6 @@ export const confluenceConstant = (t: TFunction) => [
     name: 'config.credentials.confluence_username',
     type: FormFieldType.Text,
     required: true,
-    tooltip: t('setting.connectorNameTip'),
   },
   {
     label: 'Confluence Access Token',
