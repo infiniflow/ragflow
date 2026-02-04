@@ -27,7 +27,10 @@ def convert_conditions(metadata_condition):
         metadata_condition = {}
     op_mapping = {
         "is": "=",
-        "not is": "≠"
+        "not is": "≠",
+        ">=": "≥",
+        "<=": "≤",
+        "!=": "≠"
     }
     return [
         {
@@ -47,17 +50,59 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
         for input, docids in v2docs.items():
 
             if operator in ["=", "≠", ">", "<", "≥", "≤"]:
-                try:
-                    if isinstance(input, list):
-                        input = input[0]
-                    input = ast.literal_eval(input)
-                    value = ast.literal_eval(value)
-                except Exception:
-                    pass
-            if isinstance(input, str):
-                input = input.lower()
-            if isinstance(value, str):
-                value = value.lower()
+                # 检查是否为 YYYY-MM-DD 格式的日期
+                input_str = str(input).strip()
+                value_str = str(value).strip()
+
+                # 严格的日期格式检测：YYYY-MM-DD（必须是10位，且格式正确）
+                is_input_date = (
+                    len(input_str) == 10 and
+                    input_str[4] == '-' and
+                    input_str[7] == '-' and
+                    input_str[:4].isdigit() and
+                    input_str[5:7].isdigit() and
+                    input_str[8:10].isdigit()
+                )
+
+                is_value_date = (
+                    len(value_str) == 10 and
+                    value_str[4] == '-' and
+                    value_str[7] == '-' and
+                    value_str[:4].isdigit() and
+                    value_str[5:7].isdigit() and
+                    value_str[8:10].isdigit()
+                )
+
+                if is_value_date:
+                    # 查询条件是日期格式
+                    if is_input_date:
+                        # 数据也是日期格式：进行日期比较
+                        input = input_str
+                        value = value_str
+                    else:
+                        # 数据不是日期格式：跳过此记录（不匹配）
+                        continue
+                else:
+                    # 查询条件不是日期格式：按原逻辑处理
+                    try:
+                        if isinstance(input, list):
+                            input = input[0]
+                        input = ast.literal_eval(input)
+                        value = ast.literal_eval(value)
+                    except Exception:
+                        pass
+
+                    # 字符串转小写
+                    if isinstance(input, str):
+                        input = input.lower()
+                    if isinstance(value, str):
+                        value = value.lower()
+            else:
+                # 非比较操作符，保持原有逻辑
+                if isinstance(input, str):
+                    input = input.lower()
+                if isinstance(value, str):
+                    value = value.lower()
 
             matched = False
             try:
