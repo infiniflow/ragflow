@@ -1,11 +1,8 @@
 """
 Tests for RAGFlow schema conversion.
 
-This module tests:
-- RAGFlowSchemaConverter: Analyzes ES mappings and generates OB column definitions
-- RAGFlowDataConverter: Converts ES documents to OceanBase row format
-- Vector field pattern matching
-- Schema constants
+RAGFlow uses dynamic templates based on field naming patterns.
+This module tests the pattern-based type detection and data conversion.
 """
 
 import json
@@ -13,48 +10,109 @@ import pytest
 from es_ob_migration.schema import (
     RAGFlowSchemaConverter,
     RAGFlowDataConverter,
-    RAGFLOW_COLUMNS,
-    ARRAY_COLUMNS,
-    JSON_COLUMNS,
     VECTOR_FIELD_PATTERN,
-    FTS_COLUMNS_ORIGIN,
-    FTS_COLUMNS_TKS,
+    FIELD_PATTERNS,
+    INDEX_COLUMNS,
+    FTS_COLUMNS,
+    get_ob_type,
 )
+
+
+class TestGetObType:
+    """Test get_ob_type function."""
+
+    def test_vector_field(self):
+        """Test vector field type detection."""
+        assert get_ob_type("q_768_vec") == "VECTOR"
+        assert get_ob_type("q_1024_vec") == "VECTOR"
+        assert get_ob_type("q_1536_vec") == "VECTOR"
+
+    def test_integer_fields(self):
+        """Test integer field patterns."""
+        assert get_ob_type("page_num_int") == "INTEGER"
+        assert get_ob_type("position_int") == "INTEGER"
+        assert get_ob_type("top_int") == "INTEGER"
+        assert get_ob_type("available_int") == "INTEGER"
+
+    def test_long_fields(self):
+        """Test long field patterns."""
+        assert get_ob_type("count_long") == "BIGINT"
+        assert get_ob_type("size_ulong") == "BIGINT UNSIGNED"
+        assert get_ob_type("value_short") == "SMALLINT"
+
+    def test_float_fields(self):
+        """Test float field patterns."""
+        assert get_ob_type("weight_flt") == "DOUBLE"
+        assert get_ob_type("score_flt") == "DOUBLE"
+        assert get_ob_type("create_timestamp_flt") == "DOUBLE"
+
+    def test_text_fields(self):
+        """Test text field patterns."""
+        assert get_ob_type("title_tks") == "TEXT"
+        assert get_ob_type("content_ltks") == "LONGTEXT"
+        assert get_ob_type("content_sm_ltks") == "LONGTEXT"
+        assert get_ob_type("content_with_weight") == "LONGTEXT"
+
+    def test_keyword_fields(self):
+        """Test keyword field patterns."""
+        assert get_ob_type("kb_id") == "VARCHAR(256)"
+        assert get_ob_type("doc_id") == "VARCHAR(256)"
+        assert get_ob_type("docnm_kwd") == "VARCHAR(256)"
+        assert get_ob_type("img_id") == "VARCHAR(256)"
+
+    def test_date_fields(self):
+        """Test date field patterns."""
+        assert get_ob_type("create_time") == "VARCHAR(32)"
+        assert get_ob_type("update_dt") == "VARCHAR(32)"
+        assert get_ob_type("created_at") == "VARCHAR(32)"
+
+    def test_json_fields(self):
+        """Test JSON field patterns."""
+        assert get_ob_type("data_nst") == "JSON"
+        assert get_ob_type("config_obj") == "JSON"
+        assert get_ob_type("tag_feas") == "JSON"
+        assert get_ob_type("lat_lon") == "JSON"
+
+    def test_rank_feature(self):
+        """Test rank_feature pattern."""
+        assert get_ob_type("pagerank_fea") == "DOUBLE"
+
+    def test_binary_fields(self):
+        """Test binary field patterns."""
+        assert get_ob_type("data_bin") == "LONGBLOB"
+
 
 
 class TestRAGFlowSchemaConverter:
     """Test RAGFlowSchemaConverter class."""
 
-    def test_analyze_ragflow_mapping(self):
-        """Test analyzing a RAGFlow ES mapping."""
+    def test_analyze_real_mapping(self):
+        """Test analyzing a real RAGFlow ES mapping."""
         converter = RAGFlowSchemaConverter()
         
-        # Simulate a RAGFlow ES mapping
+        # Simplified real mapping
         es_mapping = {
             "properties": {
-                "id": {"type": "keyword"},
-                "kb_id": {"type": "keyword"},
-                "doc_id": {"type": "keyword"},
-                "docnm_kwd": {"type": "keyword"},
-                "content_with_weight": {"type": "text"},
                 "content_ltks": {"type": "text"},
-                "available_int": {"type": "integer"},
-                "important_kwd": {"type": "keyword"},
-                "q_768_vec": {"type": "dense_vector", "dims": 768},
+                "content_with_weight": {"type": "text"},
+                "create_time": {"type": "date"},
+                "doc_id": {"type": "keyword"},
+                "kb_id": {"type": "keyword"},
+                "lat_lon": {"type": "geo_point"},
+                "page_num_int": {"type": "integer"},
+                "q_1024_vec": {"type": "dense_vector", "dims": 1024},
             }
         }
         
-        analysis = converter.analyze_es_mapping(es_mapping)
+        result = converter.analyze_es_mapping(es_mapping)
         
-        # Check known fields
-        assert "id" in analysis["known_fields"]
-        assert "kb_id" in analysis["known_fields"]
-        assert "content_with_weight" in analysis["known_fields"]
-        
-        # Check vector fields
-        assert len(analysis["vector_fields"]) == 1
-        assert analysis["vector_fields"][0]["name"] == "q_768_vec"
-        assert analysis["vector_fields"][0]["dimension"] == 768
+        # Should include all fields + id
+        assert len(result["fields"]) == 9  # 8 from mapping + id
+        assert "id" in result["fields"]
+        assert "content_ltks" in result["fields"]
+        assert "lat_lon" in result["fields"]
+        assert len(result["vector_fields"]) == 1
+        assert result["vector_fields"][0]["dimension"] == 1024
 
     def test_detect_vector_size(self):
         """Test automatic vector size detection."""
@@ -70,329 +128,6 @@ class TestRAGFlowSchemaConverter:
         
         assert converter.detected_vector_size == 1536
 
-    def test_unknown_fields(self):
-        """Test that unknown fields are properly identified."""
-        converter = RAGFlowSchemaConverter()
-        
-        es_mapping = {
-            "properties": {
-                "id": {"type": "keyword"},
-                "custom_field": {"type": "text"},
-                "another_field": {"type": "integer"},
-            }
-        }
-        
-        analysis = converter.analyze_es_mapping(es_mapping)
-        
-        assert "custom_field" in analysis["unknown_fields"]
-        assert "another_field" in analysis["unknown_fields"]
-
-    def test_get_column_definitions(self):
-        """Test getting RAGFlow column definitions."""
-        converter = RAGFlowSchemaConverter()
-        
-        # First analyze to detect vector fields
-        es_mapping = {
-            "properties": {
-                "q_768_vec": {"type": "dense_vector", "dims": 768},
-            }
-        }
-        converter.analyze_es_mapping(es_mapping)
-        
-        columns = converter.get_column_definitions()
-        
-        # Check that all RAGFlow columns are present
-        column_names = [c["name"] for c in columns]
-        
-        for col_name in RAGFLOW_COLUMNS:
-            assert col_name in column_names, f"Missing column: {col_name}"
-        
-        # Check vector column is added
-        assert "q_768_vec" in column_names
-
-
-class TestRAGFlowDataConverter:
-    """Test RAGFlowDataConverter class."""
-
-    def test_convert_basic_document(self):
-        """Test converting a basic RAGFlow document."""
-        converter = RAGFlowDataConverter()
-        
-        es_doc = {
-            "_id": "test-id-123",
-            "_source": {
-                "id": "test-id-123",
-                "kb_id": "kb-001",
-                "doc_id": "doc-001",
-                "docnm_kwd": "test_document.pdf",
-                "content_with_weight": "This is test content",
-                "available_int": 1,
-            }
-        }
-        
-        row = converter.convert_document(es_doc)
-        
-        assert row["id"] == "test-id-123"
-        assert row["kb_id"] == "kb-001"
-        assert row["doc_id"] == "doc-001"
-        assert row["docnm_kwd"] == "test_document.pdf"
-        assert row["content_with_weight"] == "This is test content"
-        assert row["available_int"] == 1
-
-    def test_convert_with_vector(self):
-        """Test converting document with vector embedding."""
-        converter = RAGFlowDataConverter()
-        
-        embedding = [0.1] * 768
-        es_doc = {
-            "_id": "vec-doc-001",
-            "_source": {
-                "id": "vec-doc-001",
-                "kb_id": "kb-001",
-                "q_768_vec": embedding,
-            }
-        }
-        
-        row = converter.convert_document(es_doc)
-        
-        assert row["id"] == "vec-doc-001"
-        assert row["q_768_vec"] == embedding
-        assert "q_768_vec" in converter.vector_fields
-
-    def test_convert_array_fields(self):
-        """Test converting array fields."""
-        converter = RAGFlowDataConverter()
-        
-        es_doc = {
-            "_id": "array-doc",
-            "_source": {
-                "id": "array-doc",
-                "kb_id": "kb-001",
-                "important_kwd": ["keyword1", "keyword2", "keyword3"],
-                "question_kwd": ["What is this?", "How does it work?"],
-                "tag_kwd": ["tag1", "tag2"],
-            }
-        }
-        
-        row = converter.convert_document(es_doc)
-        
-        # Array fields should be JSON strings
-        assert isinstance(row["important_kwd"], str)
-        parsed = json.loads(row["important_kwd"])
-        assert parsed == ["keyword1", "keyword2", "keyword3"]
-
-    def test_convert_json_fields(self):
-        """Test converting JSON fields."""
-        converter = RAGFlowDataConverter()
-        
-        es_doc = {
-            "_id": "json-doc",
-            "_source": {
-                "id": "json-doc",
-                "kb_id": "kb-001",
-                "tag_feas": {"tag1": 0.8, "tag2": 0.5},
-                "metadata": {"author": "John", "date": "2024-01-01"},
-            }
-        }
-        
-        row = converter.convert_document(es_doc)
-        
-        # JSON fields should be JSON strings
-        assert isinstance(row["tag_feas"], str)
-        assert isinstance(row["metadata"], str)
-        
-        tag_feas = json.loads(row["tag_feas"])
-        assert tag_feas == {"tag1": 0.8, "tag2": 0.5}
-
-    def test_convert_unknown_fields_to_extra(self):
-        """Test that unknown fields are stored in 'extra'."""
-        converter = RAGFlowDataConverter()
-        
-        es_doc = {
-            "_id": "extra-doc",
-            "_source": {
-                "id": "extra-doc",
-                "kb_id": "kb-001",
-                "custom_field": "custom_value",
-                "another_custom": 123,
-            }
-        }
-        
-        row = converter.convert_document(es_doc)
-        
-        assert "extra" in row
-        extra = json.loads(row["extra"])
-        assert extra["custom_field"] == "custom_value"
-        assert extra["another_custom"] == 123
-
-    def test_convert_kb_id_list(self):
-        """Test converting kb_id when it's a list (ES format)."""
-        converter = RAGFlowDataConverter()
-        
-        es_doc = {
-            "_id": "kb-list-doc",
-            "_source": {
-                "id": "kb-list-doc",
-                "kb_id": ["kb-001", "kb-002"],  # Some ES docs have list
-            }
-        }
-        
-        row = converter.convert_document(es_doc)
-        
-        # Should take first element
-        assert row["kb_id"] == "kb-001"
-
-    def test_convert_content_with_weight_dict(self):
-        """Test converting content_with_weight when it's a dict."""
-        converter = RAGFlowDataConverter()
-        
-        es_doc = {
-            "_id": "content-dict-doc",
-            "_source": {
-                "id": "content-dict-doc",
-                "kb_id": "kb-001",
-                "content_with_weight": {
-                    "text": "Some content",
-                    "weight": 1.0,
-                },
-            }
-        }
-        
-        row = converter.convert_document(es_doc)
-        
-        # Dict should be JSON serialized
-        assert isinstance(row["content_with_weight"], str)
-        parsed = json.loads(row["content_with_weight"])
-        assert parsed["text"] == "Some content"
-
-    def test_convert_batch(self):
-        """Test batch conversion."""
-        converter = RAGFlowDataConverter()
-        
-        es_docs = [
-            {"_id": f"doc-{i}", "_source": {"id": f"doc-{i}", "kb_id": "kb-001"}}
-            for i in range(5)
-        ]
-        
-        rows = converter.convert_batch(es_docs)
-        
-        assert len(rows) == 5
-        for i, row in enumerate(rows):
-            assert row["id"] == f"doc-{i}"
-
-
-class TestVectorFieldPattern:
-    """Test vector field pattern matching."""
-
-    def test_valid_patterns(self):
-        """Test valid vector field patterns."""
-        valid_names = [
-            "q_768_vec",
-            "q_1024_vec",
-            "q_1536_vec",
-            "q_3072_vec",
-        ]
-        
-        for name in valid_names:
-            match = VECTOR_FIELD_PATTERN.match(name)
-            assert match is not None, f"Should match: {name}"
-
-    def test_invalid_patterns(self):
-        """Test invalid vector field patterns."""
-        invalid_names = [
-            "q_vec",
-            "768_vec",
-            "q_768",
-            "vector_768",
-            "content_with_weight",
-        ]
-        
-        for name in invalid_names:
-            match = VECTOR_FIELD_PATTERN.match(name)
-            assert match is None, f"Should not match: {name}"
-
-    def test_extract_dimension(self):
-        """Test extracting dimension from pattern."""
-        match = VECTOR_FIELD_PATTERN.match("q_1536_vec")
-        assert match is not None
-        assert int(match.group("vector_size")) == 1536
-
-
-class TestConstants:
-    """Test schema constants."""
-
-    def test_array_columns(self):
-        """Test ARRAY_COLUMNS list."""
-        expected = [
-            "important_kwd", "question_kwd", "tag_kwd", "source_id",
-            "entities_kwd", "position_int", "page_num_int", "top_int"
-        ]
-        
-        for col in expected:
-            assert col in ARRAY_COLUMNS, f"Missing array column: {col}"
-
-    def test_json_columns(self):
-        """Test JSON_COLUMNS list."""
-        expected = ["tag_feas", "metadata", "extra"]
-        
-        for col in expected:
-            assert col in JSON_COLUMNS, f"Missing JSON column: {col}"
-
-    def test_ragflow_columns_completeness(self):
-        """Test that RAGFLOW_COLUMNS has all required fields."""
-        required_fields = [
-            "id", "kb_id", "doc_id", "content_with_weight",
-            "available_int", "metadata", "extra",
-        ]
-        
-        for field in required_fields:
-            assert field in RAGFLOW_COLUMNS, f"Missing required field: {field}"
-
-    def test_fts_columns(self):
-        """Test fulltext search column lists."""
-        assert "content_with_weight" in FTS_COLUMNS_ORIGIN
-        assert "content_ltks" in FTS_COLUMNS_TKS
-
-    def test_ragflow_columns_types(self):
-        """Test column type definitions."""
-        # Primary key
-        assert RAGFLOW_COLUMNS["id"]["is_primary"] is True
-        assert RAGFLOW_COLUMNS["id"]["nullable"] is False
-        
-        # Indexed columns
-        assert RAGFLOW_COLUMNS["kb_id"]["index"] is True
-        assert RAGFLOW_COLUMNS["doc_id"]["index"] is True
-        
-        # Array columns
-        assert RAGFLOW_COLUMNS["important_kwd"]["is_array"] is True
-        assert RAGFLOW_COLUMNS["question_kwd"]["is_array"] is True
-        
-        # JSON columns
-        assert RAGFLOW_COLUMNS["metadata"]["is_json"] is True
-        assert RAGFLOW_COLUMNS["extra"]["is_json"] is True
-
-
-class TestRAGFlowSchemaConverterEdgeCases:
-    """Test edge cases for RAGFlowSchemaConverter."""
-
-    def test_empty_mapping(self):
-        """Test analyzing empty mapping."""
-        converter = RAGFlowSchemaConverter()
-        
-        analysis = converter.analyze_es_mapping({})
-        
-        assert analysis["known_fields"] == []
-        assert analysis["vector_fields"] == []
-        assert analysis["unknown_fields"] == []
-
-    def test_mapping_without_properties(self):
-        """Test mapping without properties key."""
-        converter = RAGFlowSchemaConverter()
-        
-        analysis = converter.analyze_es_mapping({"some_other_key": {}})
-        
-        assert analysis["known_fields"] == []
-
     def test_multiple_vector_fields(self):
         """Test detecting multiple vector fields."""
         converter = RAGFlowSchemaConverter()
@@ -404,72 +139,201 @@ class TestRAGFlowSchemaConverterEdgeCases:
             }
         }
         
-        analysis = converter.analyze_es_mapping(es_mapping)
+        result = converter.analyze_es_mapping(es_mapping)
         
-        assert len(analysis["vector_fields"]) == 2
-        # First detected should be set
-        assert converter.detected_vector_size in [768, 1024]
+        assert len(result["vector_fields"]) == 2
 
-    def test_get_column_definitions_without_analysis(self):
-        """Test getting columns without prior analysis."""
+    def test_empty_mapping(self):
+        """Test analyzing empty mapping."""
         converter = RAGFlowSchemaConverter()
         
-        columns = converter.get_column_definitions()
+        result = converter.analyze_es_mapping({})
         
-        # Should have all RAGFlow columns but no vector columns
-        column_names = [c["name"] for c in columns]
-        assert "id" in column_names
-        assert "kb_id" in column_names
+        # Should still have id field
+        assert "id" in result["fields"]
+        assert result["vector_fields"] == []
 
-    def test_get_vector_fields(self):
-        """Test getting vector fields."""
+    def test_get_column_definitions(self):
+        """Test getting column definitions."""
         converter = RAGFlowSchemaConverter()
         
         es_mapping = {
             "properties": {
-                "q_1536_vec": {"type": "dense_vector", "dims": 1536},
+                "kb_id": {"type": "keyword"},
+                "doc_id": {"type": "keyword"},
+                "content_ltks": {"type": "text"},
+                "q_768_vec": {"type": "dense_vector"},
             }
         }
         converter.analyze_es_mapping(es_mapping)
         
-        vec_fields = converter.get_vector_fields()
+        columns = converter.get_column_definitions()
         
-        assert len(vec_fields) == 1
-        assert vec_fields[0]["name"] == "q_1536_vec"
-        assert vec_fields[0]["dimension"] == 1536
+        assert len(columns) == 5  # id + 4 from mapping
+        
+        # Check id column
+        id_col = next(c for c in columns if c["name"] == "id")
+        assert id_col["primary_key"] is True
+
+    def test_get_index_columns(self):
+        """Test getting indexed columns."""
+        converter = RAGFlowSchemaConverter()
+        
+        es_mapping = {
+            "properties": {
+                "kb_id": {"type": "keyword"},
+                "doc_id": {"type": "keyword"},
+                "content_ltks": {"type": "text"},
+            }
+        }
+        converter.analyze_es_mapping(es_mapping)
+        
+        index_cols = converter.get_index_columns()
+        
+        assert "kb_id" in index_cols
+        assert "doc_id" in index_cols
+
+    def test_get_fts_columns(self):
+        """Test getting fulltext columns."""
+        converter = RAGFlowSchemaConverter()
+        
+        es_mapping = {
+            "properties": {
+                "title_tks": {"type": "text"},
+                "content_ltks": {"type": "text"},
+                "kb_id": {"type": "keyword"},
+            }
+        }
+        converter.analyze_es_mapping(es_mapping)
+        
+        fts_cols = converter.get_fts_columns()
+        
+        assert "title_tks" in fts_cols
+        assert "content_ltks" in fts_cols
+        assert "kb_id" not in fts_cols
 
 
-class TestRAGFlowDataConverterEdgeCases:
-    """Test edge cases for RAGFlowDataConverter."""
+class TestRAGFlowDataConverter:
+    """Test RAGFlowDataConverter class."""
 
-    def test_convert_empty_document(self):
-        """Test converting empty document."""
+    def test_convert_basic_document(self):
+        """Test converting a basic document."""
         converter = RAGFlowDataConverter()
         
-        es_doc = {"_id": "empty_doc", "_source": {}}
+        es_doc = {
+            "_id": "test-id-123",
+            "_source": {
+                "kb_id": "kb-001",
+                "doc_id": "doc-001",
+                "docnm_kwd": "test.pdf",
+                "content_with_weight": "Test content",
+                "available_int": 1,
+            }
+        }
+        
         row = converter.convert_document(es_doc)
         
-        assert row["id"] == "empty_doc"
+        assert row["id"] == "test-id-123"
+        assert row["kb_id"] == "kb-001"
+        assert row["content_with_weight"] == "Test content"
+        assert row["available_int"] == 1
 
-    def test_convert_document_without_source(self):
-        """Test converting document without _source."""
+    def test_convert_with_vector(self):
+        """Test converting document with vector."""
         converter = RAGFlowDataConverter()
         
-        es_doc = {"_id": "no_source", "id": "no_source", "kb_id": "kb_001"}
+        embedding = [0.1] * 1024
+        es_doc = {
+            "_id": "vec-doc",
+            "_source": {
+                "kb_id": "kb-001",
+                "q_1024_vec": embedding,
+            }
+        }
+        
         row = converter.convert_document(es_doc)
         
-        assert row["id"] == "no_source"
-        assert row["kb_id"] == "kb_001"
+        assert row["q_1024_vec"] == embedding
+        assert "q_1024_vec" in converter.vector_fields
 
-    def test_convert_boolean_to_integer(self):
+    def test_convert_geo_point(self):
+        """Test converting geo_point field."""
+        converter = RAGFlowDataConverter()
+        
+        es_doc = {
+            "_id": "geo-doc",
+            "_source": {
+                "kb_id": "kb-001",
+                "lat_lon": {"lat": 40.7128, "lon": -74.0060},
+            }
+        }
+        
+        row = converter.convert_document(es_doc)
+        
+        # geo_point should be JSON
+        assert isinstance(row["lat_lon"], str)
+        parsed = json.loads(row["lat_lon"])
+        assert parsed["lat"] == 40.7128
+
+    def test_convert_nested_object(self):
+        """Test converting nested/object fields."""
+        converter = RAGFlowDataConverter()
+        
+        es_doc = {
+            "_id": "nested-doc",
+            "_source": {
+                "kb_id": "kb-001",
+                "data_obj": {"key": "value", "num": 123},
+            }
+        }
+        
+        row = converter.convert_document(es_doc)
+        
+        assert isinstance(row["data_obj"], str)
+        parsed = json.loads(row["data_obj"])
+        assert parsed["key"] == "value"
+
+    def test_convert_rank_features(self):
+        """Test converting rank_features field."""
+        converter = RAGFlowDataConverter()
+        
+        es_doc = {
+            "_id": "feas-doc",
+            "_source": {
+                "kb_id": "kb-001",
+                "tag_feas": {"tag1": 0.8, "tag2": 0.5},
+            }
+        }
+        
+        row = converter.convert_document(es_doc)
+        
+        assert isinstance(row["tag_feas"], str)
+        parsed = json.loads(row["tag_feas"])
+        assert parsed["tag1"] == 0.8
+
+    def test_convert_kb_id_list(self):
+        """Test converting kb_id when it's a list."""
+        converter = RAGFlowDataConverter()
+        
+        es_doc = {
+            "_id": "kb-list",
+            "_source": {
+                "kb_id": ["kb-001", "kb-002"],
+            }
+        }
+        
+        row = converter.convert_document(es_doc)
+        
+        assert row["kb_id"] == "kb-001"
+
+    def test_convert_integer_from_bool(self):
         """Test converting boolean to integer."""
         converter = RAGFlowDataConverter()
         
         es_doc = {
-            "_id": "bool_doc",
+            "_id": "bool-doc",
             "_source": {
-                "id": "bool_doc",
-                "kb_id": "kb_001",
+                "kb_id": "kb-001",
                 "available_int": True,
             }
         }
@@ -478,172 +342,92 @@ class TestRAGFlowDataConverterEdgeCases:
         
         assert row["available_int"] == 1
 
-    def test_convert_invalid_integer(self):
-        """Test converting invalid integer value."""
+    def test_convert_float_from_string(self):
+        """Test converting string to float."""
         converter = RAGFlowDataConverter()
         
         es_doc = {
-            "_id": "invalid_int",
+            "_id": "float-doc",
             "_source": {
-                "id": "invalid_int",
-                "kb_id": "kb_001",
-                "available_int": "not_a_number",
+                "kb_id": "kb-001",
+                "score_flt": "0.95",
             }
         }
         
         row = converter.convert_document(es_doc)
         
-        assert row["available_int"] is None
+        assert row["score_flt"] == 0.95
 
-    def test_convert_float_field(self):
-        """Test converting float fields."""
+    def test_convert_batch(self):
+        """Test batch conversion."""
         converter = RAGFlowDataConverter()
         
-        es_doc = {
-            "_id": "float_doc",
-            "_source": {
-                "id": "float_doc",
-                "kb_id": "kb_001",
-                "weight_flt": 0.85,
-                "rank_flt": "0.95",  # String that should become float
-            }
-        }
+        es_docs = [
+            {"_id": f"doc-{i}", "_source": {"kb_id": "kb-001"}}
+            for i in range(5)
+        ]
         
-        row = converter.convert_document(es_doc)
+        rows = converter.convert_batch(es_docs)
         
-        assert row["weight_flt"] == 0.85
-        assert row["rank_flt"] == 0.95
+        assert len(rows) == 5
 
-    def test_convert_array_with_special_characters(self):
-        """Test converting array with special characters."""
-        converter = RAGFlowDataConverter()
-        
-        es_doc = {
-            "_id": "special_array",
-            "_source": {
-                "id": "special_array",
-                "kb_id": "kb_001",
-                "important_kwd": ["key\nwith\nnewlines", "key\twith\ttabs"],
-            }
-        }
-        
-        row = converter.convert_document(es_doc)
-        
-        # Should be JSON string with escaped characters
-        assert isinstance(row["important_kwd"], str)
-        parsed = json.loads(row["important_kwd"])
-        assert len(parsed) == 2
-
-    def test_convert_already_json_array(self):
-        """Test converting already JSON-encoded array."""
-        converter = RAGFlowDataConverter()
-        
-        es_doc = {
-            "_id": "json_array",
-            "_source": {
-                "id": "json_array",
-                "kb_id": "kb_001",
-                "important_kwd": '["already", "json"]',
-            }
-        }
-        
-        row = converter.convert_document(es_doc)
-        
-        assert row["important_kwd"] == '["already", "json"]'
-
-    def test_convert_single_value_to_array(self):
-        """Test converting single value to array."""
-        converter = RAGFlowDataConverter()
-        
-        es_doc = {
-            "_id": "single_to_array",
-            "_source": {
-                "id": "single_to_array",
-                "kb_id": "kb_001",
-                "important_kwd": "single_keyword",
-            }
-        }
-        
-        row = converter.convert_document(es_doc)
-        
-        parsed = json.loads(row["important_kwd"])
-        assert parsed == ["single_keyword"]
-
-    def test_detect_vector_fields_from_document(self):
-        """Test detecting vector fields from document."""
-        converter = RAGFlowDataConverter()
-        
-        doc = {
-            "q_768_vec": [0.1] * 768,
-            "q_1024_vec": [0.2] * 1024,
-        }
-        
-        converter.detect_vector_fields(doc)
-        
-        assert "q_768_vec" in converter.vector_fields
-        assert "q_1024_vec" in converter.vector_fields
-
-    def test_convert_with_default_values(self):
-        """Test conversion uses default values."""
-        converter = RAGFlowDataConverter()
-        
-        es_doc = {
-            "_id": "default_test",
-            "_source": {
-                "id": "default_test",
-                "kb_id": "kb_001",
-                # available_int not provided, should get default
-            }
-        }
-        
-        row = converter.convert_document(es_doc)
-        
-        # available_int has default of 1
-        assert row.get("available_int") == 1
-
-    def test_convert_list_content(self):
-        """Test converting list content to JSON."""
-        converter = RAGFlowDataConverter()
-        
-        es_doc = {
-            "_id": "list_content",
-            "_source": {
-                "id": "list_content",
-                "kb_id": "kb_001",
-                "content_with_weight": ["part1", "part2", "part3"],
-            }
-        }
-        
-        row = converter.convert_document(es_doc)
-        
-        assert isinstance(row["content_with_weight"], str)
-        parsed = json.loads(row["content_with_weight"])
-        assert parsed == ["part1", "part2", "part3"]
-
-    def test_convert_batch_empty(self):
-        """Test batch conversion with empty list."""
+    def test_convert_empty_batch(self):
+        """Test empty batch."""
         converter = RAGFlowDataConverter()
         
         rows = converter.convert_batch([])
         
         assert rows == []
 
-    def test_existing_extra_field_merged(self):
-        """Test that existing extra field is merged with unknown fields."""
+    def test_convert_content_dict(self):
+        """Test converting content_with_weight as dict."""
         converter = RAGFlowDataConverter()
         
         es_doc = {
-            "_id": "merge_extra",
+            "_id": "content-doc",
             "_source": {
-                "id": "merge_extra",
-                "kb_id": "kb_001",
-                "extra": {"existing_key": "existing_value"},
-                "custom_field": "custom_value",
+                "kb_id": "kb-001",
+                "content_with_weight": {"text": "content", "weight": 1.0},
             }
         }
         
         row = converter.convert_document(es_doc)
         
-        # extra should contain both existing and new fields
-        extra = json.loads(row["extra"])
-        assert "custom_field" in extra
+        assert isinstance(row["content_with_weight"], str)
+
+
+class TestVectorFieldPattern:
+    """Test vector field pattern matching."""
+
+    def test_valid_patterns(self):
+        """Test valid vector field patterns."""
+        valid = ["q_512_vec", "q_768_vec", "q_1024_vec", "q_1536_vec", "q_3072_vec"]
+        
+        for name in valid:
+            assert VECTOR_FIELD_PATTERN.match(name), f"Should match: {name}"
+
+    def test_invalid_patterns(self):
+        """Test invalid patterns."""
+        invalid = ["q_vec", "768_vec", "q_768", "vector", "content_ltks"]
+        
+        for name in invalid:
+            assert not VECTOR_FIELD_PATTERN.match(name), f"Should not match: {name}"
+
+    def test_extract_dimension(self):
+        """Test extracting dimension."""
+        match = VECTOR_FIELD_PATTERN.match("q_1536_vec")
+        assert int(match.group(1)) == 1536
+
+
+class TestConstants:
+    """Test schema constants."""
+
+    def test_index_columns(self):
+        """Test INDEX_COLUMNS list."""
+        assert "kb_id" in INDEX_COLUMNS
+        assert "doc_id" in INDEX_COLUMNS
+
+    def test_fts_columns(self):
+        """Test FTS_COLUMNS list."""
+        assert "content_ltks" in FTS_COLUMNS
+        assert "title_tks" in FTS_COLUMNS

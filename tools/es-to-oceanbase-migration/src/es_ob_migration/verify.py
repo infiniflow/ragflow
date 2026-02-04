@@ -9,7 +9,6 @@ from typing import Any
 
 from .es_client import ESClient
 from .ob_client import OBClient
-from .schema import RAGFLOW_COLUMNS, ARRAY_COLUMNS, JSON_COLUMNS
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +45,10 @@ class MigrationVerifier:
     """Verify RAGFlow migration data consistency."""
 
     # Fields to compare for verification
+    # Note: 'id' is excluded because ES uses '_id' (metadata) while OB has 'id' column
+    # The ID match is already verified by using ES _id to fetch OB row
     VERIFY_FIELDS = [
-        "id", "kb_id", "doc_id", "docnm_kwd", "content_with_weight",
+        "kb_id", "doc_id", "docnm_kwd", "content_with_weight",
         "available_int", "create_time",
     ]
 
@@ -71,7 +72,6 @@ class MigrationVerifier:
         es_index: str,
         ob_table: str,
         sample_size: int = 100,
-        primary_key: str = "id",
         verify_fields: list[str] | None = None,
     ) -> VerificationResult:
         """
@@ -81,7 +81,6 @@ class MigrationVerifier:
             es_index: Elasticsearch index name
             ob_table: OceanBase table name
             sample_size: Number of documents to sample for verification
-            primary_key: Primary key column name
             verify_fields: Fields to verify (None = use defaults)
 
         Returns:
@@ -115,7 +114,7 @@ class MigrationVerifier:
         if result.sample_size > 0:
             logger.info(f"Verifying {result.sample_size} sample documents...")
             self._verify_samples(
-                es_index, ob_table, result, primary_key, verify_fields
+                es_index, ob_table, result, verify_fields
             )
 
         # Step 3: Determine overall result
@@ -129,7 +128,6 @@ class MigrationVerifier:
         es_index: str,
         ob_table: str,
         result: VerificationResult,
-        primary_key: str,
         verify_fields: list[str],
     ):
         """Verify sample documents."""
@@ -217,44 +215,34 @@ class MigrationVerifier:
             # For optional fields, this might be acceptable
             return False
 
-        # Handle array fields (stored as JSON strings in OB)
-        if field_name in ARRAY_COLUMNS:
-            if isinstance(ob_value, str):
-                try:
-                    ob_value = json.loads(ob_value)
-                except json.JSONDecodeError:
-                    pass
-            if isinstance(es_value, list) and isinstance(ob_value, list):
-                return set(str(x) for x in es_value) == set(str(x) for x in ob_value)
-
-        # Handle JSON fields
-        if field_name in JSON_COLUMNS:
-            if isinstance(ob_value, str):
-                try:
-                    ob_value = json.loads(ob_value)
-                except json.JSONDecodeError:
-                    pass
-            if isinstance(es_value, str):
-                try:
-                    es_value = json.loads(es_value)
-                except json.JSONDecodeError:
-                    pass
-            return es_value == ob_value
-
-        # Handle content_with_weight which might be dict or string
-        if field_name == "content_with_weight":
-            if isinstance(ob_value, str) and isinstance(es_value, dict):
-                try:
-                    ob_value = json.loads(ob_value)
-                except json.JSONDecodeError:
-                    pass
-
         # Handle kb_id which might be list in ES
         if field_name == "kb_id":
             if isinstance(es_value, list) and len(es_value) > 0:
                 es_value = es_value[0]
 
-        # Standard comparison
+        # Handle JSON/array fields: if one is dict/list and other is string, try parsing
+        # This covers: *_nst, *_obj, *_feas, lat_lon, content_with_weight, and any
+        # field where ES has dict/list that was stored as JSON string in OB
+        if isinstance(es_value, (dict, list)) and isinstance(ob_value, str):
+            try:
+                ob_parsed = json.loads(ob_value)
+                # For arrays, compare as sets (order may differ)
+                if isinstance(es_value, list) and isinstance(ob_parsed, list):
+                    return set(str(x) for x in es_value) == set(str(x) for x in ob_parsed)
+                return es_value == ob_parsed
+            except json.JSONDecodeError:
+                pass
+        
+        if isinstance(ob_value, (dict, list)) and isinstance(es_value, str):
+            try:
+                es_parsed = json.loads(es_value)
+                if isinstance(ob_value, list) and isinstance(es_parsed, list):
+                    return set(str(x) for x in ob_value) == set(str(x) for x in es_parsed)
+                return ob_value == es_parsed
+            except json.JSONDecodeError:
+                pass
+
+        # Standard comparison (as strings)
         return str(es_value) == str(ob_value)
 
     def _determine_result(self, result: VerificationResult):

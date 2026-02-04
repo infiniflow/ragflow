@@ -12,13 +12,9 @@ __version__ = "0.1.0"
 from .migrator import ESToOceanBaseMigrator
 from .es_client import ESClient
 from .ob_client import OBClient
-from .schema import RAGFlowSchemaConverter, RAGFlowDataConverter, RAGFLOW_COLUMNS
+from .schema import RAGFlowSchemaConverter, RAGFlowDataConverter
 from .verify import MigrationVerifier, VerificationResult
 from .progress import ProgressManager, MigrationProgress
-
-# Backwards compatibility aliases
-SchemaConverter = RAGFlowSchemaConverter
-DataConverter = RAGFlowDataConverter
 
 __all__ = [
     # Main classes
@@ -28,14 +24,10 @@ __all__ = [
     # Schema
     "RAGFlowSchemaConverter",
     "RAGFlowDataConverter",
-    "RAGFLOW_COLUMNS",
     # Verification
     "MigrationVerifier",
     "VerificationResult",
     # Progress
     "ProgressManager",
     "MigrationProgress",
-    # Aliases
-    "SchemaConverter",
-    "DataConverter",
 ]

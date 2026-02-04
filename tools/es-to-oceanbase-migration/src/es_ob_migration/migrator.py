@@ -18,7 +18,7 @@ from rich.progress import (
 
 from .es_client import ESClient
 from .ob_client import OBClient
-from .schema import RAGFlowSchemaConverter, RAGFlowDataConverter, VECTOR_FIELD_PATTERN
+from .schema import RAGFlowSchemaConverter, RAGFlowDataConverter
 from .progress import ProgressManager, MigrationProgress
 from .verify import MigrationVerifier
 
@@ -31,7 +31,7 @@ class ESToOceanBaseMigrator:
     RAGFlow-specific migration orchestrator.
     
     This migrator is designed specifically for RAGFlow's data structure,
-    handling the fixed schema and vector embeddings correctly.
+    handling the dynamic schema and vector embeddings correctly.
     """
 
     def __init__(
@@ -51,7 +51,6 @@ class ESToOceanBaseMigrator:
         self.es_client = es_client
         self.ob_client = ob_client
         self.progress_manager = ProgressManager(progress_dir)
-        self.schema_converter = RAGFlowSchemaConverter()
 
     def migrate(
         self,
@@ -90,6 +89,7 @@ class ESToOceanBaseMigrator:
         }
 
         progress: MigrationProgress | None = None
+        schema_converter = RAGFlowSchemaConverter()
 
         try:
             # Step 1: Check connections
@@ -98,18 +98,18 @@ class ESToOceanBaseMigrator:
 
             # Step 2: Analyze ES index
             console.print("\n[bold blue]Step 2: Analyzing ES index...[/]")
-            analysis = self._analyze_es_index(es_index)
+            es_mapping = self.es_client.get_index_mapping(es_index)
+            schema_converter.analyze_es_mapping(es_mapping)
             
-            # Auto-detect vector size from ES mapping
-            vector_size = 768  # Default fallback
-            if analysis["vector_fields"]:
-                vector_size = analysis["vector_fields"][0]["dimension"]
-                console.print(f"  [green]Auto-detected vector dimension: {vector_size}[/]")
-            else:
-                console.print(f"  [yellow]No vector fields found, using default: {vector_size}[/]")
-            console.print(f"  Known RAGFlow fields: {len(analysis['known_fields'])}")
-            if analysis["unknown_fields"]:
-                console.print(f"  [yellow]Unknown fields (will be stored in 'extra'): {analysis['unknown_fields']}[/]")
+            # Discover vector fields from actual data (may not be in ES mapping)
+            sample_docs = self.es_client.get_sample_documents(es_index, size=100)
+            if sample_docs:
+                schema_converter.discover_vector_fields(sample_docs)
+            
+            console.print(f"  Detected fields: {len(schema_converter.fields)}")
+            if schema_converter.vector_fields:
+                for vf in schema_converter.vector_fields:
+                    console.print(f"  Vector field: {vf['name']} (dim={vf['dimension']})")
 
             # Step 3: Get total document count
             total_docs = self.es_client.count_documents(es_index)
@@ -145,18 +145,13 @@ class ESToOceanBaseMigrator:
             # Step 5: Create table if needed
             if not progress.table_created:
                 console.print("\n[bold blue]Step 3: Creating OceanBase table...[/]")
-                if not self.ob_client.table_exists(ob_table):
-                    self.ob_client.create_ragflow_table(
-                        table_name=ob_table,
-                        vector_size=vector_size,
-                        create_indexes=True,
-                        create_fts_indexes=True,
-                    )
-                    console.print(f"  Created table '{ob_table}' with RAGFlow schema")
-                else:
-                    console.print(f"  Table '{ob_table}' already exists")
-                    # Check and add vector column if needed
-                    self.ob_client.add_vector_column(ob_table, vector_size)
+                self.ob_client.create_table_from_schema(
+                    table_name=ob_table,
+                    schema_converter=schema_converter,
+                    create_indexes=True,
+                    create_fts_indexes=True,
+                )
+                console.print(f"  Created table '{ob_table}' with {len(schema_converter.fields)} columns")
                 
                 progress.table_created = True
                 progress.indexes_created = True
@@ -186,10 +181,7 @@ class ESToOceanBaseMigrator:
             if verify_after:
                 console.print("\n[bold blue]Step 5: Verifying migration...[/]")
                 verifier = MigrationVerifier(self.es_client, self.ob_client)
-                verification = verifier.verify(
-                    es_index, ob_table, 
-                    primary_key="id"
-                )
+                verification = verifier.verify(es_index, ob_table)
                 result["verification"] = {
                     "passed": verification.passed,
                     "message": verification.message,
@@ -199,16 +191,39 @@ class ESToOceanBaseMigrator:
                 }
                 console.print(verifier.generate_report(verification))
 
-            result["success"] = True
             result["duration_seconds"] = time.time() - start_time
-
-            console.print(
-                f"\n[bold green]Migration completed successfully![/]"
-                f"\n  Total: {result['total_documents']:,} documents"
-                f"\n  Migrated: {result['migrated_documents']:,} documents"
-                f"\n  Failed: {result['failed_documents']:,} documents"
-                f"\n  Duration: {result['duration_seconds']:.1f} seconds"
-            )
+            
+            # Success only if we migrated documents and failed count is acceptable
+            migrated = result['migrated_documents']
+            failed = result['failed_documents']
+            total = result['total_documents']
+            
+            if failed == 0 and migrated > 0:
+                result["success"] = True
+                console.print(
+                    f"\n[bold green]Migration completed successfully![/]"
+                    f"\n  Total: {total:,} documents"
+                    f"\n  Migrated: {migrated:,} documents"
+                    f"\n  Duration: {result['duration_seconds']:.1f} seconds"
+                )
+            elif migrated > 0:
+                result["success"] = True  # Partial success
+                console.print(
+                    f"\n[bold yellow]Migration completed with errors![/]"
+                    f"\n  Total: {total:,} documents"
+                    f"\n  Migrated: {migrated:,} documents"
+                    f"\n  [red]Failed: {failed:,} documents[/]"
+                    f"\n  Duration: {result['duration_seconds']:.1f} seconds"
+                )
+            else:
+                result["success"] = False
+                console.print(
+                    f"\n[bold red]Migration failed![/]"
+                    f"\n  Total: {total:,} documents"
+                    f"\n  Migrated: 0 documents"
+                    f"\n  [red]Failed: {failed:,} documents[/]"
+                    f"\n  Duration: {result['duration_seconds']:.1f} seconds"
+                )
 
         except KeyboardInterrupt:
             console.print("\n[bold yellow]Migration interrupted by user[/]")
@@ -239,11 +254,6 @@ class ESToOceanBaseMigrator:
         
         ob_version = self.ob_client.get_version()
         console.print(f"  OceanBase connection: OK (version: {ob_version})")
-
-    def _analyze_es_index(self, es_index: str) -> dict[str, Any]:
-        """Analyze ES index structure for RAGFlow compatibility."""
-        es_mapping = self.es_client.get_index_mapping(es_index)
-        return self.schema_converter.analyze_es_mapping(es_mapping)
 
     def _migrate_data(
         self,
@@ -309,62 +319,3 @@ class ESToOceanBaseMigrator:
                     # Continue with next batch
 
         return migrated
-
-    def get_schema_preview(self, es_index: str) -> dict[str, Any]:
-        """
-        Get a preview of schema analysis without executing migration.
-
-        Args:
-            es_index: Elasticsearch index name
-
-        Returns:
-            Schema analysis information
-        """
-        es_mapping = self.es_client.get_index_mapping(es_index)
-        analysis = self.schema_converter.analyze_es_mapping(es_mapping)
-        column_defs = self.schema_converter.get_column_definitions()
-
-        return {
-            "es_index": es_index,
-            "es_mapping": es_mapping,
-            "analysis": analysis,
-            "ob_columns": column_defs,
-            "vector_fields": self.schema_converter.get_vector_fields(),
-            "total_columns": len(column_defs),
-        }
-
-    def get_data_preview(
-        self,
-        es_index: str,
-        sample_size: int = 5,
-        kb_id: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """
-        Get sample documents from ES for preview.
-        
-        Args:
-            es_index: ES index name
-            sample_size: Number of samples
-            kb_id: Optional KB filter
-        """
-        query = None
-        if kb_id:
-            query = {"term": {"kb_id": kb_id}}
-        return self.es_client.get_sample_documents(es_index, sample_size, query=query)
-
-    def list_knowledge_bases(self, es_index: str) -> list[str]:
-        """
-        List all knowledge base IDs in an ES index.
-        
-        Args:
-            es_index: ES index name
-            
-        Returns:
-            List of kb_id values
-        """
-        try:
-            agg_result = self.es_client.aggregate_field(es_index, "kb_id")
-            return [bucket["key"] for bucket in agg_result.get("buckets", [])]
-        except Exception as e:
-            logger.warning(f"Failed to list knowledge bases: {e}")
-            return []

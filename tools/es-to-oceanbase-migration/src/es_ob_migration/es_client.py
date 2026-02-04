@@ -65,9 +65,12 @@ class ESClient:
         return self.client.info().body
 
     def list_indices(self, pattern: str = "*") -> list[str]:
-        """List all indices matching pattern."""
-        response = self.client.indices.get(index=pattern)
-        return list(response.keys())
+        """List all healthy indices matching pattern (green or yellow status)."""
+        try:
+            response = self.client.cat.indices(index=pattern, format="json")
+            return [idx["index"] for idx in response]
+        except Exception:
+            return []
 
     def list_ragflow_indices(self) -> list[str]:
         """
@@ -76,17 +79,15 @@ class ESClient:
         Returns indices matching patterns:
         - ragflow_* (document chunks)
         - ragflow_doc_meta_* (document metadata)
+        - memory_* (memory/message data)
         
         Returns:
-            List of RAGFlow index names
+            List of RAGFlow index names, sorted alphabetically
         """
-        try:
-            # Get all ragflow_* indices
-            ragflow_indices = self.list_indices("ragflow_*")
-            return sorted(ragflow_indices)
-        except Exception:
-            # If no indices match, return empty list
-            return []
+        ragflow_indices = self.list_indices("ragflow_*")
+        memory_indices = self.list_indices("memory_*")
+        all_indices = set(ragflow_indices + memory_indices)
+        return sorted(all_indices)
 
     def get_index_mapping(self, index_name: str) -> dict[str, Any]:
         """
@@ -179,7 +180,6 @@ class ESClient:
         index_name: str,
         batch_size: int = 1000,
         query: dict[str, Any] | None = None,
-        sort_field: str = "_doc",
     ) -> Iterator[list[dict[str, Any]]]:
         """
         Scroll through all documents in an index using search_after (ES 8+).
@@ -191,14 +191,14 @@ class ESClient:
             index_name: Name of the index
             batch_size: Number of documents per batch
             query: Optional query filter
-            sort_field: Field to sort by (default: _doc for efficiency)
 
         Yields:
             Batches of documents
         """
         search_body: dict[str, Any] = {
             "size": batch_size,
-            "sort": [{sort_field: "asc"}, {"_id": "asc"}],
+            # Use only _doc for sorting (efficient and doesn't require fielddata or PIT)
+            "sort": [{"_doc": "asc"}],
         }
 
         if query:

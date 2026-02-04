@@ -4,13 +4,43 @@ A CLI tool for migrating RAGFlow data from Elasticsearch to OceanBase. This tool
 
 ## Features
 
-- **RAGFlow-Specific**: Designed for RAGFlow's fixed data schema
-- **ES 8+ Support**: Uses `search_after` API for efficient data scrolling
-- **Vector Support**: Auto-detects vector field dimensions from ES mapping
-- **Batch Processing**: Configurable batch size for optimal performance
-- **Resume Capability**: Save and resume migration progress
-- **Data Consistency Validation**: Compare document counts and sample data
-- **Migration Report Generation**: Generate detailed migration reports
+- **Batch Processing**: Configurable batch size for optimal performance.
+- **Resume Capability**: Save and resume migration progress.
+- **Data Consistency Validation**: Compare document counts and sample data after migration.
+
+## RAGFlow Data Model
+
+Understanding how RAGFlow stores data in Elasticsearch:
+
+| RAGFlow Concept | ES/OB Concept | Description |
+|-----------------|---------------|-------------|
+| **Tenant** | Index/Table (`ragflow_{tenant_id}`) | One tenant = one ES index = one OB table |
+| **Dataset (Knowledge Base)** | `kb_id` field | Multiple datasets share the same index, distinguished by `kb_id` |
+| **Document** | `doc_id` field | A single uploaded file (PDF, DOCX, etc.) |
+| **Chunk** | ES Document / OB Row | The actual storage unit, one document is split into multiple chunks |
+
+**Example Structure:**
+
+```
+Tenant: user_abc123
+└── ES Index: ragflow_abc123
+    │
+    ├── Dataset: kb_id="product_manual"
+    │   ├── Document: doc_id="manual.pdf"
+    │   │   ├── Chunk (_id: "chunk_001", kb_id: "product_manual", doc_id: "manual.pdf")
+    │   │   └── Chunk (_id: "chunk_002", kb_id: "product_manual", doc_id: "manual.pdf")
+    │   └── Document: doc_id="guide.docx"
+    │       └── Chunk (_id: "chunk_003", kb_id: "product_manual", doc_id: "guide.docx")
+    │
+    └── Dataset: kb_id="tech_docs"
+        └── Document: doc_id="api.md"
+            ├── Chunk (_id: "chunk_004", kb_id: "tech_docs", doc_id: "api.md")
+            └── Chunk (_id: "chunk_005", kb_id: "tech_docs", doc_id: "api.md")
+```
+
+**Key Points:**
+- All datasets (knowledge bases) of a tenant are stored in a **single index**
+- The migration tool migrates **entire indices**, preserving all datasets within
 
 ## Quick Start
 
@@ -40,12 +70,12 @@ docker compose --profile elasticsearch --profile cpu up -d
 docker compose ps
 
 # Check ES is running
-curl -X GET "http://localhost:9200/_cluster/health?pretty"
+curl -u elastic:infini_rag_flow -X GET "http://localhost:1200/_cluster/health?pretty"
 ```
 
 ### Step 2: Create Test Data in RAGFlow
 
-1. Open RAGFlow Web UI: http://localhost:9380
+1. Open RAGFlow Web UI: http://localhost
 2. Create a new Knowledge Base
 3. Upload some test documents (PDF, TXT, DOCX, etc.)
 4. Wait for the documents to be parsed and indexed
@@ -57,26 +87,20 @@ Before migration, verify the data exists in Elasticsearch. This step is importan
 
 ```bash
 # Navigate to migration tool directory (from ragflow root)
-cd tools/es-to-oceanbase-migration
+cd /path/to/tools/es-to-oceanbase-migration
 
 # Activate the virtual environment if not already done
 source .venv/bin/activate
 
-# Check connection and list indices
-es-ob-migrate status --es-host localhost --es-port 9200
+# List all RAGFlow indices to find your index name (pattern: ragflow_{tenant_id})
+es-ob-migrate list-indices
 
-# First, find your actual index name (pattern: ragflow_{tenant_id})
-curl -X GET "http://localhost:9200/_cat/indices/ragflow_*?v"
-
-# List all knowledge bases in the index
-# Replace ragflow_{tenant_id} with your actual index from the curl output above
-es-ob-migrate list-kb --es-host localhost --es-port 9200 --index ragflow_{tenant_id}
+# List all knowledge bases in a specific index
+# Replace ragflow_{tenant_id} with your actual index from the output above
+es-ob-migrate list-kb --index ragflow_{tenant_id}
 
 # View sample documents
-es-ob-migrate sample --es-host localhost --es-port 9200 --index ragflow_{tenant_id} --size 5
-
-# Check schema
-es-ob-migrate schema --es-host localhost --es-port 9200 --index ragflow_{tenant_id}
+es-ob-migrate sample --index ragflow_{tenant_id} --size 5
 ```
 
 ### Step 4: Start OceanBase for Migration
@@ -84,8 +108,8 @@ es-ob-migrate schema --es-host localhost --es-port 9200 --index ragflow_{tenant_
 Start RAGFlow's OceanBase service as the migration target:
 
 ```bash
-# Navigate to ragflow docker directory (from ragflow root)
-cd ../docker
+# Navigate to RAGFlow docker directory
+cd /path/to/ragflow/docker
 
 # Start only OceanBase service from RAGFlow docker compose
 docker compose --profile oceanbase up -d
@@ -99,84 +123,81 @@ docker compose logs -f oceanbase
 Execute the migration from Elasticsearch to OceanBase:
 
 ```bash
-cd ../tools/es-to-oceanbase-migration
+cd /path/to/tools/es-to-oceanbase-migration
 
-# Option A: Migrate ALL ragflow_* indices (Recommended)
-# If --index and --table are omitted, the tool auto-discovers all ragflow_* indices
-es-ob-migrate migrate \
-  --es-host localhost --es-port 9200 \
-  --ob-host localhost --ob-port 2881 \
-  --ob-user "root@ragflow" --ob-password "infini_rag_flow" \
-  --ob-database ragflow_doc \
-  --batch-size 1000 \
-  --verify
-
-# Option B: Migrate a specific index
-# Use the SAME name for both --index and --table
-# The index name pattern is: ragflow_{tenant_id}
-# Find your tenant_id from Step 3's curl output
-es-ob-migrate migrate \
-  --es-host localhost --es-port 9200 \
-  --ob-host localhost --ob-port 2881 \
-  --ob-user "root@ragflow" --ob-password "infini_rag_flow" \
-  --ob-database ragflow_doc \
-  --index ragflow_{tenant_id} \
-  --table ragflow_{tenant_id} \
-  --batch-size 1000 \
-  --verify
+# Migrate all ragflow_* indices
+es-ob-migrate migrate
 ```
 
 Expected output:
 ```
+es-ob-migrate migrate
 RAGFlow ES to OceanBase Migration
-Source: localhost:9200/ragflow_{tenant_id}
-Target: localhost:2881/ragflow_doc.ragflow_{tenant_id}
 
+Discovering RAGFlow indices...
+Found 1 RAGFlow indices:
+  - ragflow_20a72220ff7011f099e112baf51a40f8 (12 documents)
+
+
+============================================================
+Migrating: ragflow_20a72220ff7011f099e112baf51a40f8 -> ragflow_doc.ragflow_20a72220ff7011f099e112baf51a40f8
+============================================================
 Step 1: Checking connections...
   ES cluster status: green
-  OceanBase connection: OK (version: 4.3.5.1)
+  OceanBase connection: OK (version: 4.4.1.0)
 
 Step 2: Analyzing ES index...
-  Auto-detected vector dimension: 1024
-  Known RAGFlow fields: 25
-  Total documents: 1,234
+  Detected fields: 18
+  Vector field: q_1024_vec (dim=1024)
+  Total documents: 12
 
 Step 3: Creating OceanBase table...
-  Created table 'ragflow_{tenant_id}' with RAGFlow schema
+  Created table 'ragflow_20a72220ff7011f099e112baf51a40f8' with 18 columns
 
 Step 4: Migrating data...
-Migrating... ━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 1,234/1,234
+  Migrating... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00
 
 Step 5: Verifying migration...
-✓ Document counts match: 1,234
-✓ Sample verification: 100/100 matched
+
+============================================================
+Migration Verification Report
+============================================================
+ES Index:  ragflow_20a72220ff7011f099e112baf51a40f8
+OB Table:  ragflow_20a72220ff7011f099e112baf51a40f8
+
+Document Counts:
+  Elasticsearch: 12
+  OceanBase:     12
+  Difference:    0
+  Match:         Yes
+
+Sample Verification:
+  Sample Size:   12
+  Verified:      12
+  Matched:       12
+  Match Rate:    100.00%
+
+============================================================
+Result: PASSED
+Verification PASSED. ES: 12, OB: 12. Sample match rate: 100.00%
+============================================================
+
 
 Migration completed successfully!
-  Total: 1,234 documents
-  Migrated: 1,234 documents
-  Failed: 0 documents
-  Duration: 45.2 seconds
+  Total: 12 documents
+  Migrated: 12 documents
+  Duration: 2.8 seconds
+
+All migrations completed successfully!
 ```
 
-### Step 6: Stop RAGFlow and Switch to OceanBase Backend
+### Step 6: Start RAGFlow with OceanBase Backend
 
 ```bash
-# Navigate to ragflow docker directory
-cd ../../docker
-
-# Stop only Elasticsearch and RAGFlow (but keep OceanBase running)
-docker compose --profile elasticsearch --profile cpu down
-
 # Edit .env file, change:
 #   DOC_ENGINE=elasticsearch  ->  DOC_ENGINE=oceanbase
 #
 # The OceanBase connection settings are already configured by default in .env
-```
-
-### Step 7: Start RAGFlow with OceanBase Backend
-
-```bash
-# OceanBase should still be running from Step 4
 # Start RAGFlow with OceanBase profile (OceanBase is already running)
 docker compose --profile oceanbase --profile cpu up -d
 
@@ -187,65 +208,80 @@ docker compose ps
 docker compose logs -f ragflow-cpu
 ```
 
-### Step 8: Data Integrity Verification (Optional)
+### Step 7: Data Migration Verification (Optional)
 
 Run the verification command to compare ES and OceanBase data:
 
 ```bash
-es-ob-migrate verify \
-  --es-host localhost --es-port 9200 \
-  --ob-host localhost --ob-port 2881 \
-  --ob-user "root@ragflow" --ob-password "infini_rag_flow" \
-  --ob-database ragflow_doc \
-  --index ragflow_{tenant_id} \
-  --table ragflow_{tenant_id} \
-  --sample-size 100
+# Verify all indices (auto-discover)
+es-ob-migrate verify
+
+# Or verify a specific index
+es-ob-migrate verify --index ragflow_xxx --table ragflow_xxx
 ```
 
 Expected output:
 ```
-╭─────────────────────────────────────────────────────────────╮
-│                   Migration Verification Report             │
-├─────────────────────────────────────────────────────────────┤
-│ ES Index:  ragflow_{tenant_id}                              │
-│ OB Table:  ragflow_{tenant_id}                              │
-├─────────────────────────────────────────────────────────────┤
-│ Document Counts                                             │
-│   ES:      1,234                                            │
-│   OB:      1,234                                            │
-│   Match:   ✓ Yes                                            │
-├─────────────────────────────────────────────────────────────┤
-│ Sample Verification (100 documents)                         │
-│   Matched:     100                                          │
-│   Match Rate:  100.0%                                       │
-├─────────────────────────────────────────────────────────────┤
-│ Result: ✓ PASSED                                            │
-╰─────────────────────────────────────────────────────────────╯
+Discovering RAGFlow indices...
+Found 1 indices to verify
+
+============================================================
+Verifying: ragflow_be3a54c701a111f19c7dbe0f2700305e <-> ragflow_be3a54c701a111f19c7dbe0f2700305e
+============================================================
+
+============================================================
+Migration Verification Report
+============================================================
+ES Index:  ragflow_be3a54c701a111f19c7dbe0f2700305e
+OB Table:  ragflow_be3a54c701a111f19c7dbe0f2700305e
+
+Document Counts:
+  Elasticsearch: 38
+  OceanBase:     38
+  Difference:    0
+  Match:         Yes
+
+Sample Verification:
+  Sample Size:   38
+  Verified:      38
+  Matched:       38
+  Match Rate:    100.00%
+
+============================================================
+Result: PASSED
+Verification PASSED. ES: 38, OB: 38. Sample match rate: 100.00%
+============================================================
 ```
 
-### Step 9: Verify RAGFlow Works with OceanBase
+### Step 8: Verify RAGFlow Works with OceanBase
 
-1. Open RAGFlow Web UI: http://localhost:9380
+1. Open RAGFlow Web UI: http://localhost
 2. Navigate to your Knowledge Base
 3. Try the same queries you tested before migration
 
 ## CLI Reference
 
-### `es-ob-migrate migrate`
+### Connection Options (All Commands)
 
-Run data migration from Elasticsearch to OceanBase.
+All commands share the following connection options with RAGFlow-compatible defaults:
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--es-host` | localhost | Elasticsearch host |
-| `--es-port` | 9200 | Elasticsearch port |
-| `--es-user` | None | ES username (if auth required) |
-| `--es-password` | None | ES password |
+| `--es-port` | 1200 | Elasticsearch port (RAGFlow default) |
+| `--es-user` | elastic | ES username |
+| `--es-password` | infini_rag_flow | ES password |
 | `--ob-host` | localhost | OceanBase host |
 | `--ob-port` | 2881 | OceanBase port |
-| `--ob-user` | root@test | OceanBase user (format: user@tenant) |
-| `--ob-password` | "" | OceanBase password |
+| `--ob-user` | root@ragflow | OceanBase user (format: user@tenant) |
+| `--ob-password` | infini_rag_flow | OceanBase password |
 | `--ob-database` | test | OceanBase database name |
+
+> **Note**: These defaults match RAGFlow's standard configuration. When connecting to a standard RAGFlow deployment, you can omit these options.
+
+### `es-ob-migrate migrate`
+
+Run data migration from Elasticsearch to OceanBase.
 | `-i, --index` | None | Source ES index (omit to migrate all ragflow_* indices) |
 | `-t, --table` | None | Target OB table (omit to use same name as index) |
 | `--batch-size` | 1000 | Documents per batch |
@@ -256,28 +292,13 @@ Run data migration from Elasticsearch to OceanBase.
 
 ```bash
 # Migrate all ragflow_* indices
-es-ob-migrate migrate \
-  --es-host localhost --es-port 9200 \
-  --ob-host localhost --ob-port 2881 \
-  --ob-user "root@ragflow" --ob-password "infini_rag_flow" \
-  --ob-database ragflow_doc
+es-ob-migrate migrate
 
 # Migrate a specific index
-es-ob-migrate migrate \
-  --es-host localhost --es-port 9200 \
-  --ob-host localhost --ob-port 2881 \
-  --ob-user "root@ragflow" --ob-password "infini_rag_flow" \
-  --ob-database ragflow_doc \
-  --index ragflow_abc123 --table ragflow_abc123
+es-ob-migrate migrate --index ragflow_abc123 --table ragflow_abc123
 
 # Resume interrupted migration
-es-ob-migrate migrate \
-  --es-host localhost --es-port 9200 \
-  --ob-host localhost --ob-port 2881 \
-  --ob-user "root@ragflow" --ob-password "infini_rag_flow" \
-  --ob-database ragflow_doc \
-  --index ragflow_abc123 --table ragflow_abc123 \
-  --resume
+es-ob-migrate migrate --index ragflow_abc123 --table ragflow_abc123 --resume
 ```
 
 **Resume Feature:**
@@ -292,7 +313,7 @@ Migration progress is automatically saved to `.migration_progress/` directory. I
 
 ```
 RAGFlow ES to OceanBase Migration
-Source: localhost:9200/ragflow_abc123
+Source: localhost:1200/ragflow_abc123
 Target: localhost:2881/ragflow_doc.ragflow_abc123
 
 Step 1: Checking connections...
@@ -323,7 +344,7 @@ List all RAGFlow indices (`ragflow_*`) in Elasticsearch.
 **Example:**
 
 ```bash
-es-ob-migrate list-indices --es-host localhost --es-port 9200
+es-ob-migrate list-indices
 ```
 
 **Output:**
@@ -340,34 +361,6 @@ Total: 2 ragflow_* indices found
 
 ---
 
-### `es-ob-migrate schema`
-
-Preview schema analysis from ES mapping.
-
-**Example:**
-
-```bash
-es-ob-migrate schema --es-host localhost --es-port 9200 --index ragflow_abc123
-```
-
-**Output:**
-
-```
-RAGFlow Schema Analysis for index: ragflow_abc123
-
-Vector Fields:
-  q_1024_vec: dense_vector (dim=1024)
-
-Known RAGFlow Fields (25):
-  id, kb_id, doc_id, docnm_kwd, content_with_weight, content_ltks,
-  available_int, important_kwd, question_kwd, tag_kwd, page_num_int...
-
-Unknown Fields (stored in 'extra' column):
-  custom_field_1, custom_field_2
-```
-
----
-
 ### `es-ob-migrate verify`
 
 Verify migration data consistency between ES and OceanBase.
@@ -375,13 +368,11 @@ Verify migration data consistency between ES and OceanBase.
 **Example:**
 
 ```bash
-es-ob-migrate verify \
-  --es-host localhost --es-port 9200 \
-  --ob-host localhost --ob-port 2881 \
-  --ob-user "root@ragflow" --ob-password "infini_rag_flow" \
-  --ob-database ragflow_doc \
-  --index ragflow_abc123 --table ragflow_abc123 \
-  --sample-size 100
+# Verify all indices (auto-discover)
+es-ob-migrate verify
+
+# Verify a specific index
+es-ob-migrate verify --index ragflow_abc123 --table ragflow_abc123
 ```
 
 **Output:**
@@ -415,7 +406,7 @@ List all knowledge bases in an ES index.
 **Example:**
 
 ```bash
-es-ob-migrate list-kb --es-host localhost --es-port 9200 --index ragflow_abc123
+es-ob-migrate list-kb --index ragflow_abc123
 ```
 
 **Output:**
@@ -440,7 +431,7 @@ Show sample documents from ES index.
 **Example:**
 
 ```bash
-es-ob-migrate sample --es-host localhost --es-port 9200 --index ragflow_abc123 --size 2
+es-ob-migrate sample --index ragflow_abc123 --size 2
 ```
 
 **Output:**
@@ -465,35 +456,3 @@ Document 2:
   available_int: 1
 ```
 
----
-
-### `es-ob-migrate status`
-
-Check connection status to ES and OceanBase.
-
-**Example:**
-
-```bash
-es-ob-migrate status \
-  --es-host localhost --es-port 9200 \
-  --ob-host localhost --ob-port 2881 \
-  --ob-user "root@ragflow" --ob-password "infini_rag_flow"
-```
-
-**Output:**
-
-```
-Connection Status:
-
-Elasticsearch:
-  Host: localhost:9200
-  Status: ✓ Connected
-  Cluster: ragflow-cluster
-  Version: 8.11.0
-  Indices: 5
-
-OceanBase:
-  Host: localhost:2881
-  Status: ✓ Connected
-  Version: 4.3.5.1
-```

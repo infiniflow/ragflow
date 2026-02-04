@@ -9,11 +9,11 @@ authors = [{ name = "RAGFlow Team" }]
 keywords = ["elasticsearch", "oceanbase", "migration", "vector", "rag"]
 
 dependencies = [
-    "elasticsearch>=8.0.0",
+    "elasticsearch==8.11.1",  # Match RAGFlow's ES 8.11.3
     "pyobvector>=0.1.0",
     "pymysql>=1.0.0",
     "sqlalchemy>=2.0.0",
-    "click>=8.0.0",
+    "fire>=0.5.0",
     "tqdm>=4.60.0",
     "rich>=13.0.0",
 ]
@@ -26,7 +26,7 @@ dev = [
 ]
 
 [project.scripts]
-es-ob-migrate = "es_ob_migration.cli:main"
+es-ob-migrate = "es_ob_migration.cli:main_cli"
 
 [build-system]
 requires = ["hatchling"]
