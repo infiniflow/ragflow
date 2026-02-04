@@ -1106,7 +1106,7 @@ class RAGFlowPdfParser:
             max_page_index = len(self.page_images) - 1
 
             def local_page_index(page_number):
-                idx = page_number - 1
+                idx = page_number - 1 if page_number > 0 else 0
                 if idx > max_page_index and self.page_from:
                     idx = page_number - 1 - self.page_from
                 return idx
