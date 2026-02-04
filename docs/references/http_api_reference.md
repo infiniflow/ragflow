@@ -621,7 +621,7 @@ Failure:
 ```json
 {
     "code": 101,
-    "message": "Dataset name 'RAGFlow example' already exists"
+    "message": "Field: <name> - Message: <String should have at least 1 character> - Value: <>"
 }
 ```
 
@@ -677,9 +677,10 @@ Failure:
 
 ```json
 {
-    "code": 102,
-    "message": "You don't own the dataset."
+    "code":108,
+    "message":"User '<tenant_id>' lacks permission for datasets: '<dataset_ids>'"
 }
+
 ```
 
 ---
@@ -896,7 +897,7 @@ Success:
             "vector_similarity_weight": 0.3
         }
     ],
-    "total": 1
+    "total_datasets": 1
 }
 ```
 

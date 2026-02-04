@@ -1,4 +1,3 @@
-import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
 import sonnerMessage from '@/components/ui/message';
 import { MessageType } from '@/constants/chat';
 import {
@@ -290,8 +289,6 @@ export const useSendAgentMessage = ({
         params.files = uploadResponseList;
 
         params.session_id = sessionId;
-        params.reasoning = message.reasoning;
-        params.internet = message.internet;
       }
 
       try {
@@ -358,39 +355,28 @@ export const useSendAgentMessage = ({
     removeAllMessagesExceptFirst,
   ]);
 
-  const handlePressEnter = useCallback(
-    (
-      ...[
-        { enableThinking, enableInternet },
-      ]: NextMessageInputOnPressEnterParameter
-    ) => {
-      if (trim(value) === '') return;
-      const msgBody = buildRequestBody(value);
-      if (done) {
-        setValue('');
-        sendMessage({
-          message: {
-            ...msgBody,
-            reasoning: enableThinking,
-            internet: enableInternet,
-          },
-        });
-      }
-      addNewestOneQuestion({ ...msgBody, files: fileList });
-      setTimeout(() => {
-        scrollToBottom();
-      }, 100);
-    },
-    [
-      value,
-      done,
-      addNewestOneQuestion,
-      fileList,
-      setValue,
-      sendMessage,
-      scrollToBottom,
-    ],
-  );
+  const handlePressEnter = useCallback(() => {
+    if (trim(value) === '') return;
+    const msgBody = buildRequestBody(value);
+    if (done) {
+      setValue('');
+      sendMessage({
+        message: msgBody,
+      });
+    }
+    addNewestOneQuestion({ ...msgBody, files: fileList });
+    setTimeout(() => {
+      scrollToBottom();
+    }, 100);
+  }, [
+    value,
+    done,
+    addNewestOneQuestion,
+    fileList,
+    setValue,
+    sendMessage,
+    scrollToBottom,
+  ]);
 
   const sendedTaskMessage = useRef<boolean>(false);
 

@@ -23,7 +23,7 @@ from libs.auth import RAGFlowWebApiAuth
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
@@ -40,14 +40,14 @@ class TestAuthorization:
 @pytest.mark.usefixtures("add_memory_with_5_raw_message_func")
 class TestMessageList:
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_params_unset(self, WebApiAuth):
         memory_id = self.memory_id
         res = list_memory_message(WebApiAuth, memory_id, params=None)
         assert res["code"] == 0, res
         assert len(res["data"]["messages"]["message_list"]) == 5, res
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_params_empty(self, WebApiAuth):
         memory_id = self.memory_id
         res = list_memory_message(WebApiAuth, memory_id, params={})

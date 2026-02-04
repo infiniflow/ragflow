@@ -109,7 +109,12 @@ class DocumentService(CommonService):
 
         count = docs.count()
         docs = docs.paginate(page_number, items_per_page)
-        return list(docs.dicts()), count
+
+        docs_list = list(docs.dicts())
+        metadata_map = DocMetadataService.get_metadata_for_documents(None, kb_id)
+        for doc in docs_list:
+            doc["meta_fields"] = metadata_map.get(doc["id"], {})
+        return docs_list, count
 
     @classmethod
     @DB.connection_context()
@@ -1077,7 +1082,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         cks = [c for c in docs if c["doc_id"] == doc_id]
 
         if parser_ids[doc_id] != ParserType.PICTURE.value:
-            from graphrag.general.mind_map_extractor import MindMapExtractor
+            from rag.graphrag.general.mind_map_extractor import MindMapExtractor
             mindmap = MindMapExtractor(llm_bdl)
             try:
                 mind_map = asyncio.run(mindmap([c["content_with_weight"] for c in docs if c["doc_id"] == doc_id]))

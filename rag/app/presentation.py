@@ -15,6 +15,7 @@
 #
 
 import copy
+import logging
 import re
 from collections import defaultdict
 from io import BytesIO
@@ -22,35 +23,12 @@ from io import BytesIO
 from PIL import Image
 from PyPDF2 import PdfReader as pdf2_read
 
-from deepdoc.parser import PdfParser, PptParser, PlainParser
+from deepdoc.parser import PdfParser, PlainParser
+from deepdoc.parser.ppt_parser import RAGFlowPptParser
 from rag.app.naive import by_plaintext, PARSERS
 from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import rag_tokenizer
-from rag.nlp import tokenize, is_english
-
-
-class Ppt(PptParser):
-    def __call__(self, fnm, from_page, to_page, callback=None):
-        txts = super().__call__(fnm, from_page, to_page)
-
-        callback(0.5, "Text extraction finished.")
-        import aspose.slides as slides
-        import aspose.pydrawing as drawing
-
-        imgs = []
-        with slides.Presentation(BytesIO(fnm)) as presentation:
-            for i, slide in enumerate(presentation.slides[from_page:to_page]):
-                try:
-                    with BytesIO() as buffered:
-                        slide.get_thumbnail(0.1, 0.1).save(buffered, drawing.imaging.ImageFormat.jpeg)
-                        buffered.seek(0)
-                        imgs.append(Image.open(buffered).copy())
-                except RuntimeError as e:
-                    raise RuntimeError(f"ppt parse error at page {i + 1}, original error: {str(e)}") from e
-        assert len(imgs) == len(txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
-        callback(0.9, "Image extraction finished")
-        self.is_english = is_english(txts)
-        return [(txts[i], imgs[i]) for i in range(len(txts))]
+from rag.nlp import tokenize
 
 
 class Pdf(PdfParser):
@@ -148,7 +126,7 @@ class PlainPdf(PlainParser):
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, parser_config=None, **kwargs):
     """
-    The supported file formats are pdf, pptx.
+    The supported file formats are pdf, ppt, pptx.
     Every page will be treated as a chunk. And the thumbnail of every page will be stored.
     PPT file will be parsed by using this method automatically, setting-up for every PPT file is not necessary.
     """
@@ -159,18 +137,62 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     res = []
     if re.search(r"\.pptx?$", filename, re.IGNORECASE):
-        ppt_parser = Ppt()
-        for pn, (txt, img) in enumerate(ppt_parser(filename if not binary else binary, from_page, 1000000, callback)):
-            d = copy.deepcopy(doc)
-            pn += from_page
-            d["image"] = img
-            d["doc_type_kwd"] = "image"
-            d["page_num_int"] = [pn + 1]
-            d["top_int"] = [0]
-            d["position_int"] = [(pn + 1, 0, img.size[0], 0, img.size[1])]
-            tokenize(d, txt, eng)
-            res.append(d)
-        return res
+        try:
+            ppt_parser = RAGFlowPptParser()
+            for pn, txt in enumerate(ppt_parser(filename if not binary else binary, from_page, 1000000, callback)):
+                d = copy.deepcopy(doc)
+                pn += from_page
+                d["doc_type_kwd"] = "image"
+                d["page_num_int"] = [pn + 1]
+                d["top_int"] = [0]
+                d["position_int"] = [(pn + 1, 0, 0, 0, 0)]
+                tokenize(d, txt, eng)
+                res.append(d)
+            return res
+        except Exception as e:
+            logging.warning(f"python-pptx parsing failed for {filename}: {e}, trying tika as fallback")
+            if callback:
+                callback(0.1, "python-pptx failed, trying tika as fallback")
+            
+            try:
+                from tika import parser as tika_parser
+            except Exception as tika_error:
+                error_msg = f"tika not available: {tika_error}. Unsupported .ppt/.pptx parsing."
+                if callback:
+                    callback(0.8, error_msg)
+                logging.warning(f"{error_msg} for {filename}.")
+                raise NotImplementedError(error_msg)
+            
+            if binary:
+                binary_data = binary
+            else:
+                with open(filename, 'rb') as f:
+                    binary_data = f.read()
+            doc_parsed = tika_parser.from_buffer(BytesIO(binary_data))
+            
+            if doc_parsed.get("content", None) is not None:
+                sections = doc_parsed["content"].split("\n")
+                sections = [s for s in sections if s.strip()]
+                
+                for pn, txt in enumerate(sections):
+                    d = copy.deepcopy(doc)
+                    pn += from_page
+                    d["doc_type_kwd"] = "text"
+                    d["page_num_int"] = [pn + 1]
+                    d["top_int"] = [0]
+                    d["position_int"] = [(pn + 1, 0, 0, 0, 0)]
+                    tokenize(d, txt, eng)
+                    res.append(d)
+                
+                if callback:
+                    callback(0.8, "Finish parsing with tika.")
+                return res
+            else:
+                error_msg = f"tika.parser got empty content from {filename}."
+                if callback:
+                    callback(0.8, error_msg)
+                logging.warning(error_msg)
+                raise NotImplementedError(error_msg)
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
 
@@ -216,7 +238,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             res.append(d)
         return res
 
-    raise NotImplementedError("file type not supported yet(pptx, pdf supported)")
+    raise NotImplementedError("file type not supported yet(ppt, pptx, pdf supported)")
 
 
 if __name__ == "__main__":

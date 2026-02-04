@@ -253,11 +253,14 @@ async def upload(canvas_id):
 
     user_id = cvs["user_id"]
     files = await request.files
-    file = files['file'] if files and files.get("file") else None
+    file_objs = files.getlist("file") if files and files.get("file") else []
     try:
-        return get_json_result(data=FileService.upload_info(user_id, file, request.args.get("url")))
+        if len(file_objs) == 1:
+            return get_json_result(data=FileService.upload_info(user_id, file_objs[0], request.args.get("url")))
+        results = [FileService.upload_info(user_id, f) for f in file_objs]
+        return get_json_result(data=results)
     except Exception as e:
-        return  server_error_response(e)
+        return server_error_response(e)
 
 
 @manager.route('/input_form', methods=['GET'])  # noqa: F821
@@ -326,6 +329,9 @@ async def test_db_connect():
         if req["db_type"] in ["mysql", "mariadb"]:
             db = MySQLDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                password=req["password"])
+        elif req["db_type"] == "oceanbase":
+            db = MySQLDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
+                               password=req["password"], charset="utf8mb4")
         elif req["db_type"] == 'postgres':
             db = PostgresqlDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                     password=req["password"])

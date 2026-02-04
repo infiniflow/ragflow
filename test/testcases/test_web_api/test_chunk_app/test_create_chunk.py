@@ -36,7 +36,7 @@ def validate_chunk_details(auth, kb_id, doc_id, payload, res):
         assert chunk["question_kwd"] == expected
 
 
-@pytest.mark.p1
+@pytest.mark.p2
 class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
