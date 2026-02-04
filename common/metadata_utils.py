@@ -145,11 +145,22 @@ async def apply_meta_data_filter(
         if not doc_ids:
             return None
     elif method == "semi_auto":
-        selected_keys = meta_data_filter.get("semi_auto", [])
+        selected_keys = []
+        constraints = {}
+        for item in meta_data_filter.get("semi_auto", []):
+            if isinstance(item, str):
+                selected_keys.append(item)
+            elif isinstance(item, dict):
+                key = item.get("key")
+                op = item.get("op")
+                selected_keys.append(key)
+                if op:
+                    constraints[key] = op
+
         if selected_keys:
             filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
             if filtered_metas:
-                filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question)
+                filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
                 doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
                 if not doc_ids:
                     return None

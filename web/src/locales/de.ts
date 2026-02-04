@@ -508,7 +508,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
         'Aktualisieren Sie hier Ihre Wissensdatenbank-Konfiguration, insbesondere die Chunk-Methode.',
       name: 'Name der Wissensdatenbank',
       photo: 'Bild der Wissensdatenbank',
-      photoTip: 'Sie können eine Datei mit 4 MB hochladen',
+      photoTip: 'Sie können ein Bild bis zu 4 MB hochladen.',
       description: 'Beschreibung',
       language: 'Dokumentensprache',
       languageMessage: 'Bitte geben Sie Ihre Sprache ein!',
@@ -1026,6 +1026,16 @@ Beispiel: Virtual Hosted Style`,
         'Die Basis-URL Ihrer Moodle-Instanz (z.B. https://moodle.university.edu). Fügen Sie nicht /webservice oder /login hinzu.',
       moodleTokenTip:
         'Generieren Sie ein Web-Service-Token in Moodle: Gehen Sie zu Website-Administration → Server → Web-Services → Token verwalten. Der Benutzer muss in den Kursen eingeschrieben sein, die Sie synchronisieren möchten.',
+      seafileDescription:
+        'Verbinden Sie sich mit Ihrem SeaFile-Server, um Dateien und Dokumente aus Ihren Bibliotheken zu synchronisieren.',
+      seafileUrlTip:
+        'Die Basis-URL Ihres SeaFile-Servers (z.B. https://seafile.example.com). Fügen Sie kein /api2 oder andere Pfade hinzu.',
+      seafileTokenTip:
+        'Erstellen Sie ein API-Token in SeaFile: Gehen Sie zu Einstellungen → API-Token → Token erstellen. Das Token ermöglicht den Zugriff auf alle für Ihr Konto sichtbaren Bibliotheken.',
+      seafileIncludeSharedTip:
+        'Wenn aktiviert, werden auch Bibliotheken synchronisiert, die andere Benutzer mit Ihnen geteilt haben.',
+      seafileBatchSizeTip:
+        'Anzahl der Dokumente, die pro Batch verarbeitet werden. Höhere Werte können die Leistung verbessern, benötigen aber mehr Arbeitsspeicher. Standard: 100.',
       jiraDescription:
         'Verbinden Sie Ihren Jira-Arbeitsbereich, um Vorgänge, Kommentare und Anhänge zu synchronisieren.',
       jiraBaseUrlTip:
@@ -2036,7 +2046,7 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       conversational: 'Konversationell',
       task: 'Aufgabe',
       beginInputTip:
-        'Durch Definieren von Eingabeparametern kann auf diesen Inhalt von anderen Komponenten in nachfolgenden Prozessen zugegriffen werden.',
+        'Hier definierte Eingabeparameter können von Komponenten im nachgelagerten Workflow abgerufen werden.',
       query: 'Abfragevariablen',
       switchPromptMessage:
         'Die Prompt-Wörter werden geändert. Bitte bestätigen Sie, ob Sie die vorhandenen Prompt-Wörter verwerfen möchten?',

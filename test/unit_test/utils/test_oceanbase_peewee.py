@@ -3,7 +3,6 @@ Tests for OceanBase Peewee ORM support.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
 from api.db.db_models import (
     RetryingPooledOceanBaseDatabase,
     PooledDatabase,
@@ -72,7 +71,7 @@ class TestOceanBaseDatabase:
     def test_database_lock_enum_values(self):
         """Test DatabaseLock enum has all expected values."""
         expected = {'MYSQL', 'OCEANBASE', 'POSTGRES'}
-        actual = {e.name for e in DatabaseLock}
+        actual = set(DatabaseLock.__members__.keys())
         assert expected.issubset(actual), f"Missing: {expected - actual}"
 
 

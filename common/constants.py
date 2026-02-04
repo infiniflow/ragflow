@@ -135,6 +135,7 @@ class FileSource(StrEnum):
     IMAP = "imap"
     BITBUCKET = "bitbucket"
     ZENDESK = "zendesk"
+    SEAFILE = "seafile"
 
 
 class PipelineTaskType(StrEnum):
