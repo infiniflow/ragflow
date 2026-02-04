@@ -390,7 +390,7 @@
 							"text": "Select your desired knowledge base from the dropdown menu. \nThe Agent will only retrieve from the selected knowledge base and use this content  to generate responses."
 						},
 						"label": "Note",
-						"name": "Workflow overall description"
+						"name": "Workflow description"
 					},
 					"dragHandle": ".note-drag-handle",
 					"dragging": false,

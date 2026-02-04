@@ -508,7 +508,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
         'Aktualisieren Sie hier Ihre Wissensdatenbank-Konfiguration, insbesondere die Chunk-Methode.',
       name: 'Name der Wissensdatenbank',
       photo: 'Bild der Wissensdatenbank',
-      photoTip: 'Sie können eine Datei mit 4 MB hochladen',
+      photoTip: 'Sie können ein Bild bis zu 4 MB hochladen.',
       description: 'Beschreibung',
       language: 'Dokumentensprache',
       languageMessage: 'Bitte geben Sie Ihre Sprache ein!',
@@ -2046,7 +2046,7 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       conversational: 'Konversationell',
       task: 'Aufgabe',
       beginInputTip:
-        'Durch Definieren von Eingabeparametern kann auf diesen Inhalt von anderen Komponenten in nachfolgenden Prozessen zugegriffen werden.',
+        'Hier definierte Eingabeparameter können von Komponenten im nachgelagerten Workflow abgerufen werden.',
       query: 'Abfragevariablen',
       switchPromptMessage:
         'Die Prompt-Wörter werden geändert. Bitte bestätigen Sie, ob Sie die vorhandenen Prompt-Wörter verwerfen möchten?',

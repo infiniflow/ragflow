@@ -337,7 +337,7 @@
 							"text": "Select your desired knowledge base from the dropdown menu. \nThe retrieval assistant will only use data from your selected knowledge base to generate responses."
 						},
 						"label": "Note",
-						"name": "Workflow overall description"
+						"name": "Workflow description"
 					},
 					"dragHandle": ".note-drag-handle",
 					"dragging": false,
