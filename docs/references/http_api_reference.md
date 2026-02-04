@@ -621,7 +621,7 @@ Failure:
 ```json
 {
     "code": 101,
-    "message": "Dataset name 'RAGFlow example' already exists"
+    "message": "Field: <name> - Message: <String should have at least 1 character> - Value: <>"
 }
 ```
 
@@ -677,9 +677,10 @@ Failure:
 
 ```json
 {
-    "code": 102,
-    "message": "You don't own the dataset."
+    "code":108,
+    "message":"User '<tenant_id>' lacks permission for datasets: '<dataset_ids>'"
 }
+
 ```
 
 ---
