@@ -83,10 +83,8 @@ async def set_dialog():
             prompt_config["parameters"] = [{"key": "knowledge", "optional": False}]
             logging.debug(f"Set default parameters for datasets with knowledge placeholder: {kb_ids}")
 
-    if not is_create:
-        # only for chat updating
-        if not req.get("kb_ids", []) and not prompt_config.get("tavily_api_key") and "{knowledge}" in prompt_config.get("system", ""):
-            return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
+    if not req.get("kb_ids", []) and not prompt_config.get("tavily_api_key") and "{knowledge}" in prompt_config.get("system", ""):
+        return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
 
     for p in prompt_config.get("parameters", []):
         if p["optional"]:
