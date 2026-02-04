@@ -19,14 +19,18 @@ import * as React from 'react';
 import { toast } from 'sonner';
 
 type FileUploadDirectUploadProps = {
-  value: Record<string, any>;
-  onChange(value: Record<string, any>): void;
+  value: Record<string, any> | Record<string, any>[];
+  onChange(value: Record<string, any>[]): void;
 };
 
 export function FileUploadDirectUpload({
+  value,
   onChange,
 }: FileUploadDirectUploadProps) {
   const [files, setFiles] = React.useState<File[]>([]);
+  const uploadedFilesRef = React.useRef<Record<string, any>[]>(
+    Array.isArray(value) ? value : value ? [value] : [],
+  );
 
   const { uploadCanvasFile } = useUploadCanvasFile();
 
@@ -44,7 +48,11 @@ export function FileUploadDirectUpload({
             const ret = await uploadCanvasFile([file]);
             if (ret.code === 0) {
               onSuccess(file);
-              onChange(ret.data);
+              uploadedFilesRef.current = [
+                ...uploadedFilesRef.current,
+                ret.data,
+              ];
+              onChange(uploadedFilesRef.current);
             } else {
               handleError();
             }
@@ -69,15 +77,31 @@ export function FileUploadDirectUpload({
     });
   }, []);
 
+  const handleFilesChange = React.useCallback(
+    (newFiles: File[]) => {
+      // Find removed files and update uploadedFilesRef
+      const removedFiles = files.filter((f) => !newFiles.includes(f));
+      if (removedFiles.length > 0) {
+        const removedIndices = removedFiles.map((f) => files.indexOf(f));
+        uploadedFilesRef.current = uploadedFilesRef.current.filter(
+          (_, idx) => !removedIndices.includes(idx),
+        );
+        onChange(uploadedFilesRef.current);
+      }
+      setFiles(newFiles);
+    },
+    [files, onChange],
+  );
+
   return (
     <FileUpload
       value={files}
-      onValueChange={setFiles}
+      onValueChange={handleFilesChange}
       onUpload={onUpload}
       onFileReject={onFileReject}
-      maxFiles={1}
+      maxFiles={5}
       className="w-full"
-      multiple={false}
+      multiple={true}
     >
       <FileUploadDropzone>
         <div className="flex flex-col items-center gap-1 text-center">
@@ -86,7 +110,7 @@ export function FileUploadDirectUpload({
           </div>
           <p className="font-medium text-sm">Drag & drop files here</p>
           <p className="text-muted-foreground text-xs">
-            Or click to browse (max 1 files)
+            Or click to browse (max 5 files)
           </p>
         </div>
         <FileUploadTrigger asChild>
