@@ -1,6 +1,5 @@
 import re
 import time
-from typing import Callable
 from urllib.parse import urljoin
 
 from playwright.sync_api import expect
