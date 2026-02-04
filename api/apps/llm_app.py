@@ -103,6 +103,8 @@ async def set_api_key():
 
     if msg:
         return get_data_error_result(message=msg)
+    if req.get("verify", False):
+        return get_json_result(data=True)
 
     llm_config = {"api_key": req["api_key"], "api_base": req.get("base_url", "")}
     for n in ["model_type", "llm_name"]:
