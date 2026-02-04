@@ -54,6 +54,7 @@ from common.data_source import (
     ImapConnector,
     ZendeskConnector,
     SeaFileConnector,
+    RDBMSConnector,
 )
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
@@ -1213,6 +1214,79 @@ class SeaFile(SyncBase):
         )
         return document_generator
 
+
+class MySQL(SyncBase):
+    SOURCE_NAME: str = FileSource.MYSQL
+
+    async def _generate(self, task: dict):
+        self.connector = RDBMSConnector(
+            db_type="mysql",
+            host=self.conf.get("host", "localhost"),
+            port=int(self.conf.get("port", 3306)),
+            database=self.conf.get("database", ""),
+            query=self.conf.get("query", ""),
+            content_columns=self.conf.get("content_columns", ""),
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+
+        credentials = self.conf.get("credentials")
+        if not credentials:
+            raise ValueError("MySQL connector is missing credentials.")
+
+        self.connector.load_credentials(credentials)
+        self.connector.validate_connector_settings()
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task["poll_range_start"]
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp()
+            )
+            begin_info = f"from {poll_start}"
+
+        logging.info(f"[MySQL] Connect to {self.conf.get('host')}:{self.conf.get('database')} {begin_info}")
+        return document_generator
+
+
+class PostgreSQL(SyncBase):
+    SOURCE_NAME: str = FileSource.POSTGRESQL
+
+    async def _generate(self, task: dict):
+        self.connector = RDBMSConnector(
+            db_type="postgresql",
+            host=self.conf.get("host", "localhost"),
+            port=int(self.conf.get("port", 5432)),
+            database=self.conf.get("database", ""),
+            query=self.conf.get("query", ""),
+            content_columns=self.conf.get("content_columns", ""),
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+
+        credentials = self.conf.get("credentials")
+        if not credentials:
+            raise ValueError("PostgreSQL connector is missing credentials.")
+
+        self.connector.load_credentials(credentials)
+        self.connector.validate_connector_settings()
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task["poll_range_start"]
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp()
+            )
+            begin_info = f"from {poll_start}"
+
+        logging.info(f"[PostgreSQL] Connect to {self.conf.get('host')}:{self.conf.get('database')} {begin_info}")
+        return document_generator
+
+
 func_factory = {
     FileSource.S3: S3,
     FileSource.R2: R2,
@@ -1238,7 +1312,9 @@ func_factory = {
     FileSource.GITHUB: Github,
     FileSource.GITLAB: Gitlab,
     FileSource.BITBUCKET: Bitbucket,
-    FileSource.SEAFILE: SeaFile, 
+    FileSource.SEAFILE: SeaFile,
+    FileSource.MYSQL: MySQL,
+    FileSource.POSTGRESQL: PostgreSQL,
 }
 
 
