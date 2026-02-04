@@ -138,12 +138,14 @@ export function useSendMultipleChatMessage(
       currentConversationId,
       messages,
       chatBoxId,
+      enableInternet,
+      enableThinking,
     }: {
       message: Message;
       currentConversationId?: string;
       chatBoxId: string;
       messages?: Message[];
-    }) => {
+    } & NextMessageInputOnPressEnterParameter) => {
       let derivedMessages: IMessage[] = [];
 
       derivedMessages = messageRecord[chatBoxId];
@@ -153,6 +155,8 @@ export function useSendMultipleChatMessage(
           chatBoxId,
           conversation_id: currentConversationId ?? conversationId,
           messages: [...(messages ?? derivedMessages ?? []), message],
+          reasoning: enableThinking,
+          internet: enableInternet,
           ...getLLMConfigById(chatBoxId),
         },
         controller,
@@ -177,11 +181,10 @@ export function useSendMultipleChatMessage(
   );
 
   const handlePressEnter = useCallback(
-    async (
-      ...[
-        { enableThinking, enableInternet },
-      ]: NextMessageInputOnPressEnterParameter
-    ) => {
+    async ({
+      enableThinking,
+      enableInternet,
+    }: NextMessageInputOnPressEnterParameter) => {
       if (trim(value) === '') return;
       const id = uuid();
 
@@ -217,12 +220,12 @@ export function useSendMultipleChatMessage(
                 role: MessageType.User,
                 files,
                 conversationId: targetConversationId,
-                reasoning: enableThinking,
-                internet: enableInternet,
               },
               chatBoxId,
               currentConversationId: targetConversationId,
               messages: currentMessages,
+              enableThinking,
+              enableInternet,
             });
           }
         });

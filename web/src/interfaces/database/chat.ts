@@ -100,8 +100,6 @@ export interface Message {
   files?: (File | UploadResponseDataType)[];
   chatBoxId?: string;
   attachment?: IAttachment;
-  reasoning?: boolean;
-  internet?: boolean;
 }
 
 export interface IReferenceChunk {
