@@ -621,7 +621,7 @@ Failure:
 ```json
 {
     "code": 101,
-    "message": "Dataset name 'RAGFlow example' already exists"
+    "message": "Field: <name> - Message: <String should have at least 1 character> - Value: <>"
 }
 ```
 
