@@ -36,6 +36,26 @@ from common.doc_store.doc_store_base import OrderByExpr
 class DocMetadataService:
     """Service for managing document metadata in ES/Infinity"""
 
+    @classmethod
+    def _ensure_doc_meta_index(cls, tenant_id: str) -> tuple[str, bool]:
+        """
+        Ensure the document metadata index exists for the tenant.
+
+        Returns:
+            Tuple of (index_name, is_ready)
+        """
+        index_name = cls._get_doc_meta_index_name(tenant_id)
+        if settings.docStoreConn.index_exist(index_name, ""):
+            return index_name, True
+
+        logging.debug(f"Metadata index {index_name} does not exist, creating it")
+        result = settings.docStoreConn.create_doc_meta_idx(index_name)
+        if result is False:
+            logging.error(f"Failed to create metadata index {index_name}")
+            return index_name, False
+        logging.debug(f"Successfully created metadata index {index_name}")
+        return index_name, True
+
     @staticmethod
     def _get_doc_meta_index_name(tenant_id: str) -> str:
         """
@@ -166,16 +186,9 @@ class DocMetadataService:
             return []
 
         tenant_id = kb.tenant_id
-        index_name = cls._get_doc_meta_index_name(tenant_id)
-
-        # Check if metadata index exists, create if it doesn't
-        if not settings.docStoreConn.index_exist(index_name, ""):
-            logging.debug(f"Metadata index {index_name} does not exist, creating it")
-            result = settings.docStoreConn.create_doc_meta_idx(index_name)
-            if result is False:
-                logging.error(f"Failed to create metadata index {index_name}")
-                return []
-            logging.debug(f"Successfully created metadata index {index_name}")
+        index_name, ready = cls._ensure_doc_meta_index(tenant_id)
+        if not ready:
+            return []
 
         if condition is None:
             condition = {"kb_id": kb_id}
@@ -586,7 +599,9 @@ class DocMetadataService:
             doc_obj = doc
             tenant_id = doc.knowledgebase.tenant_id
             kb_id = doc_obj.kb_id
-            index_name = cls._get_doc_meta_index_name(tenant_id)
+            index_name, ready = cls._ensure_doc_meta_index(tenant_id)
+            if not ready:
+                return {}
 
             # Try to get metadata from ES/Infinity
             metadata_doc = settings.docStoreConn.get(
@@ -630,7 +645,9 @@ class DocMetadataService:
                 return {}
 
             tenant_id = kb.tenant_id
-            index_name = cls._get_doc_meta_index_name(tenant_id)
+            index_name, ready = cls._ensure_doc_meta_index(tenant_id)
+            if not ready:
+                return {}
 
             condition = {"kb_id": kb_ids}
             order_by = OrderByExpr()
@@ -706,7 +723,9 @@ class DocMetadataService:
                 return {}
 
             tenant_id = kb.tenant_id
-            index_name = cls._get_doc_meta_index_name(tenant_id)
+            index_name, ready = cls._ensure_doc_meta_index(tenant_id)
+            if not ready:
+                return {}
 
             condition = {"kb_id": kb_ids}
             order_by = OrderByExpr()

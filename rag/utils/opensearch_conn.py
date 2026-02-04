@@ -102,6 +102,33 @@ class OSConnection(DocStoreConnection):
         except Exception:
             logger.exception("OSConnection.createIndex error %s" % (indexName))
 
+    def create_doc_meta_idx(self, indexName: str):
+        """
+        Create a document metadata index.
+
+        Index name pattern: ragflow_doc_meta_{tenant_id}
+        - Per-tenant metadata index for storing document metadata fields
+        """
+        if self.index_exist(indexName, ""):
+            return True
+        try:
+            from opensearchpy.client import IndicesClient
+            fp_mapping = os.path.join(get_project_base_directory(), "conf", "doc_meta_es_mapping.json")
+            if not os.path.exists(fp_mapping):
+                logger.error(f"Document metadata mapping file not found at {fp_mapping}")
+                return False
+            with open(fp_mapping, "r") as f:
+                doc_meta_mapping = json.load(f)
+            return IndicesClient(self.os).create(
+                index=indexName,
+                body={
+                    "settings": doc_meta_mapping.get("settings", {}),
+                    "mappings": doc_meta_mapping.get("mappings", {}),
+                },
+            )
+        except Exception as e:
+            logger.exception(f"Error creating document metadata index {indexName}: {e}")
+
     def delete_idx(self, indexName: str, knowledgebaseId: str):
         if len(knowledgebaseId) > 0:
             # The index need to be alive after any kb deletion since all kb under this tenant are in one index.
