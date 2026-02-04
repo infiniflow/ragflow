@@ -200,6 +200,7 @@ export const DataSourceFormBaseFields = [
     name: 'name',
     type: FormFieldType.Text,
     required: true,
+    tooltip: t('setting.connectorNameTip'),
   },
   {
     label: 'Source',

@@ -677,9 +677,10 @@ Failure:
 
 ```json
 {
-    "code": 102,
-    "message": "You don't own the dataset."
+    "code":108,
+    "message":"User '<tenant_id>' lacks permission for datasets: '<dataset_ids>'"
 }
+
 ```
 
 ---
