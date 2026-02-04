@@ -37,7 +37,7 @@ class TokenizerFromUpstream(BaseModel):
 
     @model_validator(mode="after")
     def _check_payloads(self) -> "TokenizerFromUpstream":
-        if self.chunks:
+        if self.chunks is not None:
             return self
 
         if self.output_format in {"markdown", "text", "html"}:
@@ -48,6 +48,6 @@ class TokenizerFromUpstream(BaseModel):
             if self.output_format == "html" and not self.html_result:
                 raise ValueError("output_format=text requires a html payload (field: 'html' or 'html_result').")
         else:
-            if not self.json_result and not self.chunks:
+            if self.json_result is None:
                 raise ValueError("When no chunks are provided and output_format is not markdown/text, a JSON list payload is required (field: 'json' or 'json_result').")
         return self
