@@ -61,6 +61,7 @@ class TestUserDeletion:
         finally:
             # cleanup
             if username_2:
+                change_user_activation(admin_session, username_2, False)
                 delete_user(admin_session, username_2)
 
 

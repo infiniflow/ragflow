@@ -44,7 +44,13 @@ class RAGFlowS3:
     def use_default_bucket(method):
         def wrapper(self, bucket, *args, **kwargs):
             # If there is a default bucket, use the default bucket
+            # but preserve the original bucket identifier so it can be
+            # used as a path prefix inside the physical/default bucket.
+            original_bucket = bucket
             actual_bucket = self.bucket if self.bucket else bucket
+            if self.bucket:
+                # pass original identifier forward for use by other decorators
+                kwargs['_orig_bucket'] = original_bucket
             return method(self, actual_bucket, *args, **kwargs)
 
         return wrapper
@@ -52,11 +58,25 @@ class RAGFlowS3:
     @staticmethod
     def use_prefix_path(method):
         def wrapper(self, bucket, fnm, *args, **kwargs):
-            # If the prefix path is set, use the prefix path.
-            # The bucket passed from the upstream call is 
-            # used as the file prefix. This is especially useful when you're using the default bucket
+            # If a default S3 bucket is configured, the use_default_bucket
+            # decorator will have replaced the `bucket` arg with the physical
+            # bucket name and forwarded the original identifier as `_orig_bucket`.
+            # Prefer that original identifier when constructing the key path so
+            # objects are stored under <physical-bucket>/<identifier>/...
+            orig_bucket = kwargs.pop('_orig_bucket', None)
+
             if self.prefix_path:
-                fnm = f"{self.prefix_path}/{bucket}/{fnm}"
+                # If a prefix_path is configured, include it and then the identifier
+                if orig_bucket:
+                    fnm = f"{self.prefix_path}/{orig_bucket}/{fnm}"
+                else:
+                    fnm = f"{self.prefix_path}/{fnm}"
+            else:
+                # No prefix_path configured. If orig_bucket exists and the
+                # physical bucket equals configured default, use orig_bucket as a path.
+                if orig_bucket and bucket == self.bucket:
+                    fnm = f"{orig_bucket}/{fnm}"
+
             return method(self, bucket, fnm, *args, **kwargs)
 
         return wrapper
@@ -102,25 +122,37 @@ class RAGFlowS3:
         self.conn = None
 
     @use_default_bucket
-    def bucket_exists(self, bucket, *args, **kwargs):
+    def bucket_exists(self, bucket, _orig_bucket=None, *args, **kwargs):
         try:
-            logging.debug(f"head_bucket bucketname {bucket}")
-            self.conn[0].head_bucket(Bucket=bucket)
-            exists = True
-        except ClientError:
-            logging.exception(f"head_bucket error {bucket}")
-            exists = False
-        return exists
+            if self.bucket:
+                # Single bucket mode: check for objects with prefix
+                prefix = ""
+                if self.prefix_path:
+                    prefix = f"{self.prefix_path}/"
+                if _orig_bucket:
+                    prefix += f"{_orig_bucket}/"
+
+                # Check if physical bucket exists
+                if not self._physical_bucket_exists(bucket):
+                    return False
+
+                # Check if any objects exist with the prefix
+                return self.conn[0].list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1).get("KeyCount", 0) > 0
+            else:
+                # Multi-bucket mode: check physical bucket
+                return self._physical_bucket_exists(bucket)
+        except Exception:
+            logging.exception(f"bucket_exists {bucket} got exception")
+            return False
 
     def _physical_bucket_exists(self, bucket: str) -> bool:
         try:
             logging.debug(f"head_bucket bucketname {bucket}")
             self.conn[0].head_bucket(Bucket=bucket)
-            exists = True
+            return True
         except ClientError:
-            logging.exception(f"head_bucket error {bucket}")
-            exists = False
-        return exists
+            logging.info(f"Bucket {bucket} does not exist")
+            return False
 
     def health(self):
         bucket = self.bucket
@@ -139,11 +171,11 @@ class RAGFlowS3:
     def list(self, bucket, dir, recursive=True):
         return []
 
-    @use_prefix_path
     @use_default_bucket
+    @use_prefix_path
     def put(self, bucket, fnm, binary, *args, **kwargs):
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
-        for _ in range(1):
+        for _ in range(3):
             try:
                 if not self._physical_bucket_exists(bucket):
                     self.conn[0].create_bucket(Bucket=bucket)
@@ -156,16 +188,16 @@ class RAGFlowS3:
                 self.__open__()
                 time.sleep(1)
 
-    @use_prefix_path
     @use_default_bucket
+    @use_prefix_path
     def rm(self, bucket, fnm, *args, **kwargs):
         try:
             self.conn[0].delete_object(Bucket=bucket, Key=fnm)
         except Exception:
             logging.exception(f"Fail rm {bucket}/{fnm}")
 
-    @use_prefix_path
     @use_default_bucket
+    @use_prefix_path
     def get(self, bucket, fnm, *args, **kwargs):
         for _ in range(1):
             try:
@@ -178,8 +210,8 @@ class RAGFlowS3:
                 time.sleep(1)
         return None
 
-    @use_prefix_path
     @use_default_bucket
+    @use_prefix_path
     def obj_exist(self, bucket, fnm, *args, **kwargs):
         try:
             if self.conn[0].head_object(Bucket=bucket, Key=fnm):
@@ -190,8 +222,8 @@ class RAGFlowS3:
             else:
                 raise
 
-    @use_prefix_path
     @use_default_bucket
+    @use_prefix_path
     def get_presigned_url(self, bucket, fnm, expires, *args, **kwargs):
         for _ in range(10):
             try:
@@ -208,23 +240,29 @@ class RAGFlowS3:
         return None
 
     @use_default_bucket
-    def remove_bucket(self, bucket, *args, **kwargs):
+    def remove_bucket(self, bucket, **kwargs):
+        if not self._physical_bucket_exists(bucket):
+            return
+
+        orig_bucket = kwargs.pop('_orig_bucket', None)
+
+        prefix = ""
+        if self.prefix_path:
+            prefix = f"{self.prefix_path}/"
+        if orig_bucket:
+            prefix += f"{orig_bucket}/"
+
         try:
-            # check if bucket exists
-            try:
-                self.conn[0].head_bucket(Bucket=bucket)
-            except ClientError:
-                # bucket does not exist
-                return
-
-            # delete all objects from bucket
-            for object_page in self.conn[0].get_paginator("list_objects_v2").paginate(Bucket=bucket):
-                if "Contents" not in object_page:
+            # delete all objects with the prefix
+            paginator = self.conn[0].get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+                if "Contents" not in page:
                     continue
+                objects = [{"Key": obj["Key"]} for obj in page["Contents"]]
+                self.conn[0].delete_objects(Bucket=bucket, Delete={"Objects": objects})
 
-                self.conn[0].delete_objects(Bucket=bucket, Delete={"Objects": [{"Key": obj["Key"]} for obj in object_page["Contents"]]})
-
-            # delete bucket
-            self.conn[0].delete_bucket(Bucket=bucket)
+            # do NOT delete bucket in single bucket mode
+            if not self.bucket:
+                self.conn[0].delete_bucket(Bucket=bucket)
         except Exception as e:
-            logging.error(f"Fail rm {bucket}: " + str(e))
+            logging.error(f"Fail to remove bucket {bucket}: {str(e)}")
