@@ -65,8 +65,9 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 	// Build pagination parameters
 	offset, limit := calculatePagination(req.Page, req.Size, req.TopK)
 
-	// Build filter clauses
-	filterClauses := buildFilterClauses(req.KbIDs, req.DocIDs)
+	// Build filter clauses (default: available=1, meaning available_int >= 1)
+	// Reference: rag/utils/es_conn.py L60-L78
+	filterClauses := buildFilterClauses(req.KbIDs, req.DocIDs, 1)
 
 	// Build search query body
 	queryBody := make(map[string]interface{})
@@ -274,8 +275,11 @@ func calculatePagination(page, size, topK int) (int, int) {
 	return offset, RERANK_LIMIT
 }
 
-// buildFilterClauses builds ES filter clauses from kb_ids and doc_ids
-func buildFilterClauses(kbIDs, docIDs []string) []map[string]interface{} {
+// buildFilterClauses builds ES filter clauses from kb_ids, doc_ids and available_int
+// Reference: rag/utils/es_conn.py L60-L78
+// When available=0: available_int < 1
+// When available!=0: NOT (available_int < 1)
+func buildFilterClauses(kbIDs, docIDs []string, available int) []map[string]interface{} {
 	var filters []map[string]interface{}
 
 	if len(kbIDs) > 0 {
@@ -287,6 +291,34 @@ func buildFilterClauses(kbIDs, docIDs []string) []map[string]interface{} {
 	if len(docIDs) > 0 {
 		filters = append(filters, map[string]interface{}{
 			"terms": map[string]interface{}{"doc_id": docIDs},
+		})
+	}
+
+	// Add available_int filter
+	// Reference: rag/utils/es_conn.py L63-L68
+	if available == 0 {
+		// available_int < 1
+		filters = append(filters, map[string]interface{}{
+			"range": map[string]interface{}{
+				"available_int": map[string]interface{}{
+					"lt": 1,
+				},
+			},
+		})
+	} else {
+		// must_not: available_int < 1 (i.e., available_int >= 1)
+		filters = append(filters, map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must_not": []map[string]interface{}{
+					{
+						"range": map[string]interface{}{
+							"available_int": map[string]interface{}{
+								"lt": 1,
+							},
+						},
+					},
+				},
+			},
 		})
 	}
 
