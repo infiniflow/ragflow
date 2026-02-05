@@ -207,7 +207,12 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 
     Alternatively, you can use Python's `OpenAI` client:
 
+    NOTE: Streaming via `client.chat.completions.create(stream=True, ...)` does
+    not return `reference` currently. The only way to return `reference` is
+    non-stream mode with `with_raw_response`.
+
     from openai import OpenAI
+    import json
 
     model = "model"
     client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/chats_openai/<chat_id>")
@@ -215,15 +220,14 @@ async def chat_completion_openai_like(tenant_id, chat_id):
     stream = True
     reference = True
 
-    completion = client.chat.completions.create(
-        model=model,
+    request_kwargs = dict(
+        model="model",
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Who are you?"},
             {"role": "assistant", "content": "I am an AI assistant named..."},
             {"role": "user", "content": "Can you tell me how to install neovim"},
         ],
-        stream=stream,
         extra_body={
             "reference": reference,
             "reference_metadata": {
@@ -240,19 +244,25 @@ async def chat_completion_openai_like(tenant_id, chat_id):
                     }
                 ]
             }
-        }
+        },
     )
 
     if stream:
-    for chunk in completion:
-        print(chunk)
-        if reference and chunk.choices[0].finish_reason == "stop":
-            print(f"Reference:\n{chunk.choices[0].delta.reference}")
-            print(f"Final content:\n{chunk.choices[0].delta.final_content}")
+        completion = client.chat.completions.create(stream=True, **request_kwargs)
+        for chunk in completion:
+            print(chunk)
     else:
-        print(completion.choices[0].message.content)
-        if reference:
-            print(completion.choices[0].message.reference)
+        resp = client.chat.completions.with_raw_response.create(
+            stream=False, **request_kwargs
+        )
+        print("status:", resp.http_response.status_code)
+        raw_text = resp.http_response.text
+        print("raw:", raw_text)
+
+        data = json.loads(raw_text)
+        print("assistant:", data["choices"][0]["message"].get("content"))
+        print("reference:", data["choices"][0]["message"].get("reference"))
+
     """
     req = await get_request_json()
 

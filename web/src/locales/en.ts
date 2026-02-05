@@ -61,6 +61,7 @@ export default {
         tokenPlaceholder: 'e.g. eyJhbGciOiJIUzI1Ni...',
       },
       selected: 'Selected',
+      seeAll: 'See all',
     },
     login: {
       loginTitle: 'Sign in to your account',
@@ -889,6 +890,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       deleteSelectedConfirm: 'Delete the selected {count} session(s)?',
     },
     setting: {
+      Verify: 'Verify',
+      keyValid: 'Your API key is valid.',
+      keyInvalid: 'Your API key is invalid.',
       deleteModel: 'Delete model',
       bedrockCredentialsHint:
         'Tip: Leave Access Key / Secret Key blank to use AWS IAM authentication.',
@@ -1316,6 +1320,8 @@ Example: Virtual Hosted Style`,
         image2text: 'OCR',
         speech2text: 'ASR',
       },
+      showToc: 'Show TOC',
+      hideToc: 'Hide TOC',
     },
     message: {
       registered: 'Registered!',

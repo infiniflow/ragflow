@@ -21,11 +21,13 @@ import { toast } from 'sonner';
 type FileUploadDirectUploadProps = {
   value: Record<string, any> | Record<string, any>[];
   onChange(value: Record<string, any>[]): void;
+  maxFiles?: number;
 };
 
 export function FileUploadDirectUpload({
   value,
   onChange,
+  maxFiles,
 }: FileUploadDirectUploadProps) {
   const [files, setFiles] = React.useState<File[]>([]);
   const uploadedFilesRef = React.useRef<Record<string, any>[]>(
@@ -99,9 +101,10 @@ export function FileUploadDirectUpload({
       onValueChange={handleFilesChange}
       onUpload={onUpload}
       onFileReject={onFileReject}
-      maxFiles={5}
+      // TODO： DEFALUT to 5 / 1 for params
+      maxFiles={(maxFiles ?? 5) as number}
       className="w-full"
-      multiple={true}
+      multiple={!maxFiles || !!(maxFiles && maxFiles > 1)}
     >
       <FileUploadDropzone>
         <div className="flex flex-col items-center gap-1 text-center">
@@ -110,7 +113,7 @@ export function FileUploadDirectUpload({
           </div>
           <p className="font-medium text-sm">Drag & drop files here</p>
           <p className="text-muted-foreground text-xs">
-            Or click to browse (max 5 files)
+            Or click to browse (max {(maxFiles ?? 5) as number} files)
           </p>
         </div>
         <FileUploadTrigger asChild>

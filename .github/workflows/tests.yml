@@ -187,6 +187,7 @@ jobs:
           echo -e "EXPOSE_MYSQL_PORT=${EXPOSE_MYSQL_PORT}" >> docker/.env
           echo -e "MINIO_PORT=${MINIO_PORT}" >> docker/.env
           echo -e "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}" >> docker/.env
+          echo -e "REDIS_PORT=${REDIS_PORT}" >> docker/.env
           echo -e "TEI_PORT=${TEI_PORT}" >> docker/.env
           echo -e "KIBANA_PORT=${KIBANA_PORT}" >> docker/.env
           echo -e "SVR_HTTP_PORT=${SVR_HTTP_PORT}" >> docker/.env
