@@ -76,6 +76,17 @@ class API4ConversationService(CommonService):
         sessions = sessions.paginate(page_number, items_per_page)
 
         return count, list(sessions.dicts())
+    
+    @classmethod
+    @DB.connection_context()
+    def get_names(cls, dialog_id, exp_user_id):
+        fields = [cls.model.id, cls.model.name,]
+        sessions = cls.model.select(*fields).where(
+            cls.model.dialog_id == dialog_id,
+            cls.model.exp_user_id == exp_user_id
+            ).order_by(cls.model.getter_by("create_date").desc())
+
+        return list(sessions.dicts())
 
     @classmethod
     @DB.connection_context()

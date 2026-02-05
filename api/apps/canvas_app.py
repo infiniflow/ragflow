@@ -580,6 +580,11 @@ def sessions(canvas_id):
         desc = False
     else:
         desc = True
+
+    if exp_user_id:
+        sess = API4ConversationService.get_names(canvas_id, exp_user_id)
+        return get_json_result(data={"total": len(sess), "sessions": sess})
+    
     # dsl defaults to True in all cases except for False and false
     include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
     total, sess = API4ConversationService.get_list(canvas_id, tenant_id, page_number, items_per_page, orderby, desc,
@@ -616,6 +621,18 @@ async def set_session(canvas_id):
     API4ConversationService.save(**conv)
     return get_json_result(data=conv)
 
+
+@manager.route('/<canvas_id>/sessions/<session_id>', methods=['GET'])  # noqa: F821
+@login_required
+def get_session(canvas_id, session_id):
+    tenant_id = current_user.id
+    if not UserCanvasService.accessible(canvas_id, tenant_id):
+        return get_json_result(
+            data=False, message='Only owner of canvas authorized for this operation.',
+            code=RetCode.OPERATING_ERROR)
+    conv = API4ConversationService.get_by_id(session_id)
+    return get_json_result(data=conv.to_dict())
+    
 
 @manager.route('/prompts', methods=['GET'])  # noqa: F821
 @login_required
