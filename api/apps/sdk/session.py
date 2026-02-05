@@ -229,18 +229,20 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             {"role": "user", "content": "Can you tell me how to install neovim"},
         ],
         extra_body={
-            "extra_body": {
-                "reference": reference,
-                "reference_metadata": {
-                    "include": True,
-                    "fields": ["character", "version", "updated_time"],
-                },
-                "metadata_condition": {
-                    "logic": "and",
-                    "conditions": [
-                        {"name": "updated_time", "comparison_operator": "is", "value": "2018"}
-                    ],
-                },
+            "reference": reference,
+            "reference_metadata": {
+                "include": True,
+                "fields": ["author", "year", "source"],
+            },
+            "metadata_condition": {
+                "logic": "and",
+                "conditions": [
+                    {
+                        "name": "author",
+                        "comparison_operator": "is",
+                        "value": "bob"
+                    }
+                ]
             }
         },
     )
