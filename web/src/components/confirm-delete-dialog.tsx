@@ -119,17 +119,19 @@ export const ConfirmDeleteDialogNode = ({
 }) => {
   return (
     <div className="flex flex-col gap-2.5">
-      <div className="flex items-center border-0.5 text-text-secondary border-border-button rounded-lg px-3 py-4">
-        {avatar && (
-          <RAGFlowAvatar
-            className="w-8 h-8"
-            avatar={avatar.avatar}
-            isPerson={avatar.isPerson}
-            name={avatar.name}
-          />
-        )}
-        {name && <div className="ml-3">{name}</div>}
-      </div>
+      {(avatar || name) && (
+        <div className="flex items-center border-0.5 text-text-secondary border-border-button rounded-lg px-3 py-4">
+          {avatar && (
+            <RAGFlowAvatar
+              className="w-8 h-8"
+              avatar={avatar.avatar}
+              isPerson={avatar.isPerson}
+              name={avatar.name}
+            />
+          )}
+          {name && <div className="ml-3">{name}</div>}
+        </div>
+      )}
       {warnText && <div className="text-state-error text-xs">{warnText}</div>}
       {children}
     </div>

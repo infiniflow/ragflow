@@ -271,11 +271,12 @@ export interface IApiKeySavingParams {
   llm_name?: string;
   model_type?: string;
   base_url?: string;
+  verify?: boolean;
 }
 
 export const useSaveApiKey = () => {
   const queryClient = useQueryClient();
-  const { t } = useTranslation();
+  // const { t } = useTranslation();
   const {
     data,
     isPending: loading,
@@ -285,14 +286,14 @@ export const useSaveApiKey = () => {
     mutationFn: async (params: IApiKeySavingParams) => {
       const { data } = await userService.set_api_key(params);
       if (data.code === 0) {
-        message.success(t('message.modified'));
+        // message.success(t('message.modified'));
         queryClient.invalidateQueries({ queryKey: [LLMApiAction.MyLlmList] });
         queryClient.invalidateQueries({
           queryKey: [LLMApiAction.MyLlmListDetailed],
         });
         queryClient.invalidateQueries({ queryKey: [LLMApiAction.FactoryList] });
       }
-      return data.code;
+      return data;
     },
   });
 
@@ -330,25 +331,25 @@ export const useSaveTenantInfo = () => {
 
 export const useAddLlm = () => {
   const queryClient = useQueryClient();
-  const { t } = useTranslation();
+  // const { t } = useTranslation();
   const {
     data,
     isPending: loading,
     mutateAsync,
   } = useMutation({
     mutationKey: [LLMApiAction.AddLlm],
-    mutationFn: async (params: IAddLlmRequestBody) => {
+    mutationFn: async (params: IAddLlmRequestBody & { verify?: boolean }) => {
       const { data } = await userService.add_llm(params);
-      if (data.code === 0) {
+      if (data.code === 0 && !params.verify) {
         queryClient.invalidateQueries({ queryKey: [LLMApiAction.MyLlmList] });
         queryClient.invalidateQueries({
           queryKey: [LLMApiAction.MyLlmListDetailed],
         });
         queryClient.invalidateQueries({ queryKey: [LLMApiAction.FactoryList] });
         queryClient.invalidateQueries({ queryKey: [LLMApiAction.LlmList] });
-        message.success(t('message.modified'));
+        // message.success(t('message.modified'));
       }
-      return data.code;
+      return data;
     },
   });
 

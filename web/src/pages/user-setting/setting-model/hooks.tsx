@@ -20,30 +20,56 @@ import { ApiKeyPostBody } from '../interface';
 import { MinerUFormValues } from './modal/mineru-modal';
 
 type SavingParamsState = Omit<IApiKeySavingParams, 'api_key'>;
-
+export type VerifyResult = {
+  isValid: boolean | null;
+  logs: string;
+};
 export const useSubmitApiKey = () => {
   const [savingParams, setSavingParams] = useState<SavingParamsState>(
     {} as SavingParamsState,
   );
   const [editMode, setEditMode] = useState(false);
-  const { saveApiKey, loading } = useSaveApiKey();
+  const { saveApiKey } = useSaveApiKey();
+  const [saveLoading, setSaveLoading] = useState(false);
   const {
     visible: apiKeyVisible,
     hideModal: hideApiKeyModal,
     showModal: showApiKeyModal,
   } = useSetModalState();
   const queryClient = useQueryClient();
+
   const onApiKeySavingOk = useCallback(
-    async (postBody: ApiKeyPostBody) => {
+    async (postBody: ApiKeyPostBody, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
       const ret = await saveApiKey({
         ...savingParams,
         ...postBody,
+        verify: isVerify,
       });
-
-      if (ret === 0) {
-        queryClient.invalidateQueries({ queryKey: ['llmList'] });
-        hideApiKeyModal();
-        setEditMode(false);
+      if (!isVerify) {
+        setSaveLoading(false);
+        if (ret.code === 0) {
+          queryClient.invalidateQueries({ queryKey: ['llmList'] });
+          hideApiKeyModal();
+          setEditMode(false);
+        }
+      }
+      if (isVerify) {
+        let res = {} as VerifyResult;
+        if (ret.data?.success) {
+          res = {
+            isValid: true,
+            logs: ret.data?.message,
+          };
+        } else {
+          res = {
+            isValid: false,
+            logs: ret.data.message,
+          };
+        }
+        return res;
       }
     },
     [hideApiKeyModal, saveApiKey, savingParams, queryClient],
@@ -59,7 +85,7 @@ export const useSubmitApiKey = () => {
   );
 
   return {
-    saveApiKeyLoading: loading,
+    saveApiKeyLoading: saveLoading,
     initialApiKey: '',
     llmFactory: savingParams.llm_factory,
     editMode,
@@ -119,7 +145,8 @@ export const useSubmitOllama = () => {
   const [initialValues, setInitialValues] = useState<
     Partial<IAddLlmRequestBody> & { provider_order?: string }
   >();
-  const { addLlm, loading } = useAddLlm();
+  const [saveLoading, setSaveLoading] = useState(false);
+  const { addLlm } = useAddLlm();
   const {
     visible: llmAddingVisible,
     hideModal: hideLlmAddingModal,
@@ -127,20 +154,41 @@ export const useSubmitOllama = () => {
   } = useSetModalState();
 
   const onLlmAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
+    async (payload: IAddLlmRequestBody, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
       const cleanedPayload = { ...payload };
       if (!cleanedPayload.api_key || cleanedPayload.api_key.trim() === '') {
         delete cleanedPayload.api_key;
       }
 
-      const ret = await addLlm(cleanedPayload);
-      if (ret === 0) {
-        hideLlmAddingModal();
-        setEditMode(false);
-        setInitialValues(undefined);
+      const ret = await addLlm({ ...cleanedPayload, verify: isVerify });
+      if (!isVerify) {
+        setSaveLoading(false);
+        if (ret.code === 0) {
+          hideLlmAddingModal();
+          setEditMode(false);
+          setInitialValues(undefined);
+        }
+      }
+      if (isVerify) {
+        let res = {} as VerifyResult;
+        if (ret.data?.success) {
+          res = {
+            isValid: true,
+            logs: ret.data?.message,
+          };
+        } else {
+          res = {
+            isValid: false,
+            logs: ret.data?.message,
+          };
+        }
+        return res;
       }
     },
-    [hideLlmAddingModal, addLlm],
+    [hideLlmAddingModal, addLlm, setSaveLoading],
   );
 
   const handleShowLlmAddingModal = (
@@ -168,7 +216,7 @@ export const useSubmitOllama = () => {
   };
 
   return {
-    llmAddingLoading: loading,
+    llmAddingLoading: saveLoading,
     editMode,
     initialValues,
     onLlmAddingOk,
@@ -180,7 +228,8 @@ export const useSubmitOllama = () => {
 };
 
 export const useSubmitVolcEngine = () => {
-  const { addLlm, loading } = useAddLlm();
+  const [saveLoading, setSaveLoading] = useState(false);
+  const { addLlm } = useAddLlm();
   const {
     visible: volcAddingVisible,
     hideModal: hideVolcAddingModal,
@@ -188,17 +237,38 @@ export const useSubmitVolcEngine = () => {
   } = useSetModalState();
 
   const onVolcAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideVolcAddingModal();
+    async (payload: IAddLlmRequestBody, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
+      const ret = await addLlm({ ...payload, verify: isVerify });
+      if (!isVerify) {
+        setSaveLoading(false);
+        if (ret.code === 0) {
+          hideVolcAddingModal();
+        }
+      }
+      if (isVerify) {
+        let res = {} as VerifyResult;
+        if (ret.data?.success) {
+          res = {
+            isValid: true,
+            logs: ret.data?.message,
+          };
+        } else {
+          res = {
+            isValid: false,
+            logs: ret.data?.message,
+          };
+        }
+        return res;
       }
     },
-    [hideVolcAddingModal, addLlm],
+    [hideVolcAddingModal, addLlm, setSaveLoading],
   );
 
   return {
-    volcAddingLoading: loading,
+    volcAddingLoading: saveLoading,
     onVolcAddingOk,
     volcAddingVisible,
     hideVolcAddingModal,
@@ -207,7 +277,8 @@ export const useSubmitVolcEngine = () => {
 };
 
 export const useSubmitTencentCloud = () => {
-  const { addLlm, loading } = useAddLlm();
+  const [saveLoading, setSaveLoading] = useState(false);
+  const { addLlm } = useAddLlm();
   const {
     visible: TencentCloudAddingVisible,
     hideModal: hideTencentCloudAddingModal,
@@ -215,17 +286,38 @@ export const useSubmitTencentCloud = () => {
   } = useSetModalState();
 
   const onTencentCloudAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideTencentCloudAddingModal();
+    async (payload: IAddLlmRequestBody, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
+      const ret = await addLlm({ ...payload, verify: isVerify });
+      if (!isVerify) {
+        setSaveLoading(false);
+        if (ret.code === 0) {
+          hideTencentCloudAddingModal();
+        }
+      }
+      if (isVerify) {
+        let res = {} as VerifyResult;
+        if (ret.data?.success) {
+          res = {
+            isValid: true,
+            logs: ret.data?.message,
+          };
+        } else {
+          res = {
+            isValid: false,
+            logs: ret.data?.message,
+          };
+        }
+        return res;
       }
     },
-    [hideTencentCloudAddingModal, addLlm],
+    [hideTencentCloudAddingModal, addLlm, setSaveLoading],
   );
 
   return {
-    TencentCloudAddingLoading: loading,
+    TencentCloudAddingLoading: saveLoading,
     onTencentCloudAddingOk,
     TencentCloudAddingVisible,
     hideTencentCloudAddingModal,
@@ -234,7 +326,8 @@ export const useSubmitTencentCloud = () => {
 };
 
 export const useSubmitSpark = () => {
-  const { addLlm, loading } = useAddLlm();
+  const [saveLoading, setSaveLoading] = useState(false);
+  const { addLlm } = useAddLlm();
   const {
     visible: SparkAddingVisible,
     hideModal: hideSparkAddingModal,
@@ -242,17 +335,38 @@ export const useSubmitSpark = () => {
   } = useSetModalState();
 
   const onSparkAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideSparkAddingModal();
+    async (payload: IAddLlmRequestBody, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
+      const ret = await addLlm({ ...payload, verify: isVerify });
+      if (!isVerify) {
+        setSaveLoading(false);
+        if (ret.code === 0) {
+          hideSparkAddingModal();
+        }
+      }
+      if (isVerify) {
+        let res = {} as VerifyResult;
+        if (ret.data?.success) {
+          res = {
+            isValid: true,
+            logs: ret.data?.message,
+          };
+        } else {
+          res = {
+            isValid: false,
+            logs: ret.data?.message,
+          };
+        }
+        return res;
       }
     },
-    [hideSparkAddingModal, addLlm],
+    [hideSparkAddingModal, addLlm, setSaveLoading],
   );
 
   return {
-    SparkAddingLoading: loading,
+    SparkAddingLoading: saveLoading,
     onSparkAddingOk,
     SparkAddingVisible,
     hideSparkAddingModal,
@@ -261,7 +375,8 @@ export const useSubmitSpark = () => {
 };
 
 export const useSubmityiyan = () => {
-  const { addLlm, loading } = useAddLlm();
+  const [saveLoading, setSaveLoading] = useState(false);
+  const { addLlm } = useAddLlm();
   const {
     visible: yiyanAddingVisible,
     hideModal: hideyiyanAddingModal,
@@ -269,17 +384,38 @@ export const useSubmityiyan = () => {
   } = useSetModalState();
 
   const onyiyanAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideyiyanAddingModal();
+    async (payload: IAddLlmRequestBody, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
+      const ret = await addLlm({ ...payload, verify: isVerify });
+      if (!isVerify) {
+        setSaveLoading(false);
+        if (ret.code === 0) {
+          hideyiyanAddingModal();
+        }
+      }
+      if (isVerify) {
+        let res = {} as VerifyResult;
+        if (ret.data?.success) {
+          res = {
+            isValid: true,
+            logs: ret.data?.message,
+          };
+        } else {
+          res = {
+            isValid: false,
+            logs: ret.data?.message,
+          };
+        }
+        return res;
       }
     },
-    [hideyiyanAddingModal, addLlm],
+    [hideyiyanAddingModal, addLlm, setSaveLoading],
   );
 
   return {
-    yiyanAddingLoading: loading,
+    yiyanAddingLoading: saveLoading,
     onyiyanAddingOk,
     yiyanAddingVisible,
     hideyiyanAddingModal,
@@ -288,7 +424,8 @@ export const useSubmityiyan = () => {
 };
 
 export const useSubmitFishAudio = () => {
-  const { addLlm, loading } = useAddLlm();
+  const [saveLoading, setSaveLoading] = useState(false);
+  const { addLlm } = useAddLlm();
   const {
     visible: FishAudioAddingVisible,
     hideModal: hideFishAudioAddingModal,
@@ -296,17 +433,38 @@ export const useSubmitFishAudio = () => {
   } = useSetModalState();
 
   const onFishAudioAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideFishAudioAddingModal();
+    async (payload: IAddLlmRequestBody, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
+      const ret = await addLlm({ ...payload, verify: isVerify });
+      if (!isVerify) {
+        setSaveLoading(false);
+        if (ret.code === 0) {
+          hideFishAudioAddingModal();
+        }
+      }
+      if (isVerify) {
+        let res = {} as VerifyResult;
+        if (ret.data?.success) {
+          res = {
+            isValid: true,
+            logs: ret.data?.message,
+          };
+        } else {
+          res = {
+            isValid: false,
+            logs: ret.data?.message,
+          };
+        }
+        return res;
       }
     },
-    [hideFishAudioAddingModal, addLlm],
+    [hideFishAudioAddingModal, addLlm, setSaveLoading],
   );
 
   return {
-    FishAudioAddingLoading: loading,
+    FishAudioAddingLoading: saveLoading,
     onFishAudioAddingOk,
     FishAudioAddingVisible,
     hideFishAudioAddingModal,
@@ -315,7 +473,8 @@ export const useSubmitFishAudio = () => {
 };
 
 export const useSubmitGoogle = () => {
-  const { addLlm, loading } = useAddLlm();
+  const [saveLoading, setSaveLoading] = useState(false);
+  const { addLlm } = useAddLlm();
   const {
     visible: GoogleAddingVisible,
     hideModal: hideGoogleAddingModal,
@@ -323,17 +482,38 @@ export const useSubmitGoogle = () => {
   } = useSetModalState();
 
   const onGoogleAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideGoogleAddingModal();
+    async (payload: IAddLlmRequestBody, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
+      const ret = await addLlm({ ...payload, verify: isVerify });
+      if (!isVerify) {
+        setSaveLoading(false);
+        if (ret.code === 0) {
+          hideGoogleAddingModal();
+        }
+      }
+      if (isVerify) {
+        let res = {} as VerifyResult;
+        if (ret.data?.success) {
+          res = {
+            isValid: true,
+            logs: ret.data?.message,
+          };
+        } else {
+          res = {
+            isValid: false,
+            logs: ret.data?.message,
+          };
+        }
+        return res;
       }
     },
-    [hideGoogleAddingModal, addLlm],
+    [hideGoogleAddingModal, addLlm, setSaveLoading],
   );
 
   return {
-    GoogleAddingLoading: loading,
+    GoogleAddingLoading: saveLoading,
     onGoogleAddingOk,
     GoogleAddingVisible,
     hideGoogleAddingModal,
@@ -342,7 +522,8 @@ export const useSubmitGoogle = () => {
 };
 
 export const useSubmitBedrock = () => {
-  const { addLlm, loading } = useAddLlm();
+  const [saveLoading, setSaveLoading] = useState(false);
+  const { addLlm } = useAddLlm();
   const {
     visible: bedrockAddingVisible,
     hideModal: hideBedrockAddingModal,
@@ -350,17 +531,38 @@ export const useSubmitBedrock = () => {
   } = useSetModalState();
 
   const onBedrockAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideBedrockAddingModal();
+    async (payload: IAddLlmRequestBody, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
+      const ret = await addLlm({ ...payload, verify: isVerify });
+      if (!isVerify) {
+        setSaveLoading(false);
+        if (ret.code === 0) {
+          hideBedrockAddingModal();
+        }
+      }
+      if (isVerify) {
+        let res = {} as VerifyResult;
+        if (ret.data?.success) {
+          res = {
+            isValid: true,
+            logs: ret.data?.message,
+          };
+        } else {
+          res = {
+            isValid: false,
+            logs: ret.data?.message,
+          };
+        }
+        return res;
       }
     },
-    [hideBedrockAddingModal, addLlm],
+    [hideBedrockAddingModal, addLlm, setSaveLoading],
   );
 
   return {
-    bedrockAddingLoading: loading,
+    bedrockAddingLoading: saveLoading,
     onBedrockAddingOk,
     bedrockAddingVisible,
     hideBedrockAddingModal,
@@ -369,7 +571,8 @@ export const useSubmitBedrock = () => {
 };
 
 export const useSubmitAzure = () => {
-  const { addLlm, loading } = useAddLlm();
+  const [saveLoading, setSaveLoading] = useState(false);
+  const { addLlm } = useAddLlm();
   const {
     visible: AzureAddingVisible,
     hideModal: hideAzureAddingModal,
@@ -377,17 +580,38 @@ export const useSubmitAzure = () => {
   } = useSetModalState();
 
   const onAzureAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideAzureAddingModal();
+    async (payload: IAddLlmRequestBody, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
+      const ret = await addLlm({ ...payload, verify: isVerify });
+      if (!isVerify) {
+        setSaveLoading(false);
+        if (ret.code === 0) {
+          hideAzureAddingModal();
+        }
+      }
+      if (isVerify) {
+        let res = {} as VerifyResult;
+        if (ret.data?.success) {
+          res = {
+            isValid: true,
+            logs: ret.data?.message,
+          };
+        } else {
+          res = {
+            isValid: false,
+            logs: ret.data?.message,
+          };
+        }
+        return res;
       }
     },
-    [hideAzureAddingModal, addLlm],
+    [hideAzureAddingModal, addLlm, setSaveLoading],
   );
 
   return {
-    AzureAddingLoading: loading,
+    AzureAddingLoading: saveLoading,
     onAzureAddingOk,
     AzureAddingVisible,
     hideAzureAddingModal,
@@ -436,7 +660,8 @@ export const useHandleDeleteFactory = (llmFactory: string) => {
 };
 
 export const useSubmitMinerU = () => {
-  const { addLlm, loading } = useAddLlm();
+  const [saveLoading, setSaveLoading] = useState(false);
+  const { addLlm } = useAddLlm();
   const {
     visible: mineruVisible,
     hideModal: hideMineruModal,
@@ -444,7 +669,10 @@ export const useSubmitMinerU = () => {
   } = useSetModalState();
 
   const onMineruOk = useCallback(
-    async (payload: MinerUFormValues) => {
+    async (payload: MinerUFormValues, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
       const cfg: any = {
         ...payload,
         mineru_delete_output:
@@ -461,12 +689,30 @@ export const useSubmitMinerU = () => {
         api_base: '',
         max_tokens: 0,
       };
-      const ret = await addLlm(req);
-      if (ret === 0) {
-        hideMineruModal();
+      const ret = await addLlm({ ...req, verify: isVerify });
+      if (!isVerify) {
+        setSaveLoading(false);
+        if (ret.code === 0) {
+          hideMineruModal();
+        }
+      }
+      if (isVerify) {
+        let res = {} as VerifyResult;
+        if (ret.data?.success) {
+          res = {
+            isValid: true,
+            logs: ret.data?.message,
+          };
+        } else {
+          res = {
+            isValid: false,
+            logs: ret.data?.message,
+          };
+        }
+        return res;
       }
     },
-    [addLlm, hideMineruModal],
+    [addLlm, hideMineruModal, setSaveLoading],
   );
 
   return {
@@ -474,12 +720,13 @@ export const useSubmitMinerU = () => {
     hideMineruModal,
     showMineruModal,
     onMineruOk,
-    mineruLoading: loading,
+    mineruLoading: saveLoading,
   };
 };
 
 export const useSubmitPaddleOCR = () => {
-  const { addLlm, loading } = useAddLlm();
+  const [saveLoading, setSaveLoading] = useState(false);
+  const { addLlm } = useAddLlm();
   const {
     visible: paddleocrVisible,
     hideModal: hidePaddleOCRModal,
@@ -487,7 +734,10 @@ export const useSubmitPaddleOCR = () => {
   } = useSetModalState();
 
   const onPaddleOCROk = useCallback(
-    async (payload: any) => {
+    async (payload: any, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
       const cfg: any = {
         ...payload,
       };
@@ -499,14 +749,32 @@ export const useSubmitPaddleOCR = () => {
         api_base: '',
         max_tokens: 0,
       };
-      const ret = await addLlm(req);
-      if (ret === 0) {
-        hidePaddleOCRModal();
-        return true;
+      const ret = await addLlm({ ...req, verify: isVerify });
+      if (!isVerify) {
+        setSaveLoading(false);
+        if (ret.code === 0) {
+          hidePaddleOCRModal();
+          return true;
+        }
+      }
+      if (isVerify) {
+        let res = {} as VerifyResult;
+        if (ret.data?.success) {
+          res = {
+            isValid: true,
+            logs: ret.data?.message,
+          };
+        } else {
+          res = {
+            isValid: false,
+            logs: ret.data?.message,
+          };
+        }
+        return res;
       }
       return false;
     },
-    [addLlm, hidePaddleOCRModal],
+    [addLlm, hidePaddleOCRModal, setSaveLoading],
   );
 
   return {
@@ -514,6 +782,37 @@ export const useSubmitPaddleOCR = () => {
     hidePaddleOCRModal,
     showPaddleOCRModal,
     onPaddleOCROk,
-    paddleocrLoading: loading,
+    paddleocrLoading: saveLoading,
+  };
+};
+
+export const useVerifySettings = ({
+  onVerify,
+}: {
+  onVerify:
+    | ((
+        postBody: ApiKeyPostBody,
+        isVerify?: boolean,
+      ) => Promise<VerifyResult | undefined>)
+    | ((
+        payload: IAddLlmRequestBody,
+        isVerify?: boolean,
+      ) => Promise<VerifyResult | undefined>)
+    | ((
+        payload: MinerUFormValues,
+        isVerify?: boolean,
+      ) => Promise<VerifyResult | undefined>)
+    | ((payload: any, isVerify?: boolean) => Promise<boolean | VerifyResult>)
+    | (() => void);
+}) => {
+  const onApiKeyVerifying = useCallback(
+    async (postBody: any) => {
+      const res = await onVerify(postBody, true);
+      return res;
+    },
+    [onVerify],
+  );
+  return {
+    onApiKeyVerifying,
   };
 };
