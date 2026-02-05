@@ -253,6 +253,9 @@ class TestStorageDeletion:
             filename: str = upload_response["data"][0]["location"]
 
             # check storage contains bucket and uploaded document
+            if not settings.STORAGE_IMPL:
+                pytest.skip("Using unsupported storage backend. Currently only MinIO and S3 are supported by this testcase.")
+
             assert settings.STORAGE_IMPL.bucket_exists(dataset_id), f"Storage should have bucket for dataset {dataset_id}"
             assert settings.STORAGE_IMPL.obj_exist(dataset_id, filename), f"Storage should have file {filename} in bucket of dataset {dataset_id}"
 

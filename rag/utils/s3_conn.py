@@ -198,7 +198,7 @@ class RAGFlowS3:
         return None
 
     @use_default_bucket
-    def rm_bucket(self, bucket, *args, **kwargs):
+    def remove_bucket(self, bucket, *args, **kwargs):
         for conn in self.conn:
             try:
                 if not conn.bucket_exists(bucket):

@@ -30,6 +30,42 @@ class TestUserDeletion:
     @pytest.mark.usefixtures("init_storage")
     def test_delete_user_removes_storage_files(self, admin_session, tmp_path):
         """Verify that deleting a user also removes datasets from storage."""
+        username_2 = None
+        try:
+            # create 2 test users
+            username_1, auth_header_1, dataset_id_1, filename_1 = self._create_user_with_data(admin_session, tmp_path)
+            username_2, auth_header_2, dataset_id_2, filename_2 = self._create_user_with_data(admin_session, tmp_path)
+
+            # check storage contains buckets and uploaded documents for both users
+            if not settings.STORAGE_IMPL:
+                pytest.skip("Using unsupported storage backend. Currently only MinIO and S3 are supported by this testcase.")
+
+            for dataset_id, filename in ((dataset_id_1, filename_1), (dataset_id_2, filename_2)):
+                assert settings.STORAGE_IMPL.bucket_exists(dataset_id), f"Storage should have bucket for dataset {dataset_id}"
+                assert settings.STORAGE_IMPL.obj_exist(dataset_id, filename), f"Storage should have file {filename} in bucket of dataset {dataset_id}"
+
+            # deactivate user 1 (required before deletion)
+            deactivate_response = change_user_activation(admin_session, username_1, False)
+            assert deactivate_response["code"] == 0, deactivate_response
+
+            # delete user 1
+            delete_response = delete_user(admin_session, username_1)
+            assert delete_response["code"] == 0, delete_response
+
+            # verify bucket of user 1's dataset got deleted
+            assert not settings.STORAGE_IMPL.bucket_exists(dataset_id_1), f"Storage should not contain bucket for dataset {dataset_id_1} after deletion"
+
+            # verify user 2's data did not get deleted
+            assert settings.STORAGE_IMPL.bucket_exists(dataset_id_2), f"Data of user 2 was deleted. Storage should have bucket for dataset {dataset_id_2}"
+            assert settings.STORAGE_IMPL.obj_exist(dataset_id_2, filename_2), f"Data of user 2 was deleted. Storage should have file {filename_2} in bucket of dataset {dataset_id_2}"
+        finally:
+            # cleanup
+            if username_2:
+                delete_user(admin_session, username_2)
+
+
+    @staticmethod
+    def _create_user_with_data(admin_session, tmp_path) -> tuple[str, dict[str, str], str, str]:
         # create user
         username: str = f"test_user_{uuid.uuid4().hex}@ragflow.io"
         create_user_response = create_user(admin_session, username, ENCRYPTED_ADMIN_PASSWORD)
@@ -40,7 +76,7 @@ class TestUserDeletion:
         assert generate_token_response["code"] == 0, generate_token_response
         assert isinstance(generate_token_response["data"], dict), generate_token_response
         assert generate_token_response["data"].get("token"), generate_token_response
-        auth_header = {"Authorization": f"Bearer {generate_token_response["data"]["token"]}"}
+        auth_header: dict[str, str] = {"Authorization": f"Bearer {generate_token_response["data"]["token"]}"}
 
         # create a dataset
         create_dataset_response = requests.post(
@@ -54,7 +90,7 @@ class TestUserDeletion:
         dataset_id: str = create_dataset_response["data"]["id"]
 
         # upload file to dataset
-        test_file = create_txt_file(tmp_path / "ragflow_test.txt")
+        test_file = create_txt_file(tmp_path / f"test_file_{uuid.uuid4().hex}.txt")
         with open(test_file, "rb") as f:
             upload_response = requests.post(
                 url=f"{HOST_ADDRESS}/api/{VERSION}/datasets/{dataset_id}/documents",
@@ -65,16 +101,4 @@ class TestUserDeletion:
         assert len(upload_response["data"]) == 1, upload_response
         filename: str = upload_response["data"][0]["location"]
 
-        # check storage contains bucket and uploaded document
-        assert settings.STORAGE_IMPL.bucket_exists(dataset_id), f"Storage should have bucket for dataset {dataset_id}"
-        assert settings.STORAGE_IMPL.obj_exist(dataset_id, filename), f"Storage should have file {filename} in bucket of dataset {dataset_id}"
-
-        # deactivate user (required before deletion)
-        deactivate_response = change_user_activation(admin_session, username, False)
-        assert deactivate_response["code"] == 0, deactivate_response
-
-        delete_response = delete_user(admin_session, username)
-        assert delete_response["code"] == 0, delete_response
-
-        # verify bucket of user's dataset got deleted
-        assert not settings.STORAGE_IMPL.bucket_exists(dataset_id), f"Storage should not contain bucket for dataset {dataset_id} after deletion"
+        return username, auth_header, dataset_id, filename
