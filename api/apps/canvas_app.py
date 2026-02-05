@@ -107,51 +107,6 @@ def get(canvas_id):
     return get_json_result(data=c)
 
 
-@manager.route('/<canvas_id>/sessions', methods=['GET'])  # noqa: F821
-@login_required
-async def sessions(canvas_id):
-    tenant_id = current_user.id
-    if not UserCanvasService.accessible(canvas_id, tenant_id):
-        return get_data_error_result(message="canvas not found.")
-    page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size", 3000000))
-    orderby = request.args.get("orderby", "update_time")
-    if request.args.get("desc").lower() == "false":
-        desc = False
-    else:
-        desc = True
-    total, convs = API4ConversationService.get_list(canvas_id, tenant_id, page_number, items_per_page, orderby, desc, 
-                                                    include_dsl=False, exp_user_id=tenant_id)
-    return get_json_result(data={"sessions": convs, "total":total})
-
-
-@manager.route('/<canvas_id>/sessions', methods=['PUT'])  # noqa: F821
-@login_required
-async def set_session(canvas_id):
-    req = await get_request_json()
-    tenant_id = current_user.id
-    e, cvs = UserCanvasService.get_by_id(canvas_id)
-    assert e, "Agent not found."
-    if not isinstance(cvs.dsl, str):
-        cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
-    session_id=get_uuid()
-    canvas = Canvas(cvs.dsl, tenant_id, canvas_id, canvas_id=cvs.id)
-    canvas.reset()
-    conv = {
-        "id": session_id,
-        "name": req.get("name", ""),
-        "dialog_id": cvs.id,
-        "user_id": tenant_id,
-        "exp_user_id": tenant_id,
-        "message": [],
-        "source": "agent",
-        "dsl": cvs.dsl,
-        "reference": []
-    }
-    API4ConversationService.save(**conv)
-    return get_json_result(data=conv)
-
-
 @manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
 def getsse(canvas_id):
     token = request.headers.get('Authorization').split()
@@ -619,6 +574,7 @@ def sessions(canvas_id):
     from_date = request.args.get("from_date")
     to_date = request.args.get("to_date")
     orderby = request.args.get("orderby", "update_time")
+    exp_user_id = request.args.get("exp_user_id")
     if request.args.get("desc") == "False" or request.args.get("desc") == "false":
         desc = False
     else:
@@ -626,11 +582,38 @@ def sessions(canvas_id):
     # dsl defaults to True in all cases except for False and false
     include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
     total, sess = API4ConversationService.get_list(canvas_id, tenant_id, page_number, items_per_page, orderby, desc,
-                                             None, user_id, include_dsl, keywords, from_date, to_date)
+                                             None, user_id, include_dsl, keywords, from_date, to_date, exp_user_id=exp_user_id)
     try:
         return get_json_result(data={"total": total, "sessions": sess})
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route('/<canvas_id>/sessions', methods=['PUT'])  # noqa: F821
+@login_required
+async def set_session(canvas_id):
+    req = await get_request_json()
+    tenant_id = current_user.id
+    e, cvs = UserCanvasService.get_by_id(canvas_id)
+    assert e, "Agent not found."
+    if not isinstance(cvs.dsl, str):
+        cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
+    session_id=get_uuid()
+    canvas = Canvas(cvs.dsl, tenant_id, canvas_id, canvas_id=cvs.id)
+    canvas.reset()
+    conv = {
+        "id": session_id,
+        "name": req.get("name", ""),
+        "dialog_id": cvs.id,
+        "user_id": tenant_id,
+        "exp_user_id": tenant_id,
+        "message": [],
+        "source": "agent",
+        "dsl": cvs.dsl,
+        "reference": []
+    }
+    API4ConversationService.save(**conv)
+    return get_json_result(data=conv)
 
 
 @manager.route('/prompts', methods=['GET'])  # noqa: F821
