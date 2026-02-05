@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import copy
 import inspect
 import json
 import logging
@@ -46,6 +47,7 @@ from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
 from common import settings
 from api.apps import login_required, current_user
+from api.db.services.canvas_service import completion as agent_completion
 
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
@@ -103,6 +105,51 @@ def get(canvas_id):
         return get_data_error_result(message="canvas not found.")
     e, c = UserCanvasService.get_by_canvas_id(canvas_id)
     return get_json_result(data=c)
+
+
+@manager.route('/<canvas_id>/sessions', methods=['GET'])  # noqa: F821
+@login_required
+async def sessions(canvas_id):
+    tenant_id = current_user.id
+    if not UserCanvasService.accessible(canvas_id, tenant_id):
+        return get_data_error_result(message="canvas not found.")
+    page_number = int(request.args.get("page", 1))
+    items_per_page = int(request.args.get("page_size", 3000000))
+    orderby = request.args.get("orderby", "update_time")
+    if request.args.get("desc").lower() == "false":
+        desc = False
+    else:
+        desc = True
+    total, convs = API4ConversationService.get_list(canvas_id, tenant_id, page_number, items_per_page, orderby, desc, 
+                                                    include_dsl=False, exp_user_id=tenant_id)
+    return get_json_result(data={"sessions": convs, "total":total})
+
+
+@manager.route('/<canvas_id>/sessions', methods=['PUT'])  # noqa: F821
+@login_required
+async def set_session(canvas_id):
+    req = await get_request_json()
+    tenant_id = current_user.id
+    e, cvs = UserCanvasService.get_by_id(canvas_id)
+    assert e, "Agent not found."
+    if not isinstance(cvs.dsl, str):
+        cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
+    session_id=get_uuid()
+    canvas = Canvas(cvs.dsl, tenant_id, canvas_id, canvas_id=cvs.id)
+    canvas.reset()
+    conv = {
+        "id": session_id,
+        "name": req.get("name", ""),
+        "dialog_id": cvs.id,
+        "user_id": tenant_id,
+        "exp_user_id": tenant_id,
+        "message": [],
+        "source": "agent",
+        "dsl": cvs.dsl,
+        "reference": []
+    }
+    API4ConversationService.save(**conv)
+    return get_json_result(data=conv)
 
 
 @manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
@@ -183,6 +230,49 @@ async def run():
     #resp.call_on_close(lambda: canvas.cancel_task())
     return resp
 
+
+@manager.route("/<canvas_id>/completion", methods=["POST"])  # noqa: F821
+@login_required
+async def agent_completions(tenant_id, agent_id):
+    req = await get_request_json()
+    return_trace = bool(req.get("return_trace", False))
+    async def generate():
+        trace_items = []
+        async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
+            if isinstance(answer, str):
+                try:
+                    ans = json.loads(answer[5:])  # remove "data:"
+                except Exception:
+                    continue
+
+            event = ans.get("event")
+            if event == "node_finished":
+                if return_trace:
+                    data = ans.get("data", {})
+                    trace_items.append(
+                        {
+                            "component_id": data.get("component_id"),
+                            "trace": [copy.deepcopy(data)],
+                        }
+                    )
+                    ans.setdefault("data", {})["trace"] = trace_items
+                    answer = "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+                yield answer
+
+            if event not in ["message", "message_end"]:
+                continue
+
+            yield answer
+
+        yield "data:[DONE]\n\n"
+
+    resp = Response(generate(), mimetype="text/event-stream")
+    resp.headers.add_header("Cache-control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+    return resp
+    
 
 @manager.route('/rerun', methods=['POST'])  # noqa: F821
 @validate_request("id", "dsl", "component_id")
