@@ -321,7 +321,7 @@ def create_s3_client(bucket_type: BlobType, credentials: dict[str, Any], europea
             endpoint_url=credentials["endpoint_url"],
             aws_access_key_id=credentials["aws_access_key_id"],
             aws_secret_access_key=credentials["aws_secret_access_key"],
-            config=Config(s3={'addressing_style': addressing_style}),
+            config=Config(s3={'addressing_style': credentials["addressing_style"]}),
         )
 
     else:
