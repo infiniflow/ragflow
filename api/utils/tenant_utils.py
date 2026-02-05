@@ -15,9 +15,9 @@
 #
 from api.db.services.tenant_llm_service import TenantLLMService
 
-def add_tenant_model_id_for_params(tenant_id: str, param_dict: dict) -> dict:
+def ensure_tenant_model_id_for_params(tenant_id: str, param_dict: dict) -> dict:
     for key in ["llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id"]:
-        if param_dict.get(key):
+        if param_dict.get(key) and not param_dict.get(f"tenant_{key}"):
             tenant_model = TenantLLMService.get_api_key(tenant_id, param_dict[key])
             if tenant_model:
                 param_dict.update({f"tenant_{key}": tenant_model.id})

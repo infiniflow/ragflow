@@ -44,7 +44,7 @@ from api.db import VALID_FILE_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
 from api.utils.api_utils import get_json_result
-from api.utils.tenant_utils import add_tenant_model_id_for_params
+from api.utils.tenant_utils import ensure_tenant_model_id_for_params
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.utils.redis_conn import REDIS_CONN
@@ -58,7 +58,7 @@ from api.apps import login_required, current_user
 @validate_request("name")
 async def create():
     req = await get_request_json()
-    create_dict = add_tenant_model_id_for_params(current_user.id, req)
+    create_dict = ensure_tenant_model_id_for_params(current_user.id, req)
     e, res = KnowledgebaseService.create_with_name(
         name = create_dict.pop("name", None),
         tenant_id = current_user.id,
@@ -83,7 +83,7 @@ async def create():
 @not_allowed_parameters("id", "tenant_id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
 async def update():
     req = await get_request_json()
-    update_dict = add_tenant_model_id_for_params(current_user.id, req)
+    update_dict = ensure_tenant_model_id_for_params(current_user.id, req)
     if not isinstance(update_dict["name"], str):
         return get_data_error_result(message="Dataset name must be string.")
     if update_dict["name"].strip() == "":

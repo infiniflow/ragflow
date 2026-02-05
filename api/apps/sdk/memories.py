@@ -27,7 +27,7 @@ from api.db.services.task_service import TaskService
 from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
 from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
-from api.utils.tenant_utils import add_tenant_model_id_for_params
+from api.utils.tenant_utils import ensure_tenant_model_id_for_params
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
 from memory.services.messages import MessageService
 from memory.utils.prompt_util import PromptAssembler
@@ -41,7 +41,7 @@ async def create_memory():
     timing_enabled = os.getenv("RAGFLOW_API_TIMING")
     t_start = time.perf_counter() if timing_enabled else None
     req = await get_request_json()
-    memory_info = add_tenant_model_id_for_params(current_user.id, req)
+    memory_info = ensure_tenant_model_id_for_params(current_user.id, req)
     t_parsed = time.perf_counter() if timing_enabled else None
     # check name length
     name = memory_info["name"]
@@ -119,10 +119,11 @@ async def create_memory():
 @login_required
 async def update_memory(memory_id):
     req = await get_request_json()
+    memory_info = ensure_tenant_model_id_for_params(current_user.id, req)
     update_dict = {}
     # check name length
-    if "name" in req:
-        name = req["name"]
+    if "name" in memory_info:
+        name = memory_info["name"]
         memory_name = name.strip()
         if len(memory_name) == 0:
             return get_error_argument_result("Memory name cannot be empty or whitespace.")
@@ -130,40 +131,40 @@ async def update_memory(memory_id):
             return get_error_argument_result(f"Memory name '{memory_name}' exceeds limit of {MEMORY_NAME_LIMIT}.")
         update_dict["name"] = memory_name
     # check permissions valid
-    if req.get("permissions"):
-        if req["permissions"] not in [e.value for e in TenantPermission]:
-            return get_error_argument_result(f"Unknown permission '{req['permissions']}'.")
-        update_dict["permissions"] = req["permissions"]
-    if req.get("llm_id"):
-        update_dict["llm_id"] = req["llm_id"]
-    if req.get("embd_id"):
-        update_dict["embd_id"] = req["embd_id"]
-    if req.get("memory_type"):
-        memory_type = set(req["memory_type"])
+    if memory_info.get("permissions"):
+        if memory_info["permissions"] not in [e.value for e in TenantPermission]:
+            return get_error_argument_result(f"Unknown permission '{memory_info['permissions']}'.")
+        update_dict["permissions"] = memory_info["permissions"]
+    if memory_info.get("llm_id"):
+        update_dict["llm_id"] = memory_info["llm_id"]
+    if memory_info.get("embd_id"):
+        update_dict["embd_id"] = memory_info["embd_id"]
+    if memory_info.get("memory_type"):
+        memory_type = set(memory_info["memory_type"])
         invalid_type = memory_type - {e.name.lower() for e in MemoryType}
         if invalid_type:
             return get_error_argument_result(f"Memory type '{invalid_type}' is not supported.")
         update_dict["memory_type"] = list(memory_type)
     # check memory_size valid
-    if req.get("memory_size"):
-        if not 0 < int(req["memory_size"]) <= MEMORY_SIZE_LIMIT:
+    if memory_info.get("memory_size"):
+        if not 0 < int(memory_info["memory_size"]) <= MEMORY_SIZE_LIMIT:
             return get_error_argument_result(f"Memory size should be in range (0, {MEMORY_SIZE_LIMIT}] Bytes.")
-        update_dict["memory_size"] = req["memory_size"]
+        update_dict["memory_size"] = memory_info["memory_size"]
     # check forgetting_policy valid
-    if req.get("forgetting_policy"):
-        if req["forgetting_policy"] not in [e.value for e in ForgettingPolicy]:
-            return get_error_argument_result(f"Forgetting policy '{req['forgetting_policy']}' is not supported.")
-        update_dict["forgetting_policy"] = req["forgetting_policy"]
+    if memory_info.get("forgetting_policy"):
+        if memory_info["forgetting_policy"] not in [e.value for e in ForgettingPolicy]:
+            return get_error_argument_result(f"Forgetting policy '{memory_info['forgetting_policy']}' is not supported.")
+        update_dict["forgetting_policy"] = memory_info["forgetting_policy"]
     # check temperature valid
-    if "temperature" in req:
-        temperature = float(req["temperature"])
+    if "temperature" in memory_info:
+        temperature = float(memory_info["temperature"])
         if not 0 <= temperature <= 1:
             return get_error_argument_result("Temperature should be in range [0, 1].")
         update_dict["temperature"] = temperature
     # allow update to empty fields
     for field in ["avatar", "description", "system_prompt", "user_prompt"]:
-        if field in req:
-            update_dict[field] = req[field]
+        if field in memory_info:
+            update_dict[field] = memory_info[field]
     current_memory = MemoryService.get_by_memory_id(memory_id)
     if not current_memory:
         return get_json_result(code=RetCode.NOT_FOUND, message=f"Memory '{memory_id}' not found.")

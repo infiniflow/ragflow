@@ -22,7 +22,7 @@ from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
-from api.utils.tenant_utils import add_tenant_model_id_for_params
+from api.utils.tenant_utils import ensure_tenant_model_id_for_params
 from common.misc_utils import get_uuid
 from common.constants import RetCode
 from api.apps import login_required, current_user
@@ -34,7 +34,7 @@ import logging
 @login_required
 async def set_dialog():
     req = await get_request_json()
-    dialog_info = add_tenant_model_id_for_params(current_user.id, req)
+    dialog_info = ensure_tenant_model_id_for_params(current_user.id, req)
     dialog_id = dialog_info.get("dialog_id", "")
     is_create = not dialog_id
     name = dialog_info.get("name", "New Dialog")
