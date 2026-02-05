@@ -83,7 +83,13 @@ completion = client.chat.completions.create(
         {"role": "user", "content": "Can you tell me how to install neovim"},
     ],
     stream=stream,
-    extra_body={"reference": reference}
+    extra_body={
+        "reference": reference,
+        "reference_metadata": {
+            "include": True,
+            "fields": ["author", "year", "source"],
+        },
+    }
 )
 
 if stream:
@@ -97,6 +103,8 @@ else:
     if reference:
         print(completion.choices[0].message.reference)
 ```
+
+When `extra_body.reference_metadata.include` is `true`, each reference chunk may include a `document_metadata` object in both streaming and non-streaming responses.
 
 ## DATASET MANAGEMENT
 
@@ -1518,6 +1526,8 @@ A list of `Chunk` objects representing references to the message, each containin
   The ID of the referenced document.
 - `document_name` `str`  
   The name of the referenced document.
+- `document_metadata` `dict`  
+  Optional document metadata, returned only when `extra_body.reference_metadata.include` is `true`.
 - `position` `list[str]`  
   The location information of the chunk within the referenced document.
 - `dataset_id` `str`  
@@ -1643,6 +1653,8 @@ A list of `Chunk` objects representing references to the message, each containin
   The ID of the referenced document.
 - `document_name` `str`  
   The name of the referenced document.
+- `document_metadata` `dict`  
+  Optional document metadata, returned only when `extra_body.reference_metadata.include` is `true`.
 - `position` `list[str]`  
   The location information of the chunk within the referenced document.
 - `dataset_id` `str`  
@@ -2596,4 +2608,3 @@ memory_object.get_message_content(message_id)
 ```
 
 ---
-
