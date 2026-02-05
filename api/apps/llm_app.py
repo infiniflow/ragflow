@@ -351,6 +351,7 @@ def my_llms():
 
                 res[o_dict["llm_factory"]]["llm"].append(
                     {
+                        "id": o_dict["id"],
                         "type": o_dict["model_type"],
                         "name": o_dict["llm_name"],
                         "used_token": o_dict["used_tokens"],
@@ -364,7 +365,7 @@ def my_llms():
             for o in TenantLLMService.get_my_llms(current_user.id):
                 if o["llm_factory"] not in res:
                     res[o["llm_factory"]] = {"tags": o["tags"], "llm": []}
-                res[o["llm_factory"]]["llm"].append({"type": o["model_type"], "name": o["llm_name"], "used_token": o["used_tokens"], "status": o["status"]})
+                res[o["llm_factory"]]["llm"].append({"id": o["id"], "type": o["model_type"], "name": o["llm_name"], "used_token": o["used_tokens"], "status": o["status"]})
 
         return get_json_result(data=res)
     except Exception as e:

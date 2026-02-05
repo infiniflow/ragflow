@@ -87,12 +87,3 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str):
     if not model_name:
         raise Exception(f"No default {model_type} model is set.")
     return get_model_config_by_type_and_name(tenant_id, model_type, model_name)
-
-
-def get_model_config(model_id: str=None, tenant_id: str=None, model_type: str=None):
-    if model_id.isdecimal():
-        return get_model_config_by_id(model_id)
-    elif model_id:
-        return get_model_config_by_type_and_name(tenant_id, model_type, model_id)
-    else:
-        return get_tenant_default_model_by_type(tenant_id, model_type)

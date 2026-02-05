@@ -27,10 +27,12 @@ from api.db.services import UserService
 from api.db.services.canvas_service import CanvasTemplateService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.memory_service import MemoryService
 from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMService
 from api.db.services.llm_service import LLMService, LLMBundle, get_init_tenant_llm
 from api.db.services.user_service import TenantService, UserTenantService
 from api.db.services.system_settings_service import SystemSettingsService
+from api.db.services.dialog_service import DialogService
 from api.db.joint_services.memory_message_service import init_message_id_sequence, init_memory_size_cache, fix_missing_tokenized_memory
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from common.constants import LLMType
@@ -178,6 +180,7 @@ def init_web_data():
     init_message_id_sequence()
     init_memory_size_cache()
     fix_missing_tokenized_memory()
+    fix_empty_tenant_model_id()
     logging.info("init web data success:{}".format(time.time() - start_time))
 
 def init_table():
@@ -204,6 +207,65 @@ def init_table():
         except Exception as e:
             logging.exception("System settings init error: {}".format(e))
             raise e
+
+
+def fix_empty_tenant_model_id():
+    # knowledgebase
+    empty_tenant_embd_id_kbs = KnowledgebaseService.query(tenant_embd_id=None)
+    if empty_tenant_embd_id_kbs:
+        logging.info(f"Found {len(empty_tenant_embd_id_kbs)} empty tenant_embd_id knowledgebase.")
+        kb_groups: dict = {}
+        for obj in empty_tenant_embd_id_kbs:
+            if kb_groups.get((obj.tenant_id, obj.embd_id)):
+                kb_groups[(obj.tenant_id, obj.embd_id)].append(obj.id)
+            else:
+                kb_groups[(obj.tenant_id, obj.embd_id)] = [obj.id]
+        for k, v in kb_groups.items():
+            tenant_llm = TenantLLMService.get_api_key(k[0], k[1])
+            if tenant_llm:
+                KnowledgebaseService.filter_update({"id": v}, {"tenant_embd_id": tenant_llm.id})
+    # dialog
+    empty_tenant_llm_id_dialog = DialogService.query(tenant_llm_id=None)
+    if empty_tenant_llm_id_dialog:
+        logging.info(f"Found {len(empty_tenant_llm_id_dialog)} empty tenant_llm_id dialogs.")
+        dialog_groups: dict = {}
+        for obj in empty_tenant_llm_id_dialog:
+            if dialog_groups.get((obj.tenant_id, obj.llm_id)):
+                dialog_groups[(obj.tenant_id, obj.llm_id)].append(obj.id)
+            else:
+                dialog_groups[(obj.tenant_id, obj.llm_id)] = [obj.id]
+        for k, v in dialog_groups.items():
+            tenant_llm = TenantLLMService.get_api_key(k[0], k[1])
+            if tenant_llm:
+                DialogService.filter_update({"id": v}, {"tenant_llm_id": tenant_llm.id})
+    # memory
+    empty_tenant_embd_id_memories = MemoryService.query(tenant_embd_id_memory=None)
+    if empty_tenant_embd_id_memories:
+        logging.info(f"Found {len(empty_tenant_embd_id_memories)} empty tenant_embd_id memories.")
+        memory_groups: dict = {}
+        for obj in empty_tenant_embd_id_memories:
+            if memory_groups.get((obj.tenant_id, obj.embd_id)):
+                memory_groups[(obj.tenant_id, obj.embd_id)].append(obj.id)
+            else:
+                memory_groups[(obj.tenant_id, obj.embd_id)] = [obj.id]
+        for k, v in memory_groups.items():
+            tenant_llm = TenantLLMService.get_api_key(k[0], k[1])
+            if tenant_llm:
+                MemoryService.filter_update({"id": v}, {"tenant_embd_id": tenant_llm.id})
+
+    empty_tenant_llm_id_memories = MemoryService.query(tenant_llm_id_memory=None)
+    if empty_tenant_llm_id_memories:
+        logging.info(f"Found {len(empty_tenant_llm_id_memories)} empty tenant_llm_id memories.")
+        memory_groups: dict = {}
+        for obj in empty_tenant_llm_id_memories:
+            if memory_groups.get((obj.tenant_id, obj.llm_id)):
+                memory_groups[(obj.tenant_id, obj.llm_id)].append(obj.id)
+            else:
+                memory_groups[(obj.tenant_id, obj.llm_id)] = [obj.id]
+        for k, v in memory_groups.items():
+            tenant_llm = TenantLLMService.get_api_key(k[0], k[1])
+            if tenant_llm:
+                MemoryService.filter_update({"id": v}, {"tenant_llm_id": tenant_llm.id})
 
 
 if __name__ == '__main__':
