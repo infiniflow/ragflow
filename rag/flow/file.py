@@ -42,7 +42,7 @@ class File(ProcessBase):
             #self.set_output("blob", STORAGE_IMPL.get(b, n))
             self.set_output("name", doc.name)
         else:
-            file = kwargs.get("file")
+            file = kwargs.get("file")[0]
             self.set_output("name", file["name"])
             self.set_output("file", file)
             #self.set_output("blob", FileService.get_blob(file["created_by"], file["id"]))

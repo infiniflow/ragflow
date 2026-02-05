@@ -124,7 +124,7 @@ const MessageItem = ({
               ></SvgIcon>
             ))}
 
-          <section className="flex gap-2 flex-1 flex-col">
+          <section className="flex min-w-0 gap-2 flex-1 flex-col">
             {isAssistant ? (
               index !== 0 && (
                 <AssistantGroupButton

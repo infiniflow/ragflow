@@ -9,12 +9,14 @@ import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { LLMHeader } from '../../components/llm-header';
 import { BedrockRegionList } from '../../constant';
+import VerifyButton from '../../modal/verify-button';
 
 type FieldType = IAddLlmRequestBody & {
   auth_mode?: 'access_key_secret' | 'iam_role' | 'assume_role';
@@ -28,9 +30,15 @@ const BedrockModal = ({
   visible = false,
   hideModal,
   onOk,
+  onVerify,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
+}: IModalProps<IAddLlmRequestBody> & {
+  llmFactory: string;
+  onVerify?: (
+    postBody: any,
+  ) => Promise<boolean | void | VerifyResult | undefined>;
+}) => {
   const { t } = useTranslate('setting');
   const { t: ct } = useCommonTranslation();
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
@@ -129,6 +137,40 @@ const BedrockModal = ({
 
     onOk?.(data as unknown as IAddLlmRequestBody);
   };
+
+  const verifyParamsFunc = useCallback(() => {
+    const values = form.getValues();
+    const cleanedValues: Record<string, any> = { ...values };
+    const fieldsByMode: Record<string, string[]> = {
+      access_key_secret: ['bedrock_ak', 'bedrock_sk'],
+      iam_role: ['aws_role_arn'],
+      assume_role: [],
+    };
+
+    cleanedValues.auth_mode = authMode;
+
+    Object.keys(fieldsByMode).forEach((mode) => {
+      if (mode !== authMode) {
+        fieldsByMode[mode].forEach((field) => {
+          delete cleanedValues[field];
+        });
+      }
+    });
+    return {
+      ...cleanedValues,
+      llm_factory: llmFactory,
+      max_tokens: values.max_tokens,
+    };
+  }, [llmFactory, authMode, form]);
+
+  const handleVerify = useCallback(
+    async (params: any) => {
+      const verifyParams = verifyParamsFunc();
+      const res = await onVerify?.({ ...params, ...verifyParams });
+      return (res || { isValid: null, logs: '' }) as VerifyResult;
+    },
+    [verifyParamsFunc, onVerify],
+  );
 
   return (
     <Modal
@@ -262,10 +304,11 @@ const BedrockModal = ({
               />
             )}
           </RAGFlowFormItem>
+          {onVerify && <VerifyButton onVerify={handleVerify} />}
         </form>
       </Form>
     </Modal>
   );
 };
 
-export default BedrockModal;
+export default memo(BedrockModal);
