@@ -183,12 +183,20 @@ export function useSetUploadResponseData() {
     setFileList([]);
   }, []);
 
+  const removeFile = useCallback((file: File) => {
+    setFileList((prev) => prev.filter((f) => f !== file));
+    setUploadResponseList((prev) =>
+      prev.filter((item) => item.name !== file.name),
+    );
+  }, []);
+
   return {
     uploadResponseList,
     fileList,
     setUploadResponseList,
     appendUploadResponseList: append,
     clearUploadResponseList: clear,
+    removeFile,
   };
 }
 
@@ -251,6 +259,7 @@ export const useSendAgentMessage = ({
     clearUploadResponseList,
     uploadResponseList,
     fileList,
+    removeFile,
   } = useSetUploadResponseData();
 
   const { stopMessage } = useStopMessage();
@@ -461,5 +470,6 @@ export const useSendAgentMessage = ({
     appendUploadResponseList,
     addNewestOneAnswer,
     sendMessage,
+    removeFile,
   };
 };
