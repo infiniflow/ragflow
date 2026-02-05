@@ -1,7 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -95,21 +101,48 @@ func main() {
 	r := router.NewRouter(userHandler, tenantHandler, documentHandler, kbHandler, chunkHandler, llmHandler)
 
 	// Create Gin engine
-	engine := gin.New()
+	ginEngine := gin.New()
 
 	// Middleware
 	if cfg.Server.Mode == "debug" {
-		engine.Use(gin.Logger())
+		ginEngine.Use(gin.Logger())
 	}
-	engine.Use(gin.Recovery())
+	ginEngine.Use(gin.Recovery())
 
 	// Setup routes
-	r.Setup(engine)
+	r.Setup(ginEngine)
 
-	// Start server
+	// Create HTTP server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	logger.Info("Server starting", zap.String("addr", addr))
-	if err := engine.Run(addr); err != nil {
-		logger.Fatal("Failed to start server", zap.Error(err))
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: ginEngine,
 	}
+
+	// Start server in a goroutine
+	go func() {
+		logger.Info("Server starting", zap.String("addr", addr))
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal("Failed to start server", zap.Error(err))
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
+	sig := <-quit
+
+	logger.Info("Received signal", zap.String("signal", sig.String()))
+	logger.Info("Shutting down server...")
+
+	// Create context with timeout for graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Shutdown server
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Fatal("Server forced to shutdown", zap.Error(err))
+	}
+
+	logger.Info("Server exited")
 }
