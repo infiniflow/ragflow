@@ -2,8 +2,8 @@ package rag_analyzer
 
 /*
 #cgo CXXFLAGS: -std=c++17 -I${SRCDIR}/..
-#cgo linux LDFLAGS: ${SRCDIR}/../build/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/lib/x86_64-linux-gnu/libpcre2-8.a
-#cgo darwin LDFLAGS: ${SRCDIR}/../build/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/local/lib/libpcre2-8.a
+#cgo linux LDFLAGS: ${SRCDIR}/../cpp/build/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/lib/x86_64-linux-gnu/libpcre2-8.a
+#cgo darwin LDFLAGS: ${SRCDIR}/../cpp/build/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/local/lib/libpcre2-8.a
 
 #include <stdlib.h>
 #include "../cpp/rag_analyzer_c_api.h"

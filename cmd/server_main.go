@@ -13,6 +13,7 @@ import (
 	"ragflow/internal/logger"
 	"ragflow/internal/router"
 	"ragflow/internal/service"
+	"ragflow/internal/tokenizer"
 )
 
 func main() {
@@ -64,6 +65,15 @@ func main() {
 		logger.Fatal("Failed to initialize doc engine", zap.Error(err))
 	}
 	defer engine.Close()
+
+	// Initialize tokenizer (rag_analyzer)
+	tokenizerCfg := &tokenizer.Config{
+		DictPath: "/usr/share/infinity/resource",
+	}
+	if err := tokenizer.Init(tokenizerCfg); err != nil {
+		logger.Fatal("Failed to initialize tokenizer", zap.Error(err))
+	}
+	defer tokenizer.Close()
 
 	// Initialize service layer
 	userService := service.NewUserService()
