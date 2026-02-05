@@ -188,12 +188,13 @@ async def run():
 
 @manager.route("/<canvas_id>/completion", methods=["POST"])  # noqa: F821
 @login_required
-async def agent_completions(tenant_id, agent_id):
+async def exp_agent_completion(canvas_id):
+    tenant_id = current_user.id
     req = await get_request_json()
     return_trace = bool(req.get("return_trace", False))
     async def generate():
         trace_items = []
-        async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
+        async for answer in agent_completion(tenant_id=tenant_id, agent_id=canvas_id, **req):
             if isinstance(answer, str):
                 try:
                     ans = json.loads(answer[5:])  # remove "data:"
