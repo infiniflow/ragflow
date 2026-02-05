@@ -242,6 +242,10 @@ async def delete(tenant_id):
             except Exception as e:
                 logging.warning(f"Failed to drop index for dataset {kb_id}: {e}")
 
+            # delete storage bucket of dataset
+            if hasattr(settings.STORAGE_IMPL, 'remove_bucket'):
+                settings.STORAGE_IMPL.remove_bucket(kb.id)
+
             if not KnowledgebaseService.delete_by_id(kb_id):
                 errors.append(f"Delete dataset error for {kb_id}")
                 continue
