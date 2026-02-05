@@ -70,7 +70,9 @@ Whether to receive the response as a stream. Set this to `false` explicitly if y
 > return `reference` currently because `reference` is only exposed in the
 > non-stream response payload. The only way to return `reference` is non-stream
 > mode with `with_raw_response`.
-
+:::caution NOTE
+Streaming via `client.chat.completions.create(stream=True, ...)` does not return `reference` because it is *only* included in the raw response payload in non-stream mode. To return `reference`, set `stream=False`.
+:::
 ```python
 from openai import OpenAI
 import json
