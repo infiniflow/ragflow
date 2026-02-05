@@ -204,7 +204,9 @@ class RDBMSConnector(LoadConnector, PollConnector):
                 value = row_dict[col]
                 if isinstance(value, (dict, list)):
                     value = json.dumps(value, ensure_ascii=False)
-                content_parts.append(f"{col}: {value}")
+                # Use brackets around field name to ensure it's distinguishable
+                # after chunking (TxtParser strips \n delimiters during merge)
+                content_parts.append(f"【{col}】: {value}")
         
         content = "\n".join(content_parts)
         
