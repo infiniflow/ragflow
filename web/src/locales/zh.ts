@@ -56,6 +56,7 @@ export default {
       zendeskDescription: '连接 Zendesk，同步工单、文章及其他内容。',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
       selected: '已选择',
+      seeAll: '查看全部',
     },
     login: {
       loginTitle: '登录账户',
@@ -835,6 +836,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       deleteSelectedConfirm: '删除选中的 {count} 个会话？',
     },
     setting: {
+      Verify: '验证',
+      keyValid: '你的 API 密钥有效。',
+      keyInvalid: '你的 API 密钥无效。',
       deleteModel: '删除模型',
       modelEmptyTip: '暂无可用模型,<br>请先在右侧面板添加模型。',
       sourceEmptyTip: '暂未添加任何数据源，请从下方选择一个进行连接。',

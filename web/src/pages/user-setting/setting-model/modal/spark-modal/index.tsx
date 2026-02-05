@@ -1,5 +1,6 @@
 import {
   DynamicForm,
+  DynamicFormRef,
   FormFieldConfig,
   FormFieldType,
 } from '@/components/dynamic-form';
@@ -8,21 +9,30 @@ import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import omit from 'lodash/omit';
+import { memo, useCallback, useRef } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
+import VerifyButton from '../../modal/verify-button';
 
 const SparkModal = ({
   visible,
   hideModal,
   onOk,
+  onVerify,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
+}: IModalProps<IAddLlmRequestBody> & {
+  llmFactory: string;
+  onVerify?: (
+    postBody: any,
+  ) => Promise<boolean | void | VerifyResult | undefined>;
+}) => {
   const { t } = useTranslate('setting');
   const { t: tc } = useCommonTranslation();
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
-
+  const formRef = useRef<DynamicFormRef>(null);
   const fields: FormFieldConfig[] = [
     {
       name: 'model_type',
@@ -128,6 +138,27 @@ const SparkModal = ({
     await onOk?.(data as IAddLlmRequestBody);
   };
 
+  const verifyParamsFunc = useCallback(() => {
+    const values = formRef.current?.getValues();
+    const modelType =
+      values.model_type === 'chat' && values.vision
+        ? 'image2text'
+        : values.model_type;
+    return {
+      llm_factory: llmFactory,
+      model_type: modelType,
+    };
+  }, [llmFactory]);
+
+  const handleVerify = useCallback(
+    async (params: any) => {
+      const verifyParams = verifyParamsFunc();
+      const res = await onVerify?.({ ...params, ...verifyParams });
+      return (res || { isValid: null, logs: '' }) as VerifyResult;
+    },
+    [verifyParamsFunc, onVerify],
+  );
+
   return (
     <Modal
       title={<LLMHeader name={llmFactory} />}
@@ -141,6 +172,7 @@ const SparkModal = ({
         onSubmit={(data) => {
           console.log(data);
         }}
+        ref={formRef}
         defaultValues={
           {
             model_type: 'chat',
@@ -149,6 +181,7 @@ const SparkModal = ({
         }
         labelClassName="font-normal"
       >
+        {onVerify && <VerifyButton onVerify={handleVerify} />}
         <div className="absolute bottom-0 right-0 left-0 flex items-center justify-end w-full gap-2 py-6 px-6">
           <DynamicForm.CancelButton
             handleCancel={() => {
@@ -168,4 +201,4 @@ const SparkModal = ({
   );
 };
 
-export default SparkModal;
+export default memo(SparkModal);
