@@ -14,6 +14,7 @@ export enum Routes {
   Agent = '/agent',
   AgentTemplates = '/agent-templates',
   Agents = '/agents',
+  Explore = '/explore',
   Memories = '/memories',
   Memory = '/memory',
   MemoryMessage = '/memory-message',
@@ -244,6 +245,12 @@ const routeConfig = [
     path: Routes.AgentTemplates,
     layout: false,
     Component: lazy(() => import('@/pages/agents/agent-templates')),
+    errorElement: <FallbackComponent />,
+  },
+  {
+    path: `${Routes.Explore}/:id`,
+    layout: false,
+    Component: lazy(() => import('@/pages/explore')),
     errorElement: <FallbackComponent />,
   },
   {

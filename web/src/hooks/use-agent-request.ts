@@ -1,7 +1,11 @@
 import { FileUploadProps } from '@/components/file-upload';
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
-import { AgentGlobals, initialBeginValues } from '@/constants/agent';
+import {
+  AgentCategory,
+  AgentGlobals,
+  initialBeginValues,
+} from '@/constants/agent';
 import {
   IAgentLogsRequest,
   IAgentLogsResponse,
@@ -39,6 +43,7 @@ import {
 
 export const enum AgentApiAction {
   FetchAgentListByPage = 'fetchAgentListByPage',
+  FetchAllAgentList = 'fetchAllAgentList',
   FetchAgentList = 'fetchAgentList',
   UpdateAgentSetting = 'updateAgentSetting',
   DeleteAgent = 'deleteAgent',
@@ -61,6 +66,7 @@ export const enum AgentApiAction {
   CancelDataflow = 'cancelDataflow',
   CancelCanvas = 'cancelCanvas',
   FetchWebhookTrace = 'fetchWebhookTrace',
+  FetchSessionsByCanvasId = 'fetchSessionsByCanvasId',
 }
 
 export const EmptyDsl = {
@@ -193,6 +199,28 @@ export const useFetchAgentListByPage = () => {
     handleFilterSubmit,
   };
 };
+
+export function useFetchAllAgentList() {
+  const { data, isFetching: loading } = useQuery<IFlow[]>({
+    queryKey: [AgentApiAction.FetchAllAgentList],
+    queryFn: async () => {
+      const { data } = await agentService.listCanvas(
+        {
+          params: {
+            page: 1,
+            page_size: 100000,
+            canvas_category: AgentCategory.AgentCanvas,
+          },
+        },
+        true,
+      );
+
+      return data?.data?.canvas;
+    },
+  });
+
+  return { data, loading };
+}
 
 export const useUpdateAgentSetting = () => {
   const queryClient = useQueryClient();
@@ -625,6 +653,35 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
   });
 
   return { data, loading };
+};
+
+export const useFetchSessionsByCanvasId = () => {
+  const { id: canvasId } = useParams();
+
+  const { data, isFetching: loading } = useQuery<IAgentLogsResponse>({
+    queryKey: [AgentApiAction.FetchSessionsByCanvasId, canvasId],
+    initialData: { total: 0, sessions: [] } as IAgentLogsResponse,
+    gcTime: 0,
+    enabled: !!canvasId,
+    queryFn: async () => {
+      if (!canvasId) {
+        return { total: 0, sessions: [] };
+      }
+
+      const { data } = await fetchAgentLogsByCanvasId(canvasId, {
+        page: 1,
+        page_size: 100000,
+      });
+
+      return data?.data ?? { total: 0, sessions: [] };
+    },
+  });
+
+  return {
+    data: data?.sessions ?? [],
+    loading,
+    total: data?.total ?? 0,
+  };
 };
 
 export const useFetchExternalAgentInputs = () => {

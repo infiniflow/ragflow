@@ -423,7 +423,7 @@ export default {
       linkSourceSetTip: '管理与此数据集的数据源链接',
       linkDataSource: '链接数据源',
       tocExtractionTip:
-        '对于已有的chunk生成层级结构的目录信息（每个文件一个目录）。在查询时，激活`目录增强`后，系统会用大模型去判断用户问题和哪些目录项相关，从而找到相关的chunk。',
+        '对于已有的chunk生成层级结构的目录信息（每个文件一个目录）。在查询时，激活`Page Index`后，系统会用大模型去判断用户问题和哪些目录项相关，从而找到相关的chunk。',
       deleteGenerateModalContent: `
         <p>删除生成的 <strong class='text-text-primary'>{{type}}</strong> 结果
           将从此数据集中移除所有派生实体和关系。
@@ -830,7 +830,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       chatSetting: '聊天设置',
       avatarHidden: '隐藏头像',
       locale: '地区',
-      tocEnhance: '目录增强',
+      tocEnhance: 'Page Index',
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
       deleteSelectedConfirm: '删除选中的 {count} 个会话？',
@@ -2187,6 +2187,23 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       memoryTitle: '尚未创建记忆',
       notFoundMemory: '未查询到记忆',
       addNow: '立即添加',
+    },
+
+    explore: {
+      title: '智能体探索',
+      canvasList: '画布列表',
+      sessions: '会话列表',
+      newSession: '新建会话',
+      deleteSession: '删除会话',
+      searchCanvas: '搜索画布...',
+      searchSessions: '搜索会话...',
+      noCanvasSelected: '请选择一个画布',
+      noSessionSelected: '请选择一个会话或创建新会话',
+      noSessionsFound: '未找到会话',
+      createFirstSession: '创建您的第一个会话',
+      noCanvasFound: '未找到画布',
+      deleteSelectedConfirm: '确定要删除 {{count}} 个会话吗？',
+      batchDeleteSessions: '删除会话',
     },
   },
 };
