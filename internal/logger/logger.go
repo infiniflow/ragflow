@@ -1,6 +1,9 @@
 package logger
 
 import (
+	"fmt"
+	"runtime"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -28,12 +31,28 @@ func Init(level string) error {
 		zapLevel = zapcore.InfoLevel
 	}
 
+	// Custom encoder config to control output format
+	encoderConfig := zapcore.EncoderConfig{
+		TimeKey:        "timestamp",
+		LevelKey:       "level",
+		NameKey:        "logger",
+		CallerKey:      "", // Disable caller/line number
+		FunctionKey:    "",
+		MessageKey:     "msg",
+		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
+		EncodeLevel:    zapcore.LowercaseLevelEncoder,
+		EncodeTime:     zapcore.TimeEncoderOfLayout("2006-01-02 15:04:05"), // Human-readable time format
+		EncodeDuration: zapcore.SecondsDurationEncoder,
+		EncodeCaller:   zapcore.ShortCallerEncoder, // Not used since CallerKey is empty
+	}
+
 	// Configure zap
 	config := zap.Config{
 		Level:            zap.NewAtomicLevelAt(zapLevel),
 		Development:      false,
 		Encoding:         "console",
-		EncoderConfig:    zap.NewProductionEncoderConfig(),
+		EncoderConfig:    encoderConfig,
 		OutputPaths:      []string{"stdout"},
 		ErrorOutputPaths: []string{"stderr"},
 	}
@@ -57,10 +76,15 @@ func Sync() {
 	}
 }
 
-// Fatal logs a fatal message using zap
+// Fatal logs a fatal message using zap with caller info
 func Fatal(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		panic("logger not initialized")
+	}
+	// Get caller info (skip this function to get the actual caller)
+	_, file, line, ok := runtime.Caller(1)
+	if ok {
+		fields = append(fields, zap.String("caller", fmt.Sprintf("%s:%d", file, line)))
 	}
 	Logger.Fatal(msg, fields...)
 }
