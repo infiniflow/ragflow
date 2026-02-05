@@ -197,10 +197,6 @@ class _BlobLikeBase(SyncBase):
         )
         self.connector.load_credentials(self.conf["credentials"])
 
-        print("\n")
-        print(self.conf["credentials"])
-        print("\n")
-
         document_batch_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
