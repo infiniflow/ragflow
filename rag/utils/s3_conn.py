@@ -112,11 +112,21 @@ class RAGFlowS3:
             exists = False
         return exists
 
+    def _physical_bucket_exists(self, bucket: str) -> bool:
+        try:
+            logging.debug(f"head_bucket bucketname {bucket}")
+            self.conn[0].head_bucket(Bucket=bucket)
+            exists = True
+        except ClientError:
+            logging.exception(f"head_bucket error {bucket}")
+            exists = False
+        return exists
+
     def health(self):
         bucket = self.bucket
         fnm = "txtxtxtxt1"
         fnm, binary = f"{self.prefix_path}/{fnm}" if self.prefix_path else fnm, b"_t@@@1"
-        if not self.bucket_exists(bucket):
+        if not self._physical_bucket_exists(bucket):
             self.conn[0].create_bucket(Bucket=bucket)
             logging.debug(f"create bucket {bucket} ********")
 
@@ -135,7 +145,7 @@ class RAGFlowS3:
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
         for _ in range(1):
             try:
-                if not self.bucket_exists(bucket):
+                if not self._physical_bucket_exists(bucket):
                     self.conn[0].create_bucket(Bucket=bucket)
                     logging.info(f"create bucket {bucket} ********")
                 r = self.conn[0].upload_fileobj(BytesIO(binary), bucket, fnm)
@@ -199,13 +209,22 @@ class RAGFlowS3:
 
     @use_default_bucket
     def remove_bucket(self, bucket, *args, **kwargs):
-        for conn in self.conn:
+        try:
+            # check if bucket exists
             try:
-                if not conn.bucket_exists(bucket):
-                    continue
-                for o in conn.list_objects_v2(Bucket=bucket):
-                    conn.delete_object(bucket, o.object_name)
-                conn.delete_bucket(Bucket=bucket)
+                self.conn[0].head_bucket(Bucket=bucket)
+            except ClientError:
+                # bucket does not exist
                 return
-            except Exception as e:
-                logging.error(f"Fail rm {bucket}: " + str(e))
+
+            # delete all objects from bucket
+            for object_page in self.conn[0].get_paginator("list_objects_v2").paginate(Bucket=bucket):
+                if "Contents" not in object_page:
+                    continue
+
+                self.conn[0].delete_objects(Bucket=bucket, Delete={"Objects": [{"Key": obj["Key"]} for obj in object_page["Contents"]]})
+
+            # delete bucket
+            self.conn[0].delete_bucket(Bucket=bucket)
+        except Exception as e:
+            logging.error(f"Fail rm {bucket}: " + str(e))
