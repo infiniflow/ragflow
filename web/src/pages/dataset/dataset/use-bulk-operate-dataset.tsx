@@ -44,10 +44,12 @@ export function useBulkOperateDataset({
     if (!documents.length) {
       return 0;
     }
-    return documents.reduce((acc, cur) => {
-      return acc + cur.chunk_num;
-    }, 0);
-  }, [documents]);
+    return documents
+      .filter((item) => selectedRowKeys.includes(item.id) && item.id)
+      ?.reduce((acc, cur) => {
+        return acc + cur.chunk_num;
+      }, 0);
+  }, [documents, selectedRowKeys]);
 
   const runDocument = useCallback(
     async (run: number, option?: { delete: boolean; apply_kb: boolean }) => {
