@@ -50,11 +50,11 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
         for input, docids in v2docs.items():
 
             if operator in ["=", "≠", ">", "<", "≥", "≤"]:
-                # 检查是否为 YYYY-MM-DD 格式的日期
+                # Check if input is in YYYY-MM-DD date format
                 input_str = str(input).strip()
                 value_str = str(value).strip()
 
-                # 严格的日期格式检测：YYYY-MM-DD（必须是10位，且格式正确）
+                # Strict date format detection: YYYY-MM-DD (must be 10 chars with correct format)
                 is_input_date = (
                     len(input_str) == 10 and
                     input_str[4] == '-' and
@@ -74,16 +74,16 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
                 )
 
                 if is_value_date:
-                    # 查询条件是日期格式
+                    # Query value is in date format
                     if is_input_date:
-                        # 数据也是日期格式：进行日期比较
+                        # Data is also in date format: perform date comparison
                         input = input_str
                         value = value_str
                     else:
-                        # 数据不是日期格式：跳过此记录（不匹配）
+                        # Data is not in date format: skip this record (no match)
                         continue
                 else:
-                    # 查询条件不是日期格式：按原逻辑处理
+                    # Query value is not in date format: use original logic
                     try:
                         if isinstance(input, list):
                             input = input[0]
@@ -92,13 +92,13 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
                     except Exception:
                         pass
 
-                    # 字符串转小写
+                    # Convert strings to lowercase
                     if isinstance(input, str):
                         input = input.lower()
                     if isinstance(value, str):
                         value = value.lower()
             else:
-                # 非比较操作符，保持原有逻辑
+                # Non-comparison operators: maintain original logic
                 if isinstance(input, str):
                     input = input.lower()
                 if isinstance(value, str):
