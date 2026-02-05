@@ -7,6 +7,8 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/config"
+	"ragflow/internal/engine/elasticsearch"
+	"ragflow/internal/engine/infinity"
 	"ragflow/internal/logger"
 )
 
@@ -19,13 +21,16 @@ var (
 func Init(cfg *config.DocEngineConfig) error {
 	var initErr error
 	once.Do(func() {
-		engineCfg := &DocEngineConfig{
-			Type:     EngineType(cfg.Type),
-			ES:       cfg.ES,
-			Infinity: cfg.Infinity,
-		}
 		var err error
-		globalEngine, err = CreateDocEngine(engineCfg)
+		switch EngineType(cfg.Type) {
+		case EngineElasticsearch:
+			globalEngine, err = elasticsearch.NewEngine(cfg.ES)
+		case EngineInfinity:
+			globalEngine, err = infinity.NewEngine(cfg.Infinity)
+		default:
+			err = fmt.Errorf("unsupported doc engine type: %s", cfg.Type)
+		}
+		
 		if err != nil {
 			initErr = fmt.Errorf("failed to create doc engine: %w", err)
 			return

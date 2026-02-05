@@ -3,16 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 
 	"go.uber.org/zap"
 
 	"ragflow/internal/config"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
-	"ragflow/internal/engine/elasticsearch"
-	"ragflow/internal/engine/infinity"
 	"ragflow/internal/logger"
 	"ragflow/internal/model"
 	"ragflow/internal/utility"
@@ -162,8 +158,6 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	targetTenantID := tenantIDs[0]
 
 	// Get embedding model for the target tenant
-	// Note: embedding model name is taken from the kb record's embd_id
-	// All kb records have the same embd_id (checked above)
 	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, targetTenantID, kbRecords[0].EmbdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
@@ -171,13 +165,14 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	logger.Debug("Retrieved embedding model from database",
 		zap.String("targetTenantID", targetTenantID),
 		zap.String("embdID", kbRecords[0].EmbdID))
+
 	// Try to get embedding from cache first
 	embdID := kbRecords[0].EmbdID
 	var vector []float64
 
 	if s.embeddingCache != nil {
 		if cachedVector, ok := s.embeddingCache.Get(req.Question, embdID); ok {
-			logger.Debug("Embedding cache hit", 
+			logger.Debug("Embedding cache hit",
 				zap.String("question", req.Question),
 				zap.String("embdID", embdID),
 				zap.Int("cacheSize", s.embeddingCache.Len()))
@@ -203,179 +198,81 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		}
 	}
 
-	// Execute different retrieval logic based on engine type
-	switch s.engineType {
-	case config.EngineElasticsearch:
-		return s.elasticsearchRetrieval(ctx, req, vector)
-	case config.EngineInfinity:
-		return s.infinityRetrieval(ctx, req, vector)
-	default:
-		return nil, fmt.Errorf("unsupported engine type: %s", s.engineType)
-	}
-}
-
-// elasticsearchRetrieval Elasticsearch retrieval implementation
-func (s *ChunkService) elasticsearchRetrieval(ctx context.Context, req *RetrievalTestRequest, vector []float64) (*RetrievalTestResponse, error) {
-	// Build index name list (based on kb_id)
-	indexNames := buildIndexNames(req.TenantIDs)
-
-	// Build search request
-	searchReq := &elasticsearch.SearchRequest{
-		IndexNames: indexNames,
-		Size:       getPageSize(req.Size),
-		From:       getOffset(req.Page, req.Size),
+	// Build unified search request
+	searchReq := &engine.SearchRequest{
+		IndexNames:             buildIndexNames(tenantIDs),
+		Question:               req.Question,
+		Vector:                 vector,
+		KbIDs:                  kbIDs,
+		DocIDs:                 req.DocIDs,
+		Page:                   getPageNum(req.Page),
+		Size:                   getPageSize(req.Size),
+		TopK:                   getTopK(req.TopK),
+		KeywordOnly:            req.Keyword != nil && *req.Keyword,
+		SimilarityThreshold:    getSimilarityThreshold(req.SimilarityThreshold),
+		VectorSimilarityWeight: getVectorSimilarityWeight(req.VectorSimilarityWeight),
 	}
 
-	// Build knn query using the pre-generated embedding vector
-	dimensionStr := strconv.Itoa(len(vector))
-	var fieldBuilder strings.Builder
-	fieldBuilder.WriteString("q_")
-	fieldBuilder.WriteString(dimensionStr)
-	fieldBuilder.WriteString("_vec")
-	fieldName := fieldBuilder.String()
-	topK := getTopK(req.TopK)
-	searchReq.Query = map[string]interface{}{
-		"knn": map[string]interface{}{
-			"field":          fieldName,
-			"query_vector":   vector,
-			"k":              topK,
-			"num_candidates": topK, // Ensure enough candidates
-		},
-	}
-
-	// Execute search
+	// Execute search through unified engine interface
 	result, err := s.docEngine.Search(ctx, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
-	// Convert result
-	esResp := result.(*elasticsearch.SearchResponse)
-	chunks := convertESChunks(esResp)
+	// Convert result to unified response
+	searchResp, ok := result.(*engine.SearchResponse)
+	if !ok {
+		return nil, fmt.Errorf("invalid search response type")
+	}
 
 	return &RetrievalTestResponse{
-		Chunks: chunks,
+		Chunks: searchResp.Chunks,
 		Labels: []map[string]interface{}{}, // Empty labels for now
-		Total:  esResp.Hits.Total.Value,
+		Total:  searchResp.Total,
 	}, nil
 }
 
-// infinityRetrieval Infinity retrieval implementation
-func (s *ChunkService) infinityRetrieval(ctx context.Context, req *RetrievalTestRequest, vector []float64) (*RetrievalTestResponse, error) {
-	// Build table name (based on kb_id)
-	tableName := buildTableName(req.KbID)
+// Helper functions
 
-	// Build search request
-	searchReq := &infinity.SearchRequest{
-		TableName: tableName,
-		Limit:     getPageSize(req.Size),
-		Offset:    getOffset(req.Page, req.Size),
+func getPageNum(page *int) int {
+	if page != nil && *page > 0 {
+		return *page
 	}
-
-	// Add text match (question is always required)
-	searchReq.MatchText = &infinity.MatchTextExpr{
-		Fields:       []string{"title", "content"},
-		MatchingText: req.Question,
-		TopN:         getTopK(req.TopK),
-	}
-
-	// Add vector match if vector is provided (for future support)
-	if vector != nil && len(vector) > 0 {
-		searchReq.MatchDense = &infinity.MatchDenseExpr{
-			VectorColumnName:  "embedding",
-			EmbeddingData:     vector,
-			EmbeddingDataType: "float32",
-			DistanceType:      "cosine",
-			TopN:              getTopK(req.TopK),
-			ExtraOptions:      nil,
-		}
-	}
-
-	// Execute search
-	result, err := s.docEngine.Search(ctx, searchReq)
-	if err != nil {
-		return nil, fmt.Errorf("search failed: %w", err)
-	}
-
-	// Convert result
-	infResp := result.(*infinity.SearchResponse)
-	chunks := convertInfinityChunks(infResp.Rows)
-
-	return &RetrievalTestResponse{
-		Chunks: chunks,
-		Labels: []map[string]interface{}{}, // Empty labels for now
-		Total:  infResp.Total,
-	}, nil
+	return 1
 }
 
-// buildIndexNames builds ES index name list
+func getPageSize(size *int) int {
+	if size != nil && *size > 0 {
+		return *size
+	}
+	return 30
+}
+
+func getTopK(topk *int) int {
+	if topk != nil && *topk > 0 {
+		return *topk
+	}
+	return 1024
+}
+
+func getSimilarityThreshold(threshold *float64) float64 {
+	if threshold != nil && *threshold >= 0 {
+		return *threshold
+	}
+	return 0.1
+}
+
+func getVectorSimilarityWeight(weight *float64) float64 {
+	if weight != nil && *weight >= 0 && *weight <= 1 {
+		return *weight
+	}
+	return 0.3
+}
+
 func buildIndexNames(tenantIDs []string) []string {
 	indexNames := make([]string, len(tenantIDs))
 	for i, tenantID := range tenantIDs {
 		indexNames[i] = fmt.Sprintf("ragflow_%s", tenantID)
 	}
-
 	return indexNames
-}
-
-// buildTableName builds Infinity table name
-func buildTableName(kbID interface{}) string {
-	// TODO: Build actual table name based on kb_id
-	// Simplified for now
-	return "chunks"
-}
-
-// getPageSize gets page size
-func getPageSize(size *int) int {
-	if size != nil && *size > 0 {
-		return *size
-	}
-	return 30 // default value
-}
-
-// getOffset gets offset
-func getOffset(page *int, size *int) int {
-	if page != nil && *page > 0 {
-		return (*page - 1) * getPageSize(size)
-	}
-	return 0
-}
-
-// getTopK gets top k value
-func getTopK(topk *int) int {
-	if topk != nil && *topk > 0 {
-		return *topk
-	}
-	return 1024 // default value
-}
-
-// getUseKG gets use knowledge graph flag
-func getUseKG(usekg *bool) bool {
-	if usekg != nil {
-		return *usekg
-	}
-	return false // default value
-}
-
-// convertESChunks converts ES returned chunks
-func convertESChunks(esResp *elasticsearch.SearchResponse) []map[string]interface{} {
-	if esResp == nil || esResp.Hits.Hits == nil {
-		return []map[string]interface{}{}
-	}
-
-	chunks := make([]map[string]interface{}, len(esResp.Hits.Hits))
-	for i, hit := range esResp.Hits.Hits {
-		chunks[i] = hit.Source
-		// Add score information
-		chunks[i]["_score"] = hit.Score
-	}
-	return chunks
-}
-
-// convertInfinityChunks converts Infinity returned chunks
-func convertInfinityChunks(rows []map[string]interface{}) []map[string]interface{} {
-	if rows == nil {
-		return []map[string]interface{}{}
-	}
-	return rows
 }

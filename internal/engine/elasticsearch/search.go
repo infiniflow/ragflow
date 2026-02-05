@@ -6,17 +6,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"go.uber.org/zap"
 
+	"ragflow/internal/engine/types"
 	"ragflow/internal/logger"
 )
 
-// SearchRequest Elasticsearch search request
+// SearchRequest Elasticsearch search request (legacy, kept for backward compatibility)
 type SearchRequest struct {
 	IndexNames []string
 	Query      map[string]interface{}
+	Filters    map[string]interface{} // Filter conditions (e.g., kb_id, doc_id, available_int)
 	Size       int
 	From       int
 	Highlight  map[string]interface{}
@@ -39,54 +43,44 @@ type SearchResponse struct {
 	Aggregations map[string]interface{} `json:"aggregations"`
 }
 
-// Search executes search
+// Search executes search (supports both unified engine.SearchRequest and legacy SearchRequest)
 func (e *elasticsearchEngine) Search(ctx context.Context, req interface{}) (interface{}, error) {
-	searchReq, ok := req.(*SearchRequest)
-	if !ok {
-		return nil, fmt.Errorf("invalid search request type")
-	}
 
-	if len(searchReq.IndexNames) == 0 {
+	switch searchReq := req.(type) {
+	case *types.SearchRequest:
+		return e.searchUnified(ctx, searchReq)
+	case *SearchRequest:
+		return e.searchLegacy(ctx, searchReq)
+	default:
+		return nil, fmt.Errorf("invalid search request type: %T", req)
+	}
+}
+
+// searchUnified handles the unified engine.SearchRequest
+func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.SearchRequest) (*types.SearchResponse, error) {
+	if len(req.IndexNames) == 0 {
 		return nil, fmt.Errorf("index names cannot be empty")
 	}
 
-	// Build search query
+	// Build pagination parameters
+	offset, limit := calculatePagination(req.Page, req.Size, req.TopK)
+
+	// Build filter clauses
+	filterClauses := buildFilterClauses(req.KbIDs, req.DocIDs)
+
+	// Build search query body
 	queryBody := make(map[string]interface{})
-	if searchReq.Query != nil {
-		// Create a copy of the query map to avoid modifying the original
-		queryCopy := make(map[string]interface{})
-		for k, v := range searchReq.Query {
-			queryCopy[k] = v
-		}
 
-		// Check if this query contains a KNN component
-		if knnValue, ok := queryCopy["knn"]; ok {
-			// KNN queries should be at top level, not inside "query"
-			queryBody["knn"] = knnValue
-			// Remove the knn key from the copy
-			delete(queryCopy, "knn")
-		}
+	if req.KeywordOnly || len(req.Vector) == 0 {
+		// Keyword-only search
+		queryBody["query"] = buildESKeywordQuery(req.Question, filterClauses)
+	} else {
+		// Hybrid search: keyword + vector
+		queryBody["query"] = buildESHybridQuery(req.Question, req.Vector, req.VectorSimilarityWeight, filterClauses)
+	}
 
-		// If there are remaining query components after removing knn, add them under "query"
-		if len(queryCopy) > 0 {
-			queryBody["query"] = queryCopy
-		}
-	}
-	if searchReq.Size > 0 {
-		queryBody["size"] = searchReq.Size
-	}
-	if searchReq.From > 0 {
-		queryBody["from"] = searchReq.From
-	}
-	if searchReq.Highlight != nil {
-		queryBody["highlight"] = searchReq.Highlight
-	}
-	if len(searchReq.Source) > 0 {
-		queryBody["_source"] = searchReq.Source
-	}
-	if len(searchReq.Sort) > 0 {
-		queryBody["sort"] = searchReq.Sort
-	}
+	queryBody["size"] = limit
+	queryBody["from"] = offset
 
 	// Serialize query
 	var buf bytes.Buffer
@@ -94,15 +88,13 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req interface{}) (inte
 		return nil, fmt.Errorf("error encoding query: %w", err)
 	}
 
-	// query: {"query": {"bool": {"must": [{"query_string": {"fields": ["title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"], "type": "best_fields", "query": "((((rag OR (torment \"call on the carpet\" annoy tabloid tease ragtime)^0.2))^1.0)^5 OR (\"torment\" OR \"call on the carpet\" OR \"annoy\" OR \"tabloid\" OR \"teas\" OR \"ragtim\")^0.7)", "minimum_should_match": "30%", "boost": 1}}], "filter": [{"terms": {"kb_id": ["633f5749f0f011f0b06038a74640adcc"]}}, {"bool": {"must_not": [{"range": {"available_int": {"lt": 1}}}]}}], "boost": 0.050000000000000044}}, "knn": {"field": "q_1024_vec", "k": 1024, "num_candidates": 2048, "query_vector": [], "filter": {"bool": {"must": [{"query_string": {"fields": ["title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"], "type": "best_fields", "query": "((((rag OR (torment \"call on the carpet\" annoy tabloid tease ragtime)^0.2))^1.0)^5 OR (\"torment\" OR \"call on the carpet\" OR \"annoy\" OR \"tabloid\" OR \"teas\" OR \"ragtim\")^0.7)", "minimum_should_match": "30%", "boost": 1}}], "filter": [{"terms": {"kb_id": ["633f5749f0f011f0b06038a74640adcc"]}}, {"bool": {"must_not": [{"range": {"available_int": {"lt": 1}}}]}}], "boost": 0.050000000000000044}}, "similarity": 0.2}, "from": 0, "size": 90}
-
 	// Log search details
-	logger.Debug("Elasticsearch searching indices", zap.Strings("indices", searchReq.IndexNames))
+	logger.Debug("Elasticsearch searching indices", zap.Strings("indices", req.IndexNames))
 	logger.Debug("Elasticsearch DSL", zap.Any("dsl", queryBody))
 
 	// Build search request
 	reqES := esapi.SearchRequest{
-		Index: searchReq.IndexNames,
+		Index: req.IndexNames,
 		Body:  &buf,
 	}
 
@@ -124,6 +116,128 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req interface{}) (inte
 	}
 
 	// Parse response
+	var esResp SearchResponse
+	if err := json.NewDecoder(res.Body).Decode(&esResp); err != nil {
+		return nil, fmt.Errorf("error parsing response: %w", err)
+	}
+
+	// Convert to unified response
+	chunks := convertESResponse(&esResp)
+	return &types.SearchResponse{
+		Chunks: chunks,
+		Total:  esResp.Hits.Total.Value,
+	}, nil
+}
+
+// searchLegacy handles the legacy elasticsearch.SearchRequest (backward compatibility)
+func (e *elasticsearchEngine) searchLegacy(ctx context.Context, searchReq *SearchRequest) (*SearchResponse, error) {
+	if len(searchReq.IndexNames) == 0 {
+		return nil, fmt.Errorf("index names cannot be empty")
+	}
+
+	// Build search query
+	queryBody := make(map[string]interface{})
+
+	// Process Filters first - convert to Elasticsearch filter clauses
+	var filterClauses []map[string]interface{}
+	if searchReq.Filters != nil && len(searchReq.Filters) > 0 {
+		for field, value := range searchReq.Filters {
+			switch v := value.(type) {
+			case map[string]interface{}:
+				filterClauses = append(filterClauses, map[string]interface{}{
+					field: v,
+				})
+			default:
+				filterClauses = append(filterClauses, map[string]interface{}{
+					"term": map[string]interface{}{
+						field: v,
+					},
+				})
+			}
+		}
+	}
+
+	if searchReq.Query != nil {
+		queryCopy := make(map[string]interface{})
+		for k, v := range searchReq.Query {
+			queryCopy[k] = v
+		}
+
+		if knnValue, ok := queryCopy["knn"]; ok {
+			queryBody["knn"] = knnValue
+			delete(queryCopy, "knn")
+		}
+
+		if len(queryCopy) > 0 {
+			if len(filterClauses) > 0 {
+				queryBody["query"] = map[string]interface{}{
+					"bool": map[string]interface{}{
+						"must":   queryCopy,
+						"filter": filterClauses,
+					},
+				}
+			} else {
+				queryBody["query"] = queryCopy
+			}
+		} else if len(filterClauses) > 0 {
+			queryBody["query"] = map[string]interface{}{
+				"bool": map[string]interface{}{
+					"filter": filterClauses,
+				},
+			}
+		}
+	} else if len(filterClauses) > 0 {
+		queryBody["query"] = map[string]interface{}{
+			"bool": map[string]interface{}{
+				"filter": filterClauses,
+			},
+		}
+	}
+	if searchReq.Size > 0 {
+		queryBody["size"] = searchReq.Size
+	}
+	if searchReq.From > 0 {
+		queryBody["from"] = searchReq.From
+	}
+	if searchReq.Highlight != nil {
+		queryBody["highlight"] = searchReq.Highlight
+	}
+	if len(searchReq.Source) > 0 {
+		queryBody["_source"] = searchReq.Source
+	}
+	if len(searchReq.Sort) > 0 {
+		queryBody["sort"] = searchReq.Sort
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(queryBody); err != nil {
+		return nil, fmt.Errorf("error encoding query: %w", err)
+	}
+
+	logger.Debug("Elasticsearch searching indices", zap.Strings("indices", searchReq.IndexNames))
+	logger.Debug("Elasticsearch DSL", zap.Any("dsl", queryBody))
+
+	reqES := esapi.SearchRequest{
+		Index: searchReq.IndexNames,
+		Body:  &buf,
+	}
+
+	res, err := reqES.Do(ctx, e.client)
+	if err != nil {
+		return nil, fmt.Errorf("search failed: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		bodyBytes, err := io.ReadAll(res.Body)
+		if err != nil {
+			logger.Error("Elasticsearch failed to read error response body", err)
+		} else {
+			logger.Warn("Elasticsearch error response", zap.String("body", string(bodyBytes)))
+		}
+		return nil, fmt.Errorf("Elasticsearch returned error: %s", res.Status())
+	}
+
 	var response SearchResponse
 	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("error parsing response: %w", err)
@@ -131,6 +245,130 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req interface{}) (inte
 
 	return &response, nil
 }
+
+// calculatePagination calculates offset and limit based on page, size and topK
+func calculatePagination(page, size, topK int) (int, int) {
+	if page < 1 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 30
+	}
+	if topK <= 0 {
+		topK = 1024
+	}
+
+	RERANK_LIMIT := max(30, (64/size)*size)
+	if RERANK_LIMIT < size {
+		RERANK_LIMIT = size
+	}
+	if RERANK_LIMIT > topK {
+		RERANK_LIMIT = topK
+	}
+
+	offset := (page - 1) * RERANK_LIMIT
+	if offset < 0 {
+		offset = 0
+	}
+
+	return offset, RERANK_LIMIT
+}
+
+// buildFilterClauses builds ES filter clauses from kb_ids and doc_ids
+func buildFilterClauses(kbIDs, docIDs []string) []map[string]interface{} {
+	var filters []map[string]interface{}
+
+	if len(kbIDs) > 0 {
+		filters = append(filters, map[string]interface{}{
+			"terms": map[string]interface{}{"kb_id": kbIDs},
+		})
+	}
+
+	if len(docIDs) > 0 {
+		filters = append(filters, map[string]interface{}{
+			"terms": map[string]interface{}{"doc_id": docIDs},
+		})
+	}
+
+	return filters
+}
+
+// buildESKeywordQuery builds keyword-only search query for ES
+func buildESKeywordQuery(question string, filterClauses []map[string]interface{}) map[string]interface{} {
+	mustClause := map[string]interface{}{
+		"multi_match": map[string]interface{}{
+			"query":  question,
+			"fields": []string{"title_tks^2", "content_ltks", "question_kwd", "important_kwd^3"},
+			"type":   "best_fields",
+		},
+	}
+
+	return map[string]interface{}{
+		"bool": map[string]interface{}{
+			"must":                 mustClause,
+			"filter":               filterClauses,
+			"minimum_should_match": 1,
+		},
+	}
+}
+
+// buildESHybridQuery builds hybrid search query (keyword + vector) for ES
+func buildESHybridQuery(question string, vector []float64, vectorWeight float64, filterClauses []map[string]interface{}) map[string]interface{} {
+	textWeight := 1.0 - vectorWeight
+
+	dimension := len(vector)
+	var fieldBuilder strings.Builder
+	fieldBuilder.WriteString("q_")
+	fieldBuilder.WriteString(strconv.Itoa(dimension))
+	fieldBuilder.WriteString("_vec")
+	fieldName := fieldBuilder.String()
+
+	shouldClauses := []map[string]interface{}{
+		{
+			"multi_match": map[string]interface{}{
+				"query":  question,
+				"fields": []string{"title_tks^2", "content_ltks", "question_kwd", "important_kwd^3"},
+				"type":   "best_fields",
+				"boost":  textWeight,
+			},
+		},
+		{
+			"script_score": map[string]interface{}{
+				"query": map[string]interface{}{"match_all": map[string]interface{}{}},
+				"script": map[string]interface{}{
+					"source": fmt.Sprintf("cosineSimilarity(params.query_vector, '%s') + 1.0", fieldName),
+					"params": map[string]interface{}{
+						"query_vector": vector,
+					},
+				},
+				"boost": vectorWeight,
+			},
+		},
+	}
+
+	return map[string]interface{}{
+		"bool": map[string]interface{}{
+			"should": shouldClauses,
+			"filter": filterClauses,
+		},
+	}
+}
+
+// convertESResponse converts ES SearchResponse to unified chunks format
+func convertESResponse(esResp *SearchResponse) []map[string]interface{} {
+	if esResp == nil || esResp.Hits.Hits == nil {
+		return []map[string]interface{}{}
+	}
+
+	chunks := make([]map[string]interface{}, len(esResp.Hits.Hits))
+	for i, hit := range esResp.Hits.Hits {
+		chunks[i] = hit.Source
+		chunks[i]["_score"] = hit.Score
+	}
+	return chunks
+}
+
+// Helper query builder functions (legacy)
 
 // BuildMatchTextQuery builds a text match query
 func BuildMatchTextQuery(fields []string, text string, fuzziness string) map[string]interface{} {

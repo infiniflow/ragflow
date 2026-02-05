@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+
+	"ragflow/internal/engine/types"
 )
 
 // EngineType document engine type
@@ -11,6 +13,12 @@ const (
 	EngineElasticsearch EngineType = "elasticsearch"
 	EngineInfinity      EngineType = "infinity"
 )
+
+// SearchRequest is an alias for types.SearchRequest
+type SearchRequest = types.SearchRequest
+
+// SearchResponse is an alias for types.SearchResponse
+type SearchResponse = types.SearchResponse
 
 // DocEngine document storage engine interface
 type DocEngine interface {
