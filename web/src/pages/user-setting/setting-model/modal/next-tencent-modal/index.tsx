@@ -8,17 +8,24 @@ import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
+import { memo, useCallback } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
+import VerifyButton from '../../modal/verify-button';
 
 const TencentCloudModal = ({
   visible,
   hideModal,
   onOk,
+  onVerify,
   loading,
   llmFactory,
 }: IModalProps<Omit<IAddLlmRequestBody, 'max_tokens'>> & {
   llmFactory: string;
+  onVerify?: (
+    postBody: any,
+  ) => Promise<boolean | void | VerifyResult | undefined>;
 }) => {
   const { t } = useTranslate('setting');
   const { t: tc } = useCommonTranslation();
@@ -108,6 +115,21 @@ const TencentCloudModal = ({
     await onOk?.(data);
   };
 
+  const verifyParamsFunc = useCallback(() => {
+    return {
+      llm_factory: llmFactory,
+    };
+  }, [llmFactory]);
+
+  const handleVerify = useCallback(
+    async (params: any) => {
+      const verifyParams = verifyParamsFunc();
+      const res = await onVerify?.({ ...params, ...verifyParams });
+      return (res || { isValid: null, logs: '' }) as VerifyResult;
+    },
+    [verifyParamsFunc, onVerify],
+  );
+
   return (
     <Modal
       title={<LLMHeader name={llmFactory} />}
@@ -127,6 +149,9 @@ const TencentCloudModal = ({
         }
         labelClassName="font-normal"
       >
+        {onVerify && (
+          <VerifyButton onVerify={handleVerify} isAbsolute={false} />
+        )}
         <div className="absolute bottom-0 right-0 left-0 flex items-center justify-between w-full py-6 px-6">
           <a
             href="https://cloud.tencent.com/document/api/1093/37823"
@@ -156,4 +181,4 @@ const TencentCloudModal = ({
   );
 };
 
-export default TencentCloudModal;
+export default memo(TencentCloudModal);
