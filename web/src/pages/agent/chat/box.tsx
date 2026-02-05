@@ -36,6 +36,7 @@ function AgentChatBox() {
     sendFormMessage,
     findReferenceByMessageId,
     appendUploadResponseList,
+    removeFile,
   } = useSendAgentMessage({ refetch });
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
@@ -130,6 +131,7 @@ function AgentChatBox() {
             onInputChange={handleInputChange}
             stopOutputMessage={stopOutputMessage}
             onUpload={handleUploadFile}
+            removeFile={removeFile}
             conversationId=""
           />
         )}
