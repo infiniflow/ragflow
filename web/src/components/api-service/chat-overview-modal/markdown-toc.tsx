@@ -72,7 +72,7 @@ const MarkdownToc: React.FC<MarkdownTocProps> = ({ content }) => {
         padding: '10px',
         maxHeight: 'calc(100vh - 170px)',
         overflowY: 'auto',
-        zIndex: 1000,
+        zIndex: 100,
       }}
     >
       <Anchor items={items} />

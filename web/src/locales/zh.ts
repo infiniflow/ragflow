@@ -1139,6 +1139,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         modelNameRequired: '模型名称为必填项',
         apiUrlRequired: 'PaddleOCR API URL 为必填项',
       },
+      showToc: '显示目录',
+      hideToc: '隐藏目录',
     },
     message: {
       registered: '注册成功',

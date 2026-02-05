@@ -1316,6 +1316,8 @@ Example: Virtual Hosted Style`,
         image2text: 'OCR',
         speech2text: 'ASR',
       },
+      showToc: 'Show TOC',
+      hideToc: 'Hide TOC',
     },
     message: {
       registered: 'Registered!',
