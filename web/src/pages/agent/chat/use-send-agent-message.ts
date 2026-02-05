@@ -1,4 +1,3 @@
-import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
 import sonnerMessage from '@/components/ui/message';
 import { MessageType } from '@/constants/chat';
 import {
@@ -184,12 +183,20 @@ export function useSetUploadResponseData() {
     setFileList([]);
   }, []);
 
+  const removeFile = useCallback((file: File) => {
+    setFileList((prev) => prev.filter((f) => f !== file));
+    setUploadResponseList((prev) =>
+      prev.filter((item) => item.name !== file.name),
+    );
+  }, []);
+
   return {
     uploadResponseList,
     fileList,
     setUploadResponseList,
     appendUploadResponseList: append,
     clearUploadResponseList: clear,
+    removeFile,
   };
 }
 
@@ -252,6 +259,7 @@ export const useSendAgentMessage = ({
     clearUploadResponseList,
     uploadResponseList,
     fileList,
+    removeFile,
   } = useSetUploadResponseData();
 
   const { stopMessage } = useStopMessage();
@@ -290,8 +298,6 @@ export const useSendAgentMessage = ({
         params.files = uploadResponseList;
 
         params.session_id = sessionId;
-        params.reasoning = message.reasoning;
-        params.internet = message.internet;
       }
 
       try {
@@ -358,39 +364,28 @@ export const useSendAgentMessage = ({
     removeAllMessagesExceptFirst,
   ]);
 
-  const handlePressEnter = useCallback(
-    (
-      ...[
-        { enableThinking, enableInternet },
-      ]: NextMessageInputOnPressEnterParameter
-    ) => {
-      if (trim(value) === '') return;
-      const msgBody = buildRequestBody(value);
-      if (done) {
-        setValue('');
-        sendMessage({
-          message: {
-            ...msgBody,
-            reasoning: enableThinking,
-            internet: enableInternet,
-          },
-        });
-      }
-      addNewestOneQuestion({ ...msgBody, files: fileList });
-      setTimeout(() => {
-        scrollToBottom();
-      }, 100);
-    },
-    [
-      value,
-      done,
-      addNewestOneQuestion,
-      fileList,
-      setValue,
-      sendMessage,
-      scrollToBottom,
-    ],
-  );
+  const handlePressEnter = useCallback(() => {
+    if (trim(value) === '') return;
+    const msgBody = buildRequestBody(value);
+    if (done) {
+      setValue('');
+      sendMessage({
+        message: msgBody,
+      });
+    }
+    addNewestOneQuestion({ ...msgBody, files: fileList });
+    setTimeout(() => {
+      scrollToBottom();
+    }, 100);
+  }, [
+    value,
+    done,
+    addNewestOneQuestion,
+    fileList,
+    setValue,
+    sendMessage,
+    scrollToBottom,
+  ]);
 
   const sendedTaskMessage = useRef<boolean>(false);
 
@@ -475,5 +470,6 @@ export const useSendAgentMessage = ({
     appendUploadResponseList,
     addNewestOneAnswer,
     sendMessage,
+    removeFile,
   };
 };
