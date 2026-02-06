@@ -52,12 +52,21 @@ func NewSynonym(redis RedisClient, resPath string) *Synonym {
 		loadTm:     time.Now().Add(-1000000 * time.Second),
 		dictionary: make(map[string][]string),
 		redis:      redis,
-		wordNet:    NewWordNet(),
+		wordNet:    nil, // Will be initialized below
 		resPath:    resPath,
 	}
 
 	if resPath == "" {
 		s.resPath = "rag/res"
+	}
+
+	// Initialize WordNet with relative path from this file
+	wordNetDir := "../../../resource/wordnet"
+	wordNet, err := NewWordNet(wordNetDir)
+	if err != nil {
+		logger.Warn("Failed to initialize WordNet", zap.Error(err))
+	} else {
+		s.wordNet = wordNet
 	}
 
 	// Load synonym.json
@@ -160,9 +169,9 @@ func (s *Synonym) Lookup(tk string, topN int) []string {
 	}
 
 	// 2) If not found and tk is purely alphabetical, fallback to WordNet
-	if matched, _ := regexp.MatchString(`^[a-z]+$`, tk); matched {
+	if matched, _ := regexp.MatchString(`^[a-z]+$`, tk); matched && s.wordNet != nil {
 		wnSet := make(map[string]struct{})
-		synsets := s.wordNet.Synsets(tk)
+		synsets := s.wordNet.Synsets(tk, "")
 		for _, syn := range synsets {
 			// Extract word from synset name (format: word.pos.num)
 			parts := strings.Split(syn.Name, ".")
