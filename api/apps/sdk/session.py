@@ -902,7 +902,7 @@ Reason:
  - At the same time, related terms can also help search engines better understand user needs and return more accurate search results.
 
 """
-    ans = await chat_mdl.async_chat(
+    ans, _ = await chat_mdl.async_chat(
         prompt,
         [
             {
@@ -1199,7 +1199,7 @@ async def related_questions_embedded():
 
     gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
     prompt = load_prompt("related_question")
-    ans = await chat_mdl.async_chat(
+    ans, _ = await chat_mdl.async_chat(
         prompt,
         [
             {

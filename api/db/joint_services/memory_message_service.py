@@ -157,7 +157,7 @@ async def extract_by_llm(tenant_id: str, llm_id: str, extract_conf: dict, memory
     llm = LLMBundle(tenant_id, llm_type, llm_id)
     if task_id:
         TaskService.update_progress(task_id, {"progress": 0.15, "progress_msg": timestamp_to_date(current_timestamp())+ " " + "Prepared prompts and LLM."})
-    res = await llm.async_chat(system_prompt, user_prompts, extract_conf)
+    res, _ = await llm.async_chat(system_prompt, user_prompts, extract_conf)
     res_json = get_json_result_from_llm_response(res)
     if task_id:
         TaskService.update_progress(task_id, {"progress": 0.35, "progress_msg": timestamp_to_date(current_timestamp())+ " " + "Get extracted result from LLM."})
