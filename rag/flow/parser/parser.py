@@ -510,7 +510,13 @@ class Parser(ProcessBase):
         docx_parser = Docx()
 
         if conf.get("output_format") == "json":
-            sections, tbls = docx_parser(name, binary=blob)
+            main_sections = docx_parser(name, binary=blob)
+            sections = []
+            tbls = []
+            for text, image, html in main_sections:
+                sections.append((text, image))
+                tbls.append(((None, html), ""))
+
             sections = [{"text": section[0], "image": section[1]} for section in sections if section]
             sections.extend([{"text": tb, "image": None, "doc_type_kwd": "table"} for ((_, tb), _) in tbls])
 

@@ -40,8 +40,8 @@ from rag.utils.base64_image import image2id
 from rag.utils.raptor_utils import should_skip_raptor, get_skip_reason
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
-from graphrag.general.index import run_graphrag_for_kb
-from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
+from rag.graphrag.general.index import run_graphrag_for_kb
+from rag.graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text, \
     gen_metadata
 import logging
@@ -61,6 +61,7 @@ import numpy as np
 from peewee import DoesNotExist
 from common.constants import LLMType, ParserType, PipelineTaskType
 from api.db.services.document_service import DocumentService
+from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.file2document_service import File2DocumentService
@@ -73,7 +74,7 @@ from rag.nlp import search, rag_tokenizer, add_positions
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 from common.token_utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
-from graphrag.utils import chat_limiter
+from rag.graphrag.utils import chat_limiter
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
 from common import settings
@@ -165,6 +166,8 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
         if cancel:
             raise TaskCanceledException(msg)
         logging.info(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}")
+    except TaskCanceledException:
+        raise
     except DoesNotExist:
         logging.warning(f"set_progress({task_id}) got exception DoesNotExist")
     except Exception as e:
@@ -442,12 +445,10 @@ async def build_chunks(task, progress_callback):
             metadata = update_metadata_to(metadata, doc["metadata_obj"])
             del doc["metadata_obj"]
         if metadata:
-            e, doc = DocumentService.get_by_id(task["doc_id"])
-            if e:
-                if isinstance(doc.meta_fields, str):
-                    doc.meta_fields = json.loads(doc.meta_fields)
-                metadata = update_metadata_to(metadata, doc.meta_fields)
-                DocumentService.update_by_id(task["doc_id"], {"meta_fields": metadata})
+            existing_meta = DocMetadataService.get_document_metadata(task["doc_id"])
+            existing_meta = existing_meta if isinstance(existing_meta, dict) else {}
+            metadata = update_metadata_to(metadata, existing_meta)
+            DocMetadataService.update_document_metadata(task["doc_id"], metadata)
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["kb_parser_config"].get("tag_kb_ids", []):
@@ -700,6 +701,8 @@ async def run_dataflow(task: dict):
             for i, ck in enumerate(chunks):
                 v = vects[i].tolist()
                 ck["q_%d_vec" % len(v)] = v
+        except TaskCanceledException:
+            raise
         except Exception as e:
             set_progress(task_id, prog=-1, msg=f"[ERROR]: {e}")
             PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id,
@@ -741,12 +744,10 @@ async def run_dataflow(task: dict):
             del ck["positions"]
 
     if metadata:
-        e, doc = DocumentService.get_by_id(doc_id)
-        if e:
-            if isinstance(doc.meta_fields, str):
-                doc.meta_fields = json.loads(doc.meta_fields)
-            metadata = update_metadata_to(metadata, doc.meta_fields)
-            DocumentService.update_by_id(doc_id, {"meta_fields": metadata})
+        existing_meta = DocMetadataService.get_document_metadata(doc_id)
+        existing_meta = existing_meta if isinstance(existing_meta, dict) else {}
+        metadata = update_metadata_to(metadata, existing_meta)
+        DocMetadataService.update_document_metadata(doc_id, metadata)
 
     start_ts = timer()
     set_progress(task_id, prog=0.82, msg="[DOC Engine]:\nStart to index...")
@@ -969,8 +970,9 @@ async def do_handle_task(task):
     task_tenant_id = task["tenant_id"]
     task_embedding_id = task["embd_id"]
     task_language = task["language"]
-    task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
-    task["llm_id"] = task_llm_id
+    doc_task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
+    kb_task_llm_id = task['kb_parser_config'].get("llm_id") or task["llm_id"]
+    task['llm_id'] = kb_task_llm_id
     task_dataset_id = task["kb_id"]
     task_doc_id = task["doc_id"]
     task_document_name = task["name"]
@@ -1042,7 +1044,7 @@ async def do_handle_task(task):
             return
 
         # bind LLM for raptor
-        chat_model_config = get_model_config_by_type_and_name(task_dataset_id, LLMType.CHAT, task_llm_id)
+        chat_model_config = get_model_config_by_type_and_name(task_dataset_id, LLMType.CHAT, kb_task_llm_id)
         chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language)
         # run RAPTOR
         async with kg_limiter:
@@ -1087,7 +1089,7 @@ async def do_handle_task(task):
 
         graphrag_conf = kb_parser_config.get("graphrag", {})
         start_ts = timer()
-        chat_model_config = get_model_config_by_type_and_name(task_tenant_id, LLMType.CHAT, task_llm_id)
+        chat_model_config = get_model_config_by_type_and_name(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
         chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language)
         with_resolution = graphrag_conf.get("resolution", False)
         with_community = graphrag_conf.get("community", False)
@@ -1113,6 +1115,7 @@ async def do_handle_task(task):
         return
     else:
         # Standard chunking methods
+        task['llm_id'] = doc_task_llm_id
         start_ts = timer()
         chunks = await build_chunks(task, progress_callback)
         logging.info("Build document {}: {:.2f}s".format(task_document_name, timer() - start_ts))
@@ -1123,6 +1126,8 @@ async def do_handle_task(task):
         start_ts = timer()
         try:
             token_count, vector_size = await embedding(chunks, embedding_model, task_parser_config, progress_callback)
+        except TaskCanceledException:
+            raise
         except Exception as e:
             error_message = "Generate embedding error:{}".format(str(e))
             progress_callback(-1, error_message)
@@ -1140,12 +1145,16 @@ async def do_handle_task(task):
 
     async def _maybe_insert_chunks(_chunks):
         if has_canceled(task_id):
-            return True
+            progress_callback(-1, msg="Task has been canceled.")
+            return False
         insert_result = await insert_chunks(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
         return bool(insert_result)
 
     try:
         if not await _maybe_insert_chunks(chunks):
+            return
+        if has_canceled(task_id):
+            progress_callback(-1, msg="Task has been canceled.")
             return
 
         logging.info(
@@ -1215,6 +1224,12 @@ async def handle_task():
         DONE_TASKS += 1
         CURRENT_TASKS.pop(task_id, None)
         logging.info(f"handle_task done for task {json.dumps(task)}")
+    except TaskCanceledException as e:
+        DONE_TASKS += 1
+        CURRENT_TASKS.pop(task_id, None)
+        logging.info(
+            f"handle_task canceled for task {task_id}: {getattr(e, 'msg', str(e))}"
+        )
     except Exception as e:
         FAILED_TASKS += 1
         CURRENT_TASKS.pop(task_id, None)

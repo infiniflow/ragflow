@@ -48,6 +48,7 @@ AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {"create", "start", "end", "update", "read_ac
 
 class TextFieldType(Enum):
     MYSQL = "LONGTEXT"
+    OCEANBASE = "LONGTEXT"
     POSTGRES = "TEXT"
 
 
@@ -383,13 +384,95 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
         return None
 
 
+class RetryingPooledOceanBaseDatabase(PooledMySQLDatabase):
+    """Pooled OceanBase database with retry mechanism.
+
+    OceanBase is compatible with MySQL protocol, so we inherit from PooledMySQLDatabase.
+    This class provides connection pooling and automatic retry for connection issues.
+    """
+    def __init__(self, *args, **kwargs):
+        self.max_retries = kwargs.pop("max_retries", 5)
+        self.retry_delay = kwargs.pop("retry_delay", 1)
+        super().__init__(*args, **kwargs)
+
+    def execute_sql(self, sql, params=None, commit=True):
+        for attempt in range(self.max_retries + 1):
+            try:
+                return super().execute_sql(sql, params, commit)
+            except (OperationalError, InterfaceError) as e:
+                # OceanBase/MySQL specific error codes
+                # 2013: Lost connection to MySQL server during query
+                # 2006: MySQL server has gone away
+                error_codes = [2013, 2006]
+                error_messages = ['', 'Lost connection', 'gone away']
+
+                should_retry = (
+                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
+                    any(msg in str(e).lower() for msg in error_messages) or
+                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
+                )
+
+                if should_retry and attempt < self.max_retries:
+                    logging.warning(
+                        f"OceanBase connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
+                    )
+                    self._handle_connection_loss()
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    logging.error(f"OceanBase execution failure: {e}")
+                    raise
+        return None
+
+    def _handle_connection_loss(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+        try:
+            self.connect()
+        except Exception as e:
+            logging.error(f"Failed to reconnect to OceanBase: {e}")
+            time.sleep(0.1)
+            try:
+                self.connect()
+            except Exception as e2:
+                logging.error(f"Failed to reconnect to OceanBase on second attempt: {e2}")
+                raise
+
+    def begin(self):
+        for attempt in range(self.max_retries + 1):
+            try:
+                return super().begin()
+            except (OperationalError, InterfaceError) as e:
+                error_codes = [2013, 2006]
+                error_messages = ['', 'Lost connection']
+
+                should_retry = (
+                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
+                    (str(e) in error_messages) or
+                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
+                )
+
+                if should_retry and attempt < self.max_retries:
+                    logging.warning(
+                        f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries})"
+                    )
+                    self._handle_connection_loss()
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    raise
+        return None
+
+
 class PooledDatabase(Enum):
     MYSQL = RetryingPooledMySQLDatabase
+    OCEANBASE = RetryingPooledOceanBaseDatabase
     POSTGRES = RetryingPooledPostgresqlDatabase
 
 
 class DatabaseMigrator(Enum):
     MYSQL = MySQLMigrator
+    OCEANBASE = MySQLMigrator
     POSTGRES = PostgresqlMigrator
 
 
@@ -548,6 +631,7 @@ class MysqlDatabaseLock:
 
 class DatabaseLock(Enum):
     MYSQL = MysqlDatabaseLock
+    OCEANBASE = MysqlDatabaseLock
     POSTGRES = PostgresDatabaseLock
 
 
@@ -805,7 +889,6 @@ class Document(DataBaseModel):
     progress_msg = TextField(null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True, index=True)
     process_duration = FloatField(default=0)
-    meta_fields = JSONField(null=True, default={})
     suffix = CharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
 
     run = CharField(max_length=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0", index=True)
@@ -919,8 +1002,10 @@ class APIToken(DataBaseModel):
 
 class API4Conversation(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
+    name = CharField(max_length=255, null=True, help_text="conversation name", index=False)
     dialog_id = CharField(max_length=32, null=False, index=True)
     user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
+    exp_user_id = CharField(max_length=255, null=True, help_text="exp_user_id", index=True)
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
     tokens = IntegerField(default=0)
@@ -1222,7 +1307,7 @@ class SystemSettings(DataBaseModel):
     name = CharField(max_length=128, primary_key=True)
     source = CharField(max_length=32, null=False, index=False)
     data_type = CharField(max_length=32, null=False, index=False)
-    value = CharField(max_length=1024, null=False, index=False)
+    value = TextField(null=False, help_text="Configuration value (JSON, string, etc.)")
     class Meta:
         db_table = "system_settings"
 
@@ -1336,7 +1421,6 @@ def migrate_db():
     alter_db_add_column(migrator, "task", "digest", TextField(null=True, help_text="task digest", default=""))
     alter_db_add_column(migrator, "task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default=""))
     alter_db_add_column(migrator, "conversation", "user_id", CharField(max_length=255, null=True, help_text="user_id", index=True))
-    alter_db_add_column(migrator, "document", "meta_fields", JSONField(null=True, default={}))
     alter_db_add_column(migrator, "task", "task_type", CharField(max_length=32, null=False, default=""))
     alter_db_add_column(migrator, "task", "priority", IntegerField(default=0))
     alter_db_add_column(migrator, "user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True))
@@ -1363,6 +1447,10 @@ def migrate_db():
     alter_db_add_column(migrator, "tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
     alter_db_add_column(migrator, "connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False))
     alter_db_add_column(migrator, "llm_factories", "rank", IntegerField(default=0, index=False))
+    alter_db_add_column(migrator, "api_4_conversation", "name", CharField(max_length=255, null=True, help_text="conversation name", index=False))
+    alter_db_add_column(migrator, "api_4_conversation", "exp_user_id", CharField(max_length=255, null=True, help_text="exp_user_id", index=True))
+    # Migrate system_settings.value from CharField to TextField for longer sandbox configs
+    alter_db_column_type(migrator, "system_settings", "value", TextField(null=False, help_text="Configuration value (JSON, string, etc.)"))
     update_tenant_llm_to_id_primary_key()
     alter_db_add_column(migrator, "tenant", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "tenant", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))

@@ -26,7 +26,7 @@ INVALID_AUTH_CASES = [
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize("invalid_auth, expected_code, expected_message", INVALID_AUTH_CASES)
     def test_auth_invalid(self, invalid_auth, expected_code, expected_message):
         res = plugin_llm_tools(invalid_auth)

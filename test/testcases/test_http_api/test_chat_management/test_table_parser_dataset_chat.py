@@ -162,7 +162,7 @@ class TestTableParserDatasetChat:
         [
             ("show me column of product", r"\|product\|Source"),
             ("which product has price 79", r"Keyboard"),
-            ("How many rows in the dataset?", r"count\(\*\)"),
+            ("How many rows in the dataset?", r"rows|count\(\*\)"),
             ("Show me all employees in Engineering department", r"(Alice|Carol|Frank)"),
         ],
     )

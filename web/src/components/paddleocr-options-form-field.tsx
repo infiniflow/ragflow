@@ -57,7 +57,10 @@ export function PaddleOCROptionsFormField({
 
       <RAGFlowFormItem
         name={buildName('paddleocr_access_token')}
-        label={t('knowledgeConfiguration.paddleocrAccessToken', 'AI Studio Access Token')}
+        label={t(
+          'knowledgeConfiguration.paddleocrAccessToken',
+          'AI Studio Access Token',
+        )}
         tooltip={t(
           'knowledgeConfiguration.paddleocrAccessTokenTip',
           'Access token for PaddleOCR API (optional)',
@@ -67,14 +70,19 @@ export function PaddleOCROptionsFormField({
         {(field) => (
           <Input
             {...field}
-            placeholder={t('knowledgeConfiguration.paddleocrAccessTokenPlaceholder')}
+            placeholder={t(
+              'knowledgeConfiguration.paddleocrAccessTokenPlaceholder',
+            )}
           />
         )}
       </RAGFlowFormItem>
 
       <RAGFlowFormItem
         name={buildName('paddleocr_algorithm')}
-        label={t('knowledgeConfiguration.paddleocrAlgorithm', 'PaddleOCR Algorithm')}
+        label={t(
+          'knowledgeConfiguration.paddleocrAlgorithm',
+          'PaddleOCR Algorithm',
+        )}
         tooltip={t(
           'knowledgeConfiguration.paddleocrAlgorithmTip',
           'Algorithm to use for PaddleOCR parsing',
@@ -83,7 +91,7 @@ export function PaddleOCROptionsFormField({
       >
         {(field) => (
           <RAGFlowSelect
-            value={field.value || 'PaddleOCR-VL'}
+            value={field.value || undefined}
             onChange={field.onChange}
             options={algorithmOptions}
             placeholder={t('common.selectPlaceholder', 'Select value')}

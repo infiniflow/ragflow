@@ -25,6 +25,7 @@ import {
   MetadataOperations,
   MetadataValueType,
   ShowManageMetadataModalProps,
+  UpdateOperation,
 } from '../interface';
 
 export const util = {
@@ -136,6 +137,7 @@ export const useMetadataOperations = () => {
     deletes: [],
     updates: [],
   });
+  // const operationsRef = useRef(operations);
 
   const addDeleteRow = useCallback((key: string) => {
     setOperations((prev) => ({
@@ -176,30 +178,49 @@ export const useMetadataOperations = () => {
         newValuesRes = newValue;
       }
       setOperations((prev) => {
+        let updatedUpdates = [...prev.updates];
         const existsIndex = prev.updates.findIndex(
-          (update) => update.key === key && update.match === originalValue,
+          (update) =>
+            update.key === key &&
+            update.match === originalValue &&
+            update.match !== '',
         );
-
         if (existsIndex > -1) {
-          const updatedUpdates = [...prev.updates];
           updatedUpdates[existsIndex] = {
             key,
             match: originalValue,
             value: newValuesRes,
             valueType: type || DEFAULT_VALUE_TYPE,
           };
-          return {
-            ...prev,
-            updates: updatedUpdates,
-          };
+
+          // operationsRef.current = updatedOperations;
+        } else {
+          updatedUpdates.push({
+            key,
+            match: originalValue,
+            value: newValuesRes,
+            valueType: type,
+          });
         }
-        return {
+        updatedUpdates = updatedUpdates.reduce((pre, cur) => {
+          if (
+            !pre.some(
+              (item) =>
+                item.key === cur.key &&
+                item.match === cur.match &&
+                item.value === cur.value,
+            )
+          ) {
+            pre.push(cur);
+          }
+          return pre;
+        }, [] as UpdateOperation[]);
+
+        const updatedOperations = {
           ...prev,
-          updates: [
-            ...prev.updates,
-            { key, match: originalValue, value: newValuesRes, valueType: type },
-          ],
+          updates: updatedUpdates,
         };
+        return updatedOperations;
       });
     },
     [],
@@ -213,6 +234,7 @@ export const useMetadataOperations = () => {
   }, []);
 
   return {
+    // operationsRef,
     operations,
     addDeleteBatch,
     addDeleteRow,
@@ -272,6 +294,7 @@ export const useManageMetaDataModal = (
   const [tableData, setTableData] = useState<IMetaDataTableData[]>(metaData);
   const queryClient = useQueryClient();
   const {
+    // operationsRef,
     operations,
     addDeleteRow,
     addDeleteBatch,

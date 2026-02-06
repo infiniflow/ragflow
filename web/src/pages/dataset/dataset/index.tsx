@@ -100,18 +100,25 @@ export default function Dataset() {
   const handleAddMetadataWithDocuments = () => {
     showManageMetadataModal({
       type: MetadataType.Manage,
-      isCanAdd: false,
+      isCanAdd: true,
       isEditField: false,
       isDeleteSingleValue: true,
       isAddValue: true,
+      secondTitle: (
+        <>
+          {t('knowledgeDetails.metadata.selectFiles', {
+            count: documents.length,
+          })}
+        </>
+      ),
       title: (
         <div className="flex flex-col gap-2">
           <div className="text-base font-normal">
             {t('knowledgeDetails.metadata.manageMetadata')}
           </div>
-          <div className="text-sm text-text-secondary">
+          {/* <div className="text-sm text-text-secondary">
             {t('knowledgeDetails.metadata.manageMetadataForDataset')}
-          </div>
+          </div> */}
         </div>
       ),
       documentIds: documents.map((doc) => doc.id),
@@ -240,14 +247,17 @@ export default function Dataset() {
                   <div className="text-base font-normal">
                     {t('knowledgeDetails.metadata.manageMetadata')}
                   </div>
-                  <div className="text-sm text-text-secondary">
+                  {/* <div className="text-sm text-text-secondary">
                     {t('knowledgeDetails.metadata.manageMetadataForDataset')}
-                  </div>
+                  </div> */}
                 </div>
               )
             }
             visible={manageMetadataVisible}
-            hideModal={hideManageMetadataModal}
+            hideModal={() => {
+              setRowSelection({});
+              hideManageMetadataModal();
+            }}
             // selectedRowKeys={selectedRowKeys}
             tableData={tableData}
             isCanAdd={metadataConfig.isCanAdd}
@@ -255,6 +265,7 @@ export default function Dataset() {
             isVerticalShowValue={metadataConfig.isVerticalShowValue}
             isEditField={metadataConfig.isEditField}
             isDeleteSingleValue={metadataConfig.isDeleteSingleValue}
+            secondTitle={metadataConfig.secondTitle}
             type={metadataConfig.type}
             documentIds={metadataConfig.documentIds}
             otherData={metadataConfig.record}
