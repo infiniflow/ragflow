@@ -57,12 +57,10 @@ class Iteration(ComponentBase, ABC):
                 return cid
 
     def _invoke(self, **kwargs):
-        if self.check_if_canceled("Iteration processing"):
-            return
-
-        arr = self._canvas.get_variable_value(self._param.items_ref)
-        if not isinstance(arr, list):
-            self.set_output("_ERROR", self._param.items_ref + " must be an array, but its type is "+str(type(arr)))
+        if not self.check_if_canceled("Iteration processing"):
+            arr = self._canvas.get_variable_value(self._param.items_ref)
+            if not isinstance(arr, list):
+                self.set_output("_ERROR", self._param.items_ref + " must be an array, but its type is "+str(type(arr)))
 
     def thoughts(self) -> str:
         return "Need to process {} items.".format(len(self._canvas.get_variable_value(self._param.items_ref)))
