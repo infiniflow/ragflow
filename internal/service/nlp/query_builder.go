@@ -97,19 +97,19 @@ func (qb *QueryBuilder) RmWWW(txt string) string {
 // AddSpaceBetweenEngZh adds spaces between English letters and Chinese characters to improve tokenization.
 func (qb *QueryBuilder) AddSpaceBetweenEngZh(txt string) string {
 	// (ENG/ENG+NUM) + ZH: e.g., "ABC123中文" -> "ABC123 中文"
-	re1 := regexp.MustCompile(`([A-Za-z]+[0-9]*)([\x{4e00}-\x{9fa5]+)`)
+	re1 := regexp.MustCompile(`([A-Za-z]+[0-9]*)([\x{4e00}-\x{9fa5}]+)`)
 	txt = re1.ReplaceAllString(txt, "$1 $2")
 
 	// ENG + ZH: e.g., "ABC中文" -> "ABC 中文"
-	re2 := regexp.MustCompile(`([A-Za-z])([\x{4e00}-\x{9fa5]+)`)
+	re2 := regexp.MustCompile(`([A-Za-z])([\x{4e00}-\x{9fa5}]+)`)
 	txt = re2.ReplaceAllString(txt, "$1 $2")
 
 	// ZH + (ENG/ENG+NUM): e.g., "中文ABC123" -> "中文 ABC123"
-	re3 := regexp.MustCompile(`([\x{4e00}-\x{9fa5]+)([A-Za-z]+[0-9]*)`)
+	re3 := regexp.MustCompile(`([\x{4e00}-\x{9fa5}]+)([A-Za-z]+[0-9]*)`)
 	txt = re3.ReplaceAllString(txt, "$1 $2")
 
 	// ZH + ENG: e.g., "中文ABC" -> "中文 ABC"
-	re4 := regexp.MustCompile(`([\x{4e00}-\x{9fa5]+)([A-Za-z])`)
+	re4 := regexp.MustCompile(`([\x{4e00}-\x{9fa5}]+)([A-Za-z])`)
 	txt = re4.ReplaceAllString(txt, "$1 $2")
 	return txt
 }

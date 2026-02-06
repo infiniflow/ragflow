@@ -137,7 +137,7 @@ func TestSynonymLookup(t *testing.T) {
 		},
 		{
 			name:     "not found",
-			tk:       "unknown",
+			tk:       "xyzabc123",
 			topN:     8,
 			expected: []string{},
 		},
