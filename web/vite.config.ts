@@ -101,6 +101,12 @@ export default defineConfig(({ mode, command }) => {
       experimentalMinChunkSize: 30 * 1024,
       chunkSizeWarningLimit: 1000,
       rollupOptions: {
+        onwarn(warning, warn) {
+          if (warning.code === 'EMPTY_BUNDLE') {
+            return;
+          }
+          warn(warning);
+        },
         output: {
           manualChunks(id) {
             // if (id.includes('src/components')) {

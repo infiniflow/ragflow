@@ -44,7 +44,7 @@ class Excel(ExcelParser):
             wb = Excel._load_excel_to_workbook(BytesIO(binary))
         total = 0
         for sheet_name in wb.sheetnames:
-            total += len(list(wb[sheet_name].rows))
+            total += Excel._get_actual_row_count(wb[sheet_name])
         res, fails, done = [], [], 0
         rn = 0
         flow_images = []
@@ -66,7 +66,7 @@ class Excel(ExcelParser):
                             flow_images.append(img)
 
             try:
-                rows = list(ws.rows)
+                rows = Excel._get_rows_limited(ws)
             except Exception as e:
                 logging.warning(f"Skip sheet '{sheet_name}' due to rows access error: {e}")
                 continue
