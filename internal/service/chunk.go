@@ -198,10 +198,29 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		}
 	}
 
+	// Use QueryBuilder to process question and get matchText and keywords
+	// Reference: rag/nlp/search.py L115
+	queryBuilder := NewQueryBuilder()
+	questionResult, err := queryBuilder.Question(req.Question, 0.3)
+	if err != nil {
+		logger.Warn("Failed to process question with QueryBuilder, using original question", zap.Error(err))
+		questionResult = &QuestionResult{
+			MatchText: req.Question,
+			Keywords:  []string{req.Question},
+		}
+	}
+
+	logger.Debug("QueryBuilder processed question",
+		zap.String("original", req.Question),
+		zap.String("matchText", questionResult.MatchText),
+		zap.Strings("keywords", questionResult.Keywords))
+
 	// Build unified search request
 	searchReq := &engine.SearchRequest{
 		IndexNames:             buildIndexNames(tenantIDs),
 		Question:               req.Question,
+		MatchText:              questionResult.MatchText,
+		Keywords:               questionResult.Keywords,
 		Vector:                 vector,
 		KbIDs:                  kbIDs,
 		DocIDs:                 req.DocIDs,

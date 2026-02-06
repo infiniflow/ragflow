@@ -72,12 +72,18 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 	// Build search query body
 	queryBody := make(map[string]interface{})
 
+	// Use MatchText if available (from QueryBuilder), otherwise use original Question
+	matchText := req.MatchText
+	if matchText == "" {
+		matchText = req.Question
+	}
+
 	if req.KeywordOnly || len(req.Vector) == 0 {
 		// Keyword-only search
-		queryBody["query"] = buildESKeywordQuery(req.Question, filterClauses)
+		queryBody["query"] = buildESKeywordQuery(matchText, filterClauses)
 	} else {
 		// Hybrid search: keyword + vector
-		queryBody["query"] = buildESHybridQuery(req.Question, req.Vector, req.VectorSimilarityWeight, filterClauses)
+		queryBody["query"] = buildESHybridQuery(matchText, req.Vector, req.VectorSimilarityWeight, filterClauses)
 	}
 
 	queryBody["size"] = limit
@@ -326,13 +332,31 @@ func buildFilterClauses(kbIDs, docIDs []string, available int) []map[string]inte
 }
 
 // buildESKeywordQuery builds keyword-only search query for ES
-func buildESKeywordQuery(question string, filterClauses []map[string]interface{}) map[string]interface{} {
-	mustClause := map[string]interface{}{
-		"multi_match": map[string]interface{}{
-			"query":  question,
-			"fields": []string{"title_tks^2", "content_ltks", "question_kwd", "important_kwd^3"},
-			"type":   "best_fields",
-		},
+// Uses query_string if matchText is in query_string format, otherwise uses multi_match
+func buildESKeywordQuery(matchText string, filterClauses []map[string]interface{}) map[string]interface{} {
+	var mustClause map[string]interface{}
+
+	// Check if matchText contains query_string operators (OR, AND, ^, etc.)
+	if strings.Contains(matchText, " OR ") || strings.Contains(matchText, " AND ") ||
+		strings.Contains(matchText, "^") || strings.Contains(matchText, "(") {
+		// Use query_string for complex queries
+		mustClause = map[string]interface{}{
+			"query_string": map[string]interface{}{
+				"query":  matchText,
+				"fields": []string{"title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"},
+				"type":   "best_fields",
+				"minimum_should_match": "30%",
+			},
+		}
+	} else {
+		// Use multi_match for simple queries
+		mustClause = map[string]interface{}{
+			"multi_match": map[string]interface{}{
+				"query":  matchText,
+				"fields": []string{"title_tks^2", "content_ltks", "question_kwd", "important_kwd^3"},
+				"type":   "best_fields",
+			},
+		}
 	}
 
 	return map[string]interface{}{
@@ -345,7 +369,7 @@ func buildESKeywordQuery(question string, filterClauses []map[string]interface{}
 }
 
 // buildESHybridQuery builds hybrid search query (keyword + vector) for ES
-func buildESHybridQuery(question string, vector []float64, vectorWeight float64, filterClauses []map[string]interface{}) map[string]interface{} {
+func buildESHybridQuery(matchText string, vector []float64, vectorWeight float64, filterClauses []map[string]interface{}) map[string]interface{} {
 	textWeight := 1.0 - vectorWeight
 
 	dimension := len(vector)
@@ -355,15 +379,34 @@ func buildESHybridQuery(question string, vector []float64, vectorWeight float64,
 	fieldBuilder.WriteString("_vec")
 	fieldName := fieldBuilder.String()
 
-	shouldClauses := []map[string]interface{}{
-		{
+	// Build text match clause
+	var textMatchClause map[string]interface{}
+	if strings.Contains(matchText, " OR ") || strings.Contains(matchText, " AND ") ||
+		strings.Contains(matchText, "^") || strings.Contains(matchText, "(") {
+		// Use query_string for complex queries
+		textMatchClause = map[string]interface{}{
+			"query_string": map[string]interface{}{
+				"query":                matchText,
+				"fields":               []string{"title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"},
+				"type":                 "best_fields",
+				"minimum_should_match": "30%",
+				"boost":                textWeight,
+			},
+		}
+	} else {
+		// Use multi_match for simple queries
+		textMatchClause = map[string]interface{}{
 			"multi_match": map[string]interface{}{
-				"query":  question,
+				"query":  matchText,
 				"fields": []string{"title_tks^2", "content_ltks", "question_kwd", "important_kwd^3"},
 				"type":   "best_fields",
 				"boost":  textWeight,
 			},
-		},
+		}
+	}
+
+	shouldClauses := []map[string]interface{}{
+		textMatchClause,
 		{
 			"script_score": map[string]interface{}{
 				"query": map[string]interface{}{"match_all": map[string]interface{}{}},

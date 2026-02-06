@@ -7,6 +7,10 @@ type SearchRequest struct {
 	Question      string    // Search query text
 	Vector        []float64 // Embedding vector (optional, for hybrid search)
 
+	// Query analysis results (from QueryBuilder.Question)
+	MatchText string   // Processed match text for ES query_string
+	Keywords  []string // Extracted keywords from question
+
 	// Filters
 	KbIDs  []string // Knowledge base IDs filter
 	DocIDs []string // Document IDs filter
