@@ -18,7 +18,6 @@ import {
 import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
 import { useSendMessage } from '../../hooks/use-send-chat-message';
 import { buildMessageItemReference } from '../../utils';
-import { useShowInternet } from '../use-show-internet';
 
 interface IProps {
   controller: AbortController;
@@ -55,8 +54,9 @@ export function SingleChatBox({
   const sendDisabled = useSendButtonDisabled(value);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
-
-  const showInternet = useShowInternet();
+  const hasAssistantMessage = derivedMessages?.some(
+    (message) => message.role === MessageType.Assistant,
+  );
 
   useEffect(() => {
     const messages = conversation?.message;
@@ -122,8 +122,12 @@ export function SingleChatBox({
         onUpload={handleUploadFile}
         isUploading={isUploading}
         removeFile={removeFile}
-        showReasoning
-        showInternet={showInternet}
+      />
+      <div
+        data-testid="chat-stream-status"
+        data-status={sendLoading ? 'streaming' : 'idle'}
+        className="absolute left-[-9999px] top-0 h-1 w-1"
+        aria-hidden="true"
       />
       {visible && (
         <PdfSheet

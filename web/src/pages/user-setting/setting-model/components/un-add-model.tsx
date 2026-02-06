@@ -79,7 +79,7 @@ export const AvailableModels: FC<{
   };
 
   return (
-    <div className=" text-text-primary h-full p-4">
+    <div className=" text-text-primary h-full p-4" data-testid="available-models-section">
       <div className="text-text-primary text-base mb-4">
         {t('availableModels')}
       </div>
@@ -91,6 +91,7 @@ export const AvailableModels: FC<{
           placeholder={t('search')}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
+          data-testid="model-providers-search"
           className="w-full px-4 py-2 pl-10 bg-bg-input border border-border-default rounded-lg focus:outline-none focus:ring-1 focus:ring-border-button transition-colors"
         />
         {/* <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-text-secondary" /> */}
@@ -133,6 +134,8 @@ export const AvailableModels: FC<{
             key={model.name}
             className=" border border-border-button rounded-lg p-3 hover:bg-bg-input transition-colors group"
             onClick={() => handleAddModel(model.name)}
+            data-testid="available-model-card"
+            data-provider={model.name}
           >
             <div className="flex items-center space-x-3 mb-3">
               <LlmIcon name={model.name} imgClass="h-8 w-8 text-text-primary" />

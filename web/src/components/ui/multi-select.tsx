@@ -49,10 +49,14 @@ function MultiCommandItem({
   option,
   isSelected,
   toggleOption,
+  testId,
+  indexTestId,
 }: {
   option: MultiSelectOptionType;
   isSelected: boolean;
   toggleOption(value: string): void;
+  testId?: string;
+  indexTestId?: string;
 }) {
   return (
     <CommandItem
@@ -64,6 +68,7 @@ function MultiCommandItem({
       className={cn('cursor-pointer', {
         'cursor-not-allowed text-text-disabled': option.disabled,
       })}
+      data-testid={testId}
     >
       <div
         className={cn(
@@ -84,7 +89,10 @@ function MultiCommandItem({
           })}
         />
       )}
-      <span className={cn({ 'text-text-disabled': option.disabled })}>
+      <span
+        className={cn({ 'text-text-disabled': option.disabled })}
+        data-testid={indexTestId}
+      >
         {option.label}
       </span>
       {option.suffix && (
@@ -183,6 +191,9 @@ interface MultiSelectProps
    * If true, renders the multi-select component with a select all option.
    */
   showSelectAll?: boolean;
+  optionsTestId?: string;
+  optionTestId?: string;
+  optionTestIdPrefix?: string;
 }
 
 export const MultiSelect = React.forwardRef<
@@ -202,6 +213,9 @@ export const MultiSelect = React.forwardRef<
       // asChild = false,
       className,
       showSelectAll = true,
+      optionsTestId,
+      optionTestId,
+      optionTestIdPrefix,
       ...props
     },
     ref,
@@ -232,6 +246,9 @@ export const MultiSelect = React.forwardRef<
         'options' in option ? option.options : [option],
       );
     }, [options]);
+    const optionIndexMap = React.useMemo(() => {
+      return new Map(flatOptions.map((option, index) => [option.value, index]));
+    }, [flatOptions]);
     const handleInputKeyDown = (
       event: React.KeyboardEvent<HTMLInputElement>,
     ) => {
@@ -386,7 +403,7 @@ export const MultiSelect = React.forwardRef<
                 onKeyDown={handleInputKeyDown}
               />
             )}
-            <CommandList className="mt-2">
+            <CommandList className="mt-2" data-testid={optionsTestId}>
               <CommandEmpty>No results found.</CommandEmpty>
               <CommandGroup>
                 {showSelectAll && options && options.length > 0 && (
@@ -412,12 +429,19 @@ export const MultiSelect = React.forwardRef<
                   (options as unknown as MultiSelectOptionType[]).map(
                     (option) => {
                       const isSelected = selectedValues.includes(option.value);
+                      const optionIndex = optionIndexMap.get(option.value);
+                      const indexTestId =
+                        optionIndex === undefined || !optionTestIdPrefix
+                          ? undefined
+                          : `${optionTestIdPrefix}${optionIndex}`;
                       return (
                         <MultiCommandItem
                           option={option}
                           key={option.value}
                           isSelected={isSelected}
                           toggleOption={toggleOption}
+                          testId={optionTestId}
+                          indexTestId={indexTestId}
                         ></MultiCommandItem>
                       );
                     },
@@ -428,6 +452,11 @@ export const MultiSelect = React.forwardRef<
                   <CommandGroup heading={x.label} key={idx}>
                     {x.options.map((option) => {
                       const isSelected = selectedValues.includes(option.value);
+                      const optionIndex = optionIndexMap.get(option.value);
+                      const indexTestId =
+                        optionIndex === undefined || !optionTestIdPrefix
+                          ? undefined
+                          : `${optionTestIdPrefix}${optionIndex}`;
 
                       return (
                         <MultiCommandItem
@@ -435,6 +464,8 @@ export const MultiSelect = React.forwardRef<
                           key={option.value}
                           isSelected={isSelected}
                           toggleOption={toggleOption}
+                          testId={optionTestId}
+                          indexTestId={indexTestId}
                         ></MultiCommandItem>
                       );
                     })}

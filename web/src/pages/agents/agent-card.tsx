@@ -11,14 +11,22 @@ import { useRenameAgent } from './use-rename-agent';
 
 export type DatasetCardProps = {
   data: IFlow;
+  index: number;
 } & Pick<ReturnType<typeof useRenameAgent>, 'showAgentRenameModal'>;
 
-export function AgentCard({ data, showAgentRenameModal }: DatasetCardProps) {
+export function AgentCard({
+  data,
+  showAgentRenameModal,
+  index,
+}: DatasetCardProps) {
   const { navigateToAgent } = useNavigatePage();
 
   return (
     <HomeCard
       data={{ ...data, name: data.title, description: data.description || '' }}
+      dataTestId="agent-card"
+      indexTestId={`agent-card-${index}`}
+      nameTestId="agent-name"
       moreDropdown={
         <AgentDropdown showAgentRenameModal={showAgentRenameModal} agent={data}>
           <MoreButton></MoreButton>

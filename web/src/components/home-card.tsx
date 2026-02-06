@@ -14,6 +14,9 @@ interface IProps {
   moreDropdown: React.ReactNode;
   sharedBadge?: ReactNode;
   icon?: React.ReactNode;
+  dataTestId?: string;
+  indexTestId?: string;
+  nameTestId?: string;
 }
 export function HomeCard({
   data,
@@ -21,6 +24,9 @@ export function HomeCard({
   moreDropdown,
   sharedBadge,
   icon,
+  dataTestId,
+  indexTestId,
+  nameTestId,
 }: IProps) {
   return (
     <Card
@@ -28,8 +34,12 @@ export function HomeCard({
         // navigateToSearch(data?.id);
         onClick?.();
       }}
+      data-testid={dataTestId}
     >
-      <CardContent className="p-4 flex gap-2 items-start group h-full w-full hover:shadow-md">
+      <CardContent
+        className="p-4 flex gap-2 items-start group h-full w-full hover:shadow-md"
+        data-testid={indexTestId}
+      >
         <div className="flex justify-between mb-4">
           <RAGFlowAvatar
             className="w-[32px] h-[32px]"
@@ -40,7 +50,10 @@ export function HomeCard({
         <div className="flex flex-col justify-between gap-1 flex-1 h-full w-[calc(100%-50px)]">
           <section className="flex justify-between">
             <section className="flex flex-1 min-w-0 gap-1 items-center">
-              <div className="text-base font-bold leading-snug truncate">
+              <div
+                className="text-base font-bold leading-snug truncate"
+                data-testid={nameTestId}
+              >
                 {data.name}
               </div>
               {icon}
