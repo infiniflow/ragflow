@@ -37,6 +37,7 @@ export function UploaderForm({ ok, loading }: UploaderFormProps) {
               <FileUploadDirectUpload
                 value={field.value}
                 onChange={field.onChange}
+                maxFiles={1}
               ></FileUploadDirectUpload>
             );
           }}

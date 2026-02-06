@@ -78,7 +78,14 @@ if (process.env.NODE_ENV === 'development') {
     },
   );
 }
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 2,
+    },
+  },
+});
 
 type Locale = ConfigProviderProps['locale'];
 
