@@ -15,6 +15,7 @@
 #
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 import requests
@@ -173,6 +174,15 @@ def init_storage() -> None:
             settings.S3 = config_utils.get_base_config("s3", {})
         elif settings.STORAGE_IMPL_TYPE == "MINIO":
             settings.MINIO = config_utils.decrypt_database_config(name="minio")
+            # settings are read from conf/service_conf.yaml and MinIO host address is not correct when running in the CI pipeline
+            # difference between RAGFlow server port and MinIO port is always 380 (RAGFlow default: 9380, MinIO default: 9000)
+            try:
+                parsed_ragflow_addr = urlsplit(HOST_ADDRESS)
+                port = parsed_ragflow_addr.port - 380 if parsed_ragflow_addr.port else 9000
+                settings.MINIO["host"] = f"{parsed_ragflow_addr.hostname}:{port}"
+            except (ValueError, TypeError):
+                # cannot convert RAGFlow to MinIO host address -> take default MinIO address (tests might fail)
+                pass
         else:
             return
 
