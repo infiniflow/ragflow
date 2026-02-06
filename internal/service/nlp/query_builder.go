@@ -92,18 +92,21 @@ func (qb *QueryBuilder) RmWWW(txt string) string {
 
 // AddSpaceBetweenEngZh adds spaces between English letters and Chinese characters to improve tokenization.
 func (qb *QueryBuilder) AddSpaceBetweenEngZh(txt string) string {
-	// (ENG/ENG+NUM) + ZH
-	re1 := regexp.MustCompile(`([A-Za-z]+[0-9]+)([\p{Han}]+)`)
-	txt = re1.ReplaceAllString(txt, `${1} ${2}`)
-	// ENG + ZH
-	re2 := regexp.MustCompile(`([A-Za-z])([\p{Han}]+)`)
-	txt = re2.ReplaceAllString(txt, `${1} ${2}`)
-	// ZH + (ENG/ENG+NUM)
-	re3 := regexp.MustCompile(`([\p{Han}]+)([A-Za-z]+[0-9]+)`)
-	txt = re3.ReplaceAllString(txt, `${1} ${2}`)
-	// ZH + ENG
-	re4 := regexp.MustCompile(`([\p{Han}]+)([A-Za-z])`)
-	txt = re4.ReplaceAllString(txt, `${1} ${2}`)
+	// (ENG/ENG+NUM) + ZH: e.g., "ABC123中文" -> "ABC123 中文"
+	re1 := regexp.MustCompile(`([A-Za-z]+[0-9]*)([\x{4e00}-\x{9fa5]+)`)
+	txt = re1.ReplaceAllString(txt, "$1 $2")
+
+	// ENG + ZH: e.g., "ABC中文" -> "ABC 中文"
+	re2 := regexp.MustCompile(`([A-Za-z])([\x{4e00}-\x{9fa5]+)`)
+	txt = re2.ReplaceAllString(txt, "$1 $2")
+
+	// ZH + (ENG/ENG+NUM): e.g., "中文ABC123" -> "中文 ABC123"
+	re3 := regexp.MustCompile(`([\x{4e00}-\x{9fa5]+)([A-Za-z]+[0-9]*)`)
+	txt = re3.ReplaceAllString(txt, "$1 $2")
+
+	// ZH + ENG: e.g., "中文ABC" -> "中文 ABC"
+	re4 := regexp.MustCompile(`([\x{4e00}-\x{9fa5]+)([A-Za-z])`)
+	txt = re4.ReplaceAllString(txt, "$1 $2")
 	return txt
 }
 
@@ -144,8 +147,21 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 	originalQuery := txt
 	// Add space between English and Chinese
 	txt = qb.AddSpaceBetweenEngZh(txt)
+
 	// Convert to lowercase and remove punctuation (simplified)
 	txt = strings.ToLower(txt)
+
+	// Convert to half-width
+	txt = qb.StrFullWidth2HalfWidth(txt)
+
+	// Convert to simplified Chinese
+	txt = qb.Traditional2Simplified(txt)
+
+	// Replace punctuation and special characters with space
+	// Reference: rag/nlp/query.py L44-48
+	re := regexp.MustCompile(`[ :|\r\n\t,，.。?？/\` + "`" + `!！&^%()\[\]{}<>]+`)
+	txt = re.ReplaceAllString(txt, " ")
+
 	// Remove stop words
 	txt = qb.RmWWW(txt)
 	// Determine if text is Chinese
