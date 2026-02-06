@@ -226,6 +226,12 @@ class TenantService(CommonService):
         hash_obj = hashlib.sha256(tenant_id.encode("utf-8"))
         return int(hash_obj.hexdigest(), 16)%len(settings.MINIO)
 
+    @classmethod
+    @DB.connection_context()
+    def get_null_tenant_model_id_rows(cls):
+        objs = cls.model.select().where(cls.model.tenant_llm_id.is_null() or cls.model.tenant_embd_id.is_null() or cls.model.tenant_asr_id.is_null() or cls.model.tenant_tts_id.is_null() or cls.model.tenant_rerank_id.is_null() or cls.model.tenant_img2txt_id.is_null())
+        return list(objs)
+
 
 class UserTenantService(CommonService):
     """Service class for managing user-tenant relationship operations.

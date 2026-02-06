@@ -170,3 +170,25 @@ class MemoryService(CommonService):
     @DB.connection_context()
     def delete_memory(cls, memory_id: str):
         return cls.delete_by_id(memory_id)
+
+    @classmethod
+    @DB.connection_context()
+    def get_null_tenant_embd_id_row(cls):
+        fields = [
+            cls.model.id,
+            cls.model.tenant_id,
+            cls.model.embd_id
+        ]
+        objs = cls.model.select(*fields).where(cls.model.tenant_embd_id.is_null())
+        return list(objs)
+
+    @classmethod
+    @DB.connection_context()
+    def get_null_tenant_llm_id_row(cls):
+        fields = [
+            cls.model.id,
+            cls.model.tenant_id,
+            cls.model.llm_id
+        ]
+        objs = cls.model.select(*fields).where(cls.model.tenant_llm_id.is_null())
+        return list(objs)

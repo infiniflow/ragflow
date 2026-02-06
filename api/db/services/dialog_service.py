@@ -179,6 +179,17 @@ class DialogService(CommonService):
             offset += limit
         return res
 
+    @classmethod
+    @DB.connection_context()
+    def get_null_tenant_llm_id_row(cls):
+        fields = [
+            cls.model.id,
+            cls.model.tenant_id,
+            cls.model.llm_id
+        ]
+        objs = cls.model.select(*fields).where(cls.model.tenant_llm_id.is_null())
+        return list(objs)
+
 
 async def async_chat_solo(dialog, messages, stream=True):
     attachments = ""

@@ -211,7 +211,7 @@ def init_table():
 
 def fix_empty_tenant_model_id():
     # knowledgebase
-    empty_tenant_embd_id_kbs = KnowledgebaseService.query(tenant_embd_id=None)
+    empty_tenant_embd_id_kbs = KnowledgebaseService.get_null_tenant_embd_id_row()
     if empty_tenant_embd_id_kbs:
         logging.info(f"Found {len(empty_tenant_embd_id_kbs)} empty tenant_embd_id knowledgebase.")
         kb_groups: dict = {}
@@ -225,7 +225,7 @@ def fix_empty_tenant_model_id():
             if tenant_llm:
                 KnowledgebaseService.filter_update({"id": v}, {"tenant_embd_id": tenant_llm.id})
     # dialog
-    empty_tenant_llm_id_dialog = DialogService.query(tenant_llm_id=None)
+    empty_tenant_llm_id_dialog = DialogService.get_null_tenant_llm_id_row()
     if empty_tenant_llm_id_dialog:
         logging.info(f"Found {len(empty_tenant_llm_id_dialog)} empty tenant_llm_id dialogs.")
         dialog_groups: dict = {}
@@ -239,7 +239,7 @@ def fix_empty_tenant_model_id():
             if tenant_llm:
                 DialogService.filter_update({"id": v}, {"tenant_llm_id": tenant_llm.id})
     # memory
-    empty_tenant_embd_id_memories = MemoryService.query(tenant_embd_id_memory=None)
+    empty_tenant_embd_id_memories = MemoryService.get_null_tenant_embd_id_row()
     if empty_tenant_embd_id_memories:
         logging.info(f"Found {len(empty_tenant_embd_id_memories)} empty tenant_embd_id memories.")
         memory_groups: dict = {}
@@ -253,7 +253,7 @@ def fix_empty_tenant_model_id():
             if tenant_llm:
                 MemoryService.filter_update({"id": v}, {"tenant_embd_id": tenant_llm.id})
 
-    empty_tenant_llm_id_memories = MemoryService.query(tenant_llm_id_memory=None)
+    empty_tenant_llm_id_memories = MemoryService.get_null_tenant_llm_id_row()
     if empty_tenant_llm_id_memories:
         logging.info(f"Found {len(empty_tenant_llm_id_memories)} empty tenant_llm_id memories.")
         memory_groups: dict = {}
@@ -266,7 +266,20 @@ def fix_empty_tenant_model_id():
             tenant_llm = TenantLLMService.get_api_key(k[0], k[1])
             if tenant_llm:
                 MemoryService.filter_update({"id": v}, {"tenant_llm_id": tenant_llm.id})
-
+    # tenant
+    empty_tenant_model_id_tenants = TenantService.get_null_tenant_model_id_rows()
+    if empty_tenant_model_id_tenants:
+        logging.info(f"Found {len(empty_tenant_model_id_tenants)} empty tenant_model_id tenants.")
+        for obj in empty_tenant_model_id_tenants:
+            update_dict = {}
+            for key in ["llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id"]:
+                if getattr(obj, key) and not getattr(obj, f"tenant_{key}"):
+                    tenant_model = TenantLLMService.get_api_key(obj.id, getattr(obj, key))
+                    if tenant_model:
+                        update_dict.update({f"tenant_{key}": tenant_model.id})
+            if update_dict:
+                TenantService.update_by_id(obj.id, update_dict)
+    logging.info("Fix empty tenant_model_id done.")
 
 if __name__ == '__main__':
     init_web_db()

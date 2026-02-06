@@ -730,7 +730,9 @@ class TenantLLM(DataBaseModel):
 
     class Meta:
         db_table = "tenant_llm"
-        primary_key = CompositeKey("tenant_id", "llm_factory", "llm_name")
+        indexes = (
+            (("tenant_id", "llm_factory", "llm_name"), True, "uk_tenant_llm"),
+        )
 
 
 class TenantLangfuse(DataBaseModel):
@@ -1258,6 +1260,62 @@ def alter_db_rename_column(migrator, table_name, old_column_name, new_column_nam
         # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
         pass
 
+
+def update_tenant_llm_to_id_primary_key():
+    """Add ID and set to primary key step by step."""
+    try:
+        with DB.atomic():
+            # 0. Check if exist ID
+            cursor = DB.execute_sql(f"""
+                            SELECT COLUMN_NAME 
+                            FROM INFORMATION_SCHEMA.COLUMNS 
+                            WHERE TABLE_SCHEMA = DATABASE() 
+                            AND TABLE_NAME = 'tenant_llm' 
+                            AND COLUMN_NAME = 'id'
+                        """)
+            if cursor.rowcount > 0:
+                return
+
+            # 1. Add nullable column
+            DB.execute_sql("ALTER TABLE tenant_llm ADD COLUMN temp_id INT NULL")
+
+            # 2. Set ID
+            DB.execute_sql("SET @row = 0;")
+            DB.execute_sql("UPDATE tenant_llm SET temp_id = (@row := @row + 1) ORDER BY tenant_id, llm_factory, llm_name;")
+
+            # 3. Drop old primary key
+            DB.execute_sql("ALTER TABLE tenant_llm DROP PRIMARY KEY")
+
+            # 4. Update ID column to primary key
+            DB.execute_sql("""
+            ALTER TABLE tenant_llm 
+            MODIFY COLUMN temp_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY
+            """)
+
+            # 5. Add unique key
+            DB.execute_sql("""
+                ALTER TABLE tenant_llm 
+                ADD CONSTRAINT uk_tenant_llm UNIQUE (tenant_id, llm_factory, llm_name)
+            """)
+
+            # 6. rename
+            DB.execute_sql("ALTER TABLE tenant_llm RENAME COLUMN temp_id TO id")
+
+            logging.info("Successfully updated tenant_llm to id primary key.")
+
+    except Exception as e:
+        logging.error(str(e))
+        cursor = DB.execute_sql(f"""
+                                    SELECT COLUMN_NAME 
+                                    FROM INFORMATION_SCHEMA.COLUMNS 
+                                    WHERE TABLE_SCHEMA = DATABASE() 
+                                    AND TABLE_NAME = 'tenant_llm' 
+                                    AND COLUMN_NAME = 'temp_id'
+                                """)
+        if cursor.rowcount > 0:
+            DB.execute_sql("ALTER TABLE tenant_llm DROP COLUMN temp_id")
+
+
 def migrate_db():
     logging.disable(logging.ERROR)
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
@@ -1305,7 +1363,7 @@ def migrate_db():
     alter_db_add_column(migrator, "tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
     alter_db_add_column(migrator, "connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False))
     alter_db_add_column(migrator, "llm_factories", "rank", IntegerField(default=0, index=False))
-    alter_db_add_column(migrator, "tenant_llm", "id", PrimaryKeyField())
+    update_tenant_llm_to_id_primary_key()
     alter_db_add_column(migrator, "tenant", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "tenant", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "tenant", "tenant_asr_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
