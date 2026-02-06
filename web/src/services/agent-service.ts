@@ -126,6 +126,10 @@ const methods = {
     url: cancelCanvas,
     method: 'put',
   },
+  createAgentSession: {
+    url: fetchAgentLogs,
+    method: 'put',
+  },
 } as const;
 
 const agentService = registerNextServer<keyof typeof methods>(methods);
@@ -140,6 +144,10 @@ export const fetchAgentLogsByCanvasId = (
   return request.get(methods.fetchAgentLogs.url(canvasId), { params: params });
 };
 
+export const fetchAgentLogsById = (canvasId: string, sessionId: string) => {
+  return request.get(api.fetchAgentLogsById(canvasId, sessionId));
+};
+
 export const fetchPipeLineList = (params: IPipeLineListRequest) => {
   return request.get(api.listCanvas, { params: params });
 };
@@ -150,5 +158,9 @@ export const fetchWebhookTrace = (
 ) => {
   return request.get(api.fetchWebhookTrace(id), { params: params });
 };
+
+export function createAgentSession({ id, name }: { id: string; name: string }) {
+  return request.put(api.fetchAgentLogs(id), { data: { name } });
+}
 
 export default agentService;

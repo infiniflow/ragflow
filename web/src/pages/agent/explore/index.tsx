@@ -17,7 +17,7 @@ import { SessionList } from './components/session-list';
 import { useExploreUrlParams } from './hooks/use-explore-url-params';
 
 export default function AgentExplore() {
-  const { canvasId, sessionId, setSessionId } = useExploreUrlParams();
+  const { sessionId, setSessionId } = useExploreUrlParams();
   const { navigateToAgent } = useNavigatePage();
   const { t } = useTranslation();
   const { id } = useParams();
@@ -36,7 +36,7 @@ export default function AgentExplore() {
   );
 
   return (
-    <section className="h-full">
+    <section className="h-full flex flex-col">
       <PageHeader>
         <Breadcrumb>
           <BreadcrumbList>
@@ -55,7 +55,7 @@ export default function AgentExplore() {
         </Breadcrumb>
       </PageHeader>
 
-      <section className="flex h-full">
+      <section className="flex flex-1 min-h-0">
         <div className="w-[296px] border-r min-w-0">
           <SessionList
             selectedSessionId={sessionId}
@@ -64,7 +64,7 @@ export default function AgentExplore() {
         </div>
 
         <div className="flex-1 min-w-0">
-          <SessionChat canvasId={canvasId || ''} sessionId={sessionId} />
+          <SessionChat sessionId={sessionId} />
         </div>
       </section>
     </section>

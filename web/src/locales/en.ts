@@ -2586,6 +2586,7 @@ Important structured information may include: names, dates, locations, events, k
       canvasList: 'Canvas List',
       sessions: 'Sessions',
       newSession: 'New Session',
+      newSessionLabel: 'Start a new conversation',
       deleteSession: 'Delete Session',
       searchCanvas: 'Search canvas...',
       searchSessions: 'Search sessions...',

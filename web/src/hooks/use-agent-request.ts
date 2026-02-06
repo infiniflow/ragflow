@@ -6,7 +6,9 @@ import {
   AgentGlobals,
   initialBeginValues,
 } from '@/constants/agent';
+import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import {
+  IAgentLogResponse,
   IAgentLogsRequest,
   IAgentLogsResponse,
   IFlow,
@@ -24,7 +26,9 @@ import { BeginId } from '@/pages/agent/constant';
 import { IInputs } from '@/pages/agent/interface';
 import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
 import agentService, {
+  createAgentSession,
   fetchAgentLogsByCanvasId,
+  fetchAgentLogsById,
   fetchPipeLineList,
   fetchTrace,
   fetchWebhookTrace,
@@ -67,6 +71,8 @@ export const enum AgentApiAction {
   CancelCanvas = 'cancelCanvas',
   FetchWebhookTrace = 'fetchWebhookTrace',
   FetchSessionsByCanvasId = 'fetchSessionsByCanvasId',
+  FetchSessionById = 'fetchSessionById',
+  CreateAgentSession = 'createAgentSession',
 }
 
 export const EmptyDsl = {
@@ -657,12 +663,13 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
 
 export const useFetchSessionsByCanvasId = () => {
   const { id: canvasId } = useParams();
+  const { data: tenantInfo } = useFetchTenantInfo();
 
   const { data, isFetching: loading } = useQuery<IAgentLogsResponse>({
     queryKey: [AgentApiAction.FetchSessionsByCanvasId, canvasId],
     initialData: { total: 0, sessions: [] } as IAgentLogsResponse,
     gcTime: 0,
-    enabled: !!canvasId,
+    enabled: !!canvasId && !isEmpty(tenantInfo),
     queryFn: async () => {
       if (!canvasId) {
         return { total: 0, sessions: [] };
@@ -671,6 +678,7 @@ export const useFetchSessionsByCanvasId = () => {
       const { data } = await fetchAgentLogsByCanvasId(canvasId, {
         page: 1,
         page_size: 100000,
+        exp_user_id: tenantInfo.tenant_id,
       });
 
       return data?.data ?? { total: 0, sessions: [] };
@@ -681,6 +689,31 @@ export const useFetchSessionsByCanvasId = () => {
     data: data?.sessions ?? [],
     loading,
     total: data?.total ?? 0,
+  };
+};
+
+export const useFetchSessionById = (sessionId?: string) => {
+  const { id: canvasId } = useParams();
+
+  const { data, isFetching: loading } = useQuery<IAgentLogResponse | null>({
+    queryKey: [AgentApiAction.FetchSessionById, canvasId, sessionId],
+    initialData: null,
+    gcTime: 0,
+    enabled: !!canvasId && !!sessionId,
+    queryFn: async () => {
+      if (!canvasId || !sessionId) {
+        return null;
+      }
+
+      const { data } = await fetchAgentLogsById(canvasId, sessionId);
+
+      return data?.data ?? null;
+    },
+  });
+
+  return {
+    data,
+    loading,
   };
 };
 
@@ -930,3 +963,28 @@ export const useFetchWebhookTrace = (autoStart: boolean = true) => {
     currentNextSinceTs,
   };
 };
+
+export function useCreateAgentSession() {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.CreateAgentSession],
+    mutationFn: async (payload: { id: string; name: string }) => {
+      const { data } = await createAgentSession(payload);
+
+      if (data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: [AgentApiAction.FetchSessionsByCanvasId],
+        });
+      }
+
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading, createAgentSession: mutateAsync };
+}

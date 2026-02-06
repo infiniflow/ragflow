@@ -1,8 +1,10 @@
+import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
-import { useFetchSessionsByCanvasId } from '@/hooks/use-agent-request';
 import { useClientSearch } from '@/hooks/use-client-search';
 import { IAgentLogResponse } from '@/interfaces/database/agent';
+import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useSelectDerivedSessionList } from '../hooks/use-select-derived-session-list';
 import { SessionCard } from './session-card';
 
 interface SessionListProps {
@@ -16,27 +18,25 @@ export function SessionList({
 }: SessionListProps) {
   const { t } = useTranslation();
 
-  const { data: sessions, loading } = useFetchSessionsByCanvasId();
+  const { sessions, loading, addTemporarySession, removeTemporarySession } =
+    useSelectDerivedSessionList();
 
   const { filteredData, handleSearchChange, searchKeyword } =
     useClientSearch<IAgentLogResponse>({
       data: sessions,
-      searchFields: [
-        // Search in user message contents
-        (item) =>
-          item.message
-            .filter((msg) => msg.role === 'user')
-            .map((msg) => msg.content)
-            .join(' '),
-        // Search in session ID
-        'id' as keyof IAgentLogResponse,
-      ],
+      searchFields: ['name'],
     });
 
   return (
     <section className="p-5 flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-base font-bold">{t('explore.sessions')}</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-bold">{t('explore.sessions')}</h2>
+          <span className="text-xs text-text-secondary">{sessions.length}</span>
+        </div>
+        <Button variant="ghost" size="icon" onClick={addTemporarySession}>
+          <Plus className="h-4 w-4" />
+        </Button>
       </div>
       <div className="mb-4">
         <SearchInput
@@ -51,7 +51,12 @@ export function SessionList({
             key={session.id}
             session={session}
             selected={session.id === selectedSessionId}
-            onClick={() => onSelectSession(session.id)}
+            onClick={() => onSelectSession(session.id, session.is_new)}
+            onRemove={
+              session.is_new
+                ? () => removeTemporarySession(session.id)
+                : undefined
+            }
           />
         ))}
         {!loading && filteredData.length === 0 && (

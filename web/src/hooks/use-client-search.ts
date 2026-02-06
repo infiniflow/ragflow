@@ -46,7 +46,7 @@ export function useClientSearch<T>({
           value = String(item[field] ?? '');
         }
 
-        return value.toLowerCase().includes(keyword);
+        return value?.toLowerCase().includes(keyword);
       });
     });
   }, [data, debouncedSearchKeyword, searchFields]);

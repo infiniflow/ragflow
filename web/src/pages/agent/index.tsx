@@ -263,7 +263,7 @@ export default function Agent() {
             onClick={navigateToAgentExplore(id as string)}
           >
             <Compass />
-            {t('flow.explore')}
+            {t('explore.title')}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
