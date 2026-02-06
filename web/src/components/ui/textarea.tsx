@@ -22,7 +22,7 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, autoSize, resize = 'none', ...props }, ref) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const manualHeightRef = useRef<number | null>(null);
-    const expectedHeightRef = useRef<number | null>(null);
+    const isAdjustingRef = useRef(false);
     const getLineHeight = (element: HTMLElement): number => {
       const style = window.getComputedStyle(element);
       return parseInt(style.lineHeight, 10) || 20;
@@ -31,6 +31,8 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
       if (!textareaRef.current || !autoSize) return;
       const lineHeight = getLineHeight(textareaRef.current);
       const maxHeight = (autoSize?.maxRows || 3) * lineHeight;
+
+      isAdjustingRef.current = true;
       textareaRef.current.style.height = 'auto';
 
       requestAnimationFrame(() => {
@@ -38,13 +40,13 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
 
         const scrollHeight = textareaRef.current.scrollHeight;
         const desiredHeight = Math.min(scrollHeight, maxHeight);
-        expectedHeightRef.current = desiredHeight;
         const manualHeight = manualHeightRef.current;
         const nextHeight =
           manualHeight && manualHeight > desiredHeight
             ? manualHeight
             : desiredHeight;
         textareaRef.current.style.height = `${nextHeight}px`;
+        isAdjustingRef.current = false;
       });
     }, [autoSize]);
 
@@ -64,37 +66,38 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     useEffect(() => {
       if (!textareaRef.current || !autoSize || resize === 'none') {
         manualHeightRef.current = null;
-        expectedHeightRef.current = null;
         return;
       }
       const element = textareaRef.current;
+      let prevHeight = element.getBoundingClientRect().height;
       const observer = new ResizeObserver((entries) => {
+        if (isAdjustingRef.current) return;
         const entry = entries[0];
         if (!entry) return;
-        const expected = expectedHeightRef.current;
-        if (!expected) return;
         const nextHeight = entry.contentRect.height;
-        if (nextHeight > expected + 2) {
+        if (Math.abs(nextHeight - prevHeight) > 1) {
           manualHeightRef.current = nextHeight;
-        } else if (nextHeight <= expected + 2) {
-          manualHeightRef.current = null;
         }
+        prevHeight = nextHeight;
       });
       observer.observe(element);
       return () => observer.disconnect();
     }, [autoSize, resize]);
+
+    const resizable = resize !== 'none';
+
     return (
       <textarea
         className={cn(
-          'flex min-h-[80px] w-full bg-bg-input rounded-md border border-border-button px-3 py-2 text-base ring-offset-background placeholder:text-text-disabled focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm overflow-hidden',
+          'flex min-h-[80px] w-full bg-bg-input rounded-md border border-border-button px-3 py-2 text-base ring-offset-background placeholder:text-text-disabled focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
+          resizable ? 'overflow-auto' : 'overflow-hidden',
           className,
         )}
         rows={autoSize?.minRows ?? props.rows ?? undefined}
         style={{
-          maxHeight: autoSize?.maxRows && resize === 'none'
+          maxHeight: autoSize?.maxRows && !resizable
             ? `${autoSize.maxRows * 20}px`
             : undefined,
-          overflow: resize === 'none' ? (autoSize ? 'auto' : undefined) : 'auto',
           resize,
         }}
         ref={textareaRef}
