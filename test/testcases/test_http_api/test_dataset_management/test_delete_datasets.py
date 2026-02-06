@@ -234,7 +234,7 @@ class TestStorageDeletion:
     @pytest.mark.p2
     @pytest.mark.usefixtures("init_storage")
     def test_delete_dataset_removes_storage_files(self, HttpApiAuth, tmp_path):
-        orig_sys_path = sys.path
+        orig_sys_path = sys.path[:]
         try:
             sys.path.insert(0, str(Path(__file__).parents[4]))
             if "common" in sys.modules:

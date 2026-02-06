@@ -158,13 +158,14 @@ def set_tenant_info(auth):
 
 @pytest.fixture(scope="session")
 def init_storage() -> None:
-    orig_sys_path = sys.path
+    orig_sys_path = sys.path[:]
     try:
         sys.path.insert(0, str(Path(__file__).parents[2]))
         if "common" in sys.modules:
             del sys.modules["common"]
         from common import settings, config_utils, constants
 
+        # already initialized
         if settings.STORAGE_IMPL:
             return
 
