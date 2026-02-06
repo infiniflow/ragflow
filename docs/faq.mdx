@@ -1,8 +1,10 @@
 ---
 sidebar_position: 10
 slug: /faq
+sidebar_custom_props: {
+  sidebarIcon: LucideCircleQuestionMark
+}
 ---
-
 # FAQs
 
 Answers to questions about general features, troubleshooting, usage, and more.
@@ -19,40 +21,16 @@ import TOCInline from '@theme/TOCInline';
 
 ### What sets RAGFlow apart from other RAG products?
 
-The "garbage in garbage out" status quo remains unchanged despite the fact that LLMs have advanced Natural Language Processing (NLP) significantly. In response, RAGFlow introduces two unique features compared to other Retrieval-Augmented Generation (RAG) products.
+The "garbage in garbage out" status quo remains unchanged despite the fact that LLMs have advanced Natural Language Processing (NLP) significantly. In its response, RAGFlow introduces two unique features compared to other Retrieval-Augmented Generation (RAG) products.
 
 - Fine-grained document parsing: Document parsing involves images and tables, with the flexibility for you to intervene as needed.
 - Traceable answers with reduced hallucinations: You can trust RAGFlow's responses as you can view the citations and references supporting them.
 
 ---
 
-### Differences between RAGFlow full edition and RAGFlow slim edition?
-
-Each RAGFlow release is available in two editions:
-
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.18.0-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.18.0`
-
----
-
 ### Which embedding models can be deployed locally?
 
-RAGFlow offers two Docker image editions, `v0.18.0-slim` and `v0.18.0`:  
-  
-- `infiniflow/ragflow:v0.18.0-slim` (default): The RAGFlow Docker image without embedding models.  
-- `infiniflow/ragflow:v0.18.0`: The RAGFlow Docker image with embedding models including:
-  - Built-in embedding models:
-    - `BAAI/bge-large-zh-v1.5`
-    - `maidalun1020/bce-embedding-base_v1`
-  - Embedding models that will be downloaded once you select them in the RAGFlow UI:
-    - `BAAI/bge-base-en-v1.5`
-    - `BAAI/bge-large-en-v1.5`
-    - `BAAI/bge-small-en-v1.5`
-    - `BAAI/bge-small-zh-v1.5`
-    - `jinaai/jina-embeddings-v2-base-en`
-    - `jinaai/jina-embeddings-v2-small-en`
-    - `nomic-ai/nomic-embed-text-v1.5`
-    - `sentence-transformers/all-MiniLM-L6-v2`
+Starting from `v0.22.0`, we ship only the slim edition and no longer append the **-slim** suffix to the image tag.
 
 ---
 
@@ -65,13 +43,13 @@ You can find the RAGFlow version number on the **System** page of the UI:
 If you build RAGFlow from source, the version number is also in the system log:
 
 ```
-        ____   ___    ______ ______ __               
+        ____   ___    ______ ______ __
        / __ \ /   |  / ____// ____// /____  _      __
       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
-2025-02-18 10:10:43,835 INFO     1445658 RAGFlow version: v0.15.0-50-g6daae7f2 full
+2025-02-18 10:10:43,835 INFO     1445658 RAGFlow version: v0.15.0-50-g6daae7f2
 ```
 
 Where:
@@ -79,9 +57,6 @@ Where:
 - `v0.15.0`: The officially published release.
 - `50`: The number of git commits since the official release.
 - `g6daae7f2`: `g` is the prefix, and `6daae7f2` is the first seven characters of the current commit ID.
-- `full`/`slim`: The RAGFlow edition.
-  - `full`: The full RAGFlow edition.
-  - `slim`: The RAGFlow edition without embedding models and Python packages.
 
 ---
 
@@ -127,7 +102,19 @@ The corresponding APIs are now available. See the [RAGFlow HTTP API Reference](.
 
 ### Do you support stream output?
 
-Yes, we do.
+Yes, we do. Stream output is enabled by default in the chat assistant and agent. Note that you cannot disable stream output via RAGFlow's UI. To disable stream output in responses, use RAGFlow's Python or RESTful APIs:
+
+Python:
+
+- [Create chat completion](./references/python_api_reference.md#create-chat-completion)
+- [Converse with chat assistant](./references/python_api_reference.md#converse-with-chat-assistant)
+- [Converse with agent](./references/python_api_reference.md#converse-with-agent)
+
+RESTful:
+
+- [Create chat completion](./references/http_api_reference.md#create-chat-completion)
+- [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant)
+- [Converse with agent](./references/http_api_reference.md#converse-with-agent)
 
 ---
 
@@ -166,7 +153,7 @@ See [Build a RAGFlow Docker image](./develop/build_docker_image.mdx).
 
 ### Cannot access https://huggingface.co
 
-A locally deployed RAGflow downloads OCR and embedding modules from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails:
+A locally deployed RAGFlow downloads OCR models from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails:
 
 ```
 FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'
@@ -190,7 +177,7 @@ To fix this issue, use https://hf-mirror.com instead:
 3. Start up the server:
 
    ```bash
-   docker compose up -d 
+   docker compose up -d
    ```
 
 ---
@@ -208,7 +195,7 @@ This error suggests that you do not have Internet access or are unable to connec
 
 ---
 
-### `WARNING: can't find /raglof/rag/res/borker.tm`
+### `WARNING: can't find /ragflow/rag/res/borker.tm`
 
 Ignore this warning and continue. All system warnings can be ignored.
 
@@ -218,16 +205,16 @@ Ignore this warning and continue. All system warnings can be ignored.
 
 ![anomaly](https://github.com/infiniflow/ragflow/assets/93570324/beb7ad10-92e4-4a58-8886-bfb7cbd09e5d)
 
-You will not log in to RAGFlow unless the server is fully initialized. Run `docker logs -f ragflow-server`.
+You will not log in to RAGFlow unless the server is fully initialized. Run `docker logs -f docker-ragflow-cpu-1`.
 
 *The server is successfully initialized, if your system displays the following:*
 
 ```
-     ____   ___    ______ ______ __               
+     ____   ___    ______ ______ __
     / __ \ /   |  / ____// ____// /____  _      __
    / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-  / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
- /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/  
+  / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+ /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
  * Running on all addresses (0.0.0.0)
  * Running on http://127.0.0.1:9380
@@ -254,7 +241,7 @@ Click the red cross beside the 'parsing status' bar, then restart the parsing pr
 1. Check the log of your RAGFlow server to see if it is running properly:
 
    ```bash
-   docker logs -f ragflow-server
+   docker logs -f docker-ragflow-cpu-1
    ```
 
 2. Check if the **task_executor.py** process exists.
@@ -308,7 +295,7 @@ tail -f ragflow/docker/ragflow-logs/*.log
    *The following is an example result:*
 
    ```bash
-   5bc45806b680   infiniflow/ragflow:latest     "./entrypoint.sh"        11 hours ago   Up 11 hours               0.0.0.0:80->80/tcp, :::80->80/tcp, 0.0.0.0:443->443/tcp, :::443->443/tcp, 0.0.0.0:9380->9380/tcp, :::9380->9380/tcp   ragflow-server
+   5bc45806b680   infiniflow/ragflow:latest     "./entrypoint.sh"        11 hours ago   Up 11 hours               0.0.0.0:80->80/tcp, :::80->80/tcp, 0.0.0.0:443->443/tcp, :::443->443/tcp, 0.0.0.0:9380->9380/tcp, :::9380->9380/tcp   docker-ragflow-cpu-1
    91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
    d8c86f06c56b   mysql:5.7.18        "docker-entrypoint.s…"   7 days ago     Up 16 seconds (healthy)   0.0.0.0:3306->3306/tcp, :::3306->3306/tcp     ragflow-mysql
    cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
@@ -330,7 +317,7 @@ The status of a Docker container status does not necessarily reflect the status 
    $ docker ps
    ```
 
-   *The status of a healthy Elasticsearch component should look as follows:*  
+   *The status of a healthy Elasticsearch component should look as follows:*
 
    ```
    91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
@@ -338,9 +325,9 @@ The status of a Docker container status does not necessarily reflect the status 
 
 2. Follow [this document](./guides/run_health_check.md) to check the health status of the Elasticsearch service.
 
-:::danger IMPORTANT
-The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
-:::
+   :::danger IMPORTANT
+   The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
+   :::
 
 3. If your container keeps restarting, ensure `vm.max_map_count` >= 262144 as per [this README](https://github.com/infiniflow/ragflow?tab=readme-ov-file#-start-up-the-server). Updating the `vm.max_map_count` value in **/etc/sysctl.conf** is required, if you wish to keep your change permanent. Note that this configuration works only for Linux.
 
@@ -383,7 +370,7 @@ Yes, we do. See the Python files under the **rag/app** folder.
    $ docker ps
    ```
 
-   *The status of a healthy Elasticsearch component should look as follows:*  
+   *The status of a healthy Elasticsearch component should look as follows:*
 
    ```bash
    cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
@@ -428,7 +415,7 @@ See [here](./guides/models/deploy_local_llm.mdx) for more information.
 
 For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. To update this 1GB file size limit:
 
-- In **docker/.env**, upcomment `# MAX_CONTENT_LENGTH=1073741824`, adjust the value as needed, and note that `1073741824` represents 1GB in bytes.
+- In **docker/.env**, uncomment `# MAX_CONTENT_LENGTH=1073741824`, adjust the value as needed, and note that `1073741824` represents 1GB in bytes.
 - If you update the value of `MAX_CONTENT_LENGTH` in **docker/.env**, ensure that you update `client_max_body_size` in **nginx/nginx.conf** accordingly.
 
 :::tip NOTE
@@ -466,17 +453,17 @@ See [Upgrade RAGFlow](./guides/upgrade_ragflow.mdx) for more information.
 
 To switch your document engine from Elasticsearch to [Infinity](https://github.com/infiniflow/infinity):
 
-1. Stop all running containers:  
+1. Stop all running containers:
 
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
-:::caution WARNING
-`-v` will delete all Docker container volumes, and the existing data will be cleared.
-:::
+   :::caution WARNING
+   `-v` will delete all Docker container volumes, and the existing data will be cleared.
+   :::
 
 2. In **docker/.env**, set `DOC_ENGINE=${DOC_ENGINE:-infinity}`
-3. Restart your Docker image: 
+3. Restart your Docker image:
 
    ```bash
    $ docker compose -f docker-compose.yml up -d
@@ -486,6 +473,175 @@ To switch your document engine from Elasticsearch to [Infinity](https://github.c
 
 ### Where are my uploaded files stored in RAGFlow's image?
 
-All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a knowledge base, it is located at `<knowledgebase_id>/filename`.
+All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a dataset, it is located at `<knowledgebase_id>/filename`.
 
 ---
+
+### How to tune batch size for document parsing and embedding?
+
+You can control the batch size for document parsing and embedding by setting the environment variables `DOC_BULK_SIZE` and `EMBEDDING_BATCH_SIZE`. Increasing these values may improve throughput for large-scale data processing, but will also increase memory usage. Adjust them according to your hardware resources.
+
+---
+
+### How to accelerate the question-answering speed of my chat assistant?
+
+See [here](./guides/chat/best_practices/accelerate_question_answering.mdx).
+
+---
+
+### How to accelerate the question-answering speed of my Agent?
+
+See [here](./guides/agent/best_practices/accelerate_agent_question_answering.md).
+
+### How to use MinerU to parse PDF documents?
+
+From v0.22.0 onwards, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF parser of multiple backends. Please note that RAGFlow acts only as a *remote client* for MinerU, calling the MinerU API to parse PDFs and reading the returned files. To use this feature:
+
+1. Prepare a reachable MinerU API service (FastAPI server).
+2. In the **.env** file or from the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
+   - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8886`).
+   - `MINERU_BACKEND`: The MinerU backend:
+      - `"pipeline"` (default)
+      - `"vlm-http-client"`
+      - `"vlm-transformers"`
+      - `"vlm-vllm-engine"`
+      - `"vlm-mlx-engine"`
+      - `"vlm-vllm-async-engine"`
+      - `"vlm-lmdeploy-engine"`.
+   - `MINERU_SERVER_URL`: (optional) The downstream vLLM HTTP server (e.g., `http://vllm-host:30000`). Applicable when `MINERU_BACKEND` is set to `"vlm-http-client"`.
+   - `MINERU_OUTPUT_DIR`: (optional) The local directory for holding the outputs of the MinerU API service (zip/JSON) before ingestion.
+   - `MINERU_DELETE_OUTPUT`: Whether to delete temporary output when a temporary directory is used:
+     - `1`: Delete.
+     - `0`: Retain.
+3. In the web UI, navigate to your dataset's **Configuration** page and find the **Ingestion pipeline** section:
+   - If you decide to use a chunking method from the **Built-in** dropdown, ensure it supports PDF parsing, then select **MinerU** from the **PDF parser** dropdown.
+   - If you use a custom ingestion pipeline instead, select **MinerU** in the **PDF parser** section of the **Parser** component.
+
+:::note
+All MinerU environment variables are optional. When set, these values are used to auto-provision a MinerU OCR model for the tenant on first use. To avoid auto-provisioning, skip the environment variable settings and only configure MinerU from the **Model providers** page in the UI.
+:::
+
+:::caution WARNING
+Third-party visual models are marked **Experimental**, because we have not fully tested these models for the aforementioned data extraction tasks.
+:::
+---
+
+### How to configure MinerU-specific settings?
+
+The table below summarizes the most frequently used MinerU environment variables for remote MinerU:
+
+| Environment variable   | Description                        | Default                             | Example                                                                                         |
+| ---------------------- | ---------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `MINERU_APISERVER`     | URL of the MinerU API service      | _unset_                             | `MINERU_APISERVER=http://your-mineru-server:8886`                                              |
+| `MINERU_BACKEND`       | MinerU parsing backend             | `pipeline`                          | `MINERU_BACKEND=pipeline\|vlm-transformers\|vlm-vllm-engine\|vlm-mlx-engine\|vlm-vllm-async-engine\|vlm-http-client` |
+| `MINERU_SERVER_URL`    | URL of remote vLLM server (for `vlm-http-client`) | _unset_ | `MINERU_SERVER_URL=http://your-vllm-server-ip:30000`                                           |
+| `MINERU_OUTPUT_DIR`    | Directory for MinerU output files  | System-defined temporary directory  | `MINERU_OUTPUT_DIR=/home/ragflow/mineru/output`                                                |
+| `MINERU_DELETE_OUTPUT` | Whether to delete MinerU output directory when a temp dir is used | `1` (delete temp output) | `MINERU_DELETE_OUTPUT=0`                                                                       |
+
+1. Set `MINERU_APISERVER` to point RAGFlow to your MinerU API server.
+2. Set `MINERU_BACKEND` to specify a parsing backend.
+3. If using the `"vlm-http-client"` backend, set `MINERU_SERVER_URL` to your vLLM server's URL. MinerU API expects `backend=vlm-http-client` and `server_url=http://<server>:30000` in the request body.
+4. Set `MINERU_OUTPUT_DIR` to specify where RAGFlow stores MinerU API output; otherwise, a system temp directory is used.
+5. Set `MINERU_DELETE_OUTPUT` to `0` to keep MinerU's temp output (useful for debugging).
+
+:::tip NOTE
+For information about other environment variables natively supported by MinerU, see [here](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description).
+:::
+
+---
+
+### How to use MinerU with a vLLM server for document parsing?
+
+RAGFlow supports MinerU's `vlm-http-client` backend, enabling you to delegate document parsing tasks to a remote vLLM server while calling MinerU via HTTP. To configure:
+
+1. Ensure a MinerU API service is reachable (for example `http://mineru-host:8886`).
+2. Set up or point to a vLLM HTTP server (for example `http://vllm-host:30000`).
+3. Configure the following in your **docker/.env** file (or your shell if running from source):
+   - `MINERU_APISERVER=http://mineru-host:8886`
+   - `MINERU_BACKEND="vlm-http-client"`
+   - `MINERU_SERVER_URL="http://vllm-host:30000"`
+   MinerU API calls expect `backend=vlm-http-client` and `server_url=http://<server>:30000` in the request body.
+4. Configure `MINERU_OUTPUT_DIR` / `MINERU_DELETE_OUTPUT` as desired to manage the returned zip/JSON before ingestion.
+
+:::tip NOTE
+When using the `vlm-http-client` backend, the RAGFlow server requires no GPU, only network connectivity. This enables cost-effective distributed deployment with multiple RAGFlow instances sharing one remote vLLM server.
+:::
+
+### How to use PaddleOCR for document parsing?
+
+From v0.24.0 onwards, RAGFlow includes PaddleOCR as an optional PDF parser. Please note that RAGFlow acts only as a *remote client* for PaddleOCR, calling the PaddleOCR API to parse PDFs and reading the returned files.
+
+There are two main ways to configure and use PaddleOCR in RAGFlow:
+
+#### 1. Using PaddleOCR Official API
+
+This method uses PaddleOCR's official API service with an access token.
+
+**Step 1: Configure RAGFlow**
+- **Via Environment Variables:**
+   ```bash
+   # In your docker/.env file:
+   PADDLEOCR_API_URL=https://your-paddleocr-api-endpoint
+   PADDLEOCR_ALGORITHM=PaddleOCR-VL
+   PADDLEOCR_ACCESS_TOKEN=your-access-token-here
+   ```
+
+- **Via UI:**
+   - Navigate to **Model providers** page
+   - Add a new OCR model with factory type "PaddleOCR"
+   - Configure the following fields:
+      - **PaddleOCR API URL**: Your PaddleOCR API endpoint
+      - **PaddleOCR Algorithm**: Select the algorithm corresponding to the API endpoint
+      - **AI Studio Access Token**: Your access token for the PaddleOCR API
+
+**Step 2: Usage in Dataset Configuration**
+- In your dataset's **Configuration** page, find the **Ingestion pipeline** section
+- If using built-in chunking methods that support PDF parsing, select **PaddleOCR** from the **PDF parser** dropdown
+- If using custom ingestion pipeline, select **PaddleOCR** in the **Parser** component
+
+**Notes:**
+- To obtain the API URL, visit the [PaddleOCR official website](https://aistudio.baidu.com/paddleocr), click the **API** button, choose the example code for the specific algorithm you want to use (e.g., PaddleOCR-VL), and copy the `API_URL`.
+- Access tokens can be obtained from the [AI Studio platform](https://aistudio.baidu.com/account/accessToken).
+- This method requires internet connectivity to reach the official PaddleOCR API.
+
+#### 2. Using Self-Hosted PaddleOCR Service
+
+This method allows you to deploy your own PaddleOCR service and use it without an access token.
+
+**Step 1: Deploy PaddleOCR Service**
+Follow the [PaddleOCR serving documentation](https://www.paddleocr.ai/latest/en/version3.x/deployment/serving.html) to deploy your own service. For layout parsing, you can use an endpoint like:
+
+```bash
+http://localhost:8080/layout-parsing
+```
+
+**Step 2: Configure RAGFlow**
+- **Via Environment Variables:**
+  ```bash
+  PADDLEOCR_API_URL=http://localhost:8080/layout-parsing
+  PADDLEOCR_ALGORITHM=PaddleOCR-VL
+  # No access token required for self-hosted service
+  ```
+
+- **Via UI:**
+   - Navigate to **Model providers** page
+   - Add a new OCR model with factory type "PaddleOCR"
+   - Configure the following fields:
+      - **PaddleOCR API URL**: The endpoint of your deployed service
+      - **PaddleOCR Algorithm**: Select the algorithm corresponding to the deployed service
+      - **AI Studio Access Token**: Leave empty
+
+**Step 3: Usage in Dataset Configuration**
+- In your dataset's **Configuration** page, find the **Ingestion pipeline** section
+- If using built-in chunking methods that support PDF parsing, select **PaddleOCR** from the **PDF parser** dropdown
+- If using custom ingestion pipeline, select **PaddleOCR** in the **Parser** component
+
+#### Environment Variables Summary
+
+| Environment Variable | Description | Default | Required |
+|---------------------|-------------|---------|----------|
+| `PADDLEOCR_API_URL` | PaddleOCR API endpoint URL | `""` | Yes, when using environment variables |
+| `PADDLEOCR_ALGORITHM` | Algorithm to use for parsing | `"PaddleOCR-VL"` | No |
+| `PADDLEOCR_ACCESS_TOKEN` | Access token for official API | `None` | Only when using official API |
+
+Environment variables can be used for auto-provisioning, but are not required if configuring via UI. When environment variables are set, these values are used to auto-provision a PaddleOCR model for the tenant on first use.

@@ -1,13 +1,15 @@
 ---
 sidebar_position: 2
 slug: /deploy_local_llm
+sidebar_custom_props: {
+  categoryIcon: LucideMonitorCog
+}
 ---
-
 # Deploy local models
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-Deploy and run local models using Ollama, Xinference, or other frameworks.
+Deploy and run local models using Ollama, Xinference, VLLM ，SGLANG or other frameworks.
 
 ---
 
@@ -62,7 +64,7 @@ $ sudo docker exec ollama ollama pull bge-m3
 
 - If RAGFlow runs in Docker, the localhost is mapped within the RAGFlow Docker container as `host.docker.internal`. If Ollama runs on the same host machine, the right URL to use for Ollama would be `http://host.docker.internal:11434/' and you should check that Ollama is accessible from inside the RAGFlow container with:
 ```bash
-$ sudo docker exec -it ragflow-server bash
+$ sudo docker exec -it docker-ragflow-cpu-1 bash
 $ curl http://host.docker.internal:11434/
 > Ollama is running
 ```
@@ -91,7 +93,7 @@ In RAGFlow, click on your logo on the top right of the page **>** **Model provid
 In the popup window, complete basic settings for Ollama:
 
 1. Ensure that your model name and type match those been pulled at step 1 (Deploy Ollama using Docker). For example, (`llama3.2` and `chat`) or (`bge-m3` and `embedding`).
-2. In Ollama base URL, put the URL you found in step 2 followed by `/v1`, i.e. `http://host.docker.internal:11434/v1`, `http://localhost:11434/v1` or `http://${IP_OF_OLLAMA_MACHINE}:11434/v1`.
+2. Put in the Ollama base URL, i.e. `http://host.docker.internal:11434`, `http://localhost:11434` or `http://${IP_OF_OLLAMA_MACHINE}:11434`.
 3. OPTIONAL: Switch on the toggle under **Does it support Vision?** if your model includes an image-to-text model.
 
 
@@ -107,7 +109,6 @@ Max retries exceeded with url: /api/chat (Caused by NewConnectionError('<urllib3
 Click on your logo **>** **Model providers** **>** **System Model Settings** to update your model:
    
 - *You should now be able to find **llama3.2** from the dropdown list under **Chat model**, and **bge-m3** from the dropdown list under **Embedding model**.*
-- _If your local model is an embedding model, you should find it under **Embedding model**._
 
 ### 6. Update Chat Configuration
 
@@ -158,13 +159,9 @@ Click on your logo **>** **Model providers** **>** **System Model Settings** to 
    
 *You should now be able to find **mistral** from the dropdown list under **Chat model**.*
 
-> If your local model is an embedding model, you should find your local model under **Embedding model**.
-
 ### 7. Update Chat Configuration
 
 Update your chat model accordingly in **Chat Configuration**:
-
-> If your local model is an embedding model, update it on the configuration page of your knowledge base.
 
 ## Deploy a local model using IPEX-LLM
 
@@ -310,7 +307,7 @@ With the Ollama service running, open a new terminal and run `./ollama pull <mod
   </TabItem>
 </Tabs>
 
-### 4. Configure RAGflow
+### 4. Configure RAGFlow
 
 To enable IPEX-LLM accelerated Ollama in RAGFlow, you must also complete the configurations in RAGFlow. The steps are identical to those outlined in the *Deploy a local model using Ollama* section:
 
@@ -319,35 +316,41 @@ To enable IPEX-LLM accelerated Ollama in RAGFlow, you must also complete the con
 3. [Update System Model Settings](#6-update-system-model-settings)
 4. [Update Chat Configuration](#7-update-chat-configuration)
 
-## Deploy a local model using jina 
+### 5. Deploy VLLM 
 
-To deploy a local model, e.g., **gpt2**, using jina:
-
-### 1. Check firewall settings
-
-Ensure that your host machine's firewall allows inbound connections on port 12345.
+ubuntu 22.04/24.04
 
 ```bash
-sudo ufw allow 12345/tcp
-```
-
-### 2. Install jina package
-
-```bash
-pip install jina
-```
-
-### 3. Deploy a local model
-
-Step 1: Navigate to the **rag/svr** directory.
+  pip install vllm 
+  ```
+### 5.1 RUN VLLM WITH BEST PRACTISE
 
 ```bash
-cd rag/svr
-```
-
-Step 2: Run **jina_server.py**, specifying either the model's name or its local directory: 
-
+nohup vllm serve /data/Qwen3-8B --served-model-name Qwen3-8B-FP8 --dtype auto --port 1025 --gpu-memory-utilization 0.90 --tool-call-parser hermes --enable-auto-tool-choice  > /var/log/vllm_startup1.log 2>&1 &
+  ```
+you can get log info
 ```bash
-python jina_server.py  --model_name gpt2
-```
-> The script only supports models downloaded from Hugging Face.
+ tail -f -n 100 /var/log/vllm_startup1.log
+  ```
+when see the follow ,it means vllm engine is ready for access
+```bash
+Starting vLLM API server 0 on http://0.0.0.0:1025
+Started server process [19177]
+Application startup complete.
+ ```
+### 5.2 INTERGRATEING RAGFLOW WITH VLLM CHAT/EM/RERANK LLM WITH WEBUI
+
+setting->model providers->search->vllm->add ,configure as follow:
+
+![add vllm](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm.png)
+
+select vllm chat model as default llm model as follow:
+![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm1.png)
+### 5.3 chat with vllm chat model
+create chat->create conversations-chat as follow:
+![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm2.png)
+
+
+
+
+

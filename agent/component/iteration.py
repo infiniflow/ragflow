@@ -16,6 +16,13 @@
 from abc import ABC
 from agent.component.base import ComponentBase, ComponentParamBase
 
+"""
+class VariableModel(BaseModel):
+    data_type: Annotated[Literal["string", "number", "Object", "Boolean", "Array<string>", "Array<number>", "Array<object>", "Array<boolean>"], Field(default="Array<string>")]
+    input_mode: Annotated[Literal["constant", "variable"], Field(default="constant")]
+    value: Annotated[Any, Field(default=None)]
+    model_config = ConfigDict(extra="forbid")
+"""
 
 class IterationParam(ComponentParamBase):
     """
@@ -24,10 +31,19 @@ class IterationParam(ComponentParamBase):
 
     def __init__(self):
         super().__init__()
-        self.delimiter = ","
+        self.items_ref = ""
+        self.variable={}
+
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "items": {
+                "type": "json",
+                "name": "Items"
+            }
+        }
 
     def check(self):
-        self.check_empty(self.delimiter, "Delimiter")
+        return True
 
 
 class Iteration(ComponentBase, ABC):
@@ -38,8 +54,18 @@ class Iteration(ComponentBase, ABC):
             if self._canvas.get_component(cid)["obj"].component_name.lower() != "iterationitem":
                 continue
             if self._canvas.get_component(cid)["parent_id"] == self._id:
-                return self._canvas.get_component(cid)
+                return cid
 
-    def _run(self, history, **kwargs):
-        return self.output(allow_partial=False)[1]
+    def _invoke(self, **kwargs):
+        if self.check_if_canceled("Iteration processing"):
+            return
+
+        arr = self._canvas.get_variable_value(self._param.items_ref)
+        if not isinstance(arr, list):
+            self.set_output("_ERROR", self._param.items_ref + " must be an array, but its type is "+str(type(arr)))
+
+    def thoughts(self) -> str:
+        return "Need to process {} items.".format(len(self._canvas.get_variable_value(self._param.items_ref)))
+
+
 

@@ -1,11 +1,13 @@
 ---
-sidebar_position: 2
+sidebar_position: 5
 slug: /python_api_reference
+sidebar_custom_props: {
+  categoryIcon: SiPython
+}
 ---
-
 # Python API
 
-A complete reference for RAGFlow's Python APIs. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/models/llm_api_key_setup.md).
+A complete reference for RAGFlow's Python APIs. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
 :::tip NOTE
 Run the following command to download the Python SDK:
@@ -22,15 +24,15 @@ pip install ragflow-sdk
 
 ---
 
-| Code | Message              | Description                 |
-|------|----------------------|-----------------------------|
-| 400  | Bad Request          | Invalid request parameters  |
-| 401  | Unauthorized         | Unauthorized access         |
-| 403  | Forbidden            | Access denied               |
-| 404  | Not Found            | Resource not found          |
-| 500  | Internal Server Error| Server internal error       |
-| 1001 | Invalid Chunk ID     | Invalid Chunk ID            |
-| 1002 | Chunk Update Failed  | Chunk update failed         |
+| Code | Message               | Description                |
+|------|-----------------------|----------------------------|
+| 400  | Bad Request           | Invalid request parameters |
+| 401  | Unauthorized          | Unauthorized access        |
+| 403  | Forbidden             | Access denied              |
+| 404  | Not Found             | Resource not found         |
+| 500  | Internal Server Error | Server internal error      |
+| 1001 | Invalid Chunk ID      | Invalid Chunk ID           |
+| 1002 | Chunk Update Failed   | Chunk update failed        |
 
 ---
 
@@ -63,28 +65,61 @@ Whether to receive the response as a stream. Set this to `false` explicitly if y
 
 #### Examples
 
+> **Note**
+> Streaming via `client.chat.completions.create(stream=True, ...)` does not
+> return `reference` currently because `reference` is only exposed in the
+> non-stream response payload. The only way to return `reference` is non-stream
+> mode with `with_raw_response`.
+:::caution NOTE
+Streaming via `client.chat.completions.create(stream=True, ...)` does not return `reference` because it is *only* included in the raw response payload in non-stream mode. To return `reference`, set `stream=False`.
+:::
 ```python
 from openai import OpenAI
+import json
 
 model = "model"
 client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/chats_openai/<chat_id>")
 
-completion = client.chat.completions.create(
+stream = True
+reference = True
+
+request_kwargs = dict(
     model=model,
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Who are you?"},
+        {"role": "assistant", "content": "I am an AI assistant named..."},
+        {"role": "user", "content": "Can you tell me how to install neovim"},
     ],
-    stream=True
+    extra_body={
+        "extra_body": {
+            "reference": reference,
+            "reference_metadata": {
+                "include": True,
+                "fields": ["author", "year", "source"],
+            },
+        }
+    },
 )
 
-stream = True
 if stream:
+    completion = client.chat.completions.create(stream=True, **request_kwargs)
     for chunk in completion:
         print(chunk)
 else:
-    print(completion.choices[0].message.content)
+    resp = client.chat.completions.with_raw_response.create(
+        stream=False, **request_kwargs
+    )
+    print("status:", resp.http_response.status_code)
+    raw_text = resp.http_response.text
+    print("raw:", raw_text)
+
+    data = json.loads(raw_text)
+    print("assistant:", data["choices"][0]["message"].get("content"))
+    print("reference:", data["choices"][0]["message"].get("reference"))
 ```
+
+When `extra_body.reference_metadata.include` is `true`, each reference chunk may include a `document_metadata` object in both streaming and non-streaming responses.
 
 ## DATASET MANAGEMENT
 
@@ -100,7 +135,6 @@ RAGFlow.create_dataset(
     embedding_model: Optional[str] = "BAAI/bge-large-zh-v1.5@BAAI",
     permission: str = "me", 
     chunk_method: str = "naive",
-    pagerank: int = 0,
     parser_config: DataSet.ParserConfig = None
 ) -> DataSet
 ```
@@ -148,16 +182,12 @@ The chunking method of the dataset to create. Available options:
 - `"one"`: One
 - `"email"`: Email
 
-##### pagerank, `int`
-
-The pagerank of the dataset to create. Defaults to `0`.
-
 ##### parser_config
 
 The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `chunk_method`:
 
 - `chunk_method`=`"naive"`:  
-  `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
+  `{"chunk_token_num":512,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
 - `chunk_method`=`"qa"`:  
   `{"raptor": {"use_raptor": False}}`
 - `chunk_method`=`"manuel"`:  
@@ -466,7 +496,7 @@ dataset = rag_object.list_datasets(id='id')
 dataset = dataset[0]
 doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
-doc.update([{"parser_config": {"chunk_token_count": 256}}, {"chunk_method": "manual"}])
+doc.update([{"parser_config": {"chunk_token_num": 256}}, {"chunk_method": "manual"}])
 ```
 
 ---
@@ -502,7 +532,16 @@ print(doc)
 ### List documents
 
 ```python
-Dataset.list_documents(id:str =None, keywords: str=None, page: int=1, page_size:int = 30, order_by:str = "create_time", desc: bool = True) -> list[Document]
+Dataset.list_documents(
+    id: str = None,
+    keywords: str = None,
+    page: int = 1,
+    page_size: int = 30,
+    order_by: str = "create_time",
+    desc: bool = True,
+    create_time_from: int = 0,
+    create_time_to: int = 0
+) -> list[Document]
 ```
 
 Lists documents in the current dataset.
@@ -536,6 +575,12 @@ The field by which documents should be sorted. Available options:
 
 Indicates whether the retrieved documents should be sorted in descending order. Defaults to `True`.
 
+##### create_time_from: `int`
+Unix timestamp for filtering documents created after this time. 0 means no filter. Defaults to 0.
+
+##### create_time_to: `int`
+Unix timestamp for filtering documents created before this time. 0 means no filter. Defaults to 0.
+
 #### Returns
 
 - Success: A list of `Document` objects.
@@ -557,7 +602,7 @@ A `Document` object contains the following attributes:
 - `progress`: `float` The current processing progress as a percentage. Defaults to `0.0`.
 - `progress_msg`: `str` A message indicating the current progress status. Defaults to `""`.
 - `process_begin_at`: `datetime` The start time of document processing. Defaults to `None`.
-- `process_duation`: `float` Duration of the processing in seconds. Defaults to `0.0`.
+- `process_duration`: `float` Duration of the processing in seconds. Defaults to `0.0`.
 - `run`: `str` The document's processing status:
   - `"UNSTART"`  (default)
   - `"RUNNING"`
@@ -674,6 +719,58 @@ for document in documents:
     ids.append(document.id)
 dataset.async_parse_documents(ids)
 print("Async bulk parsing initiated.")
+```
+
+---
+
+### Parse documents (with document status)
+
+```python
+DataSet.parse_documents(document_ids: list[str]) -> list[tuple[str, str, int, int]]
+```
+
+*Asynchronously* parses documents in the current dataset.
+
+This method encapsulates `async_parse_documents()`. It awaits the completion of all parsing tasks before returning detailed results, including the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), all pending parsing tasks will be cancelled gracefully.
+
+#### Parameters
+
+##### document_ids: `list[str]`, *Required*
+
+The IDs of the documents to parse.
+
+#### Returns
+
+A list of tuples with detailed parsing results:
+
+```python
+[
+  (document_id: str, status: str, chunk_count: int, token_count: int),
+  ...
+]
+```
+- `status`: The final parsing state (e.g., `success`, `failed`, `cancelled`).  
+- `chunk_count`: The number of content chunks created from the document.  
+- `token_count`: The total number of tokens processed.  
+
+---
+
+#### Example
+
+```python
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+dataset = rag_object.create_dataset(name="dataset_name")
+documents = dataset.list_documents(keywords="test")
+ids = [doc.id for doc in documents]
+
+try:
+    finished = dataset.parse_documents(ids)
+    for doc_id, status, chunk_count, token_count in finished:
+        print(f"Document {doc_id} parsing finished with status: {status}, chunks: {chunk_count}, tokens: {token_count}")
+except KeyboardInterrupt:
+    print("\nParsing interrupted by user. All pending tasks have been cancelled.")
+except Exception as e:
+    print(f"Parsing failed: {e}")
 ```
 
 ---
@@ -901,7 +998,7 @@ chunk.update({"content":"sdfx..."})
 ### Retrieve chunks
 
 ```python
-RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,highlight:bool=False) -> list[Chunk]
+RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,cross_languages:list[str]=None,metadata_condition: dict=None) -> list[Chunk]
 ```
 
 Retrieves chunks from specified datasets.
@@ -951,12 +1048,13 @@ Indicates whether to enable keyword-based matching:
 - `True`: Enable keyword-based matching.
 - `False`: Disable keyword-based matching (default).
 
-##### highlight: `bool`
+##### cross_languages:  `list[string]`  
 
-Specifies whether to enable highlighting of matched terms in the results:
+The languages that should be translated into, in order to achieve keywords retrievals in different languages.
 
-- `True`: Enable highlighting of matched terms.
-- `False`: Disable highlighting of matched terms (default).
+##### metadata_condition: `dict`
+
+filter condition for `meta_fields`.
 
 #### Returns
 
@@ -1238,7 +1336,7 @@ The name of the chat session to create.
 - Success: A `Session` object containing the following attributes:
   - `id`: `str` The auto-generated unique identifier of the created session.
   - `name`: `str` The name of the created session.
-  - `message`: `list[Message]` The opening message of the created session. Default: `[{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]`
+  - `message`: `list[Message]` The opening message of the created session. Default: `[{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]`
   - `chat_id`: `str` The ID of the associated chat assistant.
 - Failure: `Exception`
 
@@ -1443,6 +1541,8 @@ A list of `Chunk` objects representing references to the message, each containin
   The ID of the referenced document.
 - `document_name` `str`  
   The name of the referenced document.
+- `document_metadata` `dict`  
+  Optional document metadata, returned only when `extra_body.reference_metadata.include` is `true`.
 - `position` `list[str]`  
   The location information of the chunk within the referenced document.
 - `dataset_id` `str`  
@@ -1497,7 +1597,7 @@ The parameters in `begin` component.
 
 - Success: A `Session` object containing the following attributes:
   - `id`: `str` The auto-generated unique identifier of the created session.
-  - `message`: `list[Message]` The messages of the created session assistant. Default: `[{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]`
+  - `message`: `list[Message]` The messages of the created session assistant. Default: `[{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]`
   - `agent_id`: `str` The ID of the associated agent.
 - Failure: `Exception`
 
@@ -1530,7 +1630,7 @@ In streaming mode, not all responses include a reference, as this depends on the
 
 ##### question: `str`
 
-The question to start an AI-powered conversation. Ifthe **Begin** component takes parameters, a question is not required.
+The question to start an AI-powered conversation. If the **Begin** component takes parameters, a question is not required.
 
 ##### stream: `bool`
 
@@ -1568,6 +1668,8 @@ A list of `Chunk` objects representing references to the message, each containin
   The ID of the referenced document.
 - `document_name` `str`  
   The name of the referenced document.
+- `document_metadata` `dict`  
+  Optional document metadata, returned only when `extra_body.reference_metadata.include` is `true`.
 - `position` `list[str]`  
   The location information of the chunk within the referenced document.
 - `dataset_id` `str`  
@@ -1667,7 +1769,7 @@ for session in sessions:
 Agent.delete_sessions(ids: list[str] = None)
 ```
 
-Deletes sessions of a agent by ID.
+Deletes sessions of an agent by ID.
 
 #### Parameters
 
@@ -1884,6 +1986,640 @@ Specifies the id of the agent to be deleted.
 from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 rag_object.delete_agent("58af890a2a8911f0a71a11b922ed82d6")
+```
+
+---
+
+
+
+## Memory Management
+
+### Create Memory
+
+```python
+Ragflow.create_memory(
+    name: str, 
+    memory_type: list[str], 
+    embd_id: str, 
+    llm_id: str
+) -> Memory
+```
+
+Create a new memory.
+
+#### Parameters
+
+##### name: `str`, *Required*
+
+The unique name of the memory to create. It must adhere to the following requirements:
+
+- Basic Multilingual Plane (BMP) only
+- Maximum 128 characters
+
+##### memory_type: `list[str]`, *Required* 
+
+Specifies the types of memory to extract. Available options:
+
+- `raw`: The raw dialogue content between the user and the agent . *Required by default*.
+- `semantic`: General knowledge and facts about the user and world.
+- `episodic`: Time-stamped records of specific events and experiences.
+- `procedural`: Learned skills, habits, and automated procedures.
+
+##### embd_id: `str`, *Required*
+
+The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`
+
+- Maximum 255 characters
+- Must follow `model_name@model_factory` format
+
+##### llm_id: `str`, *Required*
+
+The name of the chat model to use. For example: `"glm-4-flash@ZHIPU-AI"`
+
+- Maximum 255 characters
+- Must follow `model_name@model_factory` format
+
+#### Returns
+
+- Success: A `memory` object.
+
+- Failure: `Exception`
+
+#### Examples
+
+```python
+from ragflow_sdk import RAGFlow
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+memory = rag_obj.create_memory("name", ["raw"], "BAAI/bge-large-zh-v1.5@SILICONFLOW", "glm-4-flash@ZHIPU-AI")
+```
+
+---
+
+
+
+### Update Memory
+
+```python
+Memory.update(
+	update_dict: dict
+) -> Memory
+```
+
+Updates configurations for a specified memory.
+
+#### Parameters
+
+##### update_dict: `dict`, *Required*
+
+Configurations to update. Available configurations:
+
+- `name`: `string`, *Optional*
+
+  The revised name of the memory.
+
+  - Basic Multilingual Plane (BMP) only
+  - Maximum 128 characters, *Optional*
+
+- `avatar`: `string`, *Optional* 
+
+  The updated base64 encoding of the avatar.
+
+  - Maximum 65535 characters
+
+- `permission`:  `enum<string>`, *Optional*
+
+  The updated memory permission. Available options:
+
+  - `"me"`: (Default) Only you can manage the memory.
+  - `"team"`: All team members can manage the memory.
+
+- `llm_id`: `string`, *Optional*
+
+  The name of the chat model to use. For example: `"glm-4-flash@ZHIPU-AI"`
+
+  - Maximum 255 characters
+  - Must follow `model_name@model_factory` format
+
+- `description`: `string`, *Optional*
+
+  The description of the memory. Defaults to `None`.
+
+- `memory_size`: `int`, *Optional*
+
+  Defaults to `5*1024*1024` Bytes. Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.
+
+  - Maximum 10 * 1024 * 1024 Bytes
+
+- `forgetting_policy`: `enum<string>`, *Optional*
+
+  Evicts existing data based on the chosen policy when the size limit is reached, freeing up space for new messages. Available options:
+
+  - `"FIFO"`: (Default) Prioritize messages with the earliest `forget_at` time for removal. When the pool of messages that have `forget_at` set is insufficient, it falls back to selecting messages in ascending order of their `valid_at` (oldest first).
+
+- `temperature`: (*Body parameter*), `float`, *Optional*
+
+  Adjusts output randomness. Lower = more deterministic; higher = more creative.
+
+  - Range [0, 1]
+
+- `system_prompt`: (*Body parameter*), `string`, *Optional*
+
+  Defines the system-level instructions and role for the AI assistant. It is automatically assembled based on the selected `memory_type` by `PromptAssembler` in `memory/utils/prompt_util.py`. This prompt sets the foundational behavior and context for the entire conversation.
+
+  - Keep the `OUTPUT REQUIREMENTS` and `OUTPUT FORMAT` parts unchanged.
+
+- `user_prompt`: (*Body parameter*), `string`, *Optional*
+
+  Represents the user's custom setting, which is the specific question or instruction the AI needs to respond to directly. Defaults to `None`.
+
+#### Returns
+
+- Success: A `memory` object.
+
+- Failure: `Exception`
+
+#### Examples
+
+```python
+from ragflow_sdk import Ragflow, Memory
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+memory_obejct = Memory(rag_object, {"id": "your memory_id"})
+memory_object.update({"name": "New_name"})
+```
+
+---
+
+
+
+### List Memory
+
+```python
+Ragflow.list_memory(
+    page: int = 1, 
+    page_size: int = 50, 
+    tenant_id: str | list[str] = None, 
+    memory_type: str | list[str] = None, 
+    storage_type: str = None, 
+    keywords: str = None) -> dict
+```
+
+List memories.
+
+#### Parameters
+
+##### page: `int`, *Optional*
+
+Specifies the page on which the datasets will be displayed. Defaults to `1`
+
+##### page_size: `int`, *Optional*
+
+The number of memories on each page. Defaults to `50`.
+
+##### tenant_id: `str` or `list[str]`, *Optional*
+
+The owner's ID, supports search multiple IDs.
+
+##### memory_type: `str` or `list[str]`, *Optional*
+
+The type of memory (as set during creation). A memory matches if its type is **included in** the provided value(s). Available options:
+
+- `raw`
+- `semantic`
+- `episodic`
+- `procedural`
+
+##### storage_type: `str`, *Optional*
+
+The storage format of messages. Available options:
+
+- `table`: (Default)
+
+##### keywords: `str`, *Optional*
+
+The name of memory to retrieve, supports fuzzy search.
+
+#### Returns
+
+Success: A dict of `Memory` object list and total count. 
+
+```json
+{"memory_list": list[Memory], "total_count": int}
+```
+
+Failure: `Exception`
+
+#### Examples
+
+```
+from ragflow_sdk import Ragflow, Memory
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+rag_obejct.list_memory()
+```
+
+---
+
+
+
+### Get Memory Config
+
+```python
+Memory.get_config()
+```
+
+Get the configuration of a specified memory.
+
+#### Parameters
+
+None
+
+#### Returns
+
+Success: A `Memory` object.
+
+Failure: `Exception`
+
+#### Examples
+
+```python
+from ragflow_sdk import Ragflow, Memory
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+memory_obejct = Memory(rag_object, {"id": "your memory_id"})
+memory_obejct.get_config()
+```
+
+---
+
+
+
+### Delete Memory
+
+```python
+Ragflow.delete_memory(
+    memory_id: str
+) -> None
+```
+
+Delete a specified memory.
+
+#### Parameters
+
+##### memory_id: `str`, *Required*
+
+The ID of the memory.
+
+#### Returns
+
+Success: Nothing
+
+Failure: `Exception`
+
+#### Examples
+
+```python
+from ragflow_sdk import Ragflow, Memory
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+rag_object.delete_memory("your memory_id")
+```
+
+---
+
+
+
+### List messages of a memory
+
+```python
+Memory.list_memory_messages(
+    agent_id: str | list[str]=None, 
+    keywords: str=None, 
+    page: int=1, 
+    page_size: int=50
+) -> dict
+```
+
+List the messages of a specified memory.
+
+#### Parameters
+
+##### agent_id: `str` or `list[str]`, *Optional*
+
+Filters messages by the ID of their source agent. Supports multiple values.
+
+##### keywords: `str`, *Optional*
+
+Filters messages by their session ID. This field supports fuzzy search.
+
+##### page: `int`, *Optional*
+
+Specifies the page on which the messages will be displayed. Defaults to `1`.
+
+##### page_size: `int`, *Optional*
+
+The number of messages on each page. Defaults to `50`.
+
+#### Returns
+
+Success: a dict of messages and meta info. 
+
+```json
+{"messages": {"message_list": [{message dict}], "total_count": int}, "storage_type": "table"}
+```
+
+Failure: `Exception`
+
+#### Examples
+
+```python
+from ragflow_sdk import Ragflow, Memory
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+memory_obejct = Memory(rag_object, {"id": "your memory_id"})
+memory_obejct.list_memory_messages()
+```
+
+---
+
+
+
+### Add Message
+
+```python
+Ragflow.add_message(
+    memory_id: list[str], 
+    agent_id: str, 
+    session_id: str, 
+    user_input: str, 
+    agent_response: str, 
+    user_id: str = ""
+) -> str
+```
+
+Add a message to specified memories.
+
+#### Parameters
+
+##### memory_id: `list[str]`, *Required*
+
+The IDs of the memories to save messages.
+
+##### agent_id: `str`, *Required*
+
+The ID of the message's source agent.
+
+##### session_id: `str`, *Required*
+
+The ID of the message's session.
+
+##### user_input: `str`, *Required*
+
+The text input provided by the user.
+
+##### agent_response: `str`, *Required*
+
+The text response generated by the AI agent.
+
+##### user_id: `str`, *Optional*
+
+The user participating in the conversation with the agent. Defaults to `""`.
+
+#### Returns
+
+Success:  A text `"All add to task."`
+
+Failure: `Exception`
+
+#### Examples
+
+```python
+from ragflow_sdk import Ragflow, Memory
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+message_payload = {
+    "memory_id": memory_ids,
+    "agent_id": agent_id,
+    "session_id": session_id,
+    "user_id": "",
+    "user_input": "Your question here",
+    "agent_response": """
+Your agent response here
+"""
+}
+client.add_message(**message_payload)
+```
+
+---
+
+
+
+### Forget Message
+
+```python
+Memory.forget_message(message_id: int) -> bool
+```
+
+Forget a specified message. After forgetting, this message will not be retrieved by agents, and it will also be prioritized for cleanup by the forgetting policy.
+
+#### Parameters
+
+##### message_id: `int`, *Required*
+
+The ID of the message to forget.
+
+#### Returns
+
+Success: True
+
+Failure: `Exception`
+
+#### Examples
+
+```python
+from ragflow_sdk import Ragflow, Memory
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+memory_object = Memory(rag_object, {"id": "your memory_id"})
+memory_object.forget_message(message_id)
+```
+
+---
+
+
+
+### Update message status
+
+```python
+Memory.update_message_status(message_id: int, status: bool) -> bool
+```
+
+Update message status, enable or disable a message. Once a message is disabled, it will not be retrieved by agents.
+
+#### Parameters
+
+##### message_id: `int`, *Required*
+
+The ID of the message to enable or disable.
+
+##### status: `bool`, *Required*
+
+The status of message. `True` = `enabled`, `False` = `disabled`.
+
+#### Returns
+
+Success: `True`
+
+Failure: `Exception`
+
+#### Examples
+
+```python
+from ragflow_sdk import Ragflow, Memory
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+memory_object = Memory(rag_object, {"id": "your memory_id"})
+memory_object.update_message_status(message_id, True)
+```
+
+---
+
+
+
+### Search message
+
+```python
+Ragflow.search_message(
+    query: str, 
+    memory_id: list[str], 
+    agent_id: str=None, 
+    session_id: str=None, 
+    similarity_threshold: float=0.2, 
+    keywords_similarity_weight: float=0.7, 
+    top_n: int=10
+) -> list[dict]
+```
+
+Searches and retrieves messages from memory based on the provided `query` and other configuration parameters.
+
+#### Parameters
+
+##### query: `str`, *Required*
+
+The search term or natural language question used to find relevant messages.
+
+##### memory_id: `list[str]`, *Required*
+
+The IDs of the memories to search. Supports multiple values.
+
+##### agent_id: `str`, *Optional*
+
+The ID of the message's source agent. Defaults to `None`.
+
+##### session_id: `str`, *Optional*
+
+The ID of the message's session. Defaults to `None`.
+
+##### similarity_threshold: `float`, *Optional*
+
+The minimum cosine similarity score required for a message to be considered a match. A higher value yields more precise but fewer results. Defaults to `0.2`.
+
+- Range [0.0, 1.0]
+
+##### keywords_similarity_weight: `float`, *Optional*
+
+Controls the influence of keyword matching versus semantic (embedding-based) matching in the final relevance score. A value of 0.5 gives them equal weight. Defaults to `0.7`.
+
+- Range [0.0, 1.0]
+
+##### top_n: `int`, *Optional*
+
+The maximum number of most relevant messages to return. This limits the result set size for efficiency. Defaults to `10`.
+
+#### Returns
+
+Success: A list of `message` dict.
+
+Failure: `Exception`
+
+#### Examples
+
+```python
+from ragflow_sdk import Ragflow
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+rag_object.search_message("your question", ["your memory_id"])
+```
+
+---
+
+
+
+### Get Recent Messages
+
+```python
+Ragflow.get_recent_messages(
+    memory_id: list[str], 
+    agent_id: str=None, 
+    session_id: str=None, 
+    limit: int=10
+) -> list[dict]
+```
+
+Retrieves the most recent messages from specified memories. Typically accepts a `limit` parameter to control the number of messages returned.
+
+#### Parameters
+
+##### memory_id: `list[str]`, *Required*
+
+The IDs of the memories to search. Supports multiple values.
+
+##### agent_id: `str`, *Optional*
+
+The ID of the message's source agent. Defaults to `None`.
+
+##### session_id: `str`, *Optional*
+
+The ID of the message's session. Defaults to `None`.
+
+##### limit: `int`, *Optional*
+
+Control the number of messages returned. Defaults to `10`.
+
+#### Returns
+
+Success: A list of `message` dict.
+
+Failure: `Exception`
+
+#### Examples
+
+```python
+from ragflow_sdk import Ragflow
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+rag_object.get_recent_messages(["your memory_id"])
+```
+
+---
+
+
+
+### Get Message Content
+
+```python
+Memory.get_message_content(message_id: int)
+```
+
+Retrieves the full content and embed vector of a specific message using its unique message ID.
+
+#### Parameters
+
+##### message_id: `int`, *Required*
+
+#### Returns
+
+Success: A `message` dict.
+
+Failure: `Exception`
+
+#### Examples
+
+```python
+from ragflow_sdk import Ragflow
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+memory_object = Memory(rag_object, {"id": "your memory_id"})
+memory_object.get_message_content(message_id)
 ```
 
 ---

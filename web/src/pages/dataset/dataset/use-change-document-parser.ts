@@ -19,6 +19,7 @@ export const useChangeDocumentParser = () => {
       if (record?.id) {
         const ret = await setDocumentParser({
           parserId: parserConfigInfo.parser_id,
+          pipelineId: parserConfigInfo.pipeline_id,
           documentId: record?.id,
           parserConfig: parserConfigInfo.parser_config,
         });

@@ -1,3 +1,4 @@
+{{- if .Values.redis.enabled }}
 ---
 apiVersion: v1
 kind: Service
@@ -40,10 +41,22 @@ spec:
       annotations:
         checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
     spec:
+      {{- if or .Values.global.imagePullSecrets .Values.redis.image.pullSecrets }}
+      imagePullSecrets:
+        {{- with .Values.global.imagePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.redis.image.pullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
       terminationGracePeriodSeconds: 60
       containers:
         - name: redis
-          image: {{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}
+          image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.redis.image.repository) }}:{{ .Values.redis.image.tag }}
+          {{- with .Values.redis.image.pullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- end }}
           command:
             - "sh"
             - "-c"
@@ -64,11 +77,20 @@ spec:
             {{- . | toYaml | nindent 12 }}
           {{- end }}
   {{- if .Values.redis.persistence.enabled }}
+  {{- with .Values.redis.persistence.retentionPolicy }}
+  persistentVolumeClaimRetentionPolicy:
+    {{- with .whenDeleted }}
+    whenDeleted: {{ . }}
+    {{- end }}
+    {{- with .whenScaled }}
+    whenScaled: {{ . }}
+    {{- end }}
+  {{- end }}
   volumeClaimTemplates:
     - metadata:
         name: redis-data
         labels:
-          {{- include "ragflow.labels" . | nindent 10 }}
+          {{- include "ragflow.selectorLabels" . | nindent 10 }}
           app.kubernetes.io/component: redis
       spec:
         accessModes:
@@ -110,3 +132,4 @@ spec:
     matchLabels:
       {{- include "ragflow.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: redis
+{{- end }}

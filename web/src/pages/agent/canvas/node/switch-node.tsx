@@ -1,13 +1,16 @@
-import { useTheme } from '@/components/theme-provider';
+import { Card, CardContent } from '@/components/ui/card';
+import { SwitchOperatorOptions } from '@/constants/agent';
+import { LogicalOperatorIcon } from '@/hooks/logic-hooks/use-build-operator-options';
 import { ISwitchCondition, ISwitchNode } from '@/interfaces/database/flow';
-import { Handle, NodeProps, Position } from '@xyflow/react';
-import { Divider, Flex } from 'antd';
-import classNames from 'classnames';
-import { useGetComponentLabelByValue } from '../../hooks/use-get-begin-query';
+import { NodeProps, Position } from '@xyflow/react';
+import { memo, useCallback } from 'react';
+import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
+import { CommonHandle, LeftEndHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
-import { useBuildSwitchHandlePositions } from './hooks';
-import styles from './index.less';
 import NodeHeader from './node-header';
+import { NodeWrapper } from './node-wrapper';
+import { ToolBar } from './toolbar';
+import { useBuildSwitchHandlePositions } from './use-build-switch-handle-positions';
 
 const getConditionKey = (idx: number, length: number) => {
   if (idx === 0 && length !== 1) {
@@ -22,93 +25,88 @@ const getConditionKey = (idx: number, length: number) => {
 const ConditionBlock = ({
   condition,
   nodeId,
-}: {
-  condition: ISwitchCondition;
-  nodeId: string;
-}) => {
+}: { condition: ISwitchCondition } & { nodeId: string }) => {
   const items = condition?.items ?? [];
-  const getLabel = useGetComponentLabelByValue(nodeId);
+  const { getLabel } = useGetVariableLabelOrTypeByValue({ nodeId });
+
+  const renderOperatorIcon = useCallback((operator?: string) => {
+    const item = SwitchOperatorOptions.find((x) => x.value === operator);
+    if (item) {
+      return (
+        <LogicalOperatorIcon
+          icon={item?.icon}
+          value={item?.value}
+        ></LogicalOperatorIcon>
+      );
+    }
+    return <></>;
+  }, []);
+
   return (
-    <Flex vertical className={styles.conditionBlock}>
-      {items.map((x, idx) => (
-        <div key={idx}>
-          <Flex>
-            <div
-              className={classNames(styles.conditionLine, styles.conditionKey)}
-            >
-              {getLabel(x?.cpn_id)}
-            </div>
-            <span className={styles.conditionOperator}>{x?.operator}</span>
-            <Flex flex={1} className={styles.conditionLine}>
-              {x?.value}
-            </Flex>
-          </Flex>
-          {idx + 1 < items.length && (
-            <Divider orientationMargin="0" className={styles.zeroDivider}>
-              {condition?.logical_operator}
-            </Divider>
-          )}
-        </div>
-      ))}
-    </Flex>
+    <Card className="bg-bg-card border-transparent rounded-md">
+      <CardContent className="p-0 divide-y divide-background-card">
+        {items.map((x, idx) => (
+          <div key={idx}>
+            <section className="flex justify-between gap-2 items-center text-xs p-1">
+              <div className="flex-1 truncate text-accent-primary">
+                {getLabel(x?.cpn_id)}
+              </div>
+              <span>{renderOperatorIcon(x?.operator)}</span>
+              <div className="flex-1 truncate">{x?.value}</div>
+            </section>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 };
 
-export function SwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
+function InnerSwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
   const { positions } = useBuildSwitchHandlePositions({ data, id });
-  const { theme } = useTheme();
   return (
-    <section
-      className={classNames(
-        styles.logicNode,
-        theme === 'dark' ? styles.dark : '',
-        {
-          [styles.selectedNode]: selected,
-        },
-      )}
-    >
-      <Handle
-        type="target"
-        position={Position.Left}
-        isConnectable
-        className={styles.handle}
-        id={'a'}
-      ></Handle>
-      <NodeHeader
-        id={id}
-        name={data.name}
-        label={data.label}
-        className={styles.nodeHeader}
-      ></NodeHeader>
-      <Flex vertical gap={10}>
-        {positions.map((position, idx) => {
-          return (
-            <div key={idx}>
-              <Flex vertical>
-                <Flex justify={'space-between'}>
-                  <span>{idx < positions.length - 1 && position.text}</span>
-                  <span>{getConditionKey(idx, positions.length)}</span>
-                </Flex>
-                {position.condition && (
-                  <ConditionBlock
-                    nodeId={id}
-                    condition={position.condition}
-                  ></ConditionBlock>
-                )}
-              </Flex>
-              <Handle
-                key={position.text}
-                id={position.text}
-                type="source"
-                position={Position.Right}
-                isConnectable
-                className={styles.handle}
-                style={{ ...RightHandleStyle, top: position.top }}
-              ></Handle>
-            </div>
-          );
-        })}
-      </Flex>
-    </section>
+    <ToolBar selected={selected} id={id} label={data.label} showRun={false}>
+      <NodeWrapper selected={selected} id={id}>
+        <LeftEndHandle></LeftEndHandle>
+        <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
+        <section className="gap-2.5 flex flex-col">
+          {positions.map((position, idx) => {
+            return (
+              <div key={idx}>
+                <section className="flex flex-col text-xs">
+                  <div className="text-right">
+                    <span>{getConditionKey(idx, positions.length)}</span>
+                    <div className="text-text-secondary">
+                      {idx < positions.length - 1 && position.text}
+                    </div>
+                  </div>
+                  <span className="text-accent-primary">
+                    {idx < positions.length - 1 &&
+                      position.condition?.logical_operator?.toUpperCase()}
+                  </span>
+                  {position.condition && (
+                    <ConditionBlock
+                      condition={position.condition}
+                      nodeId={id}
+                    ></ConditionBlock>
+                  )}
+                </section>
+                <CommonHandle
+                  key={position.text}
+                  id={position.text}
+                  type="source"
+                  position={Position.Right}
+                  isConnectable
+                  style={{ ...RightHandleStyle, top: position.top }}
+                  nodeId={id}
+                  isConnectableEnd={false}
+                ></CommonHandle>
+              </div>
+            );
+          })}
+        </section>
+      </NodeWrapper>
+    </ToolBar>
   );
 }
+
+export const SwitchNode = memo(InnerSwitchNode);

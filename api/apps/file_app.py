@@ -13,54 +13,57 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
+import logging
 import os
 import pathlib
 import re
+from quart import request, make_response
+from api.apps import login_required, current_user
 
-import flask
-from flask import request
-from flask_login import login_required, current_user
-
+from api.common.check_team_permission import check_file_team_permission
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from api.utils import get_uuid
-from api.db import FileType, FileSource
+from common.misc_utils import get_uuid, thread_pool_exec
+from common.constants import RetCode, FileSource
+from api.db import FileType
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
-from api import settings
-from api.utils.api_utils import get_json_result
+from api.utils.api_utils import get_json_result, get_request_json
 from api.utils.file_utils import filename_type
-from rag.utils.storage_factory import STORAGE_IMPL
-
+from api.utils.web_utils import CONTENT_TYPE_MAP
+from common import settings
 
 @manager.route('/upload', methods=['POST'])  # noqa: F821
 @login_required
 # @validate_request("parent_id")
-def upload():
-    pf_id = request.form.get("parent_id")
+async def upload():
+    form = await request.form
+    pf_id = form.get("parent_id")
 
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
         pf_id = root_folder["id"]
 
-    if 'file' not in request.files:
+    files = await request.files
+    if 'file' not in files:
         return get_json_result(
-            data=False, message='No file part!', code=settings.RetCode.ARGUMENT_ERROR)
-    file_objs = request.files.getlist('file')
+            data=False, message='No file part!', code=RetCode.ARGUMENT_ERROR)
+    file_objs = files.getlist('file')
 
     for file_obj in file_objs:
         if file_obj.filename == '':
             return get_json_result(
-                data=False, message='No file selected!', code=settings.RetCode.ARGUMENT_ERROR)
+                data=False, message='No file selected!', code=RetCode.ARGUMENT_ERROR)
     file_res = []
     try:
         e, pf_folder = FileService.get_by_id(pf_id)
         if not e:
             return get_data_error_result( message="Can't find this folder!")
-        for file_obj in file_objs:
-            MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
-            if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(current_user.id) >= MAX_FILE_NUM_PER_USER:
+
+        async def _handle_single_file(file_obj):
+            MAX_FILE_NUM_PER_USER: int = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
+            if 0 < MAX_FILE_NUM_PER_USER <= await thread_pool_exec(DocumentService.get_doc_count, current_user.id):
                 return get_data_error_result( message="Exceed the maximum file number of a free user!")
 
             # split file name path
@@ -72,34 +75,36 @@ def upload():
             file_len = len(file_obj_names)
 
             # get folder
-            file_id_list = FileService.get_id_list_by_id(pf_id, file_obj_names, 1, [pf_id])
+            file_id_list = await thread_pool_exec(FileService.get_id_list_by_id, pf_id, file_obj_names, 1, [pf_id])
             len_id_list = len(file_id_list)
 
             # create folder
             if file_len != len_id_list:
-                e, file = FileService.get_by_id(file_id_list[len_id_list - 1])
+                e, file = await thread_pool_exec(FileService.get_by_id, file_id_list[len_id_list - 1])
                 if not e:
                     return get_data_error_result(message="Folder not found!")
-                last_folder = FileService.create_folder(file, file_id_list[len_id_list - 1], file_obj_names,
+                last_folder = await thread_pool_exec(FileService.create_folder, file, file_id_list[len_id_list - 1], file_obj_names,
                                                         len_id_list)
             else:
-                e, file = FileService.get_by_id(file_id_list[len_id_list - 2])
+                e, file = await thread_pool_exec(FileService.get_by_id, file_id_list[len_id_list - 2])
                 if not e:
                     return get_data_error_result(message="Folder not found!")
-                last_folder = FileService.create_folder(file, file_id_list[len_id_list - 2], file_obj_names,
+                last_folder = await thread_pool_exec(FileService.create_folder, file, file_id_list[len_id_list - 2], file_obj_names,
                                                         len_id_list)
 
             # file type
             filetype = filename_type(file_obj_names[file_len - 1])
             location = file_obj_names[file_len - 1]
-            while STORAGE_IMPL.obj_exist(last_folder.id, location):
+            while await thread_pool_exec(settings.STORAGE_IMPL.obj_exist, last_folder.id, location):
                 location += "_"
-            blob = file_obj.read()
-            filename = duplicate_name(
+            blob = await thread_pool_exec(file_obj.read)
+            filename = await thread_pool_exec(
+                duplicate_name,
                 FileService.query,
                 name=file_obj_names[file_len - 1],
                 parent_id=last_folder.id)
-            file = {
+            await thread_pool_exec(settings.STORAGE_IMPL.put, last_folder.id, location, blob)
+            file_data = {
                 "id": get_uuid(),
                 "parent_id": last_folder.id,
                 "tenant_id": current_user.id,
@@ -109,9 +114,13 @@ def upload():
                 "location": location,
                 "size": len(blob),
             }
-            file = FileService.insert(file)
-            STORAGE_IMPL.put(last_folder.id, location, blob)
-            file_res.append(file.to_json())
+            inserted = await thread_pool_exec(FileService.insert, file_data)
+            return inserted.to_json()
+
+        for file_obj in file_objs:
+            res = await _handle_single_file(file_obj)
+            file_res.append(res)
+
         return get_json_result(data=file_res)
     except Exception as e:
         return server_error_response(e)
@@ -120,10 +129,10 @@ def upload():
 @manager.route('/create', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("name")
-def create():
-    req = request.json
-    pf_id = request.json.get("parent_id")
-    input_file_type = request.json.get("type")
+async def create():
+    req = await get_request_json()
+    pf_id = req.get("parent_id")
+    input_file_type = req.get("type")
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
         pf_id = root_folder["id"]
@@ -131,7 +140,7 @@ def create():
     try:
         if not FileService.is_parent_folder_exist(pf_id):
             return get_json_result(
-                data=False, message="Parent Folder Doesn't Exist!", code=settings.RetCode.OPERATING_ERROR)
+                data=False, message="Parent Folder Doesn't Exist!", code=RetCode.OPERATING_ERROR)
         if FileService.query(name=req["name"], parent_id=pf_id):
             return get_data_error_result(
                 message="Duplicated folder name in the same folder.")
@@ -232,52 +241,67 @@ def get_all_parent_folders():
         return server_error_response(e)
 
 
-@manager.route('/rm', methods=['POST'])  # noqa: F821
+@manager.route("/rm", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("file_ids")
-def rm():
-    req = request.json
+async def rm():
+    req = await get_request_json()
     file_ids = req["file_ids"]
+    uid = current_user.id
+
     try:
-        for file_id in file_ids:
-            e, file = FileService.get_by_id(file_id)
-            if not e:
-                return get_data_error_result(message="File or Folder not found!")
-            if not file.tenant_id:
-                return get_data_error_result(message="Tenant not found!")
-            if file.source_type == FileSource.KNOWLEDGEBASE:
-                continue
+        def _delete_single_file(file):
+            try:
+                if file.location:
+                    settings.STORAGE_IMPL.rm(file.parent_id, file.location)
+            except Exception as e:
+                logging.exception(f"Fail to remove object: {file.parent_id}/{file.location}, error: {e}")
 
-            if file.type == FileType.FOLDER.value:
-                file_id_list = FileService.get_all_innermost_file_ids(file_id, [])
-                for inner_file_id in file_id_list:
-                    e, file = FileService.get_by_id(inner_file_id)
-                    if not e:
-                        return get_data_error_result(message="File not found!")
-                    STORAGE_IMPL.rm(file.parent_id, file.location)
-                FileService.delete_folder_by_pf_id(current_user.id, file_id)
-            else:
-                STORAGE_IMPL.rm(file.parent_id, file.location)
-                if not FileService.delete(file):
-                    return get_data_error_result(
-                        message="Database error (File removal)!")
-
-            # delete file2document
-            informs = File2DocumentService.get_by_file_id(file_id)
+            informs = File2DocumentService.get_by_file_id(file.id)
             for inform in informs:
                 doc_id = inform.document_id
                 e, doc = DocumentService.get_by_id(doc_id)
-                if not e:
-                    return get_data_error_result(message="Document not found!")
-                tenant_id = DocumentService.get_tenant_id(doc_id)
-                if not tenant_id:
-                    return get_data_error_result(message="Tenant not found!")
-                if not DocumentService.remove_document(doc, tenant_id):
-                    return get_data_error_result(
-                        message="Database error (Document removal)!")
-            File2DocumentService.delete_by_file_id(file_id)
+                if e and doc:
+                    tenant_id = DocumentService.get_tenant_id(doc_id)
+                    if tenant_id:
+                        DocumentService.remove_document(doc, tenant_id)
+                File2DocumentService.delete_by_file_id(file.id)
 
-        return get_json_result(data=True)
+            FileService.delete(file)
+
+        def _delete_folder_recursive(folder, tenant_id):
+            sub_files = FileService.list_all_files_by_parent_id(folder.id)
+            for sub_file in sub_files:
+                if sub_file.type == FileType.FOLDER.value:
+                    _delete_folder_recursive(sub_file, tenant_id)
+                else:
+                    _delete_single_file(sub_file)
+
+            FileService.delete(folder)
+
+        def _rm_sync():
+            for file_id in file_ids:
+                e, file = FileService.get_by_id(file_id)
+                if not e or not file:
+                    return get_data_error_result(message="File or Folder not found!")
+                if not file.tenant_id:
+                    return get_data_error_result(message="Tenant not found!")
+                if not check_file_team_permission(file, uid):
+                    return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+
+                if file.source_type == FileSource.KNOWLEDGEBASE:
+                    continue
+
+                if file.type == FileType.FOLDER.value:
+                    _delete_folder_recursive(file, uid)
+                    continue
+
+                _delete_single_file(file)
+
+            return get_json_result(data=True)
+
+        return await thread_pool_exec(_rm_sync)
+
     except Exception as e:
         return server_error_response(e)
 
@@ -285,19 +309,21 @@ def rm():
 @manager.route('/rename', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("file_id", "name")
-def rename():
-    req = request.json
+async def rename():
+    req = await get_request_json()
     try:
         e, file = FileService.get_by_id(req["file_id"])
         if not e:
             return get_data_error_result(message="File not found!")
+        if not check_file_team_permission(file, current_user.id):
+            return get_json_result(data=False, message='No authorization.', code=RetCode.AUTHENTICATION_ERROR)
         if file.type != FileType.FOLDER.value \
             and pathlib.Path(req["name"].lower()).suffix != pathlib.Path(
                 file.name.lower()).suffix:
             return get_json_result(
                 data=False,
                 message="The extension of file can't be changed",
-                code=settings.RetCode.ARGUMENT_ERROR)
+                code=RetCode.ARGUMENT_ERROR)
         for file in FileService.query(name=req["name"], pf_id=file.parent_id):
             if file.name == req["name"]:
                 return get_data_error_result(
@@ -322,55 +348,118 @@ def rename():
 
 @manager.route('/get/<file_id>', methods=['GET'])  # noqa: F821
 @login_required
-def get(file_id):
+async def get(file_id):
     try:
         e, file = FileService.get_by_id(file_id)
         if not e:
             return get_data_error_result(message="Document not found!")
+        if not check_file_team_permission(file, current_user.id):
+            return get_json_result(data=False, message='No authorization.', code=RetCode.AUTHENTICATION_ERROR)
 
-        blob = STORAGE_IMPL.get(file.parent_id, file.location)
+        blob = await thread_pool_exec(settings.STORAGE_IMPL.get, file.parent_id, file.location)
         if not blob:
             b, n = File2DocumentService.get_storage_address(file_id=file_id)
-            blob = STORAGE_IMPL.get(b, n)
+            blob = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
 
-        response = flask.make_response(blob)
-        ext = re.search(r"\.([^.]+)$", file.name)
+        response = await make_response(blob)
+        ext = re.search(r"\.([^.]+)$", file.name.lower())
+        ext = ext.group(1) if ext else None
         if ext:
             if file.type == FileType.VISUAL.value:
-                response.headers.set('Content-Type', 'image/%s' % ext.group(1))
+                content_type = CONTENT_TYPE_MAP.get(ext, f"image/{ext}")
             else:
-                response.headers.set(
-                    'Content-Type',
-                    'application/%s' %
-                    ext.group(1))
+                content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
+            response.headers.set("Content-Type", content_type)
         return response
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/mv', methods=['POST'])  # noqa: F821
+@manager.route("/mv", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("src_file_ids", "dest_file_id")
-def move():
-    req = request.json
+async def move():
+    req = await get_request_json()
     try:
         file_ids = req["src_file_ids"]
-        parent_id = req["dest_file_id"]
+        dest_parent_id = req["dest_file_id"]
+
+        ok, dest_folder = FileService.get_by_id(dest_parent_id)
+        if not ok or not dest_folder:
+            return get_data_error_result(message="Parent folder not found!")
+
         files = FileService.get_by_ids(file_ids)
-        files_dict = {}
-        for file in files:
-            files_dict[file.id] = file
+        if not files:
+            return get_data_error_result(message="Source files not found!")
+
+        files_dict = {f.id: f for f in files}
 
         for file_id in file_ids:
-            file = files_dict[file_id]
+            file = files_dict.get(file_id)
             if not file:
-                return get_data_error_result(message="File or Folder not found!")
+                return get_data_error_result(message="File or folder not found!")
             if not file.tenant_id:
                 return get_data_error_result(message="Tenant not found!")
-        fe, _ = FileService.get_by_id(parent_id)
-        if not fe:
-            return get_data_error_result(message="Parent Folder not found!")
-        FileService.move_file(file_ids, parent_id)
-        return get_json_result(data=True)
+            if not check_file_team_permission(file, current_user.id):
+                return get_json_result(
+                    data=False,
+                    message="No authorization.",
+                    code=RetCode.AUTHENTICATION_ERROR,
+                )
+
+        def _move_entry_recursive(source_file_entry, dest_folder):
+            if source_file_entry.type == FileType.FOLDER.value:
+                existing_folder = FileService.query(name=source_file_entry.name, parent_id=dest_folder.id)
+                if existing_folder:
+                    new_folder = existing_folder[0]
+                else:
+                    new_folder = FileService.insert(
+                        {
+                            "id": get_uuid(),
+                            "parent_id": dest_folder.id,
+                            "tenant_id": source_file_entry.tenant_id,
+                            "created_by": current_user.id,
+                            "name": source_file_entry.name,
+                            "location": "",
+                            "size": 0,
+                            "type": FileType.FOLDER.value,
+                        }
+                    )
+
+                sub_files = FileService.list_all_files_by_parent_id(source_file_entry.id)
+                for sub_file in sub_files:
+                    _move_entry_recursive(sub_file, new_folder)
+
+                FileService.delete_by_id(source_file_entry.id)
+                return
+
+            old_parent_id = source_file_entry.parent_id
+            old_location = source_file_entry.location
+            filename = source_file_entry.name
+
+            new_location = filename
+            while settings.STORAGE_IMPL.obj_exist(dest_folder.id, new_location):
+                new_location += "_"
+
+            try:
+                settings.STORAGE_IMPL.move(old_parent_id, old_location, dest_folder.id, new_location)
+            except Exception as storage_err:
+                raise RuntimeError(f"Move file failed at storage layer: {str(storage_err)}")
+
+            FileService.update_by_id(
+                source_file_entry.id,
+                {
+                    "parent_id": dest_folder.id,
+                    "location": new_location,
+                },
+            )
+
+        def _move_sync():
+            for file in files:
+                _move_entry_recursive(file, dest_folder)
+            return get_json_result(data=True)
+
+        return await thread_pool_exec(_move_sync)
+
     except Exception as e:
         return server_error_response(e)

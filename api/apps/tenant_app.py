@@ -13,17 +13,19 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
-from flask import request
-from flask_login import login_required, current_user
-
-from api import settings
-from api.db import UserTenantRole, StatusEnum
+import logging
+import asyncio
+from api.db import UserTenantRole
 from api.db.db_models import UserTenant
 from api.db.services.user_service import UserTenantService, UserService
 
-from api.utils import get_uuid, delta_seconds
-from api.utils.api_utils import get_json_result, validate_request, server_error_response, get_data_error_result
+from common.constants import RetCode, StatusEnum
+from common.misc_utils import get_uuid
+from common.time_utils import delta_seconds
+from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
+from api.utils.web_utils import send_invite_email
+from common import settings
+from api.apps import login_required, current_user
 
 
 @manager.route("/<tenant_id>/user/list", methods=["GET"])  # noqa: F821
@@ -33,7 +35,7 @@ def user_list(tenant_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR)
+            code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         users = UserTenantService.get_by_tenant_id(tenant_id)
@@ -47,14 +49,14 @@ def user_list(tenant_id):
 @manager.route('/<tenant_id>/user', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("email")
-def create(tenant_id):
+async def create(tenant_id):
     if current_user.id != tenant_id:
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR)
+            code=RetCode.AUTHENTICATION_ERROR)
 
-    req = request.json
+    req = await get_request_json()
     invite_user_email = req["email"]
     invite_users = UserService.query(email=invite_user_email)
     if not invite_users:
@@ -68,7 +70,8 @@ def create(tenant_id):
             return get_data_error_result(message=f"{invite_user_email} is already in the team.")
         if user_tenant_role == UserTenantRole.OWNER:
             return get_data_error_result(message=f"{invite_user_email} is the owner of the team.")
-        return get_data_error_result(message=f"{invite_user_email} is in the team, but the role: {user_tenant_role} is invalid.")
+        return get_data_error_result(
+            message=f"{invite_user_email} is in the team, but the role: {user_tenant_role} is invalid.")
 
     UserTenantService.save(
         id=get_uuid(),
@@ -78,6 +81,24 @@ def create(tenant_id):
         role=UserTenantRole.INVITE,
         status=StatusEnum.VALID.value)
 
+    try:
+
+        user_name = ""
+        _, user = UserService.get_by_id(current_user.id)
+        if user:
+            user_name = user.nickname
+
+        asyncio.create_task(
+            send_invite_email(
+                to_email=invite_user_email,
+                invite_url=settings.MAIL_FRONTEND_URL,
+                tenant_id=tenant_id,
+                inviter=user_name or current_user.email
+            )
+        )
+    except Exception as e:
+        logging.exception(f"Failed to send invite email to {invite_user_email}: {e}")
+        return get_json_result(data=False, message="Failed to send invite email.", code=RetCode.SERVER_ERROR)
     usr = invite_users[0].to_dict()
     usr = {k: v for k, v in usr.items() if k in ["id", "avatar", "email", "nickname"]}
 
@@ -91,7 +112,7 @@ def rm(tenant_id, user_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR)
+            code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         UserTenantService.filter_delete([UserTenant.tenant_id == tenant_id, UserTenant.user_id == user_id])
@@ -116,7 +137,8 @@ def tenant_list():
 @login_required
 def agree(tenant_id):
     try:
-        UserTenantService.filter_update([UserTenant.tenant_id == tenant_id, UserTenant.user_id == current_user.id], {"role": UserTenantRole.NORMAL})
+        UserTenantService.filter_update([UserTenant.tenant_id == tenant_id, UserTenant.user_id == current_user.id],
+                                        {"role": UserTenantRole.NORMAL})
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

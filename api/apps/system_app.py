@@ -17,25 +17,27 @@ import logging
 from datetime import datetime
 import json
 
-from flask_login import login_required, current_user
+from api.apps import login_required, current_user
 
 from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import UserTenantService
-from api import settings
-from api.utils import current_timestamp, datetime_format
 from api.utils.api_utils import (
     get_json_result,
     get_data_error_result,
     server_error_response,
     generate_confirmation_token,
 )
-from api.versions import get_ragflow_version
-from rag.utils.storage_factory import STORAGE_IMPL, STORAGE_IMPL_TYPE
+from common.versions import get_ragflow_version
+from common.time_utils import current_timestamp, datetime_format
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
+from quart import jsonify
+from api.utils.health_utils import run_health_checks, get_oceanbase_status
+from common import settings
+
 
 @manager.route("/version", methods=["GET"])  # noqa: F821
 @login_required
@@ -109,15 +111,15 @@ def status():
 
     st = timer()
     try:
-        STORAGE_IMPL.health()
+        settings.STORAGE_IMPL.health()
         res["storage"] = {
-            "storage": STORAGE_IMPL_TYPE.lower(),
+            "storage": settings.STORAGE_IMPL_TYPE.lower(),
             "status": "green",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
         }
     except Exception as e:
         res["storage"] = {
-            "storage": STORAGE_IMPL_TYPE.lower(),
+            "storage": settings.STORAGE_IMPL_TYPE.lower(),
             "status": "red",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
             "error": str(e),
@@ -159,7 +161,7 @@ def status():
         task_executors = REDIS_CONN.smembers("TASKEXE")
         now = datetime.now().timestamp()
         for task_executor_id in task_executors:
-            heartbeats = REDIS_CONN.zrangebyscore(task_executor_id, now - 60*30, now)
+            heartbeats = REDIS_CONN.zrangebyscore(task_executor_id, now - 60 * 30, now)
             heartbeats = [json.loads(heartbeat) for heartbeat in heartbeats]
             task_executor_heartbeats[task_executor_id] = heartbeats
     except Exception:
@@ -167,6 +169,53 @@ def status():
     res["task_executor_heartbeats"] = task_executor_heartbeats
 
     return get_json_result(data=res)
+
+
+@manager.route("/healthz", methods=["GET"])  # noqa: F821
+def healthz():
+    result, all_ok = run_health_checks()
+    return jsonify(result), (200 if all_ok else 500)
+
+
+@manager.route("/ping", methods=["GET"])  # noqa: F821
+async def ping():
+    return "pong", 200
+
+
+@manager.route("/oceanbase/status", methods=["GET"])  # noqa: F821
+@login_required
+def oceanbase_status():
+    """
+    Get OceanBase health status and performance metrics.
+    ---
+    tags:
+      - System
+    security:
+      - ApiKeyAuth: []
+    responses:
+      200:
+        description: OceanBase status retrieved successfully.
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              description: Status (alive/timeout).
+            message:
+              type: object
+              description: Detailed status information including health and performance metrics.
+    """
+    try:
+        status_info = get_oceanbase_status()
+        return get_json_result(data=status_info)
+    except Exception as e:
+        return get_json_result(
+            data={
+                "status": "error",
+                "message": f"Failed to get OceanBase status: {str(e)}"
+            },
+            code=500
+        )
 
 
 @manager.route("/new_token", methods=["POST"])  # noqa: F821
@@ -200,11 +249,11 @@ def new_token():
         if not tenants:
             return get_data_error_result(message="Tenant not found!")
 
-        tenant_id = [tenant for tenant in tenants if tenant.role == 'owner'][0].tenant_id
+        tenant_id = [tenant for tenant in tenants if tenant.role == "owner"][0].tenant_id
         obj = {
             "tenant_id": tenant_id,
-            "token": generate_confirmation_token(tenant_id),
-            "beta": generate_confirmation_token(generate_confirmation_token(tenant_id)).replace("ragflow-", "")[:32],
+            "token": generate_confirmation_token(),
+            "beta": generate_confirmation_token().replace("ragflow-", "")[:32],
             "create_time": current_timestamp(),
             "create_date": datetime_format(datetime.now()),
             "update_time": None,
@@ -255,12 +304,12 @@ def token_list():
         if not tenants:
             return get_data_error_result(message="Tenant not found!")
 
-        tenant_id = [tenant for tenant in tenants if tenant.role == 'owner'][0].tenant_id
+        tenant_id = [tenant for tenant in tenants if tenant.role == "owner"][0].tenant_id
         objs = APITokenService.query(tenant_id=tenant_id)
         objs = [o.to_dict() for o in objs]
         for o in objs:
             if not o["beta"]:
-                o["beta"] = generate_confirmation_token(generate_confirmation_token(tenants[0].tenant_id)).replace("ragflow-", "")[:32]
+                o["beta"] = generate_confirmation_token().replace("ragflow-", "")[:32]
                 APITokenService.filter_update([APIToken.tenant_id == tenant_id, APIToken.token == o["token"]], o)
         return get_json_result(data=objs)
     except Exception as e:
@@ -293,13 +342,19 @@ def rm(token):
               type: boolean
               description: Deletion status.
     """
-    APITokenService.filter_delete(
-        [APIToken.tenant_id == current_user.id, APIToken.token == token]
-    )
-    return get_json_result(data=True)
+    try:
+        tenants = UserTenantService.query(user_id=current_user.id)
+        if not tenants:
+            return get_data_error_result(message="Tenant not found!")
+
+        tenant_id = tenants[0].tenant_id
+        APITokenService.filter_delete([APIToken.tenant_id == tenant_id, APIToken.token == token])
+        return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)
 
 
-@manager.route('/config', methods=['GET'])  # noqa: F821
+@manager.route("/config", methods=["GET"])  # noqa: F821
 def get_config():
     """
     Get system configuration.
@@ -316,6 +371,4 @@ def get_config():
                         type: integer 0 means disabled, 1 means enabled
                         description: Whether user registration is enabled
     """
-    return get_json_result(data={
-        "registerEnabled": settings.REGISTER_ENABLED
-    })
+    return get_json_result(data={"registerEnabled": settings.REGISTER_ENABLED})

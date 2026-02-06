@@ -1,4 +1,4 @@
-import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
+import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { useCallback } from 'react';
 
 export function useDisplayOwnerName() {

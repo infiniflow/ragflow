@@ -1,5 +1,5 @@
 [general]
-version                  = "0.6.0"
+version                  = "0.7.0"
 time_zone                = "utc-8"
 
 [network]
@@ -48,19 +48,9 @@ buffer_manager_size      = "8GB"
 lru_num                  = 7
 temp_dir                 = "/var/infinity/tmp"
 result_cache             = "off"
-memindex_memory_quota    = "4GB"
+memindex_memory_quota    = "1GB"
 
 [wal]
 wal_dir                       = "/var/infinity/wal"
-full_checkpoint_interval      = "30s"
-delta_checkpoint_interval     = "5s"
-# delta_checkpoint_threshold  = 1000000000
-wal_compact_threshold         = "1GB"
-
-# flush_at_once: write and flush log each commit
-# only_write: write log, OS control when to flush the log, default
-# flush_per_second: logs are written after each commit and flushed to disk per second.
-wal_flush                     = "only_write"
 
 [resource]
-resource_dir                  = "/var/infinity/resource"

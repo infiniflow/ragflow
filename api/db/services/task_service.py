@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import os
 import random
 import xxhash
@@ -22,18 +23,20 @@ from api.db.db_utils import bulk_insert_into_db
 from deepdoc.parser import PdfParser
 from peewee import JOIN
 from api.db.db_models import DB, File2Document, File
-from api.db import StatusEnum, FileType, TaskStatus
+from api.db import FileType
 from api.db.db_models import Task, Document, Knowledgebase, Tenant
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
-from api.utils import current_timestamp, get_uuid
+from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp
+from common.constants import StatusEnum, TaskStatus
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
-from rag.settings import get_svr_queue_name
-from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.redis_conn import REDIS_CONN
-from api import settings
+from common import settings
 from rag.nlp import search
 
+CANVAS_DEBUG_DOC_ID = "dataflow_x"
+GRAPH_RAPTOR_FAKE_DOC_ID = "graph_raptor_x"
 
 def trim_header_by_lines(text: str, max_length) -> str:
     # Trim header text to maximum length while preserving line breaks
@@ -53,15 +56,15 @@ def trim_header_by_lines(text: str, max_length) -> str:
 
 class TaskService(CommonService):
     """Service class for managing document processing tasks.
-    
+
     This class extends CommonService to provide specialized functionality for document
     processing task management, including task creation, progress tracking, and chunk
     management. It handles various document types (PDF, Excel, etc.) and manages their
     processing lifecycle.
-    
+
     The class implements a robust task queue system with retry mechanisms and progress
     tracking, supporting both synchronous and asynchronous task execution.
-    
+
     Attributes:
         model: The Task model class for database operations.
     """
@@ -69,20 +72,24 @@ class TaskService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_task(cls, task_id):
+    def get_task(cls, task_id, doc_ids=[]):
         """Retrieve detailed task information by task ID.
-    
+
         This method fetches comprehensive task details including associated document,
-        knowledge base, and tenant information. It also handles task retry logic and
+        dataset, and tenant information. It also handles task retry logic and
         progress updates.
-    
+
         Args:
             task_id (str): The unique identifier of the task to retrieve.
-    
+
         Returns:
             dict: Task details dictionary containing all task information and related metadata.
                  Returns None if task is not found or has exceeded retry limit.
         """
+        doc_id = cls.model.doc_id
+        if doc_id == CANVAS_DEBUG_DOC_ID and doc_ids:
+            doc_id = doc_ids[0]
+
         fields = [
             cls.model.id,
             cls.model.doc_id,
@@ -108,7 +115,7 @@ class TaskService(CommonService):
         ]
         docs = (
             cls.model.select(*fields)
-                .join(Document, on=(cls.model.doc_id == Document.id))
+                .join(Document, on=(doc_id == Document.id))
                 .join(Knowledgebase, on=(Document.kb_id == Knowledgebase.id))
                 .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))
                 .where(cls.model.id == task_id)
@@ -138,13 +145,13 @@ class TaskService(CommonService):
     @DB.connection_context()
     def get_tasks(cls, doc_id: str):
         """Retrieve all tasks associated with a document.
-    
+
         This method fetches all processing tasks for a given document, ordered by page
         number and creation time. It includes task progress and chunk information.
-    
+
         Args:
             doc_id (str): The unique identifier of the document.
-    
+
         Returns:
             list[dict]: List of task dictionaries containing task details.
                        Returns None if no tasks are found.
@@ -158,7 +165,41 @@ class TaskService(CommonService):
         ]
         tasks = (
             cls.model.select(*fields).order_by(cls.model.from_page.asc(), cls.model.create_time.desc())
-                .where(cls.model.doc_id == doc_id)
+            .where(cls.model.doc_id == doc_id)
+        )
+        tasks = list(tasks.dicts())
+        if not tasks:
+            return None
+        return tasks
+
+    @classmethod
+    @DB.connection_context()
+    def get_tasks_progress_by_doc_ids(cls, doc_ids: list[str]):
+        """Retrieve all tasks associated with specific documents.
+
+        This method fetches all processing tasks for given document ids, ordered by
+        creation time. It includes task progress and chunk information.
+
+        Args:
+            doc_ids (str): The unique identifier of the document.
+
+        Returns:
+            list[dict]: List of task dictionaries containing task details.
+                       Returns None if no tasks are found.
+        """
+        fields = [
+            cls.model.id,
+            cls.model.doc_id,
+            cls.model.from_page,
+            cls.model.progress,
+            cls.model.progress_msg,
+            cls.model.digest,
+            cls.model.chunk_ids,
+            cls.model.create_time
+        ]
+        tasks = (
+            cls.model.select(*fields).order_by(cls.model.create_time.desc())
+            .where(cls.model.doc_id.in_(doc_ids))
         )
         tasks = list(tasks.dicts())
         if not tasks:
@@ -169,10 +210,10 @@ class TaskService(CommonService):
     @DB.connection_context()
     def update_chunk_ids(cls, id: str, chunk_ids: str):
         """Update the chunk IDs associated with a task.
-    
+
         This method updates the chunk_ids field of a task, which stores the IDs of
         processed document chunks in a space-separated string format.
-    
+
         Args:
             id (str): The unique identifier of the task.
             chunk_ids (str): Space-separated string of chunk identifiers.
@@ -183,11 +224,11 @@ class TaskService(CommonService):
     @DB.connection_context()
     def get_ongoing_doc_name(cls):
         """Get names of documents that are currently being processed.
-    
+
         This method retrieves information about documents that are in the processing state,
         including their locations and associated IDs. It uses database locking to ensure
         thread safety when accessing the task information.
-    
+
         Returns:
             list[tuple]: A list of tuples, each containing (parent_id/kb_id, location)
                         for documents currently being processed. Returns empty list if
@@ -198,18 +239,18 @@ class TaskService(CommonService):
                 cls.model.select(
                     *[Document.id, Document.kb_id, Document.location, File.parent_id]
                 )
-                    .join(Document, on=(cls.model.doc_id == Document.id))
-                    .join(
+                .join(Document, on=(cls.model.doc_id == Document.id))
+                .join(
                     File2Document,
                     on=(File2Document.document_id == Document.id),
                     join_type=JOIN.LEFT_OUTER,
                 )
-                    .join(
+                .join(
                     File,
                     on=(File2Document.file_id == File.id),
                     join_type=JOIN.LEFT_OUTER,
                 )
-                    .where(
+                .where(
                     Document.status == StatusEnum.VALID.value,
                     Document.run == TaskStatus.RUNNING.value,
                     ~(Document.type == FileType.VIRTUAL.value),
@@ -237,14 +278,14 @@ class TaskService(CommonService):
     @DB.connection_context()
     def do_cancel(cls, id):
         """Check if a task should be cancelled based on its document status.
-    
+
         This method determines whether a task should be cancelled by checking the
         associated document's run status and progress. A task should be cancelled
         if its document is marked for cancellation or has negative progress.
-    
+
         Args:
             id (str): The unique identifier of the task to check.
-    
+
         Returns:
             bool: True if the task should be cancelled, False otherwise.
         """
@@ -256,72 +297,109 @@ class TaskService(CommonService):
     @DB.connection_context()
     def update_progress(cls, id, info):
         """Update the progress information for a task.
-    
+
         This method updates both the progress message and completion percentage of a task.
         It handles platform-specific behavior (macOS vs others) and uses database locking
         when necessary to ensure thread safety.
-    
+
+        Update Rules:
+            - progress_msg: Always appends the new message to the existing one, and trims the result to max 3000 lines.
+            - progress: Only updates if the current progress is not -1 AND
+                        (the new progress is -1 OR greater than the existing progress),
+                        to avoid overwriting valid progress with invalid or regressive values.
+
         Args:
             id (str): The unique identifier of the task to update.
             info (dict): Dictionary containing progress information with keys:
                         - progress_msg (str, optional): Progress message to append
                         - progress (float, optional): Progress percentage (0.0 to 1.0)
         """
-        if os.environ.get("MACOS"):
-            if info["progress_msg"]:
-                task = cls.model.get_by_id(id)
-                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 3000)
-                cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
-            if "progress" in info:
-                cls.model.update(progress=info["progress"]).where(
-                    cls.model.id == id
-                ).execute()
+        task = cls.model.get_by_id(id)
+        if not task:
+            logging.warning("Update_progress error: task not found")
             return
 
-        with DB.lock("update_progress", -1):
+        if os.environ.get("MACOS"):
             if info["progress_msg"]:
-                task = cls.model.get_by_id(id)
                 progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 3000)
                 cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
             if "progress" in info:
-                cls.model.update(progress=info["progress"]).where(
-                    cls.model.id == id
+                prog = info["progress"]
+                cls.model.update(progress=prog).where(
+                    (cls.model.id == id) &
+                    (
+                            (cls.model.progress != -1) &
+                            ((prog == -1) | (prog > cls.model.progress))
+                    )
                 ).execute()
+        else:
+            with DB.lock("update_progress", -1):
+                if info["progress_msg"]:
+                    progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 3000)
+                    cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
+                if "progress" in info:
+                    prog = info["progress"]
+                    cls.model.update(progress=prog).where(
+                        (cls.model.id == id) &
+                        (
+                            (cls.model.progress != -1) &
+                            ((prog == -1) | (prog > cls.model.progress))
+                        )
+                    ).execute()
+
+        process_duration = (datetime.now() - task.begin_at).total_seconds()
+        cls.model.update(process_duration=process_duration).where(cls.model.id == id).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def delete_by_doc_ids(cls, doc_ids):
+        """Delete task associated with a document."""
+        return cls.model.delete().where(cls.model.doc_id.in_(doc_ids)).execute()
 
 
 def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     """Create and queue document processing tasks.
-    
+
     This function creates processing tasks for a document based on its type and configuration.
     It handles different document types (PDF, Excel, etc.) differently and manages task
     chunking and configuration. It also implements task reuse optimization by checking
     for previously completed tasks.
-    
+
     Args:
         doc (dict): Document dictionary containing metadata and configuration.
         bucket (str): Storage bucket name where the document is stored.
         name (str): File name of the document.
         priority (int, optional): Priority level for task queueing (default is 0).
-    
+
     Note:
         - For PDF documents, tasks are created per page range based on configuration
         - For Excel documents, tasks are created per row range
         - Task digests are calculated for optimization and reuse
         - Previous task chunks may be reused if available
     """
+
     def new_task():
-        return {"id": get_uuid(), "doc_id": doc["id"], "progress": 0.0, "from_page": 0, "to_page": 100000000}
+        return {
+            "id": get_uuid(),
+            "doc_id": doc["id"],
+            "progress": 0.0,
+            "from_page": 0,
+            "to_page": 100000000,
+            "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
 
     parse_task_array = []
 
     if doc["type"] == FileType.PDF.value:
-        file_bin = STORAGE_IMPL.get(bucket, name)
+        file_bin = settings.STORAGE_IMPL.get(bucket, name)
         do_layout = doc["parser_config"].get("layout_recognize", "DeepDOC")
         pages = PdfParser.total_page_number(doc["name"], file_bin)
-        page_size = doc["parser_config"].get("task_page_size", 12)
+        if pages is None:
+            pages = 0
+        page_size = doc["parser_config"].get("task_page_size") or 12
         if doc["parser_id"] == "paper":
-            page_size = doc["parser_config"].get("task_page_size", 22)
-        if doc["parser_id"] in ["one", "knowledge_graph"] or do_layout != "DeepDOC":
+            page_size = doc["parser_config"].get("task_page_size") or 22
+        if doc["parser_id"] in ["one", "knowledge_graph"] or do_layout != "DeepDOC" or doc["parser_config"].get("toc_extraction", False):
             page_size = 10 ** 9
         page_ranges = doc["parser_config"].get("pages") or [(1, 10 ** 5)]
         for s, e in page_ranges:
@@ -335,7 +413,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
                 parse_task_array.append(task)
 
     elif doc["parser_id"] == "table":
-        file_bin = STORAGE_IMPL.get(bucket, name)
+        file_bin = settings.STORAGE_IMPL.get(bucket, name)
         rn = RAGFlowExcelParser.row_number(doc["name"], file_bin)
         for i in range(0, rn, 3000):
             task = new_task()
@@ -367,12 +445,12 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         for task in parse_task_array:
             ck_num += reuse_prev_task_chunks(task, prev_tasks, chunking_config)
         TaskService.filter_delete([Task.doc_id == doc["id"]])
-        chunk_ids = []
-        for task in prev_tasks:
-            if task["chunk_ids"]:
-                chunk_ids.extend(task["chunk_ids"].split())
-        if chunk_ids:
-            settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(chunking_config["tenant_id"]),
+        pre_chunk_ids = []
+        for pre_task in prev_tasks:
+            if pre_task["chunk_ids"]:
+                pre_chunk_ids.extend(pre_task["chunk_ids"].split())
+        if pre_chunk_ids:
+            settings.docStoreConn.delete({"id": pre_chunk_ids}, search.index_name(chunking_config["tenant_id"]),
                                          chunking_config["kb_id"])
     DocumentService.update_by_id(doc["id"], {"chunk_num": ck_num})
 
@@ -382,25 +460,25 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     unfinished_task_array = [task for task in parse_task_array if task["progress"] < 1.0]
     for unfinished_task in unfinished_task_array:
         assert REDIS_CONN.queue_product(
-            get_svr_queue_name(priority), message=unfinished_task
+            settings.get_svr_queue_name(priority), message=unfinished_task
         ), "Can't access Redis. Please check the Redis' status."
 
 
 def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: dict):
     """Attempt to reuse chunks from previous tasks for optimization.
-    
+
     This function checks if chunks from previously completed tasks can be reused for
     the current task, which can significantly improve processing efficiency. It matches
     tasks based on page ranges and configuration digests.
-    
+
     Args:
         task (dict): Current task dictionary to potentially reuse chunks for.
         prev_tasks (list[dict]): List of previous task dictionaries to check for reuse.
         chunking_config (dict): Configuration dictionary for chunk processing.
-    
+
     Returns:
         int: Number of chunks successfully reused. Returns 0 if no chunks could be reused.
-    
+
     Note:
         Chunks can only be reused if:
         - A previous task exists with matching page range and configuration digest
@@ -431,3 +509,50 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
     prev_task["chunk_ids"] = ""
 
     return len(task["chunk_ids"].split())
+
+
+def cancel_all_task_of(doc_id):
+    for t in TaskService.query(doc_id=doc_id):
+        try:
+            REDIS_CONN.set(f"{t.id}-cancel", "x")
+        except Exception as e:
+            logging.exception(e)
+
+
+def has_canceled(task_id):
+    try:
+        if REDIS_CONN.get(f"{task_id}-cancel"):
+            logging.info(f"Task: {task_id} has been canceled")
+            return True
+    except Exception as e:
+        logging.exception(e)
+    return False
+
+
+def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str=CANVAS_DEBUG_DOC_ID, file:dict=None, priority: int=0, rerun:bool=False) -> tuple[bool, str]:
+
+    task = dict(
+        id=task_id,
+        doc_id=doc_id,
+        from_page=0,
+        to_page=100000000,
+        task_type="dataflow" if not rerun else "dataflow_rerun",
+        priority=priority,
+        begin_at= datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    )
+    if doc_id not in [CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID]:
+        TaskService.model.delete().where(TaskService.model.doc_id == doc_id).execute()
+        DocumentService.begin2parse(doc_id)
+    bulk_insert_into_db(model=Task, data_source=[task], replace_on_conflict=True)
+
+    task["kb_id"] = DocumentService.get_knowledgebase_id(doc_id)
+    task["tenant_id"] = tenant_id
+    task["dataflow_id"] = flow_id
+    task["file"] = file
+
+    if not REDIS_CONN.queue_product(
+            settings.get_svr_queue_name(priority), message=task
+    ):
+        return False, "Can't access Redis. Please check the Redis' status."
+
+    return True, ""

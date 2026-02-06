@@ -11,6 +11,8 @@ export interface DSL {
   graph?: IGraph;
   messages: Message[];
   reference: IReference[];
+  globals: Record<string, any>;
+  retrieval: IReference[];
 }
 
 export interface IOperator {
@@ -30,7 +32,7 @@ export declare interface IFlow {
   canvas_type: null;
   create_date: string;
   create_time: number;
-  description: null;
+  description: string;
   dsl: DSL;
   id: string;
   title: string;
@@ -44,12 +46,21 @@ export declare interface IFlow {
 export interface IFlowTemplate {
   avatar: string;
   canvas_type: string;
+  canvas_category?: string;
   create_date: string;
   create_time: number;
-  description: string;
+  description: {
+    en: string;
+    zh: string;
+    de: string;
+  };
   dsl: DSL;
   id: string;
-  title: string;
+  title: {
+    en: string;
+    zh: string;
+    de: string;
+  };
   update_date: string;
   update_time: number;
 }
@@ -90,7 +101,7 @@ export interface IRelevantForm extends IGenerateForm {
 export interface ISwitchCondition {
   items: ISwitchItem[];
   logical_operator: string;
-  to: string;
+  to: string[] | string;
 }
 
 export interface ISwitchItem {
@@ -152,6 +163,7 @@ export type IIterationNode = BaseNode;
 export type IIterationStartNode = BaseNode;
 export type IKeywordNode = BaseNode;
 export type ICodeNode = BaseNode<ICodeForm>;
+export type IAgentNode<T = any> = BaseNode<T>;
 
 export type RAGFlowNodeType =
   | IBeginNode

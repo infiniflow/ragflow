@@ -15,12 +15,12 @@
 #
 from datetime import datetime
 
-from api.db import FileSource
+from common.constants import FileSource
 from api.db.db_models import DB
 from api.db.db_models import File, File2Document
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
-from api.utils import current_timestamp, datetime_format
+from common.time_utils import current_timestamp, datetime_format
 
 
 class File2DocumentService(CommonService):
@@ -40,6 +40,12 @@ class File2DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_by_document_ids(cls, document_ids):
+        objs = cls.model.select().where(cls.model.document_id.in_(document_ids))
+        return list(objs.dicts())
+
+    @classmethod
+    @DB.connection_context()
     def insert(cls, obj):
         if not cls.save(**obj):
             raise RuntimeError("Database error (File)!")
@@ -49,6 +55,15 @@ class File2DocumentService(CommonService):
     @DB.connection_context()
     def delete_by_file_id(cls, file_id):
         return cls.model.delete().where(cls.model.file_id == file_id).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def delete_by_document_ids_or_file_ids(cls, document_ids, file_ids):
+        if not document_ids:
+            return cls.model.delete().where(cls.model.file_id.in_(file_ids)).execute()
+        elif not file_ids:
+            return cls.model.delete().where(cls.model.document_id.in_(document_ids)).execute()
+        return cls.model.delete().where(cls.model.document_id.in_(document_ids) | cls.model.file_id.in_(file_ids)).execute()
 
     @classmethod
     @DB.connection_context()

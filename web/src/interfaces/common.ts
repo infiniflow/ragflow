@@ -2,6 +2,7 @@ export interface Pagination {
   current: number;
   pageSize: number;
   total: number;
+  onChange?: (page: number, pageSize: number) => void;
 }
 
 export interface BaseState {
@@ -16,4 +17,5 @@ export interface IModalProps<T> {
   visible?: boolean;
   loading?: boolean;
   onOk?(payload?: T): Promise<any> | void;
+  initialValues?: T;
 }

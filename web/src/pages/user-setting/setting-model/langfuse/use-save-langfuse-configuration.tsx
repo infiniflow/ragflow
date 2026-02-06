@@ -1,5 +1,5 @@
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useSetLangfuseConfig } from '@/hooks/user-setting-hooks';
+import { useSetLangfuseConfig } from '@/hooks/use-user-setting-request';
 import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
 import { useCallback } from 'react';
 

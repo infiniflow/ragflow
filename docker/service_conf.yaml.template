@@ -1,18 +1,24 @@
 ragflow:
   host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9380
+admin:
+  host: ${RAGFLOW_HOST:-0.0.0.0}
+  http_port: 9381
 mysql:
   name: '${MYSQL_DBNAME:-rag_flow}'
   user: '${MYSQL_USER:-root}'
   password: '${MYSQL_PASSWORD:-infini_rag_flow}'
   host: '${MYSQL_HOST:-mysql}'
-  port: 3306
+  port: ${MYSQL_PORT:-3306}
   max_connections: 900
   stale_timeout: 300
+  max_allowed_packet: ${MYSQL_MAX_PACKET:-1073741824}
 minio:
   user: '${MINIO_USER:-rag_flow}'
   password: '${MINIO_PASSWORD:-infini_rag_flow}'
   host: '${MINIO_HOST:-minio}:9000'
+  bucket: '${MINIO_BUCKET:-}'
+  prefix_path: '${MINIO_PREFIX_PATH:-}'
 es:
   hosts: 'http://${ES_HOST:-es01}:9200'
   username: '${ES_USER:-elastic}'
@@ -20,15 +26,37 @@ es:
 os:
   hosts: 'http://${OS_HOST:-opensearch01}:9201'
   username: '${OS_USER:-admin}'
-  password: '${OPENSEARCHH_PASSWORD:-infini_rag_flow_OS_01}'
+  password: '${OPENSEARCH_PASSWORD:-infini_rag_flow_OS_01}'
 infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
+  postgres_port: 5432
   db_name: 'default_db'
+oceanbase:
+  scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
+  config:
+    db_name: '${OCEANBASE_DOC_DBNAME:-test}'
+    user: '${OCEANBASE_USER:-root@ragflow}'
+    password: '${OCEANBASE_PASSWORD:-infini_rag_flow}'
+    host: '${OCEANBASE_HOST:-oceanbase}'
+    port: ${OCEANBASE_PORT:-2881}
+seekdb:
+  scheme: 'oceanbase' # SeekDB is the lite version of OceanBase
+  config:
+    db_name: '${SEEKDB_DOC_DBNAME:-ragflow_doc}'
+    user: '${SEEKDB_USER:-root}'
+    password: '${SEEKDB_PASSWORD:-infini_rag_flow}'
+    host: '${SEEKDB_HOST:-seekdb}'
+    port: ${SEEKDB_PORT:-2881}
 redis:
   db: 1
+  username: '${REDIS_USERNAME:-}'
   password: '${REDIS_PASSWORD:-infini_rag_flow}'
   host: '${REDIS_HOST:-redis}:6379'
-
+user_default_llm:
+  default_models:
+    embedding_model:
+      api_key: 'xxx'
+      base_url: 'http://${TEI_HOST}:80'
 # postgres:
 #   name: '${POSTGRES_DBNAME:-rag_flow}'
 #   user: '${POSTGRES_USER:-rag_flow}'
@@ -53,6 +81,8 @@ redis:
 #   region: '${REGION}'
 #   bucket: '${BUCKET}'
 #   prefix_path: '${OSS_PREFIX_PATH}'
+#   signature_version: 's3'
+#   addressing_style: 'virtual'
 # azure:
 #   auth_type: 'sas'
 #   container_url: 'container_url'
@@ -64,15 +94,26 @@ redis:
 #   secret: 'secret'
 #   tenant_id: 'tenant_id'
 #   container_name: 'container_name'
+# The OSS object storage uses the MySQL configuration above by default. If you need to switch to another object storage service, please uncomment and configure the following parameters.
+# opendal:
+#   scheme: 'mysql'  # Storage type, such as s3, oss, azure, etc.
+#   config:
+#     oss_table: 'opendal_storage'
 # user_default_llm:
-#   factory: 'Tongyi-Qianwen'
-#   api_key: 'sk-xxxxxxxxxxxxx'
-#   base_url: ''
+#   factory: 'BAAI'
+#   api_key: 'backup'
+#   base_url: 'backup_base_url'
 #   default_models:
-#     chat_model: 'qwen-plus'
-#     embedding_model: 'BAAI/bge-large-zh-v1.5@BAAI'
-#     rerank_model: ''
-#     asr_model: ''
+#     chat_model:
+#       name: 'qwen2.5-7b-instruct'
+#       factory: 'xxxx'
+#       api_key: 'xxxx'
+#       base_url: 'https://api.xx.com'
+#     embedding_model:
+#       name: 'bge-m3'
+#     rerank_model: 'bge-reranker-v2'
+#     asr_model:
+#       model: 'whisper-large-v3' # alias of name
 #     image2text_model: ''
 # oauth:
 #   oauth2:
@@ -108,3 +149,18 @@ redis:
 #   switch: false
 #   component: false
 #   dataset: false
+# smtp:
+#   mail_server: ""
+#   mail_port: 465
+#   mail_use_ssl: true
+#   mail_use_tls: false
+#   mail_username: ""
+#   mail_password: ""
+#   mail_default_sender:
+#     - "RAGFlow" # display name
+#     - "" # sender email address
+#   mail_frontend_url: "https://your-frontend.example.com"
+# tcadp_config:
+#   secret_id: '${TENCENT_SECRET_ID}'
+#   secret_key: '${TENCENT_SECRET_KEY}'
+#   region: '${TENCENT_REGION}'

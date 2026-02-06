@@ -1,6 +1,9 @@
 ragflow:
   host: 0.0.0.0
   http_port: 9380
+admin:
+  host: 0.0.0.0
+  http_port: 9381
 mysql:
   name: 'rag_flow'
   user: 'root'
@@ -9,10 +12,13 @@ mysql:
   port: 5455
   max_connections: 900
   stale_timeout: 300
+  max_allowed_packet: 1073741824
 minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
   host: 'localhost:9000'
+  bucket: ''
+  prefix_path: ''
 es:
   hosts: 'http://localhost:1200'
   username: 'elastic'
@@ -23,12 +29,28 @@ os:
   password: 'infini_rag_flow_OS_01'
 infinity:
   uri: 'localhost:23817'
+  postgres_port: 5432
   db_name: 'default_db'
+oceanbase:
+  scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
+  config:
+    db_name: 'test'
+    user: 'root@ragflow'
+    password: 'infini_rag_flow'
+    host: 'localhost'
+    port: 2881
 redis:
   db: 1
+  username: ''
   password: 'infini_rag_flow'
   host: 'localhost:6379'
-
+task_executor:
+  message_queue_type: 'redis'
+user_default_llm:
+  default_models:
+    embedding_model:
+      api_key: 'xxx'
+      base_url: 'http://localhost:6380'
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'
@@ -41,12 +63,16 @@ redis:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
 #   region: 'region'
+#gcs:
+#  bucket: 'bridgtl-edm-d-bucket-ragflow'
 # oss:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
-#   endpoint_url: 'http://oss-cn-hangzhou.aliyuncs.com'
+#   endpoint_url: 'https://s3.oss-cn-hangzhou.aliyuncs.com'
 #   region: 'cn-hangzhou'
 #   bucket: 'bucket_name'
+#   signature_version: 's3'
+#   addressing_style: 'virtual'
 # azure:
 #   auth_type: 'sas'
 #   container_url: 'container_url'
@@ -58,10 +84,28 @@ redis:
 #   secret: 'secret'
 #   tenant_id: 'tenant_id'
 #   container_name: 'container_name'
+# The OSS object storage uses the MySQL configuration above by default. If you need to switch to another object storage service, please uncomment and configure the following parameters.
+# opendal:
+#   scheme: 'mysql'  # Storage type, such as s3, oss, azure, etc.
+#   config:
+#     oss_table: 'opendal_storage'
 # user_default_llm:
-#   factory: 'Tongyi-Qianwen'
-#   api_key: 'sk-xxxxxxxxxxxxx'
-#   base_url: ''
+#   factory: 'BAAI'
+#   api_key: 'backup'
+#   base_url: 'backup_base_url'
+#   default_models:
+#     chat_model:
+#       name: 'qwen2.5-7b-instruct'
+#       factory: 'xxxx'
+#       api_key: 'xxxx'
+#       base_url: 'https://api.xx.com'
+#     embedding_model:
+#       api_key: 'xxx'
+#       base_url: 'http://localhost:6380'
+#     rerank_model: 'bge-reranker-v2'
+#     asr_model:
+#       model: 'whisper-large-v3' # alias of name
+#     image2text_model: ''
 # oauth:
 #   oauth2:
 #     display_name: "OAuth2"
@@ -96,3 +140,18 @@ redis:
 #   switch: false
 #   component: false
 #   dataset: false
+# smtp:
+#   mail_server: ""
+#   mail_port: 465
+#   mail_use_ssl: true
+#   mail_use_tls: false
+#   mail_username: ""
+#   mail_password: ""
+#   mail_default_sender:
+#     - "RAGFlow" # display name
+#     - "" # sender email address
+#   mail_frontend_url: "https://your-frontend.example.com"
+# tcadp_config:
+#  secret_id: 'tencent_secret_id'
+#  secret_key: 'tencent_secret_key'
+#  region: 'tencent_region'

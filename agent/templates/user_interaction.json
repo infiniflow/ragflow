@@ -1,0 +1,521 @@
+{
+    "id": 27,
+    "title": {
+        "en": "Interactive Agent",
+        "de": "Interaktiver Agent",
+        "zh": "可交互的 Agent"
+    },
+    "description": {
+        "en": "During the Agent’s execution, users can actively intervene and interact with the Agent to adjust or guide its output, ensuring the final result aligns with their intentions.",
+        "de": "Wahrend der Ausführung des Agenten können Benutzer aktiv eingreifen und mit dem Agenten interagieren, um dessen Ausgabe zu steuern, sodass das Endergebnis ihren Vorstellungen entspricht.",
+        "zh": "在 Agent 的运行过程中，用户可以随时介入，与 Agent 进行交互，以调整或引导生成结果，使最终输出更符合预期。"
+    },
+    "canvas_type": "Agent",
+    "dsl": {
+        "components": {
+            "Agent:LargeFliesMelt": {
+            "downstream": [
+                "UserFillUp:GoldBroomsRelate"
+            ],
+            "obj": {
+                "component_name": "Agent",
+                "params": {
+                "cite": true,
+                "delay_after_error": 1,
+                "description": "",
+                "exception_default_value": "",
+                "exception_goto": [],
+                "exception_method": "",
+                "frequencyPenaltyEnabled": false,
+                "frequency_penalty": 0.7,
+                "llm_id": "qwen-turbo@Tongyi-Qianwen",
+                "maxTokensEnabled": false,
+                "max_retries": 3,
+                "max_rounds": 1,
+                "max_tokens": 256,
+                "mcp": [],
+                "message_history_window_size": 12,
+                "outputs": {
+                    "content": {
+                    "type": "string",
+                    "value": ""
+                    },
+                    "structured": {}
+                },
+                "presencePenaltyEnabled": false,
+                "presence_penalty": 0.4,
+                "prompts": [
+                    {
+                    "content": "User query:{sys.query}",
+                    "role": "user"
+                    }
+                ],
+                "sys_prompt": "<role>\nYou are the Planning Agent in a multi-agent RAG workflow.\nYour sole job is to design a crisp, executable Search Plan for the next agent. Do not search or answer the user’s question.\n</role>\n<objectives>\nUnderstand the user’s task and decompose it into evidence-seeking steps.\nProduce high-quality queries and retrieval settings tailored to the task type (fact lookup, multi-hop reasoning, comparison, statistics, how-to, etc.).\nIdentify missing information that would materially change the plan (≤3 concise questions).\nOptimize for source trustworthiness, diversity, and recency; define stopping criteria to avoid over-searching.\nAnswer in 150 words.\n<objectives>",
+                "temperature": 0.1,
+                "temperatureEnabled": false,
+                "tools": [],
+                "topPEnabled": false,
+                "top_p": 0.3,
+                "user_prompt": "",
+                "visual_files_var": ""
+                }
+            },
+            "upstream": [
+                "begin"
+            ]
+            },
+            "Agent:TangyWordsType": {
+            "downstream": [
+                "Message:FreshWallsStudy"
+            ],
+            "obj": {
+                "component_name": "Agent",
+                "params": {
+                "cite": true,
+                "delay_after_error": 1,
+                "description": "",
+                "exception_default_value": "",
+                "exception_goto": [],
+                "exception_method": "",
+                "frequencyPenaltyEnabled": false,
+                "frequency_penalty": 0.7,
+                "llm_id": "qwen-turbo@Tongyi-Qianwen",
+                "maxTokensEnabled": false,
+                "max_retries": 3,
+                "max_rounds": 1,
+                "max_tokens": 256,
+                "mcp": [],
+                "message_history_window_size": 12,
+                "outputs": {
+                    "content": {
+                    "type": "string",
+                    "value": ""
+                    },
+                    "structured": {}
+                },
+                "presencePenaltyEnabled": false,
+                "presence_penalty": 0.4,
+                "prompts": [
+                    {
+                    "content": "Search Plan: {Agent:LargeFliesMelt@content}\n\n\n\nAwait Response feedback:{UserFillUp:GoldBroomsRelate@instructions}\n",
+                    "role": "user"
+                    }
+                ],
+                "sys_prompt": "<role>\nYou are the Search Agent.\nYour job is to execute the approved Search Plan, integrate the Await Response feedback, retrieve evidence, and produce a well-grounded answer.\n</role>\n<objectives>\nTranslate the plan + feedback into concrete searches.\nCollect diverse, trustworthy, and recent evidence meeting the plan’s evidence bar.\nSynthesize a concise answer; include citations next to claims they support.\nIf evidence is insufficient or conflicting, clearly state limitations and propose next steps.\n</objectives>\n <tools>\nRetrieval: You must use Retrieval to do the search.\n </tools>\n",
+                "temperature": 0.1,
+                "temperatureEnabled": false,
+                "tools": [
+                    {
+                    "component_name": "Retrieval",
+                    "name": "Retrieval",
+                    "params": {
+                        "cross_languages": [],
+                        "description": "",
+                        "empty_response": "",
+                        "kb_ids": [],
+                        "keywords_similarity_weight": 0.7,
+                        "outputs": {
+                        "formalized_content": {
+                            "type": "string",
+                            "value": ""
+                        },
+                        "json": {
+                            "type": "Array<Object>",
+                            "value": []
+                        }
+                        },
+                        "rerank_id": "",
+                        "similarity_threshold": 0.2,
+                        "toc_enhance": false,
+                        "top_k": 1024,
+                        "top_n": 8,
+                        "use_kg": false
+                    }
+                    }
+                ],
+                "topPEnabled": false,
+                "top_p": 0.3,
+                "user_prompt": "",
+                "visual_files_var": ""
+                }
+            },
+            "upstream": [
+                "UserFillUp:GoldBroomsRelate"
+            ]
+            },
+            "Message:FreshWallsStudy": {
+            "downstream": [],
+            "obj": {
+                "component_name": "Message",
+                "params": {
+                "content": [
+                    "{Agent:TangyWordsType@content}"
+                ]
+                }
+            },
+            "upstream": [
+                "Agent:TangyWordsType"
+            ]
+            },
+            "UserFillUp:GoldBroomsRelate": {
+            "downstream": [
+                "Agent:TangyWordsType"
+            ],
+            "obj": {
+                "component_name": "UserFillUp",
+                "params": {
+                "enable_tips": true,
+                "inputs": {
+                    "instructions": {
+                    "name": "instructions",
+                    "optional": false,
+                    "options": [],
+                    "type": "paragraph"
+                    }
+                },
+                "outputs": {
+                    "instructions": {
+                    "name": "instructions",
+                    "optional": false,
+                    "options": [],
+                    "type": "paragraph"
+                    }
+                },
+                "tips": "Here is my search plan:\n{Agent:LargeFliesMelt@content}\nAre you okay with it?"
+                }
+            },
+            "upstream": [
+                "Agent:LargeFliesMelt"
+            ]
+            },
+            "begin": {
+            "downstream": [
+                "Agent:LargeFliesMelt"
+            ],
+            "obj": {
+                "component_name": "Begin",
+                "params": {}
+            },
+            "upstream": []
+            }
+        },
+        "globals": {
+            "sys.conversation_turns": 0,
+            "sys.files": [],
+            "sys.query": "",
+            "sys.user_id": ""
+        },
+        "graph": {
+            "edges": [
+            {
+                "data": {
+                "isHovered": false
+                },
+                "id": "xy-edge__beginstart-Agent:LargeFliesMeltend",
+                "source": "begin",
+                "sourceHandle": "start",
+                "target": "Agent:LargeFliesMelt",
+                "targetHandle": "end"
+            },
+            {
+                "data": {
+                "isHovered": false
+                },
+                "id": "xy-edge__Agent:LargeFliesMeltstart-UserFillUp:GoldBroomsRelateend",
+                "source": "Agent:LargeFliesMelt",
+                "sourceHandle": "start",
+                "target": "UserFillUp:GoldBroomsRelate",
+                "targetHandle": "end"
+            },
+            {
+                "data": {
+                "isHovered": false
+                },
+                "id": "xy-edge__UserFillUp:GoldBroomsRelatestart-Agent:TangyWordsTypeend",
+                "source": "UserFillUp:GoldBroomsRelate",
+                "sourceHandle": "start",
+                "target": "Agent:TangyWordsType",
+                "targetHandle": "end"
+            },
+            {
+                "id": "xy-edge__Agent:TangyWordsTypetool-Tool:NastyBatsGoend",
+                "source": "Agent:TangyWordsType",
+                "sourceHandle": "tool",
+                "target": "Tool:NastyBatsGo",
+                "targetHandle": "end"
+            },
+            {
+                "id": "xy-edge__Agent:TangyWordsTypestart-Message:FreshWallsStudyend",
+                "source": "Agent:TangyWordsType",
+                "sourceHandle": "start",
+                "target": "Message:FreshWallsStudy",
+                "targetHandle": "end"
+            }
+            ],
+            "nodes": [
+            {
+                "data": {
+                "label": "Begin",
+                "name": "begin"
+                },
+                "dragging": false,
+                "id": "begin",
+                "measured": {
+                "height": 50,
+                "width": 200
+                },
+                "position": {
+                "x": 154.9008789064451,
+                "y": 119.51001744285344
+                },
+                "selected": false,
+                "sourcePosition": "left",
+                "targetPosition": "right",
+                "type": "beginNode"
+            },
+            {
+                "data": {
+                "form": {
+                    "cite": true,
+                    "delay_after_error": 1,
+                    "description": "",
+                    "exception_default_value": "",
+                    "exception_goto": [],
+                    "exception_method": "",
+                    "frequencyPenaltyEnabled": false,
+                    "frequency_penalty": 0.7,
+                    "llm_id": "qwen-turbo@Tongyi-Qianwen",
+                    "maxTokensEnabled": false,
+                    "max_retries": 3,
+                    "max_rounds": 1,
+                    "max_tokens": 256,
+                    "mcp": [],
+                    "message_history_window_size": 12,
+                    "outputs": {
+                    "content": {
+                        "type": "string",
+                        "value": ""
+                    },
+                    "structured": {}
+                    },
+                    "presencePenaltyEnabled": false,
+                    "presence_penalty": 0.4,
+                    "prompts": [
+                    {
+                        "content": "User query:{sys.query}",
+                        "role": "user"
+                    }
+                    ],
+                    "sys_prompt": "<role>\nYou are the Planning Agent in a multi-agent RAG workflow.\nYour sole job is to design a crisp, executable Search Plan for the next agent. Do not search or answer the user’s question.\n</role>\n<objectives>\nUnderstand the user’s task and decompose it into evidence-seeking steps.\nProduce high-quality queries and retrieval settings tailored to the task type (fact lookup, multi-hop reasoning, comparison, statistics, how-to, etc.).\nIdentify missing information that would materially change the plan (≤3 concise questions).\nOptimize for source trustworthiness, diversity, and recency; define stopping criteria to avoid over-searching.\nAnswer in 150 words.\n<objectives>",
+                    "temperature": 0.1,
+                    "temperatureEnabled": false,
+                    "tools": [],
+                    "topPEnabled": false,
+                    "top_p": 0.3,
+                    "user_prompt": "",
+                    "visual_files_var": ""
+                },
+                "label": "Agent",
+                "name": "Planning Agent"
+                },
+                "dragging": false,
+                "id": "Agent:LargeFliesMelt",
+                "measured": {
+                "height": 90,
+                "width": 200
+                },
+                "position": {
+                "x": 443.96309330796714,
+                "y": 104.61370811205677
+                },
+                "selected": false,
+                "sourcePosition": "right",
+                "targetPosition": "left",
+                "type": "agentNode"
+            },
+            {
+                "data": {
+                "form": {
+                    "enable_tips": true,
+                    "inputs": {
+                    "instructions": {
+                        "name": "instructions",
+                        "optional": false,
+                        "options": [],
+                        "type": "paragraph"
+                    }
+                    },
+                    "outputs": {
+                    "instructions": {
+                        "name": "instructions",
+                        "optional": false,
+                        "options": [],
+                        "type": "paragraph"
+                    }
+                    },
+                    "tips": "Here is my search plan:\n{Agent:LargeFliesMelt@content}\nAre you okay with it?"
+                },
+                "label": "UserFillUp",
+                "name": "Await Response"
+                },
+                "dragging": false,
+                "id": "UserFillUp:GoldBroomsRelate",
+                "measured": {
+                "height": 50,
+                "width": 200
+                },
+                "position": {
+                "x": 683.3409492927474,
+                "y": 116.76274137645598
+                },
+                "selected": false,
+                "sourcePosition": "right",
+                "targetPosition": "left",
+                "type": "ragNode"
+            },
+            {
+                "data": {
+                "form": {
+                    "cite": true,
+                    "delay_after_error": 1,
+                    "description": "",
+                    "exception_default_value": "",
+                    "exception_goto": [],
+                    "exception_method": "",
+                    "frequencyPenaltyEnabled": false,
+                    "frequency_penalty": 0.7,
+                    "llm_id": "qwen-turbo@Tongyi-Qianwen",
+                    "maxTokensEnabled": false,
+                    "max_retries": 3,
+                    "max_rounds": 1,
+                    "max_tokens": 256,
+                    "mcp": [],
+                    "message_history_window_size": 12,
+                    "outputs": {
+                    "content": {
+                        "type": "string",
+                        "value": ""
+                    },
+                    "structured": {}
+                    },
+                    "presencePenaltyEnabled": false,
+                    "presence_penalty": 0.4,
+                    "prompts": [
+                    {
+                        "content": "Search Plan: {Agent:LargeFliesMelt@content}\n\n\n\nAwait Response feedback:{UserFillUp:GoldBroomsRelate@instructions}\n",
+                        "role": "user"
+                    }
+                    ],
+                    "sys_prompt": "<role>\nYou are the Search Agent.\nYour job is to execute the approved Search Plan, integrate the Await Response feedback, retrieve evidence, and produce a well-grounded answer.\n</role>\n<objectives>\nTranslate the plan + feedback into concrete searches.\nCollect diverse, trustworthy, and recent evidence meeting the plan’s evidence bar.\nSynthesize a concise answer; include citations next to claims they support.\nIf evidence is insufficient or conflicting, clearly state limitations and propose next steps.\n</objectives>\n <tools>\nRetrieval: You must use Retrieval to do the search.\n </tools>\n",
+                    "temperature": 0.1,
+                    "temperatureEnabled": false,
+                    "tools": [
+                    {
+                        "component_name": "Retrieval",
+                        "name": "Retrieval",
+                        "params": {
+                        "cross_languages": [],
+                        "description": "",
+                        "empty_response": "",
+                        "kb_ids": [],
+                        "keywords_similarity_weight": 0.7,
+                        "outputs": {
+                            "formalized_content": {
+                            "type": "string",
+                            "value": ""
+                            },
+                            "json": {
+                            "type": "Array<Object>",
+                            "value": []
+                            }
+                        },
+                        "rerank_id": "",
+                        "similarity_threshold": 0.2,
+                        "toc_enhance": false,
+                        "top_k": 1024,
+                        "top_n": 8,
+                        "use_kg": false
+                        }
+                    }
+                    ],
+                    "topPEnabled": false,
+                    "top_p": 0.3,
+                    "user_prompt": "",
+                    "visual_files_var": ""
+                },
+                "label": "Agent",
+                "name": "Search Agent"
+                },
+                "dragging": false,
+                "id": "Agent:TangyWordsType",
+                "measured": {
+                "height": 90,
+                "width": 200
+                },
+                "position": {
+                "x": 944.6411255659472,
+                "y": 99.84499066368488
+                },
+                "selected": true,
+                "sourcePosition": "right",
+                "targetPosition": "left",
+                "type": "agentNode"
+            },
+            {
+                "data": {
+                "form": {
+                    "description": "This is an agent for a specific task.",
+                    "user_prompt": "This is the order you need to send to the agent."
+                },
+                "label": "Tool",
+                "name": "flow.tool_0"
+                },
+                "id": "Tool:NastyBatsGo",
+                "measured": {
+                "height": 50,
+                "width": 200
+                },
+                "position": {
+                "x": 862.6411255659472,
+                "y": 239.84499066368488
+                },
+                "sourcePosition": "right",
+                "targetPosition": "left",
+                "type": "toolNode"
+            },
+            {
+                "data": {
+                "form": {
+                    "content": [
+                    "{Agent:TangyWordsType@content}"
+                    ]
+                },
+                "label": "Message",
+                "name": "Message"
+                },
+                "dragging": false,
+                "id": "Message:FreshWallsStudy",
+                "measured": {
+                "height": 50,
+                "width": 200
+                },
+                "position": {
+                "x": 1216.7057997987163,
+                "y": 120.48541298149814
+                },
+                "selected": false,
+                "sourcePosition": "right",
+                "targetPosition": "left",
+                "type": "messageNode"
+            }
+            ]
+        },
+        "history": [],
+        "messages": [],
+        "path": [],
+        "retrieval": [],
+        "variables": {}
+        },
+        "avatar":
+    "data:image/png;base64,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"
+}

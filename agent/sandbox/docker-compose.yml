@@ -1,0 +1,32 @@
+services:
+  sandbox-executor-manager:
+    build:
+      context: ./executor_manager
+      dockerfile: Dockerfile
+    image: sandbox-executor-manager:latest
+    runtime: runc
+    privileged: true
+    ports:
+      - "${EXECUTOR_PORT:-9385}:9385"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - sandbox-network
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - SANDBOX_EXECUTOR_MANAGER_POOL_SIZE=${SANDBOX_EXECUTOR_MANAGER_POOL_SIZE:-5}
+      - SANDBOX_BASE_PYTHON_IMAGE=${SANDBOX_BASE_PYTHON_IMAGE-sandbox-base-python:latest}
+      - SANDBOX_BASE_NODEJS_IMAGE=${SANDBOX_BASE_NODEJS_IMAGE-sandbox-base-nodejs:latest}
+      - SANDBOX_ENABLE_SECCOMP=${SANDBOX_ENABLE_SECCOMP:-false}
+      - SANDBOX_MAX_MEMORY=${SANDBOX_MAX_MEMORY:-256m} # b, k, m, g
+      - SANDBOX_TIMEOUT=${SANDBOX_TIMEOUT:-10s} # s, m, 1m30s
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:9385/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+networks:
+  sandbox-network:
+    driver: bridge

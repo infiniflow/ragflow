@@ -1,157 +1,282 @@
 [project]
 name = "ragflow"
-version = "0.18.0"
+version = "0.23.1"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.12,<3.15"
 dependencies = [
-    "datrie==0.8.2",
+    "aiosmtplib>=5.0.0",
     "akshare>=1.15.78,<2.0.0",
-    "azure-storage-blob==12.22.0",
-    "azure-identity==1.17.1",
-    "azure-storage-file-datalake==12.16.0",
     "anthropic==0.34.1",
     "arxiv==2.1.3",
-    "aspose-slides>=24.9.0,<25.0.0; platform_machine == 'x86_64' or (sys_platform == 'darwin' and platform_machine == 'arm64')",
-    "beartype>=0.18.5,<0.19.0",
+    "atlassian-python-api==4.0.7",
+    "azure-identity==1.17.1",
+    "azure-storage-file-datalake==12.16.0",
+    "beartype>=0.20.0,<1.0.0",
     "bio==1.7.1",
-    "blinker==1.7.0",
-    "boto3==1.34.140",
-    "botocore==1.34.140",
-    "cachetools==5.3.3",
-    "chardet==5.2.0",
+    "boxsdk>=10.1.0",
+    "captcha>=0.7.1",
     "cn2an==0.5.22",
     "cohere==5.6.2",
-    "Crawl4AI==0.3.8",
+    "Crawl4AI>=0.4.0,<1.0.0",
     "dashscope==1.20.11",
     "deepl==1.18.0",
     "demjson3==3.0.6",
     "discord-py==2.3.2",
+    "dropbox==12.0.2",
     "duckduckgo-search>=7.2.0,<8.0.0",
     "editdistance==0.8.1",
-    "elastic-transport==8.12.0",
-    "elasticsearch==8.12.1",
     "elasticsearch-dsl==8.12.0",
-    "filelock==3.15.4",
-    "flask==3.0.3",
-    "flask-cors==5.0.0",
+    "exceptiongroup>=1.3.0,<2.0.0",
+    "extract-msg>=0.39.0",
+    "ffmpeg-python>=0.2.0",
+    "flasgger>=0.9.7.1,<0.10.0",
+    "flask-cors==6.0.2",
     "flask-login==0.6.3",
+    "flask-mail>=0.10.0",
     "flask-session==0.8.0",
+    "google-auth-oauthlib>=1.2.0,<2.0.0",
+    "google-genai>=1.41.0,<2.0.0",
+    "google-generativeai>=0.8.1,<0.9.0", # Needed for cv_model and embedding_model
     "google-search-results==2.4.2",
+    "graspologic @ git+https://github.com/yuzhichang/graspologic.git@38e680cab72bc9fb68a7992c3bcc2d53b24e42fd",
     "groq==0.9.0",
-    "hanziconv==0.3.2",
+    "grpcio-status==1.67.1",
     "html-text==0.6.2",
-    "httpx==0.27.0",
-    "huggingface-hub>=0.25.0,<0.26.0",
-    "infinity-sdk==0.6.0-dev3",
+    "infinity-sdk==0.7.0-dev2",
     "infinity-emb>=0.0.66,<0.0.67",
-    "itsdangerous==2.1.2",
+    "jira==3.10.5",
     "json-repair==0.35.0",
+    "langfuse>=2.60.0",
+    "mammoth>=1.11.0",
     "markdown==3.6",
     "markdown-to-json==2.1.1",
+    "markdownify>=1.2.0",
+    "mcp>=1.19.0",
+    "mini-racer>=0.12.4,<0.13.0",
     "minio==7.2.4",
     "mistralai==0.4.2",
-    "nltk==3.9.1",
-    "numpy>=1.26.0,<2.0.0",
-    "ollama==0.2.1",
-    "onnxruntime==1.19.2; sys_platform == 'darwin' or platform_machine != 'x86_64'",
-    "onnxruntime-gpu==1.19.2; sys_platform != 'darwin' and platform_machine == 'x86_64'",
-    "openai==1.45.0",
+    "mysql-connector-python>=9.0.0,<10.0.0",
+    "moodlepy>=0.23.0",
+    "mypy-boto3-s3==1.40.26",
+    "Office365-REST-Python-Client==2.6.2",
+    "ollama>=0.5.0",
+    "onnxruntime==1.23.2; sys_platform == 'darwin' or platform_machine != 'x86_64'",
+    "onnxruntime-gpu==1.23.2; sys_platform != 'darwin' and platform_machine == 'x86_64'",
     "opencv-python==4.10.0.84",
     "opencv-python-headless==4.10.0.84",
-    "openpyxl>=3.1.0,<4.0.0",
+    "opendal>=0.45.0,<0.46.0",
+    "opensearch-py==2.7.1",
     "ormsgpack==1.5.0",
-    "pandas>=2.2.0,<3.0.0",
     "pdfplumber==0.10.4",
-    "peewee==3.17.1",
-    "pillow==10.4.0",
-    "protobuf==5.27.2",
-    "psycopg2-binary==2.9.9",
-    "pyclipper==1.3.0.post5",
+    "pluginlib==0.9.4",
+    "psycopg2-binary>=2.9.11,<3.0.0",
+    "pyclipper>=1.4.0,<2.0.0",
+    # "pywencai>=0.13.1,<1.0.0",  # Temporarily disabled: conflicts with agentrun-sdk (pydash>=8), needed for agent/tools/wencai.py
     "pycryptodomex==3.20.0",
-    "pypdf>=5.0.0,<6.0.0",
-    "pytest>=8.3.0,<9.0.0",
-    "python-dotenv==1.0.1",
-    "python-dateutil==2.8.2",
+    "pyobvector==0.2.22",
+    "pyodbc>=5.2.0,<6.0.0",
+    "pypandoc>=1.16",
+    "pypdf>=6.6.2",
+    "pypdf2>=3.0.1,<4.0.0",
+    "python-calamine>=0.4.0",
+    "python-docx>=1.1.2,<2.0.0",
     "python-pptx>=1.0.2,<2.0.0",
-    "pywencai==0.12.2",
+    # "pywencai>=0.13.1,<1.0.0",  # Temporarily disabled: conflicts with agentrun-sdk (pydash>=8), needed for agent/tools/wencai.py
     "qianfan==0.4.6",
+    "quart-auth==0.11.0",
+    "quart-cors==0.8.0",
     "ranx==0.3.20",
-    "readability-lxml==0.8.1",
-    "valkey==6.0.2",
-    "requests==2.32.2",
+    "readability-lxml>=0.8.4,<1.0.0",
     "replicate==0.31.0",
+    "reportlab>=4.4.1",
     "roman-numbers==1.0.2",
     "ruamel-base==1.0.0",
+    "ruamel-yaml>=0.18.6,<0.19.0",
     "scholarly==1.7.11",
-    "scikit-learn==1.5.0",
-    "selenium==4.22.0",
     "selenium-wire==5.1.0",
-    "setuptools>=75.2.0,<76.0.0",
-    "shapely==2.0.5",
-    "six==1.16.0",
+    "slack-sdk==3.37.0",
+    "socksio==1.0.0",
+    "agentrun-sdk>=0.0.16,<1.0.0",
+    "nest-asyncio>=1.6.0,<2.0.0",  # Needed for agent/component/message.py
+    "sqlglotrs==0.9.0",
     "strenum==0.4.15",
-    "tabulate==0.9.0",
     "tavily-python==0.5.1",
-    "tencentcloud-sdk-python==3.0.1215",
+    "tencentcloud-sdk-python==3.0.1478",
     "tika==2.6.0",
-    "tiktoken==0.7.0",
-    "umap_learn==0.5.6",
-    "vertexai==1.64.0",
-    "volcengine==1.0.146",
+    "valkey==6.0.2",
+    "vertexai==1.70.0",
+    "volcengine==1.0.194",
     "voyageai==0.2.3",
+    "webdav4>=0.10.0,<0.11.0",
     "webdriver-manager==4.0.1",
-    "werkzeug==3.0.6",
     "wikipedia==1.4.0",
     "word2number==1.1",
-    "xgboost==1.5.0",
+    "xgboost==1.6.0",
     "xpinyin==0.7.6",
-    "yfinance==0.1.96",
+    "yfinance==0.2.65",
     "zhipuai==2.0.1",
-    "ruamel-yaml>=0.18.6,<0.19.0",
-    "google-generativeai>=0.8.1,<0.9.0",
-    "python-docx>=1.1.2,<2.0.0",
-    "pypdf2>=3.0.1,<4.0.0",
-    "graspologic>=3.4.1,<4.0.0",
-    "pymysql>=1.1.1,<2.0.0",
-    "mini-racer>=0.12.4,<0.13.0",
-    "pyodbc>=5.2.0,<6.0.0",
-    "pyicu>=2.13.1,<3.0.0",
-    "flasgger>=0.9.7.1,<0.10.0",
-    "xxhash>=3.5.0,<4.0.0",
-    "trio>=0.29.0",
-    "langfuse>=2.60.0",
-    "debugpy>=1.8.13",
-    "mcp>=1.6.0",
-    "opensearch-py==2.7.1",
-    "pluginlib==0.9.4",
+    #    following modules aren't necessary
+    #    "nltk==3.9.1",
+    #    "numpy>=1.26.0,<2.0.0",
+    #    "openai>=1.45.0",
+    #    "openpyxl>=3.1.0,<4.0.0",
+    #    "pandas>=2.2.0,<3.0.0",
+    #    "peewee==3.17.1",
+    #    "pillow>=10.4.0,<13.0.0",
+    #    "protobuf==5.27.2",
+    #    "pymysql>=1.1.1,<2.0.0",
+    #    "python-dotenv==1.0.1",
+    #    "python-dateutil==2.8.2",
+    #    "Quart==0.20.0",
+    #    "requests>=2.32.3,<3.0.0",
+    #    "scikit-learn==1.5.0",
+    #    "selenium==4.22.0",
+    #    "setuptools>=78.1.1,<81.0.0",
+    #    "shapely==2.0.5",
+    #    "six==1.16.0",
+    #    "tabulate==0.9.0",
+    #    "tiktoken==0.7.0",
+    #    "umap_learn==0.5.6",
+    #    "werkzeug==3.0.6",
+    #    "xxhash>=3.5.0,<4.0.0",
+    #    "trio>=0.17.0,<0.29.0",
+    #    "debugpy>=1.8.13",
+    #    "click>=8.1.8",
+    #    "litellm>=1.74.15.post1",
+    #    "lark>=1.2.2",
+    #    "pip>=25.2",
+    #    "imageio-ffmpeg>=0.6.0",
+    #    "cryptography==46.0.3",
+    #    "jinja2>=3.1.0",
+    "pyairtable>=3.3.0",
+    "pygithub>=2.8.1",
+    "asana>=5.2.2",
+    "python-gitlab>=7.0.0",
+    "quart-schema==0.23.0",
 ]
 
-[project.optional-dependencies]
-full = [
-    "bcembedding==0.1.5",
-    "fastembed>=0.3.6,<0.4.0; sys_platform == 'darwin' or platform_machine != 'x86_64'",
-    "fastembed-gpu>=0.3.6,<0.4.0; sys_platform != 'darwin' and platform_machine == 'x86_64'",
-    "flagembedding==1.2.10",
-    "torch>=2.5.0,<3.0.0",
-    "transformers>=4.35.0,<5.0.0"
+[dependency-groups]
+test = [
+    "hypothesis>=6.132.0",
+    "openpyxl>=3.1.5",
+    "pillow>=10.4.0,<13.0.0",
+    "pytest>=8.3.5",
+    "pytest-asyncio>=1.3.0",
+    "pytest-xdist>=3.8.0",
+    "pytest-cov>=7.0.0",
+    "python-docx>=1.1.2",
+    "python-pptx>=1.0.2",
+    "reportlab>=4.4.1",
+    "requests>=2.32.2",
+    "requests-toolbelt>=1.0.0",
+    "pycryptodomex==3.20.0",
+    "codecov>=2.1.13",
 ]
-
-[tool.setuptools]
-packages = ['agent', 'agentic_reasoning', 'api', 'deepdoc', 'graphrag', 'intergrations.chatgpt-on-wechat.plugins', 'mcp.server', 'rag', 'sdk.python.ragflow_sdk']
 
 [[tool.uv.index]]
-url = "https://mirrors.aliyun.com/pypi/simple"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+[tool.setuptools]
+packages = [
+    'agent',
+    'api',
+    'deepdoc',
+    'graphrag',
+    'intergrations.chatgpt-on-wechat.plugins',
+    'mcp.server',
+    'rag',
+    'sdk.python.ragflow_sdk',
+]
 
 [tool.ruff]
 line-length = 200
-exclude = [
-    ".venv",
-    "rag/svr/discord_svr.py",
-]
+exclude = [".venv", "rag/svr/discord_svr.py"]
 
 [tool.ruff.lint]
 extend-select = ["ASYNC", "ASYNC1"]
 ignore = ["E402"]
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "."
+]
+
+testpaths = ["test"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+markers = [
+    "p1: high priority test cases",
+    "p2: medium priority test cases",
+    "p3: low priority test cases",
+]
+
+# Test collection and runtime configuration
+filterwarnings = [
+    "error",  # Treat warnings as errors
+    "ignore::DeprecationWarning",  # Ignore specific warnings
+]
+
+# Command line options
+addopts = [
+    "-v",  # Verbose output
+    "--strict-markers",  # Enforce marker definitions
+    "--tb=short",  # Simplified traceback
+    "--disable-warnings",  # Disable warnings
+    "--color=yes"  # Colored output
+]
+
+
+# Coverage configuration
+[tool.coverage.run]
+# Source paths - adjust according to your project structure
+source = [
+    # "../../api/db/services",
+    # Add more directories if needed:
+    "../../common",
+    # "../../utils",
+]
+
+# Files/directories to exclude
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/.pytest_cache/*",
+    "*/venv/*",
+    "*/.venv/*",
+    "*/env/*",
+    "*/site-packages/*",
+    "*/dist/*",
+    "*/build/*",
+    "*/migrations/*",
+    "setup.py"
+]
+
+[tool.coverage.report]
+# Report configuration
+precision = 2
+show_missing = true
+skip_covered = false
+fail_under = 0  # Minimum coverage requirement (0-100)
+
+# Lines to exclude (optional)
+exclude_lines = [
+#    "pragma: no cover",
+#    "def __repr__",
+#    "raise AssertionError",
+#    "raise NotImplementedError",
+#    "if __name__ == .__main__.:",
+#    "if TYPE_CHECKING:",
+    "pass"
+]
+
+[tool.coverage.html]
+# HTML report configuration
+directory = "htmlcov"
+title = "Test Coverage Report"
+# extra_css = "custom.css"  # Optional custom CSS

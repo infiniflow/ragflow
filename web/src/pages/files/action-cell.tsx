@@ -1,13 +1,19 @@
-import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import {
+  ConfirmDeleteDialog,
+  ConfirmDeleteDialogNode,
+} from '@/components/confirm-delete-dialog';
+import { FileIcon } from '@/components/icon-font';
 import NewDocumentLink from '@/components/new-document-link';
 import { Button } from '@/components/ui/button';
-import { useDownloadFile } from '@/hooks/file-manager-hooks';
+import { useDownloadFile } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
+import { cn } from '@/lib/utils';
 import {
   getExtension,
   isSupportedPreviewDocumentType,
 } from '@/utils/document-util';
 import { CellContext } from '@tanstack/react-table';
+import { t } from 'i18next';
 import {
   ArrowDownToLine,
   Eye,
@@ -21,8 +27,9 @@ import {
   UseHandleConnectToKnowledgeReturnType,
   UseRenameCurrentFileReturnType,
 } from './hooks';
+import { useHandleDeleteFile } from './use-delete-file';
 import { UseMoveDocumentShowType } from './use-move-file';
-import { isFolderType } from './util';
+import { isFolderType, isKnowledgeBaseType } from './util';
 
 type IProps = Pick<CellContext<IFile, unknown>, 'row'> &
   Pick<UseHandleConnectToKnowledgeReturnType, 'showConnectToKnowledgeModal'> &
@@ -37,9 +44,13 @@ export function ActionCell({
 }: IProps) {
   const record = row.original;
   const documentId = record.id;
+  const name: string = row.getValue('name');
+  const type = record.type;
+
   const { downloadFile } = useDownloadFile();
   const isFolder = isFolderType(record.type);
   const extension = getExtension(record.name);
+  const isKnowledgeBase = isKnowledgeBaseType(record.source_type);
 
   const handleShowConnectToKnowledgeModal = useCallback(() => {
     showConnectToKnowledgeModal(record);
@@ -60,25 +71,51 @@ export function ActionCell({
     showMoveFileModal([record.id]);
   }, [record, showMoveFileModal]);
 
+  const { handleRemoveFile } = useHandleDeleteFile();
+
+  const onRemoveFile = useCallback(() => {
+    handleRemoveFile([documentId]);
+  }, [handleRemoveFile, documentId]);
+
   return (
-    <section className="flex gap-4 items-center text-text-sub-title-invert">
-      <Button
-        variant="ghost"
-        size={'sm'}
-        onClick={handleShowConnectToKnowledgeModal}
-      >
-        <Link2 />
-      </Button>
-      <Button variant="ghost" size={'sm'} onClick={handleShowMoveFileModal}>
-        <FolderInput />
-      </Button>
-
-      <Button variant="ghost" size={'sm'} onClick={handleShowFileRenameModal}>
-        <FolderPen />
-      </Button>
-
+    <section className="flex gap-4 items-center text-text-sub-title-invert opacity-0 group-hover:opacity-100 transition-opacity">
+      {isKnowledgeBase || (
+        <Button
+          variant="transparent"
+          className="border-none hover:bg-bg-card text-text-primary"
+          size={'sm'}
+          onClick={handleShowConnectToKnowledgeModal}
+        >
+          <Link2 />
+        </Button>
+      )}
+      {isKnowledgeBase || (
+        <Button
+          variant="transparent"
+          className="border-none hover:bg-bg-card text-text-primary"
+          size={'sm'}
+          onClick={handleShowMoveFileModal}
+        >
+          <FolderInput />
+        </Button>
+      )}
+      {isKnowledgeBase || (
+        <Button
+          variant="transparent"
+          className="border-none hover:bg-bg-card text-text-primary"
+          size={'sm'}
+          onClick={handleShowFileRenameModal}
+        >
+          <FolderPen />
+        </Button>
+      )}
       {isFolder || (
-        <Button variant={'ghost'} size={'sm'} onClick={onDownloadDocument}>
+        <Button
+          variant="transparent"
+          className="border-none hover:bg-bg-card text-text-primary"
+          size={'sm'}
+          onClick={onDownloadDocument}
+        >
           <ArrowDownToLine />
         </Button>
       )}
@@ -89,7 +126,11 @@ export function ActionCell({
           documentName={record.name}
           className="text-text-sub-title-invert"
         >
-          <Button variant={'ghost'} size={'sm'}>
+          <Button
+            variant="transparent"
+            className="border-none hover:bg-bg-card text-text-primary"
+            size={'sm'}
+          >
             <Eye />
           </Button>
         </NewDocumentLink>
@@ -97,7 +138,8 @@ export function ActionCell({
 
       {/* <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size={'sm'}>
+          <Button variant="transparent"
+        className="border-none" size={'sm'}>
             <EllipsisVertical />
           </Button>
         </DropdownMenuTrigger>
@@ -117,11 +159,38 @@ export function ActionCell({
           )}
         </DropdownMenuContent>
       </DropdownMenu> */}
-      <ConfirmDeleteDialog>
-        <Button variant="ghost" size={'sm'}>
-          <Trash2 />
-        </Button>
-      </ConfirmDeleteDialog>
+      {isKnowledgeBase || (
+        <ConfirmDeleteDialog
+          onOk={onRemoveFile}
+          title={t('deleteModal.delFile')}
+          content={{
+            node: (
+              <ConfirmDeleteDialogNode>
+                <div className="flex items-center gap-2 text-text-secondary">
+                  <span className="size-4">
+                    <FileIcon name={name} type={type}></FileIcon>
+                  </span>
+                  <span
+                    className={cn('truncate text-xs', {
+                      ['cursor-pointer']: isFolder,
+                    })}
+                  >
+                    {name}
+                  </span>
+                </div>
+              </ConfirmDeleteDialogNode>
+            ),
+          }}
+        >
+          <Button
+            variant="transparent"
+            className="border-none hover:bg-bg-card text-text-primary"
+            size={'sm'}
+          >
+            <Trash2 />
+          </Button>
+        </ConfirmDeleteDialog>
+      )}
     </section>
   );
 }

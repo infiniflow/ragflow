@@ -1,17 +1,17 @@
-import { ReactComponent as FileIcon } from '@/assets/svg/file-management.svg';
-import { ReactComponent as GraphIcon } from '@/assets/svg/graph.svg';
-import { ReactComponent as KnowledgeBaseIcon } from '@/assets/svg/knowledge-base.svg';
+import FileIcon from '@/assets/svg/file-management.svg';
+import GraphIcon from '@/assets/svg/graph.svg';
+import KnowledgeBaseIcon from '@/assets/svg/knowledge-base.svg';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchAppConf } from '@/hooks/logic-hooks';
 import { useNavigateWithFromState } from '@/hooks/route-hook';
 import { MessageOutlined, SearchOutlined } from '@ant-design/icons';
 import { Flex, Layout, Radio, Space, theme } from 'antd';
 import { MouseEventHandler, useCallback, useMemo } from 'react';
-import { useLocation } from 'umi';
+import { useLocation } from 'react-router';
 import Toolbar from '../right-toolbar';
 
 import { useTheme } from '@/components/theme-provider';
-import styles from './index.less';
+import styles from './index.module.less';
 
 const { Header } = Layout;
 
@@ -29,7 +29,7 @@ const RagHeader = () => {
       { path: '/knowledge', name: t('knowledgeBase'), icon: KnowledgeBaseIcon },
       { path: '/chat', name: t('chat'), icon: MessageOutlined },
       { path: '/search', name: t('search'), icon: SearchOutlined },
-      { path: '/flow', name: t('flow'), icon: GraphIcon },
+      { path: '/agent-list', name: t('flow'), icon: GraphIcon },
       { path: '/file', name: t('fileManager'), icon: FileIcon },
     ],
     [t],

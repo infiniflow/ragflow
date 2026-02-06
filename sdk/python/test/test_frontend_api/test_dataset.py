@@ -101,18 +101,18 @@ def test_invalid_name_dataset(get_auth):
     # create dataset
     # with pytest.raises(Exception) as e:
     res = create_dataset(get_auth, 0)
-    assert res['code'] == 102
+    assert res['code'] != 0
 
     res = create_dataset(get_auth, "")
-    assert res['code'] == 102
+    assert res['code'] != 0
 
     long_string = ""
 
-    while len(long_string) <= DATASET_NAME_LIMIT:
+    while len(long_string.encode("utf-8")) <= DATASET_NAME_LIMIT:
         long_string += random.choice(string.ascii_letters + string.digits)
 
     res = create_dataset(get_auth, long_string)
-    assert res['code'] == 102
+    assert res['code'] != 0
     print(res)
 
 

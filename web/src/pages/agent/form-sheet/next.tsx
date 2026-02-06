@@ -1,4 +1,4 @@
-import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import {
   Sheet,
   SheetContent,
@@ -9,28 +9,25 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { cn } from '@/lib/utils';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { get, isPlainObject, lowerFirst } from 'lodash';
-import { Play, X } from 'lucide-react';
-import { useEffect, useRef } from 'react';
-import { useForm } from 'react-hook-form';
-import { BeginId, Operator, operatorMap } from '../constant';
-import { FlowFormContext } from '../context';
+import { lowerFirst } from 'lodash';
+import { CirclePlay, X } from 'lucide-react';
+import { Operator } from '../constant';
+import { AgentFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
-import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
+import { useIsMcp } from '../hooks/use-is-mcp';
 import OperatorIcon from '../operator-icon';
-import {
-  buildCategorizeListFromObject,
-  needsSingleStepDebugging,
-} from '../utils';
-import SingleDebugDrawer from './single-debug-drawer';
-import { useFormConfigMap } from './use-form-config-map';
+import useGraphStore from '../store';
+import { needsSingleStepDebugging } from '../utils';
+import { FormConfigMap } from './form-config-map';
+import SingleDebugSheet from './single-debug-sheet';
+import { TitleInput } from './title-input';
 
 interface IProps {
   node?: RAGFlowNodeType;
   singleDebugDrawerVisible: IModalProps<any>['visible'];
   hideSingleDebugDrawer: IModalProps<any>['hideModal'];
   showSingleDebugDrawer: IModalProps<any>['showModal'];
+  chatVisible: boolean;
 }
 
 const EmptyContent = () => <div></div>;
@@ -40,116 +37,88 @@ const FormSheet = ({
   hideModal,
   node,
   singleDebugDrawerVisible,
+  chatVisible,
   hideSingleDebugDrawer,
   showSingleDebugDrawer,
 }: IModalProps<any> & IProps) => {
   const operatorName: Operator = node?.data.label as Operator;
-
-  const FormConfigMap = useFormConfigMap();
+  const { clickedToolId, getAgentToolById } = useGraphStore();
 
   const currentFormMap = FormConfigMap[operatorName];
-
-  const OperatorForm = currentFormMap.component ?? EmptyContent;
-
-  const form = useForm({
-    defaultValues: currentFormMap.defaultValues,
-    resolver: zodResolver(currentFormMap.schema),
-  });
-
-  const { name, handleNameBlur, handleNameChange } = useHandleNodeNameChange({
-    id: node?.id,
-    data: node?.data,
-  });
-
-  const previousId = useRef<string | undefined>(node?.id);
-
+  const OperatorForm = currentFormMap?.component ?? EmptyContent;
+  const isMcp = useIsMcp(operatorName);
   const { t } = useTranslate('flow');
-
-  const { handleValuesChange } = useHandleFormValuesChange(
-    operatorName,
-    node?.id,
-    form,
-  );
-
-  useEffect(() => {
-    if (visible && !form.formState.isDirty) {
-      if (node?.id !== previousId.current) {
-        form.reset();
-        form.clearErrors();
-      }
-
-      if (operatorName === Operator.Categorize) {
-        const items = buildCategorizeListFromObject(
-          get(node, 'data.form.category_description', {}),
-        );
-        const formData = node?.data?.form;
-        if (isPlainObject(formData)) {
-          //   form.setFieldsValue({ ...formData, items });
-          form.reset({ ...formData, items });
-        }
-      } else {
-        // form.setFieldsValue(node?.data?.form);
-        form.reset(node?.data?.form);
-      }
-      previousId.current = node?.id;
-    }
-  }, [visible, form, node?.data?.form, node?.id, node, operatorName]);
+  const { component_name: toolComponentName } = (getAgentToolById(
+    clickedToolId,
+  ) ?? {}) as {
+    component_name: Operator;
+    name: string;
+    id: string;
+  };
 
   return (
     <Sheet open={visible} modal={false}>
-      <SheetTitle className="hidden"></SheetTitle>
-      <SheetContent className={cn('top-20 p-0')} closeIcon={false}>
+      <SheetContent
+        className={cn('top-20 p-0 flex flex-col pb-20 gap-0', {
+          'right-[clamp(0px,34%,620px)]': chatVisible,
+        })}
+        closeIcon={false}
+      >
         <SheetHeader>
-          <section className="flex-col border-b py-2 px-5">
+          <SheetTitle className="hidden"></SheetTitle>
+          <section className="flex-col border-b pt-2 pb-4 px-5">
             <div className="flex items-center gap-2 pb-3">
               <OperatorIcon
-                name={operatorName}
-                color={operatorMap[operatorName]?.color}
+                name={toolComponentName || operatorName}
               ></OperatorIcon>
-              <div className="flex items-center gap-1 flex-1">
-                <label htmlFor="">{t('title')}</label>
-                {node?.id === BeginId ? (
-                  <span>{t(BeginId)}</span>
-                ) : (
-                  <Input
-                    value={name}
-                    onBlur={handleNameBlur}
-                    onChange={handleNameChange}
-                  ></Input>
-                )}
-              </div>
-
+              <TitleInput node={node}></TitleInput>
               {needsSingleStepDebugging(operatorName) && (
                 <RunTooltip>
-                  <Play
-                    className="size-5 cursor-pointer"
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-6 !p-0 bg-transparent"
                     onClick={showSingleDebugDrawer}
-                  />
+                  >
+                    <CirclePlay className="size-3.5 cursor-pointer" />
+                  </Button>
                 </RunTooltip>
               )}
-              <X onClick={hideModal} />
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6 !p-0 bg-transparent"
+                onClick={hideModal}
+              >
+                <X className="size-3.5 cursor-pointer" />
+              </Button>
             </div>
-            <span>{t(`${lowerFirst(operatorName)}Description`)}</span>
+
+            {!isMcp && (
+              <p className="text-text-secondary">
+                {t(
+                  `${lowerFirst(operatorName === Operator.Tool ? toolComponentName : operatorName)}Description`,
+                )}
+              </p>
+            )}
           </section>
         </SheetHeader>
-        <section className="pt-4">
+
+        <section className="pt-4 overflow-auto flex-1">
           {visible && (
-            <FlowFormContext.Provider value={node}>
-              <OperatorForm
-                onValuesChange={handleValuesChange}
-                form={form}
-                node={node}
-              ></OperatorForm>
-            </FlowFormContext.Provider>
+            <AgentFormContext.Provider value={node}>
+              <OperatorForm node={node} key={node?.id}></OperatorForm>
+            </AgentFormContext.Provider>
           )}
         </section>
       </SheetContent>
       {singleDebugDrawerVisible && (
-        <SingleDebugDrawer
+        <SingleDebugSheet
           visible={singleDebugDrawerVisible}
           hideModal={hideSingleDebugDrawer}
           componentId={node?.id}
-        ></SingleDebugDrawer>
+        ></SingleDebugSheet>
       )}
     </Sheet>
   );

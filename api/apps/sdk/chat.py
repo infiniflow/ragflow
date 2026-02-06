@@ -14,24 +14,21 @@
 #  limitations under the License.
 #
 import logging
-
-from flask import request
-from api import settings
-from api.db import StatusEnum
+from quart import request
 from api.db.services.dialog_service import DialogService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import TenantLLMService
+from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService
-from api.utils import get_uuid
-from api.utils.api_utils import get_error_data_result, token_required, get_result, check_duplicate_ids
+from common.misc_utils import get_uuid
+from common.constants import RetCode, StatusEnum
+from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_result, token_required, get_request_json
 
 
-
-@manager.route('/chats', methods=['POST'])  # noqa: F821
+@manager.route("/chats", methods=["POST"])  # noqa: F821
 @token_required
-def create(tenant_id):
-    req = request.json
-    ids = [i for i in req.get("dataset_ids", []) if i] 
+async def create(tenant_id):
+    req = await get_request_json()
+    ids = [i for i in req.get("dataset_ids", []) if i]
     for kb_id in ids:
         kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
         if not kbs:
@@ -40,34 +37,32 @@ def create(tenant_id):
         kb = kbs[0]
         if kb.chunk_num == 0:
             return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
-    
+
     kbs = KnowledgebaseService.get_by_ids(ids) if ids else []
     embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
     embd_count = list(set(embd_ids))
     if len(embd_count) > 1:
-        return get_result(message='Datasets use different embedding models."',
-                          code=settings.RetCode.AUTHENTICATION_ERROR)
+        return get_result(message='Datasets use different embedding models."', code=RetCode.AUTHENTICATION_ERROR)
     req["kb_ids"] = ids
     # llm
     llm = req.get("llm")
     if llm:
         if "model_name" in llm:
             req["llm_id"] = llm.pop("model_name")
-            if not TenantLLMService.query(tenant_id=tenant_id, llm_name=req["llm_id"], model_type="chat"):
-                return get_error_data_result(f"`model_name` {req.get('llm_id')} doesn't exist")
+            if req.get("llm_id") is not None:
+                llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(req["llm_id"])
+                model_type = llm.get("model_type")
+                model_type = model_type if model_type in ["chat", "image2text"] else "chat"
+                if not TenantLLMService.query(tenant_id=tenant_id, llm_name=llm_name, llm_factory=llm_factory, model_type=model_type):
+                    return get_error_data_result(f"`model_name` {req.get('llm_id')} doesn't exist")
         req["llm_setting"] = req.pop("llm")
     e, tenant = TenantService.get_by_id(tenant_id)
     if not e:
         return get_error_data_result(message="Tenant not found!")
     # prompt
     prompt = req.get("prompt")
-    key_mapping = {"parameters": "variables",
-                   "prologue": "opener",
-                   "quote": "show_quote",
-                   "system": "prompt",
-                   "rerank_id": "rerank_model",
-                   "vector_similarity_weight": "keywords_similarity_weight"}
-    key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id","top_k"]
+    key_mapping = {"parameters": "variables", "prologue": "opener", "quote": "show_quote", "system": "prompt", "rerank_id": "rerank_model", "vector_similarity_weight": "keywords_similarity_weight"}
+    key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id", "top_k"]
     if prompt:
         for new_key, old_key in key_mapping.items():
             if old_key in prompt:
@@ -85,9 +80,7 @@ def create(tenant_id):
     req["rerank_id"] = req.get("rerank_id", "")
     if req.get("rerank_id"):
         value_rerank_model = ["BAAI/bge-reranker-v2-m3", "maidalun1020/bce-reranker-base_v1"]
-        if req["rerank_id"] not in value_rerank_model and not TenantLLMService.query(tenant_id=tenant_id,
-                                                                                     llm_name=req.get("rerank_id"),
-                                                                                     model_type="rerank"):
+        if req["rerank_id"] not in value_rerank_model and not TenantLLMService.query(tenant_id=tenant_id, llm_name=req.get("rerank_id"), model_type="rerank"):
             return get_error_data_result(f"`rerank_model` {req.get('rerank_id')} doesn't exist")
     if not req.get("llm_id"):
         req["llm_id"] = tenant.llm_id
@@ -101,32 +94,29 @@ def create(tenant_id):
     req["tenant_id"] = tenant_id
     # prompt more parameter
     default_prompt = {
-        "system": """You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
+        "system": """You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" Answers need to consider chat history.
       Here is the knowledge base:
       {knowledge}
       The above is the knowledge base.""",
-        "prologue": "Hi! I'm your assistant, what can I do for you?",
-        "parameters": [
-            {"key": "knowledge", "optional": False}
-        ],
+        "prologue": "Hi! I'm your assistant. What can I do for you?",
+        "parameters": [{"key": "knowledge", "optional": False}],
         "empty_response": "Sorry! No relevant content was found in the knowledge base!",
         "quote": True,
         "tts": False,
-        "refine_multiturn": True
+        "refine_multiturn": True,
     }
     key_list_2 = ["system", "prologue", "parameters", "empty_response", "quote", "tts", "refine_multiturn"]
     if "prompt_config" not in req:
-        req['prompt_config'] = {}
+        req["prompt_config"] = {}
     for key in key_list_2:
-        temp = req['prompt_config'].get(key)
-        if (not temp and key == 'system') or (key not in req["prompt_config"]):
-            req['prompt_config'][key] = default_prompt[key]
-    for p in req['prompt_config']["parameters"]:
+        temp = req["prompt_config"].get(key)
+        if (not temp and key == "system") or (key not in req["prompt_config"]):
+            req["prompt_config"][key] = default_prompt[key]
+    for p in req["prompt_config"]["parameters"]:
         if p["optional"]:
             continue
-        if req['prompt_config']["system"].find("{%s}" % p["key"]) < 0:
-            return get_error_data_result(
-                message="Parameter '{}' is not used".format(p["key"]))
+        if req["prompt_config"]["system"].find("{%s}" % p["key"]) < 0:
+            return get_error_data_result(message="Parameter '{}' is not used".format(p["key"]))
     # save
     if not DialogService.save(**req):
         return get_error_data_result(message="Fail to new a chat!")
@@ -141,31 +131,28 @@ def create(tenant_id):
         renamed_dict[new_key] = value
     res["prompt"] = renamed_dict
     del res["prompt_config"]
-    new_dict = {"similarity_threshold": res["similarity_threshold"],
-                "keywords_similarity_weight": 1-res["vector_similarity_weight"],
-                "top_n": res["top_n"],
-                "rerank_model": res['rerank_id']}
+    new_dict = {"similarity_threshold": res["similarity_threshold"], "keywords_similarity_weight": 1 - res["vector_similarity_weight"], "top_n": res["top_n"], "rerank_model": res["rerank_id"]}
     res["prompt"].update(new_dict)
     for key in key_list:
         del res[key]
     res["llm"] = res.pop("llm_setting")
     res["llm"]["model_name"] = res.pop("llm_id")
     del res["kb_ids"]
-    res["dataset_ids"] = req["dataset_ids"]
+    res["dataset_ids"] = req.get("dataset_ids", [])
     res["avatar"] = res.pop("icon")
     return get_result(data=res)
 
 
-@manager.route('/chats/<chat_id>', methods=['PUT'])  # noqa: F821
+@manager.route("/chats/<chat_id>", methods=["PUT"])  # noqa: F821
 @token_required
-def update(tenant_id, chat_id):
+async def update(tenant_id, chat_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
-        return get_error_data_result(message='You do not own the chat')
-    req = request.json
-    ids = req.get("dataset_ids")
+        return get_error_data_result(message="You do not own the chat")
+    req = await get_request_json()
+    ids = req.get("dataset_ids", [])
     if "show_quotation" in req:
         req["do_refer"] = req.pop("show_quotation")
-    if ids is not None:
+    if ids:
         for kb_id in ids:
             kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
             if not kbs:
@@ -174,34 +161,33 @@ def update(tenant_id, chat_id):
             kb = kbs[0]
             if kb.chunk_num == 0:
                 return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
-            
+
         kbs = KnowledgebaseService.get_by_ids(ids)
         embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
         embd_count = list(set(embd_ids))
-        if len(embd_count) != 1:
-            return get_result(
-                message='Datasets use different embedding models."',
-                code=settings.RetCode.AUTHENTICATION_ERROR)
+        if len(embd_count) > 1:
+            return get_result(message='Datasets use different embedding models."', code=RetCode.AUTHENTICATION_ERROR)
         req["kb_ids"] = ids
+    else:
+        req["kb_ids"] = []
     llm = req.get("llm")
     if llm:
         if "model_name" in llm:
             req["llm_id"] = llm.pop("model_name")
-            if not TenantLLMService.query(tenant_id=tenant_id, llm_name=req["llm_id"], model_type="chat"):
-                return get_error_data_result(f"`model_name` {req.get('llm_id')} doesn't exist")
+            if req.get("llm_id") is not None:
+                llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(req["llm_id"])
+                model_type = llm.get("model_type")
+                model_type = model_type if model_type in ["chat", "image2text"] else "chat"
+                if not TenantLLMService.query(tenant_id=tenant_id, llm_name=llm_name, llm_factory=llm_factory, model_type=model_type):
+                    return get_error_data_result(f"`model_name` {req.get('llm_id')} doesn't exist")
         req["llm_setting"] = req.pop("llm")
     e, tenant = TenantService.get_by_id(tenant_id)
     if not e:
         return get_error_data_result(message="Tenant not found!")
     # prompt
     prompt = req.get("prompt")
-    key_mapping = {"parameters": "variables",
-                   "prologue": "opener",
-                   "quote": "show_quote",
-                   "system": "prompt",
-                   "rerank_id": "rerank_model",
-                   "vector_similarity_weight": "keywords_similarity_weight"}
-    key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id","top_k"]
+    key_mapping = {"parameters": "variables", "prologue": "opener", "quote": "show_quote", "system": "prompt", "rerank_id": "rerank_model", "vector_similarity_weight": "keywords_similarity_weight"}
+    key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id", "top_k"]
     if prompt:
         for new_key, old_key in key_mapping.items():
             if old_key in prompt:
@@ -214,16 +200,12 @@ def update(tenant_id, chat_id):
     res = res.to_json()
     if req.get("rerank_id"):
         value_rerank_model = ["BAAI/bge-reranker-v2-m3", "maidalun1020/bce-reranker-base_v1"]
-        if req["rerank_id"] not in value_rerank_model and not TenantLLMService.query(tenant_id=tenant_id,
-                                                                                     llm_name=req.get("rerank_id"),
-                                                                                     model_type="rerank"):
+        if req["rerank_id"] not in value_rerank_model and not TenantLLMService.query(tenant_id=tenant_id, llm_name=req.get("rerank_id"), model_type="rerank"):
             return get_error_data_result(f"`rerank_model` {req.get('rerank_id')} doesn't exist")
     if "name" in req:
         if not req.get("name"):
             return get_error_data_result(message="`name` cannot be empty.")
-        if req["name"].lower() != res["name"].lower() \
-                and len(
-            DialogService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)) > 0:
+        if req["name"].lower() != res["name"].lower() and len(DialogService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)) > 0:
             return get_error_data_result(message="Duplicated chat name in updating chat.")
     if "prompt_config" in req:
         res["prompt_config"].update(req["prompt_config"])
@@ -246,12 +228,12 @@ def update(tenant_id, chat_id):
     return get_result()
 
 
-@manager.route('/chats', methods=['DELETE'])  # noqa: F821
+@manager.route("/chats", methods=["DELETE"])  # noqa: F821
 @token_required
-def delete(tenant_id):
+async def delete_chats(tenant_id):
     errors = []
     success_count = 0
-    req = request.json
+    req = await get_request_json()
     if not req:
         ids = None
     else:
@@ -271,32 +253,24 @@ def delete(tenant_id):
             errors.append(f"Assistant({id}) not found.")
             continue
         temp_dict = {"status": StatusEnum.INVALID.value}
-        DialogService.update_by_id(id, temp_dict)
-        success_count += 1
-        
+        success_count += DialogService.update_by_id(id, temp_dict)
+
     if errors:
         if success_count > 0:
-            return get_result(
-                data={"success_count": success_count, "errors": errors},
-                message=f"Partially deleted {success_count} chats with {len(errors)} errors"
-            )
+            return get_result(data={"success_count": success_count, "errors": errors}, message=f"Partially deleted {success_count} chats with {len(errors)} errors")
         else:
             return get_error_data_result(message="; ".join(errors))
-    
+
     if duplicate_messages:
         if success_count > 0:
-            return get_result(
-                message=f"Partially deleted {success_count} chats with {len(duplicate_messages)} errors", 
-                data={"success_count": success_count, "errors": duplicate_messages}
-            )
+            return get_result(message=f"Partially deleted {success_count} chats with {len(duplicate_messages)} errors", data={"success_count": success_count, "errors": duplicate_messages})
         else:
             return get_error_data_result(message=";".join(duplicate_messages))
-    
+
     return get_result()
 
 
-
-@manager.route('/chats', methods=['GET'])  # noqa: F821
+@manager.route("/chats", methods=["GET"])  # noqa: F821
 @token_required
 def list_chat(tenant_id):
     id = request.args.get("id")
@@ -315,14 +289,16 @@ def list_chat(tenant_id):
     chats = DialogService.get_list(tenant_id, page_number, items_per_page, orderby, desc, id, name)
     if not chats:
         return get_result(data=[])
-    list_assts = []
-    key_mapping = {"parameters": "variables",
-                   "prologue": "opener",
-                   "quote": "show_quote",
-                   "system": "prompt",
-                   "rerank_id": "rerank_model",
-                   "vector_similarity_weight": "keywords_similarity_weight",
-                   "do_refer": "show_quotation"}
+    list_assistants = []
+    key_mapping = {
+        "parameters": "variables",
+        "prologue": "opener",
+        "quote": "show_quote",
+        "system": "prompt",
+        "rerank_id": "rerank_model",
+        "vector_similarity_weight": "keywords_similarity_weight",
+        "do_refer": "show_quotation",
+    }
     key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id"]
     for res in chats:
         renamed_dict = {}
@@ -331,10 +307,7 @@ def list_chat(tenant_id):
             renamed_dict[new_key] = value
         res["prompt"] = renamed_dict
         del res["prompt_config"]
-        new_dict = {"similarity_threshold": res["similarity_threshold"],
-                    "keywords_similarity_weight": 1-res["vector_similarity_weight"],
-                    "top_n": res["top_n"],
-                    "rerank_model": res['rerank_id']}
+        new_dict = {"similarity_threshold": res["similarity_threshold"], "keywords_similarity_weight": 1 - res["vector_similarity_weight"], "top_n": res["top_n"], "rerank_model": res["rerank_id"]}
         res["prompt"].update(new_dict)
         for key in key_list:
             del res[key]
@@ -350,5 +323,5 @@ def list_chat(tenant_id):
         del res["kb_ids"]
         res["datasets"] = kb_list
         res["avatar"] = res.pop("icon")
-        list_assts.append(res)
-    return get_result(data=list_assts)
+        list_assistants.append(res)
+    return get_result(data=list_assistants)

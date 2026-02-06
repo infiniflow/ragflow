@@ -1,8 +1,10 @@
 ---
 sidebar_position: 1
 slug: /configurations
+sidebar_custom_props: {
+  sidebarIcon: LucideCog
+}
 ---
-
 # Configuration
 
 Configurations for deploying RAGFlow via Docker.
@@ -29,13 +31,13 @@ docker compose -f docker/docker-compose.yml up -d
 
 ## Docker Compose
 
-- **docker-compose.yml**  
+- **docker-compose.yml**
   Sets up environment for RAGFlow and its dependencies.
-- **docker-compose-base.yml**  
+- **docker-compose-base.yml**
   Sets up environment for RAGFlow's dependencies: Elasticsearch/[Infinity](https://github.com/infiniflow/infinity), MySQL, MinIO, and Redis.
 
 :::danger IMPORTANT
-We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-gpu-CN-oc9.yml**, or **docker-compose-gpu.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve any of them.
+We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-macos.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve them.
 :::
 
 ## Docker environment variables
@@ -44,92 +46,94 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 
 ### Elasticsearch
 
-- `STACK_VERSION`  
+- `STACK_VERSION`
   The version of Elasticsearch. Defaults to `8.11.3`
-- `ES_PORT`  
+- `ES_PORT`
   The port used to expose the Elasticsearch service to the host machine, allowing **external** access to the service running inside the Docker container.  Defaults to `1200`.
-- `ELASTIC_PASSWORD`  
+- `ELASTIC_PASSWORD`
   The password for Elasticsearch.
 
 ### Kibana
 
-- `KIBANA_PORT`  
+- `KIBANA_PORT`
   The port used to expose the Kibana service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `6601`.
-- `KIBANA_USER`  
+- `KIBANA_USER`
   The username for Kibana. Defaults to `rag_flow`.
-- `KIBANA_PASSWORD`  
+- `KIBANA_PASSWORD`
   The password for Kibana. Defaults to `infini_rag_flow`.
 
 ### Resource management
 
-- `MEM_LIMIT`  
+- `MEM_LIMIT`
   The maximum amount of the memory, in bytes, that *a specific* Docker container can use while running. Defaults to `8073741824`.
 
 ### MySQL
 
-- `MYSQL_PASSWORD`  
+- `MYSQL_PASSWORD`
   The password for MySQL.
-- `MYSQL_PORT`  
+- `MYSQL_PORT`
+  The port to connect to MySQL from RAGFlow container. Defaults to `3306`. Change this if you use an external MySQL.
+- `EXPOSE_MYSQL_PORT`
   The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `5455`.
 
 ### MinIO
 
 RAGFlow utilizes MinIO as its object storage solution, leveraging its scalability to store and manage all uploaded files.
 
-- `MINIO_CONSOLE_PORT`  
+- `MINIO_CONSOLE_PORT`
   The port used to expose the MinIO console interface to the host machine, allowing **external** access to the web-based console running inside the Docker container. Defaults to `9001`
-- `MINIO_PORT`  
+- `MINIO_PORT`
   The port used to expose the MinIO API service to the host machine, allowing **external** access to the MinIO object storage service running inside the Docker container. Defaults to `9000`.
-- `MINIO_USER`  
+- `MINIO_USER`
   The username for MinIO.
-- `MINIO_PASSWORD`  
+- `MINIO_PASSWORD`
   The password for MinIO.
 
 ### Redis
 
-- `REDIS_PORT`  
+- `REDIS_PORT`
   The port used to expose the Redis service to the host machine, allowing **external** access to the Redis service running inside the Docker container. Defaults to `6379`.
-- `REDIS_PASSWORD`  
+- `REDIS_USERNAME`
+  Optional Redis ACL username when using Redis 6+ authentication.
+- `REDIS_PASSWORD`
   The password for Redis.
 
 ### RAGFlow
 
-- `SVR_HTTP_PORT`  
+- `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
-- `RAGFLOW-IMAGE`  
-  The Docker image edition. Available editions:  
-  
-  - `infiniflow/ragflow:v0.18.0-slim` (default): The RAGFlow Docker image without embedding models.  
-  - `infiniflow/ragflow:v0.18.0`: The RAGFlow Docker image with embedding models including:
-    - Built-in embedding models:
-      - `BAAI/bge-large-zh-v1.5` 
-      - `maidalun1020/bce-embedding-base_v1`
+- `RAGFLOW-IMAGE`
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.23.1` (the RAGFlow Docker image without embedding models).
 
+:::tip NOTE
+If you cannot download the RAGFlow Docker image, try the following mirrors.
 
-:::tip NOTE  
-If you cannot download the RAGFlow Docker image, try the following mirrors.  
-
-- For the `nightly-slim` edition:  
-  - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly-slim` or,
-  - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly-slim`.
-- For the `nightly` edition:  
+- For the `nightly` edition:
   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
 :::
 
+### Embedding service
+
+- `TEI_MODEL`
+  The embedding model which text-embeddings-inference serves. Allowed values are one of `Qwen/Qwen3-Embedding-0.6B`(default), `BAAI/bge-m3`, and `BAAI/bge-small-en-v1.5`.
+
+- `TEI_PORT`
+  The port used to expose the text-embeddings-inference service to the host machine, allowing **external** access to the text-embeddings-inference service running inside the Docker container. Defaults to `6380`.
+
 ### Timezone
 
-- `TIMEZONE`  
-  The local time zone. Defaults to `'Asia/Shanghai'`.
+- `TZ`
+  The local time zone. Defaults to `Asia/Shanghai`.
 
 ### Hugging Face mirror site
 
-- `HF_ENDPOINT`  
+- `HF_ENDPOINT`
   The mirror site for huggingface.co. It is disabled by default. You can uncomment this line if you have limited access to the primary Hugging Face domain.
 
 ### MacOS
 
-- `MACOS`  
+- `MACOS`
   Optimizations for macOS. It is disabled by default. You can uncomment this line if your OS is macOS.
 
 ### User registration
@@ -148,7 +152,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `port`: The API server's serving port inside the Docker container. Defaults to `9380`.
 
 ### `mysql`
-  
+
 - `name`: The MySQL database name. Defaults to `rag_flow`.
 - `user`: The username for MySQL.
 - `password`: The password for MySQL.
@@ -157,12 +161,19 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `stale_timeout`: Timeout in seconds.
 
 ### `minio`
-  
+
 - `user`: The username for MinIO.
 - `password`: The password for MinIO.
 - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
 
-### `oauth`  
+### `redis`
+
+- `host`: The Redis serving IP *and* port inside the Docker container. Defaults to `redis:6379`.
+- `db`: The Redis database index to use. Defaults to `1`.
+- `username`: Optional Redis ACL username (Redis 6+).
+- `password`: The password for the specified Redis user.
+
+### `oauth`
 
 The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.
 
@@ -179,7 +190,7 @@ The OAuth configuration for signing up or signing in to RAGFlow using a third-pa
   - `scope`: Requested permission scope, a space-separated string. For example, `openid profile email`.
   - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/v1/user/oauth/callback/<channel>`. For local configuration, you can directly use `http://127.0.0.1:80/v1/user/oauth/callback/<channel>`.
 
-:::tip NOTE 
+:::tip NOTE
 The following are best practices for configuring various third-party authentication methods. You can configure one or multiple third-party authentication methods for Ragflow:
 ```yaml
 oauth:
@@ -211,9 +222,9 @@ oauth:
 ```
 :::
 
-### `user_default_llm`  
+### `user_default_llm`
 
-The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.  
+The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
 
 - `factory`: The LLM supplier. Available options:
   - `"OpenAI"`
@@ -223,7 +234,11 @@ The default LLM to use for a new RAGFlow user. It is disabled by default. To ena
   - `"VolcEngine"`
   - `"ZHIPU-AI"`
 - `api_key`: The API key for the specified LLM. You will need to apply for your model API key online.
+- `allowed_factories`: If this is set, the users will be allowed to add only the factories in this list.
+  - `"OpenAI"`
+  - `"DeepSeek"`
+  - `"Moonshot"`
 
-:::tip NOTE  
+:::tip NOTE
 If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.
 :::

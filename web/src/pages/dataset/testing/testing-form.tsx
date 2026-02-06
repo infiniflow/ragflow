@@ -4,18 +4,23 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
+import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import {
-  initialTopKValue,
+  MetadataFilter,
+  MetadataFilterSchema,
+} from '@/components/metadata-filter';
+import {
   RerankFormFields,
+  initialTopKValue,
   topKSchema,
 } from '@/components/rerank';
 import {
-  initialKeywordsSimilarityWeightValue,
-  initialSimilarityThresholdValue,
-  keywordsSimilarityWeightSchema,
   SimilaritySliderFormField,
+  initialSimilarityThresholdValue,
+  initialVectorSimilarityWeightValue,
   similarityThresholdSchema,
+  vectorSimilarityWeightSchema,
 } from '@/components/similarity-slider';
 import { ButtonLoading } from '@/components/ui/button';
 import {
@@ -23,15 +28,16 @@ import {
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
 import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
 import { trim } from 'lodash';
+import { Send } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 
 type TestingFormProps = Pick<
   ReturnType<typeof useTestRetrieval>,
@@ -44,22 +50,29 @@ export default function TestingForm({
   setValues,
 }: TestingFormProps) {
   const { t } = useTranslation();
+  const { id } = useParams();
+  const knowledgeBaseId = id;
 
   const formSchema = z.object({
     question: z.string().min(1, {
       message: t('knowledgeDetails.testTextPlaceholder'),
     }),
     ...similarityThresholdSchema,
-    ...keywordsSimilarityWeightSchema,
+    ...vectorSimilarityWeightSchema,
     ...topKSchema,
+    use_kg: z.boolean().optional(),
+    kb_ids: z.array(z.string()).optional(),
+    ...MetadataFilterSchema,
   });
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       ...initialSimilarityThresholdValue,
-      ...initialKeywordsSimilarityWeightValue,
+      ...initialVectorSimilarityWeightValue,
       ...initialTopKValue,
+      use_kg: false,
+      kb_ids: [knowledgeBaseId],
     },
   });
 
@@ -80,36 +93,40 @@ export default function TestingForm({
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
         <FormContainer className="p-10">
           <SimilaritySliderFormField
-            vectorSimilarityWeightName="keywords_similarity_weight"
-            isTooltipShown
+            isTooltipShown={true}
           ></SimilaritySliderFormField>
           <RerankFormFields></RerankFormFields>
           <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
+          <CrossLanguageFormField
+            name={'cross_languages'}
+          ></CrossLanguageFormField>
+          <MetadataFilter prefix=""></MetadataFilter>
         </FormContainer>
         <FormField
           control={form.control}
           name="question"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('knowledgeDetails.testText')}</FormLabel>
+              {/* <FormLabel>{t('knowledgeDetails.testText')}</FormLabel> */}
               <FormControl>
-                <Textarea
-                  {...field}
-                  className="bg-colors-background-inverse-weak"
-                ></Textarea>
+                <Textarea {...field}></Textarea>
               </FormControl>
 
               <FormMessage />
             </FormItem>
           )}
         />
-        <ButtonLoading
-          type="submit"
-          disabled={!!!trim(question)}
-          loading={loading}
-        >
-          {t('knowledgeDetails.testingLabel')}
-        </ButtonLoading>
+        <div className="flex justify-end">
+          <ButtonLoading
+            type="submit"
+            disabled={!!!trim(question)}
+            loading={loading}
+          >
+            {/* {!loading && <CirclePlay />} */}
+            {t('knowledgeDetails.testingLabel')}
+            <Send />
+          </ButtonLoading>
+        </div>
       </form>
     </Form>
   );

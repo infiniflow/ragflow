@@ -1,26 +1,50 @@
+import { FormContainer } from '@/components/form-container';
 import { LargeModelFormField } from '@/components/large-model-form-field';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
 import { Form } from '@/components/ui/form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { memo } from 'react';
+import { useForm } from 'react-hook-form';
+import { initialCategorizeValues } from '../../constant';
 import { INextOperatorForm } from '../../interface';
-import { DynamicInputVariable } from '../components/next-dynamic-input-variable';
+import { buildOutputList } from '../../utils/build-output-list';
+import { FormWrapper } from '../components/form-wrapper';
+import { Output } from '../components/output';
+import { QueryVariable } from '../components/query-variable';
 import DynamicCategorize from './dynamic-categorize';
+import { useCreateCategorizeFormSchema } from './use-form-schema';
+import { useValues } from './use-values';
+import { useWatchFormChange } from './use-watch-change';
 
-const CategorizeForm = ({ form, node }: INextOperatorForm) => {
+const outputList = buildOutputList(initialCategorizeValues.outputs);
+
+function CategorizeForm({ node }: INextOperatorForm) {
+  const values = useValues(node);
+
+  const FormSchema = useCreateCategorizeFormSchema();
+
+  const form = useForm({
+    defaultValues: values,
+    resolver: zodResolver(FormSchema),
+  });
+
+  useWatchFormChange(node?.id, form);
+
   return (
     <Form {...form}>
-      <form
-        className="space-y-6 p-5 overflow-auto max-h-[76vh]"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
-        <DynamicInputVariable node={node}></DynamicInputVariable>
-        <LargeModelFormField></LargeModelFormField>
-        <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
+      <FormWrapper>
+        <FormContainer>
+          <QueryVariable></QueryVariable>
+          <LargeModelFormField></LargeModelFormField>
+        </FormContainer>
+        <MessageHistoryWindowSizeFormField
+          min={0}
+        ></MessageHistoryWindowSizeFormField>
         <DynamicCategorize nodeId={node?.id}></DynamicCategorize>
-      </form>
+        <Output list={outputList}></Output>
+      </FormWrapper>
     </Form>
   );
-};
+}
 
-export default CategorizeForm;
+export default memo(CategorizeForm);

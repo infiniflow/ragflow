@@ -1,4 +1,5 @@
 import { MessageType } from '@/constants/chat';
+import { IAttachment } from '@/hooks/use-send-message';
 
 export interface PromptConfig {
   empty_response: string;
@@ -6,6 +7,13 @@ export interface PromptConfig {
   prologue: string;
   system: string;
   tts?: boolean;
+  quote: boolean;
+  keyword: boolean;
+  refine_multiturn: boolean;
+  use_kg: boolean;
+  reasoning?: boolean;
+  cross_languages?: Array<string>;
+  tavily_api_key?: string;
 }
 
 export interface Parameter {
@@ -26,6 +34,7 @@ export interface Variable {
   presence_penalty?: number;
   temperature?: number;
   top_p?: number;
+  llm_id?: string;
 }
 
 export interface IDialog {
@@ -50,6 +59,20 @@ export interface IDialog {
   update_time: number;
   vector_similarity_weight: number;
   similarity_threshold: number;
+  top_k: number;
+  top_n: number;
+  meta_data_filter: MetaDataFilter;
+}
+
+interface MetaDataFilter {
+  manual: Manual[];
+  method: string;
+}
+
+interface Manual {
+  key: string;
+  op: string;
+  value: string;
 }
 
 export interface IConversation {
@@ -73,6 +96,10 @@ export interface Message {
   prompt?: string;
   id?: string;
   audio_binary?: string;
+  data?: any;
+  files?: (File | UploadResponseDataType)[];
+  chatBoxId?: string;
+  attachment?: IAttachment;
 }
 
 export interface IReferenceChunk {
@@ -95,13 +122,21 @@ export interface IReference {
   total: number;
 }
 
+export interface IReferenceObject {
+  chunks: Record<string, IReferenceChunk>;
+  doc_aggs: Record<string, Docagg>;
+}
+
 export interface IAnswer {
   answer: string;
-  reference: IReference;
+  attachment?: IAttachment;
+  reference?: IReference;
   conversationId?: string;
   prompt?: string;
   id?: string;
   audio_binary?: string;
+  data?: any;
+  chatBoxId?: string;
 }
 
 export interface Docagg {
@@ -142,4 +177,32 @@ export interface IStats {
   tokens: [string, number][];
   round: [string, number][];
   thumb_up: [string, number][];
+}
+
+export interface IExternalChatInfo {
+  avatar?: string;
+  title: string;
+  prologue?: string;
+  has_tavily_key?: boolean;
+}
+
+export interface IMessage extends Message {
+  id: string;
+  reference?: IReference; // the latest news has reference
+  conversationId?: string; // To distinguish which conversation the message belongs to
+}
+
+export interface IClientConversation extends IConversation {
+  message: IMessage[];
+}
+
+export interface UploadResponseDataType {
+  created_at: number;
+  created_by: string;
+  extension: string;
+  id: string;
+  mime_type: string;
+  name: string;
+  preview_url: null;
+  size: number;
 }

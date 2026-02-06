@@ -42,10 +42,6 @@
     --colors-background-inverse-weak: rgba(17, 16, 23, 0.1);
     --colors-background-neutral-standard: white;
     --colors-background-neutral-strong: rgba(226, 223, 246, 1);
-    --colors-background-functional-solid-danger: rgba(222, 17, 53, 1);
-    --colors-background-core-strong: rgba(98, 72, 246, 1);
-    --colors-background-sentiment-solid-primary: rgba(127, 105, 255, 1);
-    --colors-background-core-standard: rgb(90, 75, 254);
 
     --button-blue-text: rgb(22, 119, 255);
 
@@ -61,7 +57,6 @@
     --colors-text-inverse-strong: rgba(255, 255, 255, 1);
     --colors-text-persist-light: rgba(255, 255, 255, 1);
     --colors-text-inverse-weak: rgba(184, 181, 203, 1);
-    --text-delete-red: rgba(216, 73, 75, 1);
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -81,11 +76,62 @@
     --text-sub-title: rgba(151, 154, 171, 1);
     --text-sub-title-invert: rgba(91, 93, 106, 1);
 
-    --background-header-bar: rgba(11, 11, 12, 1);
+    --background-header-bar: rgba(0, 0, 0, 0.05);
     --text-title-invert: rgba(255, 255, 255, 1);
     --background-card: rgba(22, 22, 24, 0.05);
 
-    --background-checked: rgba(76, 164, 231, 1);
+    --background-note: rgba(22, 22, 24, 0.1);
+
+    --background-highlight: rgba(76, 164, 231, 0.1);
+
+    --input-border: rgba(22, 22, 24, 0.2);
+
+    --metallic: #46464a;
+
+    --bg-title: #f6f6f7;
+    /* design colors */
+
+    --bg-base: #ffffff;
+    /* card color , dividing line */
+    --bg-card: rgba(0, 0, 0, 0.05);
+    --bg-component: #ffffff;
+    --bg-input: rgba(255, 255, 255, 0);
+    --bg-canvas: 246 246 247;
+    --bg-list: 246 246 247;
+    /* Button ,Body text, Input completed text */
+
+    /* #161618 */
+    --text-primary: 22 22 24;
+    --text-secondary: 117 120 122;
+    --text-disabled: #b2b5b7;
+    /* input placeholder color */
+    --text-input-tip: #b2b5b7;
+    /* Input  default color */
+    --border-default: rgba(0, 0, 0, 0.2);
+    /* Input accent color */
+    --border-accent: #000000;
+    --border-button: rgba(0, 0, 0, 0.1);
+    /* Regulators, parsing, switches, variables */
+    --accent-primary: 0 190 180;
+    /* Output Variables Box */
+    --bg-accent: rgba(76, 164, 231, 0.05);
+
+    /* --state-success: #3ba05c; */
+    --state-success: 59 160 92;
+    /* --state-warning: #767573; */
+    --state-warning: 250 173 20;
+    --state-error: 216 73 75;
+
+    --team-group: #5ab77e;
+    --team-member: #5c96c8;
+    --team-department: #8866d3;
+    --bg-group: rgba(90, 183, 126, 0.1);
+    --bg-member: rgba(92, 150, 200, 0.1);
+    --bg-department: rgba(136, 102, 211, 0.1);
+
+    /* --*-inverse: colors in dark mode */
+    --text-primary-inverse: 246 246 247;
+    --text-secondary-inverse: 178 181 183;
   }
 
   .dark {
@@ -138,27 +184,11 @@
     --background-badge: rgba(22, 22, 24, 0.5);
     --text-badge: rgba(151, 154, 171, 1);
 
-    --colors-background-core-standard: rgba(137, 126, 255, 1);
-    --colors-background-core-strong: rgba(152, 147, 255, 1);
-    --colors-background-core-weak: rgba(101, 75, 248, 1);
-    --colors-background-functional-solid-danger: rgba(255, 57, 92, 1);
-    --colors-background-functional-solid-notice: rgba(255, 208, 94, 1);
-    --colors-background-functional-solid-positive: rgba(74, 225, 145, 1);
-    --colors-background-functional-transparent-danger: rgba(234, 50, 83, 0.2);
-    --colors-background-functional-transparent-notice: rgba(248, 208, 111, 0.5);
-    --colors-background-functional-transparent-positive: rgba(
-      65,
-      203,
-      130,
-      0.5
-    );
     --colors-background-inverse-standard: rgba(230, 227, 246, 0.15);
     --colors-background-inverse-strong: rgba(255, 255, 255, 0.8);
-    --colors-background-inverse-weak: rgba(184, 181, 203, 0.15);
     --colors-background-neutral-standard: rgba(11, 10, 18, 1);
     --colors-background-neutral-strong: rgba(29, 26, 44, 1);
     --colors-background-neutral-weak: rgba(17, 16, 23, 1);
-    --colors-background-sentiment-solid-primary: rgba(146, 118, 255, 1);
 
     --colors-outline-sentiment-primary: rgba(146, 118, 255, 1);
     --colors-outline-neutral-strong: rgba(255, 255, 255, 0.15);
@@ -172,7 +202,6 @@
     --colors-text-inverse-strong: rgba(17, 16, 23, 1);
     --colors-text-persist-light: rgba(255, 255, 255, 1);
     --colors-text-inverse-weak: rgba(84, 80, 106, 1);
-    --text-delete-red: rgba(216, 73, 75, 1);
 
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
@@ -191,7 +220,36 @@
     --text-title-invert: rgba(22, 22, 24, 1);
 
     --background-card: rgba(255, 255, 255, 0.05);
-    --background-checked: rgba(76, 164, 231, 1);
+    --background-note: rgba(255, 255, 255, 0.05);
+
+    --background-highlight: rgba(76, 164, 231, 0.1);
+
+    --input-border: rgba(255, 255, 255, 0.2);
+
+    --metallic: #fafafa;
+
+    --bg-title: #38383a;
+    /* design colors */
+
+    --bg-base: #161618;
+    --bg-card: rgba(255, 255, 255, 0.05);
+    --bg-component: #202025;
+    --bg-input: rgba(255, 255, 255, 0.05);
+    --bg-canvas: 0 0 0;
+    --bg-list: 56 56 58;
+
+    /* #f6f6f7 */
+    --text-primary: 246 246 247;
+    --text-secondary: 178 181 183;
+    --text-disabled: #75787a;
+    --text-input-tip: #75787a;
+    --border-default: rgba(255, 255, 255, 0.2);
+    --border-accent: #ffffff;
+    --border-button: rgba(255, 255, 255, 0.1);
+
+    /* *-inverse: colors in light mode */
+    --text-primary-inverse: 22 22 24;
+    --text-secondary-inverse: 117 120 122;
   }
 }
 
@@ -200,7 +258,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-text-title-invert text-foreground;
+    @apply bg-bg-base text-text-primary;
     font-feature-settings:
       'rlig' 1,
       'calt' 1;
@@ -225,5 +283,40 @@
   img,
   video {
     max-width: none;
+  }
+}
+
+@layer utilities {
+  .scrollbar-auto {
+    /* hide scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-default) var(--bg-card);
+  }
+
+  .scrollbar-auto::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-auto::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-auto::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 3px;
+    transition: background-color 0.2s ease;
+  }
+
+  .scrollbar-auto:hover::-webkit-scrollbar-thumb,
+  .scrollbar-auto:focus::-webkit-scrollbar-thumb,
+  .scrollbar-auto:active::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+
+  .dark .scrollbar-auto:hover::-webkit-scrollbar-thumb,
+  .dark .scrollbar-auto:focus::-webkit-scrollbar-thumb,
+  .dark .scrollbar-auto:active::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.3);
   }
 }

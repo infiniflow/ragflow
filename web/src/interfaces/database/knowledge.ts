@@ -1,6 +1,13 @@
 import { RunningStatus } from '@/constants/knowledge';
+import { DataSourceKey } from '@/pages/user-setting/data-source/contant';
 import { TreeData } from '@antv/g6/lib/types';
-
+export interface IConnector {
+  id: string;
+  name: string;
+  status: RunningStatus;
+  source: DataSourceKey;
+  auto_parse?: '0' | '1';
+}
 // knowledge base
 export interface IKnowledge {
   avatar?: any;
@@ -14,6 +21,9 @@ export interface IKnowledge {
   name: string;
   parser_config: ParserConfig;
   parser_id: string;
+  pipeline_id: string;
+  pipeline_name: string;
+  pipeline_avatar: string;
   permission: string;
   similarity_threshold: number;
   status: string;
@@ -26,6 +36,13 @@ export interface IKnowledge {
   nickname: string;
   operator_permission: number;
   size: number;
+  raptor_task_finish_at?: string;
+  raptor_task_id?: string;
+  mindmap_task_finish_at?: string;
+  mindmap_task_id?: string;
+  graphrag_task_finish_at: string;
+  graphrag_task_id: string;
+  connectors: IConnector[];
 }
 
 export interface IKnowledgeResult {
@@ -50,6 +67,9 @@ export interface ParserConfig {
   tag_kb_ids?: string[];
   topn_tags?: number;
   graphrag?: { use_graphrag?: boolean };
+  enable_metadata?: boolean;
+  metadata?: any;
+  built_in_metadata?: Array<{ key: string; type: string }>;
 }
 
 export interface IKnowledgeFileParserConfig {
@@ -69,7 +89,7 @@ export interface IKnowledgeFile {
   name: string;
   parser_id: string;
   process_begin_at?: any;
-  process_duation: number;
+  process_duration: number;
   progress: number; // parsing process
   progress_msg: string; // parsing log
   run: RunningStatus; // parsing status
@@ -95,8 +115,11 @@ export interface ITenantInfo {
   tenant_id: string;
   chat_id: string;
   speech2text_id: string;
+  rerank_id?: string;
   tts_id: string;
 }
+
+export type ChunkDocType = 'image' | 'table' | 'text';
 
 export interface IChunk {
   available_int: number; // Whether to enable, 0: not enabled, 1: enabled
@@ -104,6 +127,7 @@ export interface IChunk {
   content_with_weight: string;
   doc_id: string;
   doc_name: string;
+  doc_type_kwd?: ChunkDocType;
   image_id: string;
   important_kwd?: string[];
   question_kwd?: string[]; // keywords
@@ -150,6 +174,7 @@ export interface INextTestingResult {
   doc_aggs: ITestingDocument[];
   total: number;
   labels?: Record<string, number>;
+  isRuned?: boolean;
 }
 
 export type IRenameTag = { fromTag: string; toTag: string };

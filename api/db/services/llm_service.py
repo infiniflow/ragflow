@@ -13,216 +13,78 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
+import inspect
 import logging
+import queue
+import re
+import threading
+from functools import partial
+from typing import Generator
 
-from langfuse import Langfuse
-
-from api import settings
-from api.db import LLMType
-from api.db.db_models import DB, LLM, LLMFactories, TenantLLM
+from api.db.db_models import LLM
 from api.db.services.common_service import CommonService
-from api.db.services.langfuse_service import TenantLangfuseService
-from api.db.services.user_service import TenantService
-from rag.llm import ChatModel, CvModel, EmbeddingModel, RerankModel, Seq2txtModel, TTSModel
-
-
-class LLMFactoriesService(CommonService):
-    model = LLMFactories
+from api.db.services.tenant_llm_service import LLM4Tenant, TenantLLMService
+from common.constants import LLMType
+from common.token_utils import num_tokens_from_string
 
 
 class LLMService(CommonService):
     model = LLM
 
 
-class TenantLLMService(CommonService):
-    model = TenantLLM
+def get_init_tenant_llm(user_id):
+    from common import settings
 
-    @classmethod
-    @DB.connection_context()
-    def get_api_key(cls, tenant_id, model_name):
-        mdlnm, fid = TenantLLMService.split_model_name_and_factory(model_name)
-        if not fid:
-            objs = cls.query(tenant_id=tenant_id, llm_name=mdlnm)
-        else:
-            objs = cls.query(tenant_id=tenant_id, llm_name=mdlnm, llm_factory=fid)
-        if not objs:
-            return
-        return objs[0]
+    tenant_llm = []
 
-    @classmethod
-    @DB.connection_context()
-    def get_my_llms(cls, tenant_id):
-        fields = [cls.model.llm_factory, LLMFactories.logo, LLMFactories.tags, cls.model.model_type, cls.model.llm_name, cls.model.used_tokens]
-        objs = cls.model.select(*fields).join(LLMFactories, on=(cls.model.llm_factory == LLMFactories.name)).where(cls.model.tenant_id == tenant_id, ~cls.model.api_key.is_null()).dicts()
+    model_configs = {
+        LLMType.CHAT: settings.CHAT_CFG,
+        LLMType.EMBEDDING: settings.EMBEDDING_CFG,
+        LLMType.SPEECH2TEXT: settings.ASR_CFG,
+        LLMType.IMAGE2TEXT: settings.IMAGE2TEXT_CFG,
+        LLMType.RERANK: settings.RERANK_CFG,
+    }
 
-        return list(objs)
+    seen = set()
+    factory_configs = []
+    for factory_config in [
+        settings.CHAT_CFG,
+        settings.EMBEDDING_CFG,
+        settings.ASR_CFG,
+        settings.IMAGE2TEXT_CFG,
+        settings.RERANK_CFG,
+    ]:
+        factory_name = factory_config["factory"]
+        if factory_name not in seen:
+            seen.add(factory_name)
+            factory_configs.append(factory_config)
 
-    @staticmethod
-    def split_model_name_and_factory(model_name):
-        arr = model_name.split("@")
-        if len(arr) < 2:
-            return model_name, None
-        if len(arr) > 2:
-            return "@".join(arr[0:-1]), arr[-1]
-
-        # model name must be xxx@yyy
-        try:
-            model_factories = settings.FACTORY_LLM_INFOS
-            model_providers = set([f["name"] for f in model_factories])
-            if arr[-1] not in model_providers:
-                return model_name, None
-            return arr[0], arr[-1]
-        except Exception as e:
-            logging.exception(f"TenantLLMService.split_model_name_and_factory got exception: {e}")
-        return model_name, None
-
-    @classmethod
-    @DB.connection_context()
-    def get_model_config(cls, tenant_id, llm_type, llm_name=None):
-        e, tenant = TenantService.get_by_id(tenant_id)
-        if not e:
-            raise LookupError("Tenant not found")
-
-        if llm_type == LLMType.EMBEDDING.value:
-            mdlnm = tenant.embd_id if not llm_name else llm_name
-        elif llm_type == LLMType.SPEECH2TEXT.value:
-            mdlnm = tenant.asr_id
-        elif llm_type == LLMType.IMAGE2TEXT.value:
-            mdlnm = tenant.img2txt_id if not llm_name else llm_name
-        elif llm_type == LLMType.CHAT.value:
-            mdlnm = tenant.llm_id if not llm_name else llm_name
-        elif llm_type == LLMType.RERANK:
-            mdlnm = tenant.rerank_id if not llm_name else llm_name
-        elif llm_type == LLMType.TTS:
-            mdlnm = tenant.tts_id if not llm_name else llm_name
-        else:
-            assert False, "LLM type error"
-
-        model_config = cls.get_api_key(tenant_id, mdlnm)
-        mdlnm, fid = TenantLLMService.split_model_name_and_factory(mdlnm)
-        if not model_config:  # for some cases seems fid mismatch
-            model_config = cls.get_api_key(tenant_id, mdlnm)
-        if model_config:
-            model_config = model_config.to_dict()
-            llm = LLMService.query(llm_name=mdlnm) if not fid else LLMService.query(llm_name=mdlnm, fid=fid)
-            if not llm and fid:  # for some cases seems fid mismatch
-                llm = LLMService.query(llm_name=mdlnm)
-            if llm:
-                model_config["is_tools"] = llm[0].is_tools
-        if not model_config:
-            if llm_type in [LLMType.EMBEDDING, LLMType.RERANK]:
-                llm = LLMService.query(llm_name=mdlnm) if not fid else LLMService.query(llm_name=mdlnm, fid=fid)
-                if llm and llm[0].fid in ["Youdao", "FastEmbed", "BAAI"]:
-                    model_config = {"llm_factory": llm[0].fid, "api_key": "", "llm_name": mdlnm, "api_base": ""}
-            if not model_config:
-                if mdlnm == "flag-embedding":
-                    model_config = {"llm_factory": "Tongyi-Qianwen", "api_key": "", "llm_name": llm_name, "api_base": ""}
-                else:
-                    if not mdlnm:
-                        raise LookupError(f"Type of {llm_type} model is not set.")
-                    raise LookupError("Model({}) not authorized".format(mdlnm))
-        return model_config
-
-    @classmethod
-    @DB.connection_context()
-    def model_instance(cls, tenant_id, llm_type, llm_name=None, lang="Chinese"):
-        model_config = TenantLLMService.get_model_config(tenant_id, llm_type, llm_name)
-        if llm_type == LLMType.EMBEDDING.value:
-            if model_config["llm_factory"] not in EmbeddingModel:
-                return
-            return EmbeddingModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
-
-        if llm_type == LLMType.RERANK:
-            if model_config["llm_factory"] not in RerankModel:
-                return
-            return RerankModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
-
-        if llm_type == LLMType.IMAGE2TEXT.value:
-            if model_config["llm_factory"] not in CvModel:
-                return
-            return CvModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], lang, base_url=model_config["api_base"])
-
-        if llm_type == LLMType.CHAT.value:
-            if model_config["llm_factory"] not in ChatModel:
-                return
-            return ChatModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
-
-        if llm_type == LLMType.SPEECH2TEXT:
-            if model_config["llm_factory"] not in Seq2txtModel:
-                return
-            return Seq2txtModel[model_config["llm_factory"]](key=model_config["api_key"], model_name=model_config["llm_name"], lang=lang, base_url=model_config["api_base"])
-        if llm_type == LLMType.TTS:
-            if model_config["llm_factory"] not in TTSModel:
-                return
-            return TTSModel[model_config["llm_factory"]](
-                model_config["api_key"],
-                model_config["llm_name"],
-                base_url=model_config["api_base"],
+    for factory_config in factory_configs:
+        for llm in LLMService.query(fid=factory_config["factory"]):
+            tenant_llm.append(
+                {
+                    "tenant_id": user_id,
+                    "llm_factory": factory_config["factory"],
+                    "llm_name": llm.llm_name,
+                    "model_type": llm.model_type,
+                    "api_key": model_configs.get(llm.model_type, {}).get("api_key", factory_config["api_key"]),
+                    "api_base": model_configs.get(llm.model_type, {}).get("base_url", factory_config["base_url"]),
+                    "max_tokens": llm.max_tokens if llm.max_tokens else 8192,
+                }
             )
 
-    @classmethod
-    @DB.connection_context()
-    def increase_usage(cls, tenant_id, llm_type, used_tokens, llm_name=None):
-        e, tenant = TenantService.get_by_id(tenant_id)
-        if not e:
-            logging.error(f"Tenant not found: {tenant_id}")
-            return 0
-
-        llm_map = {
-            LLMType.EMBEDDING.value: tenant.embd_id,
-            LLMType.SPEECH2TEXT.value: tenant.asr_id,
-            LLMType.IMAGE2TEXT.value: tenant.img2txt_id,
-            LLMType.CHAT.value: tenant.llm_id if not llm_name else llm_name,
-            LLMType.RERANK.value: tenant.rerank_id if not llm_name else llm_name,
-            LLMType.TTS.value: tenant.tts_id if not llm_name else llm_name,
-        }
-
-        mdlnm = llm_map.get(llm_type)
-        if mdlnm is None:
-            logging.error(f"LLM type error: {llm_type}")
-            return 0
-
-        llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(mdlnm)
-
-        try:
-            num = (
-                cls.model.update(used_tokens=cls.model.used_tokens + used_tokens)
-                .where(cls.model.tenant_id == tenant_id, cls.model.llm_name == llm_name, cls.model.llm_factory == llm_factory if llm_factory else True)
-                .execute()
-            )
-        except Exception:
-            logging.exception("TenantLLMService.increase_usage got exception,Failed to update used_tokens for tenant_id=%s, llm_name=%s", tenant_id, llm_name)
-            return 0
-
-        return num
-
-    @classmethod
-    @DB.connection_context()
-    def get_openai_models(cls):
-        objs = cls.model.select().where((cls.model.llm_factory == "OpenAI"), ~(cls.model.llm_name == "text-embedding-3-small"), ~(cls.model.llm_name == "text-embedding-3-large")).dicts()
-        return list(objs)
+    unique = {}
+    for item in tenant_llm:
+        key = (item["tenant_id"], item["llm_factory"], item["llm_name"])
+        if key not in unique:
+            unique[key] = item
+    return list(unique.values())
 
 
-class LLMBundle:
-    def __init__(self, tenant_id, llm_type, llm_name=None, lang="Chinese"):
-        self.tenant_id = tenant_id
-        self.llm_type = llm_type
-        self.llm_name = llm_name
-        self.mdl = TenantLLMService.model_instance(tenant_id, llm_type, llm_name, lang=lang)
-        assert self.mdl, "Can't find model for {}/{}/{}".format(tenant_id, llm_type, llm_name)
-        model_config = TenantLLMService.get_model_config(tenant_id, llm_type, llm_name)
-        self.max_length = model_config.get("max_tokens", 8192)
-
-        self.is_tools = model_config.get("is_tools", False)
-
-        langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=tenant_id)
-        if langfuse_keys:
-            langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
-            if langfuse.auth_check():
-                self.langfuse = langfuse
-                self.trace = self.langfuse.trace(name=f"{self.llm_type}-{self.llm_name}")
-        else:
-            self.langfuse = None
+class LLMBundle(LLM4Tenant):
+    def __init__(self, tenant_id, llm_type, llm_name=None, lang="Chinese", **kwargs):
+        super().__init__(tenant_id, llm_type, llm_name, lang, **kwargs)
 
     def bind_tools(self, toolcall_session, tools):
         if not self.is_tools:
@@ -232,85 +94,165 @@ class LLMBundle:
 
     def encode(self, texts: list):
         if self.langfuse:
-            generation = self.trace.generation(name="encode", model=self.llm_name, input={"texts": texts})
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="encode", model=self.llm_name, input={"texts": texts})
 
-        embeddings, used_tokens = self.mdl.encode(texts)
-        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
-            logging.error("LLMBundle.encode can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
+        safe_texts = []
+        for text in texts:
+            token_size = num_tokens_from_string(text)
+            if token_size > self.max_length:
+                target_len = int(self.max_length * 0.95)
+                safe_texts.append(text[:target_len])
+            else:
+                safe_texts.append(text)
+
+        embeddings, used_tokens = self.mdl.encode(safe_texts)
+
+        llm_name = getattr(self, "llm_name", None)
+        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, llm_name):
+            logging.error("LLMBundle.encode can't update token usage for <tenant redacted>/EMBEDDING used_tokens: {}".format(used_tokens))
 
         if self.langfuse:
-            generation.end(usage_details={"total_tokens": used_tokens})
+            generation.update(usage_details={"total_tokens": used_tokens})
+            generation.end()
 
         return embeddings, used_tokens
 
     def encode_queries(self, query: str):
         if self.langfuse:
-            generation = self.trace.generation(name="encode_queries", model=self.llm_name, input={"query": query})
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="encode_queries", model=self.llm_name, input={"query": query})
 
         emd, used_tokens = self.mdl.encode_queries(query)
-        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
-            logging.error("LLMBundle.encode_queries can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
+        llm_name = getattr(self, "llm_name", None)
+        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, llm_name):
+            logging.error("LLMBundle.encode_queries can't update token usage for <tenant redacted>/EMBEDDING used_tokens: {}".format(used_tokens))
 
         if self.langfuse:
-            generation.end(usage_details={"total_tokens": used_tokens})
+            generation.update(usage_details={"total_tokens": used_tokens})
+            generation.end()
 
         return emd, used_tokens
 
     def similarity(self, query: str, texts: list):
         if self.langfuse:
-            generation = self.trace.generation(name="similarity", model=self.llm_name, input={"query": query, "texts": texts})
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="similarity", model=self.llm_name, input={"query": query, "texts": texts})
 
         sim, used_tokens = self.mdl.similarity(query, texts)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
             logging.error("LLMBundle.similarity can't update token usage for {}/RERANK used_tokens: {}".format(self.tenant_id, used_tokens))
 
         if self.langfuse:
-            generation.end(usage_details={"total_tokens": used_tokens})
+            generation.update(usage_details={"total_tokens": used_tokens})
+            generation.end()
 
         return sim, used_tokens
 
     def describe(self, image, max_tokens=300):
         if self.langfuse:
-            generation = self.trace.generation(name="describe", metadata={"model": self.llm_name})
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="describe", metadata={"model": self.llm_name})
 
         txt, used_tokens = self.mdl.describe(image)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
             logging.error("LLMBundle.describe can't update token usage for {}/IMAGE2TEXT used_tokens: {}".format(self.tenant_id, used_tokens))
 
         if self.langfuse:
-            generation.end(output={"output": txt}, usage_details={"total_tokens": used_tokens})
+            generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
+            generation.end()
 
         return txt
 
     def describe_with_prompt(self, image, prompt):
         if self.langfuse:
-            generation = self.trace.generation(name="describe_with_prompt", metadata={"model": self.llm_name, "prompt": prompt})
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="describe_with_prompt", metadata={"model": self.llm_name, "prompt": prompt})
 
         txt, used_tokens = self.mdl.describe_with_prompt(image, prompt)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
             logging.error("LLMBundle.describe can't update token usage for {}/IMAGE2TEXT used_tokens: {}".format(self.tenant_id, used_tokens))
 
         if self.langfuse:
-            generation.end(output={"output": txt}, usage_details={"total_tokens": used_tokens})
+            generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
+            generation.end()
 
         return txt
 
     def transcription(self, audio):
         if self.langfuse:
-            generation = self.trace.generation(name="transcription", metadata={"model": self.llm_name})
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="transcription", metadata={"model": self.llm_name})
 
         txt, used_tokens = self.mdl.transcription(audio)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
             logging.error("LLMBundle.transcription can't update token usage for {}/SEQUENCE2TXT used_tokens: {}".format(self.tenant_id, used_tokens))
 
         if self.langfuse:
-            generation.end(output={"output": txt}, usage_details={"total_tokens": used_tokens})
+            generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
+            generation.end()
 
         return txt
 
-    def tts(self, text):
+    def stream_transcription(self, audio):
+        mdl = self.mdl
+        supports_stream = hasattr(mdl, "stream_transcription") and callable(getattr(mdl, "stream_transcription"))
+        if supports_stream:
+            if self.langfuse:
+                generation = self.langfuse.start_generation(
+                    trace_context=self.trace_context,
+                    name="stream_transcription",
+                    metadata={"model": self.llm_name},
+                )
+            final_text = ""
+            used_tokens = 0
+
+            try:
+                for evt in mdl.stream_transcription(audio):
+                    if evt.get("event") == "final":
+                        final_text = evt.get("text", "")
+
+                    yield evt
+
+            except Exception as e:
+                err = {"event": "error", "text": str(e)}
+                yield err
+                final_text = final_text or ""
+            finally:
+                if final_text:
+                    used_tokens = num_tokens_from_string(final_text)
+                    TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens)
+
+                if self.langfuse:
+                    generation.update(
+                        output={"output": final_text},
+                        usage_details={"total_tokens": used_tokens},
+                    )
+                    generation.end()
+
+            return
+
         if self.langfuse:
-            span = self.trace.span(name="tts", input={"text": text})
+            generation = self.langfuse.start_generation(
+                trace_context=self.trace_context,
+                name="stream_transcription",
+                metadata={"model": self.llm_name},
+            )
+
+        full_text, used_tokens = mdl.transcription(audio)
+        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
+            logging.error(f"LLMBundle.stream_transcription can't update token usage for {self.tenant_id}/SEQUENCE2TXT used_tokens: {used_tokens}")
+
+        if self.langfuse:
+            generation.update(
+                output={"output": full_text},
+                usage_details={"total_tokens": used_tokens},
+            )
+            generation.end()
+
+        yield {
+            "event": "final",
+            "text": full_text,
+            "streaming": False,
+        }
+
+    def tts(self, text: str) -> Generator[bytes, None, None]:
+        if self.langfuse:
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="tts", input={"text": text})
 
         for chunk in self.mdl.tts(text):
             if isinstance(chunk, int):
@@ -320,7 +262,7 @@ class LLMBundle:
             yield chunk
 
         if self.langfuse:
-            span.end()
+            generation.end()
 
     def _remove_reasoning_content(self, txt: str) -> str:
         first_think_start = txt.find("<think>")
@@ -336,47 +278,209 @@ class LLMBundle:
 
         return txt[last_think_end + len("</think>") :]
 
-    def chat(self, system, history, gen_conf):
+    @staticmethod
+    def _clean_param(chat_partial, **kwargs):
+        func = chat_partial.func
+        sig = inspect.signature(func)
+        support_var_args = False
+        allowed_params = set()
+
+        for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                support_var_args = True
+            elif param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
+                allowed_params.add(param.name)
+        if support_var_args:
+            return kwargs
+        else:
+            return {k: v for k, v in kwargs.items() if k in allowed_params}
+
+    def _run_coroutine_sync(self, coro):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+
+        result_queue: queue.Queue = queue.Queue()
+
+        def runner():
+            try:
+                result_queue.put((True, asyncio.run(coro)))
+            except Exception as e:
+                result_queue.put((False, e))
+
+        thread = threading.Thread(target=runner, daemon=True)
+        thread.start()
+        thread.join()
+
+        success, value = result_queue.get_nowait()
+        if success:
+            return value
+        raise value
+
+    def _sync_from_async_stream(self, async_gen_fn, *args, **kwargs):
+        result_queue: queue.Queue = queue.Queue()
+
+        def runner():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            async def consume():
+                try:
+                    async for item in async_gen_fn(*args, **kwargs):
+                        result_queue.put(item)
+                except Exception as e:
+                    result_queue.put(e)
+                finally:
+                    result_queue.put(StopIteration)
+
+            loop.run_until_complete(consume())
+            loop.close()
+
+        threading.Thread(target=runner, daemon=True).start()
+
+        while True:
+            item = result_queue.get()
+            if item is StopIteration:
+                break
+            if isinstance(item, Exception):
+                raise item
+            yield item
+
+    def _bridge_sync_stream(self, gen):
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def worker():
+            try:
+                for item in gen:
+                    loop.call_soon_threadsafe(queue.put_nowait, item)
+            except Exception as e:
+                loop.call_soon_threadsafe(queue.put_nowait, e)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, StopAsyncIteration)
+
+        threading.Thread(target=worker, daemon=True).start()
+        return queue
+
+    async def async_chat(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
+        if self.is_tools and getattr(self.mdl, "is_tools", False) and hasattr(self.mdl, "async_chat_with_tools"):
+            base_fn = self.mdl.async_chat_with_tools
+        elif hasattr(self.mdl, "async_chat"):
+            base_fn = self.mdl.async_chat
+        else:
+            raise RuntimeError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
+
+        generation = None
         if self.langfuse:
-            generation = self.trace.generation(name="chat", model=self.llm_name, input={"system": system, "history": history})
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="chat", model=self.llm_name, input={"system": system, "history": history})
 
-        chat = self.mdl.chat
-        if self.is_tools and self.mdl.is_tools:
-            chat = self.mdl.chat_with_tools
+        chat_partial = partial(base_fn, system, history, gen_conf)
+        use_kwargs = self._clean_param(chat_partial, **kwargs)
 
-        txt, used_tokens = chat(system, history, gen_conf)
+        try:
+            txt, used_tokens = await chat_partial(**use_kwargs)
+        except Exception as e:
+            if generation:
+                generation.update(output={"error": str(e)})
+                generation.end()
+            raise
+
         txt = self._remove_reasoning_content(txt)
+        if not self.verbose_tool_use:
+            txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
 
-        if isinstance(txt, int) and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, self.llm_name):
-            logging.error("LLMBundle.chat can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, used_tokens))
+        if used_tokens and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, self.llm_name):
+            logging.error("LLMBundle.async_chat can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, used_tokens))
 
-        if self.langfuse:
-            generation.end(output={"output": txt}, usage_details={"total_tokens": used_tokens})
+        if generation:
+            generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
+            generation.end()
 
         return txt
 
-    def chat_streamly(self, system, history, gen_conf):
-        if self.langfuse:
-            generation = self.trace.generation(name="chat_streamly", model=self.llm_name, input={"system": system, "history": history})
-
-        ans = ""
-        chat_streamly = self.mdl.chat_streamly
+    async def async_chat_streamly(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
         total_tokens = 0
-        if self.is_tools and self.mdl.is_tools:
-            chat_streamly = self.mdl.chat_streamly_with_tools
+        ans = ""
+        if self.is_tools and getattr(self.mdl, "is_tools", False) and hasattr(self.mdl, "async_chat_streamly_with_tools"):
+            stream_fn = getattr(self.mdl, "async_chat_streamly_with_tools", None)
+        elif hasattr(self.mdl, "async_chat_streamly"):
+            stream_fn = getattr(self.mdl, "async_chat_streamly", None)
+        else:
+            raise RuntimeError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
 
-        for txt in chat_streamly(system, history, gen_conf):
-            if isinstance(txt, int):
-                total_tokens = txt
-                if self.langfuse:
-                    generation.end(output={"output": ans})
-                break
+        generation = None
+        if self.langfuse:
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="chat_streamly", model=self.llm_name, input={"system": system, "history": history})
 
-            if txt.endswith("</think>"):
-                ans = ans.rstrip("</think>")
+        if stream_fn:
+            chat_partial = partial(stream_fn, system, history, gen_conf)
+            use_kwargs = self._clean_param(chat_partial, **kwargs)
+            try:
+                async for txt in chat_partial(**use_kwargs):
+                    if isinstance(txt, int):
+                        total_tokens = txt
+                        break
 
-            ans += txt
-            yield ans
-        if total_tokens > 0:
-            if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, txt, self.llm_name):
-                logging.error("LLMBundle.chat_streamly can't update token usage for {}/CHAT llm_name: {}, content: {}".format(self.tenant_id, self.llm_name, txt))
+                    if txt.endswith("</think>"):
+                        ans = ans[: -len("</think>")]
+
+                    if not self.verbose_tool_use:
+                        txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
+
+                    ans += txt
+                    yield ans
+            except Exception as e:
+                if generation:
+                    generation.update(output={"error": str(e)})
+                    generation.end()
+                raise
+            if total_tokens and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, total_tokens, self.llm_name):
+                logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, total_tokens))
+            if generation:
+                generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
+                generation.end()
+            return
+
+    async def async_chat_streamly_delta(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
+        total_tokens = 0
+        ans = ""
+        if self.is_tools and getattr(self.mdl, "is_tools", False) and hasattr(self.mdl, "async_chat_streamly_with_tools"):
+            stream_fn = getattr(self.mdl, "async_chat_streamly_with_tools", None)
+        elif hasattr(self.mdl, "async_chat_streamly"):
+            stream_fn = getattr(self.mdl, "async_chat_streamly", None)
+        else:
+            raise RuntimeError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
+
+        generation = None
+        if self.langfuse:
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="chat_streamly", model=self.llm_name, input={"system": system, "history": history})
+
+        if stream_fn:
+            chat_partial = partial(stream_fn, system, history, gen_conf)
+            use_kwargs = self._clean_param(chat_partial, **kwargs)
+            try:
+                async for txt in chat_partial(**use_kwargs):
+                    if isinstance(txt, int):
+                        total_tokens = txt
+                        break
+
+                    if txt.endswith("</think>"):
+                        ans = ans[: -len("</think>")]
+
+                    if not self.verbose_tool_use:
+                        txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
+
+                    ans += txt
+                    yield txt
+            except Exception as e:
+                if generation:
+                    generation.update(output={"error": str(e)})
+                    generation.end()
+                raise
+            if total_tokens and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, total_tokens, self.llm_name):
+                logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, total_tokens))
+            if generation:
+                generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
+                generation.end()
+            return

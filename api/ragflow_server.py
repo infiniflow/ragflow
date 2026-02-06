@@ -18,32 +18,30 @@
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
-from api.utils.log_utils import initRootLogger
-from plugin import GlobalPluginManager
-initRootLogger("ragflow_server")
+import time
+start_ts = time.time()
 
 import logging
 import os
 import signal
 import sys
-import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor
 import threading
 import uuid
+import faulthandler
 
-from werkzeug.serving import run_simple
-from api import settings
 from api.apps import app
 from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
-from api import utils
-
+from common.file_utils import get_project_base_directory
+from common import settings
 from api.db.db_models import init_database_tables as init_web_db
-from api.db.init_data import init_web_data
-from api.versions import get_ragflow_version
-from api.utils import show_configs
-from rag.settings import print_rag_settings
+from api.db.init_data import init_web_data, init_superuser
+from common.versions import get_ragflow_version
+from common.config_utils import show_configs
+from common.mcp_tool_call_conn import shutdown_all_mcp_sessions
+from common.log_utils import init_root_logger
+from agent.plugin import GlobalPluginManager
 from rag.utils.redis_conn import RedisDistributedLock
 
 stop_event = threading.Event()
@@ -59,36 +57,42 @@ def update_progress():
             if redis_lock.acquire():
                 DocumentService.update_progress()
                 redis_lock.release()
-            stop_event.wait(6)
         except Exception:
             logging.exception("update_progress exception")
         finally:
-            redis_lock.release()
+            try:
+                redis_lock.release()
+            except Exception:
+                logging.exception("update_progress exception")
+            stop_event.wait(6)
 
 def signal_handler(sig, frame):
     logging.info("Received interrupt signal, shutting down...")
+    shutdown_all_mcp_sessions()
     stop_event.set()
-    time.sleep(1)
+    stop_event.wait(1)
     sys.exit(0)
 
 if __name__ == '__main__':
+    faulthandler.enable()
+    init_root_logger("ragflow_server")
     logging.info(r"""
-        ____   ___    ______ ______ __               
+        ____   ___    ______ ______ __
        / __ \ /   |  / ____// ____// /____  _      __
       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     """)
     logging.info(
         f'RAGFlow version: {get_ragflow_version()}'
     )
     logging.info(
-        f'project base: {utils.file_utils.get_project_base_directory()}'
+        f'project base: {get_project_base_directory()}'
     )
     show_configs()
     settings.init_settings()
-    print_rag_settings()
+    settings.print_rag_settings()
 
     if RAGFLOW_DEBUGPY_LISTEN > 0:
         logging.info(f"debugpy listen on {RAGFLOW_DEBUGPY_LISTEN}")
@@ -108,11 +112,16 @@ if __name__ == '__main__':
     parser.add_argument(
         "--debug", default=False, help="debug mode", action="store_true"
     )
+    parser.add_argument(
+        "--init-superuser", default=False, help="init superuser", action="store_true"
+    )
     args = parser.parse_args()
     if args.version:
         print(get_ragflow_version())
         sys.exit(0)
 
+    if args.init_superuser:
+        init_superuser()
     RuntimeConfig.DEBUG = args.debug
     if RuntimeConfig.DEBUG:
         logging.info("run on debug mode")
@@ -125,22 +134,23 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    thread = ThreadPoolExecutor(max_workers=1)
-    thread.submit(update_progress)
+    def delayed_start_update_progress():
+        logging.info("Starting update_progress thread (delayed)")
+        t = threading.Thread(target=update_progress, daemon=True)
+        t.start()
+
+    if RuntimeConfig.DEBUG:
+        if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+            threading.Timer(1.0, delayed_start_update_progress).start()
+    else:
+        threading.Timer(1.0, delayed_start_update_progress).start()
 
     # start http server
     try:
-        logging.info("RAGFlow HTTP server start...")
-        run_simple(
-            hostname=settings.HOST_IP,
-            port=settings.HOST_PORT,
-            application=app,
-            threaded=True,
-            use_reloader=RuntimeConfig.DEBUG,
-            use_debugger=RuntimeConfig.DEBUG,
-        )
+        logging.info(f"RAGFlow server is ready after {time.time() - start_ts}s initialization.")
+        app.run(host=settings.HOST_IP, port=settings.HOST_PORT)
     except Exception:
         traceback.print_exc()
         stop_event.set()
-        time.sleep(1)
+        stop_event.wait(1)
         os.kill(os.getpid(), signal.SIGKILL)

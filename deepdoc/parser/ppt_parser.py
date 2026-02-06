@@ -63,7 +63,7 @@ class RAGFlowPptParser:
             if shape_type == 6:
                 texts = []
                 for p in sorted(shape.shapes, key=lambda x: (x.top // 10, x.left)):
-                    t = self.__extract_texts(p)
+                    t = self.__extract(p)
                     if t:
                         texts.append(t)
                 return "\n".join(texts)
@@ -87,13 +87,10 @@ class RAGFlowPptParser:
                 break
             texts = []
             for shape in sorted(
-                    slide.shapes, key=lambda x: ((x.top if x.top is not None else 0) // 10, x.left)):
-                try:
-                    txt = self.__extract(shape)
-                    if txt:
-                        texts.append(txt)
-                except Exception as e:
-                    logging.exception(e)
+                    slide.shapes, key=lambda x: ((x.top if x.top is not None else 0) // 10, x.left if x.left is not None else 0)):
+                txt = self.__extract(shape)
+                if txt:
+                    texts.append(txt)
             txts.append("\n".join(texts))
 
         return txts

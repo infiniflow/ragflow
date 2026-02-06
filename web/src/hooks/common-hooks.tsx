@@ -1,11 +1,10 @@
-import { ExclamationCircleFilled } from '@ant-design/icons';
-import { App } from 'antd';
+import { Modal } from '@/components/ui/modal/modal';
 import isEqual from 'lodash/isEqual';
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export const useSetModalState = () => {
-  const [visible, setVisible] = useState(false);
+export const useSetModalState = (initialVisible = false) => {
+  const [visible, setVisible] = useState(initialVisible);
 
   const showModal = useCallback(() => {
     setVisible(true);
@@ -61,7 +60,9 @@ export function useDynamicSVGImport(
     setLoading(true);
     const importIcon = async (): Promise<void> => {
       try {
-        ImportedIconRef.current = (await import(name)).ReactComponent;
+        ImportedIconRef.current = (
+          await import(/* @vite-ignore */ name)
+        ).ReactComponent;
         onCompleted?.(name, ImportedIconRef.current);
       } catch (err: any) {
         onError?.(err);
@@ -77,6 +78,7 @@ export function useDynamicSVGImport(
 }
 
 interface IProps {
+  header?: string | ReactNode;
   title?: string;
   content?: ReactNode;
   onOk?: (...args: any[]) => any;
@@ -84,20 +86,28 @@ interface IProps {
 }
 
 export const useShowDeleteConfirm = () => {
-  const { modal } = App.useApp();
   const { t } = useTranslation();
-
   const showDeleteConfirm = useCallback(
-    ({ title, content, onOk, onCancel }: IProps): Promise<number> => {
+    ({ title, content, onOk, onCancel, header }: IProps): Promise<number> => {
       return new Promise((resolve, reject) => {
-        modal.confirm({
-          title: title ?? t('common.deleteModalTitle'),
-          icon: <ExclamationCircleFilled />,
-          content,
-          okText: t('common.ok'),
-          okType: 'danger',
+        Modal.show({
+          title: header,
+          closable: !!header,
+          visible: true,
+          onVisibleChange: () => {
+            Modal.destroy();
+          },
+          footer: null,
+          maskClosable: false,
+          okText: t('common.delete'),
           cancelText: t('common.cancel'),
-          async onOk() {
+          style: {
+            width: '450px',
+          },
+          zIndex: 1000,
+          okButtonClassName:
+            'bg-state-error text-white hover:bg-state-error hover:text-white',
+          onOk: async () => {
             try {
               const ret = await onOk?.();
               resolve(ret);
@@ -106,13 +116,22 @@ export const useShowDeleteConfirm = () => {
               reject(error);
             }
           },
-          onCancel() {
+          onCancel: () => {
             onCancel?.();
+            Modal.destroy();
           },
+          children: (
+            <div className="flex flex-col justify-start items-start mt-3">
+              <div className="text-lg font-medium">
+                {title ?? t('common.deleteModalTitle')}
+              </div>
+              <div className="text-base font-normal">{content}</div>
+            </div>
+          ),
         });
       });
     },
-    [t, modal],
+    [t],
   );
 
   return showDeleteConfirm;

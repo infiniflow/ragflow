@@ -1,0 +1,422 @@
+{
+    "id": 19,
+    "title": {
+		"en": "Choose Your Knowledge Base Agent",
+		"de": "Wählen Sie Ihren Wissensdatenbank Agenten",
+		"zh": "选择知识库智能体"},
+    "description": {
+		"en": "This Agent generates responses solely from the specified dataset (knowledge base). You are required to select a knowledge base from the dropdown when running the Agent.",
+		"de": "Dieser Agent erzeugt Antworten ausschließlich aus dem angegebenen Datensatz (Wissensdatenbank). Beim Ausführen des Agents müssen Sie eine Wissensdatenbank aus dem Dropdown-Menü auswählen.",
+		"zh": "本工作流仅根据指定知识库内容生成回答。运行时，请在下拉菜单选择需要查询的知识库。"},
+	"canvas_type": "Agent", 
+    "dsl": {
+		"components": {
+			"Agent:BraveParksJoke": {
+				"downstream": [
+					"Message:HotMelonsObey"
+				],
+				"obj": {
+					"component_name": "Agent",
+					"params": {
+						"delay_after_error": 1,
+						"description": "",
+						"exception_default_value": "",
+						"exception_goto": [],
+						"exception_method": "",
+						"frequencyPenaltyEnabled": false,
+						"frequency_penalty": 0.7,
+						"llm_id": "deepseek-chat@DeepSeek",
+						"maxTokensEnabled": false,
+						"max_retries": 3,
+						"max_rounds": 1,
+						"max_tokens": 256,
+						"mcp": [],
+						"message_history_window_size": 12,
+						"outputs": {
+							"content": {
+								"type": "string",
+								"value": ""
+							}
+						},
+						"presencePenaltyEnabled": false,
+						"presence_penalty": 0.4,
+						"prompts": [
+							{
+								"content": "{sys.query}",
+								"role": "user"
+							}
+						],
+						"sys_prompt": "#Role\nYou are a **Docs QA Agent**, a specialized knowledge base assistant responsible for providing accurate answers based strictly on the connected documentation repository.\n\n# Core Principles\n1. **Rapid Output**\nRetrieve and answer questions directly from the knowledge base using the retrieval tool. Immediately return results upon successful retrieval without additional reflection rounds. Prioritize rapid output even before reaching maximum iteration limits.\n2. **Knowledge Base Only**: Answer questions EXCLUSIVELY based on information retrieved from the connected knowledge base.\n3. **No Content Creation**: Never generate, infer, or create information that is not explicitly present in the retrieved documents.\n4. **Source Transparency**: Always indicate when information comes from the knowledge base vs. when it's unavailable.\n5. **Accuracy Over Completeness**: Prefer incomplete but accurate answers over complete but potentially inaccurate ones.\n# Response Guidelines\n## When Information is Available\n- Provide direct answers based on retrieved content\n- Quote relevant sections when helpful\n- Cite the source document/section if available\n- Use phrases like: \"According to the documentation...\" or \"Based on the knowledge base...\"\n## When Information is Unavailable\n- Clearly state: \"I cannot find this information in the current knowledge base.\"\n- Do NOT attempt to fill gaps with general knowledge\n- Suggest alternative questions that might be covered in the docs\n- Use phrases like: \"The documentation does not cover...\" or \"This information is not available in the knowledge base.\"\n# Response Format\n```markdown\n## Answer\n[Your response based strictly on knowledge base content]\n**Always do these:**\n- Use the Retrieval tool for every question\n- Be transparent about information availability\n- Stick to documented facts only\n- Acknowledge knowledge base limitations",
+						"temperature": 0.1,
+						"temperatureEnabled": true,
+						"tools": [
+							{
+								"component_name": "Retrieval",
+								"name": "Retrieval",
+								"params": {
+									"cross_languages": [],
+									"description": "Retrieve from the knowledge bases.",
+									"empty_response": "",
+									"kb_ids": [
+										"begin@knowledge base"
+									],
+									"keywords_similarity_weight": 0.7,
+									"outputs": {
+										"formalized_content": {
+											"type": "string",
+											"value": ""
+										}
+									},
+									"rerank_id": "",
+									"similarity_threshold": 0.2,
+									"top_k": 1024,
+									"top_n": 8,
+									"use_kg": false
+								}
+							}
+						],
+						"topPEnabled": false,
+						"top_p": 0.3,
+						"user_prompt": "",
+						"visual_files_var": ""
+					}
+				},
+				"upstream": [
+					"begin"
+				]
+			},
+			"Message:HotMelonsObey": {
+				"downstream": [],
+				"obj": {
+					"component_name": "Message",
+					"params": {
+						"content": [
+							"{Agent:BraveParksJoke@content}"
+						]
+					}
+				},
+				"upstream": [
+					"Agent:BraveParksJoke"
+				]
+			},
+			"begin": {
+				"downstream": [
+					"Agent:BraveParksJoke"
+				],
+				"obj": {
+					"component_name": "Begin",
+					"params": {
+						"enablePrologue": true,
+						"inputs": {
+							"knowledge base": {
+								"name": "knowledge base",
+								"optional": false,
+								"options": [
+									"knowledge base 1",
+									"knowledge base 2",
+									"knowledge base 3"
+								],
+								"type": "options"
+							}
+						},
+						"mode": "conversational",
+						"prologue": "Hi! I'm your retrieval assistant. What do you want to ask?"
+					}
+				},
+				"upstream": []
+			}
+		},
+		"globals": {
+			"sys.conversation_turns": 0,
+			"sys.files": [],
+			"sys.query": "",
+			"sys.user_id": ""
+		},
+		"graph": {
+			"edges": [
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__beginstart-Agent:BraveParksJokeend",
+					"selected": false,
+					"source": "begin",
+					"sourceHandle": "start",
+					"target": "Agent:BraveParksJoke",
+					"targetHandle": "end"
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Agent:BraveParksJoketool-Tool:TangyWolvesDreamend",
+					"source": "Agent:BraveParksJoke",
+					"sourceHandle": "tool",
+					"target": "Tool:TangyWolvesDream",
+					"targetHandle": "end"
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Agent:BraveParksJokestart-Message:HotMelonsObeyend",
+					"source": "Agent:BraveParksJoke",
+					"sourceHandle": "start",
+					"target": "Message:HotMelonsObey",
+					"targetHandle": "end"
+				}
+			],
+			"nodes": [
+				{
+					"data": {
+						"form": {
+							"enablePrologue": true,
+							"inputs": {
+								"knowledge base": {
+									"name": "knowledge base",
+									"optional": false,
+									"options": [
+										"knowledge base 1",
+										"knowledge base 2",
+										"knowledge base 3"
+									],
+									"type": "options"
+								}
+							},
+							"mode": "conversational",
+							"prologue": "Hi! I'm your retrieval assistant. What do you want to ask?"
+						},
+						"label": "Begin",
+						"name": "begin"
+					},
+					"dragging": false,
+					"id": "begin",
+					"measured": {
+						"height": 76,
+						"width": 200
+					},
+					"position": {
+						"x": 174.93384234796846,
+						"y": -272.9638317458806
+					},
+					"selected": false,
+					"sourcePosition": "left",
+					"targetPosition": "right",
+					"type": "beginNode"
+				},
+				{
+					"data": {
+						"form": {
+							"delay_after_error": 1,
+							"description": "",
+							"exception_default_value": "",
+							"exception_goto": [],
+							"exception_method": "",
+							"frequencyPenaltyEnabled": false,
+							"frequency_penalty": 0.7,
+							"llm_id": "deepseek-chat@DeepSeek",
+							"maxTokensEnabled": false,
+							"max_retries": 3,
+							"max_rounds": 1,
+							"max_tokens": 256,
+							"mcp": [],
+							"message_history_window_size": 12,
+							"outputs": {
+								"content": {
+									"type": "string",
+									"value": ""
+								}
+							},
+							"presencePenaltyEnabled": false,
+							"presence_penalty": 0.4,
+							"prompts": [
+								{
+									"content": "{sys.query}",
+									"role": "user"
+								}
+							],
+							"sys_prompt": "#Role\nYou are a **Docs QA Agent**, a specialized knowledge base assistant responsible for providing accurate answers based strictly on the connected documentation repository.\n\n# Core Principles\n1. **Rapid Output**\nRetrieve and answer questions directly from the knowledge base using the retrieval tool. Immediately return results upon successful retrieval without additional reflection rounds. Prioritize rapid output even before reaching maximum iteration limits.\n2. **Knowledge Base Only**: Answer questions EXCLUSIVELY based on information retrieved from the connected knowledge base.\n3. **No Content Creation**: Never generate, infer, or create information that is not explicitly present in the retrieved documents.\n4. **Source Transparency**: Always indicate when information comes from the knowledge base vs. when it's unavailable.\n5. **Accuracy Over Completeness**: Prefer incomplete but accurate answers over complete but potentially inaccurate ones.\n# Response Guidelines\n## When Information is Available\n- Provide direct answers based on retrieved content\n- Quote relevant sections when helpful\n- Cite the source document/section if available\n- Use phrases like: \"According to the documentation...\" or \"Based on the knowledge base...\"\n## When Information is Unavailable\n- Clearly state: \"I cannot find this information in the current knowledge base.\"\n- Do NOT attempt to fill gaps with general knowledge\n- Suggest alternative questions that might be covered in the docs\n- Use phrases like: \"The documentation does not cover...\" or \"This information is not available in the knowledge base.\"\n# Response Format\n```markdown\n## Answer\n[Your response based strictly on knowledge base content]\n**Always do these:**\n- Use the Retrieval tool for every question\n- Be transparent about information availability\n- Stick to documented facts only\n- Acknowledge knowledge base limitations",
+							"temperature": 0.1,
+							"temperatureEnabled": true,
+							"tools": [
+								{
+									"component_name": "Retrieval",
+									"name": "Retrieval",
+									"params": {
+										"cross_languages": [],
+										"description": "Retrieve from the knowledge bases.",
+										"empty_response": "",
+										"kb_ids": [
+											"begin@knowledge base"
+										],
+										"keywords_similarity_weight": 0.7,
+										"outputs": {
+											"formalized_content": {
+												"type": "string",
+												"value": ""
+											}
+										},
+										"rerank_id": "",
+										"similarity_threshold": 0.2,
+										"top_k": 1024,
+										"top_n": 8,
+										"use_kg": false
+									}
+								}
+							],
+							"topPEnabled": false,
+							"top_p": 0.3,
+							"user_prompt": "",
+							"visual_files_var": ""
+						},
+						"label": "Agent",
+						"name": "Agent"
+					},
+					"dragging": false,
+					"id": "Agent:BraveParksJoke",
+					"measured": {
+						"height": 84,
+						"width": 200
+					},
+					"position": {
+						"x": 699.8147585743118,
+						"y": -512.1229013834202
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "agentNode"
+				},
+				{
+					"data": {
+						"form": {
+							"description": "This is an agent for a specific task.",
+							"user_prompt": "This is the order you need to send to the agent."
+						},
+						"label": "Tool",
+						"name": "flow.tool_0"
+					},
+					"id": "Tool:TangyWolvesDream",
+					"measured": {
+						"height": 48,
+						"width": 200
+					},
+					"position": {
+						"x": 617.8147585743118,
+						"y": -372.1229013834202
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "toolNode"
+				},
+				{
+					"data": {
+						"form": {
+							"content": [
+								"{Agent:BraveParksJoke@content}"
+							]
+						},
+						"label": "Message",
+						"name": "Message"
+					},
+					"id": "Message:HotMelonsObey",
+					"measured": {
+						"height": 56,
+						"width": 200
+					},
+					"position": {
+						"x": 999.8147585743118,
+						"y": -512.1229013834202
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "messageNode"
+				},
+				{
+					"data": {
+						"form": {
+							"text": "Configure the dropdown menu with your knowledge bases for retrieval."
+						},
+						"label": "Note",
+						"name": "Note: Begin"
+					},
+					"dragHandle": ".note-drag-handle",
+					"id": "Note:CurlyGoatsRun",
+					"measured": {
+						"height": 136,
+						"width": 250
+					},
+					"position": {
+						"x": 240,
+						"y": -135
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "noteNode"
+				},
+				{
+					"data": {
+						"form": {
+							"text": "The Agent will only retrieve from the selected knowledge base and use this content  to generate responses.\n\nThe Agent prioritizes rapid response per system prompt configuration. Adjust reflection rounds by modifying the system prompt or via Agent > Advanced Settings > Max Rounds."
+						},
+						"label": "Note",
+						"name": "Note: Agent"
+					},
+					"dragHandle": ".note-drag-handle",
+					"dragging": false,
+					"height": 186,
+					"id": "Note:GentleShowersAct",
+					"measured": {
+						"height": 186,
+						"width": 456
+					},
+					"position": {
+						"x": 759.6166714488969,
+						"y": -303.3174949046285
+					},
+					"resizing": false,
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "noteNode",
+					"width": 456
+				},
+				{
+					"data": {
+						"form": {
+							"text": "This Agent generates responses solely from the specified dataset (knowledge base). \nYou are required to select a knowledge base from the dropdown when running the Agent."
+						},
+						"label": "Note",
+						"name": "Workflow description"
+					},
+					"dragHandle": ".note-drag-handle",
+					"dragging": false,
+					"height": 169,
+					"id": "Note:FineCandlesDig",
+					"measured": {
+						"height": 169,
+						"width": 357
+					},
+					"position": {
+						"x": 177.69466666666665,
+						"y": -531.9333333333334
+					},
+					"resizing": false,
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "noteNode",
+					"width": 357
+				}
+			]
+		},
+		"history": [],
+		"messages": [],
+		"path": [],
+		"retrieval": []
+	},                                   
+    "avatar": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAACXBIWXMAABYlAAAWJQFJUiTwAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAABXvSURBVHgBXVprrKVnVX7e77rve59L5+yZM505nWmnQAsdoDTVoBYoGlADEgEDRiVqTADDLRFNvMAvfhBjiP7QmPAHRVAxXBIVDaGYprRA05EO7bSdds5cOmfm3C/7+n3f+74+a737tJXd+Wbv2fv73staz3rWs9Zbg596Jf2zD8Dadzlj3m28X4EHDP/TP3ol8FEGF0UwEb+IY0R8zlWWf1kYX4Z3p4/AugpxkgJRjirh+Jbf2gK+kyE6fhzoH4Xf20F0aRVucw+8BZ7PGOd1PYZvvlk7Z9v1czW4z+5eeHT1leuNDz/0Vs72bHrkcwb+b/n1/XzveSNLz3QBjov2cc6fuAETcRNGB4f3cKVD5EpEfDe6Caffe77r9uRebsBEnC4xei9qdSQnT6J75BiqiGNu7sDsHyDivfIcjYdgAtmQ6yeVPWsng49n2XyvmXcem0x2J2pwvYOL3x/57xpjzkJMDqcL95zPRCmsDCWL1kV5HTwuq2AeviJvUDk7mzAKV5gbwQiGBhBv8ZOT31Puid/xmWFVwRfT4GVa3tLyMYcVB8g8ET0s9zmuK+WCSm8/TmM+0FtZecvu6uqueiDJ+5/zEd7tFCeJWhlxCsN3Q6h4juYtoSAW5edIRvcBU/KbbI521XuNicNixL2zMSwtbxKOJRjE7JoSJuUU1XAP8Y11ROtr8OJJ2R8XE7XqiJr0fEHP1mqIlpdhO21k04LfFf3I5rXJaPPbca1//4qN8BVDNxrBczybSEbiJS5VPMtCZ1518iYb8zJhrB7zUazWku/FupF4TKCXpjqGbDaSOSJ550YLbqAYo8GNu5Sb3B/Sq5bPVXC1FPExxka7jYSGcvQSum0YbsQMJ9w4nzX+/lpj8Xux7x79Kwh0vCxULGoDirigmAvyMQM2jgI4BNpiX/7b8XNFmNmkwZgn4NJIn/OvgA3Ug4kGv1KBbFb2Yh1sPUf6mttw9L774RkLrs55rl6DS2j5hJ/bPUT1JlDyOYaMqQziIYN/NKIhZ/g02EucK88a68OX4jpdIDHNd1m8MI6whjGWC/NqyZKM0z3exxvuPoPbji/jyYsv4oeP/Bi5GWkAE3BwYnGJGQS4iVfFO/JZxolpAccFDSdjTHSOYBjT6AE5/VK24cf0aFpX62OyBxQjWjHhH4kfgULxroTRdxb+kCI58SwIo1TioK7Yj4gxCT5hQPFA6/Zb8d53/gzuXTmOWpbhzG3LuLpxgPXnn0fGzUJYKBBUCHqJB0LHmWwGT0bbZAr37BVsr63DZDnsziYSetPVuoibc4QLIRMFuGLM+T3XwSCHvMt6+Zez6UpgIb1RbM/dMQhtLMxXD1AQzCYCF2J5WpJcW2jeegzNWgM6El8HDKxRKYzBRXqZLFY6FexXXgJZI5oxkQTLQ4K6Tijtwmxs6YYTiR9Sa0ovWMaOBL1NYwRKoPc94VNOEFXTEJvi6cDKKYIHYg08+pIPM2XwYQlqmgVoE68MJLsz4AIMNra28e8/eArnGjWkvPfJ56/j4OYaI4LwIO16T9rjWMEoVsxFrudiEhpHsOxzji+WpBGs1cujJIXuIfOLiOkRz7HjrBbyQp3viSyaAc7xEhpMEmTqMskDPrBC4BLuahZ4YnYmLokHn7e4EUKj6RUC0dYAz13awHOFUcJOY7GgBH8iW9DEJfiXSFcPpm0m4kCxLioVhgGzkV5uVGA66XOoRUz32uge5VztZoglZva4YmwZeiDhN2S1kvE4LUsMs7VZIpPAElqcsQe3xAWRAsWVtCZ2hxzIoWLwJhIbZIU8bcHXeG9VaiJzmn3FgaUmJJlcWafTgyUdGkLLj7aVnT29GOdNBugQU9vFkff/Dd78wOtw5GSKG/0Y//zB/4L57ud53wUOuM6rmJFOyLxH0cKPzLfo0QUkkWqbSOWBgDXSJFZDRQhFtSaNKHzNRZGpUrpUwzgnFDK61Moyx8RyqSwi/4o1SOMQxxL0WZNcwHEmZBChZEIx6XhMrzyBaishlD6KOz95H95+K4mGt1zZlaDihzrXUbSVcr0fKhSF4SKZxaQYMjmdrrrME5JkolnmJGxcLDTFgE07HKSuicrT8tG4hDCX3CMbNZbpnzPGjCFnBOeih4Qi46CDOGVMwzji1lZlwDqZLDvVxuDxp+DWbnCfXHW8hoPrDuPFCEURICp0fqgehRm9f1m8yUorhZalzbzQTqDNkGQOpQQ/kx5RJ0zks1iz5tR6PkCcXonDYsHAngq2ocEbJAZjIYl0PLu2gaSCYjlhsnMLuWgXWlM8bzVOpmPdW8gVakta3YowdCLklDpNWDZCtowCEhRSuuMgwpxsQhgg75CbSXOyAWJeMrSGHjMkl41iapHS+oZsEHHmkhZORbARhjEvqkZU+1eZXTs48q9fRuN4B2Uzx4sf/BSSF27C9E4TK/+rshl2SKr1aDLp3iQhHGxxLesbxNMBlyWeJUuaxiw/OUZDhSENVfOb5JQzSDRTSmaUJJbSOsSrZ1r33EiUUYmmmarIYxRXv7LcwGIjxvmtAt++uo/J2jbqjIda3IHdoyeyBJPV/4bfuaww8yffjuzMElLGiqUkcJep+U+8mtNdJqJZA5gF+MUCzzx2DR/Z6aEkqTejCZa+/BbEc7+IvMNd0WtxHuxsBUqVQ4cZ/Hf2duHXtH4wL+luFVwysaQPCQ1uyDImUuaC99xax5tP5kRXhtPzKTJu6hGm9rR/C/KFBvZfoJpc30WVlahkDLEcE48bEwYpXe84FeMGFHA4fg8an/wDLL7nfrQ65Hhu5wTn7BEqA9vBE89KZn4RoyviCSpWJlBHKEW0fEKjolXD29on4O86NmMhpTyjGdEVE+YuqZ7iIO2VWRyfibWwUR3DDHyEqeGOpQybPsOw1UA8TwnAoiRyVmNBlCp1AvWMU5lcjMksG9twB5cQP/2XaHz/R9j+i7/DtYc3MPfrn8LZX53D2k6CSzvA1d/6CszuFznGizQtn+NlAkdrahwQSh/A3+P15ucJIal+GMhW0n9ZqAcqJgsCkwOQ8shAI5LIf15OUOcmu0TUlUGFa4MCGwcFXqQGcp0BistraPJeNyJu3/khxD97H9I7bsfm+DqSRoMBXGHh/DeZDHvYedOHsHnxH7mgJRrpjRjctYWvHe0Ce5TKB7RabagQhm2E8lPVggtkozTq8ZzfR59XIgpQIBSZoPctM5woU09uj6i9Zd81Fh9PHAzx9PUceV5HSYFXL0cY7o5RDoZIrt6Enw4xvH4T7otfQ/t9tMz2EOX1Hcyd7KNOJiumHjf/7TuIbplD+uDPYXrxqyQFIQmSx7UtmGfmSdUsVvYJFWZdrTtMYDJlHRMIyGg4Z7gcXcFJvIAEsyLFz3aouyA7RAV3PhFlKVVTgZwFSEVPlXmuhUnJoiIircaCaflM2ouX+5h++IPY/10mndE+x2yi+PMvITmxRLIpMfnjjyBusFCpL3KMpnI5SzPY7RvAC7xHrH1AZiroAVZrxg64vMkMRqHUVelDA6/6p9FHTgjFQaNrJTCTvwH6VvW3ryrFNTmTsrZgUUGuFokhcakKMSzeM1GJ1PKOEw82OCS5vtWEffYpGoILIeWaFilacDwgzVK4iZD0MgezcknaRE2YgwY5xjmWX0eSvzvkkzRQqOhCyQaWyuAhstqj46uEUKsHN51yoSFp+FkR4tk5iGkF3cscqyMpLFi3YouLo6R1Ijv0fhuscli42ypwGjcXDTfhzj8OMLhBjxjpPORjuN//U7Tv/TQ6rz+D5pE5ShbDuiKlvoqpwYymKD/TPXZmezOzv7yy2fua3ONZOEjmFJdJAS2JyMykRck4SCQzMwfYBhXleIftDw7DONFs7ERhUuAqxUm8TRH1XwXz4fchOXYLmWmBkKGeIUsZaieT/h57BTH2Fo+gu7+PavUGNh4+j2KySJY7zrqYFHxQYv/iI/CD86TQAU1eBPo1oV4Vwsnolfcnx/BrtSUkYrWYPC+1cBQHBabloBb00JZGRHaRrOvJx7J4KFiiw66KSgBJ5gkTi//qX6P1lnuQkKWK4Rg580gimoisNmH3wbO2iD79JVz7l0/wyUXO1qdJz2LYOM0NEmL2gIX7Twjfixx/i2smxEicRvseIQ6of/AfqOE7yPSzijQcahGBkEyoq+MixQKb66FY3yJbiJZGNNMkJgi8mWXcKTap3v1WbDvCywZdZFunqO1JlyUXtvGsSmOzcB/naqlM8JQnpsHArdNALDVjxpzLRJhIOdvQto1OLvGlROO0a2VMk8UPIaedBmNmxXeIATWnBDOtJh7wrFfpZ4o2EXOvaFppSacCFyUxZKy0RPg707wV6FFTRSyCfE4WSZxWdr5iS5GSQxYRcwAresdxbLtPUmAGrobKTIp4//LijT+MDCm7WG5SHE6kOnPa9vShDfJK2UrhUWGqWj8R6SrWruVaQRkWO1JqihQveInU0J6mbO65YkZ1TP/CPtuUA/VSCx0zGmhx7rb2ectAwYAprVww2Kc0hOW4QpuWHvcCGzKT1BsqJf1MgUpRWRFYpcI4gcHLWgiHxi9UCSY2UjhVbHNQZakaNdRCVqwnNTOE4SK1ppSWjk3a5G3vQ/zWX6LHisNWR2jNiOMk+KlK0VtGcu0SA7sWcpSRd15prGuJfaUsFnKXDZ4I3TWl+xp1VUvqDCMbqBDoE4H/1SMCC3J7Rb0e+0QZR7oNUth4ulh0uht5hZ48IJLDMAlFbJHgE3+G7jvuJeaD2yN6J09C02tClpM4Swmh+vAeRGG9ask2pUNN+qW8b0woTqWd8/9ty3lCgSPZ5IgggXMnphyG5CXFCbOsj00oLf3sae2/cJfjA+mVBzaTxCZNWBfYzbJQl7a5o1ByH3gQ6zYOUJMGcUKNIzlEMFwwO0vi7N1DYfdDRn9HtT6jmvec5Fxdzfywqxx/U0WcQEpYL8gFpxASuLPJiNxLNEypd7hwpcJZR0LaK05a4A6hYyHRz0TnxJVUqVGeKRNZqajE0oXAqNR2o2fOMDvs90g7XkRhRsDpTjke79eeKKlSixkf8omVlolljql2OSr1kGX/h9zvPNfmpB6eIPjJzyozuXLdVuJDGUCdzwVJka6tEGGbVDdlrQ2HDc6/FOzSM4oYC8QCA3XKPTGBCXEQE3Y0DhRLA/hSakViPg0NYEiTVuaQXCJxEacqOaDSPdFLmxtRoQuUWITEhqxp1rI8bN2E0CWEoiQOP8xygSfv2xBZ2qkIRTZ/zwLrSG9H1iIeki6x6qTKBe20wwrpt/8I8eteS32zzsy6q4zo2MwCpToGWzpmTGVRPfxsOCvQ8ZPAasLLVRzGsuawNzmjUTcTFoevVDuAidsf6SBOincp2CWgBadmomJLOmNupneCsg29o2CB0BR22lbhBPsD2NMr6P7mLxNmiXbiJO0fHgPZYCNc+fy3kElY2AzlBnl/2OEYLB+ldVkw1qb0rFkPNSSRINWcsKJ07wxCC1/aoC0RjPHxB/1hA1bwrkCRHqdJZs2zKByXHHYEwo3QZemgoZOg5zOEnnvmfzTDJd0+jUmdNXcb/HyfIo6G2bhKmcCM/L1v4tTJNhqRNjaDUFM2FKUJhaU0lcFmQWWdypDDNcpkbPKhyWyd0UCJ17bKrKk2e6f01G6yHMxFGiDVSzRrZaBZU1cTkYg5eiHOxBPcUN5TMRgvSO+IbfJ+HyU7zimFXkUYGUc1evpBPN9msJ+4HX5pGeboCTROnEGdqjefyzChtLCstqIGE6RI9ywOqJDQsl5Rkg053oQVoxbbL51MeIQKTdJHTak00gczbQYVzAMnWNDvTJy2Um5hQS6du5SHFUUhzdoceyfnccDDuhoL/SJmll1YRp0bGO3uaWnoOdb8XXdQGrGQWScoro8QXWRurW+woF9j2cz24+ASY3GVm2XM+EMxZ0OjWHvbEloZZSAPCu8+MUcGMrM0HZpbw6nDQpcWYnPr4osHSld9cny7nuLJS1u4td/Cm+44QjcbTLmBtV1qfQafJKzNwuKp9ZvYu8AN5aTEFrsaS0cpyRdgLl7E0eU2Ntcs2qTbwYSkSBznPcruuSVNnmlrjqKRK6kI0nQeFQPf8hzNkJGkmeCqsR47dWj7Y2YRyY8v7c0KENlWgYwti7vuOqn6/fzlbQxHDq8+0cMepfGFa0M88PplLM+3sDeaYsAKbZt1sWRHEiguvLCJzf0pi/m7kTXldKeFuMdWTEGrTkoUS13cefpO7K1dxPa1myGBsQc6rXKeN7TJvKJKGZ4dnkFkUkSlGFwZs0bY17gTQkrrXXpHKkX2oyw9kKfZKnl2pc6B+qeOUu/E+Mn565iSStOG8H2KC/RCwqZTq5bg4cevE58MrCj0P0O7mSOzaE/ovexVZ4B77w1ZvUa9XmPhLr0ccn9yz0l8n3RZe451Atmvu9DB7iRCzs22VgR6cnLJgz12JaqdDUx3trTykx6TlLZSwpak+YzNtGajgyXTPyck941iWn5scfkWbGzua6LuLLT1QEFyX6ynivyuFg5CMB9krjOBNSo/6ymVTlvs0S1d9olSJFwUKNZinizyBFATkx0lWObR6VOLPe29HicUe4SrSXYQs1Q9wqCdEpa7bAC0GaglDdJa6mDcjrG+ta7dw0xXxa4IY3ev3D2XLHTyr9/52v7H9tlC6dZ6GiqVHPrR8lkt6HZpuVy5OVD6MgiLl9ZK4HYXck0VqzjbZ3C+kbzwgwGDrSVapFImE2FX8J9L9ERBWV71uqivzOFUe45HCKRc0vaEtUJFaWNbHo8+PsYWO+K5dOVE1bCLITpoQq2UsGAqeTqTReazybXz//DQnac++oW5bv6xlHK5ZGZNiT05OpVz3zkWIRMWMnX+tslEFV4RdkaT8L8ESKtdFCk1jxwjne7WeGZW6lFp7GfHs1KZyWE5N9CU7N1kjfyG28lYS3hNv4ehneMGGpRuEeaox8qDPt57Vw2PXdvEBfZctUNN6JhZEy4PVPqFr/zTJ1f1hObW+cXPPL269gsX1/fOdprkXuocelabqrUt7jiSysvx1CdX2ZKwhryxZxUyetop5SMtWBJlr1po4uu7E9QW6zM9H/KMttNdgZaohAbh1ehin8dI3e48F04aJiX2OfhYpDqT8mMHHnM8g3yA866S2a7SG0POl7NGyY07N+/dZ2RczfLnzj00GeK1X42Sqj4t/P1DPmB5YyGFOJPFiBw/5ndTXkMOtDso2ZWW7oAccKeoSXHDz3ewYXqJ3D9qd/TE0RD7USZFUK6J0NK7JyhLJsQ46yNUjI8N5pv1qI5Nnopu87vrhNquNHEpM6dUsQPmoTpb/L0Gcww32KynX8iy+ofO/ck7dn+qXAiv2spvrNg0+QxF3j2E0Fk5oUnV6pFgTmWDFHNWUjwXJDGgRRCzdyFHT8eOI+P5saNlIzb9LU955CRTmEu61RUzaO3GrgpB15mjJ8j7vCK2LCXuRGZH1BOVp7R2E60HqIZXE+e/kSXu6zf+8O0PvXK9/wcj9f0wDwE0NgAAAABJRU5ErkJggg=="
+}

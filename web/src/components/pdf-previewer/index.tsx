@@ -1,7 +1,3 @@
-import {
-  useGetChunkHighlights,
-  useGetDocumentUrl,
-} from '@/hooks/document-hooks';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import FileError from '@/pages/document-viewer/file-error';
@@ -17,7 +13,11 @@ import {
 } from 'react-pdf-highlighter';
 import { useCatchDocumentError } from './hooks';
 
-import styles from './index.less';
+import {
+  useGetChunkHighlights,
+  useGetDocumentUrl,
+} from '@/hooks/use-document-request';
+import styles from './index.module.less';
 
 interface IProps {
   chunk: IChunk | IReferenceChunk;

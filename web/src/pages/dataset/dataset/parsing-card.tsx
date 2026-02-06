@@ -1,9 +1,4 @@
 import { Button } from '@/components/ui/button';
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '@/components/ui/hover-card';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
@@ -11,13 +6,14 @@ import { RunningStatus, RunningStatusMap } from './constant';
 
 interface IProps {
   record: IDocumentInfo;
+  handleShowLog?: (record: IDocumentInfo) => void;
 }
 
 function Dot({ run }: { run: RunningStatus }) {
   const runningStatus = RunningStatusMap[run];
   return (
     <span
-      className={'size-2 inline-block rounded'}
+      className={'size-1 inline-block rounded'}
       style={{ backgroundColor: runningStatus.color }}
     ></span>
   );
@@ -53,9 +49,9 @@ export const PopoverContent = ({ record }: IProps) => {
       children: record.process_begin_at,
     },
     {
-      key: 'knowledgeDetails.process_duation',
+      key: 'knowledgeDetails.process_duration',
       label: t('processDuration'),
-      children: `${record.process_duation.toFixed(2)} s`,
+      children: `${record.process_duration.toFixed(2)} s`,
     },
     {
       key: 'progress_msg',
@@ -85,17 +81,15 @@ export const PopoverContent = ({ record }: IProps) => {
   );
 };
 
-export function ParsingCard({ record }: IProps) {
+export function ParsingCard({ record, handleShowLog }: IProps) {
   return (
-    <HoverCard>
-      <HoverCardTrigger asChild>
-        <Button variant={'ghost'} size={'sm'}>
-          <Dot run={record.run}></Dot>
-        </Button>
-      </HoverCardTrigger>
-      <HoverCardContent className="w-[40vw]">
-        <PopoverContent record={record}></PopoverContent>
-      </HoverCardContent>
-    </HoverCard>
+    <Button
+      variant={'transparent'}
+      className="border-none"
+      size={'sm'}
+      onClick={() => handleShowLog?.(record)}
+    >
+      <Dot run={record.run}></Dot>
+    </Button>
   );
 }

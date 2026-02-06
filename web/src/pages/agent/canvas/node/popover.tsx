@@ -1,4 +1,3 @@
-import { useFetchFlow } from '@/hooks/flow-hooks';
 import get from 'lodash/get';
 import React, { MouseEventHandler, useCallback, useMemo } from 'react';
 import JsonView from 'react18-json-view';
@@ -20,6 +19,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useFetchAgent } from '@/hooks/use-agent-request';
 import { useGetComponentLabelByValue } from '../../hooks/use-get-begin-query';
 
 interface IProps extends React.PropsWithChildren {
@@ -30,7 +30,7 @@ interface IProps extends React.PropsWithChildren {
 export function NextNodePopover({ children, nodeId, name }: IProps) {
   const { t } = useTranslate('flow');
 
-  const { data } = useFetchFlow();
+  const { data } = useFetchAgent();
   const { theme } = useTheme();
   const component = useMemo(() => {
     return get(data, ['dsl', 'components', nodeId], {});

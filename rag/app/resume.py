@@ -25,7 +25,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from rag.nlp import rag_tokenizer
 from deepdoc.parser.resume import refactor
 from deepdoc.parser.resume import step_one, step_two
-from rag.utils import rmSpace
+from common.string_utils import remove_redundant_spaces
 
 forbidden_select_fields4resume = [
     "name_pinyin_kwd", "edu_first_fea_kwd", "degree_kwd", "sch_rank_kwd", "edu_fea_kwd"
@@ -64,7 +64,8 @@ def remote_call(filename, binary):
                     del resume[k]
 
             resume = step_one.refactor(pd.DataFrame([{"resume_content": json.dumps(resume), "tob_resume_id": "x",
-                                                      "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]))
+                                                      "updated_at": datetime.datetime.now().strftime(
+                                                          "%Y-%m-%d %H:%M:%S")}]))
             resume = step_two.parse(resume)
             return resume
         except Exception:
@@ -130,7 +131,7 @@ def chunk(filename, binary=None, callback=None, **kwargs):
         if isinstance(v, list):
             v = v[0]
         if n.find("tks") > 0:
-            v = rmSpace(v)
+            v = remove_redundant_spaces(v)
         titles.append(str(v))
     doc = {
         "docnm_kwd": filename,
@@ -145,7 +146,7 @@ def chunk(filename, binary=None, callback=None, **kwargs):
         if isinstance(v, list):
             v = " ".join(v)
         if n.find("tks") > 0:
-            v = rmSpace(v)
+            v = remove_redundant_spaces(v)
         pairs.append((m, str(v)))
 
     doc["content_with_weight"] = "\n".join(
@@ -171,6 +172,9 @@ def chunk(filename, binary=None, callback=None, **kwargs):
 if __name__ == "__main__":
     import sys
 
+
     def dummy(a, b):
         pass
+
+
     chunk(sys.argv[1], callback=dummy)

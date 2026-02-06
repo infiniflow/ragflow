@@ -14,12 +14,24 @@ module.exports = {
       center: true,
       padding: '2rem',
       screens: {
-        '2xl': '1400px',
+        '2xl': '1536px',
       },
     },
+    screens: {
+      sm: '640px',
+      md: '768px',
+      lg: '1024px',
+      xl: '1280px',
+      '2xl': '1536px',
+      '3xl': '1780px',
+      '4xl': '1980px',
+    },
     extend: {
+      borderWidth: {
+        0.5: '0.5px',
+      },
       colors: {
-        border: 'var(--colors-outline-neutral-strong)',
+        border: 'var(--border-default)',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         background: 'var(--background)',
@@ -40,7 +52,6 @@ module.exports = {
         'colors-text-inverse-strong': 'var(--colors-text-inverse-strong)',
         'colors-text-persist-light': 'var(--colors-text-persist-light)',
         'colors-text-inverse-weak': 'var(--colors-text-inverse-weak)',
-        'text-delete-red': 'var(--text-delete-red)',
 
         'background-badge': 'var(--background-badge)',
         'text-badge': 'var(--text-badge)',
@@ -50,7 +61,63 @@ module.exports = {
         'text-title-invert': 'var(--text-title-invert)',
         'background-header-bar': 'var(--background-header-bar)',
         'background-card': 'var(--background-card)',
-        'background-checked': 'var(--background-checked)',
+        'background-note': 'var(--background-note)',
+        'background-highlight': 'var(--background-highlight)',
+
+        'input-border': 'var(--input-border)',
+
+        /* design colors */
+        'bg-title': 'var(--bg-title)',
+        'bg-base': 'var(--bg-base)',
+        'bg-card': 'var(--bg-card)',
+        'bg-component': 'var(--bg-component)',
+        'bg-input': 'var(--bg-input)',
+        'bg-canvas': {
+          DEFAULT: 'rgb(var(--bg-canvas) / <alpha-value>)',
+        },
+        'bg-list': {
+          DEFAULT: 'rgb(var(--bg-list) / <alpha-value>)',
+        },
+        'text-primary': {
+          DEFAULT: 'rgb(var(--text-primary) / <alpha-value>)',
+        },
+        'text-primary-inverse': {
+          DEFAULT: 'rgb(var(--text-primary-inverse) / <alpha-value>)',
+        },
+        'text-secondary': {
+          DEFAULT: 'rgb(var(--text-secondary) / <alpha-value>)',
+        },
+        'text-secondary-inverse': {
+          DEFAULT: 'rgb(var(--text-secondary-inverse) / <alpha-value>)',
+        },
+        'text-disabled': 'var(--text-disabled)',
+        'text-input-tip': 'var(--text-input-tip)',
+        'border-default': 'var(--border-default)',
+        'border-accent': 'var(--border-accent)',
+        'border-button': 'var(--border-button)',
+        'accent-primary': {
+          DEFAULT: 'rgb(var(--accent-primary) / <alpha-value>)',
+          5: 'rgba(var(--accent-primary) / 0.05)', // 5%
+        },
+        'bg-accent': 'var(--bg-accent)',
+        'state-success': {
+          DEFAULT: 'rgb(var(--state-success) / <alpha-value>)',
+          5: 'rgba(var(--state-success) / 0.05)', // 5%
+        },
+        'state-warning': {
+          DEFAULT: 'rgb(var(--state-warning) / <alpha-value>)',
+          5: 'rgba(var(--state-warning) / 0.05)', // 5%
+        },
+        'state-error': {
+          DEFAULT: 'rgb(var(--state-error) / <alpha-value>)',
+          5: 'rgba(var(--state-error) / 0.05)', // 5%
+        },
+        'team-group': 'var(--team-group)',
+        'team-member': 'var(--team-member)',
+        'team-department': 'var(--team-department)',
+        'bg-group': 'var(--bg-group)',
+        'bg-member': 'var(--bg-member)',
+        'bg-department': 'var(--bg-department)',
 
         primary: {
           DEFAULT: 'hsl(var(--primary))',
@@ -80,71 +147,13 @@ module.exports = {
           DEFAULT: 'var(--background-inverse-standard)',
           foreground: 'var(--background-inverse-standard-foreground)',
         },
-        backgroundInverseStandard: {
-          DEFAULT: 'var(--background-inverse-standard)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        backgroundInverseWeak: {
-          DEFAULT: 'var(--background-inverse-weak)',
-          foreground: 'var(--background-inverse-weak-foreground)',
-        },
-        backgroundCoreStandard: {
-          DEFAULT: 'var(--background-core-standard)',
-          foreground: 'var(--background-core-standard-foreground)',
-        },
         backgroundCoreWeak: {
           DEFAULT: 'var(--background-core-weak)',
           foreground: 'var(--background-core-weak-foreground)',
         },
-
         'colors-background-inverse-standard': {
           DEFAULT: 'var(--colors-background-inverse-standard)',
           foreground: 'var(--colors-background-inverse-standard-foreground)',
-        },
-
-        'color-background-brand-default': {
-          DEFAULT: 'var(--color-background-brand-default)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'color-background-positive-default': {
-          DEFAULT: 'var(--color-background-positive-default)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-core-standard': {
-          DEFAULT: 'var(--colors-background-core-standard)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-core-strong': {
-          DEFAULT: 'var(--colors-background-core-strong)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-core-weak': {
-          DEFAULT: 'var(--colors-background-core-weak)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-functional-solid-danger': {
-          DEFAULT: 'var(--colors-background-functional-solid-danger)',
-          foreground: 'var(--colors-text-inverse-strong)',
-        },
-        'colors-background-functional-solid-notice': {
-          DEFAULT: 'var(--colors-background-functional-solid-notice)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-functional-solid-positive': {
-          DEFAULT: 'var(--colors-background-functional-solid-positive)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-functional-transparent-danger': {
-          DEFAULT: 'var(--colors-background-functional-transparent-danger)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-functional-transparent-notice': {
-          DEFAULT: 'var(--colors-background-functional-transparent-notice)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-functional-transparent-positive': {
-          DEFAULT: 'var(--colors-background-functional-transparent-positive)',
-          foreground: 'var(--background-inverse-standard-foreground)',
         },
         'colors-background-inverse-standard': {
           DEFAULT: 'var(--colors-background-inverse-standard)',
@@ -152,10 +161,6 @@ module.exports = {
         },
         'colors-background-inverse-strong': {
           DEFAULT: 'var(--colors-background-inverse-strong)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-inverse-weak': {
-          DEFAULT: 'var(--colors-background-inverse-weak)',
           foreground: 'var(--background-inverse-standard-foreground)',
         },
         'colors-background-neutral-standard': {
@@ -170,10 +175,6 @@ module.exports = {
           DEFAULT: 'var(--colors-background-neutral-weak)',
           foreground: 'var(--background-inverse-standard-foreground)',
         },
-        'colors-background-sentiment-solid-primary': {
-          DEFAULT: 'var(--colors-background-sentiment-solid-primary)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
         sidebar: {
           DEFAULT: 'hsl(var(--sidebar-background))',
           foreground: 'hsl(var(--sidebar-foreground))',
@@ -184,6 +185,10 @@ module.exports = {
           border: 'hsl(var(--sidebar-border))',
           ring: 'hsl(var(--sidebar-ring))',
         },
+      },
+      backgroundImage: {
+        'metallic-gradient':
+          'linear-gradient(104deg, rgb(var(--text-primary)) 30%, var(--metallic) 50%, rgb(var(--text-primary)) 70%)',
       },
       borderRadius: {
         lg: `var(--radius)`,
@@ -206,13 +211,23 @@ module.exports = {
           '0%,70%,100%': { opacity: '1' },
           '20%,50%': { opacity: '0' },
         },
+        'spin-reverse': {
+          from: { transform: 'rotate(0deg)' },
+          to: { transform: 'rotate(-360deg)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
         'caret-blink': 'caret-blink 1.25s ease-out infinite',
+        'spin-reverse': 'spin-reverse 1s linear infinite',
       },
     },
   },
-  plugins: [require('tailwindcss-animate'), require('@tailwindcss/line-clamp')],
+  plugins: [
+    require('tailwindcss-animate'),
+    require('@tailwindcss/line-clamp'),
+    require('tailwind-scrollbar'),
+    require('@tailwindcss/container-queries'),
+  ],
 };

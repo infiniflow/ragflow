@@ -1,68 +1,57 @@
-import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
-import { Button, Form, Input } from 'antd';
+'use client';
 
-const BeginDynamicOptions = () => {
+import { BlockButton, Button } from '@/components/ui/button';
+import {
+  FormControl,
+  FormField,
+  FormItem,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { X } from 'lucide-react';
+import { useFieldArray, useFormContext } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
+
+export function BeginDynamicOptions() {
+  const { t } = useTranslation();
+  const form = useFormContext();
+  const name = 'options';
+
+  const { fields, remove, append } = useFieldArray({
+    name: name,
+    control: form.control,
+  });
+
   return (
-    <Form.List
-      name="options"
-      rules={[
-        {
-          validator: async (_, names) => {
-            if (!names || names.length < 1) {
-              return Promise.reject(new Error('At least 1 option'));
-            }
-          },
-        },
-      ]}
-    >
-      {(fields, { add, remove }, { errors }) => (
-        <>
-          {fields.map((field, index) => (
-            <Form.Item
-              label={index === 0 ? 'Options' : ''}
-              required={false}
-              key={field.key}
-            >
-              <Form.Item
-                {...field}
-                validateTrigger={['onChange', 'onBlur']}
-                rules={[
-                  {
-                    required: true,
-                    whitespace: true,
-                    message: 'Please input option or delete this field.',
-                  },
-                ]}
-                noStyle
-              >
-                <Input
-                  placeholder="option"
-                  style={{ width: '90%', marginRight: 16 }}
-                />
-              </Form.Item>
-              {fields.length > 1 ? (
-                <MinusCircleOutlined
-                  className="dynamic-delete-button"
-                  onClick={() => remove(field.name)}
-                />
-              ) : null}
-            </Form.Item>
-          ))}
-          <Form.Item>
-            <Button
-              type="dashed"
-              onClick={() => add()}
-              icon={<PlusOutlined />}
-              block
-            >
-              Add option
+    <div className="space-y-5">
+      {fields.map((field, index) => {
+        const typeField = `${name}.${index}.value`;
+        return (
+          <div key={field.id} className="flex items-center gap-2">
+            <FormField
+              control={form.control}
+              name={typeField}
+              render={({ field }) => (
+                <FormItem className="flex-1">
+                  <FormControl>
+                    <Input
+                      {...field}
+                      placeholder={t('common.pleaseInput')}
+                    ></Input>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <Button variant={'ghost'} onClick={() => remove(index)}>
+              <X className="text-text-sub-title-invert " />
             </Button>
-            <Form.ErrorList errors={errors} />
-          </Form.Item>
-        </>
-      )}
-    </Form.List>
+          </div>
+        );
+      })}
+      <BlockButton onClick={() => append({ value: '' })} type="button">
+        {t('flow.addField')}
+      </BlockButton>
+    </div>
   );
-};
-
-export default BeginDynamicOptions;
+}

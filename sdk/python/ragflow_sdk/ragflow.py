@@ -21,6 +21,7 @@ from .modules.agent import Agent
 from .modules.chat import Chat
 from .modules.chunk import Chunk
 from .modules.dataset import DataSet
+from .modules.memory import Memory
 
 
 class RAGFlow:
@@ -53,11 +54,10 @@ class RAGFlow:
         name: str,
         avatar: Optional[str] = None,
         description: Optional[str] = None,
-        embedding_model: Optional[str] = "BAAI/bge-large-zh-v1.5@BAAI",
+        embedding_model: Optional[str] = None,
         permission: str = "me",
         chunk_method: str = "naive",
-        pagerank: int = 0,
-        parser_config: DataSet.ParserConfig = None,
+        parser_config: Optional[DataSet.ParserConfig] = None,
     ) -> DataSet:
         payload = {
             "name": name,
@@ -66,7 +66,6 @@ class RAGFlow:
             "embedding_model": embedding_model,
             "permission": permission,
             "chunk_method": chunk_method,
-            "pagerank": pagerank,
         }
         if parser_config is not None:
             payload["parser_config"] = parser_config.to_json()
@@ -145,13 +144,15 @@ class RAGFlow:
                 },
             )
             if prompt.opener is None:
-                prompt.opener = "Hi! I'm your assistant, what can I do for you?"
+                prompt.opener = "Hi! I'm your assistant. What can I do for you?"
             if prompt.prompt is None:
                 prompt.prompt = (
-                    "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. "
-                    "Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, "
-                    "your answer must include the sentence 'The answer you are looking for is not found in the knowledge base!' "
-                    "Answers need to consider chat history.\nHere is the knowledge base:\n{knowledge}\nThe above is the knowledge base."
+                    "You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base."
+                    "**Essential Rules:**"
+                    "- Your answer must be derived **solely** from this knowledge base: `{knowledge}`."
+                    "- **When information is available**: Summarize the content to give a detailed answer."
+                    "- **When information is unavailable**: Your response must contain this exact sentence: 'The answer you are looking for is not found in the knowledge base!' "
+                    "- **Always consider** the entire conversation history."
                 )
 
         temp_dict = {"name": name, "avatar": avatar, "dataset_ids": dataset_list if dataset_list else [], "llm": llm.to_json(), "prompt": prompt.to_json()}
@@ -199,6 +200,10 @@ class RAGFlow:
         top_k=1024,
         rerank_id: str | None = None,
         keyword: bool = False,
+        cross_languages: list[str]|None = None,
+        metadata_condition: dict | None = None,
+        use_kg: bool = False,
+        toc_enhance: bool = False,
     ):
         if document_ids is None:
             document_ids = []
@@ -213,6 +218,10 @@ class RAGFlow:
             "question": question,
             "dataset_ids": dataset_ids,
             "document_ids": document_ids,
+            "cross_languages": cross_languages,
+            "metadata_condition": metadata_condition,
+            "use_kg": use_kg,
+            "toc_enhance": toc_enhance
         }
         # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
         res = self.post("/retrieval", json=data_json)
@@ -246,10 +255,7 @@ class RAGFlow:
         raise Exception(res["message"])
 
     def create_agent(self, title: str, dsl: dict, description: str | None = None) -> None:
-        req = {
-            "title": title,
-            "dsl": dsl
-        }
+        req = {"title": title, "dsl": dsl}
 
         if description is not None:
             req["description"] = description
@@ -260,13 +266,7 @@ class RAGFlow:
         if res.get("code") != 0:
             raise Exception(res["message"])
 
-    def update_agent(
-        self,
-        agent_id: str,
-        title: str | None = None,
-        description: str | None = None,
-        dsl: dict | None = None
-    ) -> None:
+    def update_agent(self, agent_id: str, title: str | None = None, description: str | None = None, dsl: dict | None = None) -> None:
         req = {}
 
         if title is not None:
@@ -290,3 +290,86 @@ class RAGFlow:
 
         if res.get("code") != 0:
             raise Exception(res["message"])
+
+    def create_memory(self, name: str, memory_type: list[str], embd_id: str, llm_id: str):
+        payload = {"name": name, "memory_type": memory_type, "embd_id": embd_id, "llm_id": llm_id}
+        res = self.post("/memories", payload)
+        res = res.json()
+        if res.get("code") != 0:
+            raise Exception(res["message"])
+        return Memory(self, res["data"])
+
+    def list_memory(self, page: int = 1, page_size: int = 50, tenant_id: str | list[str] = None, memory_type: str | list[str] = None, storage_type: str = None, keywords: str = None) -> dict:
+        res = self.get(
+            "/memories",
+            {
+                "page": page,
+                "page_size": page_size,
+                "tenant_id": tenant_id,
+                "memory_type": memory_type,
+                "storage_type": storage_type,
+                "keywords": keywords,
+            }
+        )
+        res = res.json()
+        if res.get("code") != 0:
+            raise Exception(res["message"])
+        result_list = []
+        for data in res["data"]["memory_list"]:
+            result_list.append(Memory(self, data))
+        return {
+            "code": res.get("code", 0),
+            "message": res.get("message"),
+            "memory_list": result_list,
+            "total_count": res["data"]["total_count"]
+        }
+
+    def delete_memory(self, memory_id: str):
+        res = self.delete(f"/memories/{memory_id}", {})
+        res = res.json()
+        if res.get("code") != 0:
+            raise Exception(res["message"])
+
+    def add_message(self, memory_id: list[str], agent_id: str, session_id: str, user_input: str, agent_response: str, user_id: str = "") -> str:
+        payload = {
+            "memory_id": memory_id,
+            "agent_id": agent_id,
+            "session_id": session_id,
+            "user_input": user_input,
+            "agent_response": agent_response,
+            "user_id": user_id
+        }
+        res = self.post("/messages", payload)
+        res = res.json()
+        if res.get("code") != 0:
+            raise Exception(res["message"])
+        return res["message"]
+
+    def search_message(self, query: str, memory_id: list[str], agent_id: str=None, session_id: str=None, similarity_threshold: float=0.2, keywords_similarity_weight: float=0.7, top_n: int=10) -> list[dict]:
+        params = {
+            "query": query,
+            "memory_id": memory_id,
+            "agent_id": agent_id,
+            "session_id": session_id,
+            "similarity_threshold": similarity_threshold,
+            "keywords_similarity_weight": keywords_similarity_weight,
+            "top_n": top_n
+        }
+        res = self.get("/messages/search", params)
+        res = res.json()
+        if res.get("code") != 0:
+            raise Exception(res["message"])
+        return res["data"]
+
+    def get_recent_messages(self, memory_id: list[str], agent_id: str=None, session_id: str=None, limit: int=10) -> list[dict]:
+        params = {
+            "memory_id": memory_id,
+            "agent_id": agent_id,
+            "session_id": session_id,
+            "limit": limit
+        }
+        res = self.get("/messages", params)
+        res = res.json()
+        if res.get("code") != 0:
+            raise Exception(res["message"])
+        return res["data"]

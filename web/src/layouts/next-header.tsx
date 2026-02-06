@@ -1,6 +1,6 @@
+import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { useTheme } from '@/components/theme-provider';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -9,12 +9,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Segmented, SegmentedValue } from '@/components/ui/segmented';
-import { LanguageList, LanguageMap } from '@/constants/common';
+import { LanguageList, LanguageMap, ThemeEnum } from '@/constants/common';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useNavigateWithFromState } from '@/hooks/route-hook';
-import { useFetchUserInfo, useListTenant } from '@/hooks/user-setting-hooks';
-import { TenantRole } from '@/pages/user-setting/constants';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { Routes } from '@/routes';
 import { camelCase } from 'lodash';
 import {
@@ -22,7 +21,6 @@ import {
   CircleHelp,
   Cpu,
   File,
-  Github,
   House,
   Library,
   MessageSquareText,
@@ -32,17 +30,27 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation } from 'umi';
+import { useLocation } from 'react-router';
+import { BellButton } from './bell-button';
 
 const handleDocHelpCLick = () => {
   window.open('https://ragflow.io/docs/dev/category/guides', 'target');
 };
 
+const PathMap = {
+  [Routes.Datasets]: [Routes.Datasets],
+  [Routes.Chats]: [Routes.Chats],
+  [Routes.Searches]: [Routes.Searches],
+  [Routes.Agents]: [Routes.Agents],
+  [Routes.Memories]: [Routes.Memories, Routes.Memory, Routes.MemoryMessage],
+  [Routes.Files]: [Routes.Files],
+} as const;
+
 export function Header() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const navigate = useNavigateWithFromState();
-  const { navigateToProfile } = useNavigatePage();
+  const { navigateToOldProfile } = useNavigatePage();
 
   const changeLanguage = useChangeLanguage();
   const { setTheme, theme } = useTheme();
@@ -55,32 +63,23 @@ export function Header() {
     changeLanguage(key);
   };
 
-  const { data } = useListTenant();
-
-  const showBell = useMemo(() => {
-    return data.some((x) => x.role === TenantRole.Invite);
-  }, [data]);
-
   const items = LanguageList.map((x) => ({
     key: x,
     label: <span>{LanguageMap[x as keyof typeof LanguageMap]}</span>,
   }));
 
   const onThemeClick = React.useCallback(() => {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
+    setTheme(theme === ThemeEnum.Dark ? ThemeEnum.Light : ThemeEnum.Dark);
   }, [setTheme, theme]);
-
-  const handleBellClick = useCallback(() => {
-    navigate('/user-setting/team');
-  }, [navigate]);
 
   const tagsData = useMemo(
     () => [
-      { path: Routes.Home, name: t('header.home'), icon: House },
-      { path: Routes.Datasets, name: t('header.knowledgeBase'), icon: Library },
+      { path: Routes.Root, name: t('header.Root'), icon: House },
+      { path: Routes.Datasets, name: t('header.dataset'), icon: Library },
       { path: Routes.Chats, name: t('header.chat'), icon: MessageSquareText },
       { path: Routes.Searches, name: t('header.search'), icon: Search },
       { path: Routes.Agents, name: t('header.flow'), icon: Cpu },
+      { path: Routes.Memories, name: t('header.memories'), icon: Cpu },
       { path: Routes.Files, name: t('header.fileManager'), icon: File },
     ],
     [t],
@@ -92,7 +91,7 @@ export function Header() {
 
       return {
         label:
-          tag.path === Routes.Home ? (
+          tag.path === Routes.Root ? (
             <HeaderIcon className="size-6"></HeaderIcon>
           ) : (
             <span>{tag.name}</span>
@@ -102,40 +101,66 @@ export function Header() {
     });
   }, [tagsData]);
 
-  const currentPath = useMemo(() => {
-    return (
-      tagsData.find((x) => pathname.startsWith(x.path))?.path || Routes.Home
-    );
-  }, [pathname, tagsData]);
+  // const currentPath = useMemo(() => {
+  //   return (
+  //     tagsData.find((x) => pathname.startsWith(x.path))?.path || Routes.Root
+  //   );
+  // }, [pathname, tagsData]);
 
   const handleChange = (path: SegmentedValue) => {
     navigate(path as Routes);
   };
 
   const handleLogoClick = useCallback(() => {
-    navigate(Routes.Home);
+    navigate(Routes.Root);
   }, [navigate]);
 
+  const activePathName = useMemo(() => {
+    const name = Object.keys(PathMap).find((x: string) => {
+      const pathList = PathMap[x as keyof typeof PathMap];
+      return pathList.some((y: string) => pathname.indexOf(y) > -1);
+    });
+    if (name) {
+      return name;
+    } else {
+      return pathname;
+    }
+  }, [pathname]);
+
   return (
-    <section className="p-5 pr-14 flex justify-between items-center ">
+    <section className="py-5 px-10 flex justify-between items-center ">
       <div className="flex items-center gap-4">
         <img
           src={'/logo.svg'}
           alt="logo"
-          className="size-10 mr-[12]"
+          className="size-10 mr-[12] cursor-pointer"
           onClick={handleLogoClick}
         />
-        <div className="flex items-center gap-1.5 text-text-sub-title">
-          <Github className="size-3.5" />
-          <span className=" text-base">21.5k stars</span>
-        </div>
       </div>
       <Segmented
+        rounded="xxxl"
+        sizeType="xl"
+        buttonSize="xl"
         options={options}
-        value={currentPath}
+        value={activePathName}
         onChange={handleChange}
+        activeClassName="text-bg-base bg-metallic-gradient border-b-[#00BEB4] border-b-2"
       ></Segmented>
       <div className="flex items-center gap-5 text-text-badge">
+        <a
+          target="_blank"
+          href="https://discord.com/invite/NjYzJD3GM3"
+          rel="noreferrer"
+        >
+          <IconFontFill name="a-DiscordIconSVGVectorIcon"></IconFontFill>
+        </a>
+        <a
+          target="_blank"
+          href="https://github.com/infiniflow/ragflow"
+          rel="noreferrer"
+        >
+          <IconFontFill name="GitHub"></IconFontFill>
+        </a>
         <DropdownMenu>
           <DropdownMenuTrigger>
             <div className="flex items-center gap-1">
@@ -157,16 +182,19 @@ export function Header() {
         <Button variant={'ghost'} onClick={onThemeClick}>
           {theme === 'light' ? <Sun /> : <Moon />}
         </Button>
+        <BellButton></BellButton>
         <div className="relative">
           <RAGFlowAvatar
             name={nickname}
             avatar={avatar}
+            isPerson
             className="size-8 cursor-pointer"
-            onClick={navigateToProfile}
+            onClick={navigateToOldProfile}
           ></RAGFlowAvatar>
-          <Badge className="h-5 w-8 absolute font-normal p-0 justify-center -right-8 -top-2 text-text-title-invert bg-gradient-to-l from-[#42D7E7] to-[#478AF5]">
+          {/* Temporarily hidden */}
+          {/* <Badge className="h-5 w-8 absolute font-normal p-0 justify-center -right-8 -top-2 text-bg-base bg-gradient-to-l from-[#42D7E7] to-[#478AF5]">
             Pro
-          </Badge>
+          </Badge> */}
         </div>
       </div>
     </section>

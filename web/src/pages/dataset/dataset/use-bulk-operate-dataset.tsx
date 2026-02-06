@@ -1,3 +1,4 @@
+import { useSetModalState } from '@/hooks/common-hooks';
 import {
   UseRowSelectionType,
   useSelectedIds,
@@ -8,8 +9,15 @@ import {
   useSetDocumentStatus,
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { Ban, CircleCheck, CircleX, Play, Trash2 } from 'lucide-react';
-import { useCallback } from 'react';
+import {
+  Ban,
+  CircleCheck,
+  CircleX,
+  Cylinder,
+  Play,
+  Trash2,
+} from 'lucide-react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { DocumentType, RunningStatus } from './constant';
@@ -30,9 +38,21 @@ export function useBulkOperateDataset({
   const { runDocumentByIds } = useRunDocument();
   const { setDocumentStatus } = useSetDocumentStatus();
   const { removeDocument } = useRemoveDocument();
+  const { visible, showModal, hideModal } = useSetModalState();
+
+  const chunkNum = useMemo(() => {
+    if (!documents.length) {
+      return 0;
+    }
+    return documents
+      .filter((item) => selectedRowKeys.includes(item.id) && item.id)
+      ?.reduce((acc, cur) => {
+        return acc + cur.chunk_num;
+      }, 0);
+  }, [documents, selectedRowKeys]);
 
   const runDocument = useCallback(
-    (run: number) => {
+    async (run: number, option?: { delete: boolean; apply_kb: boolean }) => {
       const nonVirtualKeys = selectedRowKeys.filter(
         (x) =>
           !documents.some((y) => x === y.id && y.type === DocumentType.Virtual),
@@ -42,18 +62,22 @@ export function useBulkOperateDataset({
         toast.error(t('Please select a non-empty file list'));
         return;
       }
-      runDocumentByIds({
+      await runDocumentByIds({
         documentIds: nonVirtualKeys,
         run,
-        shouldDelete: false,
+        option,
       });
+      hideModal();
     },
-    [documents, runDocumentByIds, selectedRowKeys, t],
+    [documents, runDocumentByIds, selectedRowKeys, hideModal, t],
   );
 
-  const handleRunClick = useCallback(() => {
-    runDocument(1);
-  }, [runDocument]);
+  const handleRunClick = useCallback(
+    (option?: { delete: boolean; apply_kb: boolean }) => {
+      runDocument(1, option);
+    },
+    [runDocument],
+  );
 
   const handleCancelClick = useCallback(() => {
     runDocument(2);
@@ -61,9 +85,7 @@ export function useBulkOperateDataset({
 
   const onChangeStatus = useCallback(
     (enabled: boolean) => {
-      selectedRowKeys.forEach((id) => {
-        setDocumentStatus({ status: enabled, documentId: id });
-      });
+      setDocumentStatus({ status: enabled, documentId: selectedRowKeys });
     },
     [selectedRowKeys, setDocumentStatus],
   );
@@ -108,13 +130,18 @@ export function useBulkOperateDataset({
       id: 'run',
       label: t('knowledgeDetails.run'),
       icon: <Play />,
-      onClick: handleRunClick,
+      onClick: () => showModal(),
     },
     {
       id: 'cancel',
       label: t('knowledgeDetails.cancel'),
       icon: <CircleX />,
       onClick: handleCancelClick,
+    },
+    {
+      id: 'batch-metadata',
+      label: t('knowledgeDetails.metadata.metadata'),
+      icon: <Cylinder />,
     },
     {
       id: 'delete',
@@ -129,5 +156,5 @@ export function useBulkOperateDataset({
     },
   ];
 
-  return { list };
+  return { chunkNum, list, visible, hideModal, showModal, handleRunClick };
 }

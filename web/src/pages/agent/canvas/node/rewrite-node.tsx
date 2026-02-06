@@ -1,14 +1,15 @@
-import LLMLabel from '@/components/llm-select/llm-label';
 import { useTheme } from '@/components/theme-provider';
 import { IRewriteNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';
 import { get } from 'lodash';
+import { memo } from 'react';
+import { LLMLabelCard } from './card';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
-import styles from './index.less';
+import styles from './index.module.less';
 import NodeHeader from './node-header';
 
-export function RewriteNode({
+function InnerRewriteNode({
   id,
   data,
   isConnectable = true,
@@ -49,9 +50,9 @@ export function RewriteNode({
         className={styles.nodeHeader}
       ></NodeHeader>
 
-      <div className={styles.nodeText}>
-        <LLMLabel value={get(data, 'form.llm_id')}></LLMLabel>
-      </div>
+      <LLMLabelCard llmId={get(data, 'form.llm_id')}></LLMLabelCard>
     </section>
   );
 }
+
+export const RewriteNode = memo(InnerRewriteNode);

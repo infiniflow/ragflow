@@ -15,7 +15,7 @@
 #
 import logging
 from tavily import TavilyClient
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from rag.nlp import rag_tokenizer
 
 
@@ -30,7 +30,8 @@ class Tavily:
                 search_depth="advanced",
                 max_results=6
             )
-            return [{"url": res["url"], "title": res["title"], "content": res["content"], "score": res["score"]} for res in response["results"]]
+            return [{"url": res["url"], "title": res["title"], "content": res["content"], "score": res["score"]} for res
+                    in response["results"]]
         except Exception as e:
             logging.exception(e)
 
@@ -64,5 +65,5 @@ class Tavily:
                 "count": 1,
                 "url": r["url"]
             })
-            logging.info("[Tavily]R: "+r["content"][:128]+"...")
+            logging.info("[Tavily]R: " + r["content"][:128] + "...")
         return {"chunks": chunks, "doc_aggs": aggs}

@@ -1,0 +1,27 @@
+[project]
+name = "ragflow-cli"
+version = "0.23.1"
+description = "Admin Service's client of [RAGFlow](https://github.com/infiniflow/ragflow). The Admin Service provides user management and system monitoring. "
+authors = [{ name = "Lynn", email = "lynn_inf@hotmail.com" }]
+license = { text = "Apache License, Version 2.0" }
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "requests>=2.30.0,<3.0.0",
+    "beartype>=0.20.0,<1.0.0",
+    "pycryptodomex>=3.10.0",
+    "lark>=1.1.0",
+]
+
+[dependency-groups]
+test = [
+    "pytest>=8.3.5",
+    "requests>=2.32.3",
+    "requests-toolbelt>=1.0.0",
+]
+
+[tool.setuptools]
+py-modules = ["ragflow_cli", "parser"]
+
+[project.scripts]
+ragflow-cli = "ragflow_cli:main"

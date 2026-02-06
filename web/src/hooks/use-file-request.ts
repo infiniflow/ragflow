@@ -1,14 +1,17 @@
+import message from '@/components/ui/message';
 import {
   IFetchFileListResult,
   IFolder,
 } from '@/interfaces/database/file-manager';
+import { IConnectRequestBody } from '@/interfaces/request/file-manager';
 import fileManagerService from '@/services/file-manager-service';
+import { downloadFileFromBlob } from '@/utils/file-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { PaginationProps, message } from 'antd';
+import { PaginationProps } from 'antd';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'umi';
+import { useSearchParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -22,6 +25,10 @@ export const enum FileApiAction {
   CreateFolder = 'createFolder',
   FetchParentFolderList = 'fetchParentFolderList',
   DeleteFile = 'deleteFile',
+  DownloadFile = 'downloadFile',
+  RenameFile = 'renameFile',
+  ConnectFileToKnowledge = 'connectFileToKnowledge',
+  FetchPureFileList = 'fetchPureFileList',
 }
 
 export const useGetFolderId = () => {
@@ -227,4 +234,86 @@ export const useDeleteFile = () => {
   });
 
   return { data, loading, deleteFile: mutateAsync };
+};
+
+export const useDownloadFile = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [FileApiAction.DownloadFile],
+    mutationFn: async (params: { id: string; filename?: string }) => {
+      const response = await fileManagerService.getFile({}, params.id);
+      const blob = new Blob([response.data], { type: response.data.type });
+      downloadFileFromBlob(blob, params.filename);
+    },
+  });
+  return { data, loading, downloadFile: mutateAsync };
+};
+
+export const useRenameFile = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [FileApiAction.RenameFile],
+    mutationFn: async (params: { fileId: string; name: string }) => {
+      const { data } = await fileManagerService.renameFile(params);
+      if (data.code === 0) {
+        message.success(t('message.renamed'));
+        queryClient.invalidateQueries({
+          queryKey: [FileApiAction.FetchFileList],
+        });
+      }
+      return data.code;
+    },
+  });
+
+  return { data, loading, renameFile: mutateAsync };
+};
+
+export const useConnectToKnowledge = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [FileApiAction.ConnectFileToKnowledge],
+    mutationFn: async (params: IConnectRequestBody) => {
+      const { data } = await fileManagerService.connectFileToKnowledge(params);
+      if (data.code === 0) {
+        message.success(t('message.operated'));
+        queryClient.invalidateQueries({
+          queryKey: [FileApiAction.FetchFileList],
+        });
+      }
+      return data.code;
+    },
+  });
+
+  return { data, loading, connectFileToKnowledge: mutateAsync };
+};
+
+export const useFetchPureFileList = () => {
+  const { mutateAsync, isPending: loading } = useMutation({
+    mutationKey: [FileApiAction.FetchPureFileList],
+    gcTime: 0,
+
+    mutationFn: async (parentId: string) => {
+      const { data } = await fileManagerService.listFile({
+        parent_id: parentId,
+      });
+
+      return data;
+    },
+  });
+
+  return { loading, fetchList: mutateAsync };
 };

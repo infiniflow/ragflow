@@ -1,45 +1,47 @@
-import { useTheme } from '@/components/theme-provider';
 import { IRagNode } from '@/interfaces/database/flow';
-import { Handle, NodeProps, Position } from '@xyflow/react';
-import classNames from 'classnames';
-import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
-import styles from './index.less';
+import { NodeProps, Position } from '@xyflow/react';
+import { PropsWithChildren, memo } from 'react';
+import { NodeHandleId } from '../../constant';
+import { needsSingleStepDebugging, showCopyIcon } from '../../utils';
+import { CommonHandle, LeftEndHandle } from './handle';
+import { RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
+import { NodeWrapper } from './node-wrapper';
+import { ToolBar } from './toolbar';
 
-export function RagNode({
+type RagNodeProps = NodeProps<IRagNode> & PropsWithChildren;
+
+function InnerRagNode({
   id,
   data,
   isConnectable = true,
   selected,
-}: NodeProps<IRagNode>) {
-  const { theme } = useTheme();
+  children,
+}: RagNodeProps) {
   return (
-    <section
-      className={classNames(
-        styles.ragNode,
-        theme === 'dark' ? styles.dark : '',
-        {
-          [styles.selectedNode]: selected,
-        },
-      )}
+    <ToolBar
+      selected={selected}
+      id={id}
+      label={data.label}
+      showRun={needsSingleStepDebugging(data.label)}
+      showCopy={showCopyIcon(data.label)}
     >
-      <Handle
-        id="c"
-        type="source"
-        position={Position.Left}
-        isConnectable={isConnectable}
-        className={styles.handle}
-        style={LeftHandleStyle}
-      ></Handle>
-      <Handle
-        type="source"
-        position={Position.Right}
-        isConnectable={isConnectable}
-        className={styles.handle}
-        id="b"
-        style={RightHandleStyle}
-      ></Handle>
-      <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
-    </section>
+      <NodeWrapper selected={selected} id={id}>
+        <LeftEndHandle></LeftEndHandle>
+        <CommonHandle
+          type="source"
+          position={Position.Right}
+          isConnectable={isConnectable}
+          id={NodeHandleId.Start}
+          style={RightHandleStyle}
+          nodeId={id}
+          isConnectableEnd={false}
+        ></CommonHandle>
+        <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
+        {children}
+      </NodeWrapper>
+    </ToolBar>
   );
 }
+
+export const RagNode = memo(InnerRagNode);

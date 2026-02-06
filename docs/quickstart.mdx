@@ -1,8 +1,10 @@
 ---
 sidebar_position: 0
 slug: /
+sidebar_custom_props: {
+  sidebarIcon: LucideRocket
+}
 ---
-
 # Get started
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
@@ -13,7 +15,7 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 This quick start guide describes a general process from:
 
 - Starting up a local RAGFlow server, 
-- Creating a knowledge base, 
+- Creating a dataset, 
 - Intervening with file parsing, to 
 - Establishing an AI chat based on your datasets.
 
@@ -29,7 +31,7 @@ If you are on an ARM platform, follow [this guide](./develop/build_docker_image.
 - RAM &ge; 16 GB;
 - Disk &ge; 50 GB;
 - Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1.
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): Required only if you intend to use the code executor (sandbox) feature of RAGFlow.
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Required only if you intend to use the code executor ([sandbox](https://github.com/infiniflow/ragflow/tree/main/sandbox)) feature of RAGFlow.
 
 :::tip NOTE
 If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
@@ -39,12 +41,14 @@ If you have not installed Docker on your local machine (Windows, Mac, or Linux),
 
 This section provides instructions on setting up the RAGFlow server on Linux. If you are on a different operating system, no worries. Most steps are alike.
 
+1. Ensure `vm.max_map_count` &ge; 262144.
+
 <details>
-  <summary>1. Ensure <code>vm.max_map_count</code> &ge; 262144:</summary>
+  <summary>Expand to show details:</summary>
 
    `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abnormal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation.
 
-   RAGFlow v0.18.0 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
+   RAGFlow v0.23.1 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
 
 <Tabs
   defaultValue="linux"
@@ -153,7 +157,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    This change will be reset after you restart Docker. If you forget to update the value the next time you start up the server, you may get a `Can't connect to ES cluster` exception.
    :::
 
-   1.2. If you do not wish to have to run those commands each time you restart Docker, you can update your `%USERPROFILE%.wslconfig` as follows to keep your change permanent and globally for all WSL distributions:
+   1.2. If you prefer not to run those commands every time you restart Docker, you can update your `%USERPROFILE%.wslconfig` as follows to keep your change permanent and global for all WSL distributions:
 
    ```bash
    [wsl2]
@@ -184,42 +188,41 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
    $ cd ragflow/docker
-   $ git checkout -f v0.18.0
    ```
 
-3. Use the pre-built Docker images and start up the server:
+3. Switch to the current version:
+
+   ```bash
+   $ git checkout -f v0.23.1
+   ```
+4. Use the pre-built Docker images and start up the server:
+
+   ```bash
+   # Use CPU for DeepDoc tasks:
+   $ docker compose -f docker-compose.yml up -d
+   ```
+
+   ```mdx-code-block
+   <APITable>
+   ```
+
+   | RAGFlow image tag   | Image size (GB) | Stable?                  |
+   | ------------------- | --------------- | ------------------------ |
+   | v0.23.1             | &approx;2       | Stable release           |
+   | nightly             | &approx;2       | _Unstable_ nightly build |
+
+   ```mdx-code-block
+   </APITable>
+   ```
 
    :::tip NOTE
-   The command below downloads the `v0.18.0-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.18.0-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.18.0` for the full edition `v0.18.0`.
+   The image size shown refers to the size of the *downloaded* Docker image, which is compressed. When Docker runs the image, it unpacks it, resulting in significantly greater disk usage. A Docker image will expand to around 7 GB once unpacked.
    :::
 
-   ```bash
-   # Use CPU for embedding and DeepDoc tasks:
-   $ docker compose -f docker-compose.yml up -d
-
-   # To use GPU to accelerate embedding and DeepDoc tasks:
-   # docker compose -f docker-compose-gpu.yml up -d
-   ```
-
-```mdx-code-block
-<APITable>
-```
-
-| RAGFlow image tag   | Image size (GB) | Has embedding models and Python packages? | Stable?                  |
-| ------------------- | --------------- | ----------------------------------------- | ------------------------ |
-| `v0.18.0`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
-| `v0.18.0-slim`      | &approx;2       | ❌                                        | Stable release           |
-| `nightly`           | &approx;9       | :heavy_check_mark:                        | *Unstable* nightly build |
-| `nightly-slim`      | &approx;2       | ❌                                        | *Unstable* nightly build |
-
-```mdx-code-block
-</APITable>
-```
-
-4. Check the server status after having the server up and running:
+5. Check the server status after having the server up and running:
 
    ```bash
-   $ docker logs -f ragflow-server
+   $ docker logs -f docker-ragflow-cpu-1
    ```
 
    _The following output confirms a successful launch of the system:_
@@ -234,15 +237,15 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
     * Running on all addresses (0.0.0.0)
    ```
 
-:::danger IMPORTANT
-If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anomaly` error because, at that moment, your RAGFlow may not be fully initialized.
-:::  
+   :::danger IMPORTANT
+   If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anomaly` error because, at that moment, your RAGFlow may not be fully initialized.
+   :::  
 
-5. In your web browser, enter the IP address of your server and log in to RAGFlow.
+6. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
-:::caution WARNING
-With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
-:::
+   :::caution WARNING
+   With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
+   :::
 
 ## Configure LLMs
 
@@ -254,64 +257,51 @@ RAGFlow also supports deploying LLMs locally using Ollama, Xinference, or LocalA
 
 To add and configure an LLM: 
 
-1. Click on your logo on the top right of the page **>** **Model providers**:
+1. Click on your logo on the top right of the page **>** **Model providers**.
 
-   ![add llm](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
-
-   > Each RAGFlow account is able to use **text-embedding-v2** for free, an embedding model of Tongyi-Qianwen. This is why you can see Tongyi-Qianwen in the **Added models** list. And you may need to update your Tongyi-Qianwen API key at a later point.
-
-2. Click on the desired LLM and update the API key accordingly (DeepSeek-V2 in this case):
-
-   ![update api key](https://github.com/infiniflow/ragflow/assets/93570324/4e5e13ef-a98d-42e6-bcb1-0c6045fc1666)
-
-   *Your added models appear as follows:* 
-
-   ![added available models](https://github.com/infiniflow/ragflow/assets/93570324/d08b80e4-f921-480a-b41d-11832489c916)
+2. Click on the desired LLM and update the API key accordingly.
 
 3. Click **System Model Settings** to select the default models: 
 
    - Chat model, 
    - Embedding model, 
-   - Image-to-text model. 
-
-   ![system model settings](https://github.com/infiniflow/ragflow/assets/93570324/cdcc1da5-4494-44cd-ad5b-1222ed6acc3f)
+   - Image-to-text model,
+   - and more.
 
 > Some models, such as the image-to-text model **qwen-vl-max**, are subsidiary to a specific LLM. And you may need to update your API key to access these models. 
 
-## Create your first knowledge base
+## Create your first dataset
 
-You are allowed to upload files to a knowledge base in RAGFlow and parse them into datasets. A knowledge base is virtually a collection of datasets. Question answering in RAGFlow can be based on a particular knowledge base or multiple knowledge bases. File formats that RAGFlow supports include documents (PDF, DOC, DOCX, TXT, MD), tables (CSV, XLSX, XLS), pictures (JPEG, JPG, PNG, TIF, GIF), and slides (PPT, PPTX).
+You are allowed to upload files to a dataset in RAGFlow and parse them into datasets. A dataset is virtually a collection of datasets. Question answering in RAGFlow can be based on a particular dataset or multiple datasets. File formats that RAGFlow supports include documents (PDF, DOC, DOCX, TXT, MD, MDX), tables (CSV, XLSX, XLS), pictures (JPEG, JPG, PNG, TIF, GIF), and slides (PPT, PPTX).
 
-To create your first knowledge base:
+To create your first dataset:
 
-1. Click the **Knowledge Base** tab in the top middle of the page **>** **Create knowledge base**.
+1. Click the **Dataset** tab in the top middle of the page **>** **Create dataset**.
 
-2. Input the name of your knowledge base and click **OK** to confirm your changes.
+2. Input the name of your dataset and click **OK** to confirm your changes.
 
-   _You are taken to the **Configuration** page of your knowledge base._
+   _You are taken to the **Configuration** page of your dataset._
 
-   ![knowledge base configuration](https://github.com/infiniflow/ragflow/assets/93570324/384c671a-8b9c-468c-b1c9-1401128a9b65)
+   ![dataset configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_knowledge_base.jpg)
 
-3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunking method (template) for your knowledge base. 
+3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunking method (template) for your dataset. 
 
-:::danger IMPORTANT 
-Once you have selected an embedding model and used it to parse a file, you are no longer allowed to change it. The obvious reason is that we must ensure that all files in a specific knowledge base are parsed using the *same* embedding model (ensure that they are being compared in the same embedding space). 
-:::
+   :::danger IMPORTANT 
+   Once you have selected an embedding model and used it to parse a file, you are no longer allowed to change it. The obvious reason is that we must ensure that all files in a specific dataset are parsed using the *same* embedding model (ensure that they are being compared in the same embedding space). 
+   :::
 
-   _You are taken to the **Dataset** page of your knowledge base._
+   _You are taken to the **Dataset** page of your dataset._
 
-4. Click **+ Add file** **>** **Local files** to start uploading a particular file to the knowledge base. 
+4. Click **+ Add file** **>** **Local files** to start uploading a particular file to the dataset. 
 
 5. In the uploaded file entry, click the play button to start file parsing:
 
-   ![file parsing](https://github.com/infiniflow/ragflow/assets/93570324/19f273fa-0ab0-435e-bdf4-a47fb080a078)
+   ![parse file](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/parse_file.jpg)
 
-   _When the file parsing completes, its parsing status changes to **SUCCESS**._
-
-:::caution NOTE 
-- If your file parsing gets stuck at below 1%, see [this FAQ](./faq.mdx#why-does-my-document-parsing-stall-at-under-one-percent).
-- If your file parsing gets stuck at near completion, see [this FAQ](./faq.mdx#why-does-my-pdf-parsing-stall-near-completion-while-the-log-does-not-show-any-error)
-:::
+   :::caution NOTE 
+   - If your file parsing gets stuck at below 1%, see [this FAQ](./faq.mdx#why-does-my-document-parsing-stall-at-under-one-percent).
+   - If your file parsing gets stuck at near completion, see [this FAQ](./faq.mdx#why-does-my-pdf-parsing-stall-near-completion-while-the-log-does-not-show-any-error)
+   :::
 
 ## Intervene with file parsing
 
@@ -321,47 +311,46 @@ RAGFlow features visibility and explainability, allowing you to view the chunkin
 
    _You are taken to the **Chunk** page:_
 
-   ![chunks](https://github.com/infiniflow/ragflow/assets/93570324/0547fd0e-e71b-41f8-8e0e-31649c85fd3d)
+   ![chunks](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/file_chunks.jpg)
 
 2. Hover over each snapshot for a quick view of each chunk.
 
 3. Double click the chunked texts to add keywords or make *manual* changes where necessary:
 
-   ![update chunk](https://github.com/infiniflow/ragflow/assets/93570324/1d84b408-4e9f-46fd-9413-8c1059bf9c76)
+   ![update chunk](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_keyword_question.jpg)
 
-:::caution NOTE
-You can add keywords to a file chunk to improve its ranking for queries containing those keywords. This action increases its keyword weight and can improve its position in search list.
-:::
+   :::caution NOTE
+   You can add keywords or questions to a file chunk to improve its ranking for queries containing those keywords. This action increases its keyword weight and can improve its position in search list.
+   :::
 
 4. In Retrieval testing, ask a quick question in **Test text** to double check if your configurations work:
 
    _As you can tell from the following, RAGFlow responds with truthful citations._
 
-   ![retrieval test](https://github.com/infiniflow/ragflow/assets/93570324/c03f06f6-f41f-4b20-a97e-ae405d3a950c)
+   ![retrieval test](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/retrieval_test.jpg)
 
 ## Set up an AI chat
 
-Conversations in RAGFlow are based on a particular knowledge base or multiple knowledge bases. Once you have created your knowledge base and finished file parsing, you can go ahead and start an AI conversation.
+Conversations in RAGFlow are based on a particular dataset or multiple datasets. Once you have created your dataset and finished file parsing, you can go ahead and start an AI conversation.
 
-1. Click the **Chat** tab in the middle top of the mage **>** **Create an assistant** to show the **Chat Configuration** dialogue *of your next dialogue*.
+1. Click the **Chat** tab in the middle top of the page **>** **Create chat** to create a chat assistant.
+2. Click the created chat app to enter its configuration page.
    > RAGFlow offer the flexibility of choosing a different chat model for each dialogue, while allowing you to set the default models in **System Model Settings**.
 
-2. Update **Assistant settings**:
+2. Update **Chat setting** on the right of the configuration page:
 
-   - Name your assistant and specify your knowledge bases.
+   - Name your assistant and specify your datasets.
    - **Empty response**:
-     - If you wish to *confine* RAGFlow's answers to your knowledge bases, leave a response here. Then when it doesn't retrieve an answer, it *uniformly* responds with what you set here.
-     - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your knowledge bases, leave it blank, which may give rise to hallucinations.
+     - If you wish to *confine* RAGFlow's answers to your datasets, leave a response here. Then when it doesn't retrieve an answer, it *uniformly* responds with what you set here.
+     - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your datasets, leave it blank, which may give rise to hallucinations.
 
-3. Update **Prompt engine** or leave it as is for the beginning.
+3. Update **System prompt** or leave it as is for the beginning.
 
-4. Update **Model settings**.
+4. Select a chat model in the **Model** dropdown list.
 
 5. Now, let's start the show:
 
-   ![question1](https://github.com/infiniflow/ragflow/assets/93570324/bb72dd67-b35e-4b2a-87e9-4e4edbd6e677)
-
-   ![question2](https://github.com/infiniflow/ragflow/assets/93570324/7cc585ae-88d0-4aa2-817d-0370b2ad7230)
+   ![chat_thermal_solution](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_thermal_solution.jpg)
 
 
 :::tip NOTE

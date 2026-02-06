@@ -1,4 +1,7 @@
-import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import {
+  ConfirmDeleteDialog,
+  ConfirmDeleteDialogNode,
+} from '@/components/confirm-delete-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useDeleteAgent } from '@/hooks/use-agent-request';
-import { IFlow } from '@/interfaces/database/flow';
+import { IFlow } from '@/interfaces/database/agent';
 import { PenLine, Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -45,9 +48,20 @@ export function AgentDropdown({
           {t('common.rename')} <PenLine />
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <ConfirmDeleteDialog onOk={handleDelete}>
+        <ConfirmDeleteDialog
+          onOk={handleDelete}
+          title={t('deleteModal.delAgent')}
+          content={{
+            node: (
+              <ConfirmDeleteDialogNode
+                avatar={{ avatar: agent.avatar, name: agent.title }}
+                name={agent.title}
+              />
+            ),
+          }}
+        >
           <DropdownMenuItem
-            className="text-text-delete-red"
+            className="text-state-error"
             onSelect={(e) => {
               e.preventDefault();
             }}

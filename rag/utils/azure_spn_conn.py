@@ -17,10 +17,10 @@
 import logging
 import os
 import time
-from rag import settings
-from rag.utils import singleton
+from common.decorator import singleton
 from azure.identity import ClientSecretCredential, AzureAuthorityHosts
 from azure.storage.filedatalake import FileSystemClient
+from common import settings
 
 
 @singleton
@@ -42,8 +42,10 @@ class RAGFlowAzureSpnBlob:
             pass
 
         try:
-            credentials = ClientSecretCredential(tenant_id=self.tenant_id, client_id=self.client_id, client_secret=self.secret, authority=AzureAuthorityHosts.AZURE_CHINA)
-            self.conn = FileSystemClient(account_url=self.account_url, file_system_name=self.container_name, credential=credentials)
+            credentials = ClientSecretCredential(tenant_id=self.tenant_id, client_id=self.client_id,
+                                                 client_secret=self.secret, authority=AzureAuthorityHosts.AZURE_CHINA)
+            self.conn = FileSystemClient(account_url=self.account_url, file_system_name=self.container_name,
+                                         credential=credentials)
         except Exception:
             logging.exception("Fail to connect %s" % self.account_url)
 
@@ -67,6 +69,8 @@ class RAGFlowAzureSpnBlob:
                 logging.exception(f"Fail put {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
+                return None
+        return None
 
     def rm(self, bucket, fnm):
         try:
@@ -84,7 +88,7 @@ class RAGFlowAzureSpnBlob:
                 logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
-        return
+        return None
 
     def obj_exist(self, bucket, fnm):
         try:
@@ -102,4 +106,4 @@ class RAGFlowAzureSpnBlob:
                 logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
-        return
+        return None

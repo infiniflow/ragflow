@@ -1,6 +1,6 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useUpdateAgentSetting } from '@/hooks/use-agent-request';
-import { IFlow } from '@/interfaces/database/flow';
+import { IFlow } from '@/interfaces/database/agent';
 import { pick } from 'lodash';
 import { useCallback, useState } from 'react';
 

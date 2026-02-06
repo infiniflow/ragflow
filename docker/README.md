@@ -6,6 +6,7 @@
 - 🐳 [Docker Compose](#-docker-compose)
 - 🐬 [Docker environment variables](#-docker-environment-variables)
 - 🐋 [Service configuration](#-service-configuration)
+- 📋 [Setup Examples](#-setup-examples)
 
 </details>
 
@@ -17,7 +18,7 @@
   Sets up environment for RAGFlow's dependencies: Elasticsearch/[Infinity](https://github.com/infiniflow/infinity), MySQL, MinIO, and Redis.
 
 > [!CAUTION]
-> We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-gpu-CN-oc9.yml**, or **docker-compose-gpu.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve any of them.
+> We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-macos.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve any of them.
 
 ## 🐬 Docker environment variables
 
@@ -51,6 +52,8 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `MYSQL_PASSWORD`  
   The password for MySQL.
 - `MYSQL_PORT`  
+  The port to connect to MySQL from RAGFlow container. Defaults to `3306`. Change this if you use an external MySQL.
+- `EXPOSE_MYSQL_PORT`  
   The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `5455`.
 
 ### MinIO
@@ -76,28 +79,19 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `SVR_HTTP_PORT`  
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW-IMAGE`  
-  The Docker image edition. Available editions:  
-  
-  - `infiniflow/ragflow:v0.18.0-slim` (default): The RAGFlow Docker image without embedding models.  
-  - `infiniflow/ragflow:v0.18.0`: The RAGFlow Docker image with embedding models including:
-    - Built-in embedding models:
-      - `BAAI/bge-large-zh-v1.5` 
-      - `maidalun1020/bce-embedding-base_v1`
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.23.1`. The RAGFlow Docker image does not include embedding models.
 
   
 > [!TIP]  
 > If you cannot download the RAGFlow Docker image, try the following mirrors.  
 > 
-> - For the `nightly-slim` edition:  
->   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly-slim` or,
->   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly-slim`.
 > - For the `nightly` edition:  
 >   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
 >   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
 
 ### Timezone
 
-- `TIMEZONE`  
+- `TZ`  
   The local time zone. Defaults to `'Asia/Shanghai'`.
 
 ### Hugging Face mirror site
@@ -114,6 +108,16 @@ The [.env](./.env) file contains important environment variables for Docker.
 
 - `MAX_CONTENT_LENGTH`  
   The maximum file size for each uploaded file, in bytes. You can uncomment this line if you wish to change the 128M file size limit. After making the change, ensure you update `client_max_body_size` in nginx/nginx.conf correspondingly.
+
+### Doc bulk size
+
+- `DOC_BULK_SIZE`  
+  The number of document chunks processed in a single batch during document parsing. Defaults to `4`.
+
+### Embedding batch size
+
+- `EMBEDDING_BATCH_SIZE`  
+  The number of text chunks processed in a single batch during embedding vectorization. Defaults to `16`.
 
 ## 🐋 Service configuration
 
@@ -135,6 +139,15 @@ The [.env](./.env) file contains important environment variables for Docker.
   - `user`: The username for MinIO.
   - `password`: The password for MinIO.
   - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
+
+- `oceanbase`
+  - `scheme`: The connection scheme. Set to `mysql` to use mysql config, or other values to use config below.
+  - `config`:
+    - `db_name`: The OceanBase database name.
+    - `user`: The username for OceanBase.
+    - `password`: The password for OceanBase.
+    - `host`: The hostname of the OceanBase service.
+    - `port`: The port of OceanBase.
 
 - `oss`
   - `access_key`: The access key ID used to authenticate requests to the OSS service.
@@ -182,3 +195,77 @@ The [.env](./.env) file contains important environment variables for Docker.
 
 > [!TIP]  
 > If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.
+
+
+## 📋 Setup Examples
+
+### 🔒 HTTPS Setup
+
+#### Prerequisites
+
+- A registered domain name pointing to your server
+- Port 80 and 443 open on your server
+- Docker and Docker Compose installed
+
+#### Getting and configuring certificates (Let's Encrypt)
+
+If you want your instance to be available under `https`, follow these steps:
+
+1. **Install Certbot and obtain certificates**
+   ```bash
+   # Ubuntu/Debian
+   sudo apt update && sudo apt install certbot
+   
+   # CentOS/RHEL
+   sudo yum install certbot
+   
+   # Obtain certificates (replace with your actual domain)
+   sudo certbot certonly --standalone -d your-ragflow-domain.com
+   ```
+
+2. **Locate your certificates**  
+   Once generated, your certificates will be located at:
+   - Certificate: `/etc/letsencrypt/live/your-ragflow-domain.com/fullchain.pem`
+   - Private key: `/etc/letsencrypt/live/your-ragflow-domain.com/privkey.pem`
+
+3. **Update docker-compose.yml**  
+   Add the certificate volumes to the `ragflow` service in your `docker-compose.yml`:
+   ```yaml
+   services:
+     ragflow:
+       # ...existing configuration...
+       volumes:
+         # SSL certificates
+         - /etc/letsencrypt/live/your-ragflow-domain.com/fullchain.pem:/etc/nginx/ssl/fullchain.pem:ro
+         - /etc/letsencrypt/live/your-ragflow-domain.com/privkey.pem:/etc/nginx/ssl/privkey.pem:ro
+         # Switch to HTTPS nginx configuration
+         - ./nginx/ragflow.https.conf:/etc/nginx/conf.d/ragflow.conf
+         # ...other existing volumes...
+  
+   ```
+
+4. **Update nginx configuration**  
+   Edit `nginx/ragflow.https.conf` and replace `my_ragflow_domain.com` with your actual domain name.
+
+5. **Restart the services**
+   ```bash
+   docker-compose down
+   docker-compose up -d
+   ```
+
+
+> [!IMPORTANT]
+> - Ensure your domain's DNS A record points to your server's IP address
+> - Stop any services running on ports 80/443 before obtaining certificates with `--standalone`
+
+> [!TIP]
+> For development or testing, you can use self-signed certificates, but browsers will show security warnings.
+
+#### Alternative: Using existing certificates
+
+If you already have SSL certificates from another provider:
+
+1. Place your certificates in a directory accessible to Docker
+2. Update the volume paths in `docker-compose.yml` to point to your certificate files
+3. Ensure the certificate file contains the full certificate chain
+4. Follow steps 4-5 from the Let's Encrypt guide above

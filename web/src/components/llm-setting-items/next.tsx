@@ -1,9 +1,12 @@
-import { LlmModelType, ModelVariableType } from '@/constants/knowledge';
+import {
+  ModelVariableType,
+  settledModelVariableMap,
+} from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
-import { camelCase } from 'lodash';
+import { camelCase, isEqual } from 'lodash';
 import { useCallback } from 'react';
 import { useFormContext } from 'react-hook-form';
+import { z } from 'zod';
 import {
   FormControl,
   FormField,
@@ -11,160 +14,142 @@ import {
   FormLabel,
   FormMessage,
 } from '../ui/form';
-import { Input } from '../ui/input';
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '../ui/select';
-import { FormSlider } from '../ui/slider';
-import { Switch } from '../ui/switch';
-
-interface SliderWithInputNumberFormFieldProps {
-  name: string;
-  label: string;
-  checkName: string;
-  max: number;
-  min?: number;
-  step?: number;
-}
-
-function SliderWithInputNumberFormField({
-  name,
-  label,
-  checkName,
-  max,
-  min = 0,
-  step = 1,
-}: SliderWithInputNumberFormFieldProps) {
-  const { control, watch } = useFormContext();
-  const { t } = useTranslate('chat');
-  const disabled = !watch(checkName);
-
-  return (
-    <FormField
-      control={control}
-      name={name}
-      render={({ field }) => (
-        <FormItem>
-          <div className="flex items-center justify-between">
-            <FormLabel>{t(label)}</FormLabel>
-            <FormField
-              control={control}
-              name={checkName}
-              render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <Switch
-                      {...field}
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    ></Switch>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-          <FormControl>
-            <div className="flex w-full  items-center space-x-2">
-              <FormSlider
-                {...field}
-                disabled={disabled}
-                max={max}
-                min={min}
-                step={step}
-              ></FormSlider>
-              <Input
-                type={'number'}
-                className="w-2/5"
-                {...field}
-                disabled={disabled}
-                max={max}
-                min={min}
-                step={step}
-              />
-            </div>
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )}
-    />
-  );
-}
+import { LLMFormField } from './llm-form-field';
+import { SliderInputSwitchFormField } from './slider';
+import { useHandleFreedomChange } from './use-watch-change';
 
 interface LlmSettingFieldItemsProps {
   prefix?: string;
+  options?: any[];
+  llmId?: string;
+  showFields?: Array<
+    | 'temperature'
+    | 'top_p'
+    | 'presence_penalty'
+    | 'frequency_penalty'
+    | 'max_tokens'
+  >;
 }
 
-export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
+export const LLMIdFormField = {
+  llm_id: z.string(),
+};
+
+export const LlmSettingEnabledSchema = {
+  temperatureEnabled: z.boolean().optional(),
+  topPEnabled: z.boolean().optional(),
+  presencePenaltyEnabled: z.boolean().optional(),
+  frequencyPenaltyEnabled: z.boolean().optional(),
+  maxTokensEnabled: z.boolean().optional(),
+};
+
+export const LlmSettingFieldSchema = {
+  temperature: z.coerce.number().optional(),
+  top_p: z.number().optional(),
+  presence_penalty: z.coerce.number().optional(),
+  frequency_penalty: z.coerce.number().optional(),
+  max_tokens: z.number().optional(),
+};
+
+export const LlmSettingSchema = {
+  ...LLMIdFormField,
+  ...LlmSettingFieldSchema,
+  ...LlmSettingEnabledSchema,
+};
+
+export function LlmSettingFieldItems({
+  prefix,
+  options,
+  showFields = [
+    'temperature',
+    'top_p',
+    'presence_penalty',
+    'frequency_penalty',
+    'max_tokens',
+  ],
+  llmId,
+}: LlmSettingFieldItemsProps) {
   const form = useFormContext();
   const { t } = useTranslate('chat');
-  const modelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Chat,
-    LlmModelType.Image2text,
-  ]);
-
-  const parameterOptions = Object.values(ModelVariableType).map((x) => ({
-    label: t(camelCase(x)),
-    value: x,
-  }));
 
   const getFieldWithPrefix = useCallback(
     (name: string) => {
-      return `${prefix}.${name}`;
+      return prefix ? `${prefix}.${name}` : name;
     },
     [prefix],
   );
 
+  const handleChange = useHandleFreedomChange(getFieldWithPrefix);
+
+  const parameterOptions = Object.values(ModelVariableType).map((x) => ({
+    label: t(camelCase(x)),
+    value: x,
+  })) as { label: string; value: ModelVariableType | 'Custom' }[];
+
+  parameterOptions.push({
+    label: t(camelCase('Custom')),
+    value: 'Custom',
+  });
+  const checkParameterIsEqual = () => {
+    const [
+      parameter,
+      topPValue,
+      frequencyPenaltyValue,
+      temperatureValue,
+      presencePenaltyValue,
+      maxTokensValue,
+    ] = form.getValues([
+      getFieldWithPrefix('parameter'),
+      getFieldWithPrefix('temperature'),
+      getFieldWithPrefix('top_p'),
+      getFieldWithPrefix('frequency_penalty'),
+      getFieldWithPrefix('presence_penalty'),
+      getFieldWithPrefix('max_tokens'),
+    ]);
+    if (parameter && parameter !== 'Custom') {
+      const parameterValue =
+        settledModelVariableMap[parameter as keyof typeof ModelVariableType];
+      const parameterRealValue = {
+        top_p: topPValue,
+        temperature: temperatureValue,
+        frequency_penalty: frequencyPenaltyValue,
+        presence_penalty: presencePenaltyValue,
+        max_tokens: maxTokensValue,
+      };
+      if (!isEqual(parameterValue, parameterRealValue)) {
+        form.setValue(getFieldWithPrefix('parameter'), 'Custom');
+      }
+    }
+  };
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
+      <LLMFormField
+        options={options}
+        name={llmId ?? getFieldWithPrefix('llm_id')}
+      ></LLMFormField>
       <FormField
         control={form.control}
-        name={'llm_id'}
+        name={getFieldWithPrefix('parameter')}
         render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('model')}</FormLabel>
+          <FormItem className="flex justify-between items-center">
+            <FormLabel className="flex-1">{t('freedom')}</FormLabel>
             <FormControl>
-              <Select onValueChange={field.onChange} {...field}>
-                <SelectTrigger value={field.value}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {modelOptions.map((x) => (
-                    <SelectGroup key={x.value}>
-                      <SelectLabel>{x.label}</SelectLabel>
-                      {x.options.map((y) => (
-                        <SelectItem
-                          value={y.value}
-                          key={y.value}
-                          disabled={y.disabled}
-                        >
-                          {y.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name={'parameter'}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('freedom')}</FormLabel>
-            <FormControl>
-              <Select {...field} onValueChange={field.onChange}>
-                <SelectTrigger>
+              <Select
+                {...field}
+                onValueChange={(val) => {
+                  handleChange(val);
+                  field.onChange(val);
+                }}
+              >
+                <SelectTrigger className="flex-1 !m-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -180,40 +165,71 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
           </FormItem>
         )}
       />
-      <SliderWithInputNumberFormField
-        name={getFieldWithPrefix('temperature')}
-        checkName="temperatureEnabled"
-        label="temperature"
-        max={1}
-        step={0.01}
-      ></SliderWithInputNumberFormField>
-      <SliderWithInputNumberFormField
-        name={getFieldWithPrefix('top_p')}
-        checkName="topPEnabled"
-        label="topP"
-        max={1}
-        step={0.01}
-      ></SliderWithInputNumberFormField>
-      <SliderWithInputNumberFormField
-        name={getFieldWithPrefix('presence_penalty')}
-        checkName="presencePenaltyEnabled"
-        label="presencePenalty"
-        max={1}
-        step={0.01}
-      ></SliderWithInputNumberFormField>
-      <SliderWithInputNumberFormField
-        name={getFieldWithPrefix('frequency_penalty')}
-        checkName="frequencyPenaltyEnabled"
-        label="frequencyPenalty"
-        max={1}
-        step={0.01}
-      ></SliderWithInputNumberFormField>
-      <SliderWithInputNumberFormField
-        name={getFieldWithPrefix('max_tokens')}
-        checkName="maxTokensEnabled"
-        label="maxTokens"
-        max={128000}
-      ></SliderWithInputNumberFormField>
+      {showFields.some((item) => item === 'temperature') && (
+        <SliderInputSwitchFormField
+          name={getFieldWithPrefix('temperature')}
+          checkName="temperatureEnabled"
+          label="temperature"
+          max={1}
+          step={0.01}
+          min={0}
+          onChange={() => {
+            checkParameterIsEqual();
+          }}
+        ></SliderInputSwitchFormField>
+      )}
+      {showFields.some((item) => item === 'top_p') && (
+        <SliderInputSwitchFormField
+          name={getFieldWithPrefix('top_p')}
+          checkName="topPEnabled"
+          label="topP"
+          max={1}
+          step={0.01}
+          min={0}
+          onChange={() => {
+            checkParameterIsEqual();
+          }}
+        ></SliderInputSwitchFormField>
+      )}
+      {showFields.some((item) => item === 'presence_penalty') && (
+        <SliderInputSwitchFormField
+          name={getFieldWithPrefix('presence_penalty')}
+          checkName="presencePenaltyEnabled"
+          label="presencePenalty"
+          max={1}
+          step={0.01}
+          min={0}
+          onChange={() => {
+            checkParameterIsEqual();
+          }}
+        ></SliderInputSwitchFormField>
+      )}
+      {showFields.some((item) => item === 'frequency_penalty') && (
+        <SliderInputSwitchFormField
+          name={getFieldWithPrefix('frequency_penalty')}
+          checkName="frequencyPenaltyEnabled"
+          label="frequencyPenalty"
+          max={1}
+          step={0.01}
+          min={0}
+          onChange={() => {
+            checkParameterIsEqual();
+          }}
+        ></SliderInputSwitchFormField>
+      )}
+      {showFields.some((item) => item === 'max_tokens') && (
+        <SliderInputSwitchFormField
+          name={getFieldWithPrefix('max_tokens')}
+          checkName="maxTokensEnabled"
+          numberInputClassName="w-20"
+          label="maxTokens"
+          max={128000}
+          min={0}
+          onChange={() => {
+            checkParameterIsEqual();
+          }}
+        ></SliderInputSwitchFormField>
+      )}
     </div>
   );
 }

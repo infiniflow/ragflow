@@ -19,7 +19,7 @@ import peewee
 
 from api.db.db_models import DB, API4Conversation, APIToken, Dialog
 from api.db.services.common_service import CommonService
-from api.utils import current_timestamp, datetime_format
+from common.time_utils import current_timestamp, datetime_format
 
 
 class APITokenService(CommonService):
@@ -35,6 +35,11 @@ class APITokenService(CommonService):
             cls.model.token == token
         )
 
+    @classmethod
+    @DB.connection_context()
+    def delete_by_tenant_id(cls, tenant_id):
+        return cls.model.delete().where(cls.model.tenant_id == tenant_id).execute()
+
 
 class API4ConversationService(CommonService):
     model = API4Conversation
@@ -43,7 +48,9 @@ class API4ConversationService(CommonService):
     @DB.connection_context()
     def get_list(cls, dialog_id, tenant_id,
                  page_number, items_per_page,
-                 orderby, desc, id, user_id=None, include_dsl=True):
+                 orderby, desc, id=None, user_id=None, include_dsl=True, keywords="",
+                 from_date=None, to_date=None, exp_user_id=None
+                 ):
         if include_dsl:
             sessions = cls.model.select().where(cls.model.dialog_id == dialog_id)
         else:
@@ -53,11 +60,31 @@ class API4ConversationService(CommonService):
             sessions = sessions.where(cls.model.id == id)
         if user_id:
             sessions = sessions.where(cls.model.user_id == user_id)
+        if keywords:
+            sessions = sessions.where(peewee.fn.LOWER(cls.model.message).contains(keywords.lower()))
+        if from_date:
+            sessions = sessions.where(cls.model.create_date >= from_date)
+        if to_date:
+            sessions = sessions.where(cls.model.create_date <= to_date)
+        if exp_user_id:
+            sessions = sessions.where(cls.model.exp_user_id == exp_user_id)
         if desc:
             sessions = sessions.order_by(cls.model.getter_by(orderby).desc())
         else:
             sessions = sessions.order_by(cls.model.getter_by(orderby).asc())
+        count = sessions.count()
         sessions = sessions.paginate(page_number, items_per_page)
+
+        return count, list(sessions.dicts())
+    
+    @classmethod
+    @DB.connection_context()
+    def get_names(cls, dialog_id, exp_user_id):
+        fields = [cls.model.id, cls.model.name,]
+        sessions = cls.model.select(*fields).where(
+            cls.model.dialog_id == dialog_id,
+            cls.model.exp_user_id == exp_user_id
+            ).order_by(cls.model.getter_by("create_date").desc())
 
         return list(sessions.dicts())
 
@@ -91,3 +118,8 @@ class API4ConversationService(CommonService):
             cls.model.create_date <= to_date,
             cls.model.source == source
         ).group_by(cls.model.create_date.truncate("day")).dicts()
+
+    @classmethod
+    @DB.connection_context()
+    def delete_by_dialog_ids(cls, dialog_ids):
+        return cls.model.delete().where(cls.model.dialog_id.in_(dialog_ids)).execute()

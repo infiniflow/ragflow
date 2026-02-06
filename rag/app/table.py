@@ -15,83 +15,306 @@
 #
 
 import copy
+import csv
+import io
+import logging
 import re
 from io import BytesIO
 from xpinyin import Pinyin
 import numpy as np
 import pandas as pd
+from collections import Counter
+
 # from openpyxl import load_workbook, Workbook
 from dateutil.parser import parse as datetime_parse
 
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from deepdoc.parser.figure_parser import vision_figure_parser_figure_xlsx_wrapper
 from deepdoc.parser.utils import get_text
-from rag.nlp import rag_tokenizer, tokenize
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table
 from deepdoc.parser import ExcelParser
+from common import settings
 
 
 class Excel(ExcelParser):
-    def __call__(self, fnm, binary=None, from_page=0,
-                 to_page=10000000000, callback=None):
+    def __call__(self, fnm, binary=None, from_page=0, to_page=10000000000, callback=None, **kwargs):
         if not binary:
             wb = Excel._load_excel_to_workbook(fnm)
         else:
             wb = Excel._load_excel_to_workbook(BytesIO(binary))
         total = 0
-        for sheetname in wb.sheetnames:
-            total += len(list(wb[sheetname].rows))
-
+        for sheet_name in wb.sheetnames:
+            total += len(list(wb[sheet_name].rows))
         res, fails, done = [], [], 0
         rn = 0
-        for sheetname in wb.sheetnames:
-            ws = wb[sheetname]
-            rows = list(ws.rows)
+        flow_images = []
+        pending_cell_images = []
+        tables = []
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            images = Excel._extract_images_from_worksheet(ws, sheetname=sheet_name)
+            if images:
+                image_descriptions = vision_figure_parser_figure_xlsx_wrapper(images=images, callback=callback,
+                                                                              **kwargs)
+                if image_descriptions and len(image_descriptions) == len(images):
+                    for i, bf in enumerate(image_descriptions):
+                        images[i]["image_description"] = "\n".join(bf[0][1])
+                    for img in images:
+                        if img["span_type"] == "single_cell" and img.get("image_description"):
+                            pending_cell_images.append(img)
+                        else:
+                            flow_images.append(img)
+
+            try:
+                rows = list(ws.rows)
+            except Exception as e:
+                logging.warning(f"Skip sheet '{sheet_name}' due to rows access error: {e}")
+                continue
             if not rows:
                 continue
-            headers = [cell.value for cell in rows[0]]
-            missed = set([i for i, h in enumerate(headers) if h is None])
-            headers = [
-                cell.value for i,
-                cell in enumerate(
-                    rows[0]) if i not in missed]
+            headers, header_rows = self._parse_headers(ws, rows)
             if not headers:
                 continue
             data = []
-            for i, r in enumerate(rows[1:]):
+            for i, r in enumerate(rows[header_rows:]):
                 rn += 1
                 if rn - 1 < from_page:
                     continue
                 if rn - 1 >= to_page:
                     break
-                row = [
-                    cell.value for ii,
-                    cell in enumerate(r) if ii not in missed]
-                if len(row) != len(headers):
+                row_data = self._extract_row_data(ws, r, header_rows + i, len(headers))
+                if row_data is None:
                     fails.append(str(i))
                     continue
-                data.append(row)
+                if self._is_empty_row(row_data):
+                    continue
+                data.append(row_data)
                 done += 1
-            if np.array(data).size == 0:
+            if len(data) == 0:
                 continue
-            res.append(pd.DataFrame(np.array(data), columns=headers))
+            df = pd.DataFrame(data, columns=headers)
+            for img in pending_cell_images:
+                excel_row = img["row_from"] - 1
+                excel_col = img["col_from"] - 1
 
+                df_row_idx = excel_row - header_rows
+                if df_row_idx < 0 or df_row_idx >= len(df):
+                    flow_images.append(img)
+                    continue
+
+                if excel_col < 0 or excel_col >= len(df.columns):
+                    flow_images.append(img)
+                    continue
+
+                col_name = df.columns[excel_col]
+
+                if not df.iloc[df_row_idx][col_name]:
+                    df.iat[df_row_idx, excel_col] = img["image_description"]
+            res.append(df)
+        for img in flow_images:
+            tables.append(
+                (
+                    (
+                        img["image"],  # Image.Image
+                        [img["image_description"]]  # description list (must be list)
+                    ),
+                    [
+                        (0, 0, 0, 0, 0)  # dummy position
+                    ]
+                )
+            )
         callback(0.3, ("Extract records: {}~{}".format(from_page + 1, min(to_page, from_page + rn)) + (
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
-        return res
+        return res, tables
+
+    def _parse_headers(self, ws, rows):
+        if len(rows) == 0:
+            return [], 0
+        has_complex_structure = self._has_complex_header_structure(ws, rows)
+        if has_complex_structure:
+            return self._parse_multi_level_headers(ws, rows)
+        else:
+            return self._parse_simple_headers(rows)
+
+    def _has_complex_header_structure(self, ws, rows):
+        if len(rows) < 1:
+            return False
+        merged_ranges = list(ws.merged_cells.ranges)
+        # 检查前两行是否涉及合并单元格
+        for rng in merged_ranges:
+            if rng.min_row <= 2:  # 只要合并区域涉及第1或第2行
+                return True
+        return False
+
+    def _row_looks_like_header(self, row):
+        header_like_cells = 0
+        data_like_cells = 0
+        non_empty_cells = 0
+        for cell in row:
+            if cell.value is not None:
+                non_empty_cells += 1
+                val = str(cell.value).strip()
+                if self._looks_like_header(val):
+                    header_like_cells += 1
+                elif self._looks_like_data(val):
+                    data_like_cells += 1
+        if non_empty_cells == 0:
+            return False
+        return header_like_cells >= data_like_cells
+
+    def _parse_simple_headers(self, rows):
+        if not rows:
+            return [], 0
+        header_row = rows[0]
+        headers = []
+        for cell in header_row:
+            if cell.value is not None:
+                header_value = str(cell.value).strip()
+                if header_value:
+                    headers.append(header_value)
+            else:
+                pass
+        final_headers = []
+        for i, cell in enumerate(header_row):
+            if cell.value is not None:
+                header_value = str(cell.value).strip()
+                if header_value:
+                    final_headers.append(header_value)
+                else:
+                    final_headers.append(f"Column_{i + 1}")
+            else:
+                final_headers.append(f"Column_{i + 1}")
+        return final_headers, 1
+
+    def _parse_multi_level_headers(self, ws, rows):
+        if len(rows) < 2:
+            return [], 0
+        header_rows = self._detect_header_rows(rows)
+        if header_rows == 1:
+            return self._parse_simple_headers(rows)
+        else:
+            return self._build_hierarchical_headers(ws, rows, header_rows), header_rows
+
+    def _detect_header_rows(self, rows):
+        if len(rows) < 2:
+            return 1
+        header_rows = 1
+        max_check_rows = min(5, len(rows))
+        for i in range(1, max_check_rows):
+            row = rows[i]
+            if self._row_looks_like_header(row):
+                header_rows = i + 1
+            else:
+                break
+        return header_rows
+
+    def _looks_like_header(self, value):
+        if len(value) < 1:
+            return False
+        if any(ord(c) > 127 for c in value):
+            return True
+        if len([c for c in value if c.isalpha()]) >= 2:
+            return True
+        if any(c in value for c in ["(", ")", "：", ":", "（", "）", "_", "-"]):
+            return True
+        return False
+
+    def _looks_like_data(self, value):
+        if len(value) == 1 and value.upper() in ["Y", "N", "M", "X", "/", "-"]:
+            return True
+        if value.replace(".", "").replace("-", "").replace(",", "").isdigit():
+            return True
+        if value.startswith("0x") and len(value) <= 10:
+            return True
+        return False
+
+    def _build_hierarchical_headers(self, ws, rows, header_rows):
+        headers = []
+        max_col = max(len(row) for row in rows[:header_rows]) if header_rows > 0 else 0
+        merged_ranges = list(ws.merged_cells.ranges)
+        for col_idx in range(max_col):
+            header_parts = []
+            for row_idx in range(header_rows):
+                if col_idx < len(rows[row_idx]):
+                    cell_value = rows[row_idx][col_idx].value
+                    merged_value = self._get_merged_cell_value(ws, row_idx + 1, col_idx + 1, merged_ranges)
+                    if merged_value is not None:
+                        cell_value = merged_value
+                    if cell_value is not None:
+                        cell_value = str(cell_value).strip()
+                        if cell_value and cell_value not in header_parts and self._is_valid_header_part(cell_value):
+                            header_parts.append(cell_value)
+            if header_parts:
+                header = "-".join(header_parts)
+                headers.append(header)
+            else:
+                headers.append(f"Column_{col_idx + 1}")
+        final_headers = [h for h in headers if h and h != "-"]
+        return final_headers
+
+    def _is_valid_header_part(self, value):
+        if len(value) == 1 and value.upper() in ["Y", "N", "M", "X"]:
+            return False
+        if value.replace(".", "").replace("-", "").replace(",", "").isdigit():
+            return False
+        if value in ["/", "-", "+", "*", "="]:
+            return False
+        return True
+
+    def _get_merged_cell_value(self, ws, row, col, merged_ranges):
+        for merged_range in merged_ranges:
+            if merged_range.min_row <= row <= merged_range.max_row and merged_range.min_col <= col <= merged_range.max_col:
+                return ws.cell(merged_range.min_row, merged_range.min_col).value
+        return None
+
+    def _extract_row_data(self, ws, row, absolute_row_idx, expected_cols):
+        row_data = []
+        merged_ranges = list(ws.merged_cells.ranges)
+        actual_row_num = absolute_row_idx + 1
+        for col_idx in range(expected_cols):
+            cell_value = None
+            actual_col_num = col_idx + 1
+            try:
+                cell_value = ws.cell(row=actual_row_num, column=actual_col_num).value
+            except ValueError:
+                if col_idx < len(row):
+                    cell_value = row[col_idx].value
+            if cell_value is None:
+                merged_value = self._get_merged_cell_value(ws, actual_row_num, actual_col_num, merged_ranges)
+                if merged_value is not None:
+                    cell_value = merged_value
+                else:
+                    cell_value = self._get_inherited_value(ws, actual_row_num, actual_col_num, merged_ranges)
+            row_data.append(cell_value)
+        return row_data
+
+    def _get_inherited_value(self, ws, row, col, merged_ranges):
+        for merged_range in merged_ranges:
+            if merged_range.min_row <= row <= merged_range.max_row and merged_range.min_col <= col <= merged_range.max_col:
+                return ws.cell(merged_range.min_row, merged_range.min_col).value
+        return None
+
+    def _is_empty_row(self, row_data):
+        for val in row_data:
+            if val is not None and str(val).strip() != "":
+                return False
+        return True
 
 
 def trans_datatime(s):
     try:
         return datetime_parse(s.strip()).strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:
+    except Exception as e:
+        logging.warning(f"Failed to parse date from {s}, error: {e}")
         pass
 
 
 def trans_bool(s):
-    if re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√)$",
-                str(s).strip(), flags=re.IGNORECASE):
+    if re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√)$", str(s).strip(), flags=re.IGNORECASE):
         return "yes"
     if re.match(r"(false|no|否|⍻|×)$", str(s).strip(), flags=re.IGNORECASE):
         return "no"
+    return None
 
 
 def column_data_type(arr):
@@ -99,12 +322,16 @@ def column_data_type(arr):
     counts = {"int": 0, "float": 0, "text": 0, "datetime": 0, "bool": 0}
     trans = {t: f for f, t in
              [(int, "int"), (float, "float"), (trans_datatime, "datetime"), (trans_bool, "bool"), (str, "text")]}
+    float_flag = False
     for a in arr:
         if a is None:
             continue
-        if re.match(r"[+-]?[0-9]{,19}(\.0+)?$", str(a).replace("%%", "")):
+        if re.match(r"[+-]?[0-9]+$", str(a).replace("%%", "")) and not str(a).replace("%%", "").startswith("0"):
             counts["int"] += 1
-        elif re.match(r"[+-]?[0-9.]{,19}$", str(a).replace("%%", "")):
+            if int(str(a)) > 2 ** 63 - 1:
+                float_flag = True
+                break
+        elif re.match(r"[+-]?[0-9.]{,19}$", str(a).replace("%%", "")) and not str(a).replace("%%", "").startswith("0"):
             counts["float"] += 1
         elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", str(a), flags=re.IGNORECASE):
             counts["bool"] += 1
@@ -112,47 +339,46 @@ def column_data_type(arr):
             counts["datetime"] += 1
         else:
             counts["text"] += 1
-    counts = sorted(counts.items(), key=lambda x: x[1] * -1)
-    ty = counts[0][0]
+    if float_flag:
+        ty = "float"
+    else:
+        counts = sorted(counts.items(), key=lambda x: x[1] * -1)
+        ty = counts[0][0]
     for i in range(len(arr)):
         if arr[i] is None:
             continue
         try:
             arr[i] = trans[ty](str(arr[i]))
-        except Exception:
+        except Exception as e:
             arr[i] = None
+            logging.warning(f"Column {i}: {e}")
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
     return arr, ty
 
 
-def chunk(filename, binary=None, from_page=0, to_page=10000000000,
-          lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese", callback=None, **kwargs):
     """
-        Excel and csv(txt) format files are supported.
-        For csv or txt file, the delimiter between columns is TAB.
-        The first line must be column headers.
-        Column headers must be meaningful terms inorder to make our NLP model understanding.
-        It's good to enumerate some synonyms using slash '/' to separate, and even better to
-        enumerate values using brackets like 'gender/sex(male, female)'.
-        Here are some examples for headers:
-            1. supplier/vendor\tcolor(yellow, red, brown)\tgender/sex(male, female)\tsize(M,L,XL,XXL)
-            2. 姓名/名字\t电话/手机/微信\t最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，MPA，MBA，EMBA）
+    Excel and csv(txt) format files are supported.
+    For csv or txt file, the delimiter between columns is TAB.
+    The first line must be column headers.
+    Column headers must be meaningful terms inorder to make our NLP model understanding.
+    It's good to enumerate some synonyms using slash '/' to separate, and even better to
+    enumerate values using brackets like 'gender/sex(male, female)'.
+    Here are some examples for headers:
+        1. supplier/vendor\tcolor(yellow, red, brown)\tgender/sex(male, female)\tsize(M,L,XL,XXL)
+        2. 姓名/名字\t电话/手机/微信\t最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，MPA，MBA，EMBA）
 
-        Every row in table will be treated as a chunk.
+    Every row in table will be treated as a chunk.
     """
-
+    tbls = []
+    is_english = lang.lower() == "english"
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
-        dfs = excel_parser(
-            filename,
-            binary,
-            from_page=from_page,
-            to_page=to_page,
-            callback=callback)
-    elif re.search(r"\.(txt|csv)$", filename, re.IGNORECASE):
+        dfs, tbls = excel_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback, **kwargs)
+    elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")
@@ -174,36 +400,54 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         dfs = [pd.DataFrame(np.array(rows), columns=headers)]
+    elif re.search(r"\.csv$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        txt = get_text(filename, binary)
+        delimiter = kwargs.get("delimiter", ",")
 
+        reader = csv.reader(io.StringIO(txt), delimiter=delimiter)
+        all_rows = list(reader)
+        if not all_rows:
+            raise ValueError("Empty CSV file")
+
+        headers = all_rows[0]
+        fails = []
+        rows = []
+
+        for i, row in enumerate(all_rows[1 + from_page: 1 + to_page]):
+            if len(row) != len(headers):
+                fails.append(str(i + from_page))
+                continue
+            rows.append(row)
+
+        callback(
+            0.3,
+            (f"Extract records: {from_page}~{from_page + len(rows)}" +
+             (f"{len(fails)} failure, line: {','.join(fails[:3])}..." if fails else ""))
+        )
+
+        dfs = [pd.DataFrame(rows, columns=headers)]
     else:
-        raise NotImplementedError(
-            "file type not supported yet(excel, text, csv supported)")
+        raise NotImplementedError("file type not supported yet(excel, text, csv supported)")
 
     res = []
     PY = Pinyin()
-    fieds_map = {
-        "text": "_tks",
-        "int": "_long",
-        "keyword": "_kwd",
-        "float": "_flt",
-        "datetime": "_dt",
-        "bool": "_kwd"}
+    # Field type suffixes for database columns
+    # Maps data types to their database field suffixes
+    fields_map = {"text": "_tks", "int": "_long", "keyword": "_kwd", "float": "_flt", "datetime": "_dt", "bool": "_kwd"}
     for df in dfs:
         for n in ["id", "_id", "index", "idx"]:
             if n in df.columns:
                 del df[n]
         clmns = df.columns.values
         if len(clmns) != len(set(clmns)):
-            duplicates = [col for col in clmns if list(clmns).count(col) > 1]
-            raise ValueError(f"Duplicate column names detected: {set(duplicates)}")
+            col_counts = Counter(clmns)
+            duplicates = [col for col, count in col_counts.items() if count > 1]
+            if duplicates:
+                raise ValueError(f"Duplicate column names detected: {duplicates}\nFrom: {clmns}")
+
         txts = list(copy.deepcopy(clmns))
-        py_clmns = [
-            PY.get_pinyins(
-                re.sub(
-                    r"(/.*|（[^（）]+?）|\([^()]+?\))",
-                    "",
-                    str(n)),
-                '_')[0] for n in clmns]
+        py_clmns = [PY.get_pinyins(re.sub(r"(/.*|（[^（）]+?）|\([^()]+?\))", "", str(n)), "_")[0] for n in clmns]
         clmn_tys = []
         for j in range(len(clmns)):
             cln, ty = column_data_type(df[clmns[j]])
@@ -211,16 +455,24 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
             df[clmns[j]] = cln
             if ty == "text":
                 txts.extend([str(c) for c in cln if c])
-        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], str(clmns[i]).replace("_", " "))
-                     for i in range(len(clmns))]
+        clmns_map = [(py_clmns[i].lower() + fields_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in
+                     range(len(clmns))]
+        # For Infinity/OceanBase: Use original column names as keys since they're stored in chunk_data JSON
+        # For ES/OS: Use full field names with type suffixes (e.g., url_kwd, body_tks)
+        if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
+            # For Infinity/OceanBase: key = original column name, value = display name
+            field_map = {py_clmns[i].lower(): str(clmns[i]).replace("_", " ") for i in range(len(clmns))}
+        else:
+            # For ES/OS: key = typed field name, value = display name
+            field_map = {k: v for k, v in clmns_map}
+        logging.debug(f"Field map: {field_map}")
+        KnowledgebaseService.update_parser_config(kwargs["kb_id"], {"field_map": field_map})
 
         eng = lang.lower() == "english"  # is_english(txts)
         for ii, row in df.iterrows():
-            d = {
-                "docnm_kwd": filename,
-                "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
-            }
-            row_txt = []
+            d = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
+            row_fields = []
+            data_json = {}  # For Infinity: Store all columns in a JSON object
             for j in range(len(clmns)):
                 if row[clmns[j]] is None:
                     continue
@@ -228,17 +480,27 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
                     continue
                 if not isinstance(row[clmns[j]], pd.Series) and pd.isna(row[clmns[j]]):
                     continue
-                fld = clmns_map[j][0]
-                d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else rag_tokenizer.tokenize(
-                    row[clmns[j]])
-                row_txt.append("{}:{}".format(clmns[j], row[clmns[j]]))
-            if not row_txt:
+                # For Infinity/OceanBase: Store in chunk_data JSON column
+                # For Elasticsearch/OpenSearch: Store as individual fields with type suffixes
+                if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
+                    data_json[str(clmns[j])] = row[clmns[j]]
+                else:
+                    fld = clmns_map[j][0]
+                    d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else rag_tokenizer.tokenize(row[clmns[j]])
+                row_fields.append((clmns[j], row[clmns[j]]))
+            if not row_fields:
                 continue
-            tokenize(d, "; ".join(row_txt), eng)
+            # Add the data JSON field to the document (for Infinity/OceanBase)
+            if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
+                d["chunk_data"] = data_json
+            # Format as a structured text for better LLM comprehension
+            # Format each field as "- Field Name: Value" on separate lines
+            formatted_text = "\n".join([f"- {field}: {value}" for field, value in row_fields])
+            tokenize(d, formatted_text, eng)
             res.append(d)
-
-        KnowledgebaseService.update_parser_config(
-            kwargs["kb_id"], {"field_map": {k: v for k, v in clmns_map}})
+        if tbls:
+            doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
+            res.extend(tokenize_table(tbls, doc, is_english))
     callback(0.35, "")
 
     return res
@@ -247,7 +509,9 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
 if __name__ == "__main__":
     import sys
 
+
     def dummy(prog=None, msg=""):
         pass
+
 
     chunk(sys.argv[1], callback=dummy)

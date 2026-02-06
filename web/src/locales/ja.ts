@@ -1,6 +1,7 @@
 export default {
   translation: {
     common: {
+      selectPlaceholder: '選択してください',
       delete: '削除',
       deleteModalTitle: 'この項目を削除してよろしいですか？',
       ok: 'はい',
@@ -156,7 +157,7 @@ export default {
       cancel: 'キャンセル',
       rerankModel: 'リランキングモデル',
       rerankPlaceholder: '選択してください',
-      rerankTip: `オプション：Rerankモデルを選択しない場合、システムはデフォルトでキーワードの類似度とベクトルのコサイン類似度を組み合わせたハイブリッド検索方式を採用します。Rerankモデルを設定した場合、ハイブリッド検索のベクトル類似度部分はrerankのスコアに置き換えられます。`,
+      rerankTip: `任意です。空欄の場合、RAGFlowは加重キーワード類似度と加重ベクトルコサイン類似度の組み合わせを使用します。リランキングモデルが選択された場合は、加重リランキングスコアが加重ベクトルコサイン類似度に代わります。リランキングモデルを使用すると、システムの応答時間が大幅に増加することにご注意ください。リランキングモデルを使用する場合は、SaaSリランカーを使用してください。ローカルにデプロイされたリランキングモデルを使用する場合は、docker-compose-gpu.ymlでRAGFlowを起動してください。`,
       topK: 'トップK',
       topKTip: `Rerank modelと一緒に使用する場合、この設定は指定されたreranking modelに送信するテキストのチャンク数を定義します。`,
       delimiter: `テキストセグメンテーションの区切り文字`,
@@ -165,15 +166,19 @@ export default {
       html4excel: 'ExcelをHTMLに変換',
       html4excelTip: `General切片方法と併用してください。無効の場合、表計算ファイル（XLSX、XLS（Excel 97-2003））は行ごとにキーと値のペアとして解析されます。有効の場合、表計算ファイルはHTML表として解析されます。元の表が12行を超える場合、システムは自動的に12行ごとに複数のHTML表に分割します。詳細については、https://ragflow.io/docs/dev/enable_excel2html をご覧ください。`,
       autoKeywords: '自動キーワード',
-      autoKeywordsTip: `各チャンクに含まれるキーワードのランキングを向上させるために、自動的にN個のキーワードを抽出します。「システムモデル設定」で指定されたチャットモデルによって追加のトークンが消費されることに注意してください。チャンクリストから追加されたキーワードを確認または更新することができます。`,
+      autoKeywordsTip: `各チャンクに含まれるキーワードのランキングを向上させるために、自動的にN個のキーワードを抽出します。「システムモデル設定」で指定されたチャットモデルによって追加のトークンが消費されることに注意してください。チャンクリストから追加されたキーワードを確認または更新することができます。詳細は https://ragflow.io/docs/dev/autokeyword_autoquestion をご覧ください。`,
       autoQuestions: '自動質問',
-      autoQuestionsTip: `ランキングスコアを向上させるために、「システムモデル設定」で定義されたチャットモデルを使用して、ナレッジベースのチャンクごとにN個の質問を抽出します。 これにより、追加のトークンが消費されることに注意してください。 結果はチャンクリストで表示および編集できます。 質問抽出エラーはチャンク処理をブロックしません。空の結果が元のチャンクに追加されます。`,
+      autoQuestionsTip: `ランキングスコアを向上させるために、「システムモデル設定」で定義されたチャットモデルを使用して、ナレッジベースのチャンクごとにN個の質問を抽出します。 これにより、追加のトークンが消費されることに注意してください。 結果はチャンクリストで表示および編集できます。 質問抽出エラーはチャンク処理をブロックしません。空の結果が元のチャンクに追加されます。詳細は https://ragflow.io/docs/dev/autokeyword_autoquestion をご覧ください。`,
     },
     knowledgeConfiguration: {
+      imageTableContextWindow: '画像・表コンテキストウィンドウ',
+      imageTableContextWindowTip:
+        '画像と表の上下のテキストをNトークン取得し、より豊かな背景コンテキストを提供します。',
       titleDescription:
         'ナレッジベースの設定、特にチャンク方法をここで更新してください。',
       name: 'ナレッジベース名',
       photo: 'ナレッジベース写真',
+      photoTip: '4 MB までの画像をアップロードできます。す',
       description: '説明',
       language: '言語',
       languageMessage: '言語を入力してください',
@@ -183,7 +188,7 @@ export default {
       chunkTokenNumber: '推奨チャンクサイズ',
       chunkTokenNumberMessage: 'チャンクトークン数は必須です',
       embeddingModelTip:
-        'ナレッジベースのデフォルトの埋め込みモデルです。ナレッジベースにチャンクが存在する場合、変更することはできません。別のデフォルト埋め込みモデルに切り替えるには、ナレッジベース内のすべての既存チャンクを削除する必要があります。',
+        'ナレッジベースで使用されるデフォルトの埋め込みモデルです。ナレッジベースにチャンクが作成された後に埋め込みモデルを変更する場合、システムは互換性チェックのためにいくつかのチャンクをランダムに抽出し、新しい埋め込みモデルで再エンコードして新旧ベクトルのコサイン類似度を計算します。サンプルの平均類似度が ≥ 0.9 の場合のみ切り替えできます。平均類似度が 0.9 未満の場合は、変更する前にナレッジベース内のすべてのチャンクを削除する必要があります。',
       permissionsTip:
         '「チーム」に設定すると、全てのチームメンバーがナレッジベースを管理できます。',
       chunkTokenNumberTip:
@@ -202,7 +207,7 @@ export default {
       methodTitle: 'チャンク方法の説明',
       methodExamples: '例',
       methodExamplesDescription:
-        '以下のスクリーンショットは明確な説明のために提供されています。',
+        '理解を深めるために、関連するスクリーンショットを参考として提供しております。',
       dialogueExamplesTitle: '会話の例',
       methodEmpty: 'ナレッジベースカテゴリの視覚的説明がここに表示されます',
       book: `<p>対応ファイル形式は<b>DOCX</b>, <b>PDF</b>, <b>TXT</b>です。</p><p>
@@ -215,7 +220,7 @@ export default {
       manual: `<p>対応するのは<b>PDF</b>のみです。</p><p>
       マニュアルは階層的なセクション構造を持つと仮定され、最下位のセクションタイトルを基にチャンク分割を行います。そのため、同じセクション内の図表は分割されませんが、大きなチャンクサイズになる可能性があります。
       </p>`,
-      naive: `<p>対応ファイル形式は<b>DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>です。</p>
+      naive: `<p>対応ファイル形式は<b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>です。</p>
       <p>この方法では、'ナイーブ'な方法でファイルを分割します：</p>
       <p>
       <li>視覚認識モデルを使用してテキストを小さなセグメントに分割します。</li>
@@ -235,7 +240,7 @@ export default {
       <b>XLSX</b>形式のファイルには、ヘッダーのない2つの
       列が必要です： 1つは質問の列でもう1つは回答の列です
       （質問列が先行）。複数のシートも可能です。
-      
+
     </li>
     <li>
      <b>CSV/TXT</b>形式のファイルは、TABで区切られたUTF-8エンコードである必要があります。
@@ -280,7 +285,7 @@ export default {
     LLMがその量のコンテキスト長を処理できる場合に、ドキュメント全体を要約する必要があるときに適用されます。
     </p>`,
       knowledgeGraph: `<p>対応ファイル形式は<b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>です。
-          
+
 <p>このアプローチでは、ファイルを'ナイーブ'/'一般'メソッドを使用してチャンクに分割します。ドキュメントをセグメントに分割し、隣接するセグメントを結合してトークン数が'チャンクトークン数'で指定されたしきい値を超えるまで続け、その時点でチャンクが作成されます。</p>
 <p>その後、チャンクはLLMに入力され、ナレッジグラフとマインドマップのエンティティと関係を抽出します。</p>
 <p><b>エンティティタイプ</b>を設定することを忘れないでください。</p>`,
@@ -309,6 +314,17 @@ export default {
       entityTypes: 'エンティティタイプ',
       pageRank: 'ページランク',
       pageRankTip: `検索時に特定の知識ベースにより高いPageRankスコアを割り当てることができます。対応するスコアは、これらの知識ベースから取得されたチャンクのハイブリッド類似度スコアに加算され、ランキングが向上します。詳細については、https://ragflow.io/docs/dev/set_page_rank を参照してください。`,
+      paddleocrOptions: 'PaddleOCRオプション',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlTip: 'PaddleOCRサービスのAPIエンドポイントURL',
+      paddleocrApiUrlPlaceholder: '例: https://paddleocr-server.com/api',
+      paddleocrAccessToken: 'AI Studioアクセストークン',
+      paddleocrAccessTokenTip: 'PaddleOCR APIのアクセストークン（オプション）',
+      paddleocrAccessTokenPlaceholder: 'AI Studioトークン（オプション）',
+      paddleocrAlgorithm: 'PaddleOCRアルゴリズム',
+      paddleocrAlgorithmTip: 'PaddleOCR解析に使用するアルゴリズム',
+      paddleocrSelectAlgorithm: 'アルゴリズムを選択',
+      paddleocrModelNamePlaceholder: '例: paddleocr-from-env-1',
     },
     chunk: {
       chunk: 'チャンク',
@@ -332,6 +348,12 @@ export default {
       questionTip: `質問が指定されている場合、チャンクの埋め込みはそれらに基づきます。`,
     },
     chat: {
+      messagePlaceholder: 'メッセージを入力してください...',
+      exit: '終了',
+      multipleModels: '複数モデル',
+      applyModelConfigs: 'モデル設定を適用',
+      conversations: '会話一覧',
+      chatApps: 'チャットアプリ',
       newConversation: '新しい会話',
       createAssistant: 'アシスタントを作成',
       assistantSetting: 'アシスタント設定',
@@ -351,6 +373,7 @@ export default {
       language: '言語',
       emptyResponse: '空の応答',
       emptyResponseTip: `ナレッジベースに該当する内容がない場合、この応答が使用されます。`,
+      emptyResponseMessage: `ナレッジベースから関連する情報が取得できなかった場合に発動します。ナレッジベースが選択されていない場合、このフィールドをクリアしてください。`,
       setAnOpener: 'オープニングメッセージを設定',
       setAnOpenerInitial: `こんにちは！ 私はあなたのアシスタントです。何をお手伝いしましょうか？`,
       setAnOpenerTip: 'お客様をどのように歓迎しますか？',
@@ -377,10 +400,14 @@ export default {
       model: 'モデル',
       modelTip: '大規模言語チャットモデル',
       modelMessage: '選択してください！',
+      modelEnabledTools: '有効化されたツール',
+      modelEnabledToolsTip:
+        'モデルで使用するツールを1つ以上選択してください。ツール呼び出しをサポートしていないモデルでは効果がありません。',
       freedom: '自由度',
       improvise: '自由に',
       precise: '正確に',
       balance: 'バランス',
+      custom: 'カスタム',
       freedomTip: `'正確に'は、LLMが慎重に質問に答えることを意味します。'自由に'は、LLMが多く話し、自由に答えることを望むことを意味します。'バランス'は、慎重さと自由さの間のバランスを取ることを意味します。`,
       temperature: '温度',
       temperatureMessage: '温度は必須です',
@@ -400,8 +427,7 @@ export default {
         '存在ペナルティと同様に、モデルが同じ単語を頻繁に繰り返す傾向を減少させます。',
       maxTokens: '最大トークン数',
       maxTokensMessage: '最大トークン数は必須です',
-      maxTokensTip:
-        'これは、モデルの出力の最大長を設定します。トークン（単語または単語の一部）の数で測定されます。',
+      maxTokensTip: `モデルの最大コンテキストサイズ。無効または不正な値はエラーになります。デフォルトは512。`,
       maxTokensInvalidMessage: '最大トークン数に有効な数値を入力してください。',
       maxTokensMinMessage: '最大トークン数は0以上でなければなりません。',
       quote: '引用を表示',
@@ -434,6 +460,7 @@ export default {
       partialTitle: '部分埋め込み',
       extensionTitle: 'Chrome拡張機能',
       tokenError: 'まずAPIトークンを作成してください！',
+      betaError: 'システム設定ページからRAGFlow APIキーを取得してください。',
       searching: '検索中...',
       parsing: '解析中',
       uploading: 'アップロード中',
@@ -450,14 +477,46 @@ export default {
         'マルチラウンドの会話では、ナレッジベースへのクエリが最適化されます。大規模モデルが呼び出され、追加のトークンが消費されます。',
       howUseId: 'チャットIDの使い方？',
       description: 'アシスタントの説明',
+      descriptionPlaceholder: '例: 履歴書用のチャットアシスタント',
+      useKnowledgeGraph: 'ナレッジグラフを使用',
+      useKnowledgeGraphTip:
+        'ナレッジグラフを利用してエンティティや関係をまたいだ検索を行います。マルチホップ質問応答が可能になりますが、検索時間が大幅に増加します。',
+      keyword: 'キーワード解析',
+      keywordTip: `LLMでユーザーの質問を解析し、重要キーワードを抽出して関連性計算で強調します。長文クエリに有効ですが応答速度が遅くなります。`,
+      languageTip:
+        '選択した言語で文をリライトできます。未選択の場合は直近の質問の言語が使われます。',
+      avatarHidden: 'アバターを非表示',
+      locale: 'ロケール',
+      selectLanguage: '言語を選択',
+      reasoning: '推論',
+      reasoningTip: `Deepseek-R1 や OpenAI o1 のように、推論ワークフローを有効にできます。ステップごとの論理展開で複雑な質問への正確さが向上します。`,
+      tavilyApiKeyTip:
+        'ここにTavilyのAPIキーを設定すると、ナレッジベース検索に加えてウェブ検索も利用できます。',
+      tavilyApiKeyMessage: 'Tavily APIキーを入力してください',
+      tavilyApiKeyHelp: '取得方法はこちら',
+      crossLanguage: 'クロス言語検索',
+      crossLanguageTip: `1つ以上の言語を選択すると、その言語でも検索します。未選択の場合は元の言語で検索します。`,
+      createChat: 'チャットを作成',
+      metadata: 'メタデータ',
+      metadataTip:
+        'メタデータ（タグ、カテゴリ、アクセス権限など）を使って、関連情報の検索を制御・絞り込みます。',
+      conditions: '条件',
+      addCondition: '条件を追加',
+      meta: {
+        disabled: '無効',
+        auto: '自動',
+        manual: '手動',
+      },
+      cancel: 'キャンセル',
+      chatSetting: 'チャット設定',
     },
     setting: {
       profile: 'プロファイル',
+      avatar: 'アバター‌',
       profileDescription: 'ここで写真と個人情報を更新してください。',
       maxTokens: '最大トークン数',
       maxTokensMessage: '最大トークン数は必須です',
-      maxTokensTip:
-        'これは、モデルの出力の最大長を設定します。トークン（単語または単語の一部）の数で測定されます。',
+      maxTokensTip: `モデルの最大コンテキストサイズ。無効または不正な値はエラーになります。デフォルトは512。`,
       maxTokensInvalidMessage: '有効な数値を入力してください。',
       maxTokensMinMessage: '最大トークン数は0以上でなければなりません。',
       password: 'パスワード',
@@ -503,11 +562,19 @@ export default {
       apiKeyTip:
         'APIキーは、対応するLLMサプライヤーに登録することで取得できます。',
       showMoreModels: 'さらにモデルを表示',
+      hideModels: 'モデルを隠す',
       baseUrl: 'ベースURL',
       baseUrlTip:
         'APIキーがOpenAIからのものであれば無視してください。他の中間プロバイダーはAPIキーと共にこのベースURLを提供します。',
+      tongyiBaseUrlTip:
+        '中国ユーザーの場合、記入不要または https://dashscope.aliyuncs.com/compatible-mode/v1 を使用してください。国際ユーザーは https://dashscope-intl.aliyuncs.com/compatible-mode/v1 を使用してください',
+      tongyiBaseUrlPlaceholder: '（国際ユーザーのみ、ヒントをご覧ください）',
+      minimaxBaseUrlTip:
+        '国際ユーザーのみ：https://api.minimax.io/v1 を使用してください。',
+      minimaxBaseUrlPlaceholder:
+        '（国際ユーザーのみ、https://api.minimax.io/v1 を入力してください）',
       modify: '変更',
-      systemModelSettings: 'デフォルトモデルを設定',
+      systemModelSettings: 'デフォルトモデルを設定する',
       chatModel: 'チャットモデル',
       chatModelTip:
         '新しく作成されたナレッジベースが使用するデフォルトのチャットLLM。',
@@ -528,6 +595,8 @@ export default {
       workspace: 'ワークスペース',
       upgrade: 'アップグレード',
       addLlmTitle: 'LLMを追加',
+      editLlmTitle: '{{name}}モデルを編集',
+      editModel: 'モデルを編集',
       modelName: 'モデル名',
       modelID: 'モデルID',
       modelUid: 'モデルUID',
@@ -536,6 +605,17 @@ export default {
       modelTypeMessage: 'モデルタイプを入力してください！',
       addLlmBaseUrl: 'ベースURL',
       baseUrlNameMessage: 'ベースURLを入力してください！',
+      paddleocr: {
+        apiUrl: 'PaddleOCR API URL',
+        apiUrlPlaceholder: '例：https://paddleocr-server.com/layout-parsing',
+        accessToken: 'AI Studio アクセストークン',
+        accessTokenPlaceholder: 'AI Studio のトークン（任意）',
+        algorithm: 'PaddleOCR アルゴリズム',
+        selectAlgorithm: 'アルゴリズムを選択',
+        modelNamePlaceholder: '例：paddleocr-from-env-1',
+        modelNameRequired: 'モデル名は必須です',
+        apiUrlRequired: 'PaddleOCR API URL は必須です',
+      },
       vision: 'ビジョンをサポートしていますか？',
       ollamaLink: '{{name}}を統合する方法',
       FishAudioLink: 'FishAudioの使用方法',
@@ -559,10 +639,6 @@ export default {
       'eu-central-1': 'ヨーロッパ（フランクフルト）',
       'us-gov-west-1': 'AWS GovCloud（米国西部）',
       'ap-southeast-2': 'アジア太平洋（シドニー）',
-      addHunyuanSID: 'HunyuanシークレットID',
-      HunyuanSIDMessage: 'シークレットIDを入力してください',
-      addHunyuanSK: 'Hunyuanシークレットキー',
-      HunyuanSKMessage: 'シークレットキーを入力してください',
       addTencentCloudSID: 'TencentCloudシークレットID',
       TencentCloudSIDMessage: 'シークレットIDを入力してください',
       addTencentCloudSK: 'TencentCloudシークレットキー',
@@ -596,7 +672,7 @@ export default {
         'Google Cloudサービスアカウントキーをbase64形式で入力してください',
       addGoogleRegion: 'Google Cloudリージョン',
       GoogleRegionMessage: 'Google Cloudリージョンを入力してください',
-      modelProvidersWarn: `まず<b>設定 > モデルプロバイダー</b>で埋め込みモデルとLLMの両方を追加してください。その後、「システムモデル設定」で設定します。`,
+      modelProvidersWarn: `まず<b>設定 > モデルプロバイダー</b>で埋め込みモデルとLLMの両方を追加してください。その後、「デフォルトモデルを設定する」で設定します。`,
       apiVersion: 'APIバージョン',
       apiVersionMessage: 'APIバージョンを入力してください',
       add: '追加',
@@ -735,11 +811,30 @@ export default {
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         'duckduckgo.comから検索を行うコンポーネントで、TopNを使用して検索結果の数を指定します。既存のナレッジベースを補完します。',
-      channel: 'チャンネル',
-      channelTip: `コンポーネントの入力に対してテキスト検索またはニュース検索を実行します`,
-      text: 'テキスト',
-      news: 'ニュース',
-      messageHistoryWindowSize: 'メッセージウィンドウサイズ',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        'SearXNGのインスタンスURLを提供して検索を行うコンポーネント。TopNとインスタンスURLを指定してください。',
+      pdfGenerator: 'ドキュメント生成',
+      pDFGenerator: 'ドキュメント生成',
+      pdfGeneratorDescription: `マークダウン形式のコンテンツからドキュメント（PDF、DOCX、TXT）を生成するコンポーネント。カスタムスタイル、画像、テーブルをサポート。サポート：**太字**、*斜体*、# 見出し、- リスト、| 構文のテーブル。`,
+      pDFGeneratorDescription: `マークダウン形式のコンテンツからドキュメント（PDF、DOCX、TXT）を生成するコンポーネント。カスタムスタイル、画像、テーブルをサポート。サポート：**太字**、*斜体*、# 見出し、- リスト、| 構文のテーブル。`,
+      subtitle: 'サブタイトル',
+      logoImage: 'ロゴ画像',
+      logoPosition: 'ロゴ位置',
+      logoWidth: 'ロゴ幅',
+      logoHeight: 'ロゴ高さ',
+      fontFamily: 'フォントファミリー',
+      fontSize: 'フォントサイズ',
+      titleFontSize: 'タイトルフォントサイズ',
+      pageSize: 'ページサイズ',
+      orientation: '向き',
+      marginTop: '上余白',
+      marginBottom: '下余白',
+      filename: 'ファイル名',
+      outputDirectory: '出力ディレクトリ',
+      addPageNumbers: 'ページ番号を追加',
+      addTimestamp: 'タイムスタンプを追加',
+      watermarkText: '透かしテキスト',
       messageHistoryWindowSizeTip:
         'LLMに表示される会話履歴のウィンドウサイズ。大きいほど良いですが、LLMの最大トークン制限に注意してください。',
       wikipedia: 'Wikipedia',
@@ -1042,6 +1137,8 @@ export default {
       cleanHtml: 'HTMLをクリーン',
       cleanHtmlTip:
         '応答がHTML形式であり、主要なコンテンツのみが必要な場合は、これをオンにしてください。',
+      invalidUrl:
+        '有効なURLまたは{variable_name}または{component@variable}形式の変数プレースホルダーを含むURLである必要があります',
       reference: '参照',
       input: '入力',
       output: '出力',

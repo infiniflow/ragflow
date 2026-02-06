@@ -1,0 +1,19 @@
+<iframe src="http://localhost:9222/next-chats/widget?shared_id=9dcfc68696c611f0bb789b9b8b765d12&from=chat&auth=U4MDU3NzkwOTZjNzExZjBiYjc4OWI5Yj&mode=master&streaming=false"
+  style="position:fixed;bottom:0;right:0;width:100px;height:100px;border:none;background:transparent;z-index:9999"
+  frameborder="0" allow="microphone;camera"></iframe>
+<script>
+window.addEventListener('message',e=>{
+  if(e.origin!=='http://localhost:9222')return;
+  if(e.data.type==='CREATE_CHAT_WINDOW'){
+    if(document.getElementById('chat-win'))return;
+    const i=document.createElement('iframe');
+    i.id='chat-win';i.src=e.data.src;
+    i.style.cssText='position:fixed;bottom:104px;right:24px;width:380px;height:500px;border:none;background:transparent;z-index:9998;display:none';
+    i.frameBorder='0';i.allow='microphone;camera';
+    document.body.appendChild(i);
+  }else if(e.data.type==='TOGGLE_CHAT'){
+    const w=document.getElementById('chat-win');
+    if(w)w.style.display=e.data.isOpen?'block':'none';
+  }else if(e.data.type==='SCROLL_PASSTHROUGH')window.scrollBy(0,e.data.deltaY);
+});
+</script>

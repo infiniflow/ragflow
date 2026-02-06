@@ -1,0 +1,777 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
+import pathlib
+import re
+from quart import request, make_response
+from pathlib import Path
+
+from api.db.services.document_service import DocumentService
+from api.db.services.file2document_service import File2DocumentService
+from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.utils.api_utils import get_json_result, get_request_json, server_error_response, token_required
+from common.misc_utils import get_uuid, thread_pool_exec
+from api.db import FileType
+from api.db.services import duplicate_name
+from api.db.services.file_service import FileService
+from api.utils.file_utils import filename_type
+from api.utils.web_utils import CONTENT_TYPE_MAP
+from common import settings
+from common.constants import RetCode
+
+@manager.route('/file/upload', methods=['POST'])  # noqa: F821
+@token_required
+async def upload(tenant_id):
+    """
+    Upload a file to the system.
+    ---
+    tags:
+      - File
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: formData
+        name: file
+        type: file
+        required: true
+        description: The file to upload
+      - in: formData
+        name: parent_id
+        type: string
+        description: Parent folder ID where the file will be uploaded. Optional.
+    responses:
+      200:
+        description: Successfully uploaded the file.
+        schema:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: File ID
+                  name:
+                    type: string
+                    description: File name
+                  size:
+                    type: integer
+                    description: File size in bytes
+                  type:
+                    type: string
+                    description: File type (e.g., document, folder)
+    """
+    form = await request.form
+    files = await request.files
+    pf_id = form.get("parent_id")
+
+    if not pf_id:
+        root_folder = FileService.get_root_folder(tenant_id)
+        pf_id = root_folder["id"]
+
+    if 'file' not in files:
+        return get_json_result(data=False, message='No file part!', code=RetCode.BAD_REQUEST)
+    file_objs = files.getlist('file')
+
+    for file_obj in file_objs:
+        if file_obj.filename == '':
+            return get_json_result(data=False, message='No selected file!', code=RetCode.BAD_REQUEST)
+
+    file_res = []
+
+    try:
+        e, pf_folder = FileService.get_by_id(pf_id)
+        if not e:
+            return get_json_result(data=False, message="Can't find this folder!", code=RetCode.NOT_FOUND)
+
+        for file_obj in file_objs:
+            # Handle file path
+            full_path = '/' + file_obj.filename
+            file_obj_names = full_path.split('/')
+            file_len = len(file_obj_names)
+
+            # Get folder path ID
+            file_id_list = FileService.get_id_list_by_id(pf_id, file_obj_names, 1, [pf_id])
+            len_id_list = len(file_id_list)
+
+            # Crete file folder
+            if file_len != len_id_list:
+                e, file = FileService.get_by_id(file_id_list[len_id_list - 1])
+                if not e:
+                    return get_json_result(data=False, message="Folder not found!", code=RetCode.NOT_FOUND)
+                last_folder = FileService.create_folder(file, file_id_list[len_id_list - 1], file_obj_names,
+                                                        len_id_list)
+            else:
+                e, file = FileService.get_by_id(file_id_list[len_id_list - 2])
+                if not e:
+                    return get_json_result(data=False, message="Folder not found!", code=RetCode.NOT_FOUND)
+                last_folder = FileService.create_folder(file, file_id_list[len_id_list - 2], file_obj_names,
+                                                        len_id_list)
+
+            filetype = filename_type(file_obj_names[file_len - 1])
+            location = file_obj_names[file_len - 1]
+            while settings.STORAGE_IMPL.obj_exist(last_folder.id, location):
+                location += "_"
+            blob = file_obj.read()
+            filename = duplicate_name(FileService.query, name=file_obj_names[file_len - 1], parent_id=last_folder.id)
+
+            file = {
+                "id": get_uuid(),
+                "parent_id": last_folder.id,
+                "tenant_id": tenant_id,
+                "created_by": tenant_id,
+                "type": filetype,
+                "name": filename,
+                "location": location,
+                "size": len(blob),
+            }
+            file = FileService.insert(file)
+            settings.STORAGE_IMPL.put(last_folder.id, location, blob)
+            file_res.append(file.to_json())
+        return get_json_result(data=file_res)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/file/create', methods=['POST'])  # noqa: F821
+@token_required
+async def create(tenant_id):
+    """
+    Create a new file or folder.
+    ---
+    tags:
+      - File
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        description: File creation parameters
+        required: true
+        schema:
+          type: object
+          properties:
+            name:
+              type: string
+              description: Name of the file/folder
+            parent_id:
+              type: string
+              description: Parent folder ID. Optional.
+            type:
+              type: string
+              enum: ["FOLDER", "VIRTUAL"]
+              description: Type of the file
+    responses:
+      200:
+        description: File created successfully.
+        schema:
+          type: object
+          properties:
+            data:
+              type: object
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+                type:
+                  type: string
+    """
+    req = await get_request_json()
+    pf_id = req.get("parent_id")
+    input_file_type = req.get("type")
+    if not pf_id:
+        root_folder = FileService.get_root_folder(tenant_id)
+        pf_id = root_folder["id"]
+
+    try:
+        if not FileService.is_parent_folder_exist(pf_id):
+            return get_json_result(data=False, message="Parent Folder Doesn't Exist!", code=RetCode.BAD_REQUEST)
+        if FileService.query(name=req["name"], parent_id=pf_id):
+            return get_json_result(data=False, message="Duplicated folder name in the same folder.",
+                                   code=RetCode.CONFLICT)
+
+        if input_file_type == FileType.FOLDER.value:
+            file_type = FileType.FOLDER.value
+        else:
+            file_type = FileType.VIRTUAL.value
+
+        file = FileService.insert({
+            "id": get_uuid(),
+            "parent_id": pf_id,
+            "tenant_id": tenant_id,
+            "created_by": tenant_id,
+            "name": req["name"],
+            "location": "",
+            "size": 0,
+            "type": file_type
+        })
+
+        return get_json_result(data=file.to_json())
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/file/list', methods=['GET'])  # noqa: F821
+@token_required
+async def list_files(tenant_id):
+    """
+    List files under a specific folder.
+    ---
+    tags:
+      - File
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: query
+        name: parent_id
+        type: string
+        description: Folder ID to list files from
+      - in: query
+        name: keywords
+        type: string
+        description: Search keyword filter
+      - in: query
+        name: page
+        type: integer
+        default: 1
+        description: Page number
+      - in: query
+        name: page_size
+        type: integer
+        default: 15
+        description: Number of results per page
+      - in: query
+        name: orderby
+        type: string
+        default: "create_time"
+        description: Sort by field
+      - in: query
+        name: desc
+        type: boolean
+        default: true
+        description: Descending order
+    responses:
+      200:
+        description: Successfully retrieved file list.
+        schema:
+          type: object
+          properties:
+            total:
+              type: integer
+            files:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  type:
+                    type: string
+                  size:
+                    type: integer
+                  create_time:
+                    type: string
+                    format: date-time
+    """
+    pf_id = request.args.get("parent_id")
+    keywords = request.args.get("keywords", "")
+    page_number = int(request.args.get("page", 1))
+    items_per_page = int(request.args.get("page_size", 15))
+    orderby = request.args.get("orderby", "create_time")
+    desc = request.args.get("desc", True)
+
+    if not pf_id:
+        root_folder = FileService.get_root_folder(tenant_id)
+        pf_id = root_folder["id"]
+        FileService.init_knowledgebase_docs(pf_id, tenant_id)
+
+    try:
+        e, file = FileService.get_by_id(pf_id)
+        if not e:
+            return get_json_result(message="Folder not found!", code=RetCode.NOT_FOUND)
+
+        files, total = FileService.get_by_pf_id(tenant_id, pf_id, page_number, items_per_page, orderby, desc, keywords)
+
+        parent_folder = FileService.get_parent_folder(pf_id)
+        if not parent_folder:
+            return get_json_result(message="File not found!", code=RetCode.NOT_FOUND)
+
+        return get_json_result(data={"total": total, "files": files, "parent_folder": parent_folder.to_json()})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/file/root_folder', methods=['GET'])  # noqa: F821
+@token_required
+async def get_root_folder(tenant_id):
+    """
+    Get user's root folder.
+    ---
+    tags:
+      - File
+    security:
+      - ApiKeyAuth: []
+    responses:
+      200:
+        description: Root folder information
+        schema:
+          type: object
+          properties:
+            data:
+              type: object
+              properties:
+                root_folder:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    type:
+                      type: string
+    """
+    try:
+        root_folder = FileService.get_root_folder(tenant_id)
+        return get_json_result(data={"root_folder": root_folder})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/file/parent_folder', methods=['GET'])  # noqa: F821
+@token_required
+async def get_parent_folder():
+    """
+    Get parent folder info of a file.
+    ---
+    tags:
+      - File
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: query
+        name: file_id
+        type: string
+        required: true
+        description: Target file ID
+    responses:
+      200:
+        description: Parent folder information
+        schema:
+          type: object
+          properties:
+            data:
+              type: object
+              properties:
+                parent_folder:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+    """
+    file_id = request.args.get("file_id")
+    try:
+        e, file = FileService.get_by_id(file_id)
+        if not e:
+            return get_json_result(message="Folder not found!", code=RetCode.NOT_FOUND)
+
+        parent_folder = FileService.get_parent_folder(file_id)
+        return get_json_result(data={"parent_folder": parent_folder.to_json()})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/file/all_parent_folder', methods=['GET'])  # noqa: F821
+@token_required
+async def get_all_parent_folders(tenant_id):
+    """
+    Get all parent folders of a file.
+    ---
+    tags:
+      - File
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: query
+        name: file_id
+        type: string
+        required: true
+        description: Target file ID
+    responses:
+      200:
+        description: All parent folders of the file
+        schema:
+          type: object
+          properties:
+            data:
+              type: object
+              properties:
+                parent_folders:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+    """
+    file_id = request.args.get("file_id")
+    try:
+        e, file = FileService.get_by_id(file_id)
+        if not e:
+            return get_json_result(message="Folder not found!", code=RetCode.NOT_FOUND)
+
+        parent_folders = FileService.get_all_parent_folders(file_id)
+        parent_folders_res = [folder.to_json() for folder in parent_folders]
+        return get_json_result(data={"parent_folders": parent_folders_res})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/file/rm', methods=['POST'])  # noqa: F821
+@token_required
+async def rm(tenant_id):
+    """
+    Delete one or multiple files/folders.
+    ---
+    tags:
+      - File
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        description: Files to delete
+        required: true
+        schema:
+          type: object
+          properties:
+            file_ids:
+              type: array
+              items:
+                type: string
+              description: List of file IDs to delete
+    responses:
+      200:
+        description: Successfully deleted files
+        schema:
+          type: object
+          properties:
+            data:
+              type: boolean
+              example: true
+    """
+    req = await get_request_json()
+    file_ids = req["file_ids"]
+    try:
+        for file_id in file_ids:
+            e, file = FileService.get_by_id(file_id)
+            if not e:
+                return get_json_result(message="File or Folder not found!", code=RetCode.NOT_FOUND)
+            if not file.tenant_id:
+                return get_json_result(message="Tenant not found!", code=RetCode.NOT_FOUND)
+
+            if file.type == FileType.FOLDER.value:
+                file_id_list = FileService.get_all_innermost_file_ids(file_id, [])
+                for inner_file_id in file_id_list:
+                    e, file = FileService.get_by_id(inner_file_id)
+                    if not e:
+                        return get_json_result(message="File not found!", code=RetCode.NOT_FOUND)
+                    settings.STORAGE_IMPL.rm(file.parent_id, file.location)
+                FileService.delete_folder_by_pf_id(tenant_id, file_id)
+            else:
+                settings.STORAGE_IMPL.rm(file.parent_id, file.location)
+                if not FileService.delete(file):
+                    return get_json_result(message="Database error (File removal)!", code=RetCode.SERVER_ERROR)
+
+            informs = File2DocumentService.get_by_file_id(file_id)
+            for inform in informs:
+                doc_id = inform.document_id
+                e, doc = DocumentService.get_by_id(doc_id)
+                if not e:
+                    return get_json_result(message="Document not found!", code=RetCode.NOT_FOUND)
+                tenant_id = DocumentService.get_tenant_id(doc_id)
+                if not tenant_id:
+                    return get_json_result(message="Tenant not found!", code=RetCode.NOT_FOUND)
+                if not DocumentService.remove_document(doc, tenant_id):
+                    return get_json_result(message="Database error (Document removal)!", code=RetCode.SERVER_ERROR)
+            File2DocumentService.delete_by_file_id(file_id)
+
+        return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/file/rename', methods=['POST'])  # noqa: F821
+@token_required
+async def rename(tenant_id):
+    """
+    Rename a file.
+    ---
+    tags:
+      - File
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        description: Rename file
+        required: true
+        schema:
+          type: object
+          properties:
+            file_id:
+              type: string
+              description: Target file ID
+            name:
+              type: string
+              description: New name for the file
+    responses:
+      200:
+        description: File renamed successfully
+        schema:
+          type: object
+          properties:
+            data:
+              type: boolean
+              example: true
+    """
+    req = await get_request_json()
+    try:
+        e, file = FileService.get_by_id(req["file_id"])
+        if not e:
+            return get_json_result(message="File not found!", code=RetCode.NOT_FOUND)
+
+        if file.type != FileType.FOLDER.value and pathlib.Path(req["name"].lower()).suffix != pathlib.Path(
+                file.name.lower()).suffix:
+            return get_json_result(data=False, message="The extension of file can't be changed",
+                                   code=RetCode.BAD_REQUEST)
+
+        for existing_file in FileService.query(name=req["name"], pf_id=file.parent_id):
+            if existing_file.name == req["name"]:
+                return get_json_result(data=False, message="Duplicated file name in the same folder.",
+                                       code=RetCode.CONFLICT)
+
+        if not FileService.update_by_id(req["file_id"], {"name": req["name"]}):
+            return get_json_result(message="Database error (File rename)!", code=RetCode.SERVER_ERROR)
+
+        informs = File2DocumentService.get_by_file_id(req["file_id"])
+        if informs:
+            if not DocumentService.update_by_id(informs[0].document_id, {"name": req["name"]}):
+                return get_json_result(message="Database error (Document rename)!", code=RetCode.SERVER_ERROR)
+
+        return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/file/get/<file_id>', methods=['GET'])  # noqa: F821
+@token_required
+async def get(tenant_id, file_id):
+    """
+    Download a file.
+    ---
+    tags:
+      - File
+    security:
+      - ApiKeyAuth: []
+    produces:
+      - application/octet-stream
+    parameters:
+      - in: path
+        name: file_id
+        type: string
+        required: true
+        description: File ID to download
+    responses:
+      200:
+        description: File stream
+        schema:
+          type: file
+      RetCode.NOT_FOUND:
+        description: File not found
+    """
+    try:
+        e, file = FileService.get_by_id(file_id)
+        if not e:
+            return get_json_result(message="Document not found!", code=RetCode.NOT_FOUND)
+
+        blob = settings.STORAGE_IMPL.get(file.parent_id, file.location)
+        if not blob:
+            b, n = File2DocumentService.get_storage_address(file_id=file_id)
+            blob = settings.STORAGE_IMPL.get(b, n)
+
+        response = await make_response(blob)
+        ext = re.search(r"\.([^.]+)$", file.name)
+        if ext:
+            if file.type == FileType.VISUAL.value:
+                response.headers.set('Content-Type', 'image/%s' % ext.group(1))
+            else:
+                response.headers.set('Content-Type', 'application/%s' % ext.group(1))
+        return response
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/file/download/<attachment_id>", methods=["GET"])  # noqa: F821
+@token_required
+async def download_attachment(tenant_id, attachment_id):
+    try:
+        ext = request.args.get("ext", "markdown")
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+        response = await make_response(data)
+        response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
+
+        return response
+
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/file/mv', methods=['POST'])  # noqa: F821
+@token_required
+async def move(tenant_id):
+    """
+    Move one or multiple files to another folder.
+    ---
+    tags:
+      - File
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        description: Move operation
+        required: true
+        schema:
+          type: object
+          properties:
+            src_file_ids:
+              type: array
+              items:
+                type: string
+              description: Source file IDs
+            dest_file_id:
+              type: string
+              description: Destination folder ID
+    responses:
+      200:
+        description: Files moved successfully
+        schema:
+          type: object
+          properties:
+            data:
+              type: boolean
+              example: true
+    """
+    req = await get_request_json()
+    try:
+        file_ids = req["src_file_ids"]
+        parent_id = req["dest_file_id"]
+        files = FileService.get_by_ids(file_ids)
+        files_dict = {f.id: f for f in files}
+
+        for file_id in file_ids:
+            file = files_dict[file_id]
+            if not file:
+                return get_json_result(message="File or Folder not found!", code=RetCode.NOT_FOUND)
+            if not file.tenant_id:
+                return get_json_result(message="Tenant not found!", code=RetCode.NOT_FOUND)
+
+        fe, _ = FileService.get_by_id(parent_id)
+        if not fe:
+            return get_json_result(message="Parent Folder not found!", code=RetCode.NOT_FOUND)
+
+        FileService.move_file(file_ids, parent_id)
+        return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/file/convert', methods=['POST'])  # noqa: F821
+@token_required
+async def convert(tenant_id):
+    req = await get_request_json()
+    kb_ids = req["kb_ids"]
+    file_ids = req["file_ids"]
+    file2documents = []
+
+    try:
+        files = FileService.get_by_ids(file_ids)
+        files_set = dict({file.id: file for file in files})
+        for file_id in file_ids:
+            file = files_set[file_id]
+            if not file:
+                return get_json_result(message="File not found!", code=RetCode.NOT_FOUND)
+            file_ids_list = [file_id]
+            if file.type == FileType.FOLDER.value:
+                file_ids_list = FileService.get_all_innermost_file_ids(file_id, [])
+            for id in file_ids_list:
+                informs = File2DocumentService.get_by_file_id(id)
+                # delete
+                for inform in informs:
+                    doc_id = inform.document_id
+                    e, doc = DocumentService.get_by_id(doc_id)
+                    if not e:
+                        return get_json_result(message="Document not found!", code=RetCode.NOT_FOUND)
+                    tenant_id = DocumentService.get_tenant_id(doc_id)
+                    if not tenant_id:
+                        return get_json_result(message="Tenant not found!", code=RetCode.NOT_FOUND)
+                    if not DocumentService.remove_document(doc, tenant_id):
+                        return get_json_result(
+                            message="Database error (Document removal)!", code=RetCode.NOT_FOUND)
+                File2DocumentService.delete_by_file_id(id)
+
+                # insert
+                for kb_id in kb_ids:
+                    e, kb = KnowledgebaseService.get_by_id(kb_id)
+                    if not e:
+                        return get_json_result(
+                            message="Can't find this dataset!", code=RetCode.NOT_FOUND)
+                    e, file = FileService.get_by_id(id)
+                    if not e:
+                        return get_json_result(
+                            message="Can't find this file!", code=RetCode.NOT_FOUND)
+
+                    doc = DocumentService.insert({
+                        "id": get_uuid(),
+                        "kb_id": kb.id,
+                        "parser_id": FileService.get_parser(file.type, file.name, kb.parser_id),
+                        "parser_config": kb.parser_config,
+                        "created_by": tenant_id,
+                        "type": file.type,
+                        "name": file.name,
+                        "suffix": Path(file.name).suffix.lstrip("."),
+                        "location": file.location,
+                        "size": file.size
+                    })
+                    file2document = File2DocumentService.insert({
+                        "id": get_uuid(),
+                        "file_id": id,
+                        "document_id": doc.id,
+                    })
+
+                    file2documents.append(file2document.to_json())
+        return get_json_result(data=file2documents)
+    except Exception as e:
+        return server_error_response(e)

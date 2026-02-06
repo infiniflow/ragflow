@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 
-import requests
+from common.http_client import async_request, sync_request
 from .oauth import OAuthClient, UserInfo
 
 
@@ -34,24 +34,49 @@ class GithubOAuthClient(OAuthClient):
 
     def fetch_user_info(self, access_token, **kwargs):
         """
-        Fetch github user info.
+        Fetch GitHub user info (synchronous).
         """
         user_info = {}
         try:
             headers = {"Authorization": f"Bearer {access_token}"}
-            # user info
-            response = requests.get(self.userinfo_url, headers=headers, timeout=self.http_request_timeout)
+            response = sync_request("GET", self.userinfo_url, headers=headers, timeout=self.http_request_timeout)
             response.raise_for_status()
             user_info.update(response.json())
-            # email info
-            response = requests.get(self.userinfo_url+"/emails", headers=headers, timeout=self.http_request_timeout)
-            response.raise_for_status()
-            email_info = response.json()
-            user_info["email"] = next(
-                (email for email in email_info if email["primary"]), None
-            )["email"]
+            email_response = sync_request(
+                "GET", self.userinfo_url + "/emails", headers=headers, timeout=self.http_request_timeout
+            )
+            email_response.raise_for_status()
+            email_info = email_response.json()
+            user_info["email"] = next((email for email in email_info if email["primary"]), None)["email"]
             return self.normalize_user_info(user_info)
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
+            raise ValueError(f"Failed to fetch github user info: {e}")
+
+    async def async_fetch_user_info(self, access_token, **kwargs):
+        """Async variant of fetch_user_info using httpx."""
+        user_info = {}
+        headers = {"Authorization": f"Bearer {access_token}"}
+        try:
+            response = await async_request(
+                "GET",
+                self.userinfo_url,
+                headers=headers,
+                timeout=self.http_request_timeout,
+            )
+            response.raise_for_status()
+            user_info.update(response.json())
+
+            email_response = await async_request(
+                "GET",
+                self.userinfo_url + "/emails",
+                headers=headers,
+                timeout=self.http_request_timeout,
+            )
+            email_response.raise_for_status()
+            email_info = email_response.json()
+            user_info["email"] = next((email for email in email_info if email["primary"]), None)["email"]
+            return self.normalize_user_info(user_info)
+        except Exception as e:
             raise ValueError(f"Failed to fetch github user info: {e}")
 
 

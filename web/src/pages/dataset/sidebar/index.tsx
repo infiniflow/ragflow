@@ -1,40 +1,64 @@
+import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
-import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
+import {
+  useFetchKnowledgeBaseConfiguration,
+  useFetchKnowledgeGraph,
+} from '@/hooks/use-knowledge-request';
 import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
-import { Banknote, Database, FileSearch2 } from 'lucide-react';
+import { isEmpty } from 'lodash';
+import { Banknote, FileSearch2, FolderOpen, Logs } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
 
-export function SideBar() {
+type PropType = {
+  refreshCount?: number;
+};
+
+export function SideBar({ refreshCount }: PropType) {
   const pathName = useSecondPathName();
   const { handleMenuClick } = useHandleMenuClick();
-  const { data } = useFetchKnowledgeBaseConfiguration();
+  // refreshCount: be for avatar img sync update on top left
+  const { data } = useFetchKnowledgeBaseConfiguration({ refreshCount });
+  const { data: routerData } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
 
   const items = useMemo(() => {
-    return [
+    const list = [
       {
-        icon: Database,
-        label: t(`knowledgeDetails.dataset`),
+        icon: <FolderOpen className="size-4" />,
+        label: t(`knowledgeDetails.subbarFiles`),
         key: Routes.DatasetBase,
       },
       {
-        icon: FileSearch2,
+        icon: <FileSearch2 className="size-4" />,
         label: t(`knowledgeDetails.testing`),
         key: Routes.DatasetTesting,
       },
       {
-        icon: Banknote,
+        icon: <Logs className="size-4" />,
+        label: t(`knowledgeDetails.overview`),
+        key: Routes.DataSetOverview,
+      },
+      {
+        icon: <Banknote className="size-4" />,
         label: t(`knowledgeDetails.configuration`),
-        key: Routes.DatasetSetting,
+        key: Routes.DataSetSetting,
       },
     ];
-  }, [t]);
+    if (!isEmpty(routerData?.graph)) {
+      list.push({
+        icon: <IconFontFill name="knowledgegraph" className="size-4" />,
+        label: t(`knowledgeDetails.knowledgeGraph`),
+        key: Routes.KnowledgeGraph,
+      });
+    }
+    return list;
+  }, [t, routerData]);
 
   return (
     <aside className="relative p-5 space-y-8">
@@ -44,15 +68,19 @@ export function SideBar() {
           name={data.name}
           className="size-16"
         ></RAGFlowAvatar>
-        <div className=" text-text-sub-title text-xs space-y-1">
-          <h3 className="text-lg font-semibold line-clamp-1 text-text-title">
+        <div className=" text-text-secondary text-xs space-y-1 overflow-hidden">
+          <h3 className="text-lg font-semibold line-clamp-1 text-text-primary text-ellipsis overflow-hidden">
             {data.name}
           </h3>
           <div className="flex justify-between">
-            <span>{data.doc_num} files</span>
+            <span>
+              {data.doc_num} {t('knowledgeDetails.files')}
+            </span>
             <span>{formatBytes(data.size)}</span>
           </div>
-          <div>Created {formatPureDate(data.create_time)}</div>
+          <div>
+            {t('knowledgeDetails.created')} {formatPureDate(data.create_time)}
+          </div>
         </div>
       </div>
 
@@ -64,15 +92,15 @@ export function SideBar() {
               key={itemIdx}
               variant={active ? 'secondary' : 'ghost'}
               className={cn(
-                'w-full justify-start gap-2.5 px-3 relative h-10 text-text-sub-title-invert',
+                'w-full justify-start gap-2.5 px-3 relative h-10 text-text-secondary',
                 {
-                  'bg-background-card': active,
-                  'text-text-title': active,
+                  'bg-bg-card': active,
+                  'text-text-primary': active,
                 },
               )}
               onClick={handleMenuClick(item.key)}
             >
-              <item.icon className="size-4" />
+              {item.icon}
               <span>{item.label}</span>
             </Button>
           );

@@ -1,8 +1,10 @@
 ---
 sidebar_position: 1
 slug: /build_docker_image
+sidebar_custom_props: {
+  categoryIcon: LucidePackage
+}
 ---
-
 # Build RAGFlow Docker image
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
@@ -24,34 +26,7 @@ A guide explaining how to build a RAGFlow Docker image from its source code. By 
 
 ## Build a Docker image
 
-<Tabs
-  defaultValue="without"
-  values={[
-    {label: 'Build a Docker image without embedding models', value: 'without'},
-    {label: 'Build a Docker image including embedding models', value: 'including'}
-  ]}>
-  <TabItem value="without">
-
 This image is approximately 2 GB in size and relies on external LLM and embedding services.
-
-:::danger IMPORTANT
-- While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM. However, you can build an image yourself on a `linux/arm64` or `darwin/arm64` host machine as well.
-- For ARM64 platforms, please upgrade the `xgboost` version in **pyproject.toml** to `1.6.0` and ensure **unixODBC** is properly installed.
-:::
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-uv run download_deps.py
-docker build -f Dockerfile.deps -t infiniflow/ragflow_deps .
-docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
-```
-
-
-  </TabItem>
-  <TabItem value="including">
-
-This image is approximately 9 GB in size. As it includes embedding models, it relies on external LLM services only.  
 
 :::danger IMPORTANT
 - While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM. However, you can build an image yourself on a `linux/arm64` or `darwin/arm64` host machine as well.
@@ -66,18 +41,15 @@ docker build -f Dockerfile.deps -t infiniflow/ragflow_deps .
 docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
-  </TabItem>
-</Tabs>
-
 ## Launch a RAGFlow Service from Docker for MacOS
 
-After building the infiniflow/ragflow:nightly-slim image, you are ready to launch a fully-functional RAGFlow service with all the required components, such as Elasticsearch, MySQL, MinIO, Redis, and more.
+After building the infiniflow/ragflow:nightly image, you are ready to launch a fully-functional RAGFlow service with all the required components, such as Elasticsearch, MySQL, MinIO, Redis, and more.
 
 ## Example: Apple M2 Pro (Sequoia)
 
 1. Edit Docker Compose Configuration
 
-Open the `docker/.env` file. Find the `RAGFLOW_IMAGE` setting and change the image reference from `infiniflow/ragflow:v0.18.0-slim` to `infiniflow/ragflow:nightly-slim` to use the pre-built image.
+Open the `docker/.env` file. Find the `RAGFLOW_IMAGE` setting and change the image reference from `infiniflow/ragflow:v0.23.1` to `infiniflow/ragflow:nightly` to use the pre-built image.
 
 
 2. Launch the Service

@@ -1,27 +1,29 @@
-import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
-import { useSetModalState } from '@/hooks/common-hooks';
-import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
-import classNames from 'classnames';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-
 import {
-  useFetchDocumentInfosByIds,
-  useFetchDocumentThumbnailsByIds,
-} from '@/hooks/document-hooks';
+  IMessage,
+  IReference,
+  IReferenceChunk,
+  UploadResponseDataType,
+} from '@/interfaces/database/chat';
+import classNames from 'classnames';
+import { memo, useCallback, useMemo } from 'react';
+
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
-import { IMessage } from '@/pages/chat/interface';
-import MarkdownContent from '@/pages/chat/markdown-content';
-import { getExtension, isImage } from '@/utils/document-util';
-import { Avatar, Button, Flex, List, Space, Typography } from 'antd';
-import FileIcon from '../file-icon';
-import IndentedTreeModal from '../indented-tree/modal';
-import NewDocumentLink from '../new-document-link';
+import { cn } from '@/lib/utils';
+import MarkdownContent from '../markdown-content';
+import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
+import { ReferenceImageList } from '../next-message-item/reference-image-list';
+import { UploadedMessageFiles } from '../next-message-item/uploaded-message-files';
+import {
+  PDFDownloadButton,
+  extractPDFDownloadInfo,
+  removePDFDownloadInfo,
+} from '../pdf-download-button';
+import { RAGFlowAvatar } from '../ragflow-avatar';
+import SvgIcon from '../svg-icon';
 import { useTheme } from '../theme-provider';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
-import styles from './index.less';
-
-const { Text } = Typography;
+import styles from './index.module.less';
 
 interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   item: IMessage;
@@ -56,38 +58,32 @@ const MessageItem = ({
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
-  const { data: documentList, setDocumentIds } = useFetchDocumentInfosByIds();
-  const { data: documentThumbnails, setDocumentIds: setIds } =
-    useFetchDocumentThumbnailsByIds();
-  const { visible, hideModal, showModal } = useSetModalState();
-  const [clickedDocumentId, setClickedDocumentId] = useState('');
+
+  const uploadedFiles = useMemo(() => {
+    return item?.files ?? [];
+  }, [item?.files]);
 
   const referenceDocumentList = useMemo(() => {
     return reference?.doc_aggs ?? [];
   }, [reference?.doc_aggs]);
 
-  const handleUserDocumentClick = useCallback(
-    (id: string) => () => {
-      setClickedDocumentId(id);
-      showModal();
-    },
-    [showModal],
+  // Extract PDF download info from message content
+  const pdfDownloadInfo = useMemo(
+    () => extractPDFDownloadInfo(item.content),
+    [item.content],
   );
+
+  // If we have PDF download info, extract the remaining text
+  const messageContent = useMemo(() => {
+    if (!pdfDownloadInfo) return item.content;
+
+    // Remove the JSON part from the content to avoid showing it
+    return removePDFDownloadInfo(item.content, pdfDownloadInfo);
+  }, [item.content, pdfDownloadInfo]);
 
   const handleRegenerateMessage = useCallback(() => {
     regenerateMessage?.(item);
   }, [regenerateMessage, item]);
-
-  useEffect(() => {
-    const ids = item?.doc_ids ?? [];
-    if (ids.length) {
-      setDocumentIds(ids);
-      const documentIds = ids.filter((x) => !(x in documentThumbnails));
-      if (documentIds.length) {
-        setIds(documentIds);
-      }
-    }
-  }, [item.doc_ids, setDocumentIds, setIds, documentThumbnails]);
 
   return (
     <div
@@ -109,134 +105,94 @@ const MessageItem = ({
         >
           {visibleAvatar &&
             (item.role === MessageType.User ? (
-              <Avatar size={40} src={avatar ?? '/logo.svg'} />
+              <RAGFlowAvatar
+                className="size-10"
+                avatar={avatar ?? '/logo.svg'}
+                isPerson
+              />
             ) : avatarDialog ? (
-              <Avatar size={40} src={avatarDialog} />
+              <RAGFlowAvatar
+                className="size-10"
+                avatar={avatarDialog}
+                isPerson
+              />
             ) : (
-              <AssistantIcon />
+              <SvgIcon
+                name={'assistant'}
+                width={'100%'}
+                className={cn('size-10 fill-current')}
+              ></SvgIcon>
             ))}
 
-          <Flex vertical gap={8} flex={1}>
-            <Space>
-              {isAssistant ? (
-                index !== 0 && (
-                  <AssistantGroupButton
-                    messageId={item.id}
-                    content={item.content}
-                    prompt={item.prompt}
-                    showLikeButton={showLikeButton}
-                    audioBinary={item.audio_binary}
-                    showLoudspeaker={showLoudspeaker}
-                  ></AssistantGroupButton>
-                )
-              ) : (
-                <UserGroupButton
-                  content={item.content}
+          <section className="flex min-w-0 gap-2 flex-1 flex-col">
+            {isAssistant ? (
+              index !== 0 && (
+                <AssistantGroupButton
                   messageId={item.id}
-                  removeMessageById={removeMessageById}
-                  regenerateMessage={
-                    regenerateMessage && handleRegenerateMessage
-                  }
-                  sendLoading={sendLoading}
-                ></UserGroupButton>
-              )}
-
-              {/* <b>{isAssistant ? '' : nickname}</b> */}
-            </Space>
-            <div
-              className={
-                isAssistant
-                  ? theme === 'dark'
-                    ? styles.messageTextDark
-                    : styles.messageText
-                  : styles.messageUserText
-              }
-            >
-              <MarkdownContent
-                loading={loading}
+                  content={item.content}
+                  prompt={item.prompt}
+                  showLikeButton={showLikeButton}
+                  audioBinary={item.audio_binary}
+                  showLoudspeaker={showLoudspeaker}
+                ></AssistantGroupButton>
+              )
+            ) : (
+              <UserGroupButton
                 content={item.content}
-                reference={reference}
-                clickDocumentButton={clickDocumentButton}
-              ></MarkdownContent>
-            </div>
+                messageId={item.id}
+                removeMessageById={removeMessageById}
+                regenerateMessage={regenerateMessage && handleRegenerateMessage}
+                sendLoading={sendLoading}
+              ></UserGroupButton>
+            )}
+            {/* Show PDF download button if download info is present */}
+            {pdfDownloadInfo && (
+              <PDFDownloadButton
+                downloadInfo={pdfDownloadInfo}
+                className="mb-2"
+              />
+            )}
+            {/* Show message content if there's any text besides the download */}
+            {messageContent && (
+              <div
+                className={cn(
+                  isAssistant
+                    ? theme === 'dark'
+                      ? styles.messageTextDark
+                      : styles.messageText
+                    : styles.messageUserText,
+                  { '!bg-bg-card': !isAssistant },
+                )}
+              >
+                <MarkdownContent
+                  loading={loading}
+                  content={messageContent}
+                  reference={reference}
+                  clickDocumentButton={clickDocumentButton}
+                ></MarkdownContent>
+              </div>
+            )}
+            {isAssistant && (
+              <ReferenceImageList
+                referenceChunks={reference.chunks}
+                messageContent={messageContent}
+              ></ReferenceImageList>
+            )}
             {isAssistant && referenceDocumentList.length > 0 && (
-              <List
-                bordered
-                dataSource={referenceDocumentList}
-                renderItem={(item) => {
-                  return (
-                    <List.Item>
-                      <Flex gap={'small'} align="center">
-                        <FileIcon
-                          id={item.doc_id}
-                          name={item.doc_name}
-                        ></FileIcon>
-
-                        <NewDocumentLink
-                          documentId={item.doc_id}
-                          documentName={item.doc_name}
-                          prefix="document"
-                          link={item.url}
-                        >
-                          {item.doc_name}
-                        </NewDocumentLink>
-                      </Flex>
-                    </List.Item>
-                  );
-                }}
-              />
+              <ReferenceDocumentList
+                list={referenceDocumentList}
+              ></ReferenceDocumentList>
             )}
-            {isUser && documentList.length > 0 && (
-              <List
-                bordered
-                dataSource={documentList}
-                renderItem={(item) => {
-                  // TODO:
-                  // const fileThumbnail =
-                  //   documentThumbnails[item.id] || documentThumbnails[item.id];
-                  const fileExtension = getExtension(item.name);
-                  return (
-                    <List.Item>
-                      <Flex gap={'small'} align="center">
-                        <FileIcon id={item.id} name={item.name}></FileIcon>
-
-                        {isImage(fileExtension) ? (
-                          <NewDocumentLink
-                            documentId={item.id}
-                            documentName={item.name}
-                            prefix="document"
-                          >
-                            {item.name}
-                          </NewDocumentLink>
-                        ) : (
-                          <Button
-                            type={'text'}
-                            onClick={handleUserDocumentClick(item.id)}
-                          >
-                            <Text
-                              style={{ maxWidth: '40vw' }}
-                              ellipsis={{ tooltip: item.name }}
-                            >
-                              {item.name}
-                            </Text>
-                          </Button>
-                        )}
-                      </Flex>
-                    </List.Item>
-                  );
-                }}
-              />
-            )}
-          </Flex>
+            {isUser &&
+              Array.isArray(uploadedFiles) &&
+              uploadedFiles.length > 0 && (
+                <UploadedMessageFiles
+                  files={uploadedFiles as UploadResponseDataType[]}
+                ></UploadedMessageFiles>
+              )}
+          </section>
         </div>
       </section>
-      {visible && (
-        <IndentedTreeModal
-          visible={visible}
-          hideModal={hideModal}
-          documentId={clickedDocumentId}
-        ></IndentedTreeModal>
-      )}
     </div>
   );
 };

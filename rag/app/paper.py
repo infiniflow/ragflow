@@ -18,10 +18,14 @@ import logging
 import copy
 import re
 
-from api.db import ParserType
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
-from deepdoc.parser import PdfParser, PlainParser
+from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper
+from common.constants import ParserType
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, \
+    tokenize_chunks, attach_media_context
+from deepdoc.parser import PdfParser
 import numpy as np
+from rag.app.naive import by_plaintext, PARSERS
+from common.parser_config_utils import normalize_layout_recognizer
 
 
 class Pdf(PdfParser):
@@ -63,7 +67,7 @@ class Pdf(PdfParser):
         # clean mess
         if column_width < self.page_images[0].size[0] / zoomin / 2:
             logging.debug("two_column................... {} {}".format(column_width,
-                  self.page_images[0].size[0] / zoomin / 2))
+                                                                       self.page_images[0].size[0] / zoomin / 2))
             self.boxes = self.sort_X_by_page(self.boxes, column_width / 2)
         for b in self.boxes:
             b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
@@ -86,7 +90,7 @@ class Pdf(PdfParser):
         title = ""
         authors = []
         i = 0
-        while i < min(32, len(self.boxes)-1):
+        while i < min(32, len(self.boxes) - 1):
             b = self.boxes[i]
             i += 1
             if b.get("layoutno", "").find("title") >= 0:
@@ -143,20 +147,59 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         Only pdf is supported.
         The abstract of the paper will be sliced as an entire chunk, and will not be sliced partly.
     """
+    parser_config = kwargs.get(
+        "parser_config", {
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        if kwargs.get("parser_config", {}).get("layout_recognize", "DeepDOC") == "Plain Text":
-            pdf_parser = PlainParser()
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(
+            parser_config.get("layout_recognize", "DeepDOC")
+        )
+
+        if isinstance(layout_recognizer, bool):
+            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
+
+        name = layout_recognizer.strip().lower()
+        pdf_parser = PARSERS.get(name, by_plaintext)
+        callback(0.1, "Start to parse.")
+
+        if name == "deepdoc":
+            pdf_parser = Pdf()
+            paper = pdf_parser(filename if not binary else binary,
+                               from_page=from_page, to_page=to_page, callback=callback)
+            sections = paper.get("sections", [])
+        else:
+            kwargs.pop("parse_method", None)
+            kwargs.pop("mineru_llm_name", None)
+            sections, tables, pdf_parser = pdf_parser(
+                filename=filename,
+                binary=binary,
+                from_page=from_page,
+                to_page=to_page,
+                lang=lang,
+                callback=callback,
+                pdf_cls=Pdf,
+                layout_recognizer=layout_recognizer,
+                mineru_llm_name=parser_model_name,
+                parse_method="paper",
+                **kwargs
+            )
+
             paper = {
                 "title": filename,
                 "authors": " ",
                 "abstract": "",
-                "sections": pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page)[0],
-                "tables": []
+                "sections": sections,
+                "tables": tables
             }
-        else:
-            pdf_parser = Pdf()
-            paper = pdf_parser(filename if not binary else binary,
-                               from_page=from_page, to_page=to_page, callback=callback)
+
+        tbls = paper["tables"]
+        tbls = vision_figure_parser_pdf_wrapper(
+            tbls=tbls,
+            sections=sections,
+            callback=callback,
+            **kwargs,
+        )
+        paper["tables"] = tbls
     else:
         raise NotImplementedError("file type not supported yet(pdf supported)")
 
@@ -205,6 +248,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         chunks.append(txt)
         last_sid = sec_id
     res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
+    table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
+    image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
+    if table_ctx or image_ctx:
+        attach_media_context(res, table_ctx, image_ctx)
     return res
 
 
@@ -289,6 +336,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 if __name__ == "__main__":
     import sys
 
+
     def dummy(prog=None, msg=""):
         pass
+
+
     chunk(sys.argv[1], callback=dummy)

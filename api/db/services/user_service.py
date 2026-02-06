@@ -15,6 +15,7 @@
 #
 import hashlib
 from datetime import datetime
+import logging
 
 import peewee
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -23,9 +24,10 @@ from api.db import UserTenantRole
 from api.db.db_models import DB, UserTenant
 from api.db.db_models import User, Tenant
 from api.db.services.common_service import CommonService
-from api.utils import get_uuid, current_timestamp, datetime_format
-from api.db import StatusEnum
-from rag.settings import MINIO
+from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp, datetime_format
+from common.constants import StatusEnum
+from common import settings
 
 
 class UserService(CommonService):
@@ -38,6 +40,30 @@ class UserService(CommonService):
         model: The User model class for database operations.
     """
     model = User
+
+    @classmethod
+    @DB.connection_context()
+    def query(cls, cols=None, reverse=None, order_by=None, **kwargs):
+        if 'access_token' in kwargs:
+            access_token = kwargs['access_token']
+
+            # Reject empty, None, or whitespace-only access tokens
+            if not access_token or not str(access_token).strip():
+                logging.warning("UserService.query: Rejecting empty access_token query")
+                return cls.model.select().where(cls.model.id == "INVALID_EMPTY_TOKEN")  # Returns empty result
+
+            # Reject tokens that are too short (should be UUID, 32+ chars)
+            if len(str(access_token).strip()) < 32:
+                logging.warning(f"UserService.query: Rejecting short access_token query: {len(str(access_token))} chars")
+                return cls.model.select().where(cls.model.id == "INVALID_SHORT_TOKEN")  # Returns empty result
+
+            # Reject tokens that start with "INVALID_" (from logout)
+            if str(access_token).startswith("INVALID_"):
+                logging.warning("UserService.query: Rejecting invalidated access_token")
+                return cls.model.select().where(cls.model.id == "INVALID_LOGOUT_TOKEN")  # Returns empty result
+
+        # Call parent query method for valid requests
+        return super().query(cols=cols, reverse=reverse, order_by=order_by, **kwargs)
 
     @classmethod
     @DB.connection_context()
@@ -77,6 +103,12 @@ class UserService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def query_user_by_email(cls, email):
+        users = cls.model.select().where((cls.model.email == email))
+        return list(users)
+
+    @classmethod
+    @DB.connection_context()
     def save(cls, **kwargs):
         if "id" not in kwargs:
             kwargs["id"] = get_uuid()
@@ -84,10 +116,13 @@ class UserService(CommonService):
             kwargs["password"] = generate_password_hash(
                 str(kwargs["password"]))
 
-        kwargs["create_time"] = current_timestamp()
-        kwargs["create_date"] = datetime_format(datetime.now())
-        kwargs["update_time"] = current_timestamp()
-        kwargs["update_date"] = datetime_format(datetime.now())
+        current_ts = current_timestamp()
+        current_date = datetime_format(datetime.now())
+
+        kwargs["create_time"] = current_ts
+        kwargs["create_date"] = current_date
+        kwargs["update_time"] = current_ts
+        kwargs["update_date"] = current_date
         obj = cls.model(**kwargs).save(force_insert=True)
         return obj
 
@@ -107,6 +142,30 @@ class UserService(CommonService):
                 user_dict["update_date"] = datetime_format(datetime.now())
                 cls.model.update(user_dict).where(
                     cls.model.id == user_id).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def update_user_password(cls, user_id, new_password):
+        with DB.atomic():
+            update_dict = {
+                "password": generate_password_hash(str(new_password)),
+                "update_time": current_timestamp(),
+                "update_date": datetime_format(datetime.now())
+            }
+            cls.model.update(update_dict).where(cls.model.id == user_id).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def is_admin(cls, user_id):
+        return cls.model.select().where(
+            cls.model.id == user_id,
+            cls.model.is_superuser == 1).count() > 0
+
+    @classmethod
+    @DB.connection_context()
+    def get_all_users(cls):
+        users = cls.model.select().order_by(cls.model.email)
+        return list(users)
 
 
 class TenantService(CommonService):
@@ -164,8 +223,8 @@ class TenantService(CommonService):
     @classmethod
     @DB.connection_context()
     def user_gateway(cls, tenant_id):
-        hashobj = hashlib.sha256(tenant_id.encode("utf-8"))
-        return int(hashobj.hexdigest(), 16)%len(MINIO)
+        hash_obj = hashlib.sha256(tenant_id.encode("utf-8"))
+        return int(hash_obj.hexdigest(), 16)%len(settings.MINIO)
 
 
 class UserTenantService(CommonService):
@@ -232,6 +291,17 @@ class UserTenantService(CommonService):
         return list(cls.model.select(*fields)
                     .join(User, on=((cls.model.tenant_id == User.id) & (UserTenant.user_id == user_id) & (UserTenant.status == StatusEnum.VALID.value)))
                     .where(cls.model.status == StatusEnum.VALID.value).dicts())
+
+    @classmethod
+    @DB.connection_context()
+    def get_user_tenant_relation_by_user_id(cls, user_id):
+        fields = [
+            cls.model.id,
+            cls.model.user_id,
+            cls.model.tenant_id,
+            cls.model.role
+        ]
+        return list(cls.model.select(*fields).where(cls.model.user_id == user_id).dicts().dicts())
 
     @classmethod
     @DB.connection_context()
