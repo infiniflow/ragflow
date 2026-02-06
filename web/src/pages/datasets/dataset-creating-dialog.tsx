@@ -3,6 +3,7 @@ import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -168,6 +169,7 @@ export function DatasetCreatingDialog({
         <DialogHeader>
           <DialogTitle>{t('knowledgeList.createKnowledgeBase')}</DialogTitle>
         </DialogHeader>
+        <DialogDescription></DialogDescription>
         <InputForm onOk={onOk}></InputForm>
         <DialogFooter>
           <ButtonLoading type="submit" form={FormId} loading={loading}>
