@@ -48,12 +48,21 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y libatk-bridge2.0-0 && \
     apt install -y libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev && \
     apt install -y libjemalloc-dev && \
-    apt install -y nginx unzip curl wget git vim less && \
+    apt install -y gnupg unzip curl wget git vim less && \
     apt install -y ghostscript && \
     apt install -y pandoc && \
     apt install -y texlive && \
     apt install -y fonts-freefont-ttf fonts-noto-cjk && \
     apt install -y postgresql-client
+
+ARG NGINX_VERSION=1.29.5-1~noble
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/keyrings/nginx-archive-keyring.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/nginx-archive-keyring.gpg] https://nginx.org/packages/mainline/ubuntu/ noble nginx" > /etc/apt/sources.list.d/nginx.list && \
+    apt update && \
+    apt install -y nginx=${NGINX_VERSION} && \
+    apt-mark hold nginx
 
 # Install uv
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
