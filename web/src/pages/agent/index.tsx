@@ -110,7 +110,7 @@ export default function Agent() {
 
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
-  const { navigateToAgentLogs } = useNavigatePage();
+  const { navigateToAgentLogs, navigateToAgentExplore } = useNavigatePage();
   const time = useWatchAgentChange(chatDrawerVisible);
   const isWebhookMode = useIsWebhookMode();
 
@@ -257,6 +257,13 @@ export default function Agent() {
               {t('flow.log')}
             </Button>
           )}
+          {/* <Button
+            variant={'secondary'}
+            onClick={navigateToAgentExplore(id as string)}
+          >
+            <Compass />
+            {t('explore.title')}
+          </Button> */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant={'secondary'}>
