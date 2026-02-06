@@ -163,4 +163,8 @@ export function createAgentSession({ id, name }: { id: string; name: string }) {
   return request.put(api.fetchAgentLogs(id), { data: { name } });
 }
 
+export const deleteAgentSession = (canvasId: string, sessionId: string) => {
+  return request.delete(api.fetchAgentLogsById(canvasId, sessionId));
+};
+
 export default agentService;

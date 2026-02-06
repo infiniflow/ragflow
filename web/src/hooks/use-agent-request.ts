@@ -27,6 +27,7 @@ import { IInputs } from '@/pages/agent/interface';
 import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
 import agentService, {
   createAgentSession,
+  deleteAgentSession,
   fetchAgentLogsByCanvasId,
   fetchAgentLogsById,
   fetchPipeLineList,
@@ -73,6 +74,7 @@ export const enum AgentApiAction {
   FetchSessionsByCanvasId = 'fetchSessionsByCanvasId',
   FetchSessionById = 'fetchSessionById',
   CreateAgentSession = 'createAgentSession',
+  DeleteAgentSession = 'deleteAgentSession',
 }
 
 export const EmptyDsl = {
@@ -987,4 +989,35 @@ export function useCreateAgentSession() {
   });
 
   return { data, loading, createAgentSession: mutateAsync };
+}
+
+export function useDeleteAgentSession() {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.DeleteAgentSession],
+    mutationFn: async ({
+      canvasId,
+      sessionId,
+    }: {
+      canvasId: string;
+      sessionId: string;
+    }) => {
+      const { data } = await deleteAgentSession(canvasId, sessionId);
+
+      if (data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: [AgentApiAction.FetchSessionsByCanvasId],
+        });
+      }
+
+      return data?.code ?? -1;
+    },
+  });
+
+  return { data, loading, deleteAgentSession: mutateAsync };
 }

@@ -52,11 +52,7 @@ export function SessionList({
             session={session}
             selected={session.id === selectedSessionId}
             onClick={() => onSelectSession(session.id, session.is_new)}
-            onRemove={
-              session.is_new
-                ? () => removeTemporarySession(session.id)
-                : undefined
-            }
+            removeTemporarySession={removeTemporarySession}
           />
         ))}
         {!loading && filteredData.length === 0 && (

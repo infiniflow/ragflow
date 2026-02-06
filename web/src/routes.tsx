@@ -254,12 +254,7 @@ const routeConfig = [
     Component: lazy(() => import('@/pages/agents/agent-templates')),
     errorElement: <FallbackComponent />,
   },
-  {
-    path: `${Routes.Explore}/:id`,
-    layout: false,
-    Component: lazy(() => import('@/pages/explore')),
-    errorElement: <FallbackComponent />,
-  },
+
   {
     path: Routes.Files,
     layout: false,
