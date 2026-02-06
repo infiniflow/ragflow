@@ -18,14 +18,39 @@ const removeKnowledgeParameter = (parameters?: Parameter[]) => {
   return parameters.filter((parameter) => parameter?.key !== KNOWLEDGE_KEY);
 };
 
+const ensureKnowledgeParameter = (parameters?: Parameter[]): Parameter[] => {
+  const list = Array.isArray(parameters) ? parameters : [];
+  if (list.some((p) => p?.key === KNOWLEDGE_KEY)) {
+    return list;
+  }
+  return [...list, { key: KNOWLEDGE_KEY, optional: false }];
+};
+
+const ensureKnowledgePlaceholder = (system?: string): string => {
+  if (!system || system.includes(KNOWLEDGE_PLACEHOLDER)) {
+    return system ?? KNOWLEDGE_PLACEHOLDER;
+  }
+  return `${system.trim()}\n\n${KNOWLEDGE_PLACEHOLDER}`;
+};
+
+/**
+ * Synchronises the prompt config with the current knowledge-base state:
+ * - KB present  -> ensure {knowledge} placeholder + parameter exist
+ * - KB absent   -> strip {knowledge} placeholder + parameter
+ */
 export const sanitizePromptConfigForKnowledge = (
   promptConfig: PromptConfig,
   kbIds?: string[],
 ): PromptConfig => {
   const hasKb = Array.isArray(kbIds) && kbIds.length > 0;
   const hasTavilyKey = Boolean(promptConfig.tavily_api_key?.trim());
+
   if (hasKb || hasTavilyKey) {
-    return promptConfig;
+    return {
+      ...promptConfig,
+      system: ensureKnowledgePlaceholder(promptConfig.system),
+      parameters: ensureKnowledgeParameter(promptConfig.parameters),
+    };
   }
 
   const nextSystem = promptConfig.system?.includes(KNOWLEDGE_PLACEHOLDER)

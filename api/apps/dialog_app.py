@@ -75,11 +75,17 @@ async def set_dialog():
     kb_ids = req.get("kb_ids", [])
     parameters = prompt_config.get("parameters")
     logging.debug(f"set_dialog: kb_ids={kb_ids}, parameters={parameters}, is_create={not is_create}")
-    # Check if parameters is missing, None, or empty list
+
+    # When datasets are configured, ensure {knowledge} placeholder is present in the
+    # system prompt so retrieval results are automatically cited in responses.
+    if kb_ids and "{knowledge}" not in prompt_config.get("system", ""):
+        system = prompt_config.get("system", "")
+        prompt_config["system"] = f"{system}\n\n{{knowledge}}" if system.strip() else "{knowledge}"
+        logging.debug(f"Auto-injected {{knowledge}} placeholder for datasets: {kb_ids}")
+
+    # Ensure the "knowledge" parameter entry exists when {knowledge} is referenced
     if kb_ids and not parameters:
-        # Check if system prompt uses {knowledge} placeholder
         if "{knowledge}" in prompt_config.get("system", ""):
-            # Set default parameters for any dataset with knowledge placeholder
             prompt_config["parameters"] = [{"key": "knowledge", "optional": False}]
             logging.debug(f"Set default parameters for datasets with knowledge placeholder: {kb_ids}")
 
