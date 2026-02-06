@@ -67,25 +67,25 @@ func TestSynsets(t *testing.T) {
 		minSynsets int
 		checkNames []string
 	}{
-		// 基础名词
+		// Basic nouns
 		{"dog", "", 1, []string{"dog.n.01"}},
 		{"dog", NOUN, 1, []string{"dog.n.01"}},
 		{"entity", NOUN, 1, []string{"entity.n.01"}},
 		{"computer", NOUN, 1, nil},
-		// 基础动词
+		// Basic verbs
 		{"run", VERB, 1, nil},
 		{"walk", VERB, 1, nil},
-		// 基础形容词/副词
+		// Basic adjectives/adverbs
 		{"good", ADJ, 1, nil},
 		{"quickly", ADV, 1, nil},
-		// 边缘情况：多词词组
+		// Edge case: multi-word phrases
 		{"physical_entity", NOUN, 1, nil},
 		{"hot_dog", NOUN, 1, nil},
-		// 边缘情况：罕见词
+		// Edge case: rare words
 		{"aardvark", NOUN, 1, nil},
-		// 边缘情况：大写输入（应转为小写）
+		// Edge case: uppercase input (should be converted to lowercase)
 		{"DOG", NOUN, 1, []string{"dog.n.01"}},
-		// 边缘情况：不存在词
+		// Edge case: non-existent words
 		{"xyznonexistent", "", 0, nil},
 	}
 
