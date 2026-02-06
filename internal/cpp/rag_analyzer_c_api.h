@@ -79,6 +79,11 @@ RAGTokenList* RAGAnalyzer_TokenizeWithPosition(RAGAnalyzerHandle handle, const c
 // Free a token list allocated by RAGAnalyzer_TokenizeWithPosition
 void RAGAnalyzer_FreeTokenList(RAGTokenList* token_list);
 
+// Fine-grained tokenize: takes space-separated tokens and returns fine-grained tokens as space-separated string
+// Caller is responsible for freeing the returned string
+// Returns: dynamically allocated string (must call free()), or NULL on failure
+char* RAGAnalyzer_FineGrainedTokenize(RAGAnalyzerHandle handle, const char* tokens);
+
 #ifdef __cplusplus
 }
 #endif

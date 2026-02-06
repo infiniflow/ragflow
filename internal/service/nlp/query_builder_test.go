@@ -224,12 +224,13 @@ func TestQueryBuilder_Traditional2Simplified(t *testing.T) {
 func TestQueryBuilder_Question(t *testing.T) {
 	qb := NewQueryBuilder()
 	tests := []struct {
-		name      string
-		txt       string
-		tbl       string
-		minMatch  float64
-		expectNil bool
-		checkExpr func(*infinity.MatchTextExpr) bool
+		name         string
+		txt          string
+		tbl          string
+		minMatch     float64
+		expectNil    bool
+		checkExpr    func(*infinity.MatchTextExpr) bool
+		checkKeywords func([]string) bool
 	}{
 		{
 			name:     "Chinese text",
@@ -237,7 +238,12 @@ func TestQueryBuilder_Question(t *testing.T) {
 			tbl:      "test",
 			minMatch: 0.5,
 			checkExpr: func(expr *infinity.MatchTextExpr) bool {
-				return expr != nil && expr.MatchingText == "请问如何安装软件"
+				// Should return a valid query expression with processed text
+				return expr != nil && expr.MatchingText != ""
+			},
+			checkKeywords: func(keywords []string) bool {
+				// Should return extracted keywords
+				return len(keywords) > 0
 			},
 		},
 		{
@@ -246,7 +252,12 @@ func TestQueryBuilder_Question(t *testing.T) {
 			tbl:      "test",
 			minMatch: 0.5,
 			checkExpr: func(expr *infinity.MatchTextExpr) bool {
-				return expr != nil && expr.MatchingText == "How to install software"
+				// Should return a valid query expression with processed text
+				return expr != nil && expr.MatchingText != ""
+			},
+			checkKeywords: func(keywords []string) bool {
+				// Should return extracted keywords
+				return len(keywords) > 0
 			},
 		},
 		{
@@ -255,7 +266,12 @@ func TestQueryBuilder_Question(t *testing.T) {
 			tbl:      "test",
 			minMatch: 0.5,
 			checkExpr: func(expr *infinity.MatchTextExpr) bool {
-				return expr != nil && expr.MatchingText == "hello世界"
+				// Should return a valid query expression with processed text
+				return expr != nil && expr.MatchingText != ""
+			},
+			checkKeywords: func(keywords []string) bool {
+				// Should return extracted keywords
+				return len(keywords) > 0
 			},
 		},
 		{
@@ -263,8 +279,12 @@ func TestQueryBuilder_Question(t *testing.T) {
 			txt:      "",
 			tbl:      "test",
 			minMatch: 0.5,
+			expectNil: true,
 			checkExpr: func(expr *infinity.MatchTextExpr) bool {
-				return expr != nil && expr.MatchingText == ""
+				return expr == nil
+			},
+			checkKeywords: func(keywords []string) bool {
+				return len(keywords) == 0
 			},
 		},
 	}
@@ -280,9 +300,8 @@ func TestQueryBuilder_Question(t *testing.T) {
 			if expr != nil && !tt.checkExpr(expr) {
 				t.Errorf("Question(%q) expr check failed, got %+v", tt.txt, expr)
 			}
-			// Keywords currently always empty slice
-			if keywords != nil && len(keywords) != 0 {
-				t.Errorf("Question(%q) keywords not empty: %v", tt.txt, keywords)
+			if tt.checkKeywords != nil && !tt.checkKeywords(keywords) {
+				t.Errorf("Question(%q) keywords check failed, got %v", tt.txt, keywords)
 			}
 		})
 	}

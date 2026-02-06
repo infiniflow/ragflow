@@ -161,4 +161,27 @@ uint32_t RAGToken_GetEndOffset(void* token) {
     return t->end_offset;
 }
 
+char* RAGAnalyzer_FineGrainedTokenize(RAGAnalyzerHandle handle, const char* tokens) {
+    if (!handle || !tokens) return nullptr;
+
+    RAGAnalyzer* analyzer = static_cast<RAGAnalyzer*>(handle);
+
+    std::vector<std::string> result;
+    analyzer->FineGrainedTokenize(std::string(tokens), result);
+
+    // Join results with space
+    std::string result_str;
+    for (size_t i = 0; i < result.size(); ++i) {
+        if (i > 0) result_str += " ";
+        result_str += result[i];
+    }
+
+    // Allocate memory for C string
+    char* c_result = static_cast<char*>(malloc(result_str.size() + 1));
+    if (c_result) {
+        std::memcpy(c_result, result_str.c_str(), result_str.size() + 1);
+    }
+    return c_result;
+}
+
 } // extern "C"

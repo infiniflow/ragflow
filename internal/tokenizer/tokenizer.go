@@ -98,6 +98,16 @@ func SetFineGrained(fineGrained bool) {
 	}
 }
 
+// FineGrainedTokenize performs fine-grained tokenization on space-separated tokens
+// Input: space-separated tokens (e.g., "hello world 测试")
+// Output: space-separated fine-grained tokens (e.g., "hello world 测 试")
+func FineGrainedTokenize(tokens string) (string, error) {
+	if globalAnalyzer == nil {
+		return "", fmt.Errorf("tokenizer not initialized")
+	}
+	return globalAnalyzer.FineGrainedTokenize(tokens)
+}
+
 // SetEnablePosition sets whether to enable position tracking
 func SetEnablePosition(enablePosition bool) {
 	if globalAnalyzer != nil {

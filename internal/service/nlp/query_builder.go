@@ -17,6 +17,7 @@ package nlp
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"ragflow/internal/engine/infinity"
@@ -29,6 +30,7 @@ import (
 type QueryBuilder struct {
 	queryFields []string
 	tw          *TermWeightDealer
+	syn         *Synonym
 }
 
 // NewQueryBuilder creates a new QueryBuilder with default query fields.
@@ -43,7 +45,8 @@ func NewQueryBuilder() *QueryBuilder {
 			"content_ltks^2",
 			"content_sm_ltks",
 		},
-		tw: NewTermWeightDealer(""),
+		tw:  NewTermWeightDealer(""),
+		syn: NewSynonym(nil, ""),
 	}
 }
 
@@ -142,6 +145,18 @@ func (qb *QueryBuilder) StrFullWidth2HalfWidth(ustring string) string {
 // Uses gojianfan library which provides conversion similar to Python's HanziConv.
 func (qb *QueryBuilder) Traditional2Simplified(line string) string {
 	return gojianfan.T2S(line)
+}
+
+// NeedFineGrainedTokenize determines if fine-grained tokenization is needed for a token.
+// Reference: rag/nlp/query.py L88-93
+func (qb *QueryBuilder) NeedFineGrainedTokenize(tk string) bool {
+	if len(tk) < 3 {
+		return false
+	}
+	if matched, _ := regexp.MatchString(`^[0-9a-z\.\+#_\*-]+$`, tk); matched {
+		return false
+	}
+	return true
 }
 
 // Question builds a full-text query expression based on input text.
@@ -273,13 +288,203 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			},
 		}, keywords
 	}
-	// Chinese processing (simplified)
-	// Could also be extended
-	return &infinity.MatchTextExpr{
-		Fields:       qb.queryFields,
-		MatchingText: originalQuery,
-		TopN:         100,
-	}, []string{}
+	// Chinese processing
+	// Reference: rag/nlp/query.py L88-172
+
+	// Save original text before removing stop words (for fallback)
+	otxt := txt
+
+	// Remove stop words
+	txt = qb.RmWWW(txt)
+
+	var qs []string
+	var keywords []string
+
+	// Split text and process each segment (limit to 256)
+	tts := qb.tw.Split(txt)
+	if len(tts) > 256 {
+		tts = tts[:256]
+	}
+
+	for _, tt := range tts {
+		if tt == "" {
+			continue
+		}
+		keywords = append(keywords, tt)
+
+		// Get term weights
+		twts := qb.tw.Weights([]string{tt}, true)
+
+		// Lookup synonyms
+		syns := qb.syn.Lookup(tt, 8)
+		if len(syns) > 0 && len(keywords) < 32 {
+			keywords = append(keywords, syns...)
+		}
+
+		// Sort by weight descending
+		sort.Slice(twts, func(i, j int) bool {
+			return twts[i].Weight > twts[j].Weight
+		})
+
+		var tms []struct {
+			tk string
+			w  float64
+		}
+
+		for _, tw := range twts {
+			tk := tw.Term
+			w := tw.Weight
+
+			// Fine-grained tokenization if needed
+			var sm []string
+			if qb.NeedFineGrainedTokenize(tk) {
+				fineGrained, err := tokenizer.FineGrainedTokenize(tk)
+				if err == nil && fineGrained != "" {
+					sm = strings.Fields(fineGrained)
+				}
+			}
+
+			// Clean special characters from sm
+			var cleanSm []string
+			specialCharRe := regexp.MustCompile(`[,\.\/;'\[\]\\\` + "`" + `~!@#$%\^&\*\(\)=\+_<>\?:"\{\}\|，。；'‘’【】、！￥……（）——《》？："""-]+`)
+			for _, m := range sm {
+				m = specialCharRe.ReplaceAllString(m, "")
+				m = qb.SubSpecialChar(m)
+				if len(m) > 1 {
+					cleanSm = append(cleanSm, m)
+				}
+			}
+			sm = cleanSm
+
+			// Add to keywords if under limit
+			if len(keywords) < 32 {
+				cleanTk := regexp.MustCompile(`[ \"']+`).ReplaceAllString(tk, "")
+				if cleanTk != "" {
+					keywords = append(keywords, cleanTk)
+				}
+				keywords = append(keywords, sm...)
+			}
+
+		// Lookup synonyms for this token
+		tkSyns := qb.syn.Lookup(tk, 8)
+		for i, s := range tkSyns {
+			tkSyns[i] = qb.SubSpecialChar(s)
+		}
+			if len(keywords) < 32 {
+				for _, s := range tkSyns {
+					if s != "" {
+						keywords = append(keywords, s)
+					}
+				}
+			}
+
+			// Fine-grained tokenize synonyms
+			var fineGrainedSyns []string
+			for _, s := range tkSyns {
+				if s == "" {
+					continue
+				}
+				fg, err := tokenizer.FineGrainedTokenize(s)
+				if err == nil && fg != "" {
+					// Quote if contains space
+					if strings.Contains(fg, " ") {
+						fg = fmt.Sprintf(`"%s"`, fg)
+					}
+					fineGrainedSyns = append(fineGrainedSyns, fg)
+				}
+			}
+
+			if len(keywords) >= 32 {
+				break
+			}
+
+			// Clean token for query
+			tk = qb.SubSpecialChar(tk)
+			if tk == "" {
+				continue
+			}
+
+			// Quote if contains space
+			if strings.Contains(tk, " ") {
+				tk = fmt.Sprintf(`"%s"`, tk)
+			}
+
+			// Build query part with synonyms
+			if len(fineGrainedSyns) > 0 {
+				tk = fmt.Sprintf("(%s OR (%s)^0.2)", tk, strings.Join(fineGrainedSyns, " "))
+			}
+			if len(sm) > 0 {
+				smStr := strings.Join(sm, " ")
+				tk = fmt.Sprintf(`%s OR "%s" OR ("%s"~2)^0.5`, tk, smStr, smStr)
+			}
+
+			tms = append(tms, struct {
+				tk string
+				w  float64
+			}{tk, w})
+		}
+
+		// Build query string for this segment
+		var tmsParts []string
+		for _, tw := range tms {
+			tmsParts = append(tmsParts, fmt.Sprintf("(%s)^%.4f", tw.tk, tw.w))
+		}
+		tmsStr := strings.Join(tmsParts, " ")
+
+		// Add proximity query if multiple tokens
+		if len(twts) > 1 {
+			tokenized, _ := tokenizer.Tokenize(tt)
+			if tokenized != "" {
+				tmsStr += fmt.Sprintf(` ("%s"~2)^1.5`, tokenized)
+			}
+		}
+
+		// Add segment-level synonyms
+		if len(syns) > 0 && tmsStr != "" {
+			var synParts []string
+			for _, s := range syns {
+				s = qb.SubSpecialChar(s)
+				if s != "" {
+					tokenized, _ := tokenizer.Tokenize(s)
+					if tokenized != "" {
+						synParts = append(synParts, fmt.Sprintf(`"%s"`, tokenized))
+					}
+				}
+			}
+			if len(synParts) > 0 {
+				tmsStr = fmt.Sprintf("(%s)^5 OR (%s)^0.7", tmsStr, strings.Join(synParts, " OR "))
+			}
+		}
+
+		if tmsStr != "" {
+			qs = append(qs, tmsStr)
+		}
+	}
+
+	// Build final query
+	if len(qs) > 0 {
+		var queryParts []string
+		for _, q := range qs {
+			if q != "" {
+				queryParts = append(queryParts, fmt.Sprintf("(%s)", q))
+			}
+		}
+		query := strings.Join(queryParts, " OR ")
+		if query == "" {
+			query = otxt
+		}
+		return &infinity.MatchTextExpr{
+			Fields:       qb.queryFields,
+			MatchingText: query,
+			TopN:         100,
+			ExtraOptions: map[string]interface{}{
+				"minimum_should_match": minMatch,
+				"original_query":       originalQuery,
+			},
+		}, keywords
+	}
+
+	return nil, keywords
 }
 
 // Paragraph builds a query expression based on content terms and keywords.

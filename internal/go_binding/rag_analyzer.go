@@ -179,3 +179,23 @@ func (a *Analyzer) Close() {
 		a.handle = nil
 	}
 }
+
+// FineGrainedTokenize performs fine-grained tokenization on space-separated tokens
+// Input: space-separated tokens (e.g., "hello world 测试")
+// Output: space-separated fine-grained tokens (e.g., "hello world 测 试")
+func (a *Analyzer) FineGrainedTokenize(tokens string) (string, error) {
+	if a.handle == nil {
+		return "", fmt.Errorf("analyzer is not initialized")
+	}
+
+	cTokens := C.CString(tokens)
+	defer C.free(unsafe.Pointer(cTokens))
+
+	cResult := C.RAGAnalyzer_FineGrainedTokenize(a.handle, cTokens)
+	if cResult == nil {
+		return "", fmt.Errorf("fine-grained tokenize failed")
+	}
+	defer C.free(unsafe.Pointer(cResult))
+
+	return C.GoString(cResult), nil
+}
