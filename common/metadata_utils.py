@@ -138,20 +138,24 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
                 ids.extend(docids)
         return ids
 
-    for k, v2docs in metas.items():
-        for f in filters:
-            if k != f["key"]:
-                continue
+    for f in filters:
+        k = f["key"]
+        if k not in metas:
+            # Key not found in metas: treat as no match
+            ids = []
+        else:
+            v2docs = metas[k]
             ids = filter_out(v2docs, f["op"], f["value"])
-            if not doc_ids:
-                doc_ids = set(ids)
+
+        if not doc_ids:
+            doc_ids = set(ids)
+        else:
+            if logic == "and":
+                doc_ids = doc_ids & set(ids)
+                if not doc_ids:
+                    return []
             else:
-                if logic == "and":
-                    doc_ids = doc_ids & set(ids)
-                    if not doc_ids:
-                        return []
-                else:
-                    doc_ids = doc_ids | set(ids)
+                doc_ids = doc_ids | set(ids)
     return list(doc_ids)
 
 
