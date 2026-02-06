@@ -166,20 +166,14 @@ async def async_request(
                 if attempt >= retries:
                     if not _is_sensitive_url(url):
                         log_url = _redact_sensitive_url_params(url)
-                        logger.warning(f"async_request exhausted retries for {method}")
+                        logger.warning(f"async_request exhausted retries for {method} {log_url}")
                     raise
                 delay = _get_delay(backoff_factor, attempt)
                 if not _is_sensitive_url(url):
                     log_url = _redact_sensitive_url_params(url)
                     logger.warning(
-                        f"async_request attempt {attempt + 1}/{retries + 1} failed for {method}; retrying in {delay:.2f}s"
+                        f"async_request attempt {attempt + 1}/{retries + 1} failed for {method} {log_url}; retrying in {delay:.2f}s"
                     )
-                    raise
-                delay = _get_delay(backoff_factor, attempt)
-                # Avoid including the (potentially sensitive) URL in retry logs.
-                logger.warning(
-                    f"async_request attempt {attempt + 1}/{retries + 1} failed for {method}; retrying in {delay:.2f}s"
-                )
                 await asyncio.sleep(delay)
         raise last_exc  # pragma: no cover
 
