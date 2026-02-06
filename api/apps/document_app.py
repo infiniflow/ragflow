@@ -617,7 +617,9 @@ async def run():
                     return get_data_error_result(message="Document not found!")
 
                 if str(req["run"]) == TaskStatus.CANCEL.value:
-                    if str(doc.run) == TaskStatus.RUNNING.value:
+                    tasks = list(TaskService.query(doc_id=id))
+                    has_unfinished_task = any((task.progress or 0) < 1 for task in tasks)
+                    if str(doc.run) in [TaskStatus.RUNNING.value, TaskStatus.CANCEL.value] or has_unfinished_task:
                         cancel_all_task_of(id)
                     else:
                         return get_data_error_result(message="Cannot cancel a task that is not in RUNNING status")
