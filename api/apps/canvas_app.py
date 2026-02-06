@@ -633,7 +633,7 @@ def get_session(canvas_id, session_id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
-    conv = API4ConversationService.get_by_id(session_id)
+    _, conv = API4ConversationService.get_by_id(session_id)
     return get_json_result(data=conv.to_dict())
     
 
