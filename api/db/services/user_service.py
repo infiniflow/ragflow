@@ -229,7 +229,7 @@ class TenantService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_null_tenant_model_id_rows(cls):
-        objs = cls.model.select().where(cls.model.tenant_llm_id.is_null() or cls.model.tenant_embd_id.is_null() or cls.model.tenant_asr_id.is_null() or cls.model.tenant_tts_id.is_null() or cls.model.tenant_rerank_id.is_null() or cls.model.tenant_img2txt_id.is_null())
+        objs = cls.model.select().orwhere(cls.model.tenant_llm_id.is_null(), cls.model.tenant_embd_id.is_null(), cls.model.tenant_asr_id.is_null(), cls.model.tenant_tts_id.is_null(), cls.model.tenant_rerank_id.is_null(), cls.model.tenant_img2txt_id.is_null())
         return list(objs)
 
 
