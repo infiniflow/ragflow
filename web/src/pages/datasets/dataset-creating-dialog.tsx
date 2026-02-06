@@ -155,7 +155,16 @@ export function DatasetCreatingDialog({
 
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent className="sm:max-w-[425px] focus-visible:!outline-none flex flex-col">
+      <DialogContent
+        className="sm:max-w-[425px] focus-visible:!outline-none flex flex-col"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            const form = document.getElementById(FormId) as HTMLFormElement;
+            form?.requestSubmit();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{t('knowledgeList.createKnowledgeBase')}</DialogTitle>
         </DialogHeader>
