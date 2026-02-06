@@ -19,13 +19,12 @@ import pytest
 import requests
 
 from common import settings
-from configs import EMAIL, HOST_ADDRESS, VERSION
-from conftest import ADMIN_HOST_ADDRESS, ENCRYPTED_ADMIN_PASSWORD, change_user_activation, create_user, delete_user, generate_user_api_key
+from configs import HOST_ADDRESS, VERSION
+from conftest import ENCRYPTED_ADMIN_PASSWORD, change_user_activation, create_user, delete_user, generate_user_api_key
 from utils.file_utils import create_txt_file
 
 
 class TestUserDeletion:
-
     @pytest.mark.p2
     @pytest.mark.usefixtures("init_storage")
     def test_delete_user_removes_storage_files(self, admin_session, tmp_path):
@@ -64,7 +63,6 @@ class TestUserDeletion:
                 change_user_activation(admin_session, username_2, False)
                 delete_user(admin_session, username_2)
 
-
     @staticmethod
     def _create_user_with_data(admin_session, tmp_path) -> tuple[str, dict[str, str], str, str]:
         # create user
@@ -77,7 +75,7 @@ class TestUserDeletion:
         assert generate_token_response["code"] == 0, generate_token_response
         assert isinstance(generate_token_response["data"], dict), generate_token_response
         assert generate_token_response["data"].get("token"), generate_token_response
-        auth_header: dict[str, str] = {"Authorization": f"Bearer {generate_token_response["data"]["token"]}"}
+        auth_header: dict[str, str] = {"Authorization": f"Bearer {generate_token_response['data']['token']}"}
 
         # create a dataset
         create_dataset_response = requests.post(

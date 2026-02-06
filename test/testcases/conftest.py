@@ -155,6 +155,7 @@ def set_tenant_info(auth):
     if res.get("code") != 0:
         raise Exception(res.get("message"))
 
+
 @pytest.fixture(scope="session")
 def init_storage() -> None:
     orig_sys_path = sys.path
@@ -163,12 +164,13 @@ def init_storage() -> None:
         if "common" in sys.modules:
             del sys.modules["common"]
         from common import settings, config_utils, constants
+
         if settings.STORAGE_IMPL:
             return
 
-        if settings.STORAGE_IMPL_TYPE == 'AWS_S3':
+        if settings.STORAGE_IMPL_TYPE == "AWS_S3":
             settings.S3 = config_utils.get_base_config("s3", {})
-        elif settings.STORAGE_IMPL_TYPE == 'MINIO':
+        elif settings.STORAGE_IMPL_TYPE == "MINIO":
             settings.MINIO = config_utils.decrypt_database_config(name="minio")
         else:
             return
