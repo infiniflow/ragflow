@@ -35,6 +35,7 @@ export default {
       pleaseInput: '請輸入',
       submit: '提交',
       embedIntoSite: '嵌入網站',
+      openInNewTab: '在新標籤頁中開啟',
       previousPage: '上一頁',
       nextPage: '下一頁',
       add: '添加',
@@ -370,7 +371,8 @@ export default {
       paddleocrOptions: 'PaddleOCR 選項',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'PaddleOCR 服務的 API 端點 URL',
-      paddleocrApiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
+      paddleocrApiUrlPlaceholder:
+        '例如：https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio 訪問令牌',
       paddleocrAccessTokenTip: 'PaddleOCR API 的訪問令牌（可選）',
       paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可選）',
@@ -664,7 +666,7 @@ export default {
         selectAlgorithm: '選擇演算法',
         modelNamePlaceholder: '例如：paddleocr-from-env-1',
         modelNameRequired: '模型名稱為必填項目',
-        apiUrlRequired: 'PaddleOCR API URL 為必填項目'
+        apiUrlRequired: 'PaddleOCR API URL 為必填項目',
       },
       ollamaLink: '如何集成 {{name}}',
       FishAudioLink: '如何使用Fish Audio',

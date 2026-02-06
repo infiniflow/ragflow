@@ -35,6 +35,7 @@ export default {
       pleaseInput: 'Por favor, insira',
       submit: 'Enviar',
       embedIntoSite: 'Incorporar no site',
+      openInNewTab: 'Abrir em nova aba',
       previousPage: 'Anterior',
       nextPage: 'Próxima',
     },
@@ -315,10 +316,12 @@ export default {
       paddleocrApiUrlTip: 'A URL do endpoint da API para o serviço PaddleOCR',
       paddleocrApiUrlPlaceholder: 'ex: https://servidor-paddleocr.com/api',
       paddleocrAccessToken: 'Token de Acesso do AI Studio',
-      paddleocrAccessTokenTip: 'Token de acesso para a API do PaddleOCR (opcional)',
+      paddleocrAccessTokenTip:
+        'Token de acesso para a API do PaddleOCR (opcional)',
       paddleocrAccessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
       paddleocrAlgorithm: 'Algoritmo do PaddleOCR',
-      paddleocrAlgorithmTip: 'Algoritmo a ser usado para a análise do PaddleOCR',
+      paddleocrAlgorithmTip:
+        'Algoritmo a ser usado para a análise do PaddleOCR',
       paddleocrSelectAlgorithm: 'Selecionar algoritmo',
       paddleocrModelNamePlaceholder: 'ex: paddleocr-do-ambiente-1',
     },
@@ -559,14 +562,15 @@ export default {
       baseUrlNameMessage: 'Por favor, insira sua URL base!',
       paddleocr: {
         apiUrl: 'URL da API do PaddleOCR',
-        apiUrlPlaceholder: 'Por exemplo: https://paddleocr-server.com/layout-parsing',
+        apiUrlPlaceholder:
+          'Por exemplo: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token de acesso do AI Studio',
         accessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
         algorithm: 'Algoritmo do PaddleOCR',
         selectAlgorithm: 'Selecionar algoritmo',
         modelNamePlaceholder: 'Por exemplo: paddleocr-from-env-1',
         modelNameRequired: 'O nome do modelo é obrigatório',
-        apiUrlRequired: 'A URL da API do PaddleOCR é obrigatória'
+        apiUrlRequired: 'A URL da API do PaddleOCR é obrigatória',
       },
       vision: 'Suporta visão?',
       ollamaLink: 'Como integrar {{name}}',

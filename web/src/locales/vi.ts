@@ -38,6 +38,7 @@ export default {
       spanish: 'Tiếng Tây Ban Nha',
       japanese: 'Tiếng Nhật',
       embedIntoSite: 'Nhúng vào trang web',
+      openInNewTab: 'Mở trong tab mới',
       nextPage: 'Tới',
       previousPage: 'Lùi',
     },
@@ -357,7 +358,8 @@ export default {
       paddleocrOptions: 'Tùy chọn PaddleOCR',
       paddleocrApiUrl: 'URL API PaddleOCR',
       paddleocrApiUrlTip: 'URL điểm cuối API của dịch vụ PaddleOCR',
-      paddleocrApiUrlPlaceholder: 'Ví dụ: https://paddleocr-server.com/layout-parsing',
+      paddleocrApiUrlPlaceholder:
+        'Ví dụ: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Token truy cập AI Studio',
       paddleocrAccessTokenTip: 'Token truy cập cho API PaddleOCR (tùy chọn)',
       paddleocrAccessTokenPlaceholder: 'Token AI Studio của bạn (tùy chọn)',
@@ -615,7 +617,7 @@ export default {
         selectAlgorithm: 'Chọn thuật toán',
         modelNamePlaceholder: 'Ví dụ: paddleocr-from-env-1',
         modelNameRequired: 'Tên mô hình là bắt buộc',
-        apiUrlRequired: 'URL API PaddleOCR là bắt buộc'
+        apiUrlRequired: 'URL API PaddleOCR là bắt buộc',
       },
       vision: 'Có hỗ trợ Tầm nhìn không?',
       ollamaLink: 'Cách tích hợp {{name}}',

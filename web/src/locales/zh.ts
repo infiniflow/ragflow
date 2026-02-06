@@ -44,6 +44,7 @@ export default {
       submit: '提交',
       clear: '清空',
       embedIntoSite: '嵌入网站',
+      openInNewTab: '在新标签页中打开',
       previousPage: '上一页',
       nextPage: '下一页',
       add: '添加',
@@ -393,7 +394,8 @@ export default {
       paddleocrOptions: 'PaddleOCR 选项',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'PaddleOCR 服务的 API 端点 URL',
-      paddleocrApiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
+      paddleocrApiUrlPlaceholder:
+        '例如：https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio 访问令牌',
       paddleocrAccessTokenTip: 'PaddleOCR API 的访问令牌（可选）',
       paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可选）',
@@ -1133,7 +1135,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         selectAlgorithm: '选择算法',
         modelNamePlaceholder: '例如：paddleocr-from-env-1',
         modelNameRequired: '模型名称为必填项',
-        apiUrlRequired: 'PaddleOCR API URL 为必填项'
+        apiUrlRequired: 'PaddleOCR API URL 为必填项',
       },
     },
     message: {

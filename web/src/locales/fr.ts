@@ -36,6 +36,7 @@ export default {
       pleaseInput: 'Veuillez saisir',
       submit: 'Soumettre',
       embedIntoSite: 'Intégrer dans la page web',
+      openInNewTab: 'Ouvrir dans un nouvel onglet',
       previousPage: 'Précédent',
       nextPage: 'Suivant',
       add: 'Ajouter',
@@ -295,8 +296,10 @@ export default {
         'Le document en cours d’analyse ne peut pas être supprimé',
       paddleocrOptions: 'Options PaddleOCR',
       paddleocrApiUrl: 'URL de l’API PaddleOCR',
-      paddleocrApiUrlTip: 'URL du point de terminaison de l’API du service PaddleOCR',
-      paddleocrApiUrlPlaceholder: 'Par exemple : https://paddleocr-server.com/layout-parsing',
+      paddleocrApiUrlTip:
+        'URL du point de terminaison de l’API du service PaddleOCR',
+      paddleocrApiUrlPlaceholder:
+        'Par exemple : https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Jeton d’accès AI Studio',
       paddleocrAccessTokenTip: 'Jeton d’accès à l’API PaddleOCR (optionnel)',
       paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio (optionnel)',
@@ -579,14 +582,15 @@ export default {
       baseUrlNameMessage: 'Veuillez saisir votre URL de base !',
       paddleocr: {
         apiUrl: 'URL de l’API PaddleOCR',
-        apiUrlPlaceholder: 'Par exemple : https://paddleocr-server.com/layout-parsing',
+        apiUrlPlaceholder:
+          'Par exemple : https://paddleocr-server.com/layout-parsing',
         accessToken: 'Jeton d’accès AI Studio',
         accessTokenPlaceholder: 'Votre jeton AI Studio (optionnel)',
         algorithm: 'Algorithme PaddleOCR',
         selectAlgorithm: 'Sélectionner un algorithme',
         modelNamePlaceholder: 'Par exemple : paddleocr-from-env-1',
         modelNameRequired: 'Le nom du modèle est obligatoire',
-        apiUrlRequired: 'L’URL de l’API PaddleOCR est obligatoire'
+        apiUrlRequired: 'L’URL de l’API PaddleOCR est obligatoire',
       },
       vision: 'Supporte-t-il la vision ?',
       ollamaLink: 'Comment intégrer {{name}}',

@@ -44,6 +44,7 @@ export default {
       submit: 'Отправить',
       clear: 'Очистить',
       embedIntoSite: 'Встроить на веб-страницу',
+      openInNewTab: 'Открыть в новой вкладке',
       previousPage: 'Назад',
       nextPage: 'Вперед',
       add: 'Добавить',
@@ -513,7 +514,8 @@ export default {
       paddleocrOptions: 'Параметры PaddleOCR',
       paddleocrApiUrl: 'URL API PaddleOCR',
       paddleocrApiUrlTip: 'URL конечной точки API сервиса PaddleOCR',
-      paddleocrApiUrlPlaceholder: 'Например: https://paddleocr-server.com/layout-parsing',
+      paddleocrApiUrlPlaceholder:
+        'Например: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Токен доступа AI Studio',
       paddleocrAccessTokenTip: 'Токен доступа к API PaddleOCR (необязательно)',
       paddleocrAccessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
@@ -1047,14 +1049,15 @@ export default {
       mcp: 'MCP',
       paddleocr: {
         apiUrl: 'URL API PaddleOCR',
-        apiUrlPlaceholder: 'Например: https://paddleocr-server.com/layout-parsing',
+        apiUrlPlaceholder:
+          'Например: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Токен доступа AI Studio',
         accessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
         algorithm: 'Алгоритм PaddleOCR',
         selectAlgorithm: 'Выбрать алгоритм',
         modelNamePlaceholder: 'Например: paddleocr-from-env-1',
         modelNameRequired: 'Имя модели является обязательным',
-        apiUrlRequired: 'URL API PaddleOCR является обязательным'
+        apiUrlRequired: 'URL API PaddleOCR является обязательным',
       },
     },
     message: {
