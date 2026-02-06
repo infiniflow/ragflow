@@ -56,6 +56,7 @@ export default {
       zendeskDescription: '连接 Zendesk，同步工单、文章及其他内容。',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
       selected: '已选择',
+      seeAll: '查看全部',
     },
     login: {
       loginTitle: '登录账户',
@@ -175,6 +176,7 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        selectFiles: '已选择 {{count}} 个文件',
         type: '类型',
         fieldNameInvalid: '字段名称只能包含字母或下划线。',
         builtIn: '内置',
@@ -192,10 +194,10 @@ export default {
         fieldExists: '字段名已存在。',
         fieldSetting: '字段设置',
         changesAffectNewParses: '更改仅影响新的解析。',
-        editMetadataForDataset: '查看和编辑元数据 ',
+        // editMetadataForDataset: '查看和编辑元数据 ',
         restrictDefinedValues: '限制为已定义的值',
         metadataGenerationSettings: '元数据生成设置',
-        manageMetadataForDataset: '管理此数据集的元数据',
+        // manageMetadataForDataset: '管理此数据集的元数据',
         manageMetadata: '管理元数据',
         metadata: '元数据',
         values: '值',
@@ -749,8 +751,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '与存在惩罚类似，这减少了模型频繁重复相同单词的倾向。',
       maxTokens: '最大token数',
       maxTokensMessage: '最大token数是必填项',
-      maxTokensTip:
-        '这设置了模型输出的最大长度，以标记（单词或单词片段）的数量来衡量。',
+      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       quote: '显示引文',
@@ -835,6 +836,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       deleteSelectedConfirm: '删除选中的 {count} 个会话？',
     },
     setting: {
+      Verify: '验证',
+      keyValid: '你的 API 密钥有效。',
+      keyInvalid: '你的 API 密钥无效。',
       deleteModel: '删除模型',
       modelEmptyTip: '暂无可用模型,<br>请先在右侧面板添加模型。',
       sourceEmptyTip: '暂未添加任何数据源，请从下方选择一个进行连接。',
@@ -934,8 +938,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       profileDescription: '在此更新您的照片和个人详细信息。',
       maxTokens: '最大token数',
       maxTokensMessage: '最大token数是必填项',
-      maxTokensTip:
-        '这设置了模型输出的最大长度，以标记（单词或单词片段）的数量来衡量。',
+      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       password: '密码',
@@ -1050,10 +1053,6 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       'eu-central-1': '欧洲 (法兰克福)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       'ap-southeast-2': '亚太地区 (悉尼)',
-      addHunyuanSID: '混元 Secret ID',
-      HunyuanSIDMessage: '请输入 Secret ID',
-      addHunyuanSK: '混元 Secret Key',
-      HunyuanSKMessage: '请输入 Secret Key',
       addTencentCloudSID: '腾讯云 Secret ID',
       TencentCloudSIDMessage: '请输入 Secret ID',
       addTencentCloudSK: '腾讯云 Secret Key',
@@ -1144,6 +1143,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         modelNameRequired: '模型名称为必填项',
         apiUrlRequired: 'PaddleOCR API URL 为必填项',
       },
+      showToc: '显示目录',
+      hideToc: '隐藏目录',
     },
     message: {
       registered: '注册成功',

@@ -29,6 +29,7 @@ from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileType
 from api.db.db_models import File, Task
 from api.db.services.document_service import DocumentService
+from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -255,7 +256,8 @@ async def update_doc(tenant_id, dataset_id, document_id):
     if "meta_fields" in req:
         if not isinstance(req["meta_fields"], dict):
             return get_error_data_result(message="meta_fields must be a dictionary")
-        DocumentService.update_meta_fields(document_id, req["meta_fields"])
+        if not DocMetadataService.update_document_metadata(document_id, req["meta_fields"]):
+            return get_error_data_result(message="Failed to update metadata")
 
     if "name" in req and req["name"] != doc.name:
         if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
@@ -568,7 +570,7 @@ def list_docs(dataset_id, tenant_id):
 
     doc_ids_filter = None
     if metadata_condition:
-        metas = DocumentService.get_flatted_meta_by_kbs([dataset_id])
+        metas = DocMetadataService.get_flatted_meta_by_kbs([dataset_id])
         doc_ids_filter = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
         if metadata_condition.get("conditions") and not doc_ids_filter:
             return get_result(data={"total": 0, "docs": []})
@@ -611,7 +613,7 @@ async def metadata_summary(dataset_id, tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
     req = await get_request_json()
     try:
-        summary = DocumentService.get_metadata_summary(dataset_id, req.get("doc_ids"))
+        summary = DocMetadataService.get_metadata_summary(dataset_id, req.get("doc_ids"))
         return get_result(data={"summary": summary})
     except Exception as e:
         return server_error_response(e)
@@ -657,14 +659,14 @@ async def metadata_batch_update(dataset_id, tenant_id):
         target_doc_ids = set(document_ids)
 
     if metadata_condition:
-        metas = DocumentService.get_flatted_meta_by_kbs([dataset_id])
+        metas = DocMetadataService.get_flatted_meta_by_kbs([dataset_id])
         filtered_ids = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         target_doc_ids = target_doc_ids & filtered_ids
         if metadata_condition.get("conditions") and not target_doc_ids:
             return get_result(data={"updated": 0, "matched_docs": 0})
 
     target_doc_ids = list(target_doc_ids)
-    updated = DocumentService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
+    updated = DocMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
     return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
@@ -1514,6 +1516,12 @@ async def retrieval_test(tenant_id):
     page = int(req.get("page", 1))
     size = int(req.get("page_size", 30))
     question = req["question"]
+    # Trim whitespace and validate question
+    if isinstance(question, str):
+        question = question.strip()
+    # Return empty result if question is empty or whitespace-only
+    if not question:
+        return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
     doc_ids = req.get("document_ids", [])
     use_kg = req.get("use_kg", False)
     toc_enhance = req.get("toc_enhance", False)
@@ -1526,14 +1534,18 @@ async def retrieval_test(tenant_id):
             if doc_id not in doc_ids_list:
                 return get_error_data_result(f"The datasets don't own the document {doc_id}")
     if not doc_ids:
-        metadata_condition = req.get("metadata_condition", {}) or {}
-        metas = DocumentService.get_meta_by_kbs(kb_ids)
-        doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
-        # If metadata_condition has conditions but no docs match, return empty result
-        if not doc_ids and metadata_condition.get("conditions"):
-            return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
-        if metadata_condition and not doc_ids:
-            doc_ids = ["-999"]
+        metadata_condition = req.get("metadata_condition")
+        if metadata_condition:
+            metas = DocMetadataService.get_meta_by_kbs(kb_ids)
+            doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+            # If metadata_condition has conditions but no docs match, return empty result
+            if not doc_ids and metadata_condition.get("conditions"):
+                return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
+            if metadata_condition and not doc_ids:
+                doc_ids = ["-999"]
+        else:
+            # If doc_ids is None all documents of the datasets are used
+            doc_ids = None
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))

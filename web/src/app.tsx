@@ -77,7 +77,14 @@ if (process.env.NODE_ENV === 'development') {
     },
   );
 }
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 2,
+    },
+  },
+});
 
 type Locale = ConfigProviderProps['locale'];
 
@@ -91,6 +98,8 @@ function Root({ children }: React.PropsWithChildren) {
   i18n.on('languageChanged', function (lng: string) {
     storage.setLanguage(lng);
     setLocal(getLocale(lng));
+    // Should reflect to <html lang="...">
+    document.documentElement.lang = lng;
   });
 
   return (

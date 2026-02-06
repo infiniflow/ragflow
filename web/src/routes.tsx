@@ -60,6 +60,7 @@ export enum Routes {
   Admin = '/admin',
   AdminServices = `${Admin}/services`,
   AdminUserManagement = `${Admin}/users`,
+  AdminSandboxSettings = `${Admin}/sandbox-settings`,
   AdminWhitelist = `${Admin}/whitelist`,
   AdminRoles = `${Admin}/roles`,
   AdminMonitoring = `${Admin}/monitoring`,
@@ -418,6 +419,10 @@ const routeConfig = [
               {
                 path: Routes.AdminUserManagement,
                 Component: lazy(() => import('@/pages/admin/users')),
+              },
+              {
+                path: Routes.AdminSandboxSettings,
+                Component: lazy(() => import('@/pages/admin/sandbox-settings')),
               },
               ...(IS_ENTERPRISE
                 ? [

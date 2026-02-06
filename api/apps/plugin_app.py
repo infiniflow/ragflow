@@ -18,7 +18,7 @@
 from quart import Response
 from api.apps import login_required
 from api.utils.api_utils import get_json_result
-from plugin import GlobalPluginManager
+from agent.plugin import GlobalPluginManager
 
 
 @manager.route('/llm_tools', methods=['GET'])  # noqa: F821
