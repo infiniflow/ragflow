@@ -13,9 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import sys
+from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 import requests
+
 from configs import EMAIL, HOST_ADDRESS, PASSWORD, VERSION, ZHIPU_AI_API_KEY
 
 MARKER_EXPRESSIONS = {
@@ -151,3 +155,38 @@ def set_tenant_info(auth):
     res = response.json()
     if res.get("code") != 0:
         raise Exception(res.get("message"))
+
+
+@pytest.fixture(scope="session")
+def init_storage() -> None:
+    orig_sys_path = sys.path[:]
+    try:
+        sys.path.insert(0, str(Path(__file__).parents[2]))
+        if "common" in sys.modules:
+            del sys.modules["common"]
+        from common import settings, config_utils, constants
+
+        # already initialized
+        if settings.STORAGE_IMPL:
+            return
+
+        if settings.STORAGE_IMPL_TYPE == "AWS_S3":
+            settings.S3 = config_utils.get_base_config("s3", {})
+        elif settings.STORAGE_IMPL_TYPE == "MINIO":
+            settings.MINIO = config_utils.decrypt_database_config(name="minio")
+            # settings are read from conf/service_conf.yaml and MinIO host address is not correct when running in the CI pipeline
+            # difference between RAGFlow server port and MinIO port is always 380 (RAGFlow default: 9380, MinIO default: 9000)
+            try:
+                parsed_ragflow_addr = urlsplit(HOST_ADDRESS)
+                port = parsed_ragflow_addr.port - 380 if parsed_ragflow_addr.port else 9000
+                settings.MINIO["host"] = f"{parsed_ragflow_addr.hostname}:{port}"
+            except (ValueError, TypeError):
+                # cannot convert RAGFlow to MinIO host address -> take default MinIO address (tests might fail)
+                pass
+        else:
+            return
+
+        settings.STORAGE_IMPL = settings.StorageFactory.create(constants.Storage[settings.STORAGE_IMPL_TYPE])
+    finally:
+        sys.path = orig_sys_path
+        del sys.modules["common"]

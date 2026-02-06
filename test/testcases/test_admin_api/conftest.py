@@ -63,7 +63,7 @@ def generate_user_api_key(session: requests.Session, user_name: str) -> dict[str
     Returns:
         Dict containing the full API response with keys: code, message, data
     """
-    url: str = f"{ADMIN_HOST_ADDRESS}/api/{VERSION}/admin/users/{user_name}/new_token"
+    url: str = f"{ADMIN_HOST_ADDRESS}/api/{VERSION}/admin/users/{user_name}/keys"
     response: requests.Response = session.post(url)
 
     # Some error responses (e.g., 401) may return HTML instead of JSON.
@@ -84,7 +84,7 @@ def get_user_api_key(session: requests.Session, username: str) -> dict[str, Any]
     Returns:
         Dict containing the full API response with keys: code, message, data
     """
-    url: str = f"{ADMIN_HOST_ADDRESS}/api/{VERSION}/admin/users/{username}/token_list"
+    url: str = f"{ADMIN_HOST_ADDRESS}/api/{VERSION}/admin/users/{username}/keys"
     response: requests.Response = session.get(url)
 
     try:
@@ -106,7 +106,69 @@ def delete_user_api_key(session: requests.Session, username: str, token: str) ->
     """
     # URL encode the token to handle special characters
     encoded_token: str = urllib.parse.quote(token, safe="")
-    url: str = f"{ADMIN_HOST_ADDRESS}/api/{VERSION}/admin/users/{username}/token/{encoded_token}"
+    url: str = f"{ADMIN_HOST_ADDRESS}/api/{VERSION}/admin/users/{username}/keys/{encoded_token}"
+    response: requests.Response = session.delete(url)
+
+    try:
+        res_json: dict[str, Any] = response.json()
+    except requests.exceptions.JSONDecodeError:
+        return {
+            "code": response.status_code,
+            "message": response.text,
+            "data": None,
+        }
+    return res_json
+
+
+def create_user(session: requests.Session, username: str, password: str) -> dict[str, Any]:
+    """Helper function to create a new user.
+
+    Returns:
+        Dict containing the full API response with keys: code, message, data
+    """
+    url: str = f"{ADMIN_HOST_ADDRESS}/api/{VERSION}/admin/users"
+    payload: dict[str, str] = {"username": username, "password": password}
+    response: requests.Response = session.post(url, json=payload)
+
+    try:
+        res_json: dict[str, Any] = response.json()
+    except requests.exceptions.JSONDecodeError:
+        return {
+            "code": response.status_code,
+            "message": response.text,
+            "data": None,
+        }
+    return res_json
+
+
+def change_user_activation(session: requests.Session, username: str, active: bool) -> dict[str, Any]:
+    """Helper function to change the activation status of a user.
+
+    Returns:
+        Dict containing the full API response with keys: code, message, data
+    """
+    url: str = f"{ADMIN_HOST_ADDRESS}/api/{VERSION}/admin/users/{username}/activate"
+    payload: dict[str, str] = {"activate_status": "on" if active else "off"}
+    response: requests.Response = session.put(url, json=payload)
+
+    try:
+        res_json: dict[str, Any] = response.json()
+    except requests.exceptions.JSONDecodeError:
+        return {
+            "code": response.status_code,
+            "message": response.text,
+            "data": None,
+        }
+    return res_json
+
+
+def delete_user(session: requests.Session, username: str) -> dict[str, Any]:
+    """Helper function to delete an API key for a user
+
+    Returns:
+        Dict containing the full API response with keys: code, message, data
+    """
+    url: str = f"{ADMIN_HOST_ADDRESS}/api/{VERSION}/admin/users/{username}"
     response: requests.Response = session.delete(url)
 
     try:
