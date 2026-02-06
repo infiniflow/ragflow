@@ -25,7 +25,6 @@ import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
   CirclePlay,
-  Compass,
   History,
   LaptopMinimalCheck,
   Logs,
@@ -258,13 +257,13 @@ export default function Agent() {
               {t('flow.log')}
             </Button>
           )}
-          <Button
+          {/* <Button
             variant={'secondary'}
             onClick={navigateToAgentExplore(id as string)}
           >
             <Compass />
             {t('explore.title')}
-          </Button>
+          </Button> */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant={'secondary'}>
