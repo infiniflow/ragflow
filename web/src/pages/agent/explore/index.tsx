@@ -1,0 +1,72 @@
+import { PageHeader } from '@/components/page-header';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
+import { useFetchDataOnMount } from '../hooks/use-fetch-data';
+import { SessionChat } from './components/session-chat';
+import { SessionList } from './components/session-list';
+import { useExploreUrlParams } from './hooks/use-explore-url-params';
+
+export default function AgentExplore() {
+  const { canvasId, sessionId, setSessionId } = useExploreUrlParams();
+  const { navigateToAgent } = useNavigatePage();
+  const { t } = useTranslation();
+  const { id } = useParams();
+  const { flowDetail: agentDetail } = useFetchDataOnMount();
+
+  const handleBackToAgent = useCallback(() => {
+    const navigateFn = navigateToAgent(id as string);
+    navigateFn();
+  }, [id, navigateToAgent]);
+
+  const handleSessionSelect = useCallback(
+    (id: string, isNew?: boolean) => {
+      setSessionId(id, isNew);
+    },
+    [setSessionId],
+  );
+
+  return (
+    <section className="h-full">
+      <PageHeader>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink onClick={handleBackToAgent}>
+                {t('header.flow')}
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>
+                {agentDetail?.title || t('explore.title')}
+              </BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      </PageHeader>
+
+      <section className="flex h-full">
+        <div className="w-[296px] border-r min-w-0">
+          <SessionList
+            selectedSessionId={sessionId}
+            onSelectSession={handleSessionSelect}
+          />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <SessionChat canvasId={canvasId || ''} sessionId={sessionId} />
+        </div>
+      </section>
+    </section>
+  );
+}
