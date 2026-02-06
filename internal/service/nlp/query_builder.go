@@ -28,6 +28,7 @@ import (
 // QueryBuilder provides functionality to build query expressions based on text, referencing Python's FulltextQueryer and QueryBase.
 type QueryBuilder struct {
 	queryFields []string
+	tw          *TermWeightDealer
 }
 
 // NewQueryBuilder creates a new QueryBuilder with default query fields.
@@ -42,6 +43,7 @@ func NewQueryBuilder() *QueryBuilder {
 			"content_ltks^2",
 			"content_sm_ltks",
 		},
+		tw: NewTermWeightDealer(""),
 	}
 }
 
@@ -169,6 +171,10 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 	// Determine if text is Chinese
 	if !qb.IsChinese(txt) {
 		// Non-Chinese processing
+		// Reference: rag/nlp/query.py L52-88
+
+		// Remove stop words again
+		txt = qb.RmWWW(txt)
 
 		// Tokenize using rag_tokenizer
 		tokenized, err := tokenizer.Tokenize(txt)
@@ -185,16 +191,21 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			}
 		}
 
-		// Build term weights (simplified version without term_weight module)
-		// Assign decreasing weights based on position
-		tksW := make([]struct {
+		// Calculate term weights using TermWeightDealer
+		// Reference: rag/nlp/query.py L56
+		tws := qb.tw.Weights(tks, false)
+
+		// Clean tokens and filter
+		// Reference: rag/nlp/query.py L57-60
+		type tokenWeight struct {
 			tk string
 			w  float64
-		}, 0, len(tks))
-		for i, tk := range tks {
-			if tk == "" {
-				continue
-			}
+		}
+		var tksW []tokenWeight
+		for _, tw := range tws {
+			tk := tw.Term
+			w := tw.Weight
+
 			// Clean token: remove special chars
 			tk = regexp.MustCompile(`[ \"'^]+`).ReplaceAllString(tk, "")
 			// Remove single alphanumeric chars
@@ -202,40 +213,39 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			// Remove leading +/-
 			tk = regexp.MustCompile(`^[\+\-]+`).ReplaceAllString(tk, "")
 			tk = strings.TrimSpace(tk)
+
 			if tk == "" {
 				continue
 			}
-			// Weight decreases with position
-			w := 1.0 - float64(i)*0.05
-			if w < 0.3 {
-				w = 0.3
-			}
-			tksW = append(tksW, struct {
-				tk string
-				w  float64
-			}{tk, w})
+			tksW = append(tksW, tokenWeight{tk, w})
 		}
 
 		// Limit to 256 tokens
+		// Reference: rag/nlp/query.py L62
 		if len(tksW) > 256 {
 			tksW = tksW[:256]
 		}
 
+		// TODO: Synonym expansion (reference L61-67)
+		// For now, use empty synonyms
+		syns := make([]string, len(tksW))
+
 		// Build query parts
+		// Reference: rag/nlp/query.py L69-70
 		var q []string
-		for _, tw := range tksW {
+		for i, tw := range tksW {
 			tk := tw.tk
 			w := tw.w
 			// Skip tokens with special regex chars
 			if matched, _ := regexp.MatchString(`[.^+\(\)-]`, tk); matched {
 				continue
 			}
-			// Escape quotes
-			tk = strings.ReplaceAll(tk, `"`, `\"`)
-			q = append(q, fmt.Sprintf("(%s^%.4f)", tk, w))
+			// Format: (token^weight synonym)
+			q = append(q, fmt.Sprintf("(%s^%.4f %s)", tk, w, syns[i]))
 		}
 
 		// Add phrase queries for adjacent tokens
+		// Reference: rag/nlp/query.py L71-82
 		for i := 1; i < len(tksW); i++ {
 			left := strings.TrimSpace(tksW[i-1].tk)
 			right := strings.TrimSpace(tksW[i].tk)
