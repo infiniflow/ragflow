@@ -40,8 +40,8 @@ var (
 // QueryBuilder provides functionality to build query expressions based on text, referencing Python's FulltextQueryer and QueryBase.
 type QueryBuilder struct {
 	queryFields []string
-	tw          *TermWeightDealer
-	syn         *Synonym
+	termWeight  *TermWeightDealer
+	synonym     *Synonym
 }
 
 // InitQueryBuilder initializes the global QueryBuilder with the given wordnet directory.
@@ -59,8 +59,8 @@ func InitQueryBuilder(wordnetDir string) error {
 				"content_ltks^2",
 				"content_sm_ltks",
 			},
-			tw:  NewTermWeightDealer(""),
-			syn: NewSynonym(nil, "", wordnetDir),
+			termWeight: NewTermWeightDealer(""),
+			synonym:    NewSynonym(nil, "", wordnetDir),
 		}
 	})
 	return qbInitError
@@ -93,8 +93,8 @@ func NewQueryBuilder() *QueryBuilder {
 			"content_ltks^2",
 			"content_sm_ltks",
 		},
-		tw:  NewTermWeightDealer(""),
-		syn: NewSynonym(nil, "", ""),
+		termWeight: NewTermWeightDealer(""),
+		synonym:    NewSynonym(nil, "", ""),
 	}
 }
 
@@ -258,7 +258,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 
 		// Calculate term weights using TermWeightDealer
 		// Reference: rag/nlp/query.py L56
-		tws := qb.tw.Weights(tks, false)
+		tws := qb.termWeight.Weights(tks, false)
 
 		// Clean tokens and filter
 		// Reference: rag/nlp/query.py L57-60
@@ -351,22 +351,22 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 	var keywords []string
 
 	// Split text and process each segment (limit to 256)
-	tts := qb.tw.Split(txtChinese)
-	if len(tts) > 256 {
-		tts = tts[:256]
+	segments := qb.termWeight.Split(txtChinese)
+	if len(segments) > 256 {
+		segments = segments[:256]
 	}
 
-	for _, tt := range tts {
-		if tt == "" {
+	for _, segment := range segments {
+		if segment == "" {
 			continue
 		}
-		keywords = append(keywords, tt)
+		keywords = append(keywords, segment)
 
 		// Get term weights
-		twts := qb.tw.Weights([]string{tt}, true)
+		twts := qb.termWeight.Weights([]string{segment}, true)
 
 		// Lookup synonyms
-		syns := qb.syn.Lookup(tt, 8)
+		syns := qb.synonym.Lookup(segment, 8)
 		if len(syns) > 0 && len(keywords) < 32 {
 			keywords = append(keywords, syns...)
 		}
@@ -415,11 +415,11 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 				keywords = append(keywords, sm...)
 			}
 
-		// Lookup synonyms for this token
-		tkSyns := qb.syn.Lookup(tk, 8)
-		for i, s := range tkSyns {
-			tkSyns[i] = qb.SubSpecialChar(s)
-		}
+			// Lookup synonyms for this token
+			tkSyns := qb.synonym.Lookup(tk, 8)
+			for i, s := range tkSyns {
+				tkSyns[i] = qb.SubSpecialChar(s)
+			}
 			if len(keywords) < 32 {
 				for _, s := range tkSyns {
 					if s != "" {
@@ -483,7 +483,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 
 		// Add proximity query if multiple tokens
 		if len(twts) > 1 {
-			tokenized, _ := tokenizer.Tokenize(tt)
+			tokenized, _ := tokenizer.Tokenize(segment)
 			if tokenized != "" {
 				tmsStr += fmt.Sprintf(` ("%s"~2)^1.5`, tokenized)
 			}
