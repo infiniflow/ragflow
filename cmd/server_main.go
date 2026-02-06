@@ -19,6 +19,7 @@ import (
 	"ragflow/internal/logger"
 	"ragflow/internal/router"
 	"ragflow/internal/service"
+	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 )
 
@@ -80,6 +81,12 @@ func main() {
 		logger.Fatal("Failed to initialize tokenizer", zap.Error(err))
 	}
 	defer tokenizer.Close()
+
+	// Initialize global QueryBuilder using tokenizer's DictPath
+	// This ensures the Synonym uses the same wordnet directory as tokenizer
+	if err := nlp.InitQueryBuilderFromTokenizer(tokenizerCfg.DictPath); err != nil {
+		logger.Fatal("Failed to initialize query builder", zap.Error(err))
+	}
 
 	// Initialize service layer
 	userService := service.NewUserService()

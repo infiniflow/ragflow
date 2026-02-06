@@ -199,9 +199,12 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		}
 	}
 
-	// Use QueryBuilder to process question and get matchText and keywords
+	// Use global QueryBuilder to process question and get matchText and keywords
 	// Reference: rag/nlp/search.py L115
-	queryBuilder := nlp.NewQueryBuilder()
+	queryBuilder := nlp.GetQueryBuilder()
+	if queryBuilder == nil {
+		return nil, fmt.Errorf("query builder not initialized")
+	}
 	matchTextExpr, keywords := queryBuilder.Question(req.Question, "qa", 0.6)
 
 	logger.Debug("QueryBuilder processed question",

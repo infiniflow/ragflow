@@ -23,6 +23,32 @@ import (
 	"time"
 )
 
+var testSynonymWordNetDir string
+
+func init() {
+	// Find project root by locating go.mod file
+	dir, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	for {
+		goModPath := filepath.Join(dir, "go.mod")
+		if _, err := os.Stat(goModPath); err == nil {
+			// Found go.mod, project root is dir
+			testSynonymWordNetDir = filepath.Join(dir, "resource", "wordnet")
+			return
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached root directory
+			break
+		}
+		dir = parent
+	}
+	// Fallback to relative path if go.mod not found
+	testSynonymWordNetDir = "../../../resource/wordnet"
+}
+
 // MockRedisClient is a mock implementation of RedisClient for testing
 type MockRedisClient struct {
 	data map[string]string
@@ -45,7 +71,7 @@ func (m *MockRedisClient) Set(key, value string) {
 // TestNewSynonym tests the constructor
 func TestNewSynonym(t *testing.T) {
 	t.Run("without redis", func(t *testing.T) {
-		s := NewSynonym(nil, "")
+		s := NewSynonym(nil, "", testSynonymWordNetDir)
 		if s == nil {
 			t.Fatal("NewSynonym returned nil")
 		}
@@ -59,7 +85,7 @@ func TestNewSynonym(t *testing.T) {
 
 	t.Run("with redis", func(t *testing.T) {
 		redis := NewMockRedisClient()
-		s := NewSynonym(redis, "")
+		s := NewSynonym(redis, "", testSynonymWordNetDir)
 		if s == nil {
 			t.Fatal("NewSynonym returned nil")
 		}
@@ -85,7 +111,7 @@ func TestNewSynonymWithMockFile(t *testing.T) {
 		t.Fatalf("Failed to create mock synonym.json: %v", err)
 	}
 
-	s := NewSynonym(nil, tmpDir)
+	s := NewSynonym(nil, tmpDir, testSynonymWordNetDir)
 
 	// Check dictionary loaded correctly
 	if len(s.dictionary) != 4 {
@@ -115,7 +141,7 @@ func TestSynonymLookup(t *testing.T) {
 	data, _ := json.Marshal(synonymData)
 	os.WriteFile(filepath.Join(tmpDir, "synonym.json"), data, 0644)
 
-	s := NewSynonym(nil, tmpDir)
+	s := NewSynonym(nil, tmpDir, testSynonymWordNetDir)
 
 	tests := []struct {
 		name     string
@@ -168,7 +194,7 @@ func TestSynonymLookup(t *testing.T) {
 // TestSynonymLookupFromWordNet tests WordNet fallback
 func TestSynonymLookupFromWordNet(t *testing.T) {
 	// Create synonym with empty dictionary to force WordNet fallback
-	s := NewSynonym(nil, "")
+	s := NewSynonym(nil, "", "")
 	s.dictionary = make(map[string][]string) // Clear dictionary
 
 	t.Run("pure alphabetical token", func(t *testing.T) {
@@ -208,7 +234,7 @@ func TestSynonymLoad(t *testing.T) {
 	redisBytes, _ := json.Marshal(redisData)
 	redis.Set("kevin_synonyms", string(redisBytes))
 
-	s := NewSynonym(redis, tmpDir)
+	s := NewSynonym(redis, tmpDir, testSynonymWordNetDir)
 
 	// Simulate multiple lookups to trigger load
 	s.lookupNum = 200 // Set above threshold
@@ -225,7 +251,7 @@ func TestSynonymLoad(t *testing.T) {
 
 // TestSynonymLoadNoRedis tests load without Redis
 func TestSynonymLoadNoRedis(t *testing.T) {
-	s := NewSynonym(nil, "")
+	s := NewSynonym(nil, "", "")
 
 	// Should not panic
 	s.load()
@@ -241,7 +267,7 @@ func TestSynonymLoadNoRedis(t *testing.T) {
 // TestSynonymLoadNotTriggered tests load conditions
 func TestSynonymLoadNotTriggered(t *testing.T) {
 	redis := NewMockRedisClient()
-	s := NewSynonym(redis, "")
+	s := NewSynonym(redis, "", "")
 
 	// Set conditions that should prevent load
 	s.lookupNum = 50 // Below threshold
@@ -267,7 +293,7 @@ func TestGetDictionary(t *testing.T) {
 	data, _ := json.Marshal(synonymData)
 	os.WriteFile(filepath.Join(tmpDir, "synonym.json"), data, 0644)
 
-	s := NewSynonym(nil, tmpDir)
+	s := NewSynonym(nil, tmpDir, testSynonymWordNetDir)
 
 	dict := s.GetDictionary()
 	if dict == nil {
@@ -280,7 +306,7 @@ func TestGetDictionary(t *testing.T) {
 
 // TestGetLookupNum tests GetLookupNum method
 func TestGetLookupNum(t *testing.T) {
-	s := NewSynonym(nil, "")
+	s := NewSynonym(nil, "", "")
 	initialNum := s.GetLookupNum()
 
 	// Perform some lookups
@@ -296,7 +322,7 @@ func TestGetLookupNum(t *testing.T) {
 
 // TestGetLoadTime tests GetLoadTime method
 func TestGetLoadTime(t *testing.T) {
-	s := NewSynonym(nil, "")
+	s := NewSynonym(nil, "", "")
 	loadTime := s.GetLoadTime()
 
 	// Load time should be in the past (since we set it to -1000000 seconds)
@@ -315,7 +341,7 @@ func TestLookupCaseSensitivity(t *testing.T) {
 	data, _ := json.Marshal(synonymData)
 	os.WriteFile(filepath.Join(tmpDir, "synonym.json"), data, 0644)
 
-	s := NewSynonym(nil, tmpDir)
+	s := NewSynonym(nil, tmpDir, testSynonymWordNetDir)
 
 	// Lookup with different cases
 	tests := []string{"lowercase", "LOWERCASE", "LowerCase", "LoWeRcAsE"}
@@ -337,7 +363,7 @@ func TestLookupWithSpaces(t *testing.T) {
 	data, _ := json.Marshal(synonymData)
 	os.WriteFile(filepath.Join(tmpDir, "synonym.json"), data, 0644)
 
-	s := NewSynonym(nil, tmpDir)
+	s := NewSynonym(nil, tmpDir, testSynonymWordNetDir)
 
 	// Lookup with various whitespace
 	tests := []string{
@@ -361,7 +387,7 @@ func TestSynonymMissingFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	// Don't create synonym.json
 
-	s := NewSynonym(nil, tmpDir)
+	s := NewSynonym(nil, tmpDir, testSynonymWordNetDir)
 
 	if len(s.dictionary) != 0 {
 		t.Errorf("Expected empty dictionary, got %d entries", len(s.dictionary))
@@ -381,7 +407,7 @@ func TestSynonymInvalidJSON(t *testing.T) {
 	// Create invalid JSON file
 	os.WriteFile(filepath.Join(tmpDir, "synonym.json"), []byte("invalid json"), 0644)
 
-	s := NewSynonym(nil, tmpDir)
+	s := NewSynonym(nil, tmpDir, testSynonymWordNetDir)
 
 	// Should have empty dictionary but not panic
 	if s.dictionary == nil {
@@ -399,7 +425,7 @@ func BenchmarkLookup(b *testing.B) {
 	data, _ := json.Marshal(synonymData)
 	os.WriteFile(filepath.Join(tmpDir, "synonym.json"), data, 0644)
 
-	s := NewSynonym(nil, tmpDir)
+	s := NewSynonym(nil, tmpDir, testSynonymWordNetDir)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -409,7 +435,7 @@ func BenchmarkLookup(b *testing.B) {
 
 // BenchmarkLookupNotFound benchmarks lookup for non-existent tokens
 func BenchmarkLookupNotFound(b *testing.B) {
-	s := NewSynonym(nil, "")
+	s := NewSynonym(nil, "", "")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

@@ -16,14 +16,25 @@ package nlp
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"ragflow/internal/engine/infinity"
 	"ragflow/internal/tokenizer"
 
 	"github.com/siongui/gojianfan"
+)
+
+var (
+	// globalQueryBuilder is the global query builder instance
+	globalQueryBuilder *QueryBuilder
+	// qbOnce ensures the query builder is initialized only once
+	qbOnce sync.Once
+	// qbInitError stores any error during initialization
+	qbInitError error
 )
 
 // QueryBuilder provides functionality to build query expressions based on text, referencing Python's FulltextQueryer and QueryBase.
@@ -33,7 +44,44 @@ type QueryBuilder struct {
 	syn         *Synonym
 }
 
+// InitQueryBuilder initializes the global QueryBuilder with the given wordnet directory.
+// It should be called during the initialization phase of main.go, after tokenizer.Init.
+// The wordnetDir is typically filepath.Join(tokenizer.Config.DictPath, "wordnet")
+func InitQueryBuilder(wordnetDir string) error {
+	qbOnce.Do(func() {
+		globalQueryBuilder = &QueryBuilder{
+			queryFields: []string{
+				"title_tks^10",
+				"title_sm_tks^5",
+				"important_kwd^30",
+				"important_tks^20",
+				"question_tks^20",
+				"content_ltks^2",
+				"content_sm_ltks",
+			},
+			tw:  NewTermWeightDealer(""),
+			syn: NewSynonym(nil, "", wordnetDir),
+		}
+	})
+	return qbInitError
+}
+
+// InitQueryBuilderFromTokenizer initializes the global QueryBuilder using tokenizer's DictPath.
+// The wordnet directory is derived from tokenizer's DictPath as: DictPath/wordnet
+// This should be called after tokenizer.Init().
+func InitQueryBuilderFromTokenizer(tokenizerDictPath string) error {
+	wordnetDir := filepath.Join(tokenizerDictPath, "wordnet")
+	return InitQueryBuilder(wordnetDir)
+}
+
+// GetQueryBuilder returns the global QueryBuilder instance.
+// Returns nil if InitQueryBuilder has not been called.
+func GetQueryBuilder() *QueryBuilder {
+	return globalQueryBuilder
+}
+
 // NewQueryBuilder creates a new QueryBuilder with default query fields.
+// Deprecated: Use GetQueryBuilder() to get the global instance for better performance.
 func NewQueryBuilder() *QueryBuilder {
 	return &QueryBuilder{
 		queryFields: []string{
@@ -46,7 +94,7 @@ func NewQueryBuilder() *QueryBuilder {
 			"content_sm_ltks",
 		},
 		tw:  NewTermWeightDealer(""),
-		syn: NewSynonym(nil, ""),
+		syn: NewSynonym(nil, "", ""),
 	}
 }
 

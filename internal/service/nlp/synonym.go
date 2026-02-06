@@ -46,7 +46,9 @@ type RedisClient interface {
 
 // NewSynonym creates a new Synonym instance
 // Reference: synonym.py Dealer.__init__
-func NewSynonym(redis RedisClient, resPath string) *Synonym {
+// wordnetDir: path to wordnet directory (e.g., "/usr/share/infinity/resource/wordnet").
+//             If empty, WordNet will not be initialized.
+func NewSynonym(redis RedisClient, resPath string, wordnetDir string) *Synonym {
 	s := &Synonym{
 		lookupNum:  100000000,
 		loadTm:     time.Now().Add(-1000000 * time.Second),
@@ -60,13 +62,15 @@ func NewSynonym(redis RedisClient, resPath string) *Synonym {
 		s.resPath = "rag/res"
 	}
 
-	// Initialize WordNet with relative path from this file
-	wordNetDir := "resource/wordnet"
-	wordNet, err := NewWordNet(wordNetDir)
-	if err != nil {
-		logger.Fatal("Failed to initialize WordNet", zap.Error(err))
-	} else {
-		s.wordNet = wordNet
+	// Initialize WordNet with provided path
+	if wordnetDir != "" {
+		wordNet, err := NewWordNet(wordnetDir)
+		if err != nil {
+			// WordNet is optional, continue without it
+			s.wordNet = nil
+		} else {
+			s.wordNet = wordNet
+		}
 	}
 
 	// Load synonym.json
