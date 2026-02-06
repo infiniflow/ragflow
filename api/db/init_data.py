@@ -242,6 +242,22 @@ def fix_empty_tenant_model_id():
             if tenant_llm:
                 update_cnt += DialogService.filter_update([Dialog.id.in_(v)], {"tenant_llm_id": tenant_llm.id})
         logging.info(f"Update {update_cnt} tenant_llm_id in table dialog.")
+
+    empty_tenant_rerank_id_dialog = DialogService.get_null_tenant_rerank_id_row()
+    if empty_tenant_rerank_id_dialog:
+        logging.info(f"Found {len(empty_tenant_rerank_id_dialog)} empty tenant_rerank_id dialogs.")
+        dialog_groups: dict = {}
+        for obj in empty_tenant_rerank_id_dialog:
+            if dialog_groups.get((obj.tenant_id, obj.rerank_id)):
+                dialog_groups[(obj.tenant_id, obj.rerank_id)].append(obj.id)
+            else:
+                dialog_groups[(obj.tenant_id, obj.rerank_id)] = [obj.id]
+        update_cnt = 0
+        for k, v in dialog_groups.items():
+            tenant_llm = TenantLLMService.get_api_key(k[0], k[1])
+            if tenant_llm:
+                update_cnt += DialogService.filter_update([Dialog.id.in_(v)], {"tenant_rerank_id": tenant_llm.id})
+        logging.info(f"Update {update_cnt} tenant_rerank_id in table dialog.")
     # memory
     empty_tenant_embd_id_memories = MemoryService.get_null_tenant_embd_id_row()
     if empty_tenant_embd_id_memories:
