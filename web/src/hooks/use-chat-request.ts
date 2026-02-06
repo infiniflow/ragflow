@@ -16,6 +16,7 @@ import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-
 import { isConversationIdExist } from '@/pages/next-chats/utils';
 import chatService from '@/services/next-chat-service';
 import api from '@/utils/api';
+import { sanitizePromptConfigForKnowledge } from '@/utils/prompt-config';
 import { buildMessageListWithUuid, generateConversationId } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
@@ -150,7 +151,13 @@ export const useSetDialog = () => {
   } = useMutation({
     mutationKey: [ChatApiAction.SetDialog],
     mutationFn: async (params: Partial<IDialog>) => {
-      const { data } = await chatService.setDialog(params);
+      const sanitizedPromptConfig = params.prompt_config
+        ? sanitizePromptConfigForKnowledge(params.prompt_config, params.kb_ids)
+        : params.prompt_config;
+      const { data } = await chatService.setDialog({
+        ...params,
+        prompt_config: sanitizedPromptConfig,
+      });
       if (data.code === 0) {
         queryClient.invalidateQueries({
           exact: false,
