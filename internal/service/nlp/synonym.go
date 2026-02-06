@@ -61,10 +61,10 @@ func NewSynonym(redis RedisClient, resPath string) *Synonym {
 	}
 
 	// Initialize WordNet with relative path from this file
-	wordNetDir := "../../../resource/wordnet"
+	wordNetDir := "resource/wordnet"
 	wordNet, err := NewWordNet(wordNetDir)
 	if err != nil {
-		logger.Warn("Failed to initialize WordNet", zap.Error(err))
+		logger.Fatal("Failed to initialize WordNet", zap.Error(err))
 	} else {
 		s.wordNet = wordNet
 	}
