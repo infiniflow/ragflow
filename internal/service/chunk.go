@@ -11,6 +11,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/logger"
 	"ragflow/internal/model"
+	"ragflow/internal/service/nlp"
 	"ragflow/internal/utility"
 )
 
@@ -200,27 +201,20 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 
 	// Use QueryBuilder to process question and get matchText and keywords
 	// Reference: rag/nlp/search.py L115
-	queryBuilder := NewQueryBuilder()
-	questionResult, err := queryBuilder.Question(req.Question, 0.3)
-	if err != nil {
-		logger.Warn("Failed to process question with QueryBuilder, using original question", zap.Error(err))
-		questionResult = &QuestionResult{
-			MatchText: req.Question,
-			Keywords:  []string{req.Question},
-		}
-	}
+	queryBuilder := nlp.NewQueryBuilder()
+	matchTextExpr, keywords := queryBuilder.Question(req.Question, "qa", 0.6)
 
 	logger.Debug("QueryBuilder processed question",
 		zap.String("original", req.Question),
-		zap.String("matchText", questionResult.MatchText),
-		zap.Strings("keywords", questionResult.Keywords))
+		zap.String("matchingText", matchTextExpr.MatchingText),
+		zap.Strings("keywords", keywords))
 
 	// Build unified search request
 	searchReq := &engine.SearchRequest{
 		IndexNames:             buildIndexNames(tenantIDs),
 		Question:               req.Question,
-		MatchText:              questionResult.MatchText,
-		Keywords:               questionResult.Keywords,
+		MatchText:              matchTextExpr.MatchingText,
+		Keywords:               keywords,
 		Vector:                 vector,
 		KbIDs:                  kbIDs,
 		DocIDs:                 req.DocIDs,

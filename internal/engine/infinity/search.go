@@ -32,6 +32,7 @@ type MatchTextExpr struct {
 	Fields       []string
 	MatchingText string
 	TopN         int
+	ExtraOptions map[string]interface{}
 }
 
 // MatchDenseExpr vector match expression

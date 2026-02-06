@@ -15,10 +15,12 @@
 package nlp
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
 	"ragflow/internal/engine/infinity"
+	"ragflow/internal/tokenizer"
 
 	"github.com/siongui/gojianfan"
 )
@@ -166,14 +168,100 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 	txt = qb.RmWWW(txt)
 	// Determine if text is Chinese
 	if !qb.IsChinese(txt) {
-		// Non-Chinese processing (simplified)
-		// Could add more complex logic here, e.g., tokenization, term weight, synonym expansion
-		// Currently returns original query
+		// Non-Chinese processing
+
+		// Tokenize using rag_tokenizer
+		tokenized, err := tokenizer.Tokenize(txt)
+		if err != nil {
+			// If tokenizer fails, use simple split
+			tokenized = txt
+		}
+
+		tks := strings.Fields(tokenized)
+		keywords := make([]string, 0, len(tks))
+		for _, t := range tks {
+			if t != "" {
+				keywords = append(keywords, t)
+			}
+		}
+
+		// Build term weights (simplified version without term_weight module)
+		// Assign decreasing weights based on position
+		tksW := make([]struct {
+			tk string
+			w  float64
+		}, 0, len(tks))
+		for i, tk := range tks {
+			if tk == "" {
+				continue
+			}
+			// Clean token: remove special chars
+			tk = regexp.MustCompile(`[ \"'^]+`).ReplaceAllString(tk, "")
+			// Remove single alphanumeric chars
+			tk = regexp.MustCompile(`^[a-z0-9]$`).ReplaceAllString(tk, "")
+			// Remove leading +/-
+			tk = regexp.MustCompile(`^[\+\-]+`).ReplaceAllString(tk, "")
+			tk = strings.TrimSpace(tk)
+			if tk == "" {
+				continue
+			}
+			// Weight decreases with position
+			w := 1.0 - float64(i)*0.05
+			if w < 0.3 {
+				w = 0.3
+			}
+			tksW = append(tksW, struct {
+				tk string
+				w  float64
+			}{tk, w})
+		}
+
+		// Limit to 256 tokens
+		if len(tksW) > 256 {
+			tksW = tksW[:256]
+		}
+
+		// Build query parts
+		var q []string
+		for _, tw := range tksW {
+			tk := tw.tk
+			w := tw.w
+			// Skip tokens with special regex chars
+			if matched, _ := regexp.MatchString(`[.^+\(\)-]`, tk); matched {
+				continue
+			}
+			// Escape quotes
+			tk = strings.ReplaceAll(tk, `"`, `\"`)
+			q = append(q, fmt.Sprintf("(%s^%.4f)", tk, w))
+		}
+
+		// Add phrase queries for adjacent tokens
+		for i := 1; i < len(tksW); i++ {
+			left := strings.TrimSpace(tksW[i-1].tk)
+			right := strings.TrimSpace(tksW[i].tk)
+			if left == "" || right == "" {
+				continue
+			}
+			maxW := tksW[i-1].w
+			if tksW[i].w > maxW {
+				maxW = tksW[i].w
+			}
+			q = append(q, fmt.Sprintf(`"%s %s"^%.4f`, left, right, maxW*2))
+		}
+
+		if len(q) == 0 {
+			q = append(q, txt)
+		}
+
+		query := strings.Join(q, " ")
 		return &infinity.MatchTextExpr{
 			Fields:       qb.queryFields,
-			MatchingText: originalQuery,
+			MatchingText: query,
 			TopN:         100,
-		}, []string{}
+			ExtraOptions: map[string]interface{}{
+				"original_query": originalQuery,
+			},
+		}, keywords
 	}
 	// Chinese processing (simplified)
 	// Could also be extended
