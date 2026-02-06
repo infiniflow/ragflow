@@ -212,38 +212,40 @@ func (qb *QueryBuilder) NeedFineGrainedTokenize(tk string) bool {
 // Currently, a simplified version, returns basic MatchTextExpr; future integration of term weight and synonyms.
 func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*infinity.MatchTextExpr, []string) {
 	originalQuery := txt
+
 	// Add space between English and Chinese
-	txt = qb.AddSpaceBetweenEngZh(txt)
+	txtWithSpaces := qb.AddSpaceBetweenEngZh(txt)
 
 	// Convert to lowercase and remove punctuation (simplified)
-	txt = strings.ToLower(txt)
+	txtLower := strings.ToLower(txtWithSpaces)
 
 	// Convert to half-width
-	txt = qb.StrFullWidth2HalfWidth(txt)
+	txtHalfWidth := qb.StrFullWidth2HalfWidth(txtLower)
 
 	// Convert to simplified Chinese
-	txt = qb.Traditional2Simplified(txt)
+	txtSimplified := qb.Traditional2Simplified(txtHalfWidth)
 
 	// Replace punctuation and special characters with space
 	// Reference: rag/nlp/query.py L44-48
 	re := regexp.MustCompile(`[ :|\r\n\t,，.。?？/\` + "`" + `!！&^%()\[\]{}<>]+`)
-	txt = re.ReplaceAllString(txt, " ")
+	txtCleaned := re.ReplaceAllString(txtSimplified, " ")
 
 	// Remove stop words
-	txt = qb.RmWWW(txt)
+	txtNoStopWords := qb.RmWWW(txtCleaned)
+
 	// Determine if text is Chinese
-	if !qb.IsChinese(txt) {
+	if !qb.IsChinese(txtNoStopWords) {
 		// Non-Chinese processing
 		// Reference: rag/nlp/query.py L52-88
 
 		// Remove stop words again
-		txt = qb.RmWWW(txt)
+		txtFinal := qb.RmWWW(txtNoStopWords)
 
 		// Tokenize using rag_tokenizer
-		tokenized, err := tokenizer.Tokenize(txt)
+		tokenized, err := tokenizer.Tokenize(txtFinal)
 		if err != nil {
 			// If tokenizer fails, use simple split
-			tokenized = txt
+			tokenized = txtFinal
 		}
 
 		tks := strings.Fields(tokenized)
@@ -323,7 +325,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 		}
 
 		if len(q) == 0 {
-			q = append(q, txt)
+			q = append(q, txtFinal)
 		}
 
 		query := strings.Join(q, " ")
@@ -340,16 +342,16 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 	// Reference: rag/nlp/query.py L88-172
 
 	// Save original text before removing stop words (for fallback)
-	otxt := txt
+	otxt := txtNoStopWords
 
-	// Remove stop words
-	txt = qb.RmWWW(txt)
+	// Remove stop words for Chinese processing
+	txtChinese := qb.RmWWW(txtNoStopWords)
 
 	var qs []string
 	var keywords []string
 
 	// Split text and process each segment (limit to 256)
-	tts := qb.tw.Split(txt)
+	tts := qb.tw.Split(txtChinese)
 	if len(tts) > 256 {
 		tts = tts[:256]
 	}
