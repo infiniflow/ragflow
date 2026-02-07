@@ -65,7 +65,14 @@ const AntLanguageMap = {
 //     logOnDifferentValues: true,
 //   });
 // }
-if (process.env.NODE_ENV === 'development') {
+// In some setups why-did-you-render can crash the app at startup (hook tracking internals).
+// Keep it opt-in via `VITE_WDYR=true`.
+const ENABLE_WDYR =
+  process.env.NODE_ENV === 'development' &&
+  // Vite exposes env vars via import.meta.env
+  (import.meta as any).env?.VITE_WDYR === 'true';
+
+if (ENABLE_WDYR) {
   import('@welldone-software/why-did-you-render').then(
     (whyDidYouRenderModule) => {
       const whyDidYouRender = whyDidYouRenderModule.default;
@@ -78,6 +85,7 @@ if (process.env.NODE_ENV === 'development') {
     },
   );
 }
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
