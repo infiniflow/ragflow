@@ -211,6 +211,7 @@ func (qb *QueryBuilder) NeedFineGrainedTokenize(tk string) bool {
 // References Python FulltextQueryer.question method.
 // Currently, a simplified version, returns basic MatchTextExpr; future integration of term weight and synonyms.
 func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*infinity.MatchTextExpr, []string) {
+	// originalQuery stores the original input text for later use in query expression.
 	originalQuery := txt
 
 	// Add space between English and Chinese
@@ -227,7 +228,9 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 
 	// Replace punctuation and special characters with space
 	// Reference: rag/nlp/query.py L44-48
+	// re is the regex pattern for matching punctuation and special characters.
 	re := regexp.MustCompile(`[ :|\r\n\t,，.。?？/\` + "`" + `!！&^%()\[\]{}<>]+`)
+	// txtCleaned is the text after removing punctuation and special characters.
 	txtCleaned := re.ReplaceAllString(txtSimplified, " ")
 
 	// Remove stop words
@@ -239,6 +242,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 		// Reference: rag/nlp/query.py L52-88
 
 		// Remove stop words again
+		// txtFinal is the text after removing stop words again.
 		txtFinal := qb.RmWWW(txtNoStopWords)
 
 		// Tokenize using rag_tokenizer
@@ -248,7 +252,9 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			tokenized = txtFinal
 		}
 
+		// tks are tokens obtained by splitting the tokenized text by whitespace.
 		tks := strings.Fields(tokenized)
+		// keywords stores the non‑empty tokens as keywords.
 		keywords := make([]string, 0, len(tks))
 		for _, t := range tks {
 			if t != "" {
@@ -258,6 +264,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 
 		// Calculate term weights using TermWeightDealer
 		// Reference: rag/nlp/query.py L56
+		// tws holds the term weight list for each token.
 		tws := qb.termWeight.Weights(tks, false)
 
 		// Clean tokens and filter
@@ -266,6 +273,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			tk string
 			w  float64
 		}
+		// tksW holds the cleaned tokens with their weights.
 		var tksW []tokenWeight
 		for _, tw := range tws {
 			tk := tw.Term
@@ -293,10 +301,12 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 
 		// TODO: Synonym expansion (reference L61-67)
 		// For now, use empty synonyms
+		// syns is a placeholder for synonym expansion (currently empty).
 		syns := make([]string, len(tksW))
 
 		// Build query parts
 		// Reference: rag/nlp/query.py L69-70
+		// q collects the query part strings.
 		var q []string
 		for i, tw := range tksW {
 			tk := tw.tk
@@ -317,6 +327,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			if left == "" || right == "" {
 				continue
 			}
+			// maxW is the maximum weight between two adjacent tokens.
 			maxW := tksW[i-1].w
 			if tksW[i].w > maxW {
 				maxW = tksW[i].w
@@ -328,6 +339,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			q = append(q, txtFinal)
 		}
 
+		// query is the final query string built from all query parts.
 		query := strings.Join(q, " ")
 		return &infinity.MatchTextExpr{
 			Fields:       qb.queryFields,
@@ -342,15 +354,20 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 	// Reference: rag/nlp/query.py L88-172
 
 	// Save original text before removing stop words (for fallback)
+	// otxt holds the original text before removing stop words, used as fallback.
 	otxt := txtNoStopWords
 
 	// Remove stop words for Chinese processing
+	// txtChinese is the text after removing stop words for Chinese processing.
 	txtChinese := qb.RmWWW(txtNoStopWords)
 
+	// qs collects query strings for each segment.
 	var qs []string
+	// keywords stores keywords extracted from segments.
 	var keywords []string
 
 	// Split text and process each segment (limit to 256)
+	// segments are the text segments after splitting by term weight.
 	segments := qb.termWeight.Split(txtChinese)
 	if len(segments) > 256 {
 		segments = segments[:256]
@@ -363,9 +380,11 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 		keywords = append(keywords, segment)
 
 		// Get term weights
+		// termWeightList holds term weights for the current segment.
 		termWeightList := qb.termWeight.Weights([]string{segment}, true)
 
 		// Lookup synonyms
+		// syns are synonyms for the current segment.
 		syns := qb.synonym.Lookup(segment, 8)
 		if len(syns) > 0 && len(keywords) < 32 {
 			keywords = append(keywords, syns...)
@@ -376,6 +395,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			return termWeightList[i].Weight > termWeightList[j].Weight
 		})
 
+		// terms stores term strings with their weights for the current segment.
 		var terms []struct {
 			term   string
 			weight float64
@@ -386,6 +406,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			weight := termWeight.Weight
 
 			// Fine-grained tokenization if needed
+			// sm holds fine‑grained tokens for the current term.
 			var sm []string
 			if qb.NeedFineGrainedTokenize(term) {
 				fineGrained, err := tokenizer.FineGrainedTokenize(term)
@@ -395,7 +416,9 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			}
 
 			// Clean special characters from sm
+			// cleanSm holds cleaned fine‑grained tokens with special characters removed.
 			var cleanSm []string
+			// specialCharRe is the regex pattern for matching special characters.
 			specialCharRe := regexp.MustCompile(`[,\.\/;'\[\]\\\` + "`" + `~!@#$%\^&\*\(\)=\+_<>\?:"\{\}\|，。；'‘’【】、！￥……（）——《》？："""-]+`)
 			for _, m := range sm {
 				m = specialCharRe.ReplaceAllString(m, "")
@@ -408,6 +431,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 
 			// Add to keywords if under limit
 			if len(keywords) < 32 {
+				// cleanTk is the term with quotes and spaces removed.
 				cleanTk := regexp.MustCompile(`[ \"']+`).ReplaceAllString(term, "")
 				if cleanTk != "" {
 					keywords = append(keywords, cleanTk)
@@ -416,6 +440,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			}
 
 			// Lookup synonyms for this token
+			// tkSyns are synonyms for the current term.
 			tkSyns := qb.synonym.Lookup(term, 8)
 			for i, s := range tkSyns {
 				tkSyns[i] = qb.SubSpecialChar(s)
@@ -429,6 +454,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			}
 
 			// Fine-grained tokenize synonyms
+			// fineGrainedSyns holds fine‑grained tokenized synonyms.
 			var fineGrainedSyns []string
 			for _, s := range tkSyns {
 				if s == "" {
@@ -475,14 +501,17 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 		}
 
 		// Build query string for this segment
+		// termParts collects query parts for each term in the segment.
 		var termParts []string
 		for _, termWeight := range terms {
 			termParts = append(termParts, fmt.Sprintf("(%s)^%.4f", termWeight.term, termWeight.weight))
 		}
+		// tmsStr is the query string for the current segment.
 		tmsStr := strings.Join(termParts, " ")
 
 		// Add proximity query if multiple tokens
 		if len(termWeightList) > 1 {
+			// tokenized is the tokenized version of the segment.
 			tokenized, _ := tokenizer.Tokenize(segment)
 			if tokenized != "" {
 				tmsStr += fmt.Sprintf(` ("%s"~2)^1.5`, tokenized)
@@ -491,6 +520,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 
 		// Add segment-level synonyms
 		if len(syns) > 0 && tmsStr != "" {
+			// synParts collects synonym query parts.
 			var synParts []string
 			for _, s := range syns {
 				s = qb.SubSpecialChar(s)
@@ -513,12 +543,14 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 
 	// Build final query
 	if len(qs) > 0 {
+		// queryParts collects final query parts for each segment.
 		var queryParts []string
 		for _, q := range qs {
 			if q != "" {
 				queryParts = append(queryParts, fmt.Sprintf("(%s)", q))
 			}
 		}
+		// query is the final query string built from all segments.
 		query := strings.Join(queryParts, " OR ")
 		if query == "" {
 			query = otxt
