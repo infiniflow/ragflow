@@ -80,10 +80,42 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 
 	if req.KeywordOnly || len(req.Vector) == 0 {
 		// Keyword-only search
-		queryBody["query"] = buildESKeywordQuery(matchText, filterClauses)
+		queryBody["query"] = buildESKeywordQuery(matchText, filterClauses, 1.0)
 	} else {
 		// Hybrid search: keyword + vector
-		queryBody["query"] = buildESHybridQuery(matchText, req.Vector, req.VectorSimilarityWeight, filterClauses)
+		// Calculate text weight
+		textWeight := 1.0 - req.VectorSimilarityWeight
+		// Build boolean query for text match and filters
+		boolQuery := buildESKeywordQuery(matchText, filterClauses, 1.0)
+		// Add boost to the bool query (as in Python code)
+		if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
+			boolMap["boost"] = textWeight
+		}
+		// Build kNN query
+		dimension := len(req.Vector)
+		var fieldBuilder strings.Builder
+		fieldBuilder.WriteString("q_")
+		fieldBuilder.WriteString(strconv.Itoa(dimension))
+		fieldBuilder.WriteString("_vec")
+		fieldName := fieldBuilder.String()
+
+		k := req.TopK
+		if k <= 0 {
+			k = 1024
+		}
+		numCandidates := k * 2
+
+		knnQuery := map[string]interface{}{
+			"field":          fieldName,
+			"query_vector":   req.Vector,
+			"k":              k,
+			"num_candidates": numCandidates,
+			"filter":         boolQuery,
+			"similarity":     req.SimilarityThreshold,
+		}
+
+		queryBody["knn"] = knnQuery
+		queryBody["query"] = boolQuery
 	}
 
 	queryBody["size"] = limit
@@ -333,97 +365,25 @@ func buildFilterClauses(kbIDs, docIDs []string, available int) []map[string]inte
 
 // buildESKeywordQuery builds keyword-only search query for ES
 // Uses query_string if matchText is in query_string format, otherwise uses multi_match
-func buildESKeywordQuery(matchText string, filterClauses []map[string]interface{}) map[string]interface{} {
+// boost is applied to the text match clause (query_string or multi_match)
+func buildESKeywordQuery(matchText string, filterClauses []map[string]interface{}, boost float64) map[string]interface{} {
 	var mustClause map[string]interface{}
 
-	// Check if matchText contains query_string operators (OR, AND, ^, etc.)
-	if strings.Contains(matchText, " OR ") || strings.Contains(matchText, " AND ") ||
-		strings.Contains(matchText, "^") || strings.Contains(matchText, "(") {
-		// Use query_string for complex queries
-		mustClause = map[string]interface{}{
-			"query_string": map[string]interface{}{
-				"query":  matchText,
-				"fields": []string{"title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"},
-				"type":   "best_fields",
-				"minimum_should_match": "30%",
-			},
-		}
-	} else {
-		// Use multi_match for simple queries
-		mustClause = map[string]interface{}{
-			"multi_match": map[string]interface{}{
-				"query":  matchText,
-				"fields": []string{"title_tks^2", "content_ltks", "question_kwd", "important_kwd^3"},
-				"type":   "best_fields",
-			},
-		}
+	// Use query_string for complex queries
+	queryString := map[string]interface{}{
+		"query":                matchText,
+		"fields":               []string{"title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"},
+		"type":                 "best_fields",
+		"minimum_should_match": "30%",
+		"boost":                boost,
+	}
+	mustClause = map[string]interface{}{
+		"query_string": queryString,
 	}
 
 	return map[string]interface{}{
 		"bool": map[string]interface{}{
-			"must":                 mustClause,
-			"filter":               filterClauses,
-			"minimum_should_match": 1,
-		},
-	}
-}
-
-// buildESHybridQuery builds hybrid search query (keyword + vector) for ES
-func buildESHybridQuery(matchText string, vector []float64, vectorWeight float64, filterClauses []map[string]interface{}) map[string]interface{} {
-	textWeight := 1.0 - vectorWeight
-
-	dimension := len(vector)
-	var fieldBuilder strings.Builder
-	fieldBuilder.WriteString("q_")
-	fieldBuilder.WriteString(strconv.Itoa(dimension))
-	fieldBuilder.WriteString("_vec")
-	fieldName := fieldBuilder.String()
-
-	// Build text match clause
-	var textMatchClause map[string]interface{}
-	if strings.Contains(matchText, " OR ") || strings.Contains(matchText, " AND ") ||
-		strings.Contains(matchText, "^") || strings.Contains(matchText, "(") {
-		// Use query_string for complex queries
-		textMatchClause = map[string]interface{}{
-			"query_string": map[string]interface{}{
-				"query":                matchText,
-				"fields":               []string{"title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"},
-				"type":                 "best_fields",
-				"minimum_should_match": "30%",
-				"boost":                textWeight,
-			},
-		}
-	} else {
-		// Use multi_match for simple queries
-		textMatchClause = map[string]interface{}{
-			"multi_match": map[string]interface{}{
-				"query":  matchText,
-				"fields": []string{"title_tks^2", "content_ltks", "question_kwd", "important_kwd^3"},
-				"type":   "best_fields",
-				"boost":  textWeight,
-			},
-		}
-	}
-
-	shouldClauses := []map[string]interface{}{
-		textMatchClause,
-		{
-			"script_score": map[string]interface{}{
-				"query": map[string]interface{}{"match_all": map[string]interface{}{}},
-				"script": map[string]interface{}{
-					"source": fmt.Sprintf("cosineSimilarity(params.query_vector, '%s') + 1.0", fieldName),
-					"params": map[string]interface{}{
-						"query_vector": vector,
-					},
-				},
-				"boost": vectorWeight,
-			},
-		},
-	}
-
-	return map[string]interface{}{
-		"bool": map[string]interface{}{
-			"should": shouldClauses,
+			"must":   mustClause,
 			"filter": filterClauses,
 		},
 	}

@@ -279,10 +279,10 @@ func getSimilarityThreshold(threshold *float64) float64 {
 }
 
 func getVectorSimilarityWeight(weight *float64) float64 {
-	if weight != nil && *weight >= 0 && *weight <= 1 {
-		return *weight
-	}
-	return 0.3
+	//if weight != nil && *weight >= 0 && *weight <= 1 {
+	//	return *weight
+	//}
+	return 0.95
 }
 
 func buildIndexNames(tenantIDs []string) []string {
