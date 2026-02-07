@@ -241,48 +241,54 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		return nil, fmt.Errorf("invalid search response type")
 	}
 
-	// Build SearchResult for reranker
-	sres := buildSearchResult(searchResp, questionVector)
-
-	// Get rerank model if RerankID is specified (can be nil)
-	var rerankModel nlp.RerankModel
-	if req.RerankID != nil && *req.RerankID != "" {
-		rerankModel, err = s.modelProvider.GetRerankModel(ctx, targetTenantID, *req.RerankID)
-		if err != nil {
-			logger.Warn("Failed to get rerank model, falling back to standard reranking", zap.Error(err))
-			rerankModel = nil
-		}
-	}
-
-	// Perform reranking
-	// Reference: rag/nlp/search.py L404-L429
-	tkWeight := 1.0 - getVectorSimilarityWeight(req.VectorSimilarityWeight)
-	vtWeight := getVectorSimilarityWeight(req.VectorSimilarityWeight)
-	useInfinity := s.engineType == config.EngineInfinity
-
-	sim, _, _ := nlp.Rerank(
-		rerankModel,
-		searchResp,
-		keywords,
-		questionVector,
-		sres,
-		req.Question,
-		tkWeight,
-		vtWeight,
-		useInfinity,
-		"content_ltks",
-		queryBuilder,
-	)
-
-	// Apply similarity threshold and sort chunks
-	similarityThreshold := getSimilarityThreshold(req.SimilarityThreshold)
-	filteredChunks := applyRerankResults(searchResp.Chunks, sim, similarityThreshold)
-
 	return &RetrievalTestResponse{
-		Chunks: filteredChunks,
+		Chunks: searchResp.Chunks,
 		Labels: []map[string]interface{}{}, // Empty labels for now
-		Total:  int64(len(filteredChunks)),
+		Total:  searchResp.Total,
 	}, nil
+
+	//// Build SearchResult for reranker
+	//sres := buildSearchResult(searchResp, questionVector)
+	//
+	//// Get rerank model if RerankID is specified (can be nil)
+	//var rerankModel nlp.RerankModel
+	//if req.RerankID != nil && *req.RerankID != "" {
+	//	rerankModel, err = s.modelProvider.GetRerankModel(ctx, targetTenantID, *req.RerankID)
+	//	if err != nil {
+	//		logger.Warn("Failed to get rerank model, falling back to standard reranking", zap.Error(err))
+	//		rerankModel = nil
+	//	}
+	//}
+	//
+	//// Perform reranking
+	//// Reference: rag/nlp/search.py L404-L429
+	//tkWeight := 1.0 - getVectorSimilarityWeight(req.VectorSimilarityWeight)
+	//vtWeight := getVectorSimilarityWeight(req.VectorSimilarityWeight)
+	//useInfinity := s.engineType == config.EngineInfinity
+	//
+	//sim, _, _ := nlp.Rerank(
+	//	rerankModel,
+	//	searchResp,
+	//	keywords,
+	//	questionVector,
+	//	sres,
+	//	req.Question,
+	//	tkWeight,
+	//	vtWeight,
+	//	useInfinity,
+	//	"content_ltks",
+	//	queryBuilder,
+	//)
+	//
+	//// Apply similarity threshold and sort chunks
+	//similarityThreshold := getSimilarityThreshold(req.SimilarityThreshold)
+	//filteredChunks := applyRerankResults(searchResp.Chunks, sim, similarityThreshold)
+	//
+	//return &RetrievalTestResponse{
+	//	Chunks: filteredChunks,
+	//	Labels: []map[string]interface{}{}, // Empty labels for now
+	//	Total:  int64(len(filteredChunks)),
+	//}, nil
 }
 
 // Helper functions
