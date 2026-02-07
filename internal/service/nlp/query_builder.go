@@ -363,7 +363,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 		keywords = append(keywords, segment)
 
 		// Get term weights
-		twts := qb.termWeight.Weights([]string{segment}, true)
+		termWeightList := qb.termWeight.Weights([]string{segment}, true)
 
 		// Lookup synonyms
 		syns := qb.synonym.Lookup(segment, 8)
@@ -372,23 +372,23 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 		}
 
 		// Sort by weight descending
-		sort.Slice(twts, func(i, j int) bool {
-			return twts[i].Weight > twts[j].Weight
+		sort.Slice(termWeightList, func(i, j int) bool {
+			return termWeightList[i].Weight > termWeightList[j].Weight
 		})
 
-		var tms []struct {
-			tk string
-			w  float64
+		var terms []struct {
+			term   string
+			weight float64
 		}
 
-		for _, tw := range twts {
-			tk := tw.Term
-			w := tw.Weight
+		for _, termWeight := range termWeightList {
+			term := termWeight.Term
+			weight := termWeight.Weight
 
 			// Fine-grained tokenization if needed
 			var sm []string
-			if qb.NeedFineGrainedTokenize(tk) {
-				fineGrained, err := tokenizer.FineGrainedTokenize(tk)
+			if qb.NeedFineGrainedTokenize(term) {
+				fineGrained, err := tokenizer.FineGrainedTokenize(term)
 				if err == nil && fineGrained != "" {
 					sm = strings.Fields(fineGrained)
 				}
@@ -408,7 +408,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 
 			// Add to keywords if under limit
 			if len(keywords) < 32 {
-				cleanTk := regexp.MustCompile(`[ \"']+`).ReplaceAllString(tk, "")
+				cleanTk := regexp.MustCompile(`[ \"']+`).ReplaceAllString(term, "")
 				if cleanTk != "" {
 					keywords = append(keywords, cleanTk)
 				}
@@ -416,7 +416,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			}
 
 			// Lookup synonyms for this token
-			tkSyns := qb.synonym.Lookup(tk, 8)
+			tkSyns := qb.synonym.Lookup(term, 8)
 			for i, s := range tkSyns {
 				tkSyns[i] = qb.SubSpecialChar(s)
 			}
@@ -449,40 +449,40 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			}
 
 			// Clean token for query
-			tk = qb.SubSpecialChar(tk)
-			if tk == "" {
+			term = qb.SubSpecialChar(term)
+			if term == "" {
 				continue
 			}
 
 			// Quote if contains space
-			if strings.Contains(tk, " ") {
-				tk = fmt.Sprintf(`"%s"`, tk)
+			if strings.Contains(term, " ") {
+				term = fmt.Sprintf(`"%s"`, term)
 			}
 
 			// Build query part with synonyms
 			if len(fineGrainedSyns) > 0 {
-				tk = fmt.Sprintf("(%s OR (%s)^0.2)", tk, strings.Join(fineGrainedSyns, " "))
+				term = fmt.Sprintf("(%s OR (%s)^0.2)", term, strings.Join(fineGrainedSyns, " "))
 			}
 			if len(sm) > 0 {
 				smStr := strings.Join(sm, " ")
-				tk = fmt.Sprintf(`%s OR "%s" OR ("%s"~2)^0.5`, tk, smStr, smStr)
+				term = fmt.Sprintf(`%s OR "%s" OR ("%s"~2)^0.5`, term, smStr, smStr)
 			}
 
-			tms = append(tms, struct {
-				tk string
-				w  float64
-			}{tk, w})
+			terms = append(terms, struct {
+				term   string
+				weight float64
+			}{term, weight})
 		}
 
 		// Build query string for this segment
-		var tmsParts []string
-		for _, tw := range tms {
-			tmsParts = append(tmsParts, fmt.Sprintf("(%s)^%.4f", tw.tk, tw.w))
+		var termParts []string
+		for _, termWeight := range terms {
+			termParts = append(termParts, fmt.Sprintf("(%s)^%.4f", termWeight.term, termWeight.weight))
 		}
-		tmsStr := strings.Join(tmsParts, " ")
+		tmsStr := strings.Join(termParts, " ")
 
 		// Add proximity query if multiple tokens
-		if len(twts) > 1 {
+		if len(termWeightList) > 1 {
 			tokenized, _ := tokenizer.Tokenize(segment)
 			if tokenized != "" {
 				tmsStr += fmt.Sprintf(` ("%s"~2)^1.5`, tokenized)
