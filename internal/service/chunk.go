@@ -169,7 +169,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 
 	// Try to get embedding from cache first
 	embdID := kbRecords[0].EmbdID
-	var vector []float64
+	var questionVector []float64
 
 	if s.embeddingCache != nil {
 		if cachedVector, ok := s.embeddingCache.Get(req.Question, embdID); ok {
@@ -177,23 +177,23 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 				zap.String("question", req.Question),
 				zap.String("embdID", embdID),
 				zap.Int("cacheSize", s.embeddingCache.Len()))
-			vector = cachedVector
+			questionVector = cachedVector
 		} else {
 			// Cache miss, encode and store
-			vector, err = embeddingModel.EncodeQuery(req.Question)
+			questionVector, err = embeddingModel.EncodeQuery(req.Question)
 			if err != nil {
 				return nil, fmt.Errorf("failed to encode query: %w", err)
 			}
-			s.embeddingCache.Put(req.Question, embdID, vector)
+			s.embeddingCache.Put(req.Question, embdID, questionVector)
 			logger.Debug("Embedding cache miss, stored",
 				zap.String("question", req.Question),
 				zap.String("embdID", embdID),
-				zap.Int("vectorDim", len(vector)),
+				zap.Int("vectorDim", len(questionVector)),
 				zap.Int("cacheSize", s.embeddingCache.Len()))
 		}
 	} else {
 		// No cache, just encode
-		vector, err = embeddingModel.EncodeQuery(req.Question)
+		questionVector, err = embeddingModel.EncodeQuery(req.Question)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encode query: %w", err)
 		}
@@ -218,7 +218,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		Question:               req.Question,
 		MatchText:              matchTextExpr.MatchingText,
 		Keywords:               keywords,
-		Vector:                 vector,
+		Vector:                 questionVector,
 		KbIDs:                  kbIDs,
 		DocIDs:                 req.DocIDs,
 		Page:                   getPageNum(req.Page),
@@ -241,10 +241,47 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		return nil, fmt.Errorf("invalid search response type")
 	}
 
+	// Build SearchResult for reranker
+	sres := buildSearchResult(searchResp, questionVector)
+
+	// Get rerank model if RerankID is specified (can be nil)
+	var rerankModel nlp.RerankModel
+	if req.RerankID != nil && *req.RerankID != "" {
+		rerankModel, err = s.modelProvider.GetRerankModel(ctx, targetTenantID, *req.RerankID)
+		if err != nil {
+			logger.Warn("Failed to get rerank model, falling back to standard reranking", zap.Error(err))
+			rerankModel = nil
+		}
+	}
+
+	// Perform reranking
+	// Reference: rag/nlp/search.py L404-L429
+	tkWeight := 1.0 - getVectorSimilarityWeight(req.VectorSimilarityWeight)
+	vtWeight := getVectorSimilarityWeight(req.VectorSimilarityWeight)
+	useInfinity := s.engineType == config.EngineInfinity
+
+	sim, _, _ := nlp.Rerank(
+		rerankModel,
+		searchResp,
+		keywords,
+		questionVector,
+		sres,
+		req.Question,
+		tkWeight,
+		vtWeight,
+		useInfinity,
+		"content_ltks",
+		queryBuilder,
+	)
+
+	// Apply similarity threshold and sort chunks
+	similarityThreshold := getSimilarityThreshold(req.SimilarityThreshold)
+	filteredChunks := applyRerankResults(searchResp.Chunks, sim, similarityThreshold)
+
 	return &RetrievalTestResponse{
-		Chunks: searchResp.Chunks,
+		Chunks: filteredChunks,
 		Labels: []map[string]interface{}{}, // Empty labels for now
-		Total:  searchResp.Total,
+		Total:  int64(len(filteredChunks)),
 	}, nil
 }
 
@@ -291,4 +328,58 @@ func buildIndexNames(tenantIDs []string) []string {
 		indexNames[i] = fmt.Sprintf("ragflow_%s", tenantID)
 	}
 	return indexNames
+}
+
+// buildSearchResult converts engine.SearchResponse to nlp.SearchResult for reranking
+func buildSearchResult(resp *engine.SearchResponse, queryVector []float64) *nlp.SearchResult {
+	field := make(map[string]map[string]interface{})
+	ids := make([]string, 0, len(resp.Chunks))
+
+	for i, chunk := range resp.Chunks {
+		// Extract ID from chunk
+		id := ""
+		if idVal, ok := chunk["_id"].(string); ok {
+			id = idVal
+		} else {
+			id = fmt.Sprintf("chunk_%d", i)
+		}
+		ids = append(ids, id)
+
+		// Store fields by id
+		field[id] = chunk
+	}
+
+	return &nlp.SearchResult{
+		Total:       len(resp.Chunks),
+		IDs:         ids,
+		QueryVector: queryVector,
+		Field:       field,
+	}
+}
+
+// applyRerankResults sorts and filters chunks based on reranking results
+// Reference: rag/nlp/search.py L430-L439
+func applyRerankResults(chunks []map[string]interface{}, sim []float64, threshold float64) []map[string]interface{} {
+	if len(chunks) == 0 || len(sim) == 0 {
+		return chunks
+	}
+
+	// Get sorted indices (descending by similarity)
+	sortedIndices := nlp.ArgsortDescending(sim)
+
+	// Sort and filter chunks based on reranking results
+	var filteredChunks []map[string]interface{}
+	for _, idx := range sortedIndices {
+		if idx < 0 || idx >= len(chunks) {
+			continue
+		}
+		if sim[idx] >= threshold {
+			chunk := chunks[idx]
+			// Add similarity score to chunk
+			chunk["_score"] = sim[idx]
+			filteredChunks = append(filteredChunks, chunk)
+		}
+	}
+
+	return filteredChunks
 }
