@@ -15,21 +15,18 @@
 #
 
 import infinity.rag_tokenizer
-class RagTokenizer(infinity.rag_tokenizer.RagTokenizer):
 
+
+class RagTokenizer(infinity.rag_tokenizer.RagTokenizer):
     def tokenize(self, line: str) -> str:
-        from common import settings # moved from the top of the file to avoid circular import
-        if settings.DOC_ENGINE_INFINITY:
-            return line
-        else:
-            return super().tokenize(line)
+        # Always tokenize using Infinity's tokenizer regardless of doc engine
+        # The Infinity Python SDK's tokenizer properly handles Chinese characters
+        return super().tokenize(line)
 
     def fine_grained_tokenize(self, tks: str) -> str:
-        from common import settings # moved from the top of the file to avoid circular import
-        if settings.DOC_ENGINE_INFINITY:
-            return tks
-        else:
-            return super().fine_grained_tokenize(tks)
+        # Always tokenize using Infinity's tokenizer regardless of doc engine
+        # The Infinity Python SDK's tokenizer properly handles Chinese characters
+        return super().fine_grained_tokenize(tks)
 
 
 def is_chinese(s):
