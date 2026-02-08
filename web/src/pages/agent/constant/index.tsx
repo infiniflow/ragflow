@@ -1085,3 +1085,5 @@ export const BeginQueryTypeMap = {
   [BeginQueryType.Integer]: TypesWithArray.Number,
   [BeginQueryType.Boolean]: TypesWithArray.Boolean,
 };
+
+export const VariableRegex = /{([^{}]*)}/g;

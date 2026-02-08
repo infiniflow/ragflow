@@ -22,12 +22,15 @@ This is the SOLE source of truth for document metadata - MySQL meta_fields colum
 
 import json
 import logging
+import re
 from copy import deepcopy
 from typing import Dict, List, Optional
 
 from api.db.db_models import DB, Document
 from common import settings
 from common.metadata_utils import dedupe_list
+from api.db.db_models import Knowledgebase
+from common.doc_store.doc_store_base import OrderByExpr
 
 
 class DocMetadataService:
@@ -57,7 +60,7 @@ class DocMetadataService:
         Returns:
             Simple metadata dictionary
         """
-        if not flat_meta:
+        if not flat_meta or not isinstance(flat_meta, dict):
             return {}
 
         meta_fields = flat_meta.get('meta_fields')
@@ -156,17 +159,23 @@ class DocMetadataService:
             limit: Max results to return
 
         Returns:
-            Search results from ES/Infinity
+            Search results from ES/Infinity, or empty list if index doesn't exist
         """
-        from api.db.db_models import Knowledgebase
-        from common.doc_store.doc_store_base import OrderByExpr
-
         kb = Knowledgebase.get_by_id(kb_id)
         if not kb:
-            return None
+            return []
 
         tenant_id = kb.tenant_id
         index_name = cls._get_doc_meta_index_name(tenant_id)
+
+        # Check if metadata index exists, create if it doesn't
+        if not settings.docStoreConn.index_exist(index_name, ""):
+            logging.debug(f"Metadata index {index_name} does not exist, creating it")
+            result = settings.docStoreConn.create_doc_meta_idx(index_name)
+            if result is False:
+                logging.error(f"Failed to create metadata index {index_name}")
+                return []
+            logging.debug(f"Successfully created metadata index {index_name}")
 
         if condition is None:
             condition = {"kb_id": kb_id}
@@ -200,8 +209,6 @@ class DocMetadataService:
         Returns:
             Processed metadata with split values
         """
-        import re
-
         if not meta_fields or not isinstance(meta_fields, dict):
             return meta_fields
 
@@ -247,8 +254,6 @@ class DocMetadataService:
             True if successful, False otherwise
         """
         try:
-            from api.db.db_models import Knowledgebase
-
             # Get document with tenant_id (need to join with Knowledgebase)
             doc_query = Document.select(Document, Knowledgebase.tenant_id).join(
                 Knowledgebase, on=(Knowledgebase.id == Document.kb_id)
@@ -291,6 +296,9 @@ class DocMetadataService:
                 # Both ES and Infinity now use per-tenant metadata tables
                 result = settings.docStoreConn.create_doc_meta_idx(index_name)
                 logging.debug(f"Table creation result: {result}")
+                if result is False:
+                    logging.error(f"Failed to create metadata table {index_name}")
+                    return False
             else:
                 logging.debug(f"Metadata table already exists: {index_name}")
 
@@ -304,7 +312,14 @@ class DocMetadataService:
             if result:
                 logging.error(f"Failed to insert metadata for document {doc_id}: {result}")
                 return False
-
+            # Force ES refresh to make metadata immediately available for search
+            if not settings.DOC_ENGINE_INFINITY:
+                try:
+                    settings.docStoreConn.es.indices.refresh(index=index_name)
+                    logging.debug(f"Refreshed metadata index: {index_name}")
+                except Exception as e:
+                    logging.warning(f"Failed to refresh metadata index {index_name}: {e}")
+            
             logging.debug(f"Successfully inserted metadata for document {doc_id}")
             return True
 
@@ -329,8 +344,6 @@ class DocMetadataService:
             True if successful, False otherwise
         """
         try:
-            from api.db.db_models import Knowledgebase
-
             # Get document with tenant_id
             doc_query = Document.select(Document, Knowledgebase.tenant_id).join(
                 Knowledgebase, on=(Knowledgebase.id == Document.kb_id)
@@ -394,10 +407,7 @@ class DocMetadataService:
             True if successful (or no metadata to delete), False otherwise
         """
         try:
-            from api.db.db_models import Knowledgebase
-
             logging.debug(f"[METADATA DELETE] Starting metadata deletion for document: {doc_id}")
-
             # Get document with tenant_id
             doc_query = Document.select(Document, Knowledgebase.tenant_id).join(
                 Knowledgebase, on=(Knowledgebase.id == Document.kb_id)
@@ -494,8 +504,6 @@ class DocMetadataService:
             except Exception as e:
                 logging.warning(f"[DROP EMPTY TABLE] Count API failed, falling back to search: {e}")
                 # Fallback to search if count fails
-                from common.doc_store.doc_store_base import OrderByExpr
-
                 results = settings.docStoreConn.search(
                     select_fields=["id"],
                     highlight_fields=[],
@@ -564,8 +572,6 @@ class DocMetadataService:
             Metadata dictionary, empty dict if not found
         """
         try:
-            from api.db.db_models import Knowledgebase
-
             # Get document with tenant_id
             doc_query = Document.select(Document, Knowledgebase.tenant_id).join(
                 Knowledgebase, on=(Knowledgebase.id == Document.kb_id)
@@ -618,9 +624,6 @@ class DocMetadataService:
             Metadata dictionary in format: {field_name: {value: [doc_ids]}}
         """
         try:
-            from api.db.db_models import Knowledgebase
-            from common.doc_store.doc_store_base import OrderByExpr
-
             # Get tenant_id from first KB
             kb = Knowledgebase.get_by_id(kb_ids[0])
             if not kb:
@@ -697,9 +700,6 @@ class DocMetadataService:
             Metadata dictionary in format: {field_name: {value: [doc_ids]}}
         """
         try:
-            from api.db.db_models import Knowledgebase
-            from common.doc_store.doc_store_base import OrderByExpr
-
             # Get tenant_id from first KB
             kb = Knowledgebase.get_by_id(kb_ids[0])
             if not kb:
@@ -811,11 +811,17 @@ class DocMetadataService:
             Dictionary with metadata field statistics in format:
             {
                 "field_name": {
-                    "type": "string" | "number" | "list",
+                    "type": "string" | "number" | "list" | "time",
                     "values": [("value1", count1), ("value2", count2), ...]  # sorted by count desc
                 }
             }
         """
+        def _is_time_string(value: str) -> bool:
+            """Check if a string value is an ISO 8601 datetime (e.g., '2026-02-03T00:00:00')."""
+            if not isinstance(value, str):
+                return False
+            return bool(re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$', value))
+
         def _meta_value_type(value):
             """Determine the type of a metadata value."""
             if value is None:
@@ -826,6 +832,8 @@ class DocMetadataService:
                 return "string"
             if isinstance(value, (int, float)):
                 return "number"
+            if isinstance(value, str) and _is_time_string(value):
+                return "time"
             return "string"
 
         try:
@@ -861,7 +869,7 @@ class DocMetadataService:
                     # Aggregate value counts
                     values = v if isinstance(v, list) else [v]
                     for vv in values:
-                        if not vv:
+                        if vv is None:
                             continue
                         sv = str(vv)
                         if k not in summary:

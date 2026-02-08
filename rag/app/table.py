@@ -44,7 +44,7 @@ class Excel(ExcelParser):
             wb = Excel._load_excel_to_workbook(BytesIO(binary))
         total = 0
         for sheet_name in wb.sheetnames:
-            total += len(list(wb[sheet_name].rows))
+            total += Excel._get_actual_row_count(wb[sheet_name])
         res, fails, done = [], [], 0
         rn = 0
         flow_images = []
@@ -66,7 +66,7 @@ class Excel(ExcelParser):
                             flow_images.append(img)
 
             try:
-                rows = list(ws.rows)
+                rows = Excel._get_rows_limited(ws)
             except Exception as e:
                 logging.warning(f"Skip sheet '{sheet_name}' due to rows access error: {e}")
                 continue
@@ -457,10 +457,10 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 txts.extend([str(c) for c in cln if c])
         clmns_map = [(py_clmns[i].lower() + fields_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in
                      range(len(clmns))]
-        # For Infinity: Use original column names as keys since they're stored in chunk_data JSON
+        # For Infinity/OceanBase: Use original column names as keys since they're stored in chunk_data JSON
         # For ES/OS: Use full field names with type suffixes (e.g., url_kwd, body_tks)
-        if settings.DOC_ENGINE_INFINITY:
-            # For Infinity: key = original column name, value = display name
+        if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
+            # For Infinity/OceanBase: key = original column name, value = display name
             field_map = {py_clmns[i].lower(): str(clmns[i]).replace("_", " ") for i in range(len(clmns))}
         else:
             # For ES/OS: key = typed field name, value = display name
@@ -480,9 +480,9 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                     continue
                 if not isinstance(row[clmns[j]], pd.Series) and pd.isna(row[clmns[j]]):
                     continue
-                # For Infinity: Store in chunk_data JSON column
+                # For Infinity/OceanBase: Store in chunk_data JSON column
                 # For Elasticsearch/OpenSearch: Store as individual fields with type suffixes
-                if settings.DOC_ENGINE_INFINITY:
+                if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
                     data_json[str(clmns[j])] = row[clmns[j]]
                 else:
                     fld = clmns_map[j][0]
@@ -490,8 +490,8 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 row_fields.append((clmns[j], row[clmns[j]]))
             if not row_fields:
                 continue
-            # Add the data JSON field to the document (for Infinity only)
-            if settings.DOC_ENGINE_INFINITY:
+            # Add the data JSON field to the document (for Infinity/OceanBase)
+            if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
                 d["chunk_data"] = data_json
             # Format as a structured text for better LLM comprehension
             # Format each field as "- Field Name: Value" on separate lines

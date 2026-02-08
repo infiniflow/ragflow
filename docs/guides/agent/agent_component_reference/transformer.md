@@ -46,10 +46,10 @@ Click the dropdown menu of **Model** to show the model configuration window.
   - A higher **frequency penalty** value results in the model being more conservative in its use of repeated tokens.
   - Defaults to 0.7.
 - **Max tokens**:  
-  - The maximum context size of the agent.
+  - The maximum context size of the model.
 
 :::tip NOTE
-- It is not necessary to stick with the same model for all components. If a specific model is not performing well for a particular task, consider using a different one.
+- It is *not* necessary to stick with the same model for all components. If a specific model is not performing well for a particular task, consider using a different one.
 - If you are uncertain about the mechanism behind **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**, simply choose one of the three options of **Creativity**.
 :::
 
