@@ -230,6 +230,8 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 fi
 
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
+    # Fix: replace 'async for' with 'for' in sync_data_source.py (v0.23.1 bug)
+    sed -i 's/async for document_batch in document_batch_generator:/for document_batch in document_batch_generator:/' /ragflow/rag/svr/sync_data_source.py
     echo "Starting data sync..."
     while true; do
         "$PY" rag/svr/sync_data_source.py &
