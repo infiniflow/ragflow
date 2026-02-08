@@ -1522,7 +1522,7 @@
                     "model_type": "embedding"
                 },
                 {
-                    "llm_name": "embedding-001",
+                    "llm_name": "gemini-embedding-001",
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 2048,
                     "model_type": "embedding"
