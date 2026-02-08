@@ -42,7 +42,7 @@ services:
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
       - ../conf/llm_factories.json:/ragflow/conf/llm_factories.json
-      - ../rag/svr/sync_data_source.py:/ragflow/rag/svr/sync_data_source.py
+      - ../rag/svr/sync_data_source_v0.23.1_patched.py:/ragflow/rag/svr/sync_data_source.py
     env_file: .env
     networks:
       - ragflow
