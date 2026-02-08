@@ -38,6 +38,7 @@ export enum DataSourceKey {
   SEAFILE = 'seafile',
   MYSQL = 'mysql',
   POSTGRESQL = 'postgresql',
+  FIRECRAWL = 'firecrawl',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -172,6 +173,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'PostgreSQL',
       description: t(`setting.${DataSourceKey.POSTGRESQL}Description`),
       icon: <SvgIcon name={'data-source/postgresql'} width={38} />,
+    },
+    [DataSourceKey.FIRECRAWL]: {
+      name: 'Firecrawl',
+      description: t(`setting.${DataSourceKey.FIRECRAWL}Description`),
+      icon: <SvgIcon name={'data-source/firecrawl'} width={38} />,
     },
   };
 };
@@ -967,6 +973,55 @@ export const DataSourceFormFields = {
       tooltip: t('setting.postgresqlContentColumnsTip'),
     },
   ],
+  [DataSourceKey.FIRECRAWL]: [
+    {
+      label: 'Firecrawl API Key',
+      name: 'config.credentials.firecrawl_api_key',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.firecrawlApiKeyTip'),
+    },
+    {
+      label: 'URLs to Scrape',
+      name: 'config.urls',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: 'https://example.com, https://docs.example.com',
+      tooltip: t('setting.firecrawlUrlsTip'),
+    },
+    {
+      label: 'Crawl Base URL',
+      name: 'config.crawl_url',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'https://docs.example.com',
+      tooltip: t('setting.firecrawlCrawlUrlTip'),
+    },
+    {
+      label: 'Max Crawl Depth',
+      name: 'config.max_depth',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '2',
+      tooltip: t('setting.firecrawlMaxDepthTip'),
+    },
+    {
+      label: 'Include Paths (for crawl)',
+      name: 'config.include_paths',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '/docs/*, /blog/*',
+      tooltip: t('setting.firecrawlIncludePathsTip'),
+    },
+    {
+      label: 'Exclude Paths (for crawl)',
+      name: 'config.exclude_paths',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '/private/*, /admin/*',
+      tooltip: t('setting.firecrawlExcludePathsTip'),
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -1293,6 +1348,20 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         username: '',
         password: '',
+      },
+    },
+  },
+  [DataSourceKey.FIRECRAWL]: {
+    name: '',
+    source: DataSourceKey.FIRECRAWL,
+    config: {
+      urls: '',
+      crawl_url: '',
+      max_depth: 2,
+      include_paths: '',
+      exclude_paths: '',
+      credentials: {
+        firecrawl_api_key: '',
       },
     },
   },

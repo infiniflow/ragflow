@@ -55,6 +55,7 @@ from common.data_source import (
     ZendeskConnector,
     SeaFileConnector,
     RDBMSConnector,
+    FirecrawlConnector,
 )
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
@@ -1287,6 +1288,69 @@ class PostgreSQL(SyncBase):
         return document_generator
 
 
+class Firecrawl(SyncBase):
+    """Firecrawl web scraping data source.
+
+    Supports:
+    - Single URL scraping
+    - Batch/crawl operations for multiple pages
+    - Rate limit handling with automatic retries
+    """
+
+    SOURCE_NAME: str = FileSource.FIRECRAWL
+
+    async def _generate(self, task: dict):
+        # Parse URLs - can be comma-separated or a list
+        urls_config = self.conf.get("urls", "")
+        if isinstance(urls_config, str):
+            urls = [u.strip() for u in urls_config.split(",") if u.strip()]
+        else:
+            urls = urls_config or []
+
+        # Parse include/exclude paths for crawl
+        include_paths = self.conf.get("include_paths", "")
+        if isinstance(include_paths, str):
+            include_paths = [p.strip() for p in include_paths.split(",") if p.strip()]
+
+        exclude_paths = self.conf.get("exclude_paths", "")
+        if isinstance(exclude_paths, str):
+            exclude_paths = [p.strip() for p in exclude_paths.split(",") if p.strip()]
+
+        self.connector = FirecrawlConnector(
+            urls=urls,
+            crawl_url=self.conf.get("crawl_url"),
+            max_depth=int(self.conf.get("max_depth", 2)),
+            include_paths=include_paths,
+            exclude_paths=exclude_paths,
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            scrape_options=self.conf.get("scrape_options", {}),
+        )
+
+        credentials = self.conf.get("credentials")
+        if not credentials:
+            raise ValueError("Firecrawl connector is missing credentials.")
+
+        self.connector.load_credentials(credentials)
+
+        # Firecrawl doesn't have built-in change detection yet,
+        # so we always do a full load
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task["poll_range_start"]
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp()
+            )
+            begin_info = f"from {poll_start}"
+
+        crawl_url = self.conf.get("crawl_url", "")
+        url_count = len(urls)
+        logging.info(f"[Firecrawl] Connect: {url_count} URLs, crawl_url={crawl_url} {begin_info}")
+        return document_generator
+
+
 func_factory = {
     FileSource.S3: S3,
     FileSource.R2: R2,
@@ -1315,6 +1379,7 @@ func_factory = {
     FileSource.SEAFILE: SeaFile,
     FileSource.MYSQL: MySQL,
     FileSource.POSTGRESQL: PostgreSQL,
+    FileSource.FIRECRAWL: Firecrawl,
 }
 
 
