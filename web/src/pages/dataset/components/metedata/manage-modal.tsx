@@ -19,7 +19,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
-import { Routes } from '@/routes';
 import {
   flexRender,
   getCoreRowModel,
@@ -321,7 +320,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                 {secondTitle || t('knowledgeDetails.metadata.metadata')}
               </div>
               <div>
-                {metadataType === MetadataType.Manage && (
+                {/* {metadataType === MetadataType.Manage && (
                   <Button
                     variant={'ghost'}
                     className="border border-border-button"
@@ -332,7 +331,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                   >
                     {t('knowledgeDetails.metadata.toMetadataSetting')}
                   </Button>
-                )}
+                )} */}
                 {isCanAdd && activeTab !== 'built-in' && (
                   <Button
                     variant={'ghost'}
@@ -341,6 +340,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                     onClick={handAddValueRow}
                   >
                     <Plus />
+                    {t('common.add')}
                   </Button>
                 )}
               </div>

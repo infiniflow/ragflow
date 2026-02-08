@@ -5,9 +5,9 @@
 		"de": "Wählen Sie Ihren Wissensdatenbank Agenten",
 		"zh": "选择知识库智能体"},
     "description": {
-		"en": "Select your desired knowledge base from the dropdown menu. The Agent will only retrieve from the selected knowledge base and use this content  to generate responses.",
-		"de": "Wählen Sie Ihre gewünschte Wissensdatenbank aus dem Dropdown-Menü. Der Agent ruft nur Informationen aus der ausgewählten Wissensdatenbank ab und verwendet diesen Inhalt zur Generierung von Antworten.",
-		"zh": "从下拉菜单中选择知识库，智能体将仅根据所选知识库内容生成回答。"},
+		"en": "This Agent generates responses solely from the specified dataset (knowledge base). You are required to select a knowledge base from the dropdown when running the Agent.",
+		"de": "Dieser Agent erzeugt Antworten ausschließlich aus dem angegebenen Datensatz (Wissensdatenbank). Beim Ausführen des Agents müssen Sie eine Wissensdatenbank aus dem Dropdown-Menü auswählen.",
+		"zh": "本工作流仅根据指定知识库内容生成回答。运行时，请在下拉菜单选择需要查询的知识库。"},
 	"canvas_type": "Agent", 
     "dsl": {
 		"components": {
@@ -387,10 +387,10 @@
 				{
 					"data": {
 						"form": {
-							"text": "Select your desired knowledge base from the dropdown menu. \nThe Agent will only retrieve from the selected knowledge base and use this content  to generate responses."
+							"text": "This Agent generates responses solely from the specified dataset (knowledge base). \nYou are required to select a knowledge base from the dropdown when running the Agent."
 						},
 						"label": "Note",
-						"name": "Workflow overall description"
+						"name": "Workflow description"
 					},
 					"dragHandle": ".note-drag-handle",
 					"dragging": false,

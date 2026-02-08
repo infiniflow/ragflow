@@ -201,7 +201,7 @@ export default {
         "Capture N jetons de texte au-dessus et au-dessous de l'image et du tableau pour fournir un contexte plus riche.",
       name: 'Nom de la base de connaissances',
       photo: 'Photo de la base de connaissances',
-      photoTip: 'Vous pouvez téléverser un fichier de 4 Mo',
+      photoTip: 'Vous pouvez télécharger une image jusqu’à 4 Mo.',
       description: 'Description',
       language: 'Langue du document',
       languageMessage: 'Veuillez saisir votre langue !',
@@ -402,7 +402,7 @@ export default {
       frequencyPenaltyTip: `Similaire à la pénalité de présence, cela réduit la tendance du modèle à répéter fréquemment les mêmes mots.`,
       maxTokens: 'Nombre max de tokens',
       maxTokensMessage: 'Le nombre max de tokens est requis',
-      maxTokensTip: `La taille maximale de contexte de l’agent ; une valeur invalide ou incorrecte provoquera une erreur. Valeur par défaut : 512.`,
+      maxTokensTip: `La taille maximale de contexte de l’modèle ; une valeur invalide ou incorrecte provoquera une erreur. Valeur par défaut : 512.`,
       maxTokensInvalidMessage:
         'Veuillez saisir un nombre valide pour le nombre max de tokens.',
       maxTokensMinMessage:
@@ -483,7 +483,7 @@ export default {
         'Mettez à jour votre photo et vos informations personnelles ici.',
       maxTokens: 'Nombre maximum de tokens',
       maxTokensMessage: 'Le nombre maximum de tokens est requis',
-      maxTokensTip: `La taille maximale de contexte de l’agent ; une valeur invalide ou incorrecte provoquera une erreur. Valeur par défaut : 512.`,
+      maxTokensTip: `La taille maximale de contexte de l’modèle ; une valeur invalide ou incorrecte provoquera une erreur. Valeur par défaut : 512.`,
       maxTokensInvalidMessage:
         'Veuillez saisir un nombre valide pour le nombre maximum de tokens.',
       maxTokensMinMessage:
@@ -1263,7 +1263,7 @@ export default {
         'Vos utilisateurs verront ce message d’accueil au début.',
       modeTip: 'Le mode définit comment le workflow est initié.',
       beginInputTip:
-        'En définissant des paramètres d’entrée, ce contenu peut être utilisé par d’autres composants dans les processus suivants.',
+        'Les paramètres d’entrée définis ici peuvent être accessibles par les composants du workflow en aval.',
       query: 'Variables de requête',
       agent: 'Agent',
       agentDescription:

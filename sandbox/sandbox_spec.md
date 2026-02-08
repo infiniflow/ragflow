@@ -1,26 +1,25 @@
-# RAGFlow Sandbox Multi-Provider Architecture - Design Specification
+# RAGFlow Sandbox multi-provider architecture - design specification
 
 ## 1. Overview
 
-### 1.1 Goals
-Enable RAGFlow to support multiple sandbox deployment modes:
-- **Self-Managed**: On-premise deployment using Daytona/Docker (current implementation)
-- **SaaS Providers**: Cloud-based sandbox services (Aliyun Code Interpreter, E2B)
+The goal of this design specification is to enable RAGFlow to support multiple Sandbox deployment modes:
 
-### 1.2 Key Requirements
+- Self-Managed: On-premise deployment using Daytona/Docker (current implementation)
+- SaaS providers: Cloud-based sandbox services (Aliyun Code Interpreter, E2B)
+
+### Key requirements
+
 - Provider-agnostic interface for sandbox operations
 - Admin-configurable provider settings with dynamic schema
 - Multi-tenant isolation (1:1 session-to-sandbox mapping)
 - Graceful fallback and error handling
 - Unified monitoring and observability
 
-## 2. Architecture Design
+## Architecture
 
-### 2.1 Provider Abstraction Layer
+### Provider abstraction layer
 
-**Location**: `agent/sandbox/providers/`
-
-Define a unified `SandboxProvider` interface:
+Defines a unified `SandboxProvider` interface, and is located at `agent/sandbox/providers/`.
 
 ```python
 # agent/sandbox/providers/base.py
@@ -112,40 +111,48 @@ class SandboxProvider(ABC):
         return True, None
 ```
 
-### 2.2 Provider Implementations
+### Provider implementations
 
-#### 2.2.1 Self-Managed Provider
-**File**: `agent/sandbox/providers/self_managed.py`
+#### Self-managed provider
 
-Wraps the existing executor_manager implementation.
+Wraps the existing executor_manager implementation. The implementation file is located at `agent/sandbox/providers/self_managed.py`.
 
 **Prerequisites**:
-- **gVisor (runsc)**: Required for secure container isolation. Install with:
+
+- gVisor (runsc): Required for secure container isolation. Install with:
   ```bash
   go install gvisor.dev/gvisor/runsc@latest
   sudo cp ~/go/bin/runsc /usr/local/bin/
   runsc --version
   ```
   Or download from: https://github.com/google/gvisor/releases
-- **Docker**: Docker runtime with gVisor support
-- **Base Images**: Pull sandbox base images:
+- Docker: Docker runtime with gVisor support.
+- Base Images: Pull sandbox base images:
   ```bash
   docker pull infiniflow/sandbox-base-python:latest
   docker pull infiniflow/sandbox-base-nodejs:latest
   ```
 
-**Configuration**: Docker API endpoint, pool size, resource limits
+**Configuration**: Docker API endpoint, pool size, resource limits:
+
 - `endpoint`: HTTP endpoint (default: "http://localhost:9385")
 - `timeout`: Request timeout in seconds (default: 30)
 - `max_retries`: Maximum retry attempts (default: 3)
 - `pool_size`: Container pool size (default: 10)
 
-**Languages**: Python, Node.js, JavaScript
+**Languages**: 
+- Python
+- Node.js
+- JavaScript
 
-**Security**: gVisor (runsc runtime), seccomp, read-only filesystem, memory limits
+**Security**: 
+- gVisor (runsc runtime)
+- seccomp
+- read-only filesystem
+- memory limits
 
 **Advantages**:
-- Low latency (<90ms), data privacy, full control
+- Low latency (&lt;90ms), data privacy, full control
 - No per-execution costs
 - Supports `arguments` parameter for passing data to `main()` function
 
@@ -154,11 +161,12 @@ Wraps the existing executor_manager implementation.
 - Requires gVisor installation for security
 - Pool exhaustion causes "Container pool is busy" errors
 
-**Common Issues**:
-- **"Container pool is busy"**: Increase `SANDBOX_EXECUTOR_MANAGER_POOL_SIZE` (default: 1 in .env, should be 5+)
-- **Container creation fails**: Ensure gVisor is installed and accessible at `/usr/local/bin/runsc`
+**Common issues**:
+- `"Container pool is busy"`: Increase `SANDBOX_EXECUTOR_MANAGER_POOL_SIZE` (default: 1 in .env, should be 5+)
+- `Container creation fails`: Ensure gVisor is installed and accessible at `/usr/local/bin/runsc`
 
-#### 2.2.2 Aliyun Code Interpreter Provider
+#### 2.2.2 Aliyun code interpreter provider
+
 **File**: `agent/sandbox/providers/aliyun_codeinterpreter.py`
 
 SaaS integration with Aliyun Function Compute Code Interpreter service using the official agentrun-sdk.
@@ -177,7 +185,7 @@ SaaS integration with Aliyun Function Compute Code Interpreter service using the
 **Configuration**:
 - `access_key_id`: Aliyun AccessKey ID
 - `access_key_secret`: Aliyun AccessKey Secret
-- `account_id`: Aliyun primary account ID (主账号ID) - Required for API calls
+- `account_id`: Aliyun primary account ID - Required for API calls
 - `region`: Region (cn-hangzhou, cn-beijing, cn-shanghai, cn-shenzhen, cn-guangzhou)
 - `template_name`: Optional sandbox template name for pre-configured environments
 - `timeout`: Execution timeout (max 30 seconds - hard limit)
@@ -200,11 +208,11 @@ SaaS integration with Aliyun Function Compute Code Interpreter service using the
 - Pay-as-you-go costs
 - Requires Aliyun primary account ID for API calls
 
-**Setup Instructions - Creating a RAM User with Minimal Privileges**:
+**Setup instructions - Creating a RAM user with minimal privileges**:
 
-⚠️ **Security Warning**: Never use your Aliyun primary account (root account) AccessKey for SDK operations. Primary accounts have full resource permissions, and leaked credentials pose significant security risks.
+⚠️ **Security warning**: Never use your Aliyun primary account (root account) AccessKey for SDK operations. Primary accounts have full resource permissions, and leaked credentials pose significant security risks.
 
-**Step 1: Create a RAM User**
+**Step 1: Create a RAM user**
 
 1. Log in to [RAM Console](https://ram.console.aliyun.com/)
 2. Navigate to **People** → **Users**
@@ -216,13 +224,13 @@ SaaS integration with Aliyun Function Compute Code Interpreter service using the
    - **Console Login**: Optional (not needed for SDK-only access)
 5. Click **OK** and save the AccessKey ID and Secret immediately (displayed only once!)
 
-**Step 2: Create a Custom Authorization Policy**
+**Step 2: Create a custom authorization policy**
 
 Navigate to **Permissions** → **Policies** → **Create Policy** → **Custom Policy** → **Configuration Script (JSON)**
 
 Choose one of the following policy options based on your security requirements:
 
-**Option A: Minimal Privilege Policy (Recommended)**
+**Option A: Minimal privilege policy (Recommended)**
 
 Grants only the permissions required by the AgentRun SDK:
 
@@ -272,7 +280,7 @@ Grants only the permissions required by the AgentRun SDK:
 
 > Replace `{account_id}` with your Aliyun primary account ID
 
-**Option B: Resource-Level Privilege Control (Most Secure)**
+**Option B: Resource-Level privilege control (most secure)**
 
 Limits access to specific resource prefixes:
 
@@ -329,7 +337,7 @@ Limits access to specific resource prefixes:
 
 > This limits template creation to only those prefixed with `ragflow-*`
 
-**Option C: Full Access (Not Recommended for Production)**
+**Option C: Full access (not recommended for production)**
 
 ```json
 {
@@ -344,7 +352,7 @@ Limits access to specific resource prefixes:
 }
 ```
 
-**Step 3: Authorize the RAM User**
+**Step 3: Authorize the RAM user**
 
 1. Return to **Users** list
 2. Find the user you just created (e.g., `ragflow-sandbox-user`)
@@ -352,7 +360,7 @@ Limits access to specific resource prefixes:
 4. In the **Custom Policy** tab, select the policy you created in Step 2
 5. Click **OK**
 
-**Step 4: Configure RAGFlow with the RAM User Credentials**
+**Step 4: Configure RAGFlow with the RAM User credentials**
 
 After creating the RAM user and obtaining the AccessKey, configure it in RAGFlow's admin settings or environment variables:
 
@@ -374,7 +382,7 @@ Or via Admin UI (recommended for production):
    - `account_id`: Your primary account ID
    - `region`: e.g., `cn-hangzhou`
 
-**Step 5: Verify Permissions**
+**Step 5: Verify permissions**
 
 Test if the RAM user permissions are correctly configured:
 
@@ -400,24 +408,26 @@ finally:
         pass
 ```
 
-**Security Best Practices**:
+**Security best practices**:
 
-1. ✅ **Always use RAM user AccessKeys**, never primary account AccessKeys
-2. ✅ **Follow the principle of least privilege** - grant only necessary permissions
-3. ✅ **Rotate AccessKeys regularly** - recommend every 3-6 months
-4. ✅ **Enable MFA** - enable multi-factor authentication for RAM users
-5. ✅ **Use secure storage** - store credentials in environment variables or secret management services, never hardcode in code
-6. ✅ **Restrict IP access** - add IP whitelist policies for RAM users if needed
-7. ✅ **Monitor access logs** - regularly check RAM user access logs in CloudTrail
+- **Always use RAM user AccessKeys**, never primary account AccessKeys.
+- **Follow the principle of least privilege** - grant only necessary permissions.
+- **Rotate AccessKeys regularly** - recommend every 3-6 months.
+- **Enable MFA** - enable multi-factor authentication for RAM users.
+- **Use secure storage** - store credentials in environment variables or secret management services, never hardcode in code.
+- **Restrict IP access** - add IP whitelist policies for RAM users if needed.
+- **Monitor access logs** - regularly check RAM user access logs in CloudTrail.
 
-**Reference Links**:
+**References**:
+
 - [Aliyun RAM Documentation](https://help.aliyun.com/product/28625.html)
 - [RAM Policy Language](https://help.aliyun.com/document_detail/100676.html)
 - [AgentRun Official Documentation](https://docs.agent.run)
 - [AgentRun SDK GitHub](https://github.com/Serverless-Devs/agentrun-sdk-python)
 
-#### 2.2.3 E2B Provider
-**File**: `agent/sandbox/providers/e2b.py`
+#### E2B provider
+
+The file is located at `agent/sandbox/providers/e2b.py`.
 
 SaaS integration with E2B Cloud.
 - **Configuration**: api_key, region (us/eu)
@@ -426,9 +436,9 @@ SaaS integration with E2B Cloud.
 - **Advantages**: Global CDN, fast startup, multiple language support
 - **Limitations**: International network latency for China users
 
-### 2.3 Provider Management
+### Provider management
 
-**File**: `agent/sandbox/providers/manager.py`
+The file is located at  `agent/sandbox/providers/manager.py`.
 
 Since we only use one active provider at a time (configured globally), the provider management is simplified:
 
@@ -456,9 +466,9 @@ class ProviderManager:
 
 **Rationale**: With global configuration, there's only one active provider at a time. The provider manager simply holds a reference to the currently active provider, making it a thin wrapper rather than a complex multi-provider manager.
 
-## 3. Admin Configuration
+## Admin configuration
 
-### 3.1 Database Schema
+### Database Schema
 
 Use the existing **SystemSettings** table for global sandbox configuration:
 
@@ -486,11 +496,12 @@ class SystemSettings(DataBaseModel):
 
 **Note**: The `value` field has a 1024 character limit, which should be sufficient for typical sandbox configurations. If larger configs are needed, consider using a TextField or a separate configuration table.
 
-### 3.2 Configuration Schema
+### Configuration Schema
 
 Each provider's configuration is stored as a **single JSON object** in the `value` field:
 
-#### Self-Managed Provider
+#### Self-managed provider
+
 ```json
 {
   "name": "sandbox.self_managed",
@@ -500,7 +511,7 @@ Each provider's configuration is stored as a **single JSON object** in the `valu
 }
 ```
 
-#### Aliyun Code Interpreter
+#### Aliyun code interpreter
 ```json
 {
   "name": "sandbox.aliyun_codeinterpreter",
@@ -520,7 +531,7 @@ Each provider's configuration is stored as a **single JSON object** in the `valu
 }
 ```
 
-#### Active Provider Selection
+#### Active provider selection
 ```json
 {
   "name": "sandbox.provider_type",
@@ -530,7 +541,7 @@ Each provider's configuration is stored as a **single JSON object** in the `valu
 }
 ```
 
-### 3.3 Provider Self-Describing Schema
+### Provider self-describing Schema
 
 Each provider class implements a static method to describe its configuration schema:
 
@@ -582,7 +593,7 @@ class SandboxProvider(ABC):
         return {}
 ```
 
-**Example Implementation**:
+**Example implementation**:
 
 ```python
 # agent/sandbox/providers/self_managed.py
@@ -696,13 +707,14 @@ class E2BProvider(SandboxProvider):
         }
 ```
 
-**Benefits of Self-Describing Providers**:
+**Benefits of Self-describing providers**:
+
 - Single source of truth - schema defined alongside implementation
 - Easy to add new providers - no central registry to update
 - Type safety - schema stays in sync with provider code
 - Flexible - frontend can use schema for validation or hardcode if preferred
 
-### 3.4 Admin API Endpoints
+### Admin API endpoints
 
 Follow existing pattern in `admin/server/routes.py` and use `SettingsMgr`:
 
@@ -853,9 +865,9 @@ def set_active_sandbox_provider():
     return jsonify({"message": "Active provider updated"})
 ```
 
-## 4. Frontend Integration
+## Frontend integration
 
-### 4.1 Admin Settings UI
+### Admin settings UI
 
 **Location**: `web/src/pages/SandboxSettings/index.tsx`
 
@@ -944,7 +956,7 @@ const SandboxSettings: React.FC = () => {
 };
 ```
 
-### 4.2 API Client
+### API client
 
 **File**: `web/src/utils/api.ts`
 
@@ -1024,9 +1036,9 @@ interface SandboxConfigRequest {
 }
 ```
 
-## 5. Integration with Agent System
+## Integration with Agent system
 
-### 5.1 Agent Component Usage
+### Agent component usage
 
 The agent system will use the sandbox through the simplified provider manager, loading global configuration from SystemSettings:
 
@@ -1107,15 +1119,16 @@ class CodeExecutorComponent:
             provider.destroy_instance(instance.instance_id)
 ```
 
-## 6. Security Considerations
+## Security considerations
 
-### 6.1 Credential Storage
+### Credential storage
 - Sensitive credentials (API keys, secrets) encrypted at rest in database
 - Use RAGFlow's existing encryption mechanisms (AES-256)
 - Never log or expose credentials in error messages or API responses
 - Credentials redacted in UI (show only last 4 characters)
 
-### 6.2 Tenant Isolation
+### Tenant isolation
+
 - **Configuration**: Global sandbox settings shared by all tenants (admin-only access)
 - **Execution**: Sandboxes never shared across tenants/sessions during runtime
 - **Instance IDs**: Scoped to tenant: `{tenant_id}:{session_id}:{instance_id}`
@@ -1123,49 +1136,49 @@ class CodeExecutorComponent:
 - **Resource Quotas**: Per-tenant limits on concurrent executions, total execution time
 - **Audit Logging**: All sandbox executions logged with tenant_id for traceability
 
-### 6.3 Resource Limits
+### Resource limits
 - Timeout limits per execution (configurable per provider, default 30s)
 - Memory/CPU limits enforced at provider level
 - Automatic cleanup of stale instances (max lifetime: 5 minutes)
 - Rate limiting per tenant (max concurrent executions: 10)
 
-### 6.4 Code Security
+### Code security
 - For self-managed: AST-based security analysis before execution
 - Blocked operations: file system writes, network calls, system commands
 - Allowlist approach: only specific imports allowed
 - Runtime monitoring for malicious patterns
 
-### 6.5 Network Security
+### Network security
 - Self-managed: Network isolation by default, no external access
 - SaaS: HTTPS only, certificate pinning
 - IP whitelisting for self-managed endpoint access
 
-## 7. Monitoring and Observability
+## Monitoring and observability
 
-### 7.1 Metrics to Track
+### Metrics to track
 
-**Common Metrics (All Providers)**:
+**Common metrics (all providers)**:
 - Execution success rate (target: >95%)
 - Average execution time (p50, p95, p99)
 - Error rate by error type
 - Active instance count
 - Queue depth (for self-managed pool)
 
-**Self-Managed Specific**:
+**Self-managed specific**:
 - Container pool utilization (target: 60-80%)
 - Host resource usage (CPU, memory, disk)
 - Container creation latency
 - Container restart rate
 - gVisor runtime health
 
-**SaaS Specific**:
+**SaaS specific**:
 - API call latency by region
 - Rate limit usage and throttling events
 - Cost estimation (execution count × unit cost)
 - Provider availability (uptime %)
 - API error rate by error code
 
-### 7.2 Logging
+### Logging
 
 Structured logging for all provider operations:
 ```json
@@ -1185,23 +1198,23 @@ Structured logging for all provider operations:
 }
 ```
 
-### 7.3 Alerts
+### Alerts
 
-**Critical Alerts**:
+**Critical alerts**:
 - Provider availability < 99%
 - Error rate > 5%
 - Average execution time > 10s
 - Container pool exhaustion (0 available)
 
-**Warning Alerts**:
+**Warning alerts**:
 - Cost spike (2x daily average)
 - Rate limit approaching (>80%)
 - High memory usage (>90%)
 - Slow execution times (p95 > 5s)
 
-## 8. Migration Path
+## Migration path
 
-### 8.1 Phase 1: Refactor Existing Code (Week 1-2)
+### Phase 1: Refactor existing code (week 1-2)
 **Goals**: Extract current implementation into provider pattern
 
 **Tasks**:
@@ -1216,7 +1229,7 @@ Structured logging for all provider operations:
 - Self-managed provider implementation
 - Unit test suite
 
-### 8.2 Phase 2: Database Integration (Week 3)
+### Phase 2: Database entegration (week 3)
 **Goals**: Add sandbox configuration to admin system
 
 **Tasks**:
@@ -1233,7 +1246,7 @@ Structured logging for all provider operations:
 - Configuration validation
 - API test suite
 
-### 8.3 Phase 3: Frontend UI (Week 4)
+### Phase 3: Frontend UI (week 4)
 **Goals**: Build admin settings interface
 
 **Tasks**:
@@ -1248,7 +1261,7 @@ Structured logging for all provider operations:
 - Type definitions
 - Frontend test suite
 
-### 8.4 Phase 4: SaaS Provider Implementation (Week 5-6)
+### Phase 4: SaaS provider implementation (Week 5-6)
 **Goals**: Implement Aliyun Code Interpreter and E2B providers
 
 **Tasks**:
@@ -1263,7 +1276,7 @@ Structured logging for all provider operations:
 - E2B provider
 - Provider documentation
 
-### 8.5 Phase 5: Agent Integration (Week 7)
+### Phase 5: Agent integration (week 7)
 **Goals**: Update agent components to use new provider system
 
 **Tasks**:
@@ -1278,7 +1291,7 @@ Structured logging for all provider operations:
 - Fallback mechanism
 - Updated test suite
 
-### 8.6 Phase 6: Monitoring & Documentation (Week 8)
+### Phase 6: Monitoring & documentation (week 8)
 **Goals**: Add observability and complete documentation
 
 **Tasks**:
@@ -1294,11 +1307,11 @@ Structured logging for all provider operations:
 - Complete documentation
 - Deployment guides
 
-## 9. Testing Strategy
+## Testing strategy
 
-### 9.1 Unit Tests
+### Unit tests
 
-**Provider Tests** (`test/agent/sandbox/providers/test_*.py`):
+**Provider tests** (`test/agent/sandbox/providers/test_*.py`):
 ```python
 class TestSelfManagedProvider:
     def test_initialize_with_config():
@@ -1318,12 +1331,12 @@ class TestSelfManagedProvider:
         assert "hello" in result.stdout
 ```
 
-**Configuration Tests**:
+**Configuration tests**:
 - Test configuration validation for each provider schema
 - Test error handling for invalid configurations
 - Test secret field redaction
 
-### 9.2 Integration Tests
+### Integration tests
 
 **Provider Switching**:
 - Test switching between providers
@@ -1340,9 +1353,9 @@ class TestSelfManagedProvider:
 - Test connection testing endpoint
 - Test validation error responses
 
-### 9.3 E2E Tests
+### E2E tests
 
-**Complete Flow Tests**:
+**Complete flow tests**:
 ```python
 def test_sandbox_execution_flow():
     # 1. Configure provider via admin API
@@ -1362,12 +1375,12 @@ def test_sandbox_execution_flow():
     assert get_active_instances() == 0
 ```
 
-**Admin UI Tests**:
+**Admin UI tests**:
 - Test provider configuration flow
 - Test connection testing
 - Test error handling in UI
 
-### 9.4 Performance Tests
+### Performance tests
 
 **Load Testing**:
 - Test 100 concurrent executions
@@ -1379,9 +1392,9 @@ def test_sandbox_execution_flow():
 - Measure execution latency percentiles
 - Compare provider performance
 
-## 10. Cost Considerations
+## Cost considerations
 
-### 10.1 Self-Managed Costs
+### Self-managed costs
 
 **Infrastructure**:
 - Server hosting: $X/month (depends on specs)
@@ -1398,7 +1411,7 @@ def test_sandbox_execution_flow():
 - Operational overhead
 - Finite capacity
 
-### 10.2 SaaS Costs
+### SaaS costs
 
 **Aliyun Code Interpreter** (estimated):
 - Pricing: execution time × memory configuration
@@ -1418,20 +1431,20 @@ def test_sandbox_execution_flow():
 - Network dependency
 - Potential for runaway costs
 
-### 10.3 Cost Optimization
+### Cost optimization
 
 **Recommendations**:
-1. **Hybrid Approach**: Use self-managed for base load, SaaS for spikes
-2. **Cost Monitoring**: Set budget alerts per tenant
-3. **Resource Limits**: Enforce max executions per tenant/day
-4. **Caching**: Reuse instances when possible (self-managed pool)
-5. **Smart Routing**: Route to cheapest provider based on availability
+- **Hybrid Approach**: Use self-managed for base load, SaaS for spikes
+- **Cost Monitoring**: Set budget alerts per tenant
+- **Resource Limits**: Enforce max executions per tenant/day
+- **Caching**: Reuse instances when possible (self-managed pool)
+- **Smart Routing**: Route to cheapest provider based on availability
 
-## 11. Future Extensibility
+## Future extensibility
 
 The architecture supports easy addition of new providers:
 
-### 11.1 Adding a New Provider
+### Adding a new provider
 
 **Step 1**: Implement provider class with schema
 
@@ -1481,7 +1494,7 @@ PROVIDER_CLASSES = {
 
 **No central registry to update** - just import and add to the mapping!
 
-### 11.2 Potential Future Providers
+### Potential future providers
 
 - **GitHub Codespaces**: For GitHub-integrated workflows
 - **Gitpod**: Cloud development environments
@@ -1489,28 +1502,28 @@ PROVIDER_CLASSES = {
 - **AWS Firecracker**: Raw microVM management
 - **Custom Provider**: User-defined provider implementations
 
-### 11.3 Advanced Features
+### Advanced features
 
-**Feature Pooling**:
+**Feature pooling**:
 - Share instances across executions (same language, same user)
 - Warm pool for reduced latency
 - Instance hibernation for cost savings
 
-**Feature Multi-Region**:
+**Feature multi-region**:
 - Route to nearest region
 - Failover across regions
 - Regional cost optimization
 
-**Feature Hybrid Execution**:
+**Feature hybrid execution**:
 - Split workloads between providers
 - Dynamic provider selection based on cost/performance
 - A/B testing for provider performance
 
-## 12. Appendix
+## Appendix
 
-### 12.1 Configuration Examples
+### Configuration examples
 
-**SystemSettings Initialization File** (`conf/system_settings.json` - add these entries):
+**SystemSettings initialization file** (`conf/system_settings.json` - add these entries):
 
 ```json
 {
@@ -1543,7 +1556,7 @@ PROVIDER_CLASSES = {
 }
 ```
 
-**Admin API Request Example** (POST to `/api/admin/sandbox/config`):
+**Admin API request example** (POST to `/api/admin/sandbox/config`):
 
 ```json
 {
@@ -1563,7 +1576,7 @@ PROVIDER_CLASSES = {
 
 **Note**: The `config` object in the request is a plain JSON object. The API will serialize it to a JSON string before storing in SystemSettings.
 
-**Admin API Response Example** (GET from `/api/admin/sandbox/config`):
+**Admin API response example** (GET from `/api/admin/sandbox/config`):
 
 ```json
 {
@@ -1594,7 +1607,7 @@ PROVIDER_CLASSES = {
 
 **Note**: The response deserializes the JSON strings back to objects for easier frontend consumption.
 
-### 12.2 Error Codes
+### Error codes
 
 | Code | Description | Resolution |
 |------|-------------|------------|
@@ -1608,24 +1621,22 @@ PROVIDER_CLASSES = {
 | SB008 | Rate limit exceeded | Reduce concurrency or upgrade plan |
 | SB009 | Provider unavailable | Check provider status or use fallback |
 
-### 12.3 References
+### References
 
-- [Current Sandbox Implementation](../sandbox/README.md)
-- [RAGFlow Admin System](../CONTRIBUTING.md)
 - [Daytona Documentation](https://daytona.dev/docs)
 - [Aliyun Code Interpreter](https://help.aliyun.com/...)
 - [E2B Documentation](https://e2b.dev/docs)
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2025-01-26
+**Document version**: 1.0
+**Last updated**: 2026-01-26
 **Author**: RAGFlow Team
 **Status**: Design Specification - Ready for Review
 
-## Appendix C: Configuration Storage Considerations
+## Appendix C: configuration storage considerations
 
-### Current Implementation
+### Current implementation
 - **Storage**: SystemSettings table with `value` field as `TextField` (unlimited length)
 - **Migration**: Database migration added to convert from `CharField(1024)` to `TextField`
 - **Benefit**: Supports arbitrarily long API keys, workspace IDs, and other SaaS provider credentials
@@ -1635,17 +1646,17 @@ PROVIDER_CLASSES = {
 - **Provider-specific validation**: Custom validation via `validate_config()` method
 - **Example**: SelfManagedProvider validates URL format, timeout ranges, pool size constraints
 
-### Configuration Storage Format
+### Configuration storage format
 Each provider's configuration is stored as JSON in `SystemSettings.value`:
 - `sandbox.provider_type`: Active provider selection
 - `sandbox.self_managed`: Self-managed provider JSON config
 - `sandbox.aliyun_codeinterpreter`: Aliyun provider JSON config
 - `sandbox.e2b`: E2B provider JSON config
 
-## Appendix D: Configuration Hot Reload Limitations
+## Appendix D: Configuration hot reload limitations
 
-### Current Behavior
-**Provider Configuration Requires Restart**: When switching sandbox providers in the admin panel, the ragflow service must be restarted for changes to take effect.
+### Current behavior
+**Provider configuration requires restart**: When switching sandbox providers in the admin panel, the ragflow service must be restarted for changes to take effect.
 
 **Reason**:
 - Admin and ragflow are separate processes
@@ -1671,7 +1682,7 @@ Each provider's configuration is stored as JSON in `SystemSettings.value`:
    reload_provider()  # Reloads from MySQL settings
    ```
 
-**Future Enhancement**:
+**Future enhancement**:
 To support hot reload without restart, implement configuration change detection:
 ```python
 # In agent/sandbox/client.py
@@ -1695,14 +1706,14 @@ def get_provider_manager() -> ProviderManager:
 
 However, this adds overhead on every `execute_code()` call. For production use, explicit restart is preferred for simplicity and reliability.
 
-## Appendix E: Arguments Parameter Support
+## Appendix E: Arguments parameter support
 
 ### Overview
 All sandbox providers support passing arguments to the `main()` function in user code. This enables dynamic parameter injection for code execution.
 
-### Implementation Details
+### Implementation details
 
-**Base Interface**:
+**Base interface**:
 ```python
 # agent/sandbox/providers/base.py
 @abstractmethod
@@ -1724,9 +1735,9 @@ def execute_code(
     pass
 ```
 
-**Provider Implementations**:
+**Provider implementations**:
 
-1. **Self-Managed Provider** ([self_managed.py:164](agent/sandbox/providers/self_managed.py:164)):
+1. **Self-managed provider** ([self_managed.py:164](agent/sandbox/providers/self_managed.py:164)):
    - Passes arguments via HTTP API: `"arguments": arguments or {}`
    - executor_manager receives and passes to code via command line
    - Runner script: `args = json.loads(sys.argv[1])` then `result = main(**args)`
@@ -1754,7 +1765,7 @@ def execute_code(
      '''
      ```
 
-**Client Layer** ([client.py:138-190](agent/sandbox/client.py:138-190)):
+**Client layer** ([client.py:138-190](agent/sandbox/client.py:138-190)):
 ```python
 def execute_code(
     code: str,
@@ -1779,7 +1790,7 @@ def execute_code(
         provider.destroy_instance(instance.instance_id)
 ```
 
-**CodeExec Tool Integration** ([code_exec.py:136-165](agent/tools/code_exec.py:136-165)):
+**CodeExec tool integration** ([code_exec.py:136-165](agent/tools/code_exec.py:136-165)):
 ```python
 def _execute_code(self, language: str, code: str, arguments: dict):
     # ... collect arguments from component configuration
@@ -1792,9 +1803,9 @@ def _execute_code(self, language: str, code: str, arguments: dict):
     )
 ```
 
-### Usage Examples
+### Usage examples
 
-**Python Code with Arguments**:
+**Python code with arguments**:
 ```python
 # User code
 def main(name: str, count: int) -> dict:
@@ -1805,7 +1816,7 @@ def main(name: str, count: int) -> dict:
 # Result: {"message": "Hello World!Hello World!Hello World!"}
 ```
 
-**JavaScript Code with Arguments**:
+**JavaScript code with arguments**:
 ```javascript
 // User code
 function main(args) {
@@ -1817,21 +1828,21 @@ function main(args) {
 // Result: "Hello World!Hello World!Hello World!"
 ```
 
-### Important Notes
+### Important notes
 
-1. **Function Signature**: Code MUST define a `main()` function
+1. **Function signature**: Code MUST define a `main()` function
    - Python: `def main(**kwargs)` or `def main()` if no arguments
    - JavaScript: `function main(args)` or `function main()` if no arguments
 
-2. **Type Consistency**: Arguments are passed as JSON, so types are preserved:
+2. **Type consistency**: Arguments are passed as JSON, so types are preserved:
    - Numbers → int/float
    - Strings → str
    - Booleans → bool
    - Objects → dict (Python) / object (JavaScript)
    - Arrays → list (Python) / array (JavaScript)
 
-3. **Return Value**: Return value is serialized as JSON for parsing
+3. **Return value**: Return value is serialized as JSON for parsing
    - Python: `print(json.dumps(result))` if dict
    - JavaScript: `console.log(JSON.stringify(result))` if object
 
-4. **Provider Alignment**: All providers (self_managed, aliyun_codeinterpreter, e2b) implement arguments passing consistently
+4. **Provider alignment**: All providers (self_managed, aliyun_codeinterpreter, e2b) implement arguments passing consistently

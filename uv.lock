@@ -35,7 +35,7 @@ wheels = [
 
 [[package]]
 name = "agentrun-sdk"
-version = "0.0.16"
+version = "0.0.17"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "agentrun-mem0ai" },
@@ -51,9 +51,9 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/34/99/e4651b65a6e52a6547e17c97efc96660f6476ffa49b178253ef62d9982bd/agentrun_sdk-0.0.16.tar.gz", hash = "sha256:73900293aaa6be4d6c7304870b662e302c86f817ebe280ed34c53ea2fe054cc9", size = 232813, upload-time = "2026-01-22T09:28:32.558Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a7/26/77f2e2e9ee8d2caec776a8a4e5bc0f2d2e5b550152fec61721684f29e819/agentrun_sdk-0.0.17.tar.gz", hash = "sha256:cb0362487d0cbe0a11b21f4e12071e4dfcf9666a13e42c1bccee2d8948411ef9", size = 235373, upload-time = "2026-01-28T12:33:09.501Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5d/94/6ad9dd91195bfdc2e423b30184ce7cbb20e388b4ac1c6251c9e1ca17ea74/agentrun_sdk-0.0.16-py3-none-any.whl", hash = "sha256:a6dafef9f71c28e5bbc682d33258050a858d68d33a32070332e36c35cdf28720", size = 316358, upload-time = "2026-01-22T09:28:31.167Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b0/52/28d808d37d272d52f3aec56f7433f9aff43bdb83224a7c715c65568ac53b/agentrun_sdk-0.0.17-py3-none-any.whl", hash = "sha256:19b1ca5e49b57000973d1f755b540cdb92ecb97084891234808a20be7e72aed6", size = 318809, upload-time = "2026-01-28T12:33:07.87Z" },
 ]
 
 [[package]]
@@ -260,28 +260,28 @@ wheels = [
 
 [[package]]
 name = "alibabacloud-agentrun20250910"
-version = "5.3.3"
+version = "5.3.4"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "alibabacloud-tea-openapi" },
     { name = "darabonba-core" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/1d/41/90db47e8a912a1f98d84cdda19850ee6c73d1fef82ad3403ba87872bef0f/alibabacloud_agentrun20250910-5.3.3.tar.gz", hash = "sha256:8615c288a2812f231fe854f8cff0bfac2e18276a6758d1794a58a6bedb6ecc76", size = 86201, upload-time = "2026-01-26T17:30:09.885Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/7e/97/d4d72b7a100ae686aab2c83f1388483508fa0f3ccf1259626b18d94cd74a/alibabacloud_agentrun20250910-5.3.4.tar.gz", hash = "sha256:3ea8fd0bfebc07aede3ca55a4b189f4e0be382eaf0e58df098d1ecdcc971bed1", size = 86441, upload-time = "2026-01-28T13:20:11.535Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/90/39/1d92863f2fc4210ee376b2d95b2219ebe2d6d0c4cf0c07f60123a299121e/alibabacloud_agentrun20250910-5.3.3-py3-none-any.whl", hash = "sha256:87d1ed906f431ef479b01fb6dfe9151829f69a177c35c397a6b6878d57f5ad38", size = 281038, upload-time = "2026-01-26T17:30:08.739Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/8e/bb/1dac68128e71da7974fef1c89b2af3981326ae5d0062e06a94798db9b39a/alibabacloud_agentrun20250910-5.3.4-py3-none-any.whl", hash = "sha256:7e3f708aaa94680360ec98478f705495952bb603495863bf0eadd92fe09e728c", size = 281312, upload-time = "2026-01-28T13:20:10.019Z" },
 ]
 
 [[package]]
 name = "alibabacloud-bailian20231229"
-version = "2.8.0"
+version = "2.8.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "alibabacloud-tea-openapi" },
     { name = "darabonba-core" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/09/ec/84096b2218491574ede0ceec85bc6fbe2e9c84ae3805b9a2e3888c5849f2/alibabacloud_bailian20231229-2.8.0.tar.gz", hash = "sha256:7c1db87943ef4a3ba4f04cc5b3c5c0a1de7f74ef730852cd1f55694ea550054f", size = 68014, upload-time = "2026-01-22T03:51:09.751Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b4/65/2aee1e58bb3eec52c4892637ee15c453b0a3c7797b9b68f49bb5e9dd4e60/alibabacloud_bailian20231229-2.8.1.tar.gz", hash = "sha256:d39a79cc11b7bd0cd59054b0c8a943923f4f3330da243c83446524aab4b63ed8", size = 68212, upload-time = "2026-01-29T07:44:52.23Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/74/ba/c68aa20f3a1fb7e222e38f37a8efb1d5f139a256ad89a4622cacf1b21756/alibabacloud_bailian20231229-2.8.0-py3-none-any.whl", hash = "sha256:8a78464ddb0de89e966a6bbd082da677099af3f44c2ae96eb327553fe9c7e1b6", size = 176573, upload-time = "2026-01-22T03:51:08.747Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/50/c6/97c771aa4305844c20549c61f79dc48ed418838fed77608240475f4d53cb/alibabacloud_bailian20231229-2.8.1-py3-none-any.whl", hash = "sha256:403678010e65412ee5f0f80c2a831bb50d5e4178f9e616c21fc2793232f25913", size = 176806, upload-time = "2026-01-29T07:44:50.762Z" },
 ]
 
 [[package]]
@@ -530,17 +530,6 @@ dependencies = [
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/db/59/af14efdd03d332c33d4a77aed8f1f7151e3de5c2441e4bea3b1c6dbcc9d7/asana-5.2.2.tar.gz", hash = "sha256:d280ce2e8edf0355ccf21e548d887617ca8c926e1cb41309b8a173ca3181632c", size = 126424, upload-time = "2025-09-24T21:31:04.055Z" }
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/26/5e/337125441af40aba86b087dee3dbe829413b6e42eac74defae2076926dbe/asana-5.2.2-py3-none-any.whl", hash = "sha256:1c8d15949a6cb9aa12363a5b7cfc6c0544cb3ae77290dd2e3255c0ec70668458", size = 203161, upload-time = "2025-09-24T21:31:02.401Z" },
-]
-
-[[package]]
-name = "aspose-slides"
-version = "24.7.0"
-source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ea/8f/aed51648b153c854841e882b93ab01b671a6fc4e01860450bfe21e957aa7/Aspose.Slides-24.7.0-py3-none-macosx_10_14_x86_64.whl", hash = "sha256:ad1386d88539fd5ba1639ea420387d88a0ef79bea265d79d453452764cf63530", size = 82204653, upload-time = "2024-07-19T09:58:13.084Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/97/b1/6e012da70b68c3eae23daeeec3fe4c7e11fa62af84a3ece37a660c1a488c/Aspose.Slides-24.7.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:d8025282e687a1eae80be8e92250aa91f5e0725a568627597eca1477a0a4256d", size = 60041209, upload-time = "2024-07-19T09:58:19.508Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/1a/8c/48e760f52f46dad428fef6b7929b3ed4cfad89c2ec1b314ce7ad064d7314/Aspose.Slides-24.7.0-py3-none-manylinux1_x86_64.whl", hash = "sha256:5793cd178a7460a0ebcc10acd77600d8ce420f844a50cb640743aa2a7878089e", size = 95758565, upload-time = "2024-07-19T09:58:25.163Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d8/04/c5af29852f2475c7433092c5c7701e029e1191661e8127ec72588fd720d4/Aspose.Slides-24.7.0-py3-none-win_amd64.whl", hash = "sha256:db9246fcdfcf54a1501608bd599a4b531afe753a8c23b19f53f0f48f0550712a", size = 68831159, upload-time = "2024-07-19T09:58:36.269Z" },
 ]
 
 [[package]]
@@ -1108,6 +1097,19 @@ wheels = [
 ]
 
 [[package]]
+name = "codecov"
+version = "2.1.13"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "coverage" },
+    { name = "requests" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/2c/bb/594b26d2c85616be6195a64289c578662678afa4910cef2d3ce8417cf73e/codecov-2.1.13.tar.gz", hash = "sha256:2362b685633caeaf45b9951a9b76ce359cd3581dd515b430c6c3f5dfb4d92a8c", size = 21416, upload-time = "2023-04-17T23:11:39.779Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/af/02/18785edcdf6266cdd6c6dc7635f1cbeefd9a5b4c3bb8aff8bd681e9dd095/codecov-2.1.13-py2.py3-none-any.whl", hash = "sha256:c2ca5e51bba9ebb43644c43d0690148a55086f7f5e6fd36170858fa4206744d5", size = 16512, upload-time = "2023-04-17T23:11:37.344Z" },
+]
+
+[[package]]
 name = "cohere"
 version = "5.6.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -1555,15 +1557,17 @@ wheels = [
 
 [[package]]
 name = "dashscope"
-version = "1.20.11"
+version = "1.25.11"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "aiohttp" },
+    { name = "certifi" },
+    { name = "cryptography" },
     { name = "requests" },
     { name = "websocket-client" },
 ]
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/25/21/0ddfa1aae7f45b3039d10d61ede77dedfc70d24ff946e7d0ecb92e9a2c85/dashscope-1.20.11-py3-none-any.whl", hash = "sha256:7367802c5ae136c6c1f4f8a16f9aba628e97adefae8afdebce6bbf518d0065d1", size = 1264221, upload-time = "2024-10-14T05:30:25.083Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/30/15/35551e6c6d3ea19df754ed32aa5f281b2052ef9e1ff1538f2708f74f3312/dashscope-1.25.11-py3-none-any.whl", hash = "sha256:93e86437f5f30e759e98292f0490e44eff00c337968363f27d29dd42ec7cc07c", size = 1342054, upload-time = "2026-02-03T02:49:48.711Z" },
 ]
 
 [[package]]
@@ -6123,7 +6127,6 @@ dependencies = [
     { name = "anthropic" },
     { name = "arxiv" },
     { name = "asana" },
-    { name = "aspose-slides", marker = "platform_machine == 'x86_64' or (platform_machine == 'arm64' and sys_platform == 'darwin')" },
     { name = "atlassian-python-api" },
     { name = "azure-identity" },
     { name = "azure-storage-file-datalake" },
@@ -6173,6 +6176,7 @@ dependencies = [
     { name = "mistralai" },
     { name = "moodlepy" },
     { name = "mypy-boto3-s3" },
+    { name = "mysql-connector-python" },
     { name = "nest-asyncio" },
     { name = "office365-rest-python-client" },
     { name = "ollama" },
@@ -6235,6 +6239,7 @@ dependencies = [
 
 [package.dev-dependencies]
 test = [
+    { name = "codecov" },
     { name = "hypothesis" },
     { name = "openpyxl" },
     { name = "pillow" },
@@ -6258,7 +6263,6 @@ requires-dist = [
     { name = "anthropic", specifier = "==0.34.1" },
     { name = "arxiv", specifier = "==2.1.3" },
     { name = "asana", specifier = ">=5.2.2" },
-    { name = "aspose-slides", marker = "platform_machine == 'x86_64' or (platform_machine == 'arm64' and sys_platform == 'darwin')", specifier = "==24.7.0" },
     { name = "atlassian-python-api", specifier = "==4.0.7" },
     { name = "azure-identity", specifier = "==1.17.1" },
     { name = "azure-storage-file-datalake", specifier = "==12.16.0" },
@@ -6269,7 +6273,7 @@ requires-dist = [
     { name = "cn2an", specifier = "==0.5.22" },
     { name = "cohere", specifier = "==5.6.2" },
     { name = "crawl4ai", specifier = ">=0.4.0,<1.0.0" },
-    { name = "dashscope", specifier = "==1.20.11" },
+    { name = "dashscope", specifier = "==1.25.11" },
     { name = "deepl", specifier = "==1.18.0" },
     { name = "demjson3", specifier = "==3.0.6" },
     { name = "discord-py", specifier = "==2.3.2" },
@@ -6308,6 +6312,7 @@ requires-dist = [
     { name = "mistralai", specifier = "==0.4.2" },
     { name = "moodlepy", specifier = ">=0.23.0" },
     { name = "mypy-boto3-s3", specifier = "==1.40.26" },
+    { name = "mysql-connector-python", specifier = ">=9.0.0,<10.0.0" },
     { name = "nest-asyncio", specifier = ">=1.6.0,<2.0.0" },
     { name = "office365-rest-python-client", specifier = "==2.6.2" },
     { name = "ollama", specifier = ">=0.5.0" },
@@ -6370,6 +6375,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 test = [
+    { name = "codecov", specifier = ">=2.1.13" },
     { name = "hypothesis", specifier = ">=6.132.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pillow", specifier = ">=10.4.0,<13.0.0" },

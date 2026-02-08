@@ -44,10 +44,12 @@ export function useBulkOperateDataset({
     if (!documents.length) {
       return 0;
     }
-    return documents.reduce((acc, cur) => {
-      return acc + cur.chunk_num;
-    }, 0);
-  }, [documents]);
+    return documents
+      .filter((item) => selectedRowKeys.includes(item.id) && item.id)
+      ?.reduce((acc, cur) => {
+        return acc + cur.chunk_num;
+      }, 0);
+  }, [documents, selectedRowKeys]);
 
   const runDocument = useCallback(
     async (run: number, option?: { delete: boolean; apply_kb: boolean }) => {
@@ -137,6 +139,11 @@ export function useBulkOperateDataset({
       onClick: handleCancelClick,
     },
     {
+      id: 'batch-metadata',
+      label: t('knowledgeDetails.metadata.metadata'),
+      icon: <Cylinder />,
+    },
+    {
       id: 'delete',
       label: t('common.delete'),
       icon: <Trash2 />,
@@ -146,11 +153,6 @@ export function useBulkOperateDataset({
           setRowSelection({});
         }
       },
-    },
-    {
-      id: 'batch-metadata',
-      label: t('knowledgeDetails.metadata.metadata'),
-      icon: <Cylinder />,
     },
   ];
 

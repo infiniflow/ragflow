@@ -61,6 +61,7 @@ export default {
         tokenPlaceholder: 'e.g. eyJhbGciOiJIUzI1Ni...',
       },
       selected: 'Selected',
+      seeAll: 'See all',
     },
     login: {
       loginTitle: 'Sign in to your account',
@@ -129,6 +130,17 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       delMemoryWarn: `After deletion, all messages in this memory will be deleted and cannot be retrieved by agents.`,
     },
     memory: {
+      taskLogDialog: {
+        title: 'Memory',
+        startTime: 'Start time',
+        status: 'Status',
+        details: 'Details',
+
+        success: 'Success',
+        running: 'Running',
+        failed: 'Failed',
+      },
+
       messages: {
         forget: 'Forget',
         forgetMessageTip: 'Are you sure you want to forget?',
@@ -490,7 +502,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Update your memory configuration here, particularly the LLM and prompts.',
       name: 'Knowledge base name',
       photo: 'Knowledge base photo',
-      photoTip: 'You can upload a file with 4 MB',
+      photoTip: 'You can upload an image up to 4 MB.',
       description: 'Description',
       language: 'Document language',
       languageMessage: 'Please input your language!',
@@ -788,7 +800,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently.',
       maxTokens: 'Max tokens',
       maxTokensMessage: 'Max tokens is required',
-      maxTokensTip: `The maximum context size of the agent; an invalid or incorrect value will cause an error. Defaults to 512.`,
+      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. Defaults to 512.`,
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
       quote: 'Show quote',
@@ -878,6 +890,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       deleteSelectedConfirm: 'Delete the selected {count} session(s)?',
     },
     setting: {
+      Verify: 'Verify',
+      keyValid: 'Your API key is valid.',
+      keyInvalid: 'Your API key is invalid.',
       deleteModel: 'Delete model',
       bedrockCredentialsHint:
         'Tip: Leave Access Key / Secret Key blank to use AWS IAM authentication.',
@@ -987,6 +1002,16 @@ Example: Virtual Hosted Style`,
         'The base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
       moodleTokenTip:
         'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
+      seafileDescription:
+        'Connect to your SeaFile server to sync files and documents from your libraries.',
+      seafileUrlTip:
+        'The base URL of your SeaFile server (e.g., https://seafile.example.com). Do not include /api2 or other paths.',
+      seafileTokenTip:
+        'Generate an API token in SeaFile: Go to Settings → API Token → Generate Token. The token provides access to all libraries visible to your account.',
+      seafileIncludeSharedTip:
+        'When enabled, libraries shared with you by other users will also be synced.',
+      seafileBatchSizeTip:
+        'Number of documents to process per batch. Higher values may improve performance but use more memory. Default: 100.',
       jiraDescription:
         'Connect your Jira workspace to sync issues, comments, and attachments.',
       jiraBaseUrlTip:
@@ -1050,7 +1075,7 @@ Example: Virtual Hosted Style`,
       profileDescription: 'Update your photo and personal details here.',
       maxTokens: 'Max tokens',
       maxTokensMessage: 'Max tokens is required',
-      maxTokensTip: `The maximum context size of the agent; an invalid or incorrect value will cause an error. Defaults to 512.`,
+      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. Defaults to 512.`,
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
       password: 'Password',
@@ -1295,6 +1320,8 @@ Example: Virtual Hosted Style`,
         image2text: 'OCR',
         speech2text: 'ASR',
       },
+      showToc: 'Show TOC',
+      hideToc: 'Hide TOC',
     },
     message: {
       registered: 'Registered!',
@@ -1992,7 +2019,7 @@ This process aggregates variables from multiple branches into a single variable 
       conversational: 'Conversational',
       task: 'Task',
       beginInputTip:
-        'By defining input parameters, this content can be accessed by other components in subsequent processes.',
+        'Input parameters defined here can be accessed by components in the downstream workflow.',
       query: 'Query variables',
       switchPromptMessage:
         'The prompt words will change. Please confirm whether you want to discard the existing prompt words?',
