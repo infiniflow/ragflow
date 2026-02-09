@@ -17,6 +17,7 @@ import json
 import os
 import threading
 from abc import ABC
+from typing import Any
 from urllib.parse import urljoin
 
 import dashscope
@@ -25,7 +26,6 @@ import numpy as np
 import requests
 from ollama import Client
 from openai import OpenAI
-from zhipuai import ZhipuAI
 
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
@@ -223,35 +223,65 @@ class QWenEmbed(Base):
 class ZhipuEmbed(Base):
     _FACTORY_NAME = "ZHIPU-AI"
 
-    def __init__(self, key, model_name="embedding-2", **kwargs):
-        self.client = ZhipuAI(api_key=key)
+    def __init__(self, key, model_name="embedding-2", base_url="https://open.bigmodel.cn/api/paas/v4", **kwargs):
+        if not base_url:
+            base_url = "https://open.bigmodel.cn/api/paas/v4"
+        normalized_base_url = base_url.rstrip("/")
+        if normalized_base_url.endswith("/embeddings"):
+            self.base_url = normalized_base_url
+        elif normalized_base_url.endswith("/api"):
+            self.base_url = f"{normalized_base_url}/paas/v4/embeddings"
+        else:
+            self.base_url = f"{normalized_base_url}/embeddings"
+        self.headers = {
+            "authorization": f"Bearer {key}",
+            "content-type": "application/json",
+        }
         self.model_name = model_name
+
+    def _request_embeddings(self, input_text: str | list[str]) -> dict[str, Any]:
+        payload = {
+            "model": self.model_name,
+            "input": input_text,
+        }
+        response = requests.post(self.base_url, json=payload, headers=self.headers, timeout=120)
+        try:
+            res = response.json()
+        except Exception as _e:
+            log_exception(_e, response)
+            raise Exception(f"Error: {response}")
+        if response.status_code != 200:
+            err = res.get("error", {})
+            message = err.get("message", str(res))
+            raise Exception(f"Error: {message}")
+        return res
 
     def encode(self, texts: list):
         arr = []
         tks_num = 0
-        MAX_LEN = -1
+        max_len = -1
         if self.model_name.lower() == "embedding-2":
-            MAX_LEN = 512
+            max_len = 512
         if self.model_name.lower() == "embedding-3":
-            MAX_LEN = 3072
-        if MAX_LEN > 0:
-            texts = [truncate(t, MAX_LEN) for t in texts]
+            max_len = 3072
+        if max_len > 0:
+            texts = [truncate(t, max_len) for t in texts]
 
         for txt in texts:
-            res = self.client.embeddings.create(input=txt, model=self.model_name)
+            res = None
             try:
-                arr.append(res.data[0].embedding)
+                res = self._request_embeddings(txt)
+                arr.append(res["data"][0]["embedding"])
                 tks_num += total_token_count_from_response(res)
             except Exception as _e:
-                log_exception(_e, res)
-                raise Exception(f"Error: {res}")
+                log_exception(_e, res if res is not None else {"model": self.model_name, "input": txt})
+                raise Exception(f"Error: {res}") from _e
         return np.array(arr), tks_num
 
     def encode_queries(self, text):
-        res = self.client.embeddings.create(input=text, model=self.model_name)
+        res = self._request_embeddings(text)
         try:
-            return np.array(res.data[0].embedding), total_token_count_from_response(res)
+            return np.array(res["data"][0]["embedding"]), total_token_count_from_response(res)
         except Exception as _e:
             log_exception(_e, res)
             raise Exception(f"Error: {res}")
