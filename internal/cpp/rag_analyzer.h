@@ -90,7 +90,7 @@ public:
     std::string Tag(std::string_view key) const;
 
 protected:
-    int AnalyzeImpl(const Term& input, void* data, HookType func);
+    int AnalyzeImpl(const Term& input, void* data, bool fine_grained, bool enable_position, HookType func);
 
 private:
     static constexpr float DENOMINATOR = 1000000;

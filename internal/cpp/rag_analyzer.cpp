@@ -2388,11 +2388,11 @@ void RAGAnalyzer::FineGrainedTokenize(const std::string &tokens, std::vector<std
     // return ret;
 }
 
-int RAGAnalyzer::AnalyzeImpl(const Term &input, void *data, HookType func) {
-    if (enable_position_) {
+int RAGAnalyzer::AnalyzeImpl(const Term &input, void *data, bool fine_grained, bool enable_position, HookType func) {
+    if (enable_position) {
         auto [tokens, positions] = TokenizeWithPosition(input.text_);
 
-        if (fine_grained_) {
+        if (fine_grained) {
             std::vector<std::string> fine_tokens;
             std::vector<std::pair<unsigned, unsigned>> fine_positions;
             FineGrainedTokenizeWithPosition(Join(tokens, 0), positions, fine_tokens, fine_positions);
@@ -2409,7 +2409,7 @@ int RAGAnalyzer::AnalyzeImpl(const Term &input, void *data, HookType func) {
     } else {
         std::string result = Tokenize(input.text_);
         std::vector<std::string> tokens;
-        if (fine_grained_) {
+        if (fine_grained) {
             FineGrainedTokenize(result, tokens);
         } else {
             Split(result, blank_pattern_, tokens);

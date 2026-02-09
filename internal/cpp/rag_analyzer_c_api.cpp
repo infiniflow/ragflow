@@ -46,24 +46,25 @@ void RAGAnalyzer_SetEnablePosition(RAGAnalyzerHandle handle, bool enable_positio
 
 int RAGAnalyzer_Analyze(RAGAnalyzerHandle handle, const char* text, RAGTokenCallback callback) {
     if (!handle || !text || !callback) return -1;
-    
+
     RAGAnalyzer* analyzer = static_cast<RAGAnalyzer*>(handle);
-    
+
     Term input;
     input.text_ = std::string(text);
-    
+
     TermList output;
-    int ret = analyzer->Analyze(input, output);
-    
+    // Use the analyzer's internal state for fine_grained and enable_position
+    int ret = analyzer->Analyze(input, output, analyzer->fine_grained_, analyzer->enable_position_);
+
     if (ret != 0) {
         return ret;
     }
-    
+
     // Call callback for each token
     for (const auto& term : output) {
         callback(term.text_.c_str(), term.text_.length(), term.word_offset_, term.end_offset_);
     }
-    
+
     return 0;
 }
 
@@ -91,7 +92,8 @@ RAGTokenList* RAGAnalyzer_TokenizeWithPosition(RAGAnalyzerHandle handle, const c
     input.text_ = std::string(text);
 
     TermList output;
-    analyzer->Analyze(input, output);
+    // Pass fine_grained and enable_position=true to get position information
+    analyzer->Analyze(input, output, analyzer->fine_grained_, true);
 
     // Allocate memory for the token list structure
     RAGTokenList* token_list = static_cast<RAGTokenList*>(malloc(sizeof(RAGTokenList)));

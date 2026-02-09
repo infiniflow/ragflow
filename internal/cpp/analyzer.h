@@ -37,9 +37,9 @@ public:
 
     void SetTokenizerConfig(const TokenizeConfig &conf) { tokenizer_.SetConfig(conf); }
 
-    int Analyze(const Term &input, TermList &output) {
+    int Analyze(const Term &input, TermList &output, bool fine_grained = false, bool enable_position = false) {
         void *array[2] = {&output, this};
-        return AnalyzeImpl(input, &array, &Analyzer::AppendTermList);
+        return AnalyzeImpl(input, &array, fine_grained, enable_position, Analyzer::AppendTermList);
     }
 
 protected:
@@ -51,7 +51,7 @@ protected:
                              const bool is_special_char,
                              const uint16_t payload);
 
-    virtual int AnalyzeImpl(const Term &input, void *data, HookType func) { return -1; }
+    virtual int AnalyzeImpl(const Term &input, void *data, bool fine_grained, bool enable_position,HookType func) { return -1; }
 
     static void AppendTermList(void *data,
                                const char *text,
