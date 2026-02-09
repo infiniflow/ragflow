@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, validator
 
 from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileType
-from api.db.db_models import File, Task
+from api.db.db_models import APIToken, File, Task
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.file2document_service import File2DocumentService
@@ -420,43 +420,15 @@ async def download(tenant_id, dataset_id, document_id):
 
 
 @manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
-@token_required
-async def download_doc(tenant_id, document_id):
-    """
-    Download a document from a dataset.
-    ---
-    tags:
-      - Documents
-    security:
-      - ApiKeyAuth: []
-    produces:
-      - application/octet-stream
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: path
-        name: document_id
-        type: string
-        required: true
-        description: ID of the document to download.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Document file stream.
-        schema:
-          type: file
-      400:
-        description: Error message.
-        schema:
-          type: object
-    """
+async def download_doc(document_id):
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+    
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
     doc = DocumentService.query(id=document_id)
