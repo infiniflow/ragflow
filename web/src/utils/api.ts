@@ -1,7 +1,7 @@
 let api_host = `/v1`;
 const ExternalApi = `/api`;
 
-export { api_host };
+export { ExternalApi, api_host };
 
 export default {
   // user
