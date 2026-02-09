@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // POS constants for WordNet parts of speech
@@ -76,6 +77,7 @@ type WordNet struct {
 	exceptionMap        map[string]map[string][]string
 	dataFileCache       map[string]*os.File
 	dataFileCacheOffset map[string]int64
+	fileMutexes         map[string]*sync.Mutex // Mutex for each POS to ensure concurrency safety
 }
 
 // NewWordNet creates a new WordNet instance with the given WordNet directory
@@ -86,6 +88,7 @@ func NewWordNet(wordNetDir string) (*WordNet, error) {
 		exceptionMap:        make(map[string]map[string][]string),
 		dataFileCache:       make(map[string]*os.File),
 		dataFileCacheOffset: make(map[string]int64),
+		fileMutexes:         make(map[string]*sync.Mutex),
 	}
 
 	// Initialize exception maps for all POS
@@ -108,8 +111,14 @@ func NewWordNet(wordNetDir string) (*WordNet, error) {
 
 // Close closes all cached file handles
 func (wn *WordNet) Close() {
-	for _, f := range wn.dataFileCache {
-		f.Close()
+	for pos, f := range wn.dataFileCache {
+		if mutex, ok := wn.fileMutexes[pos]; ok {
+			mutex.Lock()
+			f.Close()
+			mutex.Unlock()
+		} else {
+			f.Close()
+		}
 	}
 }
 
@@ -283,28 +292,35 @@ func (wn *WordNet) morphy(form string, pos string, checkExceptions bool) []strin
 }
 
 // getDataFile returns the data file for a given POS, with caching
-func (wn *WordNet) getDataFile(pos string) (*os.File, error) {
+func (wn *WordNet) getDataFile(pos string) (*os.File, *sync.Mutex, error) {
 	if pos == "s" { // Adjective satellite uses the same file as adjective
 		pos = ADJ
 	}
 
+	// Get or create mutex for this POS
+	mutex, exists := wn.fileMutexes[pos]
+	if !exists {
+		mutex = &sync.Mutex{}
+		wn.fileMutexes[pos] = mutex
+	}
+
 	if file, ok := wn.dataFileCache[pos]; ok {
-		return file, nil
+		return file, mutex, nil
 	}
 
 	suffix, ok := fileMap[pos]
 	if !ok {
-		return nil, fmt.Errorf("unknown POS: %s", pos)
+		return nil, nil, fmt.Errorf("unknown POS: %s", pos)
 	}
 
 	filename := filepath.Join(wn.wordNetDir, "data."+suffix)
 	file, err := os.Open(filename)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open %s: %w", filename, err)
+		return nil, nil, fmt.Errorf("failed to open %s: %w", filename, err)
 	}
 
 	wn.dataFileCache[pos] = file
-	return file, nil
+	return file, mutex, nil
 }
 
 // parseDataLine parses a line from a data file and returns a Synset
@@ -423,19 +439,25 @@ func regexpRemoveQuotes(s string) string {
 
 // synsetFromPosAndOffset retrieves a synset by POS and byte offset
 func (wn *WordNet) synsetFromPosAndOffset(pos string, offset int) (*Synset, error) {
-	file, err := wn.getDataFile(pos)
+	file, mutex, err := wn.getDataFile(pos)
 	if err != nil {
 		return nil, err
 	}
 
+	// Lock only for Seek and Read operations to minimize critical section
+	mutex.Lock()
+
 	// Seek to the offset
 	_, err = file.Seek(int64(offset), 0)
 	if err != nil {
+		mutex.Unlock()
 		return nil, fmt.Errorf("failed to seek to offset %d: %w", offset, err)
 	}
 
 	reader := bufio.NewReader(file)
 	line, err := reader.ReadString('\n')
+	mutex.Unlock() // Release lock immediately after reading
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to read line at offset %d: %w", offset, err)
 	}
@@ -457,6 +479,7 @@ func (wn *WordNet) synsetFromPosAndOffset(pos string, offset int) (*Synset, erro
 	}
 
 	// Calculate the correct sense number by looking up the offset in the index
+	// This operation only accesses memory map, no need for file lock
 	senseNum := wn.findSenseNumber(synset.Lemmas[0], pos, offset)
 	if senseNum > 0 {
 		synset.Name = fmt.Sprintf("%s.%s.%02d", synset.Lemmas[0], synset.POS, senseNum)
