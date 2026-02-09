@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, memo, Suspense } from 'react';
 import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 import FallbackComponent from './components/fallback-component';
 import { IS_ENTERPRISE } from './pages/admin/utils';
@@ -94,7 +94,8 @@ const withLazyRoute = (
     LazyComponent.name ||
     'Component'
   })`;
-  return Wrapped;
+  Wrapped.whyDidYouRender = false;
+  return process.env.NODE_ENV === 'development' ? LazyComponent : memo(Wrapped);
 };
 
 const routeConfigOptions = [
