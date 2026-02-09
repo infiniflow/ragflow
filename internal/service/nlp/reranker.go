@@ -301,30 +301,27 @@ func tokensToDict(tks []string, qb *QueryBuilder) map[string]float64 {
 }
 
 // tokenDictSimilarity calculates similarity between two token dictionaries
-// Reference: rag/nlp/query.py L201-L210
+// Reference: rag/nlp/query.py L201-L213
 func tokenDictSimilarity(qtwt, dtwt map[string]float64) float64 {
 	if len(qtwt) == 0 || len(dtwt) == 0 {
 		return 0.0
 	}
 
-	s := 0.0
+	// s = sum of query weights for matching tokens
+	s := 1e-9
 	for t, qw := range qtwt {
-		if dw, ok := dtwt[t]; ok {
-			s += math.Min(qw, dw)
+		if _, ok := dtwt[t]; ok {
+			s += qw
 		}
 	}
 
-	// Normalize by query magnitude
-	qmag := 0.0
+	// q = sum of all query weights (L1 normalization)
+	q := 1e-9
 	for _, qw := range qtwt {
-		qmag += qw * qw
+		q += qw
 	}
 
-	if qmag == 0 {
-		return 0.0
-	}
-
-	return s / math.Sqrt(qmag)
+	return s / q
 }
 
 // ArgsortDescending returns indices sorted by values in descending order

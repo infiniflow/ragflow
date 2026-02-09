@@ -344,14 +344,15 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 		if s == 0 && len([]rune(t)) >= 4 {
 			// Try fine-grained tokenization
 			fgTokens, _ := tokenizer.Tokenize(t)
+			tokens := strings.Fields(fgTokens)
+
 			var validTokens []float64
-			for _, tt := range strings.Fields(fgTokens) {
-				if len([]rune(tt)) > 1 {
+			if len(tokens) > 1 {
+				for _, tt := range tokens {
 					f := freq(tt)
 					validTokens = append(validTokens, f)
 				}
-			}
-			if len(validTokens) > 1 {
+
 				minVal := validTokens[0]
 				for _, v := range validTokens[1:] {
 					if v < minVal {
@@ -360,6 +361,7 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 				}
 				return minVal / 6.0
 			}
+
 			// Default frequency
 			return 10
 		}
@@ -380,13 +382,15 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 		}
 		if len([]rune(t)) >= 4 {
 			fgTokens, _ := tokenizer.Tokenize(t)
+			tokens := strings.Fields(fgTokens)
+
 			var validTokens []float64
-			for _, tt := range strings.Fields(fgTokens) {
-				if len([]rune(tt)) > 1 {
-					validTokens = append(validTokens, df(tt))
+			if len(tokens) > 1 {
+				for _, tt := range tokens {
+					f := df(tt)
+					validTokens = append(validTokens, f)
 				}
-			}
-			if len(validTokens) > 1 {
+
 				minVal := validTokens[0]
 				for _, v := range validTokens[1:] {
 					if v < minVal {
@@ -413,6 +417,7 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 		nerPosVals := make([]float64, len(tks))
 
 		for i, t := range tks {
+			//fmt.Println("index:", i, "term:", t)
 			idf1Vals[i] = idf(freq(t), 10000000)
 			idf2Vals[i] = idf(df(t), 1000000000)
 			nerPosVals[i] = nerWeight(t) * postagWeight(t)
