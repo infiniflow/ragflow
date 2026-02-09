@@ -92,7 +92,6 @@ const withLazyRoute = (
     LazyComponent.name ||
     'Component'
   })`;
-  Wrapped.whyDidYouRender = false;
   return process.env.NODE_ENV === 'development' ? LazyComponent : memo(Wrapped);
 };
 
