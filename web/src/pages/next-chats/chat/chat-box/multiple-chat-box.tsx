@@ -255,6 +255,7 @@ export function MultipleChatBox({
           sendDisabled={sendDisabled}
           sendLoading={sendLoading}
           value={value}
+          resize="vertical"
           onInputChange={handleInputChange}
           onPressEnter={handlePressEnter}
           conversationId={conversationId}

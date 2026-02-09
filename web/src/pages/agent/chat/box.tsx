@@ -127,6 +127,7 @@ function AgentChatBox() {
             disabled={isWaitting}
             sendDisabled={sendLoading || isWaitting}
             isUploading={loading || isWaitting}
+            resize="vertical"
             onPressEnter={handlePressEnter}
             onInputChange={handleInputChange}
             stopOutputMessage={stopOutputMessage}

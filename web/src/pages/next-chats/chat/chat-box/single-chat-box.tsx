@@ -112,6 +112,7 @@ export function SingleChatBox({
         sendDisabled={sendDisabled}
         sendLoading={sendLoading}
         value={value}
+        resize="vertical"
         onInputChange={handleInputChange}
         onPressEnter={handlePressEnter}
         conversationId={conversationId}
