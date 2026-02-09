@@ -78,6 +78,7 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 		matchText = req.Question
 	}
 
+	var vectorFieldName string
 	if req.KeywordOnly || len(req.Vector) == 0 {
 		// Keyword-only search
 		queryBody["query"] = buildESKeywordQuery(matchText, filterClauses, 1.0)
@@ -97,7 +98,7 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 		fieldBuilder.WriteString("q_")
 		fieldBuilder.WriteString(strconv.Itoa(dimension))
 		fieldBuilder.WriteString("_vec")
-		fieldName := fieldBuilder.String()
+		vectorFieldName = fieldBuilder.String()
 
 		k := req.TopK
 		if k <= 0 {
@@ -106,7 +107,7 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 		numCandidates := k * 2
 
 		knnQuery := map[string]interface{}{
-			"field":          fieldName,
+			"field":          vectorFieldName,
 			"query_vector":   req.Vector,
 			"k":              k,
 			"num_candidates": numCandidates,
@@ -161,7 +162,7 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 	}
 
 	// Convert to unified response
-	chunks := convertESResponse(&esResp)
+	chunks := convertESResponse(&esResp, vectorFieldName)
 	return &types.SearchResponse{
 		Chunks: chunks,
 		Total:  esResp.Hits.Total.Value,
@@ -390,15 +391,21 @@ func buildESKeywordQuery(matchText string, filterClauses []map[string]interface{
 }
 
 // convertESResponse converts ES SearchResponse to unified chunks format
-func convertESResponse(esResp *SearchResponse) []map[string]interface{} {
+func convertESResponse(esResp *SearchResponse, vectorFieldName string) []map[string]interface{} {
 	if esResp == nil || esResp.Hits.Hits == nil {
 		return []map[string]interface{}{}
 	}
 
 	chunks := make([]map[string]interface{}, len(esResp.Hits.Hits))
 	for i, hit := range esResp.Hits.Hits {
+
+		//// vectorField is list of float64, which need to be converted to float32
+
 		chunks[i] = hit.Source
 		chunks[i]["_score"] = hit.Score
+		chunks[i]["_id"] = hit.ID
+		//vectorField := hit.Source[vectorFieldName]
+		//chunks[i][vectorFieldName] = utility.Float64ToFloat32(vectorField)
 	}
 	return chunks
 }

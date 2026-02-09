@@ -66,8 +66,8 @@ func Rerank(
 	qb *QueryBuilder,
 ) (sim []float64, tsim []float64, vsim []float64) {
 	// If reranker model is provided and there are results, use model reranking
-	if rerankModel != nil && sres.Total > 0 {
-		return RerankByModel(rerankModel, sres, query, tkWeight, vtWeight, cfield, qb)
+	if rerankModel != nil && resp.Total > 0 {
+		return RerankByModel(rerankModel, nil, query, tkWeight, vtWeight, cfield, qb)
 	}
 
 	// Otherwise, use fallback logic based on engine type
@@ -78,7 +78,7 @@ func Rerank(
 	}
 
 	// For Elasticsearch: need to perform reranking
-	return RerankStandard(sres, query, tkWeight, vtWeight, cfield, qb)
+	return RerankStandard(resp, keywords, questionVector, nil, query, tkWeight, vtWeight, cfield, qb)
 }
 
 // RerankByModel performs reranking using a reranker model
@@ -150,45 +150,40 @@ func RerankByModel(
 // Used for Elasticsearch when no reranker model is provided
 // Reference: rag/nlp/search.py L294-L331
 func RerankStandard(
+	resp *engine.SearchResponse,
+	keywords []string,
+	questionVector []float64,
 	sres *SearchResult,
 	query string,
 	tkWeight, vtWeight float64,
 	cfield string,
 	qb *QueryBuilder,
 ) (sim []float64, tsim []float64, vsim []float64) {
-	if sres.Total == 0 || len(sres.IDs) == 0 {
+	chunkCount := len(resp.Chunks)
+	if resp.Total == 0 || chunkCount == 0 {
 		return []float64{}, []float64{}, []float64{}
 	}
 
-	// Extract keywords from query
-	_, keywords := qb.Question(query, "qa", 0.6)
-
 	// Get vector information
-	vectorSize := len(sres.QueryVector)
+	vectorSize := len(questionVector)
 	vectorColumn := getVectorColumnName(vectorSize)
 	zeroVector := make([]float64, vectorSize)
 
 	// Extract embeddings and tokens from search results
-	insEmbd := make([][]float64, 0, len(sres.IDs))
-	insTw := make([][]string, 0, len(sres.IDs))
+	insEmbd := make([][]float64, 0, chunkCount)
+	insTw := make([][]string, 0, chunkCount)
 
-	for _, id := range sres.IDs {
-		fields := sres.Field[id]
-		if fields == nil {
-			insEmbd = append(insEmbd, zeroVector)
-			insTw = append(insTw, []string{})
-			continue
-		}
-
+	for index := range resp.Chunks {
 		// Extract vector
-		vector := extractVector(fields, vectorColumn, zeroVector)
-		insEmbd = append(insEmbd, vector)
+		chunk := resp.Chunks[index]
+		chunkVector := extractVector(chunk, vectorColumn, zeroVector)
+		insEmbd = append(insEmbd, chunkVector)
 
-		// Extract tokens with weights
-		contentLtks := extractContentTokens(fields, cfield)
-		titleTks := extractTitleTokens(fields)
-		questionTks := extractQuestionTokens(fields)
-		importantKwd := extractImportantKeywords(fields)
+		// Extract tokens
+		contentLtks := extractContentTokens(chunk, cfield)
+		titleTks := extractTitleTokens(chunk)
+		questionTks := extractQuestionTokens(chunk)
+		importantKwd := extractImportantKeywords(chunk)
 
 		// Combine tokens with weights: content + title*2 + important_kwd*5 + question_tks*6
 		tks := make([]string, 0, len(contentLtks)+len(titleTks)*2+len(importantKwd)*5+len(questionTks)*6)
@@ -210,7 +205,7 @@ func RerankStandard(
 	}
 
 	// Calculate hybrid similarity
-	return HybridSimilarity(sres.QueryVector, insEmbd, keywords, insTw, tkWeight, vtWeight, qb)
+	return HybridSimilarity(questionVector, insEmbd, keywords, insTw, tkWeight, vtWeight, qb)
 }
 
 // RerankInfinityFallback extracts scores from Infinity search results
@@ -363,19 +358,6 @@ func extractVector(fields map[string]interface{}, column string, zeroVector []fl
 	switch val := v.(type) {
 	case []float64:
 		return val
-	case string:
-		// Parse tab-separated floats
-		parts := strings.Split(val, "\t")
-		vec := make([]float64, 0, len(parts))
-		for _, p := range parts {
-			if f, err := parseFloat(p); err == nil {
-				vec = append(vec, f)
-			}
-		}
-		if len(vec) == 0 {
-			return zeroVector
-		}
-		return vec
 	default:
 		return zeroVector
 	}
