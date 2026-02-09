@@ -199,3 +199,35 @@ func (a *Analyzer) FineGrainedTokenize(tokens string) (string, error) {
 
 	return C.GoString(cResult), nil
 }
+
+// GetTermFreq returns the frequency of a term (matching Python rag_tokenizer.freq)
+// Returns: frequency value, or 0 if term not found
+func (a *Analyzer) GetTermFreq(term string) int32 {
+	if a.handle == nil {
+		return 0
+	}
+
+	cTerm := C.CString(term)
+	defer C.free(unsafe.Pointer(cTerm))
+
+	return int32(C.RAGAnalyzer_GetTermFreq(a.handle, cTerm))
+}
+
+// GetTermTag returns the POS tag of a term (matching Python rag_tokenizer.tag)
+// Returns: POS tag string (e.g., "n", "v", "ns"), or empty string if term not found or no tag
+func (a *Analyzer) GetTermTag(term string) string {
+	if a.handle == nil {
+		return ""
+	}
+
+	cTerm := C.CString(term)
+	defer C.free(unsafe.Pointer(cTerm))
+
+	cResult := C.RAGAnalyzer_GetTermTag(a.handle, cTerm)
+	if cResult == nil {
+		return ""
+	}
+	defer C.free(unsafe.Pointer(cResult))
+
+	return C.GoString(cResult)
+}

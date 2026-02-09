@@ -86,6 +86,9 @@ public:
 
     void SplitByLang(const std::string& line, std::vector<std::pair<std::string, bool>>& txt_lang_pairs) const;
 
+    int32_t Freq(std::string_view key) const;
+    std::string Tag(std::string_view key) const;
+
 protected:
     int AnalyzeImpl(const Term& input, void* data, HookType func);
 
@@ -97,7 +100,6 @@ private:
     static void BuildPositionMapping(const std::string& original, const std::string& converted,
                                      std::vector<unsigned>& pos_mapping);
 
-    int32_t Freq(std::string_view key) const;
 
     static std::string Key(std::string_view line);
 

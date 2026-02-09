@@ -78,6 +78,11 @@ static inline int32_t DecodeFreq(int32_t value) {
     return v1;
 }
 
+static inline int32_t DecodePOSIndex(int32_t value) {
+    // POS index is stored in the high 8 bits (bits 24-31)
+    return static_cast<int32_t>(static_cast<uint32_t>(value) >> 24);
+}
+
 void Split(const std::string &input, const std::string &split_pattern, std::vector<std::string> &result, bool keep_delim = false) {
     re2::RE2 pattern(split_pattern);
     re2::StringPiece leftover(input.data());
@@ -839,6 +844,20 @@ int32_t RAGAnalyzer::Freq(const std::string_view key) const {
     int32_t v = trie_->Get(key);
     v = DecodeFreq(v);
     return static_cast<int32_t>(std::exp(v) * DENOMINATOR + 0.5);
+}
+
+std::string RAGAnalyzer::Tag(std::string_view key) const {
+    std::string lower_key = Key(std::string(key));
+    int32_t encoded_value = trie_->Get(lower_key);
+    if (encoded_value == -1) {
+        return "";
+    }
+    int32_t pos_idx = DecodePOSIndex(encoded_value);
+    if (pos_table_ == nullptr) {
+        return "";
+    }
+    const char* pos_tag = pos_table_->GetPOS(pos_idx);
+    return pos_tag ? std::string(pos_tag) : "";
 }
 
 std::string RAGAnalyzer::Key(const std::string_view line) { return ToLowerString(line); }

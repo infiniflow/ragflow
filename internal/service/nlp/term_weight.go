@@ -310,37 +310,38 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 		return 1
 	}
 
-	// postag weight function (simplified without POS tagger)
+	// postag weight function using real POS tagger
 	postagWeight := func(t string) float64 {
-		// Simple heuristic based on term characteristics
-		// Numbers
-		if matched, _ := regexp.MatchString("^[0-9-]+", t); matched {
-			return 2
-		}
-		// Single English letters
-		if matched, _ := regexp.MatchString("^[a-zA-Z]$", t); matched {
+		tag := tokenizer.GetTermTag(t)
+		// Map POS tags to weights (matching Python implementation)
+		if tag == "r" || tag == "c" || tag == "d" {
 			return 0.3
 		}
-		// Multi-character Chinese terms (likely nouns)
-		if len([]rune(t)) >= 2 && !letterPattern.MatchString(t) {
+		if tag == "ns" || tag == "nt" {
+			return 3
+		}
+		if tag == "n" {
+			return 2
+		}
+		// Fallback to heuristic for terms without tags
+		if matched, _ := regexp.MatchString("^[0-9-]+", tag); matched {
 			return 2
 		}
 		return 1
 	}
 
-	// freq function (simplified without frequency dictionary)
+	// freq function using real frequency dictionary
 	var freq func(t string) float64
 	freq = func(t string) float64 {
 		if numSpacePattern.MatchString(t) {
 			return 3
 		}
-		// Estimate frequency based on term characteristics
-		// Long English terms are rare
-		if letterPattern.MatchString(t) && len(t) >= 4 {
+		// Use tokenizer's freq function
+		s := tokenizer.GetTermFreq(t)
+		if s == 0 && letterPattern.MatchString(t) {
 			return 300
 		}
-		// Very long terms get higher rarity score
-		if len([]rune(t)) >= 4 {
+		if s == 0 && len([]rune(t)) >= 4 {
 			// Try fine-grained tokenization
 			fgTokens, _ := tokenizer.Tokenize(t)
 			var validTokens []float64
@@ -359,9 +360,10 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 				}
 				return minVal / 6.0
 			}
+			// Default frequency
+			return 10
 		}
-		// Default frequency
-		return 10
+		return math.Max(float64(s), 10)
 	}
 
 	// df function
@@ -399,7 +401,7 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 
 	// idf function
 	idf := func(s, N float64) float64 {
-		return math.Log10(10 + ((N-s+0.5)/(s+0.5)))
+		return math.Log10(10 + ((N - s + 0.5) / (s + 0.5)))
 	}
 
 	tw := []TermWeight{}

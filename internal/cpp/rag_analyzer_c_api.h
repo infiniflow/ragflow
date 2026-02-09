@@ -84,6 +84,15 @@ void RAGAnalyzer_FreeTokenList(RAGTokenList* token_list);
 // Returns: dynamically allocated string (must call free()), or NULL on failure
 char* RAGAnalyzer_FineGrainedTokenize(RAGAnalyzerHandle handle, const char* tokens);
 
+// Get the frequency of a term (matching Python rag_tokenizer.freq)
+// Returns: frequency value, or 0 if term not found
+int32_t RAGAnalyzer_GetTermFreq(RAGAnalyzerHandle handle, const char* term);
+
+// Get the POS tag of a term (matching Python rag_tokenizer.tag)
+// Caller is responsible for freeing the returned string
+// Returns: dynamically allocated string (must call free()), or NULL if term not found or no tag
+char* RAGAnalyzer_GetTermTag(RAGAnalyzerHandle handle, const char* term);
+
 #ifdef __cplusplus
 }
 #endif

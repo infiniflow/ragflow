@@ -184,4 +184,29 @@ char* RAGAnalyzer_FineGrainedTokenize(RAGAnalyzerHandle handle, const char* toke
     return c_result;
 }
 
+int32_t RAGAnalyzer_GetTermFreq(RAGAnalyzerHandle handle, const char* term) {
+    if (!handle || !term) return 0;
+
+    RAGAnalyzer* analyzer = static_cast<RAGAnalyzer*>(handle);
+    return analyzer->Freq(term);
+}
+
+char* RAGAnalyzer_GetTermTag(RAGAnalyzerHandle handle, const char* term) {
+    if (!handle || !term) return nullptr;
+
+    RAGAnalyzer* analyzer = static_cast<RAGAnalyzer*>(handle);
+    std::string tag_result = analyzer->Tag(term);
+
+    if (tag_result.empty()) {
+        return nullptr;
+    }
+
+    // Allocate memory for C string
+    char* c_result = static_cast<char*>(malloc(tag_result.size() + 1));
+    if (c_result) {
+        std::memcpy(c_result, tag_result.c_str(), tag_result.size() + 1);
+    }
+    return c_result;
+}
+
 } // extern "C"

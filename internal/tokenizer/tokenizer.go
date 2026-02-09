@@ -119,3 +119,21 @@ func SetEnablePosition(enablePosition bool) {
 func IsInitialized() bool {
 	return globalAnalyzer != nil
 }
+
+// GetTermFreq returns the frequency of a term (matching Python rag_tokenizer.freq)
+// Returns: frequency value, or 0 if term not found
+func GetTermFreq(term string) int32 {
+	if globalAnalyzer == nil {
+		return 0
+	}
+	return globalAnalyzer.GetTermFreq(term)
+}
+
+// GetTermTag returns the POS tag of a term (matching Python rag_tokenizer.tag)
+// Returns: POS tag string (e.g., "n", "v", "ns"), or empty string if term not found or no tag
+func GetTermTag(term string) string {
+	if globalAnalyzer == nil {
+		return ""
+	}
+	return globalAnalyzer.GetTermTag(term)
+}
