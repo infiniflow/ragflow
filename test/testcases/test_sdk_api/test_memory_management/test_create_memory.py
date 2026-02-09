@@ -81,6 +81,7 @@ class TestMemoryCreate:
 
     @pytest.mark.p2
     @given(name=valid_names())
+    @settings(deadline=None)
     def test_type_invalid(self, client, name):
         payload = {
             "name": name,

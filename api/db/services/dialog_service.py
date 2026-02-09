@@ -606,10 +606,21 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         table_name = base_table
         logging.debug(f"use_sql: Using ES/OS table name: {table_name}")
 
+    def is_row_count_question(q: str) -> bool:
+        q = (q or "").lower()
+        if not re.search(r"\bhow many rows\b|\bnumber of rows\b|\brow count\b", q):
+            return False
+        return bool(re.search(r"\bdataset\b|\btable\b|\bspreadsheet\b|\bexcel\b", q))
+
     # Generate engine-specific SQL prompts
     if doc_engine == "infinity":
         # Build Infinity prompts with JSON extraction context
         json_field_names = list(field_map.keys())
+        row_count_override = (
+            f"SELECT COUNT(*) AS rows FROM {table_name}"
+            if is_row_count_question(question)
+            else None
+        )
         sys_prompt = """You are a Database Administrator. Write SQL for a table with JSON 'chunk_data' column.
 
 JSON Extraction: json_extract_string(chunk_data, '$.FieldName')
@@ -641,6 +652,11 @@ Write SQL using json_extract_string() with exact field names. Include doc_id, do
     elif doc_engine == "oceanbase":
         # Build OceanBase prompts with JSON extraction context
         json_field_names = list(field_map.keys())
+        row_count_override = (
+            f"SELECT COUNT(*) AS rows FROM {table_name}"
+            if is_row_count_question(question)
+            else None
+        )
         sys_prompt = """You are a Database Administrator. Write SQL for a table with JSON 'chunk_data' column.
 
 JSON Extraction: json_extract_string(chunk_data, '$.FieldName')
@@ -671,6 +687,7 @@ Write SQL using json_extract_string() with exact field names. Include doc_id, do
         )
     else:
         # Build ES/OS prompts with direct field access
+        row_count_override = None
         sys_prompt = """You are a Database Administrator. Write SQL queries.
 
 RULES:
@@ -693,8 +710,11 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
     tried_times = 0
 
     async def get_table():
-        nonlocal sys_prompt, user_prompt, question, tried_times
-        sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
+        nonlocal sys_prompt, user_prompt, question, tried_times, row_count_override
+        if row_count_override:
+            sql = row_count_override
+        else:
+            sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
         logging.debug(f"use_sql: Raw SQL from LLM: {repr(sql[:500])}")
         # Remove think blocks if present (format: </think>...)
         sql = re.sub(r"</think>\n.*?\n\s*", "", sql, flags=re.DOTALL)
