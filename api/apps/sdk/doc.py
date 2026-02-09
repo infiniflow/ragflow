@@ -421,7 +421,7 @@ async def download(tenant_id, dataset_id, document_id):
 
 @manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
 @token_required
-async def download(tenant_id, document_id):
+async def download_doc(tenant_id, document_id):
     """
     Download a document from a dataset.
     ---
