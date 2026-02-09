@@ -440,6 +440,10 @@ func (wn *WordNet) synsetFromPosAndOffset(pos string, offset int) (*Synset, erro
 		return nil, fmt.Errorf("failed to read line at offset %d: %w", offset, err)
 	}
 
+	//if len(line) < 8 {
+	//	fmt.Println(line)
+	//}
+
 	// Verify the offset matches
 	lineOffset := strings.TrimSpace(line[:8])
 	expectedOffset := fmt.Sprintf("%08d", offset)

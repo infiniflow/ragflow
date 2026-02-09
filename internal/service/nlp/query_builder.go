@@ -539,6 +539,9 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 		if tmsStr != "" {
 			qs = append(qs, tmsStr)
 		}
+		//else {
+		//	fmt.Println("tmsStr is empty")
+		//}
 	}
 
 	// Build final query

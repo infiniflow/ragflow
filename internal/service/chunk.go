@@ -207,6 +207,9 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	}
 	matchTextExpr, keywords := queryBuilder.Question(req.Question, "qa", 0.6)
 
+	//if matchTextExpr == nil {
+	//	return nil, fmt.Errorf("failed to process question")
+	//}
 	logger.Debug("QueryBuilder processed question",
 		zap.String("original", req.Question),
 		zap.String("matchingText", matchTextExpr.MatchingText),
@@ -266,7 +269,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	vtWeight := *req.VectorSimilarityWeight
 	useInfinity := s.engineType == config.EngineInfinity
 
-	sim, _, _ := nlp.Rerank(
+	sim, term_similarity, vector_similarity := nlp.Rerank(
 		rerankModel,
 		searchResp,
 		keywords,
@@ -283,11 +286,18 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	// Apply similarity threshold and sort chunks
 	similarityThreshold := getSimilarityThreshold(req.SimilarityThreshold)
 	filteredChunks := applyRerankResults(searchResp.Chunks, sim, similarityThreshold)
+	for idx, _ := range filteredChunks {
+		filteredChunks[idx]["similarity"] = sim[idx]
+		filteredChunks[idx]["term_similarity"] = term_similarity[idx]
+		filteredChunks[idx]["vector_similarity"] = vector_similarity[idx]
+	}
+
+	convertedChunks := buildRetrievalTestResults(filteredChunks)
 
 	return &RetrievalTestResponse{
-		Chunks: filteredChunks,
+		Chunks: convertedChunks,
 		Labels: []map[string]interface{}{}, // Empty labels for now
-		Total:  int64(len(filteredChunks)),
+		Total:  int64(len(convertedChunks)),
 	}, nil
 }
 
@@ -388,4 +398,52 @@ func applyRerankResults(chunks []map[string]interface{}, sim []float64, threshol
 	}
 
 	return filteredChunks
+}
+
+// buildRetrievalTestResults converts filtered chunks to retrieval test results with renamed keys
+func buildRetrievalTestResults(filteredChunks []map[string]interface{}) []map[string]interface{} {
+	results := make([]map[string]interface{}, 0, len(filteredChunks))
+
+	for _, chunk := range filteredChunks {
+		result := make(map[string]interface{})
+
+		// Key mappings
+		if v, ok := chunk["_id"]; ok {
+			result["chunk_id"] = v
+		}
+		if v, ok := chunk["content_ltks"]; ok {
+			result["content_ltks"] = v
+		}
+		if v, ok := chunk["content_with_weight"]; ok {
+			result["content_with_weight"] = v
+		}
+		if v, ok := chunk["doc_id"]; ok {
+			result["doc_id"] = v
+		}
+		if v, ok := chunk["docnm_kwd"]; ok {
+			result["docnm_kwd"] = v
+		}
+		if v, ok := chunk["img_id"]; ok {
+			result["image_id"] = v
+		}
+		if v, ok := chunk["kb_id"]; ok {
+			result["kb_id"] = v
+		}
+		if v, ok := chunk["position_int"]; ok {
+			result["positions"] = v
+		}
+		if v, ok := chunk["similarity"]; ok {
+			result["similarity"] = v
+		}
+		if v, ok := chunk["term_similarity"]; ok {
+			result["term_similarity"] = v
+		}
+		if v, ok := chunk["vector_similarity"]; ok {
+			result["vector_similarity"] = v
+		}
+
+		results = append(results, result)
+	}
+
+	return results
 }
