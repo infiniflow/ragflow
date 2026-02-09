@@ -419,6 +419,64 @@ async def download(tenant_id, dataset_id, document_id):
     )
 
 
+@manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
+@token_required
+async def download(tenant_id, document_id):
+    """
+    Download a document from a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    produces:
+      - application/octet-stream
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: path
+        name: document_id
+        type: string
+        required: true
+        description: ID of the document to download.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Document file stream.
+        schema:
+          type: file
+      400:
+        description: Error message.
+        schema:
+          type: object
+    """
+    if not document_id:
+        return get_error_data_result(message="Specify document_id please.")
+    doc = DocumentService.query(id=document_id)
+    if not doc:
+        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+    # The process of downloading
+    doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
+    file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
+    if not file_stream:
+        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
+    file = BytesIO(file_stream)
+    # Use send_file with a proper filename and MIME type
+    return await send_file(
+        file,
+        as_attachment=True,
+        attachment_filename=doc[0].name,
+        mimetype="application/octet-stream",  # Set a default MIME type
+    )
+
+
 @manager.route("/datasets/<dataset_id>/documents", methods=["GET"])  # noqa: F821
 @token_required
 def list_docs(dataset_id, tenant_id):

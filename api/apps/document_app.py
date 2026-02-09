@@ -705,7 +705,7 @@ async def rename():
 
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
-# @login_required
+@login_required
 async def get(doc_id):
     try:
         e, doc = DocumentService.get_by_id(doc_id)
