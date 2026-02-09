@@ -262,8 +262,8 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 
 	// Perform reranking
 	// Reference: rag/nlp/search.py L404-L429
-	tkWeight := 1.0 - getVectorSimilarityWeight(req.VectorSimilarityWeight)
-	vtWeight := getVectorSimilarityWeight(req.VectorSimilarityWeight)
+	tkWeight := 1.0 - *req.VectorSimilarityWeight
+	vtWeight := *req.VectorSimilarityWeight
 	useInfinity := s.engineType == config.EngineInfinity
 
 	sim, _, _ := nlp.Rerank(

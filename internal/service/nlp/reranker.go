@@ -233,13 +233,13 @@ func HybridSimilarity(
 	tkWeight, vtWeight float64,
 	qb *QueryBuilder,
 ) (sim []float64, tsim []float64, vsim []float64) {
-	tsim = TokenSimilarity(atks, btkss, qb)
-
 	// Calculate vector similarities using cosine similarity
 	vsim = make([]float64, len(bvecs))
 	for i, bvec := range bvecs {
 		vsim[i] = cosineSimilarity(avec, bvec)
 	}
+
+	tsim = TokenSimilarity(atks, btkss, qb)
 
 	// Check if all vector similarities are zero
 	allZero := true
@@ -358,6 +358,12 @@ func extractVector(fields map[string]interface{}, column string, zeroVector []fl
 	switch val := v.(type) {
 	case []float64:
 		return val
+	case []interface{}:
+		vec := make([]float64, len(val))
+		for i, v := range val {
+			vec[i] = v.(float64)
+		}
+		return vec
 	default:
 		return zeroVector
 	}
