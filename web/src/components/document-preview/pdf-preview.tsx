@@ -52,9 +52,15 @@ const PdfPreview = ({
   const resetHash = () => {};
 
   useEffect(() => {
+    let timer = null;
     if (state?.length && state?.length > 0) {
-      ref?.current(state[0]);
+      timer = setTimeout(() => {
+        ref?.current(state[0]);
+      }, 100);
     }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [state]);
 
   const httpHeaders = {
