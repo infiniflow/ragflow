@@ -14,6 +14,8 @@ export enum Routes {
   Agent = '/agent',
   AgentTemplates = '/agent-templates',
   Agents = '/agents',
+  Explore = '/explore',
+  AgentExplore = `${Routes.Agent}/:id/explore`,
   Memories = '/memories',
   Memory = '/memory',
   MemoryMessage = '/memory-message',
@@ -250,10 +252,17 @@ const routeConfigOptions = [
     Component: () => import('@/pages/agent'),
   },
   {
+    path: Routes.AgentExplore,
+    layout: false,
+    Component: () => import('@/pages/agent/explore'),
+    errorElement: <FallbackComponent />,
+  },
+  {
     path: Routes.AgentTemplates,
     layout: false,
     Component: () => import('@/pages/agents/agent-templates'),
   },
+
   {
     path: Routes.Files,
     layout: false,
