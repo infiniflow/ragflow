@@ -3,22 +3,31 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useCreateAgentSession,
   useFetchAgent,
-  useFetchSessionById,
 } from '@/hooks/use-agent-request';
-import { IMessage } from '@/interfaces/database/chat';
 import { useSendAgentMessage } from '@/pages/agent/chat/use-send-agent-message';
 import { buildBeginInputListFromObject } from '@/pages/agent/form/begin-form/utils';
 import api from '@/utils/api';
-import { isEmpty } from 'lodash';
+import { get, isEmpty } from 'lodash';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router';
 import { BeginId } from '../../constant';
 import { useExploreUrlParams } from './use-explore-url-params';
 
+export const useGetBeginNodePrologue = () => {
+  const { data } = useFetchAgent();
+  const nodes = get(data, 'dsl.graph.nodes', []);
+
+  return useMemo(() => {
+    const beginNode = nodes.find((node: any) => node.id === BeginId);
+    const formData: Record<string, any> = get(beginNode, 'data.form', {});
+    if (formData?.enablePrologue) {
+      return formData?.prologue;
+    }
+  }, [nodes]);
+};
+
 export const useSendSessionMessage = () => {
-  const { setSessionId, sessionId } = useExploreUrlParams();
-  const { data: sessionData, loading: sessionLoading } =
-    useFetchSessionById(sessionId);
+  const { setSessionId, sessionId, isNew } = useExploreUrlParams();
 
   const { data: canvasInfo } = useFetchAgent();
 
@@ -29,6 +38,8 @@ export const useSendSessionMessage = () => {
   const isCreatingSession = useRef(false);
 
   const [beginParams, setBeginParams] = useState<any[]>([]);
+
+  const prologue = useGetBeginNodePrologue();
 
   const {
     visible: parameterDialogVisible,
@@ -44,25 +55,12 @@ export const useSendSessionMessage = () => {
     return buildBeginInputListFromObject(inputs || {});
   }, [canvasInfo]);
 
-  const { setDerivedMessages, ...chatLogic } = useSendAgentMessage({
-    url: api.runCanvasExplore(canvasId!),
-    beginParams,
-  });
-
-  useEffect(() => {
-    if (sessionData?.message && sessionId) {
-      const messages = sessionData.message;
-      setDerivedMessages(messages as IMessage[]);
-    }
-  }, [sessionId, sessionData, setDerivedMessages]);
-
-  useEffect(() => {
-    return () => {
-      if (!sessionId) {
-        setDerivedMessages([]);
-      }
-    };
-  }, [sessionId, setDerivedMessages]);
+  const { setDerivedMessages, addPrologue, ...chatLogic } = useSendAgentMessage(
+    {
+      url: api.runCanvasExplore(canvasId!),
+      beginParams,
+    },
+  );
 
   const handleParametersOk = useCallback(
     (params: any[]) => {
@@ -112,14 +110,26 @@ export const useSendSessionMessage = () => {
     return chatLogic.handlePressEnter?.({ exploreSessionId });
   }, [sessionId, canvasId, chatLogic, createAgentSession, setSessionId]);
 
+  useEffect(() => {
+    if (isNew && isEmpty(sessionId)) {
+      setDerivedMessages([]);
+    }
+  }, [isNew, sessionId, setDerivedMessages]);
+
+  useEffect(() => {
+    if (prologue && isNew && isEmpty(sessionId)) {
+      addPrologue(prologue);
+    }
+  }, [addPrologue, isNew, prologue, sessionId]);
+
   return {
     ...chatLogic,
     handlePressEnter,
     canvasInfo,
-    sessionLoading,
     parameterDialogVisible,
     handleParametersOk,
     beginInputs,
     shouldShowParameterDialog,
+    setDerivedMessages,
   };
 };

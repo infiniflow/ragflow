@@ -75,6 +75,7 @@ export const enum AgentApiAction {
   FetchSessionById = 'fetchSessionById',
   CreateAgentSession = 'createAgentSession',
   DeleteAgentSession = 'deleteAgentSession',
+  FetchSessionByIdManually = 'fetchSessionByIdManually',
 }
 
 export const EmptyDsl = {
@@ -694,31 +695,6 @@ export const useFetchSessionsByCanvasId = () => {
   };
 };
 
-export const useFetchSessionById = (sessionId?: string) => {
-  const { id: canvasId } = useParams();
-
-  const { data, isFetching: loading } = useQuery<IAgentLogResponse | null>({
-    queryKey: [AgentApiAction.FetchSessionById, canvasId, sessionId],
-    initialData: null,
-    gcTime: 0,
-    enabled: !!canvasId && !!sessionId,
-    queryFn: async () => {
-      if (!canvasId || !sessionId) {
-        return null;
-      }
-
-      const { data } = await fetchAgentLogsById(canvasId, sessionId);
-
-      return data?.data ?? null;
-    },
-  });
-
-  return {
-    data,
-    loading,
-  };
-};
-
 export const useFetchExternalAgentInputs = () => {
   const { sharedId } = useGetSharedChatSearchParams();
 
@@ -1020,4 +996,27 @@ export function useDeleteAgentSession() {
   });
 
   return { data, loading, deleteAgentSession: mutateAsync };
+}
+
+export function useFetchSessionManually() {
+  const { id: canvasId } = useParams();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation<IAgentLogResponse, unknown, string>({
+    mutationKey: [AgentApiAction.FetchSessionByIdManually, canvasId],
+    mutationFn: async (sessionId) => {
+      if (!canvasId || !sessionId) {
+        return null;
+      }
+
+      const { data } = await fetchAgentLogsById(canvasId, sessionId);
+
+      return data?.data;
+    },
+  });
+
+  return { data, loading, fetchSessionManually: mutateAsync };
 }

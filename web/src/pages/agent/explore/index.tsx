@@ -8,6 +8,7 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useFetchSessionManually } from '@/hooks/use-agent-request';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
@@ -22,6 +23,7 @@ export default function AgentExplore() {
   const { t } = useTranslation();
   const { id } = useParams();
   const { flowDetail: agentDetail } = useFetchDataOnMount();
+  const { fetchSessionManually, data: session } = useFetchSessionManually();
 
   const handleBackToAgent = useCallback(() => {
     const navigateFn = navigateToAgent(id as string);
@@ -31,8 +33,9 @@ export default function AgentExplore() {
   const handleSessionSelect = useCallback(
     (id: string, isNew?: boolean) => {
       setSessionId(id, isNew);
+      fetchSessionManually(id);
     },
-    [setSessionId],
+    [fetchSessionManually, setSessionId],
   );
 
   return (
@@ -64,7 +67,7 @@ export default function AgentExplore() {
         </div>
 
         <div className="flex-1 min-w-0">
-          <SessionChat sessionId={sessionId} />
+          <SessionChat session={session} />
         </div>
       </section>
     </section>

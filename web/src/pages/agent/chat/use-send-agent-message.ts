@@ -479,5 +479,6 @@ export const useSendAgentMessage = ({
     sendMessage,
     removeFile,
     setDerivedMessages,
+    addPrologue,
   };
 };

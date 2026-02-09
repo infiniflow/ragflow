@@ -6,20 +6,28 @@ import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType } from '@/constants/chat';
 import { useUploadCanvasFileWithProgress } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
+import { IAgentLogResponse } from '@/interfaces/database/agent';
+import { IMessage } from '@/interfaces/database/chat';
 import { BeginQuery } from '@/pages/agent/interface';
 import { ParameterDialog } from '@/pages/agent/share/parameter-dialog';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useExploreUrlParams } from '../hooks/use-explore-url-params';
 import { useSendSessionMessage } from '../hooks/use-send-session-message';
 
 interface SessionChatProps {
-  sessionId?: string;
+  session?: IAgentLogResponse;
 }
 
-export function SessionChat({ sessionId }: SessionChatProps) {
+export function SessionChat({ session }: SessionChatProps) {
   const { t } = useTranslation();
   const { data: userInfo } = useFetchUserInfo();
+  const { sessionId, isNew } = useExploreUrlParams();
+  const hasActiveSession = Boolean(sessionId || isNew);
+  const hasLocalMessageRef = useRef(false);
+
+  const sessionLoading = false;
 
   const {
     value,
@@ -27,7 +35,6 @@ export function SessionChat({ sessionId }: SessionChatProps) {
     scrollRef,
     messageContainerRef,
     sendLoading,
-    sessionLoading,
     handleInputChange,
     handlePressEnter,
     stopOutputMessage,
@@ -39,6 +46,7 @@ export function SessionChat({ sessionId }: SessionChatProps) {
     handleParametersOk,
     beginInputs,
     shouldShowParameterDialog,
+    setDerivedMessages,
   } = useSendSessionMessage();
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
@@ -61,16 +69,43 @@ export function SessionChat({ sessionId }: SessionChatProps) {
     shouldShowParameterDialog();
   }, [shouldShowParameterDialog]);
 
+  useEffect(() => {
+    hasLocalMessageRef.current = false;
+  }, [sessionId, isNew]);
+
+  useEffect(() => {
+    if (hasLocalMessageRef.current) {
+      return;
+    }
+    if (sessionId && session?.id === sessionId && session?.message) {
+      const messages = session.message;
+      setDerivedMessages(messages as IMessage[]);
+    }
+  }, [session?.id, session?.message, sessionId, setDerivedMessages]);
+
+  useEffect(() => {
+    if (!sessionId && !isNew && !hasLocalMessageRef.current && !sendLoading) {
+      setDerivedMessages([]);
+    }
+  }, [sessionId, isNew, sendLoading, setDerivedMessages]);
+
+  const handleSessionPressEnter = useCallback(async () => {
+    if (value.trim()) {
+      hasLocalMessageRef.current = true;
+    }
+    return handlePressEnter();
+  }, [handlePressEnter, value]);
+
   return (
     <>
       <section className="flex flex-col h-full">
-        {!sessionId && (
+        {!hasActiveSession && (
           <div className="flex-1 flex items-center justify-center text-text-secondary">
             {t('explore.noSessionSelected')}
           </div>
         )}
 
-        {sessionId && (
+        {hasActiveSession && (
           <div
             ref={messageContainerRef}
             className="flex-1 overflow-auto min-h-0 p-5"
@@ -116,7 +151,7 @@ export function SessionChat({ sessionId }: SessionChatProps) {
             disabled={false}
             sendDisabled={sendLoading}
             isUploading={isUploading}
-            onPressEnter={handlePressEnter}
+            onPressEnter={handleSessionPressEnter}
             onInputChange={handleInputChange}
             stopOutputMessage={stopOutputMessage}
             onUpload={handleUploadFile}
