@@ -181,8 +181,10 @@ class DialogService(CommonService):
 
 async def async_chat_solo(dialog, messages, stream=True):
     attachments = ""
+    image_attachments = []
     if "files" in messages[-1]:
-        attachments = "\n\n".join(FileService.get_files(messages[-1]["files"]))
+        text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
+        attachments = "\n\n".join(text_attachments)
     if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
@@ -195,6 +197,8 @@ async def async_chat_solo(dialog, messages, stream=True):
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"]
     if attachments and msg:
         msg[-1]["content"] += attachments
+    if image_attachments:
+        convert_last_user_msg_to_multimodal(msg, image_attachments)
     if stream:
         stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
         async for kind, value, state in _stream_with_think_delta(stream_iter):
@@ -233,6 +237,51 @@ def get_models(dialog):
     if dialog.prompt_config.get("tts"):
         tts_mdl = LLMBundle(dialog.tenant_id, LLMType.TTS)
     return kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl
+
+
+def split_file_attachments(files: list[dict] | None) -> tuple[list[str], list[str]]:
+    if not files:
+        return [], []
+
+    text_attachments = []
+    image_attachments = []
+    for content in FileService.get_files(files):
+        if not isinstance(content, str):
+            content = str(content)
+        if content.strip().startswith("data:"):
+            image_attachments.append(content.strip())
+            continue
+        text_attachments.append(content)
+    return text_attachments, image_attachments
+
+
+def convert_last_user_msg_to_multimodal(msg: list[dict], image_data_uris: list[str]) -> None:
+    if not msg or not image_data_uris:
+        return
+
+    for idx in range(len(msg) - 1, -1, -1):
+        if msg[idx].get("role") != "user":
+            continue
+
+        text_content = msg[idx].get("content", "")
+        multimodal_content = []
+        if isinstance(text_content, list):
+            multimodal_content = deepcopy(text_content)
+        else:
+            text_content = "" if text_content is None else str(text_content)
+            if text_content:
+                multimodal_content.append({"type": "text", "text": text_content})
+
+        for data_uri in image_data_uris:
+            image_url = data_uri
+            if not isinstance(image_url, str):
+                image_url = str(image_url)
+            if not image_url.startswith("data:"):
+                image_url = f"data:image/png;base64,{image_url}"
+            multimodal_content.append({"type": "image_url", "image_url": {"url": image_url}})
+
+        msg[idx]["content"] = multimodal_content
+        return
 
 
 BAD_CITATION_PATTERNS = [
@@ -316,10 +365,12 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
     attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else []
     attachments_= ""
+    image_attachments = []
     if "doc_ids" in messages[-1]:
         attachments = messages[-1]["doc_ids"]
     if "files" in messages[-1]:
-        attachments_ = "\n\n".join(FileService.get_files(messages[-1]["files"]))
+        text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
+        attachments_ = "\n\n".join(text_attachments)
 
     prompt_config = dialog.prompt_config
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
@@ -464,6 +515,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         prompt4citation = citation_prompt()
     msg.extend([{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"])
     used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.95))
+    if image_attachments:
+        convert_last_user_msg_to_multimodal(msg, image_attachments)
     assert len(msg) >= 2, f"message_fit_in has bug: {msg}"
     prompt = msg[0]["content"]
 
