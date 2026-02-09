@@ -27,6 +27,11 @@
     .chunkText();
     .messageTextBase();
     word-break: break-word;
+
+    // RTL Support
+    &[dir='rtl'] {
+      text-align: right;
+    }
   }
   .messageTextDark {
     .chunkText();
@@ -36,6 +41,21 @@
       color: rgb(166, 166, 166);
       border-left-color: rgb(78, 78, 86);
     }
+
+    // RTL Support
+    &[dir='rtl'] {
+      text-align: right;
+
+      :global(section.think) {
+        border-left-color: transparent;
+        border-right-color: rgb(78, 78, 86);
+        border-right-width: 2px;
+        border-right-style: solid;
+        border-left: none;
+        padding-left: 0;
+        padding-right: 10px;
+      }
+    }
   }
 
   .messageUserText {
@@ -43,6 +63,11 @@
     .messageTextBase();
     word-break: break-word;
     text-align: justify;
+
+    // RTL Support
+    &[dir='rtl'] {
+      text-align: right;
+    }
   }
   .messageEmpty {
     width: 300px;
