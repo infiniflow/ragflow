@@ -55,12 +55,17 @@ export const useSendSessionMessage = () => {
     return buildBeginInputListFromObject(inputs || {});
   }, [canvasInfo]);
 
-  const { setDerivedMessages, addPrologue, ...chatLogic } = useSendAgentMessage(
-    {
-      url: api.runCanvasExplore(canvasId!),
-      beginParams,
-    },
-  );
+  const {
+    setDerivedMessages,
+    addPrologue,
+    derivedMessages,
+    handlePressEnter: handleSendPressEnter,
+    value,
+    ...chatLogic
+  } = useSendAgentMessage({
+    url: api.runCanvasExplore(canvasId!),
+    beginParams,
+  });
 
   const handleParametersOk = useCallback(
     (params: any[]) => {
@@ -81,12 +86,21 @@ export const useSendSessionMessage = () => {
       return;
     }
 
+    if (
+      prologue &&
+      isEmpty(sessionId) &&
+      !isNew &&
+      derivedMessages.length === 0
+    ) {
+      addPrologue(prologue);
+    }
+
     let exploreSessionId = sessionId;
 
     if (isEmpty(sessionId) && canvasId) {
       isCreatingSession.current = true;
       try {
-        const sessionName = chatLogic.value?.trim() || 'New Session';
+        const sessionName = value?.trim() || 'New Session';
         const result = await createAgentSession({
           id: canvasId,
           name: sessionName,
@@ -107,8 +121,19 @@ export const useSendSessionMessage = () => {
       }
     }
 
-    return chatLogic.handlePressEnter?.({ exploreSessionId });
-  }, [sessionId, canvasId, chatLogic, createAgentSession, setSessionId]);
+    return handleSendPressEnter?.({ exploreSessionId });
+  }, [
+    addPrologue,
+    canvasId,
+    createAgentSession,
+    derivedMessages.length,
+    handleSendPressEnter,
+    isNew,
+    prologue,
+    sessionId,
+    setSessionId,
+    value,
+  ]);
 
   useEffect(() => {
     if (isNew && isEmpty(sessionId)) {
@@ -124,6 +149,8 @@ export const useSendSessionMessage = () => {
 
   return {
     ...chatLogic,
+    value,
+    derivedMessages,
     handlePressEnter,
     canvasInfo,
     parameterDialogVisible,

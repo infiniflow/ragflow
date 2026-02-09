@@ -24,7 +24,6 @@ export function SessionChat({ session }: SessionChatProps) {
   const { t } = useTranslation();
   const { data: userInfo } = useFetchUserInfo();
   const { sessionId, isNew } = useExploreUrlParams();
-  const hasActiveSession = Boolean(sessionId || isNew);
   const hasLocalMessageRef = useRef(false);
 
   const sessionLoading = false;
@@ -48,6 +47,9 @@ export function SessionChat({ session }: SessionChatProps) {
     shouldShowParameterDialog,
     setDerivedMessages,
   } = useSendSessionMessage();
+  const hasActiveSession = Boolean(
+    sessionId || isNew || hasLocalMessageRef.current,
+  );
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
