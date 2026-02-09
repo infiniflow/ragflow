@@ -229,7 +229,8 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
     conv.message.append({
         "role": "user",
         "content": query,
-        "id": message_id
+        "id": message_id,
+        "files": files
     })
     txt = ""
     async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
