@@ -19,6 +19,7 @@ import random
 import pytest
 from ragflow_sdk import RAGFlow, Memory
 from configs import INVALID_API_TOKEN, HOST_ADDRESS
+from utils.engine_utils import get_doc_engine
 
 
 class TestAuthorization:
@@ -88,6 +89,8 @@ class TestMessageList:
     @pytest.mark.p2
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="Not support.")
     def test_search_keyword(self, client):
+        if get_doc_engine(client) == "infinity":
+            pytest.skip("Not support.")
         memory_id = self.memory_id
         session_ids = self.session_ids
         session_id = random.choice(session_ids)

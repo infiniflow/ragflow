@@ -1549,10 +1549,18 @@ async def retrieval_test(tenant_id):
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
-    if req.get("highlight") == "False" or req.get("highlight") == "false":
+    highlight_val = req.get("highlight", None)
+    if highlight_val is None:
         highlight = False
+    elif isinstance(highlight_val, bool):
+        highlight = highlight_val
+    elif isinstance(highlight_val, str):
+        if highlight_val.lower() in ["true", "false"]:
+            highlight = highlight_val.lower() == "true"
+        else:
+            return get_error_data_result("`highlight` should be a boolean")
     else:
-        highlight = True
+        return get_error_data_result("`highlight` should be a boolean")
     try:
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
