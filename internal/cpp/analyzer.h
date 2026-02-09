@@ -51,7 +51,7 @@ protected:
                              const bool is_special_char,
                              const uint16_t payload);
 
-    virtual int AnalyzeImpl(const Term &input, void *data, bool fine_grained, bool enable_position,HookType func) { return -1; }
+    virtual int AnalyzeImpl(const Term &input, void *data, bool fine_grained, bool enable_position,HookType func) const { return -1; }
 
     static void AppendTermList(void *data,
                                const char *text,

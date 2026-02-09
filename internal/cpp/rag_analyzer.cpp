@@ -659,13 +659,13 @@ void SentenceSplitter(const std::string &text, std::vector<std::string> &result)
 }
 
 RAGAnalyzer::RAGAnalyzer(const std::string &path)
-    : dict_path_(path), stemmer_(std::make_unique<Stemmer>()), lowercase_string_buffer_(term_string_buffer_limit_) {
+    : dict_path_(path), stemmer_(std::make_unique<Stemmer>()) {
     InitStemmer(STEM_LANG_ENGLISH);
 }
 
 RAGAnalyzer::RAGAnalyzer(const RAGAnalyzer &other)
     : own_dict_(false), trie_(other.trie_), pos_table_(other.pos_table_), wordnet_lemma_(other.wordnet_lemma_), stemmer_(std::make_unique<Stemmer>()),
-      opencc_(other.opencc_), lowercase_string_buffer_(term_string_buffer_limit_), fine_grained_(other.fine_grained_) {
+      opencc_(other.opencc_), fine_grained_(other.fine_grained_) {
     InitStemmer(STEM_LANG_ENGLISH);
 }
 
@@ -1315,7 +1315,7 @@ std::string RAGAnalyzer::Merge(const std::string &tks_str) const {
 void RAGAnalyzer::MergeWithPosition(const std::vector<std::string> &tokens,
                                     const std::vector<std::pair<unsigned, unsigned>> &positions,
                                     std::vector<std::string> &merged_tokens,
-                                    std::vector<std::pair<unsigned, unsigned>> &merged_positions) {
+                                    std::vector<std::pair<unsigned, unsigned>> &merged_positions) const {
     // Filter out empty tokens first (like spaces) to match Merge behavior
     std::vector<std::string> filtered_tokens;
     std::vector<std::pair<unsigned, unsigned>> filtered_positions;
@@ -1359,12 +1359,13 @@ void RAGAnalyzer::MergeWithPosition(const std::vector<std::string> &tokens,
     merged_positions = std::move(res_positions);
 }
 
-void RAGAnalyzer::EnglishNormalize(const std::vector<std::string> &tokens, std::vector<std::string> &res) {
+void RAGAnalyzer::EnglishNormalize(const std::vector<std::string> &tokens, std::vector<std::string> &res) const {
     for (auto &t : tokens) {
         if (re2::RE2::PartialMatch(t, pattern1_)) {
             //"[a-zA-Z_-]+$"
             std::string lemma_term = wordnet_lemma_->Lemmatize(t);
-            char *lowercase_term = lowercase_string_buffer_.data();
+            std::vector<char> lowercase_buffer(term_string_buffer_limit_);
+            char *lowercase_term = lowercase_buffer.data();
             ToLower(lemma_term.c_str(), lemma_term.size(), lowercase_term, term_string_buffer_limit_);
             std::string stem_term;
             stemmer_->Stem(lowercase_term, stem_term);
@@ -1701,7 +1702,7 @@ std::string PCRE2GlobalReplace(const std::string &text, const std::string &patte
     return result;
 }
 
-std::string RAGAnalyzer::Tokenize(const std::string &line) {
+std::string RAGAnalyzer::Tokenize(const std::string &line) const {
     // Python-style simple tokenization: re.sub(r"\\W+", " ", line)
     std::string processed_line = PCRE2GlobalReplace(line, R"#(\W+)#", " ");
     std::string str1 = StrQ2B(processed_line);
@@ -1725,7 +1726,8 @@ std::string RAGAnalyzer::Tokenize(const std::string &line) {
             }
             for (unsigned i = 0; i < term_list.size(); ++i) {
                 std::string t = wordnet_lemma_->Lemmatize(term_list[i]);
-                char *lowercase_term = lowercase_string_buffer_.data();
+                std::vector<char> lowercase_buffer(term_string_buffer_limit_);
+                char *lowercase_term = lowercase_buffer.data();
                 ToLower(t.c_str(), t.size(), lowercase_term, term_string_buffer_limit_);
                 std::string stem_term;
                 stemmer_->Stem(lowercase_term, stem_term);
@@ -1760,7 +1762,7 @@ std::string RAGAnalyzer::Tokenize(const std::string &line) {
     return ret;
 }
 
-std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> RAGAnalyzer::TokenizeWithPosition(const std::string &line) {
+std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> RAGAnalyzer::TokenizeWithPosition(const std::string &line) const {
     // Python-style simple tokenization: re.sub(r"\W+", " ", line)
     // Get processed line and position mapping from PCRE2GlobalReplace
     auto [processed_line, pcre2_pos_mapping] = PCRE2GlobalReplaceWithPosition(line, R"#(\W+)#", " ");
@@ -1842,7 +1844,8 @@ std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> 
                         unsigned start_pos = sentence_start_pos + static_cast<unsigned>(pos_in_sentence);
                         unsigned end_pos = start_pos + static_cast<unsigned>(term.size());
                         std::string t = wordnet_lemma_->Lemmatize(term);
-                        char *lowercase_term = lowercase_string_buffer_.data();
+                        std::vector<char> lowercase_buffer(term_string_buffer_limit_);
+                        char *lowercase_term = lowercase_buffer.data();
                         ToLower(t.c_str(), t.size(), lowercase_term, term_string_buffer_limit_);
                         std::string stem_term;
                         stemmer_->Stem(lowercase_term, stem_term);
@@ -1909,7 +1912,7 @@ std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> 
     return {std::move(tokens), std::move(positions)};
 }
 
-unsigned RAGAnalyzer::MapToOriginalPosition(unsigned processed_pos, const std::vector<std::pair<unsigned, unsigned>> &mapping) {
+unsigned RAGAnalyzer::MapToOriginalPosition(unsigned processed_pos, const std::vector<std::pair<unsigned, unsigned>> &mapping) const {
     for (const auto &[orig, proc] : mapping) {
         if (proc == processed_pos) {
             return orig;
@@ -1930,7 +1933,7 @@ void RAGAnalyzer::TokenizeInnerWithPosition(const std::string &L,
                                             std::vector<std::string> &tokens,
                                             std::vector<std::pair<unsigned, unsigned>> &positions,
                                             unsigned base_pos,
-                                            const std::vector<unsigned> *pos_mapping) {
+                                            const std::vector<unsigned> *pos_mapping) const {
     auto [tks, s] = MaxForward(L);
     auto [tks1, s1] = MaxBackward(L);
 
@@ -2159,7 +2162,7 @@ void RAGAnalyzer::TokenizeInnerWithPosition(const std::string &L,
 void RAGAnalyzer::EnglishNormalizeWithPosition(const std::vector<std::string> &tokens,
                                                const std::vector<std::pair<unsigned, unsigned>> &positions,
                                                std::vector<std::string> &normalize_tokens,
-                                               std::vector<std::pair<unsigned, unsigned>> &normalize_positions) {
+                                               std::vector<std::pair<unsigned, unsigned>> &normalize_positions) const {
     for (size_t i = 0; i < tokens.size(); ++i) {
         const auto &token = tokens[i];
         const auto &[start_pos, end_pos] = positions[i];
@@ -2167,7 +2170,8 @@ void RAGAnalyzer::EnglishNormalizeWithPosition(const std::vector<std::string> &t
         if (re2::RE2::PartialMatch(token, pattern1_)) {
             //"[a-zA-Z_-]+$"
             std::string lemma_term = wordnet_lemma_->Lemmatize(token);
-            char *lowercase_term = lowercase_string_buffer_.data();
+            std::vector<char> lowercase_buffer(term_string_buffer_limit_);
+            char *lowercase_term = lowercase_buffer.data();
             ToLower(lemma_term.c_str(), lemma_term.size(), lowercase_term, term_string_buffer_limit_);
             std::string stem_term;
             stemmer_->Stem(lowercase_term, stem_term);
@@ -2184,7 +2188,7 @@ void RAGAnalyzer::EnglishNormalizeWithPosition(const std::vector<std::string> &t
 void RAGAnalyzer::FineGrainedTokenizeWithPosition(const std::string &tokens_str,
                                                   const std::vector<std::pair<unsigned, unsigned>> &positions,
                                                   std::vector<std::string> &fine_tokens,
-                                                  std::vector<std::pair<unsigned, unsigned>> &fine_positions) {
+                                                  std::vector<std::pair<unsigned, unsigned>> &fine_positions) const {
     std::vector<std::string> tks;
     Split(tokens_str, blank_pattern_, tks);
 
@@ -2297,7 +2301,7 @@ void RAGAnalyzer::FineGrainedTokenizeWithPosition(const std::string &tokens_str,
     // fine_tokens already contains the correct Chinese tokens
 }
 
-void RAGAnalyzer::FineGrainedTokenize(const std::string &tokens, std::vector<std::string> &result) {
+void RAGAnalyzer::FineGrainedTokenize(const std::string &tokens, std::vector<std::string> &result) const {
     std::vector<std::string> tks;
     Split(tokens, blank_pattern_, tks);
     std::vector<std::string> res;
@@ -2388,7 +2392,7 @@ void RAGAnalyzer::FineGrainedTokenize(const std::string &tokens, std::vector<std
     // return ret;
 }
 
-int RAGAnalyzer::AnalyzeImpl(const Term &input, void *data, bool fine_grained, bool enable_position, HookType func) {
+int RAGAnalyzer::AnalyzeImpl(const Term &input, void *data, bool fine_grained, bool enable_position, HookType func) const {
     if (enable_position) {
         auto [tokens, positions] = TokenizeWithPosition(input.text_);
 

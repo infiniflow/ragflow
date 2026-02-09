@@ -59,30 +59,30 @@ public:
     void SetEnablePosition(bool enable_position) { enable_position_ = enable_position; }
 
     std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> TokenizeWithPosition(
-        const std::string& line);
-    std::string Tokenize(const std::string& line);
+        const std::string& line) const;
+    std::string Tokenize(const std::string& line) const;
 
-    void FineGrainedTokenize(const std::string& tokens, std::vector<std::string>& result);
+    void FineGrainedTokenize(const std::string& tokens, std::vector<std::string>& result) const;
 
     void TokenizeInnerWithPosition(const std::string& L,
                                    std::vector<std::string>& tokens,
                                    std::vector<std::pair<unsigned, unsigned>>& positions,
                                    unsigned base_pos,
-                                   const std::vector<unsigned>* pos_mapping = nullptr);
+                                   const std::vector<unsigned>* pos_mapping = nullptr) const;
     void FineGrainedTokenizeWithPosition(const std::string& tokens_str,
                                          const std::vector<std::pair<unsigned, unsigned>>& positions,
                                          std::vector<std::string>& fine_tokens,
-                                         std::vector<std::pair<unsigned, unsigned>>& fine_positions);
+                                         std::vector<std::pair<unsigned, unsigned>>& fine_positions) const;
     void EnglishNormalizeWithPosition(const std::vector<std::string>& tokens,
                                       const std::vector<std::pair<unsigned, unsigned>>& positions,
                                       std::vector<std::string>& normalize_tokens,
-                                      std::vector<std::pair<unsigned, unsigned>>& normalize_positions);
+                                      std::vector<std::pair<unsigned, unsigned>>& normalize_positions) const;
     unsigned MapToOriginalPosition(unsigned processed_pos,
-                                   const std::vector<std::pair<unsigned, unsigned>>& mapping);
+                                   const std::vector<std::pair<unsigned, unsigned>>& mapping) const;
     void MergeWithPosition(const std::vector<std::string>& tokens,
                            const std::vector<std::pair<unsigned, unsigned>>& positions,
                            std::vector<std::string>& merged_tokens,
-                           std::vector<std::pair<unsigned, unsigned>>& merged_positions);
+                           std::vector<std::pair<unsigned, unsigned>>& merged_positions) const;
 
     void SplitByLang(const std::string& line, std::vector<std::pair<std::string, bool>>& txt_lang_pairs) const;
 
@@ -90,7 +90,7 @@ public:
     std::string Tag(std::string_view key) const;
 
 protected:
-    int AnalyzeImpl(const Term& input, void* data, bool fine_grained, bool enable_position, HookType func);
+    int AnalyzeImpl(const Term& input, void* data, bool fine_grained, bool enable_position, HookType func) const;
 
 private:
     static constexpr float DENOMINATOR = 1000000;
@@ -129,7 +129,7 @@ private:
 
     [[nodiscard]] std::string Merge(const std::string& tokens) const;
 
-    void EnglishNormalize(const std::vector<std::string>& tokens, std::vector<std::string>& res);
+    void EnglishNormalize(const std::vector<std::string>& tokens, std::vector<std::string>& res) const;
 
 public:
     [[nodiscard]] std::vector<std::pair<std::vector<std::string_view>, double>> GetBestTokensTopN(
@@ -150,8 +150,6 @@ public:
     std::unique_ptr<Stemmer> stemmer_;
 
     OpenCC* opencc_{nullptr};
-
-    std::vector<char> lowercase_string_buffer_;
 
     bool fine_grained_{false};
 
