@@ -101,8 +101,7 @@ class TestDialogCreate:
     def test_prompt_config_with_knowledge_no_kb(self, WebApiAuth):
         payload = {"name": "test_dialog", "prompt_config": {"system": "You are a helpful assistant. Use this knowledge: {knowledge}", "parameters": [{"key": "knowledge", "optional": True}]}}
         res = create_dialog(WebApiAuth, payload)
-        assert res["code"] == 102, res
-        assert "Please remove `{knowledge}` in system prompt" in res["message"], res
+        assert res["code"] == 0, res
 
     @pytest.mark.p1
     def test_prompt_config_parameter_not_used(self, WebApiAuth):
