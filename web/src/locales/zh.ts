@@ -2190,7 +2190,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
     },
 
     explore: {
-      title: '智能体探索',
+      title: '探索',
       canvasList: '画布列表',
       sessions: '会话列表',
       newSession: '新建会话',

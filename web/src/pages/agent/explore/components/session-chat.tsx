@@ -6,8 +6,10 @@ import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType } from '@/constants/chat';
 import { useUploadCanvasFileWithProgress } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
+import { BeginQuery } from '@/pages/agent/interface';
+import { ParameterDialog } from '@/pages/agent/share/parameter-dialog';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSendSessionMessage } from '../hooks/use-send-session-message';
 
@@ -19,7 +21,6 @@ export function SessionChat({ sessionId }: SessionChatProps) {
   const { t } = useTranslation();
   const { data: userInfo } = useFetchUserInfo();
 
-  // Use custom hook for chat logic
   const {
     value,
     derivedMessages,
@@ -34,9 +35,12 @@ export function SessionChat({ sessionId }: SessionChatProps) {
     findReferenceByMessageId,
     appendUploadResponseList,
     removeFile,
+    parameterDialogVisible,
+    handleParametersOk,
+    beginInputs,
+    shouldShowParameterDialog,
   } = useSendSessionMessage();
 
-  // PDF drawer for reference preview
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
@@ -52,6 +56,10 @@ export function SessionChat({ sessionId }: SessionChatProps) {
       },
       [appendUploadResponseList, uploadCanvasFile],
     );
+
+  useEffect(() => {
+    shouldShowParameterDialog();
+  }, [shouldShowParameterDialog]);
 
   return (
     <>
@@ -118,7 +126,20 @@ export function SessionChat({ sessionId }: SessionChatProps) {
         </section>
       </section>
 
-      {/* PDF Preview */}
+      {parameterDialogVisible && beginInputs.length > 0 && (
+        <ParameterDialog
+          ok={handleParametersOk}
+          data={beginInputs.reduce(
+            (acc, item) => {
+              const { key, ...rest } = item;
+              acc[key] = rest;
+              return acc;
+            },
+            {} as Record<string, Omit<BeginQuery, 'key'>>,
+          )}
+        />
+      )}
+
       {visible && (
         <PdfSheet
           visible={visible}

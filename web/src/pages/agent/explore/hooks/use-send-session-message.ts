@@ -1,17 +1,18 @@
 import sonnerMessage from '@/components/ui/message';
-import { MessageType } from '@/constants/chat';
+import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useCreateAgentSession,
   useFetchAgent,
   useFetchSessionById,
 } from '@/hooks/use-agent-request';
-import { IAgentLogMessage } from '@/interfaces/database/agent';
+import { IMessage } from '@/interfaces/database/chat';
 import { useSendAgentMessage } from '@/pages/agent/chat/use-send-agent-message';
+import { buildBeginInputListFromObject } from '@/pages/agent/form/begin-form/utils';
 import api from '@/utils/api';
-import { buildMessageUuidWithRole } from '@/utils/chat';
 import { isEmpty } from 'lodash';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router';
+import { BeginId } from '../../constant';
 import { useExploreUrlParams } from './use-explore-url-params';
 
 export const useSendSessionMessage = () => {
@@ -27,24 +28,31 @@ export const useSendSessionMessage = () => {
 
   const isCreatingSession = useRef(false);
 
+  const [beginParams, setBeginParams] = useState<any[]>([]);
+
+  const {
+    visible: parameterDialogVisible,
+    hideModal: hideParameterDialog,
+    showModal: showParameterDialog,
+  } = useSetModalState();
+
+  const beginInputs = useMemo(() => {
+    const beginNode = canvasInfo?.dsl?.graph?.nodes?.find(
+      (node: any) => node.id === BeginId,
+    );
+    const inputs = beginNode?.data?.form?.inputs;
+    return buildBeginInputListFromObject(inputs || {});
+  }, [canvasInfo]);
+
   const { setDerivedMessages, ...chatLogic } = useSendAgentMessage({
     url: api.runCanvasExplore(canvasId!),
+    beginParams,
   });
 
   useEffect(() => {
     if (sessionData?.message && sessionId) {
-      const initialMessages = sessionData.message.map(
-        (msg: IAgentLogMessage) => ({
-          role:
-            msg.role === 'assistant' ? MessageType.Assistant : MessageType.User,
-          content: msg.content,
-          id: buildMessageUuidWithRole({ role: msg.role, id: msg.id }),
-          ...(msg.role === 'assistant' && {
-            reference: sessionData.reference,
-          }),
-        }),
-      );
-      setDerivedMessages(initialMessages);
+      const messages = sessionData.message;
+      setDerivedMessages(messages as IMessage[]);
     }
   }, [sessionId, sessionData, setDerivedMessages]);
 
@@ -55,6 +63,20 @@ export const useSendSessionMessage = () => {
       }
     };
   }, [sessionId, setDerivedMessages]);
+
+  const handleParametersOk = useCallback(
+    (params: any[]) => {
+      setBeginParams(params);
+      hideParameterDialog();
+    },
+    [hideParameterDialog],
+  );
+
+  const shouldShowParameterDialog = useCallback(() => {
+    if (beginInputs.length > 0 && beginParams.length === 0) {
+      showParameterDialog();
+    }
+  }, [beginInputs, beginParams, showParameterDialog]);
 
   const handlePressEnter = useCallback(async () => {
     if (isCreatingSession.current) {
@@ -95,5 +117,9 @@ export const useSendSessionMessage = () => {
     handlePressEnter,
     canvasInfo,
     sessionLoading,
+    parameterDialogVisible,
+    handleParametersOk,
+    beginInputs,
+    shouldShowParameterDialog,
   };
 };

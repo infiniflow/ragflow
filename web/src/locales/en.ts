@@ -2582,7 +2582,7 @@ Important structured information may include: names, dates, locations, events, k
       fail: 'Fail',
     },
     explore: {
-      title: 'Agent Explore',
+      title: 'Launch',
       canvasList: 'Canvas List',
       sessions: 'Sessions',
       newSession: 'New Session',

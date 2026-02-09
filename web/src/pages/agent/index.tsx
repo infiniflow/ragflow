@@ -25,6 +25,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
   CirclePlay,
+  Compass,
   History,
   LaptopMinimalCheck,
   Logs,
@@ -46,7 +47,10 @@ import { useFetchDataOnMount } from './hooks/use-fetch-data';
 import { useFetchPipelineLog } from './hooks/use-fetch-pipeline-log';
 import { useGetBeginNodeDataInputs } from './hooks/use-get-begin-query';
 import { useIsPipeline } from './hooks/use-is-pipeline';
-import { useIsWebhookMode } from './hooks/use-is-webhook';
+import {
+  useIsConversationMode,
+  useIsWebhookMode,
+} from './hooks/use-is-webhook';
 import { useRunDataflow } from './hooks/use-run-dataflow';
 import {
   useSaveGraph,
@@ -113,6 +117,8 @@ export default function Agent() {
   const { navigateToAgentLogs, navigateToAgentExplore } = useNavigatePage();
   const time = useWatchAgentChange(chatDrawerVisible);
   const isWebhookMode = useIsWebhookMode();
+
+  const isConversationMode = useIsConversationMode();
 
   // pipeline
 
@@ -257,13 +263,15 @@ export default function Agent() {
               {t('flow.log')}
             </Button>
           )}
-          {/* <Button
-            variant={'secondary'}
-            onClick={navigateToAgentExplore(id as string)}
-          >
-            <Compass />
-            {t('explore.title')}
-          </Button> */}
+          {isConversationMode && (
+            <Button
+              variant={'secondary'}
+              onClick={navigateToAgentExplore(id as string)}
+            >
+              <Compass />
+              {t('explore.title')}
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant={'secondary'}>

@@ -254,7 +254,7 @@ const routeConfigOptions = [
   {
     path: Routes.AgentExplore,
     layout: false,
-    Component: lazy(() => import('@/pages/agent/explore')),
+    Component: () => import('@/pages/agent/explore'),
     errorElement: <FallbackComponent />,
   },
   {
