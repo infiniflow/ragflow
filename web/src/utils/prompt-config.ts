@@ -18,25 +18,12 @@ const removeKnowledgeParameter = (parameters?: Parameter[]) => {
   return parameters.filter((parameter) => parameter?.key !== KNOWLEDGE_KEY);
 };
 
-const ensureKnowledgeParameter = (parameters?: Parameter[]): Parameter[] => {
-  const list = Array.isArray(parameters) ? parameters : [];
-  if (list.some((p) => p?.key === KNOWLEDGE_KEY)) {
-    return list;
-  }
-  return [...list, { key: KNOWLEDGE_KEY, optional: false }];
-};
-
-const ensureKnowledgePlaceholder = (system?: string): string => {
-  if (!system || system.includes(KNOWLEDGE_PLACEHOLDER)) {
-    return system ?? KNOWLEDGE_PLACEHOLDER;
-  }
-  return `${system.trim()}\n\n${KNOWLEDGE_PLACEHOLDER}`;
-};
-
 /**
- * Synchronises the prompt config with the current knowledge-base state:
- * - KB present  -> ensure {knowledge} placeholder + parameter exist
- * - KB absent   -> strip {knowledge} placeholder + parameter
+ * Sanitise the prompt config before sending it to the backend:
+ * when no KB / Tavily is configured, strip the {knowledge} placeholder
+ * and its parameter entry so the backend validation does not reject the
+ * request.  When a KB IS configured the prompt is left untouched — the
+ * user is responsible for placing {knowledge} where they want it.
  */
 export const sanitizePromptConfigForKnowledge = (
   promptConfig: PromptConfig,
@@ -45,12 +32,9 @@ export const sanitizePromptConfigForKnowledge = (
   const hasKb = Array.isArray(kbIds) && kbIds.length > 0;
   const hasTavilyKey = Boolean(promptConfig.tavily_api_key?.trim());
 
+  // Nothing to strip when a knowledge source is configured.
   if (hasKb || hasTavilyKey) {
-    return {
-      ...promptConfig,
-      system: ensureKnowledgePlaceholder(promptConfig.system),
-      parameters: ensureKnowledgeParameter(promptConfig.parameters),
-    };
+    return promptConfig;
   }
 
   const nextSystem = promptConfig.system?.includes(KNOWLEDGE_PLACEHOLDER)
