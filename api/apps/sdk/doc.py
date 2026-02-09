@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, validator
 
 from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileType
-from api.db.db_models import File, Task
+from api.db.db_models import APIToken, File, Task
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.file2document_service import File2DocumentService
@@ -402,6 +402,36 @@ async def download(tenant_id, dataset_id, document_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(message=f"You do not own the dataset {dataset_id}.")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
+    if not doc:
+        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+    # The process of downloading
+    doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
+    file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
+    if not file_stream:
+        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
+    file = BytesIO(file_stream)
+    # Use send_file with a proper filename and MIME type
+    return await send_file(
+        file,
+        as_attachment=True,
+        attachment_filename=doc[0].name,
+        mimetype="application/octet-stream",  # Set a default MIME type
+    )
+
+
+@manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
+async def download_doc(document_id):
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+    
+    if not document_id:
+        return get_error_data_result(message="Specify document_id please.")
+    doc = DocumentService.query(id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
     # The process of downloading
