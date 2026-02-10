@@ -139,6 +139,7 @@ export function SessionChat({ session }: SessionChatProps) {
                     index={i}
                     showLikeButton={false}
                     sendLoading={sendLoading}
+                    showLog={false}
                   />
                 ))}
               </div>
