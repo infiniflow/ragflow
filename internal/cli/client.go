@@ -167,6 +167,10 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (map[string]interface{}, 
 		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
 
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
 	resJSON, err := resp.JSON()
 	if err != nil {
 		return nil, fmt.Errorf("invalid JSON response: %w", err)
@@ -232,15 +236,13 @@ func (c *RAGFlowClient) ListDatasets(cmd *Command) (map[string]interface{}, erro
 		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
 
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
 	resJSON, err := resp.JSON()
 	if err != nil {
 		return nil, fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		code, _ := resJSON["code"].(float64)
-		msg, _ := resJSON["message"].(string)
-		return nil, fmt.Errorf("failed to get all datasets of %s, code: %v, message: %s", userName, code, msg)
 	}
 
 	data, ok := resJSON["data"].([]interface{})
@@ -309,6 +311,97 @@ func readPasswordFallback() (string, error) {
 	return strings.TrimSpace(password), nil
 }
 
+// SearchOnDatasets searches for chunks in specified datasets
+// Returns (result_map, error) - result_map is non-nil for benchmark mode
+func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (map[string]interface{}, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	question, ok := cmd.Params["question"].(string)
+	if !ok {
+		return nil, fmt.Errorf("question not provided")
+	}
+
+	datasets, ok := cmd.Params["datasets"].(string)
+	if !ok {
+		return nil, fmt.Errorf("datasets not provided")
+	}
+
+	// Parse dataset IDs (comma-separated)
+	datasetIDs := strings.Split(datasets, ",")
+	for i := range datasetIDs {
+		datasetIDs[i] = strings.TrimSpace(datasetIDs[i])
+	}
+
+	// Check for benchmark iterations
+	iterations := 1
+	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
+		iterations = val
+	}
+
+	payload := map[string]interface{}{
+		"kb_id":                    datasetIDs,
+		"question":                 question,
+		"similarity_threshold":     0.2,
+		"vector_similarity_weight": 0.3,
+	}
+
+	if iterations > 1 {
+		// Benchmark mode - return raw result for benchmark stats
+		return c.HTTPClient.RequestWithIterations("POST", "/chunk/retrieval_test", false, "web", nil, payload, iterations)
+	}
+
+	// Normal mode
+	resp, err := c.HTTPClient.Request("POST", "/chunk/retrieval_test", false, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search on datasets: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to search on datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok || code != 0 {
+		msg, _ := resJSON["message"].(string)
+		return nil, fmt.Errorf("failed to search on datasets: %s", msg)
+	}
+
+	data, ok := resJSON["data"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid response format")
+	}
+
+	chunks, ok := data["chunks"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: chunks not found")
+	}
+
+	// Convert to slice of maps for printing
+	tableData := make([]map[string]interface{}, 0, len(chunks))
+	for _, chunk := range chunks {
+		if chunkMap, ok := chunk.(map[string]interface{}); ok {
+			row := map[string]interface{}{
+				"id":          chunkMap["id"],
+				"content":     chunkMap["content"],
+				"document_id": chunkMap["document_id"],
+				"dataset_id":  chunkMap["dataset_id"],
+				"similarity":  chunkMap["similarity"],
+			}
+			tableData = append(tableData, row)
+		}
+	}
+
+	PrintTableSimple(tableData)
+	return nil, nil
+}
+
 // ExecuteCommand executes a parsed command
 // Returns benchmark result map for commands that support it (e.g., ping_server with iterations > 1)
 func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (map[string]interface{}, error) {
@@ -323,6 +416,8 @@ func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (map[string]interface{}, er
 		return c.ListUserDatasets(cmd)
 	case "list_datasets":
 		return c.ListDatasets(cmd)
+	case "search_on_datasets":
+		return c.SearchOnDatasets(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)

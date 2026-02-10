@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -201,14 +202,26 @@ func (c *RAGFlowClient) executeBenchmarkSilent(cmd *Command, iterations int) []*
 		var err error
 
 	switch cmd.Type {
-	case "ping_server":
-		resp, err = c.HTTPClient.Request("GET", "/system/ping", false, "web", nil, nil)
-	case "list_user_datasets":
-		resp, err = c.HTTPClient.Request("POST", "/kb/list", false, "web", nil, nil)
-	case "list_datasets":
-		userName, _ := cmd.Params["user_name"].(string)
-		resp, err = c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), true, "admin", nil, nil)
-	default:
+		case "ping_server":
+			resp, err = c.HTTPClient.Request("GET", "/system/ping", false, "web", nil, nil)
+		case "list_user_datasets":
+			resp, err = c.HTTPClient.Request("POST", "/kb/list", false, "web", nil, nil)
+		case "list_datasets":
+			userName, _ := cmd.Params["user_name"].(string)
+			resp, err = c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), true, "admin", nil, nil)
+		case "search_on_datasets":
+			question, _ := cmd.Params["question"].(string)
+			datasets, _ := cmd.Params["datasets"].(string)
+			datasetIDs := strings.Split(datasets, ",")
+			for i := range datasetIDs {
+				datasetIDs[i] = strings.TrimSpace(datasetIDs[i])
+			}
+			payload := map[string]interface{}{
+				"dataset_ids": datasetIDs,
+				"question":    question,
+			}
+			resp, err = c.HTTPClient.Request("POST", "/retrieval", true, "web", nil, payload)
+		default:
 		// For other commands, we would need to add specific handling
 		// For now, mark as failed
 		resp = &Response{StatusCode: 0}
@@ -233,7 +246,7 @@ func isSuccess(resp *Response, commandType string) bool {
 	switch commandType {
 	case "ping_server":
 		return resp.StatusCode == 200 && string(resp.Body) == "pong"
-	case "list_user_datasets", "list_datasets":
+	case "list_user_datasets", "list_datasets", "search_on_datasets":
 		// Check status code and JSON response code for dataset commands
 		if resp.StatusCode != 200 {
 			return false
