@@ -468,7 +468,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dataSource: 'Data source',
       linkSourceSetTip: 'Manage data source linkage with this dataset',
       linkDataSource: 'Link data source',
-      tocExtraction: 'TOC enhance',
+      tocExtraction: 'PageIndex',
       tocExtractionTip:
         " For existing chunks, generate a hierarchical table of contents (one directory per file). During queries, when Directory Enhancement is activated, the system will use a large model to determine which directory items are relevant to the user's question, thereby identifying the relevant chunks.",
       deleteGenerateModalContent: `
@@ -884,7 +884,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       },
       cancel: 'Cancel',
       chatSetting: 'Chat setting',
-      tocEnhance: 'TOC enhance',
+      tocEnhance: 'PageIndex',
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
       batchDeleteSessions: 'Batch delete',
       deleteSelectedConfirm: 'Delete the selected {count} session(s)?',
@@ -2142,7 +2142,7 @@ The Indexer will store the content in the corresponding data structures for the 
       keywords: 'Keywords',
       questions: 'Questions',
       metadata: 'Metadata',
-      toc: 'Table of contents',
+      toc: 'PageIndex',
       fieldName: 'Result destination',
       prompts: {
         system: {
@@ -2580,6 +2580,24 @@ Important structured information may include: names, dates, locations, events, k
       alive: 'Alive',
       timeout: 'Timeout',
       fail: 'Fail',
+    },
+    explore: {
+      title: 'Launch',
+      canvasList: 'Canvas List',
+      sessions: 'Sessions',
+      newSession: 'New Session',
+      newSessionLabel: 'Start a new conversation',
+      deleteSession: 'Delete Session',
+      searchCanvas: 'Search canvas...',
+      searchSessions: 'Search sessions...',
+      noCanvasSelected: 'Please select a canvas',
+      noSessionSelected: 'Please select a session or create a new one',
+      noSessionsFound: 'No sessions found',
+      createFirstSession: 'Create your first session',
+      noCanvasFound: 'No canvas found',
+      deleteSelectedConfirm:
+        'Are you sure you want to delete {{count}} session(s)?',
+      batchDeleteSessions: 'Delete Sessions',
     },
   },
 };
