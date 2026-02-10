@@ -121,6 +121,18 @@ add_library(rag_tokenizer_c_api STATIC
 target_link_libraries(rag_tokenizer_c_api stdc++ libm.a libpcre2-8.a)
 target_include_directories(rag_tokenizer_c_api PUBLIC "${CMAKE_SOURCE_DIR}")
 set_target_properties(rag_tokenizer_c_api PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+)
+
+# Test executable for C API
+add_executable(rag_analyzer_c_test
+        rag_analyzer_c_test.cpp
+)
+
+target_link_libraries(rag_analyzer_c_test rag_tokenizer_c_api stdc++ libm.a libpcre2-8.a)
+target_include_directories(rag_analyzer_c_test PUBLIC "${CMAKE_SOURCE_DIR}")
+set_target_properties(rag_analyzer_c_test PROPERTIES
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
 )

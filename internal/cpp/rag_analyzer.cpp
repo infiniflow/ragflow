@@ -741,6 +741,7 @@ int32_t RAGAnalyzer::Load() {
 
     fs::path lemma_path(root / WORDNET_PATH);
     if (!fs::exists(lemma_path)) {
+        printf("Fail to load wordnet: %s", lemma_path.string().c_str());
         return -1;
         // return Status::InvalidAnalyzerFile(lemma_path);
     }
@@ -750,6 +751,7 @@ int32_t RAGAnalyzer::Load() {
     fs::path opencc_path(root / OPENCC_PATH);
 
     if (!fs::exists(opencc_path)) {
+        printf("Fail to load opencc_path: %s", opencc_path.string().c_str());
         return -1;
         // return Status::InvalidAnalyzerFile(opencc_path);
     }
