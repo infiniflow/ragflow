@@ -199,6 +199,8 @@ func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (map[string]interface{}, er
 		return nil, c.LoginUser(cmd)
 	case "ping_server":
 		return c.PingServer(cmd)
+	case "benchmark":
+		return nil, c.RunBenchmark(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
