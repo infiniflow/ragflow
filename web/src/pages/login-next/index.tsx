@@ -24,6 +24,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { useFetchAppConf } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -135,7 +136,7 @@ const Login = () => {
       console.log('Failed:', errorInfo);
     }
   };
-
+  const appConf = useFetchAppConf();
   return (
     <>
       <Spotlight opcity={0.4} coverage={60} color={'rgb(128, 255, 248)'} />
@@ -160,12 +161,14 @@ const Login = () => {
           <div className="flex items-center mb-4 w-full pl-10 pt-10 ">
             <div className="w-12 h-12 p-2 rounded-lg flex items-center justify-center mr-3">
               <img
-                src={'/logo.svg'}
+                src={'/logo.gif'}
                 alt="logo"
                 className="size-8 mr-[12] cursor-pointer"
               />
             </div>
-            <div className="text-xl font-bold self-center">RAGFlow</div>
+            <div className="text-xl font-bold self-center">
+              {appConf.appName}
+            </div>
           </div>
           <h1 className="text-[36px] font-medium  text-center mb-2">
             {t('title')}

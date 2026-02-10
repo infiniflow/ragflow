@@ -4,6 +4,7 @@ export enum Routes {
   Root = '/',
   Login = '/login-next',
   Logout = '/logout',
+  Portal = '/portal',
   Home = '/home',
   Datasets = '/datasets',
   DatasetBase = '/dataset',
@@ -71,6 +72,11 @@ const routes = [
   {
     path: '/login-next',
     component: '@/pages/login-next',
+    layout: false,
+  },
+  {
+    path: Routes.Portal,
+    component: '@/pages/portal',
     layout: false,
   },
   {
