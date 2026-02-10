@@ -200,7 +200,7 @@ class OpenAI_APIRerank(Base):
         if "/rerank" in normalized_base_url:
             self.base_url = normalized_base_url.rstrip("/")
         else:
-            self.base_url = f"{normalized_base_url.rstrip('/')}/rerank"
+            self.base_url = urljoin(f"{normalized_base_url.rstrip('/')}/", "rerank").rstrip("/")
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name.split("___")[0]
 
