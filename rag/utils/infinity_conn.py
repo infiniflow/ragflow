@@ -134,11 +134,11 @@ class InfinityConnection(InfinityConnectionBase):
                     score_column = "SIMILARITY"
                     break
         if match_expressions:
-            if score_func not in output:
+            if score_func and score_func not in output:
                 output.append(score_func)
             if PAGERANK_FLD not in output:
                 output.append(PAGERANK_FLD)
-        output = [f for f in output if f != "_score"]
+        output = [f for f in output if f and f != "_score"]
         if limit <= 0:
             # ElasticSearch default limit is 10000
             limit = 10000
@@ -272,7 +272,7 @@ class InfinityConnection(InfinityConnectionBase):
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
         res = self.concat_dataframes(df_list, output)
-        if match_expressions:
+        if match_expressions and score_column:
             res["_score"] = res[score_column] + res[PAGERANK_FLD]
             res = res.sort_values(by="_score", ascending=False).reset_index(drop=True)
             res = res.head(limit)
