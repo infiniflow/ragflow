@@ -1,5 +1,10 @@
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
-import { Circle, CircleSlash2 } from 'lucide-react';
+import {
+  Circle,
+  CircleDashed,
+  CircleDotDashed,
+  CircleSlash2,
+} from 'lucide-react';
 import { ChatVariableEnabledField, variableEnabledFieldMap } from './chat';
 
 export enum ProgrammingLanguage {
@@ -173,12 +178,12 @@ export const SwitchOperatorOptions = [
   {
     value: ComparisonOperator.In,
     label: 'in',
-    icon: <CircleSlash2 className="size-4" />,
+    icon: <CircleDotDashed className="size-4" />,
   },
   {
     value: ComparisonOperator.NotIn,
     label: 'notIn',
-    icon: <CircleSlash2 className="size-4" />,
+    icon: <CircleDashed className="size-4" />,
   },
 ];
 
