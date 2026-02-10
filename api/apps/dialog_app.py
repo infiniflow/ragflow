@@ -25,6 +25,8 @@ from api.utils.api_utils import get_data_error_result, get_json_result, get_requ
 from common.misc_utils import get_uuid
 from common.constants import RetCode
 from api.apps import login_required, current_user
+from peewee import fn
+from api.db.db_models import Dialog
 
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
@@ -223,5 +225,114 @@ async def rm():
             dialog_list.append({"id": id,"status":StatusEnum.INVALID.value})
         DialogService.update_many_by_id(dialog_list)
         return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/public/list', methods=['POST'])  # noqa: F821
+async def list_public_dialogs():
+    """
+    Public API to get all shared dialogs (assistants).
+    No authentication required.
+    Supports pagination and keyword search.
+    
+    Query Parameters:
+        - keywords: Search keywords (optional)
+        - page: Page number (default: 1)
+        - page_size: Items per page (default: 20)
+        - orderby: Order by field (default: create_time)
+        - desc: Descending order (default: true)
+    
+    Returns:
+        {
+            "code": 0,
+            "data": {
+                "dialogs": [...],
+                "total": 100
+            }
+        }
+    
+    Logic:
+        - Each tenant (admin) creates one APIToken (with dialog_id=NULL)
+        - All dialogs created by this tenant use this APIToken's token and beta
+        - Join: Dialog.tenant_id = APIToken.tenant_id (where APIToken.dialog_id IS NULL)
+    """
+    from api.db.services.api_service import APITokenService
+    from api.db.db_models import APIToken, User
+    
+    try:
+        # Get query parameters (same as /next endpoint)
+        args = request.args
+        keywords = args.get("keywords", "")
+        page_number = int(args.get("page", 1))
+        items_per_page = int(args.get("page_size", 20))
+        orderby = args.get("orderby", "create_time")
+        if args.get("desc", "true").lower() == "false":
+            desc = False
+        else:
+            desc = True
+        
+        # Query dialogs with their tenant's APIToken
+        # Each tenant has one APIToken (dialog_id IS NULL), all their dialogs use it
+        fields = [
+            DialogService.model.id,
+            DialogService.model.tenant_id,
+            DialogService.model.name,
+            DialogService.model.description,
+            DialogService.model.language,
+            DialogService.model.llm_id,
+            DialogService.model.llm_setting,
+            DialogService.model.prompt_type,
+            DialogService.model.prompt_config,
+            DialogService.model.similarity_threshold,
+            DialogService.model.vector_similarity_weight,
+            DialogService.model.top_n,
+            DialogService.model.top_k,
+            DialogService.model.do_refer,
+            DialogService.model.rerank_id,
+            DialogService.model.kb_ids,
+            DialogService.model.icon,
+            DialogService.model.status,
+            User.nickname,
+            User.avatar.alias("tenant_avatar"),
+            DialogService.model.update_time,
+            DialogService.model.create_time,
+            APIToken.token.alias("shared_id"),
+            APIToken.beta.alias("auth_token"),
+        ]
+        
+        # Build query: Dialog JOIN APIToken (on tenant_id, where dialog_id IS NULL) JOIN User
+        query = (
+            DialogService.model.select(*fields)
+            .join(APIToken, on=(
+                (DialogService.model.tenant_id == APIToken.tenant_id) &
+                (APIToken.dialog_id.is_null(True))
+            ))
+            .join(User, on=(DialogService.model.tenant_id == User.id))
+            .where(DialogService.model.status == StatusEnum.VALID.value)
+        )
+        
+        # Apply keyword filter if provided
+        if keywords:
+            query = query.where(fn.LOWER(DialogService.model.name).contains(keywords.lower()))
+        
+        # Apply ordering
+        if desc:
+            query = query.order_by(DialogService.model.getter_by(orderby).desc())
+        else:
+            query = query.order_by(DialogService.model.getter_by(orderby).asc())
+        
+        # Get total count
+        count = query.count()
+        
+        # Apply pagination
+        if page_number and items_per_page:
+            query = query.paginate(page_number, items_per_page)
+        
+        # Convert to list of dicts
+        dialogs = list(query.dicts())
+        
+        return get_json_result(data={"dialogs": dialogs, "total": count})
+        
     except Exception as e:
         return server_error_response(e)
