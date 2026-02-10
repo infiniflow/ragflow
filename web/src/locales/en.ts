@@ -2142,7 +2142,7 @@ The Indexer will store the content in the corresponding data structures for the 
       keywords: 'Keywords',
       questions: 'Questions',
       metadata: 'Metadata',
-      toc: 'Table of contents',
+      toc: 'PageIndex',
       fieldName: 'Result destination',
       prompts: {
         system: {

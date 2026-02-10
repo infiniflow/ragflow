@@ -830,7 +830,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       chatSetting: '聊天设置',
       avatarHidden: '隐藏头像',
       locale: '地区',
-      tocEnhance: 'Page Index',
+      tocEnhance: 'PageIndex',
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
       deleteSelectedConfirm: '删除选中的 {count} 个会话？',
@@ -1898,7 +1898,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       keywords: '关键词',
       questions: '问题',
       metadata: '元数据',
-      toc: '目录',
+      toc: 'PageIndex',
       fieldName: '结果目的地',
       prompts: {
         system: {
