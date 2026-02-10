@@ -143,6 +143,115 @@ func (c *RAGFlowClient) PingServer(cmd *Command) (map[string]interface{}, error)
 	return nil, nil
 }
 
+// ListUserDatasets lists datasets for current user (user mode)
+func (c *RAGFlowClient) ListUserDatasets(cmd *Command) error {
+	if c.ServerType != "user" {
+		return fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	// Check for benchmark iterations
+	iterations := 1
+	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
+		iterations = val
+	}
+
+	if iterations > 1 {
+		// Benchmark mode
+		_, err := c.HTTPClient.RequestWithIterations("POST", "/kb/list", false, "web", nil, nil, iterations)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// Normal mode
+	resp, err := c.HTTPClient.Request("POST", "/kb/list", false, "web", nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to list datasets: %w", err)
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok || code != 0 {
+		msg, _ := resJSON["message"].(string)
+		return fmt.Errorf("failed to list datasets: %s", msg)
+	}
+
+	data, ok := resJSON["data"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid response format")
+	}
+
+	kbs, ok := data["kbs"].([]interface{})
+	if !ok {
+		return fmt.Errorf("invalid response format: kbs not found")
+	}
+
+	// Convert to slice of maps
+	tableData := make([]map[string]interface{}, 0, len(kbs))
+	for _, kb := range kbs {
+		if kbMap, ok := kb.(map[string]interface{}); ok {
+			// Remove avatar field
+			delete(kbMap, "avatar")
+			tableData = append(tableData, kbMap)
+		}
+	}
+
+	PrintTableSimple(tableData)
+	return nil
+}
+
+// ListDatasets lists datasets for a specific user (admin mode)
+func (c *RAGFlowClient) ListDatasets(cmd *Command) error {
+	if c.ServerType != "admin" {
+		return fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return fmt.Errorf("user_name not provided")
+	}
+
+	fmt.Printf("Listing all datasets of user: %s\n", userName)
+
+	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), true, "admin", nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to list datasets: %w", err)
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		code, _ := resJSON["code"].(float64)
+		msg, _ := resJSON["message"].(string)
+		return fmt.Errorf("failed to get all datasets of %s, code: %v, message: %s", userName, code, msg)
+	}
+
+	data, ok := resJSON["data"].([]interface{})
+	if !ok {
+		return fmt.Errorf("invalid response format")
+	}
+
+	// Convert to slice of maps and remove avatar
+	tableData := make([]map[string]interface{}, 0, len(data))
+	for _, item := range data {
+		if itemMap, ok := item.(map[string]interface{}); ok {
+			delete(itemMap, "avatar")
+			tableData = append(tableData, itemMap)
+		}
+	}
+
+	PrintTableSimple(tableData)
+	return nil
+}
+
 // readPassword reads password from terminal without echoing
 func readPassword() (string, error) {
 	// Check if stdin is a terminal by trying to get terminal size
@@ -201,6 +310,10 @@ func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (map[string]interface{}, er
 		return c.PingServer(cmd)
 	case "benchmark":
 		return nil, c.RunBenchmark(cmd)
+	case "list_user_datasets":
+		return nil, c.ListUserDatasets(cmd)
+	case "list_datasets":
+		return nil, c.ListDatasets(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
