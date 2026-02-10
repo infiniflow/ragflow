@@ -31,6 +31,7 @@ from agent.component.base import ComponentBase
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from common.constants import LLMType
 from common.misc_utils import get_uuid, hash_str2int
 from common.exceptions import TaskCanceledException
@@ -502,7 +503,8 @@ class Canvas(Graph):
                 cpn_obj = self.get_component_obj(self.path[i])
                 if cpn_obj.component_name.lower() == "message":
                     if cpn_obj.get_param("auto_play"):
-                        tts_mdl = LLMBundle(self._tenant_id, LLMType.TTS)
+                        tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
+                        tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
                     if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
                         buff_m = ""

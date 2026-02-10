@@ -161,7 +161,9 @@ export const SelectWithSearch = forwardRef<
           >
             {selectLabel || value ? (
               <span className="flex min-w-0 options-center gap-2">
-                <span className="leading-none truncate">{selectLabel || value}</span>
+                <span className="leading-none truncate">
+                  {selectLabel || value}
+                </span>
               </span>
             ) : (
               <span className="text-text-disabled">{placeholder}</span>

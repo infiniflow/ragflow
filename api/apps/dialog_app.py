@@ -22,6 +22,7 @@ from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
+from api.utils.tenant_utils import ensure_tenant_model_id_for_params
 from common.misc_utils import get_uuid
 from common.constants import RetCode
 from api.apps import login_required, current_user
@@ -33,9 +34,10 @@ import logging
 @login_required
 async def set_dialog():
     req = await get_request_json()
-    dialog_id = req.get("dialog_id", "")
+    dialog_info = ensure_tenant_model_id_for_params(current_user.id, req)
+    dialog_id = dialog_info.get("dialog_id", "")
     is_create = not dialog_id
-    name = req.get("name", "New Dialog")
+    name = dialog_info.get("name", "New Dialog")
     if not isinstance(name, str):
         return get_data_error_result(message="Dialog name must be string.")
     if name.strip() == "":
@@ -57,22 +59,22 @@ async def set_dialog():
 
             name = duplicate_name(_name_exists, name=name)
 
-    description = req.get("description", "A helpful dialog")
-    icon = req.get("icon", "")
-    top_n = req.get("top_n", 6)
-    top_k = req.get("top_k", 1024)
-    rerank_id = req.get("rerank_id", "")
+    description = dialog_info.get("description", "A helpful dialog")
+    icon = dialog_info.get("icon", "")
+    top_n = dialog_info.get("top_n", 6)
+    top_k = dialog_info.get("top_k", 1024)
+    rerank_id = dialog_info.get("rerank_id", "")
     if not rerank_id:
-        req["rerank_id"] = ""
-    similarity_threshold = req.get("similarity_threshold", 0.1)
-    vector_similarity_weight = req.get("vector_similarity_weight", 0.3)
-    llm_setting = req.get("llm_setting", {})
-    meta_data_filter = req.get("meta_data_filter", {})
-    prompt_config = req["prompt_config"]
+        dialog_info["rerank_id"] = ""
+    similarity_threshold = dialog_info.get("similarity_threshold", 0.1)
+    vector_similarity_weight = dialog_info.get("vector_similarity_weight", 0.3)
+    llm_setting = dialog_info.get("llm_setting", {})
+    meta_data_filter = dialog_info.get("meta_data_filter", {})
+    prompt_config = dialog_info["prompt_config"]
 
     # Set default parameters for datasets with knowledge retrieval
     # All datasets with {knowledge} in system prompt need "knowledge" parameter to enable retrieval
-    kb_ids = req.get("kb_ids", [])
+    kb_ids = dialog_info.get("kb_ids", [])
     parameters = prompt_config.get("parameters")
     logging.debug(f"set_dialog: kb_ids={kb_ids}, parameters={parameters}, is_create={not is_create}")
     # Check if parameters is missing, None, or empty list
@@ -85,7 +87,7 @@ async def set_dialog():
 
     if not is_create:
         # only for chat updating
-        if not req.get("kb_ids", []) and not prompt_config.get("tavily_api_key") and "{knowledge}" in prompt_config.get("system", ""):
+        if not dialog_info.get("kb_ids", []) and not prompt_config.get("tavily_api_key") and "{knowledge}" in prompt_config.get("system", ""):
             return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
 
     for p in prompt_config.get("parameters", []):
@@ -99,19 +101,19 @@ async def set_dialog():
         e, tenant = TenantService.get_by_id(current_user.id)
         if not e:
             return get_data_error_result(message="Tenant not found!")
-        kbs = KnowledgebaseService.get_by_ids(req.get("kb_ids", []))
+        kbs = KnowledgebaseService.get_by_ids(dialog_info.get("kb_ids", []))
         embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
         embd_count = len(set(embd_ids))
         if embd_count > 1:
             return get_data_error_result(message=f'Datasets use different embedding models: {[kb.embd_id for kb in kbs]}"')
 
-        llm_id = req.get("llm_id", tenant.llm_id)
+        llm_id = dialog_info.get("llm_id", tenant.llm_id)
         if not dialog_id:
             dia = {
                 "id": get_uuid(),
                 "tenant_id": current_user.id,
                 "name": name,
-                "kb_ids": req.get("kb_ids", []),
+                "kb_ids": dialog_info.get("kb_ids", []),
                 "description": description,
                 "llm_id": llm_id,
                 "llm_setting": llm_setting,
@@ -128,16 +130,16 @@ async def set_dialog():
                 return get_data_error_result(message="Fail to new a dialog!")
             return get_json_result(data=dia)
         else:
-            del req["dialog_id"]
-            if "kb_names" in req:
-                del req["kb_names"]
-            if not DialogService.update_by_id(dialog_id, req):
+            del dialog_info["dialog_id"]
+            if "kb_names" in dialog_info:
+                del dialog_info["kb_names"]
+            if not DialogService.update_by_id(dialog_id, dialog_info):
                 return get_data_error_result(message="Dialog not found!")
             e, dia = DialogService.get_by_id(dialog_id)
             if not e:
                 return get_data_error_result(message="Fail to update a dialog!")
             dia = dia.to_dict()
-            dia.update(req)
+            dia.update(dialog_info)
             dia["kb_ids"], dia["kb_names"] = get_kb_names(dia["kb_ids"])
             return get_json_result(data=dia)
     except Exception as e:
