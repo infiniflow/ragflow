@@ -140,7 +140,85 @@ func (c *HTTPClient) Request(method, path string, useAPIBase bool, authKind stri
 	return &Response{
 		StatusCode: resp.StatusCode,
 		Body:       respBody,
-		Headers:    resp.Header,
+		Headers:    resp.Header.Clone(),
+	}, nil
+}
+
+// RequestWithIterations makes multiple HTTP requests for benchmarking
+// Returns a map with "duration" (total time in seconds) and "response_list"
+func (c *HTTPClient) RequestWithIterations(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}, iterations int) (map[string]interface{}, error) {
+	if iterations <= 1 {
+		resp, err := c.Request(method, path, useAPIBase, authKind, headers, jsonBody)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"duration":      0.0,
+			"response_list": []*Response{resp},
+		}, nil
+	}
+
+	url := c.BuildURL(path, useAPIBase)
+	mergedHeaders := c.Headers(authKind, headers)
+
+	var body io.Reader
+	if jsonBody != nil {
+		jsonData, err := json.Marshal(jsonBody)
+		if err != nil {
+			return nil, err
+		}
+		body = bytes.NewReader(jsonData)
+		if mergedHeaders == nil {
+			mergedHeaders = make(map[string]string)
+		}
+		mergedHeaders["Content-Type"] = "application/json"
+	}
+
+	responseList := make([]*Response, 0, iterations)
+	var totalDuration float64
+
+	for i := 0; i < iterations; i++ {
+		start := time.Now()
+
+		var reqBody io.Reader
+		if body != nil {
+			// Need to create a new reader for each request
+			jsonData, _ := json.Marshal(jsonBody)
+			reqBody = bytes.NewReader(jsonData)
+		}
+
+		req, err := http.NewRequest(method, url, reqBody)
+		if err != nil {
+			return nil, err
+		}
+
+		for k, v := range mergedHeaders {
+			req.Header.Set(k, v)
+		}
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+
+		responseList = append(responseList, &Response{
+			StatusCode: resp.StatusCode,
+			Body:       respBody,
+			Headers:    resp.Header.Clone(),
+		})
+
+		totalDuration += time.Since(start).Seconds()
+	}
+
+	return map[string]interface{}{
+		"duration":      totalDuration,
+		"response_list": responseList,
 	}, nil
 }
 

@@ -110,12 +110,29 @@ func (c *RAGFlowClient) loginUser(email, password string) (string, error) {
 }
 
 // PingServer pings the server to check if it's alive
-func (c *RAGFlowClient) PingServer(cmd *Command) error {
+// Returns benchmark result map if iterations > 1, otherwise prints status
+func (c *RAGFlowClient) PingServer(cmd *Command) (map[string]interface{}, error) {
+	// Get iterations from command params (for benchmark)
+	iterations := 1
+	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
+		iterations = val
+	}
+
+	if iterations > 1 {
+		// Benchmark mode: multiple iterations
+		result, err := c.HTTPClient.RequestWithIterations("GET", "/system/ping", false, "web", nil, nil, iterations)
+		if err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
+
+	// Single ping mode
 	resp, err := c.HTTPClient.Request("GET", "/system/ping", false, "web", nil, nil)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		fmt.Println("Server is down")
-		return err
+		return nil, err
 	}
 
 	if resp.StatusCode == 200 && string(resp.Body) == "pong" {
@@ -123,7 +140,7 @@ func (c *RAGFlowClient) PingServer(cmd *Command) error {
 	} else {
 		fmt.Println("Server is down")
 	}
-	return nil
+	return nil, nil
 }
 
 // readPassword reads password from terminal without echoing
@@ -175,14 +192,15 @@ func readPasswordFallback() (string, error) {
 }
 
 // ExecuteCommand executes a parsed command
-func (c *RAGFlowClient) ExecuteCommand(cmd *Command) error {
+// Returns benchmark result map for commands that support it (e.g., ping_server with iterations > 1)
+func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (map[string]interface{}, error) {
 	switch cmd.Type {
 	case "login_user":
-		return c.LoginUser(cmd)
+		return nil, c.LoginUser(cmd)
 	case "ping_server":
 		return c.PingServer(cmd)
 	// TODO: Implement other commands
 	default:
-		return fmt.Errorf("command '%s' would be executed with API", cmd.Type)
+		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}
 }

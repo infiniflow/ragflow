@@ -71,7 +71,8 @@ func (c *CLI) execute(input string) error {
 	}
 
 	// Execute the command using the client
-	return c.client.ExecuteCommand(cmd)
+	_, err = c.client.ExecuteCommand(cmd)
+	return err
 }
 
 func (c *CLI) handleMetaCommand(cmd *Command) error {
