@@ -200,14 +200,19 @@ func (c *RAGFlowClient) executeBenchmarkSilent(cmd *Command, iterations int) []*
 		var resp *Response
 		var err error
 
-		switch cmd.Type {
-		case "ping_server":
-			resp, err = c.HTTPClient.Request("GET", "/system/ping", false, "web", nil, nil)
-		default:
-			// For other commands, we would need to add specific handling
-			// For now, mark as failed
-			resp = &Response{StatusCode: 0}
-		}
+	switch cmd.Type {
+	case "ping_server":
+		resp, err = c.HTTPClient.Request("GET", "/system/ping", false, "web", nil, nil)
+	case "list_user_datasets":
+		resp, err = c.HTTPClient.Request("POST", "/kb/list", false, "web", nil, nil)
+	case "list_datasets":
+		userName, _ := cmd.Params["user_name"].(string)
+		resp, err = c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), true, "admin", nil, nil)
+	default:
+		// For other commands, we would need to add specific handling
+		// For now, mark as failed
+		resp = &Response{StatusCode: 0}
+	}
 
 		if err != nil {
 			resp = &Response{StatusCode: 0}
@@ -228,6 +233,17 @@ func isSuccess(resp *Response, commandType string) bool {
 	switch commandType {
 	case "ping_server":
 		return resp.StatusCode == 200 && string(resp.Body) == "pong"
+	case "list_user_datasets", "list_datasets":
+		// Check status code and JSON response code for dataset commands
+		if resp.StatusCode != 200 {
+			return false
+		}
+		resJSON, err := resp.JSON()
+		if err != nil {
+			return false
+		}
+		code, ok := resJSON["code"].(float64)
+		return ok && code == 0
 	default:
 		// For other commands, check status code and response code
 		if resp.StatusCode != 200 {

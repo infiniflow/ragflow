@@ -144,9 +144,10 @@ func (c *RAGFlowClient) PingServer(cmd *Command) (map[string]interface{}, error)
 }
 
 // ListUserDatasets lists datasets for current user (user mode)
-func (c *RAGFlowClient) ListUserDatasets(cmd *Command) error {
+// Returns (result_map, error) - result_map is non-nil for benchmark mode
+func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (map[string]interface{}, error) {
 	if c.ServerType != "user" {
-		return fmt.Errorf("this command is only allowed in USER mode")
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
 	// Check for benchmark iterations
@@ -156,39 +157,35 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) error {
 	}
 
 	if iterations > 1 {
-		// Benchmark mode
-		_, err := c.HTTPClient.RequestWithIterations("POST", "/kb/list", false, "web", nil, nil, iterations)
-		if err != nil {
-			return err
-		}
-		return nil
+		// Benchmark mode - return raw result for benchmark stats
+		return c.HTTPClient.RequestWithIterations("POST", "/kb/list", false, "web", nil, nil, iterations)
 	}
 
 	// Normal mode
 	resp, err := c.HTTPClient.Request("POST", "/kb/list", false, "web", nil, nil)
 	if err != nil {
-		return fmt.Errorf("failed to list datasets: %w", err)
+		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
 
 	resJSON, err := resp.JSON()
 	if err != nil {
-		return fmt.Errorf("invalid JSON response: %w", err)
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
 	}
 
 	code, ok := resJSON["code"].(float64)
 	if !ok || code != 0 {
 		msg, _ := resJSON["message"].(string)
-		return fmt.Errorf("failed to list datasets: %s", msg)
+		return nil, fmt.Errorf("failed to list datasets: %s", msg)
 	}
 
 	data, ok := resJSON["data"].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("invalid response format")
+		return nil, fmt.Errorf("invalid response format")
 	}
 
 	kbs, ok := data["kbs"].([]interface{})
 	if !ok {
-		return fmt.Errorf("invalid response format: kbs not found")
+		return nil, fmt.Errorf("invalid response format: kbs not found")
 	}
 
 	// Convert to slice of maps
@@ -202,41 +199,53 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) error {
 	}
 
 	PrintTableSimple(tableData)
-	return nil
+	return nil, nil
 }
 
 // ListDatasets lists datasets for a specific user (admin mode)
-func (c *RAGFlowClient) ListDatasets(cmd *Command) error {
+// Returns (result_map, error) - result_map is non-nil for benchmark mode
+func (c *RAGFlowClient) ListDatasets(cmd *Command) (map[string]interface{}, error) {
 	if c.ServerType != "admin" {
-		return fmt.Errorf("this command is only allowed in ADMIN mode")
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
 	if !ok {
-		return fmt.Errorf("user_name not provided")
+		return nil, fmt.Errorf("user_name not provided")
+	}
+
+	// Check for benchmark iterations
+	iterations := 1
+	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
+		iterations = val
+	}
+
+	if iterations > 1 {
+		// Benchmark mode - return raw result for benchmark stats
+		return c.HTTPClient.RequestWithIterations("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), true, "admin", nil, nil, iterations)
 	}
 
 	fmt.Printf("Listing all datasets of user: %s\n", userName)
 
 	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), true, "admin", nil, nil)
 	if err != nil {
-		return fmt.Errorf("failed to list datasets: %w", err)
+		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
 
 	resJSON, err := resp.JSON()
 	if err != nil {
-		return fmt.Errorf("invalid JSON response: %w", err)
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
 		code, _ := resJSON["code"].(float64)
 		msg, _ := resJSON["message"].(string)
-		return fmt.Errorf("failed to get all datasets of %s, code: %v, message: %s", userName, code, msg)
+		return nil, fmt.Errorf("failed to get all datasets of %s, code: %v, message: %s", userName, code, msg)
 	}
 
 	data, ok := resJSON["data"].([]interface{})
 	if !ok {
-		return fmt.Errorf("invalid response format")
+		return nil, fmt.Errorf("invalid response format")
 	}
 
 	// Convert to slice of maps and remove avatar
@@ -249,7 +258,7 @@ func (c *RAGFlowClient) ListDatasets(cmd *Command) error {
 	}
 
 	PrintTableSimple(tableData)
-	return nil
+	return nil, nil
 }
 
 // readPassword reads password from terminal without echoing
@@ -311,9 +320,9 @@ func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (map[string]interface{}, er
 	case "benchmark":
 		return nil, c.RunBenchmark(cmd)
 	case "list_user_datasets":
-		return nil, c.ListUserDatasets(cmd)
+		return c.ListUserDatasets(cmd)
 	case "list_datasets":
-		return nil, c.ListDatasets(cmd)
+		return c.ListDatasets(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
