@@ -47,7 +47,8 @@ type RedisClient interface {
 // NewSynonym creates a new Synonym instance
 // Reference: synonym.py Dealer.__init__
 // wordnetDir: path to wordnet directory (e.g., "/usr/share/infinity/resource/wordnet").
-//             If empty, WordNet will not be initialized.
+//
+//	If empty, WordNet will not be initialized.
 func NewSynonym(redis RedisClient, resPath string, wordnetDir string) *Synonym {
 	s := &Synonym{
 		lookupNum:  100000000,
@@ -117,34 +118,34 @@ func NewSynonym(redis RedisClient, resPath string, wordnetDir string) *Synonym {
 // load loads synonyms from Redis if available
 // Reference: synonym.py Dealer.load
 func (s *Synonym) load() {
-	if s.redis == nil {
-		return
-	}
-
-	if s.lookupNum < 100 {
-		return
-	}
-
-	tm := time.Now()
-	if tm.Sub(s.loadTm).Seconds() < 3600 {
-		return
-	}
-
-	s.loadTm = time.Now()
-	s.lookupNum = 0
-
-	data, err := s.redis.Get("kevin_synonyms")
-	if err != nil || data == "" {
-		return
-	}
-
-	var dict map[string][]string
-	if jsonErr := json.Unmarshal([]byte(data), &dict); jsonErr != nil {
-		logger.Error("Fail to load synonym!", jsonErr)
-		return
-	}
-
-	s.dictionary = dict
+	//if s.redis == nil {
+	//	return
+	//}
+	//
+	//if s.lookupNum < 100 {
+	//	return
+	//}
+	//
+	//tm := time.Now()
+	//if tm.Sub(s.loadTm).Seconds() < 3600 {
+	//	return
+	//}
+	//
+	//s.loadTm = time.Now()
+	//s.lookupNum = 0
+	//
+	//data, err := s.redis.Get("kevin_synonyms")
+	//if err != nil || data == "" {
+	//	return
+	//}
+	//
+	//var dict map[string][]string
+	//if jsonErr := json.Unmarshal([]byte(data), &dict); jsonErr != nil {
+	//	logger.Error("Fail to load synonym!", jsonErr)
+	//	return
+	//}
+	//
+	//s.dictionary = dict
 }
 
 // Lookup looks up synonyms for a given token
@@ -159,8 +160,8 @@ func (s *Synonym) Lookup(tk string, topN int) []string {
 	}
 
 	// 1) Check the custom dictionary first
-	s.lookupNum++
-	s.load()
+	//s.lookupNum++
+	//s.load()
 
 	key := regexp.MustCompile(`[ \t]+`).ReplaceAllString(strings.TrimSpace(tk), " ")
 	key = strings.ToLower(key)

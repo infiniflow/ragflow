@@ -211,4 +211,15 @@ char* RAGAnalyzer_GetTermTag(RAGAnalyzerHandle handle, const char* term) {
     return c_result;
 }
 
+RAGAnalyzerHandle RAGAnalyzer_Copy(RAGAnalyzerHandle handle) {
+    if (!handle) return nullptr;
+    try {
+        RAGAnalyzer* original = static_cast<RAGAnalyzer*>(handle);
+        RAGAnalyzer* copy = new RAGAnalyzer(*original);
+        return static_cast<RAGAnalyzerHandle>(copy);
+    } catch (...) {
+        return nullptr;
+    }
+}
+
 } // extern "C"

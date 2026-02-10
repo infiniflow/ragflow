@@ -1,9 +1,9 @@
 package rag_analyzer
 
 /*
-#cgo CXXFLAGS: -std=c++17 -I${SRCDIR}/..
-#cgo linux LDFLAGS: ${SRCDIR}/../cpp/build/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/lib/x86_64-linux-gnu/libpcre2-8.a
-#cgo darwin LDFLAGS: ${SRCDIR}/../cpp/build/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/local/lib/libpcre2-8.a
+#cgo CXXFLAGS: -std=c++20 -I${SRCDIR}/..
+#cgo linux LDFLAGS: ${SRCDIR}/../cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/lib/x86_64-linux-gnu/libpcre2-8.a
+#cgo darwin LDFLAGS: ${SRCDIR}/../cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/local/lib/libpcre2-8.a
 
 #include <stdlib.h>
 #include "../cpp/rag_analyzer_c_api.h"
@@ -230,4 +230,20 @@ func (a *Analyzer) GetTermTag(term string) string {
 	defer C.free(unsafe.Pointer(cResult))
 
 	return C.GoString(cResult)
+}
+
+// Copy creates a new independent analyzer instance from the current one
+// The new instance shares the loaded dictionaries but has independent internal state
+// This is useful for creating per-request analyzer instances in concurrent environments
+func (a *Analyzer) Copy() *Analyzer {
+	if a.handle == nil {
+		return nil
+	}
+
+	handle := C.RAGAnalyzer_Copy(a.handle)
+	if handle == nil {
+		return nil
+	}
+
+	return &Analyzer{handle: handle}
 }

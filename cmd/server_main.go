@@ -75,7 +75,7 @@ func main() {
 	defer engine.Close()
 
 	// Initialize tokenizer (rag_analyzer)
-	tokenizerCfg := &tokenizer.Config{
+	tokenizerCfg := &tokenizer.PoolConfig{
 		DictPath: "/usr/share/infinity/resource",
 	}
 	if err := tokenizer.Init(tokenizerCfg); err != nil {

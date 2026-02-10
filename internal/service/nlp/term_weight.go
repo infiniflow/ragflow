@@ -434,7 +434,8 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 	} else {
 		// With preprocessing
 		for _, tk := range tks {
-			tt := d.TokenMerge(d.Pretoken(tk, true, true))
+			tokens := d.Pretoken(tk, true, true)
+			tt := d.TokenMerge(tokens)
 			if len(tt) == 0 {
 				continue
 			}
