@@ -138,7 +138,7 @@ func (c *RAGFlowClient) PingServer(cmd *Command) (map[string]interface{}, error)
 	if resp.StatusCode == 200 && string(resp.Body) == "pong" {
 		fmt.Println("Server is alive")
 	} else {
-		fmt.Println("Server is down")
+		fmt.Printf("Error: %d\n", resp.StatusCode)
 	}
 	return nil, nil
 }

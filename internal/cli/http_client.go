@@ -59,9 +59,9 @@ func (c *HTTPClient) BuildURL(path string, useAPIBase bool) string {
 		base = c.NonAPIBase()
 	}
 	if c.VerifySSL {
-		return fmt.Sprintf("https://%s/%s", base, path)
+		return fmt.Sprintf("https://%s%s", base, path)
 	}
-	return fmt.Sprintf("http://%s/%s", base, path)
+	return fmt.Sprintf("http://%s%s", base, path)
 }
 
 // Headers builds the request headers
