@@ -69,15 +69,31 @@ file(GLOB
 list(FILTER main_src EXCLUDE REGEX "rag_analyzer_c_api")
 
 add_executable(rag_tokenizer
-        ${main_src}
+        main.cpp
+        rag_analyzer.cpp
+        rag_analyzer.h
+        dart_trie.h
+        darts_trie.cpp
+        wordnet_lemmatizer.cpp
+        wordnet_lemmatizer.h
+        string_utils.h
+        term.h
+        term.cpp
+        tokenizer.cpp
+        tokenizer.h
+        analyzer.h
         ${stemmer_src}
         ${opencc_src}
         ${util_src}
         ${darts_src}
         ${re2_src})
 
-target_link_libraries(rag_tokenizer stdc++ libm.a libpcre2-8.a)
+target_link_libraries(rag_tokenizer stdc++ m libpcre2-8.a)
 target_include_directories(rag_tokenizer PUBLIC "${CMAKE_SOURCE_DIR}")
+set_target_properties(rag_tokenizer PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+)
 
 # Build C API static library for CGO
 add_library(rag_tokenizer_c_api STATIC
