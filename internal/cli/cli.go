@@ -10,6 +10,7 @@ import (
 // CLI represents the command line interface
 type CLI struct {
 	parser  *Parser
+	client  *RAGFlowClient
 	prompt  string
 	running bool
 }
@@ -17,7 +18,8 @@ type CLI struct {
 // NewCLI creates a new CLI instance
 func NewCLI() (*CLI, error) {
 	return &CLI{
-		prompt: "RAGFlow> ",
+		prompt:  "RAGFlow> ",
+		client:  NewRAGFlowClient("user"), // Default to user mode
 	}, nil
 }
 
@@ -68,16 +70,8 @@ func (c *CLI) execute(input string) error {
 		return c.handleMetaCommand(cmd)
 	}
 
-	// For now, just print the parsed command
-	fmt.Printf("Command: %s\n", cmd.Type)
-	if len(cmd.Params) > 0 {
-		fmt.Println("Parameters:")
-		for k, v := range cmd.Params {
-			fmt.Printf("  %s: %v\n", k, v)
-		}
-	}
-
-	return nil
+	// Execute the command using the client
+	return c.client.ExecuteCommand(cmd)
 }
 
 func (c *CLI) handleMetaCommand(cmd *Command) error {
