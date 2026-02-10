@@ -17,16 +17,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import message from '@/components/ui/message';
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchManualSystemTokenList } from '@/hooks/use-user-setting-request';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
   CirclePlay,
-  ExternalLink,
   History,
   LaptopMinimalCheck,
   Logs,
@@ -112,23 +109,9 @@ export default function Agent() {
 
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
-  const { fetchSystemTokenList } = useFetchManualSystemTokenList();
   const { navigateToAgentLogs } = useNavigatePage();
   const time = useWatchAgentChange(chatDrawerVisible);
   const isWebhookMode = useIsWebhookMode();
-
-  const handleOpenAgentInNewTab = useCallback(async () => {
-    const tokenList = await fetchSystemTokenList();
-    if (Array.isArray(tokenList) && tokenList.length > 0 && tokenList[0].beta) {
-      const betaToken = tokenList[0].beta;
-      const agentShareUrl = `${location.origin}/agent/share?shared_id=${id}&from=${SharedFrom.Agent}&auth=${betaToken}`;
-      window.open(agentShareUrl, '_blank');
-    } else {
-      message.error(
-        'Authentication token not found. Please configure your API token first.',
-      );
-    }
-  }, [id, fetchSystemTokenList]);
 
   // pipeline
 
@@ -296,10 +279,6 @@ export default function Agent() {
                     <AgentDropdownMenuItem onClick={showEmbedModal}>
                       <ScreenShare />
                       {t('common.embedIntoSite')}
-                    </AgentDropdownMenuItem>
-                    <AgentDropdownMenuItem onClick={handleOpenAgentInNewTab}>
-                      <ExternalLink />
-                      {t('common.openInNewTab')}
                     </AgentDropdownMenuItem>
                   </>
                 ))}
