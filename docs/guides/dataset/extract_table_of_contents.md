@@ -32,7 +32,7 @@ The system's default chat model is used to summarize clustered content. Before p
 3. To use this technique during retrieval, do either of the following:
    
    - In the **Chat setting** panel of your chat app, switch on the **PageIndex** toggle.
-   - If you are using an agent, click the **Retrieval** agent component to specify the dataset(s) and switch on the **Page Index** toggle.
+   - If you are using an Agent, click the **Retrieval** agent component to specify the dataset(s) and switch on the **PageIndex** toggle.
 
 ## Frequently asked questions
 
