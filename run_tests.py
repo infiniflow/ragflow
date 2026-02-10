@@ -142,6 +142,9 @@ EXAMPLES:
         # Change to test directory
         os.chdir(self.project_root)
 
+        # Set PYTHONPATH to include project root for imports
+        os.environ['PYTHONPATH'] = str(self.project_root) + os.pathsep + os.environ.get('PYTHONPATH', '')
+
         # Build command
         cmd = self.build_pytest_command()
 
@@ -248,7 +251,7 @@ Examples:
 
         except SystemExit:
             # argparse already printed help, just exit
-            return False
+            return 1
         except Exception as e:
             self.print_error(f"Error parsing arguments: {e}")
             return False
