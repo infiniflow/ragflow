@@ -343,7 +343,7 @@ export default {
         'Aggiorna la configurazione della tua base di conoscenza qui, in particolare il metodo di chunking.',
       name: 'Nome base di conoscenza',
       photo: 'Foto base di conoscenza',
-      photoTip: 'Puoi caricare un file di 4 MB',
+      photoTip: 'Puoi caricare un’immagine fino a 4 MB.',
       description: 'Descrizione',
       language: 'Lingua documento',
       languageMessage: 'Inserisci la tua lingua!',

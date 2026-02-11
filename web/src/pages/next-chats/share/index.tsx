@@ -116,6 +116,7 @@ const ChatContainer = () => {
                 value={value}
                 disabled={hasError}
                 sendDisabled={sendDisabled}
+                resize="vertical"
                 conversationId={conversationId}
                 onInputChange={handleInputChange}
                 onPressEnter={handlePressEnter}

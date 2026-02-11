@@ -458,7 +458,7 @@ async def rank_memories_async(chat_mdl, goal: str, sub_goal: str, tool_call_summ
     return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
 
 
-async def gen_meta_filter(chat_mdl, meta_data: dict, query: str) -> dict:
+async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: dict = None) -> dict:
     meta_data_structure = {}
     for key, values in meta_data.items():
         meta_data_structure[key] = list(values.keys()) if isinstance(values, dict) else values
@@ -466,7 +466,8 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str) -> dict:
     sys_prompt = PROMPT_JINJA_ENV.from_string(META_FILTER).render(
         current_date=datetime.datetime.today().strftime('%Y-%m-%d'),
         metadata_keys=json.dumps(meta_data_structure),
-        user_question=query
+        user_question=query,
+        constraints=json.dumps(constraints) if constraints else None
     )
     user_prompt = "Generate filters:"
     ans, _ = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}])

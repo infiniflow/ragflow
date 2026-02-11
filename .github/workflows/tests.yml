@@ -202,8 +202,11 @@ jobs:
           echo -e "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> docker/.env
           echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
+          # Patch entrypoint.sh for coverage
+          sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' docker/entrypoint.sh
+
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
-          uv sync --python 3.12 --group test --frozen && uv pip install sdk/python
+          uv sync --python 3.12 --group test --frozen && uv pip install -e sdk/python
 
       - name: Run sdk tests against Elasticsearch
         run: |
@@ -212,7 +215,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api 2>&1 | tee es_sdk_test.log
+          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-es-sdk.xml test/testcases/test_sdk_api 2>&1 | tee es_sdk_test.log
 
       - name: Run web api tests against Elasticsearch
         run: |
@@ -221,7 +224,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/ 2>&1 | tee es_web_api_test.log
+          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api 2>&1 | tee es_web_api_test.log
           
       - name: Run http api tests against Elasticsearch
         run: |
@@ -232,7 +235,7 @@ jobs:
           done
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 2>&1 | tee es_http_api_test.log
 
-      - name: RAGFlow CLI retrieval test
+      - name: RAGFlow CLI retrieval test Elasticsearch
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -333,12 +336,52 @@ jobs:
           run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "parse dataset '$DATASET' sync"
           run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "Benchmark 16 100 search 'what are these documents about' on datasets '$DATASET'"
 
-      - name: Collect ragflow log
+      - name: Stop ragflow to save coverage Elasticsearch
         if: ${{ !cancelled() }}
         run: |
-          cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-es
-          echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log
-          sudo rm -rf docker/ragflow-logs
+          # Send SIGINT to ragflow_server.py to trigger coverage save
+          PID=$(sudo docker exec ${RAGFLOW_CONTAINER} ps aux | grep "ragflow_server.py" | grep -v grep | awk '{print $2}' | head -n 1)
+          if [ -n "$PID" ]; then
+            echo "Sending SIGINT to ragflow_server.py (PID: $PID)..."
+            sudo docker exec ${RAGFLOW_CONTAINER} kill -INT $PID
+            # Wait for process to exit and coverage file to be written
+            sleep 10
+          else
+            echo "ragflow_server.py not found!"
+          fi
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} stop
+
+      - name: Generate server coverage report Elasticsearch
+        if: ${{ !cancelled() }}
+        run: |
+          # .coverage file should be in docker/ragflow-logs/.coverage
+          if [ -f docker/ragflow-logs/.coverage ]; then
+            echo "Found .coverage file"
+            cp docker/ragflow-logs/.coverage .coverage
+            source .venv/bin/activate
+            # Create .coveragerc to map container paths to host paths
+            echo "[paths]" > .coveragerc
+            echo "source =" >> .coveragerc
+            echo "    ." >> .coveragerc
+            echo "    /ragflow" >> .coveragerc
+            coverage xml -o coverage-es-server.xml
+            rm .coveragerc
+            # Clean up for next run
+            sudo rm docker/ragflow-logs/.coverage
+          else
+            echo ".coverage file not found!"
+          fi
+          
+      - name: Collect ragflow log Elasticsearch
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -d docker/ragflow-logs ]; then
+            cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-es
+            echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log || true
+          else
+            echo "No docker/ragflow-logs directory found; skipping log collection"
+          fi
+          sudo rm -rf docker/ragflow-logs || true
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
@@ -358,7 +401,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-infinity-sdk.xml test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
 
       - name: Run web api tests against Infinity
         run: |
@@ -367,7 +410,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/ 2>&1 | tee infinity_web_api_test.log
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/test_api_app 2>&1 | tee infinity_web_api_test.log
 
       - name: Run http api tests against Infinity
         run: |
@@ -378,7 +421,7 @@ jobs:
           done
           source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 2>&1 | tee infinity_http_api_test.log
 
-      - name: RAGFlow CLI retrieval test (Infinity)
+      - name: RAGFlow CLI retrieval test Infinity
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -479,12 +522,58 @@ jobs:
           run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "parse dataset '$DATASET' sync"
           run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "Benchmark 16 100 search 'what are these documents about' on datasets '$DATASET'"
 
+      - name: Stop ragflow to save coverage Infinity
+        if: ${{ !cancelled() }}
+        run: |
+          # Send SIGINT to ragflow_server.py to trigger coverage save
+          PID=$(sudo docker exec ${RAGFLOW_CONTAINER} ps aux | grep "ragflow_server.py" | grep -v grep | awk '{print $2}' | head -n 1)
+          if [ -n "$PID" ]; then
+            echo "Sending SIGINT to ragflow_server.py (PID: $PID)..."
+            sudo docker exec ${RAGFLOW_CONTAINER} kill -INT $PID
+            # Wait for process to exit and coverage file to be written
+            sleep 10
+          else
+            echo "ragflow_server.py not found!"
+          fi
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} stop
+
+      - name: Generate server coverage report Infinity
+        if: ${{ !cancelled() }}
+        run: |
+          # .coverage file should be in docker/ragflow-logs/.coverage
+          if [ -f docker/ragflow-logs/.coverage ]; then
+            echo "Found .coverage file"
+            cp docker/ragflow-logs/.coverage .coverage
+            source .venv/bin/activate
+            # Create .coveragerc to map container paths to host paths
+            echo "[paths]" > .coveragerc
+            echo "source =" >> .coveragerc
+            echo "    ." >> .coveragerc
+            echo "    /ragflow" >> .coveragerc
+            coverage xml -o coverage-infinity-server.xml
+            rm .coveragerc
+          else
+            echo ".coverage file not found!"
+          fi
+          
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        if: ${{ !cancelled() }}
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
       - name: Collect ragflow log
         if: ${{ !cancelled() }}
         run: |
-          cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-infinity
-          echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log
-          sudo rm -rf docker/ragflow-logs
+          if [ -d docker/ragflow-logs ]; then
+            cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-infinity
+            echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log || true
+          else
+            echo "No docker/ragflow-logs directory found; skipping log collection"
+          fi
+          sudo rm -rf docker/ragflow-logs || true
+
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
         run: |

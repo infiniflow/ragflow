@@ -22,7 +22,7 @@ from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
 
-@pytest.mark.p1
+@pytest.mark.p2
 class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",

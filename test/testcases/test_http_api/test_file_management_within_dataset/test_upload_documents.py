@@ -80,7 +80,7 @@ class TestDocumentsUpload:
         assert res["data"][0]["dataset_id"] == dataset_id
         assert res["data"][0]["name"] == fp.name
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "file_type",
         ["exe", "unknown"],

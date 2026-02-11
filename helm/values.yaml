@@ -77,7 +77,7 @@ env:
 ragflow:
   image:
     repository: infiniflow/ragflow
-    tag: v0.23.1
+    tag: v0.24.0
     pullPolicy: IfNotPresent
     pullSecrets: []
   # Optional service configuration overrides

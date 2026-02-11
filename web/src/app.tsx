@@ -73,11 +73,19 @@ if (process.env.NODE_ENV === 'development') {
         trackAllPureComponents: true,
         trackExtraHooks: [],
         logOnDifferentValues: true,
+        exclude: [/^RouterProvider$/],
       });
     },
   );
 }
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 2,
+    },
+  },
+});
 
 type Locale = ConfigProviderProps['locale'];
 
@@ -91,6 +99,8 @@ function Root({ children }: React.PropsWithChildren) {
   i18n.on('languageChanged', function (lng: string) {
     storage.setLanguage(lng);
     setLocal(getLocale(lng));
+    // Should reflect to <html lang="...">
+    document.documentElement.lang = lng;
   });
 
   return (
@@ -141,6 +151,13 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
   );
 };
 
+const RouterProviderWrapper: React.FC<{ router: typeof routers }> = ({
+  router,
+}) => {
+  return <RouterProvider router={router}></RouterProvider>;
+};
+RouterProviderWrapper.whyDidYouRender = false;
+
 export default function AppContainer() {
   // const [router, setRouter] = useState<any>(null);
 
@@ -154,8 +171,7 @@ export default function AppContainer() {
 
   return (
     <RootProvider>
-      <RouterProvider router={routers}></RouterProvider>
-      {/* <RouterProvider router={router}></RouterProvider> */}
+      <RouterProviderWrapper router={routers} />
     </RootProvider>
   );
 }
