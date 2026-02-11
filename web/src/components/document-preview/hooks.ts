@@ -66,12 +66,23 @@ export const useGetDocumentUrl = (isAgent: boolean) => {
 export const useCatchError = (api: string) => {
   const [error, setError] = useState('');
   const fetchDocument = useCallback(async () => {
-    const ret = await axios.get(api);
-    const { data } = ret;
-    if (!(data instanceof ArrayBuffer) && data.code !== 0) {
-      setError(data.message);
+    try {
+      const ret = await axios.get(api, { responseType: 'arraybuffer' });
+      const { data } = ret;
+      if (data instanceof ArrayBuffer) {
+        try {
+          const jsonData = JSON.parse(new TextDecoder().decode(data));
+          if (jsonData.code !== 0) {
+            setError(jsonData.message);
+          }
+        } catch (e) {
+          // It's a real binary file
+        }
+      }
+      return ret;
+    } catch (e) {
+      console.error(e);
     }
-    return ret;
   }, [api]);
 
   useEffect(() => {

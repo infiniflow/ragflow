@@ -2,6 +2,7 @@ import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import FileError from '@/pages/document-viewer/file-error';
 import { Skeleton } from 'antd';
+import * as pdfjs from 'pdfjs-dist';
 import { useEffect, useRef, useState } from 'react';
 import {
   AreaHighlight,
@@ -12,6 +13,8 @@ import {
   Popup,
 } from 'react-pdf-highlighter';
 import { useCatchDocumentError } from './hooks';
+
+pdfjs.GlobalWorkerOptions.workerSrc = '/pdfjs-dist/pdf.worker.min.js';
 
 import {
   useGetChunkHighlights,
@@ -41,6 +44,7 @@ const DocumentPreviewer = ({ chunk, documentId, visible }: IProps) => {
   const { highlights: state, setWidthAndHeight } = useGetChunkHighlights(chunk);
   const ref = useRef<(highlight: IHighlight) => void>(() => {});
   const [loaded, setLoaded] = useState(false);
+  const [isReady, setIsReady] = useState(false);
   const url = getDocumentUrl();
   const error = useCatchDocumentError(url);
 
@@ -51,85 +55,88 @@ const DocumentPreviewer = ({ chunk, documentId, visible }: IProps) => {
   }, [visible]);
 
   useEffect(() => {
-    if (state.length > 0 && loaded) {
+    if (state.length > 0 && loaded && isReady) {
       setLoaded(false);
       ref.current(state[0]);
     }
-  }, [state, loaded]);
+  }, [state, loaded, isReady]);
+
+  const isUrlValid =
+    !!url && !url.endsWith('undefined') && !url.endsWith('/get/');
 
   return (
     <div className={styles.documentContainer}>
-      <PdfLoader
-        url={url}
-        beforeLoad={<Skeleton active />}
-        workerSrc="/pdfjs-dist/pdf.worker.min.js"
-        errorMessage={<FileError>{error}</FileError>}
-      >
-        {(pdfDocument) => {
-          pdfDocument.getPage(1).then((page) => {
-            const viewport = page.getViewport({ scale: 1 });
-            const width = viewport.width;
-            const height = viewport.height;
-            setWidthAndHeight(width, height);
-          });
+      {isUrlValid && (
+        <PdfLoader
+          url={url}
+          beforeLoad={<Skeleton active />}
+          errorMessage={<FileError>{error}</FileError>}
+        >
+          {(pdfDocument) => {
+            pdfDocument.getPage(1).then((page) => {
+              const viewport = page.getViewport({ scale: 1 });
+              const width = viewport.width;
+              const height = viewport.height;
+              setWidthAndHeight(width, height);
+            });
 
-          return (
-            <PdfHighlighter
-              pdfDocument={pdfDocument}
-              enableAreaSelection={(event) => event.altKey}
-              onScrollChange={resetHash}
-              scrollRef={(scrollTo) => {
-                ref.current = scrollTo;
-                setLoaded(true);
-              }}
-              onSelectionFinished={() => null}
-              highlightTransform={(
-                highlight,
-                index,
-                setTip,
-                hideTip,
-                viewportToScaled,
-                screenshot,
-                isScrolledTo,
-              ) => {
-                const isTextHighlight = !Boolean(
-                  highlight.content && highlight.content.image,
-                );
+            return (
+              <PdfHighlighter
+                pdfDocument={pdfDocument}
+                enableAreaSelection={(event) => event.altKey}
+                onScrollChange={resetHash}
+                scrollRef={(scrollTo) => {
+                  ref.current = scrollTo;
+                  setIsReady(true);
+                }}
+                onSelectionFinished={() => null}
+                highlightTransform={(
+                  highlight,
+                  index,
+                  setTip,
+                  hideTip,
+                  viewportToScaled,
+                  screenshot,
+                  isScrolledTo,
+                ) => {
+                  const isTextHighlight = !(
+                    highlight.content && highlight.content.image
+                  );
 
-                const component = isTextHighlight ? (
-                  <Highlight
-                    isScrolledTo={isScrolledTo}
-                    position={highlight.position}
-                    comment={highlight.comment}
-                  />
-                ) : (
-                  <AreaHighlight
-                    isScrolledTo={isScrolledTo}
-                    highlight={highlight}
-                    onChange={() => {}}
-                  />
-                );
+                  const component = isTextHighlight ? (
+                    <Highlight
+                      isScrolledTo={isScrolledTo}
+                      position={highlight.position}
+                      comment={highlight.comment}
+                    />
+                  ) : (
+                    <AreaHighlight
+                      isScrolledTo={isScrolledTo}
+                      highlight={highlight}
+                      onChange={() => {}}
+                    />
+                  );
 
-                return (
-                  <Popup
-                    popupContent={<HighlightPopup {...highlight} />}
-                    onMouseOver={(popupContent) =>
-                      setTip(highlight, () => popupContent)
-                    }
-                    onMouseOut={hideTip}
-                    key={index}
-                  >
-                    {component}
-                  </Popup>
-                );
-              }}
-              highlights={state}
-            />
-          );
-        }}
-      </PdfLoader>
+                  return (
+                    <Popup
+                      popupContent={<HighlightPopup {...highlight} />}
+                      onMouseOver={(popupContent) =>
+                        setTip(highlight, () => popupContent)
+                      }
+                      onMouseOut={hideTip}
+                      key={index}
+                    >
+                      {component}
+                    </Popup>
+                  );
+                }}
+                highlights={isReady ? state : []}
+              />
+            );
+          }}
+        </PdfLoader>
+      )}
     </div>
   );
 };
-
 export default DocumentPreviewer;
