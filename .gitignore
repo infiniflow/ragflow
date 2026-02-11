@@ -213,3 +213,9 @@ backup
 
 /target
 attili-sys/cleaning_data/configs_solution_1.md
+
+# Do not include in PR (local dev / build artifacts)
+ragflow.egg-info/
+uv-aarch64*.tar.gz
+uv-aarch64-unknown-linux-gnu.tar.gz
+docker/launch_backend_service_windows.sh
