@@ -9,6 +9,44 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.24.0
+
+Released on February 10, 2026.
+
+### New features
+
+- Memory
+  - Introduces APIs and an SDK for developer integration.
+  - Outputs Memory extraction log to the console for debugging and tracing.
+- Dataset
+  - Supports batch metadata management.
+  - Renames "ToC (Table of Contents)" to "PageIndex". See [here](./guides/dataset/extract_table_of_contents.md).
+- Agent
+  - Launches a new Chat-like Agent conversation management interface that retains sessions and dialogue history.
+  - Introduces a multi-Sandbox mechanism supporting local gVisor and Alibaba Cloud, with compatibility for mainstream Sandbox APIs (configurable in the Admin page).
+- Chat
+  - Adds a new "Thinking" mode and removes the previous "Reasoning" configuration option.
+  - Optimizes retrieval strategies for deep-research scenarios, enhancing recall accuracy.
+- Admin
+  - Supports configuring multiple Admin accounts.
+- Model configuration center
+  - Adds a model connection test feature when adding new models.
+
+### MySQL alternative
+
+- Supports OceanBase as an alternative to MySQL.
+
+### Model support
+
+- Kimi 2.5
+- Stepfun 3
+- doubao-embedding-vision
+- PaddleOCR-VL
+
+### Data sources
+
+- Zendesk
+- Bitbucket
 
 ## v0.23.1
 

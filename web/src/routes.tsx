@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, memo, Suspense } from 'react';
 import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 import FallbackComponent from './components/fallback-component';
 import { IS_ENTERPRISE } from './pages/admin/utils';
@@ -14,6 +14,8 @@ export enum Routes {
   Agent = '/agent',
   AgentTemplates = '/agent-templates',
   Agents = '/agents',
+  Explore = '/explore',
+  AgentExplore = `${Routes.Agent}/:id/explore`,
   Memories = '/memories',
   Memory = '/memory',
   MemoryMessage = '/memory-message',
@@ -92,7 +94,7 @@ const withLazyRoute = (
     LazyComponent.name ||
     'Component'
   })`;
-  return Wrapped;
+  return process.env.NODE_ENV === 'development' ? LazyComponent : memo(Wrapped);
 };
 
 const routeConfigOptions = [
@@ -250,10 +252,17 @@ const routeConfigOptions = [
     Component: () => import('@/pages/agent'),
   },
   {
+    path: Routes.AgentExplore,
+    layout: false,
+    Component: () => import('@/pages/agent/explore'),
+    errorElement: <FallbackComponent />,
+  },
+  {
     path: Routes.AgentTemplates,
     layout: false,
     Component: () => import('@/pages/agents/agent-templates'),
   },
+
   {
     path: Routes.Files,
     layout: false,
