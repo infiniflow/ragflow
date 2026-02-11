@@ -7,6 +7,7 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+    entrypoint: ["/bin/bash", "./entrypoint.sh"]
     build:
       context: ../
       dockerfile: Dockerfile
