@@ -178,3 +178,20 @@ class TestDocumentsList:
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures), responses
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "payload, expected_message",
+        [
+            ({"run_status": ["BAD"]}, "Invalid filter run status conditions"),
+            ({"types": ["BADTYPE"]}, "Invalid filter conditions"),
+            ({"metadata_condition": "bad"}, "metadata_condition must be an object"),
+            ({"metadata": "bad"}, "metadata must be an object"),
+        ],
+    )
+    def test_list_documents_invalid_filter_inputs(self, WebApiAuth, add_documents, payload, expected_message):
+        kb_id, _ = add_documents
+        res = list_documents(WebApiAuth, {"kb_id": kb_id}, payload=payload)
+        assert res["code"] != 0, res
+        assert res["code"] != 500, res
+        assert expected_message in res.get("message", ""), res

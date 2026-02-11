@@ -123,6 +123,13 @@ class TestMemoryUpdate:
         assert res["code"] == 0, res
         assert res["data"]["permissions"] == permission.lower().strip(), res
 
+    @pytest.mark.p2
+    def test_permission_invalid(self, WebApiAuth, add_memory_func):
+        memory_ids = add_memory_func
+        res = update_memory(WebApiAuth, memory_ids[0], {"permissions": "invalid"})
+        assert res["code"] != 0, res
+        assert "permission" in res.get("message", "").lower(), res
+
 
     @pytest.mark.p1
     def test_memory_size(self, WebApiAuth, add_memory_func):

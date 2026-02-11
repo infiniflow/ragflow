@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import requests
 import pytest
 from common import (
     system_config,
@@ -22,7 +23,7 @@ from common import (
     system_token_list,
     system_version,
 )
-from configs import INVALID_API_TOKEN
+from configs import HOST_ADDRESS, INVALID_API_TOKEN, VERSION
 from libs.auth import RAGFlowWebApiAuth
 
 
@@ -84,6 +85,12 @@ class TestSystemEndpoints:
         res = system_version(WebApiAuth)
         assert res["code"] == 0, res
         assert res["data"], res
+
+    @pytest.mark.p2
+    def test_ping_endpoint(self):
+        res = requests.get(f"{HOST_ADDRESS}/{VERSION}/system/ping")
+        assert res.status_code == 200, res.text
+        assert res.text == "pong", res.text
 
     @pytest.mark.p2
     def test_token_list(self, WebApiAuth):

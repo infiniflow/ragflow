@@ -358,3 +358,13 @@ class TestDocumentsList:
         res = list_documents(HttpApiAuth, dataset_id, params=params)
         assert res["code"] == 0
         assert len(res["data"]["docs"]) == 5
+
+    @pytest.mark.p2
+    def test_metadata_condition_invalid_json(self, HttpApiAuth, add_dataset_func):
+        dataset_id = add_dataset_func
+        params = {"metadata_condition": "{"}
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
+        assert res["code"] != 0, res
+        message = res.get("message", "").lower()
+        assert "metadata_condition" in message, res
+        assert "json" in message or "valid" in message, res

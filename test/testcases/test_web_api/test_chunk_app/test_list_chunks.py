@@ -38,6 +38,14 @@ class TestAuthorization:
 
 
 class TestChunksList:
+    @pytest.mark.p2
+    def test_invalid_doc_id_returns_error(self, WebApiAuth):
+        res = list_chunks(WebApiAuth, {"doc_id": "invalid_document_id"})
+        assert res["code"] != 0, res
+        message = str(res.get("message", "")).lower()
+        assert "not found" in message, res
+        assert any(token in message for token in ("tenant", "document", "doc")), res
+
     @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",

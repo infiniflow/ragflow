@@ -19,6 +19,7 @@ from common import (
     document_filter,
     document_infos,
     document_metadata_summary,
+    document_metadata_update,
     document_rename,
     document_set_meta,
     document_update_metadata_setting,
@@ -182,6 +183,37 @@ class TestDocumentMetadata:
         meta_fields = info_res["data"][0].get("meta_fields", {})
         assert meta_fields.get("author") == "alice", info_res
 
+    @pytest.mark.p2
+    def test_metadata_update_success(self, WebApiAuth, add_document_func):
+        kb_id, doc_id = add_document_func
+        payload = {
+            "kb_id": kb_id,
+            "doc_ids": [doc_id],
+            "updates": [{"key": "author", "value": "alice"}],
+            "deletes": [],
+        }
+        res = document_metadata_update(WebApiAuth, payload)
+        assert res["code"] == 0, res
+        assert res["data"]["matched_docs"] == 1, res
+
+        found = False
+        for _ in range(3):
+            info_res = document_infos(WebApiAuth, {"doc_ids": [doc_id]})
+            assert info_res["code"] == 0, info_res
+            meta_fields = info_res["data"][0].get("meta_fields", {})
+            if meta_fields.get("author") == "alice":
+                found = True
+                break
+        assert found, info_res
+
+    @pytest.mark.p2
+    def test_update_metadata_setting_success(self, WebApiAuth, add_document_func):
+        _, doc_id = add_document_func
+        metadata = {"source": "test"}
+        res = document_update_metadata_setting(WebApiAuth, {"doc_id": doc_id, "metadata": metadata})
+        assert res["code"] == 0, res
+        assert res["data"]["parser_config"]["metadata"] == metadata, res
+
 
 class TestDocumentMetadataNegative:
     @pytest.mark.p3
@@ -241,3 +273,26 @@ class TestDocumentMetadataNegative:
         res = document_set_meta(WebApiAuth, {"doc_id": doc_id, "meta": "[]"})
         assert res["code"] == 101, res
         assert "dictionary" in res["message"], res
+
+    @pytest.mark.p3
+    @pytest.mark.parametrize(
+        "payload, expected_message",
+        [
+            ({"updates": "bad", "deletes": []}, "updates and deletes must be lists"),
+            ({"updates": [{"value": "alice"}], "deletes": []}, "Each update requires key and value"),
+            ({"updates": [{"key": "author", "value": "alice"}], "deletes": "bad"}, "updates and deletes must be lists"),
+        ],
+    )
+    def test_metadata_update_invalid_payload(self, WebApiAuth, add_document_func, payload, expected_message):
+        kb_id, doc_id = add_document_func
+        payload = {"kb_id": kb_id, "doc_ids": [doc_id], **payload}
+        res = document_metadata_update(WebApiAuth, payload)
+        assert res["code"] != 0, res
+        assert expected_message in res.get("message", ""), res
+
+    @pytest.mark.p3
+    def test_set_meta_invalid_json(self, WebApiAuth, add_document_func):
+        _, doc_id = add_document_func
+        res = document_set_meta(WebApiAuth, {"doc_id": doc_id, "meta": "{bad"})
+        assert res["code"] != 0, res
+        assert "Json syntax error" in res.get("message", ""), res

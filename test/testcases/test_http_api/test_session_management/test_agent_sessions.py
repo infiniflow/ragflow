@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import requests
 import pytest
 from common import (
     create_agent,
@@ -22,6 +23,7 @@ from common import (
     list_agent_sessions,
     list_agents,
 )
+from configs import HOST_ADDRESS, VERSION
 
 AGENT_TITLE = "test_agent_http"
 MINIMAL_DSL = {
@@ -87,3 +89,45 @@ class TestAgentSessions:
 
         res = delete_agent_sessions(HttpApiAuth, agent_id, {"ids": [session_id]})
         assert res["code"] == 0, res
+
+    @pytest.mark.p2
+    def test_delete_agent_sessions_no_sessions(self, HttpApiAuth, agent_id):
+        res = delete_agent_sessions(HttpApiAuth, agent_id)
+        assert res.get("code") != 0, res
+        assert "has no sessions" in res.get("message", ""), res
+
+    @pytest.mark.p2
+    def test_create_agent_missing_fields(self, HttpApiAuth):
+        res = create_agent(HttpApiAuth, {"title": "missing_dsl"})
+        assert res["code"] != 0, res
+        assert "dsl" in res.get("message", "").lower(), res
+
+        res = create_agent(HttpApiAuth, {"dsl": MINIMAL_DSL})
+        assert res["code"] != 0, res
+        assert "title" in res.get("message", "").lower(), res
+
+    @pytest.mark.p2
+    def test_create_agent_duplicate_title(self, HttpApiAuth, agent_id):
+        res = create_agent(HttpApiAuth, {"title": AGENT_TITLE, "dsl": MINIMAL_DSL})
+        assert res["code"] != 0, res
+        assert "exist" in res.get("message", "").lower(), res
+
+    @pytest.mark.p2
+    def test_list_agents_not_found(self, HttpApiAuth):
+        res = list_agents(HttpApiAuth, {"id": "invalid_agent_id"})
+        assert res["code"] != 0, res
+        assert "exist" in res.get("message", "").lower(), res
+
+    @pytest.mark.p2
+    def test_delete_agent_invalid_id_or_not_found(self, HttpApiAuth):
+        res = delete_agent(HttpApiAuth, "invalid_agent_id")
+        assert res["code"] != 0, res
+        assert "authorized" in res.get("message", "").lower(), res
+
+    @pytest.mark.p2
+    def test_webhook_invalid_agent_id_early_exit(self):
+        url = f"{HOST_ADDRESS}/api/{VERSION}/webhook/invalid_agent_id"
+        res = requests.post(url=url)
+        body = res.json()
+        assert body.get("code") != 0, body
+        assert "not found" in body.get("message", "").lower(), body

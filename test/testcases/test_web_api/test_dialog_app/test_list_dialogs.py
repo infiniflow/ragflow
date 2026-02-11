@@ -14,8 +14,9 @@
 #  limitations under the License.
 #
 import pytest
-from common import batch_create_dialogs, create_dialog, list_dialogs
-from configs import INVALID_API_TOKEN
+import requests
+from common import DIALOG_APP_URL, batch_create_dialogs, create_dialog, list_dialogs
+from configs import HOST_ADDRESS, INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
 
@@ -171,6 +172,39 @@ class TestDialogList:
         assert "parameters" in prompt_config, res
         assert isinstance(prompt_config["system"], str), res
         assert isinstance(prompt_config["parameters"], list), res
+
+    @pytest.mark.p2
+    def test_list_dialogs_next_default(self, WebApiAuth):
+        url = f"{HOST_ADDRESS}{DIALOG_APP_URL}/next"
+        res = requests.post(
+            url=url,
+            auth=WebApiAuth,
+            params={"page": 1, "page_size": 10},
+            json={"owner_ids": []},
+        )
+        data = res.json()
+        assert data.get("code") == 0, data
+        assert isinstance(data.get("data", {}).get("dialogs"), list), data
+        assert isinstance(data.get("data", {}).get("total"), int), data
+
+    @pytest.mark.p2
+    def test_list_dialogs_next_with_owner_ids_invalid(self, WebApiAuth):
+        url = f"{HOST_ADDRESS}{DIALOG_APP_URL}/next"
+        res = requests.post(
+            url=url,
+            auth=WebApiAuth,
+            params={"page": 1, "page_size": 10},
+            json={"owner_ids": ["invalid_owner_id"]},
+        )
+        data = res.json()
+        if data.get("code") == 0:
+            dialogs = data.get("data", {}).get("dialogs", [])
+            total = data.get("data", {}).get("total", 0)
+            assert isinstance(dialogs, list), data
+            assert isinstance(total, int), data
+        else:
+            message = str(data.get("message", "")).lower()
+            assert "owner" in message, data
 
     @pytest.mark.p3
     @pytest.mark.usefixtures("clear_dialogs")

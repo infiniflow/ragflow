@@ -435,8 +435,10 @@ class Dealer:
         sorted_idx = np.argsort(sim_np * -1)
 
         # When vector_similarity_weight is 0, similarity_threshold is not meaningful for term-only scores.
-        post_threshold = 0.0 if vector_similarity_weight <= 0 else similarity_threshold
-        valid_idx = [int(i) for i in sorted_idx if sim_np[i] >= post_threshold]
+        if vector_similarity_weight <= 0:
+            valid_idx = [int(i) for i in sorted_idx]
+        else:
+            valid_idx = [int(i) for i in sorted_idx if sim_np[i] >= similarity_threshold]
         filtered_count = len(valid_idx)
         ranks["total"] = int(filtered_count)
 

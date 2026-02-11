@@ -148,6 +148,18 @@ class TestAddChunk:
         else:
             assert res["message"] == expected_message, res
 
+    @pytest.mark.p2
+    def test_invalid_keywords_type(self, WebApiAuth):
+        payload = {
+            "doc_id": "invalid_document_id",
+            "content_with_weight": "chunk test",
+            "important_kwd": "not_a_list",
+        }
+        res = add_chunk(WebApiAuth, payload)
+        assert res["code"] != 0, res
+        message = str(res.get("message", "")).lower()
+        assert "important_kwd" in message and "list" in message, res
+
     @pytest.mark.p3
     @pytest.mark.parametrize(
         "doc_id, expected_code, expected_message",

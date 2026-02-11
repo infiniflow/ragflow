@@ -200,9 +200,31 @@ class TestKbPipelineLogs:
         assert res["code"] == 101, res
         assert "Pipeline log ID" in res["message"], res
 
+    @pytest.mark.p2
+    def test_list_pipeline_logs_invalid_filters(self, WebApiAuth, add_document):
+        kb_id, _ = add_document
+        res = kb_list_pipeline_logs(WebApiAuth, params={"kb_id": kb_id}, payload={"operation_status": ["BAD"]})
+        assert res["code"] != 0, res
+        assert res["code"] != 500, res
+        assert "Invalid" in res.get("message", ""), res
+
+    @pytest.mark.p2
+    def test_pipeline_log_detail_invalid_id(self, WebApiAuth):
+        res = kb_pipeline_log_detail(WebApiAuth, {"log_id": "invalid"})
+        assert res["code"] != 0, res
+        msg = res.get("message", "")
+        assert "Invalid" in msg and "log" in msg and "ID" in msg, res
+
     @pytest.mark.p3
     def test_delete_pipeline_logs_empty(self, WebApiAuth, add_document):
         kb_id, _ = add_document
         res = kb_delete_pipeline_logs(WebApiAuth, params={"kb_id": kb_id}, payload={"log_ids": []})
         assert res["code"] == 0, res
         assert res["data"] is True, res
+
+    @pytest.mark.p2
+    def test_delete_pipeline_logs_missing_kb_id(self, WebApiAuth):
+        res = kb_delete_pipeline_logs(WebApiAuth, params={}, payload={"log_ids": []})
+        assert res["code"] != 0, res
+        msg = res.get("message", "")
+        assert "Lack" in msg and "KB" in msg and "ID" in msg, res

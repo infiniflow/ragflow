@@ -156,6 +156,15 @@ class TestChatAssistantCreate:
             assert res["message"] == expected_message
 
     @pytest.mark.p2
+    def test_rejects_tenant_id(self, HttpApiAuth):
+        payload = {"name": "tenant_id_test", "dataset_ids": [], "tenant_id": "invalid"}
+        res = create_chat_assistant(HttpApiAuth, payload)
+        assert res["code"] != 0, res
+        message = res.get("message", "").lower()
+        assert "tenant_id" in message, res
+        assert "must not" in message or "not allowed" in message or "not be provided" in message, res
+
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "prompt, expected_code, expected_message",
         [

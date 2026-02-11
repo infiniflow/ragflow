@@ -74,6 +74,15 @@ class TestApiTokens:
         assert rm_res["data"] is True, rm_res
 
     @pytest.mark.p2
+    def test_token_list_canvas_id_branch(self, WebApiAuth):
+        res = api_token_list(WebApiAuth, {"canvas_id": "dummy_canvas_id"})
+        if res["code"] == 0:
+            assert isinstance(res.get("data"), list), res
+        else:
+            message = str(res.get("message", "")).lower()
+            assert "canvas" in message or "not found" in message, res
+
+    @pytest.mark.p2
     def test_stats_basic(self, WebApiAuth):
         res = api_stats(WebApiAuth)
         assert res["code"] == 0, res

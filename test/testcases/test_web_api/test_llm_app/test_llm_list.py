@@ -14,8 +14,9 @@
 #  limitations under the License.
 #
 import pytest
-from common import llm_factories, llm_list
-from configs import INVALID_API_TOKEN
+import requests
+from common import HEADERS, LLM_APP_URL, llm_factories, llm_list
+from configs import HOST_ADDRESS, INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
 
@@ -53,3 +54,31 @@ class TestLLMList:
         res = llm_list(WebApiAuth)
         assert res["code"] == 0, res
         assert isinstance(res["data"], dict), res
+
+    @pytest.mark.p2
+    def test_add_llm_invalid_factory(self, WebApiAuth):
+        payload = {"llm_factory": "invalid_factory"}
+        res = requests.post(
+            url=f"{HOST_ADDRESS}{LLM_APP_URL}/add_llm",
+            headers=HEADERS,
+            auth=WebApiAuth,
+            json=payload,
+        ).json()
+        assert res["code"] != 0, res
+        assert "not allowed" in res.get("message", "").lower(), res
+
+    @pytest.mark.p2
+    def test_my_llms_include_details_shape(self, WebApiAuth):
+        res = requests.get(
+            url=f"{HOST_ADDRESS}{LLM_APP_URL}/my_llms",
+            headers=HEADERS,
+            auth=WebApiAuth,
+            params={"include_details": "true"},
+        ).json()
+        assert res["code"] == 0, res
+        assert isinstance(res["data"], dict), res
+        for value in res["data"].values():
+            assert isinstance(value, dict), res
+            assert "llm" in value, res
+            assert isinstance(value["llm"], list), res
+            assert "tags" in value, res

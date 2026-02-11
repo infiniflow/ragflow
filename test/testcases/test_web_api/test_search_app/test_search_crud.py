@@ -127,6 +127,21 @@ class TestSearchCrud:
         assert res["code"] == 0, res
         assert res["data"].get("name") == new_name, res
 
+    @pytest.mark.p2
+    def test_update_search_config_invalid_type(self, WebApiAuth, search_app):
+        tenant_id = _find_tenant_id(WebApiAuth, search_app)
+        payload = {
+            "search_id": search_app,
+            "name": _search_name("invalid_config"),
+            "search_config": [],
+            "tenant_id": tenant_id,
+        }
+        res = search_update(WebApiAuth, payload)
+        assert res["code"] != 0, res
+        message = res.get("message", "").lower()
+        assert "search_config" in message, res
+        assert "object" in message or "json" in message or "dict" in message, res
+
     @pytest.mark.p3
     def test_create_invalid_name(self, WebApiAuth):
         res = search_create(WebApiAuth, {"name": ""})

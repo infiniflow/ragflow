@@ -16,7 +16,7 @@
 import random
 
 import pytest
-from test_web_api.common import update_message_status, list_memory_message, get_message_content
+from test_web_api.common import update_message_status, list_memory_message, get_message_content, search_message
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
@@ -73,3 +73,17 @@ class TestUpdateMessageStatus:
         res = get_message_content(WebApiAuth, memory_id, message["message_id"])
         assert res["code"] == 0, res
         assert res["data"]["status"], res
+
+
+@pytest.mark.p2
+class TestMessageValidation:
+    def test_message_validation_errors(self, WebApiAuth):
+        res = update_message_status(WebApiAuth, "invalid_memory", 1, "bad")
+        assert res["code"] != 0, res
+        message = str(res.get("message", "")).lower()
+        assert "boolean" in message, res
+
+        res = search_message(WebApiAuth, params={})
+        assert res["code"] != 0, res
+        message = str(res.get("message", "")).lower()
+        assert "memory_id" in message and "query" in message, res

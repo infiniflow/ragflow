@@ -105,6 +105,20 @@ class TestDatasetUpdate:
         assert res["code"] == 102, res
         assert expected_message in res["message"], res
 
+    @pytest.mark.p2
+    def test_update_kb_rejects_not_allowed_parameters(self, WebApiAuth, add_dataset_func):
+        kb_id = add_dataset_func
+        payload = {
+            "kb_id": kb_id,
+            "name": "not_allowed_param_test",
+            "description": "",
+            "parser_id": "naive",
+            "id": "forbidden",
+        }
+        res = update_kb(WebApiAuth, payload)
+        assert res["code"] != 0, res
+        assert "allowed" in res.get("message", ""), res
+
     @pytest.mark.p3
     def test_name_duplicated(self, WebApiAuth, add_datasets_func):
         kb_id = add_datasets_func[0]

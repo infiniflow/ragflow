@@ -1656,6 +1656,9 @@ async def retrieval_test(tenant_id):
                 rename_chunk[new_key] = value
             renamed_chunks.append(rename_chunk)
         ranks["chunks"] = renamed_chunks
+        if not highlight:
+            for chunk in ranks["chunks"]:
+                chunk.pop("highlight", None)
         return get_result(data=ranks)
     except Exception as e:
         if str(e).find("not_found") > 0:

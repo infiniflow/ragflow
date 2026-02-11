@@ -46,6 +46,12 @@ class TestKnowledgeGraph:
         assert isinstance(res["data"]["mind_map"], dict), res
 
     @pytest.mark.p2
+    def test_get_knowledge_graph_no_authorization(self, HttpApiAuth):
+        res = knowledge_graph(HttpApiAuth, "invalid_dataset_id")
+        assert res["code"] != 0, res
+        assert "authorization" in res.get("message", "").lower(), res
+
+    @pytest.mark.p2
     def test_delete_knowledge_graph(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         res = delete_knowledge_graph(HttpApiAuth, dataset_id)

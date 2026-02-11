@@ -36,6 +36,20 @@ class TestAuthorization:
             client.list_datasets()
         assert expected_message in str(exception_info.value)
 
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "invalid_auth",
+        [
+            None,
+            INVALID_API_TOKEN,
+        ],
+    )
+    def test_delete_chats_auth_invalid(self, invalid_auth):
+        client = RAGFlow(invalid_auth, HOST_ADDRESS)
+        with pytest.raises(Exception) as exception_info:
+            client.delete_chats()
+        assert "authentication error" in str(exception_info.value).lower()
+
 
 class TestCapability:
     @pytest.mark.p3
@@ -63,6 +77,15 @@ class TestDatasetsList:
     def test_params_empty(self, client):
         datasets = client.list_datasets(**{})
         assert len(datasets) == 5, str(datasets)
+
+    @pytest.mark.p2
+    def test_get_dataset_not_found_raises(self, client):
+        name = f"missing_{uuid.uuid4().hex}"
+        with pytest.raises(Exception) as exception_info:
+            client.get_dataset(name=name)
+        message = str(exception_info.value)
+        assert name in message
+        assert "dataset" in message.lower()
 
     @pytest.mark.p1
     @pytest.mark.parametrize(

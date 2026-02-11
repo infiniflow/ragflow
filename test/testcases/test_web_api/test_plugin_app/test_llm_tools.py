@@ -40,3 +40,11 @@ class TestPluginTools:
         res = plugin_llm_tools(WebApiAuth)
         assert res["code"] == 0, res
         assert isinstance(res["data"], list), res
+
+    @pytest.mark.p2
+    def test_llm_tools_metadata_shape(self, WebApiAuth):
+        res = plugin_llm_tools(WebApiAuth)
+        assert res["code"] == 0, res
+        assert isinstance(res["data"], list), res
+        if res["data"]:
+            assert all(isinstance(item, dict) for item in res["data"]), res

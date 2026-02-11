@@ -130,3 +130,30 @@ class TestChatCompletionsOpenAI:
         )
         # Should return an error (format may vary based on implementation)
         assert "error" in res or res.get("code") != 0, f"Should return error for invalid chat: {res}"
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "payload, expected_message",
+        [
+            ({"extra_body": "bad"}, "extra_body must be an object"),
+            ({"extra_body": {"reference_metadata": "bad"}}, "reference_metadata must be an object"),
+            ({"extra_body": {"reference_metadata": {"fields": "bad"}}}, "reference_metadata.fields must be an array"),
+            ({"messages": []}, "You have to provide messages"),
+            ({"messages": [{"role": "assistant", "content": "hello"}]}, "last content of this conversation"),
+        ],
+    )
+    def test_openai_chat_completion_extra_body_validation(self, HttpApiAuth, payload, expected_message, request):
+        res = create_chat_assistant(HttpApiAuth, {"name": "openai_validation_test", "dataset_ids": []})
+        assert res["code"] == 0, res
+        chat_id = res["data"]["id"]
+        request.addfinalizer(lambda: delete_chat_assistants(HttpApiAuth))
+
+        base_payload = {
+            "model": "model",
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": False,
+        }
+        base_payload.update(payload)
+        res = chat_completions_openai(HttpApiAuth, chat_id, base_payload)
+        assert res.get("code") != 0 or "error" in res, res
+        assert expected_message in res.get("message", "") or expected_message in res.get("error", ""), res
