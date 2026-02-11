@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timedelta
 from datetime import timezone
 from email.message import Message
-from email.utils import collapse_rfc2231_value, parseaddr
+from email.utils import collapse_rfc2231_value, getaddresses, parseaddr
 from enum import Enum
 from typing import Any
 from typing import cast
@@ -617,9 +617,11 @@ def _sanitize_mailbox_names(mailboxes: list[str]) -> list[str]:
 
 
 def _parse_addrs(raw_header: str) -> list[tuple[str, str]]:
-    addrs = raw_header.split(",")
-    name_addr_pairs = [parseaddr(addr=addr) for addr in addrs if addr]
-    return [(name, addr) for name, addr in name_addr_pairs if addr]
+    if not raw_header:
+        return []
+    # FIX: Use getaddresses to correctly handle quoted commas in display names
+    # e.g. "Galloni, Alessandra" <email@domain.com>
+    return getaddresses([raw_header])
 
 
 def _parse_singular_addr(raw_header: str) -> tuple[str, str]:
