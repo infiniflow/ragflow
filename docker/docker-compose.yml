@@ -41,7 +41,6 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
-      - ../conf/llm_factories.json:/ragflow/conf/llm_factories.json
     env_file: .env
     networks:
       - ragflow
