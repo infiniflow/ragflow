@@ -217,7 +217,7 @@
 > 如果你遇到 Docker 映像檔拉不下來的問題，可以在 **docker/.env** 檔案內根據變數 `RAGFLOW_IMAGE` 的註解提示選擇華為雲或阿里雲的對應映像。
 >
 > - 華為雲鏡像名：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow`
-> - 阿里雲鏡像名：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow`
+> - 阿里雲鏡像名：`infiniflow-registry.cn-shanghai.cr.aliyuncs.com/infiniflow/ragflow`
 
 4. 伺服器啟動成功後再次確認伺服器狀態：
 
