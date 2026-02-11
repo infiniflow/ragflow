@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 
-import asyncio
 import base64
 import json
 import logging
@@ -35,6 +34,10 @@ from common.token_utils import num_tokens_from_string, total_token_count_from_re
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 
+
+
+
+from common.misc_utils import thread_pool_exec
 
 class Base(ABC):
     def __init__(self, **kwargs):
@@ -64,6 +67,61 @@ class Base(ABC):
             hist.append(h)
         return hist
 
+    @staticmethod
+    def _blob_to_data_url(blob, mime_type="image/png"):
+        if isinstance(blob, str):
+            blob = blob.strip()
+            if blob.startswith("data:") or blob.startswith("http://") or blob.startswith("https://") or blob.startswith("file://"):
+                return blob
+            return f"data:{mime_type};base64,{blob}"
+        if isinstance(blob, BytesIO):
+            blob = blob.getvalue()
+        if isinstance(blob, memoryview):
+            blob = blob.tobytes()
+        if isinstance(blob, bytearray):
+            blob = bytes(blob)
+        if isinstance(blob, bytes):
+            b64 = base64.b64encode(blob).decode("utf-8")
+            return f"data:{mime_type};base64,{b64}"
+        return None
+
+    def _normalize_image(self, image):
+        if isinstance(image, dict):
+            inline_data = image.get("inline_data")
+            if isinstance(inline_data, dict):
+                mime = inline_data.get("mime_type") or "image/png"
+                data_url = self._blob_to_data_url(inline_data.get("data"), mime)
+                if data_url:
+                    return data_url
+
+            image_url = image.get("image_url")
+            if isinstance(image_url, dict):
+                data_url = self._blob_to_data_url(image_url.get("url"), image.get("mime_type") or "image/png")
+                if data_url:
+                    return data_url
+            if isinstance(image_url, str):
+                data_url = self._blob_to_data_url(image_url, image.get("mime_type") or "image/png")
+                if data_url:
+                    return data_url
+
+            if "url" in image:
+                data_url = self._blob_to_data_url(image.get("url"), image.get("mime_type") or "image/png")
+                if data_url:
+                    return data_url
+
+            mime = image.get("mime_type") or image.get("media_type") or "image/png"
+            for key in ("blob", "data"):
+                if key in image:
+                    data_url = self._blob_to_data_url(image.get(key), mime)
+                    if data_url:
+                        return data_url
+
+        if isinstance(image, (bytes, bytearray, memoryview, BytesIO)):
+            return self.image2base64(image)
+        if isinstance(image, str):
+            return self._blob_to_data_url(image, "image/png")
+        return self.image2base64(image)
+
     def _image_prompt(self, text, images):
         if not images:
             return text
@@ -73,7 +131,11 @@ class Base(ABC):
 
         pmpt = [{"type": "text", "text": text}]
         for img in images:
-            pmpt.append({"type": "image_url", "image_url": {"url": img if isinstance(img, str) and img.startswith("data:") else f"data:image/png;base64,{img}"}})
+            try:
+                pmpt.append({"type": "image_url", "image_url": {"url": self._normalize_image(img)}})
+            except Exception:
+                logging.warning("[%s] Skip invalid image input in request payload.", self.__class__.__name__)
+                continue
         return pmpt
 
     async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
@@ -245,51 +307,86 @@ class QWenCV(GptV4):
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
 
+    @staticmethod
+    def _extract_text_from_content(content):
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            texts = []
+            for blk in content:
+                if not isinstance(blk, dict):
+                    continue
+                if blk.get("type") in {"text", "input_text"} and blk.get("text"):
+                    texts.append(str(blk["text"]))
+                elif "text" in blk and isinstance(blk.get("text"), (str, int, float)):
+                    texts.append(str(blk["text"]))
+            return "\n".join(texts).strip()
+        return ""
+
+    def _resolve_video_prompt(self, system, history, **kwargs):
+        prompt = kwargs.get("video_prompt") or kwargs.get("prompt")
+        if isinstance(prompt, str) and prompt.strip():
+            return prompt.strip()
+
+        for h in reversed(history or []):
+            if h.get("role") != "user":
+                continue
+            txt = self._extract_text_from_content(h.get("content"))
+            if txt:
+                return txt
+
+        if isinstance(system, str) and system.strip():
+            return system.strip()
+
+        return "Please summarize this video in proper sentences."
+
     async def async_chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
         if video_bytes:
             try:
-                summary, summary_num_tokens = self._process_video(video_bytes, filename)
+                summary, summary_num_tokens = self._process_video(video_bytes, filename, self._resolve_video_prompt(system, history, **kwargs))
                 return summary, summary_num_tokens
             except Exception as e:
                 return "**ERROR**: " + str(e), 0
 
-        return "**ERROR**: Method chat not supported yet.", 0
+        return await super().async_chat(system, history, gen_conf, images=images, **kwargs)
 
-    def _process_video(self, video_bytes, filename):
+    def _process_video(self, video_bytes, filename, prompt):
         from dashscope import MultiModalConversation
 
         video_suffix = Path(filename).suffix or ".mp4"
+        tmp_path = None
         with tempfile.NamedTemporaryFile(delete=False, suffix=video_suffix) as tmp:
             tmp.write(video_bytes)
             tmp_path = tmp.name
 
-            video_path = f"file://{tmp_path}"
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "video": video_path,
-                            "fps": 2,
-                        },
-                        {
-                            "text": "Please summarize this video in proper sentences.",
-                        },
-                    ],
-                }
-            ]
+        video_path = f"file://{tmp_path}"
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "video": video_path,
+                        "fps": 2,
+                    },
+                    {
+                        "text": prompt,
+                    },
+                ],
+            }
+        ]
 
-            def call_api():
-                response = MultiModalConversation.call(
-                    api_key=self.api_key,
-                    model=self.model_name,
-                    messages=messages,
-                )
-                if response.get("message"):
-                    raise Exception(response["message"])
-                summary = response["output"]["choices"][0]["message"].content[0]["text"]
-                return summary, num_tokens_from_string(summary)
+        def call_api():
+            response = MultiModalConversation.call(
+                api_key=self.api_key,
+                model=self.model_name,
+                messages=messages,
+            )
+            if response.get("message"):
+                raise Exception(response["message"])
+            summary = response["output"]["choices"][0]["message"].content[0]["text"]
+            return summary, num_tokens_from_string(summary)
 
+        try:
             try:
                 return call_api()
             except Exception as e1:
@@ -300,6 +397,12 @@ class QWenCV(GptV4):
                     return call_api()
                 except Exception as e2:
                     raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    logging.warning("[QWenCV] Failed to cleanup temp video file: %s", tmp_path)
 
 
 class HunyuanCV(GptV4):
@@ -648,7 +751,7 @@ class OllamaCV(Base):
 
     async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
-            response = await asyncio.to_thread(self.client.chat, model=self.model_name, messages=self._form_history(system, history, images), options=self._clean_conf(gen_conf), keep_alive=self.keep_alive)
+            response = await thread_pool_exec(self.client.chat, model=self.model_name, messages=self._form_history(system, history, images), options=self._clean_conf(gen_conf), keep_alive=self.keep_alive)
 
             ans = response["message"]["content"].strip()
             return ans, response["eval_count"] + response.get("prompt_eval_count", 0)
@@ -658,7 +761,7 @@ class OllamaCV(Base):
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         try:
-            response = await asyncio.to_thread(self.client.chat, model=self.model_name, messages=self._form_history(system, history, images), stream=True, options=self._clean_conf(gen_conf), keep_alive=self.keep_alive)
+            response = await thread_pool_exec(self.client.chat, model=self.model_name, messages=self._form_history(system, history, images), stream=True, options=self._clean_conf(gen_conf), keep_alive=self.keep_alive)
             for resp in response:
                 if resp["done"]:
                     yield resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
@@ -796,7 +899,7 @@ class GeminiCV(Base):
             try:
                 size = len(video_bytes) if video_bytes else 0
                 logging.info(f"[GeminiCV] async_chat called with video: filename={filename} size={size}")
-                summary, summary_num_tokens = await asyncio.to_thread(self._process_video, video_bytes, filename)
+                summary, summary_num_tokens = await thread_pool_exec(self._process_video, video_bytes, filename)
                 return summary, summary_num_tokens
             except Exception as e:
                 logging.info(f"[GeminiCV] async_chat video error: {e}")
@@ -952,7 +1055,7 @@ class NvidiaCV(Base):
 
     async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
-            response = await asyncio.to_thread(self._request, self._form_history(system, history, images), gen_conf)
+            response = await thread_pool_exec(self._request, self._form_history(system, history, images), gen_conf)
             return (response["choices"][0]["message"]["content"].strip(), total_token_count_from_response(response))
         except Exception as e:
             return "**ERROR**: " + str(e), 0
@@ -960,7 +1063,7 @@ class NvidiaCV(Base):
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         total_tokens = 0
         try:
-            response = await asyncio.to_thread(self._request, self._form_history(system, history, images), gen_conf)
+            response = await thread_pool_exec(self._request, self._form_history(system, history, images), gen_conf)
             cnt = response["choices"][0]["message"]["content"]
             total_tokens += total_token_count_from_response(response)
             for resp in cnt:

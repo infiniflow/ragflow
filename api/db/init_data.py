@@ -31,7 +31,7 @@ from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMSer
 from api.db.services.llm_service import LLMService, LLMBundle, get_init_tenant_llm
 from api.db.services.user_service import TenantService, UserTenantService
 from api.db.services.system_settings_service import SystemSettingsService
-from api.db.joint_services.memory_message_service import init_message_id_sequence, init_memory_size_cache
+from api.db.joint_services.memory_message_service import init_message_id_sequence, init_memory_size_cache, fix_missing_tokenized_memory
 from common.constants import LLMType
 from common.file_utils import get_project_base_directory
 from common import settings
@@ -175,6 +175,7 @@ def init_web_data():
     add_graph_templates()
     init_message_id_sequence()
     init_memory_size_cache()
+    fix_missing_tokenized_memory()
     logging.info("init web data success:{}".format(time.time() - start_time))
 
 def init_table():

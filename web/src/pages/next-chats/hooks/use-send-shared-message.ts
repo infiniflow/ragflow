@@ -1,3 +1,4 @@
+import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
@@ -24,8 +25,7 @@ export const useGetSharedChatSearchParams = () => {
   const [searchParams] = useSearchParams();
   const data_prefix = 'data_';
   const data = Object.fromEntries(
-    searchParams
-      .entries()
+    Array.from(searchParams.entries())
       .filter(([key]) => key.startsWith(data_prefix))
       .map(([key, value]) => [key.replace(data_prefix, ''), value]),
   );
@@ -66,12 +66,19 @@ export const useSendSharedMessage = () => {
   const [hasError, setHasError] = useState(false);
 
   const sendMessage = useCallback(
-    async (message: Message, id?: string) => {
+    async (
+      message: Message,
+      id?: string,
+      enableThinking?: boolean,
+      enableInternet?: boolean,
+    ) => {
       const res = await send({
         conversation_id: id ?? conversationId,
         quote: true,
         question: message.content,
         session_id: get(derivedMessages, '0.session_id'),
+        reasoning: enableThinking,
+        internet: enableInternet,
       });
 
       if (isCompletionError(res)) {
@@ -84,14 +91,18 @@ export const useSendSharedMessage = () => {
   );
 
   const handleSendMessage = useCallback(
-    async (message: Message) => {
+    async (
+      message: Message,
+      enableThinking?: boolean,
+      enableInternet?: boolean,
+    ) => {
       if (conversationId !== '') {
-        sendMessage(message);
+        sendMessage(message, undefined, enableThinking, enableInternet);
       } else {
         const data = await setConversation('user id');
         if (data.code === 0) {
           const id = data.data.id;
-          sendMessage(message, id);
+          sendMessage(message, id, enableThinking, enableInternet);
         }
       }
     },
@@ -118,22 +129,29 @@ export const useSendSharedMessage = () => {
   }, [answer, addNewestAnswer]);
 
   const handlePressEnter = useCallback(
-    (documentIds: string[]) => {
+    ({
+      enableThinking,
+      enableInternet,
+    }: NextMessageInputOnPressEnterParameter) => {
       if (trim(value) === '') return;
       const id = uuid();
       if (done) {
         setValue('');
         addNewestQuestion({
           content: value,
-          doc_ids: documentIds,
+          doc_ids: [],
           id,
           role: MessageType.User,
         });
-        handleSendMessage({
-          content: value.trim(),
-          id,
-          role: MessageType.User,
-        });
+        handleSendMessage(
+          {
+            content: value.trim(),
+            id,
+            role: MessageType.User,
+          },
+          enableThinking,
+          enableInternet,
+        );
       }
     },
     [addNewestQuestion, done, handleSendMessage, setValue, value],

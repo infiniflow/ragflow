@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 from time import sleep
 from ragflow_sdk import RAGFlow
 from configs import HOST_ADDRESS, VERSION
@@ -89,6 +90,15 @@ def client(token: str) -> RAGFlow:
 @pytest.fixture(scope="session")
 def WebApiAuth(auth):
     return RAGFlowWebApiAuth(auth)
+
+
+@pytest.fixture
+def require_env_flag():
+    def _require(flag, value="1"):
+        if os.getenv(flag) != value:
+            pytest.skip(f"Requires {flag}={value}")
+
+    return _require
 
 
 @pytest.fixture(scope="function")

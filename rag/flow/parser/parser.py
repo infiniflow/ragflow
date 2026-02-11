@@ -40,6 +40,10 @@ from rag.llm.cv_model import Base as VLM
 from rag.utils.base64_image import image2id
 
 
+
+
+from common.misc_utils import thread_pool_exec
+
 class ParserParam(ProcessParamBase):
     def __init__(self):
         super().__init__()
@@ -157,6 +161,7 @@ class ParserParam(ProcessParamBase):
                     "mkv",
                 ],
                 "output_format": "text",
+                "prompt": "",
             },
         }
 
@@ -499,7 +504,13 @@ class Parser(ProcessBase):
         docx_parser = Docx()
 
         if conf.get("output_format") == "json":
-            sections, tbls = docx_parser(name, binary=blob)
+            main_sections = docx_parser(name, binary=blob)
+            sections = []
+            tbls = []
+            for text, image, html in main_sections:
+                sections.append((text, image))
+                tbls.append(((None, html), ""))
+
             sections = [{"text": section[0], "image": section[1]} for section in sections if section]
             sections.extend([{"text": tb, "image": None, "doc_type_kwd": "table"} for ((_, tb), _) in tbls])
 
@@ -675,7 +686,8 @@ class Parser(ProcessBase):
         self.set_output("output_format", conf["output_format"])
 
         cv_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"])
-        txt = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name))
+        video_prompt = str(conf.get("prompt", "") or "")
+        txt = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name, video_prompt=video_prompt))
 
         self.set_output("text", txt)
 
@@ -845,7 +857,7 @@ class Parser(ProcessBase):
         for p_type, conf in self._param.setups.items():
             if from_upstream.name.split(".")[-1].lower() not in conf.get("suffix", []):
                 continue
-            await asyncio.to_thread(function_map[p_type], name, blob)
+            await thread_pool_exec(function_map[p_type], name, blob)
             done = True
             break
 

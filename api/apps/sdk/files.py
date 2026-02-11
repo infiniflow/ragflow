@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 
-import asyncio
 import pathlib
 import re
 from quart import request, make_response
@@ -24,7 +23,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import get_json_result, get_request_json, server_error_response, token_required
-from common.misc_utils import get_uuid
+from common.misc_utils import get_uuid, thread_pool_exec
 from api.db import FileType
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
@@ -32,7 +31,6 @@ from api.utils.file_utils import filename_type
 from api.utils.web_utils import CONTENT_TYPE_MAP
 from common import settings
 from common.constants import RetCode
-
 
 @manager.route('/file/upload', methods=['POST'])  # noqa: F821
 @token_required
@@ -640,7 +638,7 @@ async def get(tenant_id, file_id):
 async def download_attachment(tenant_id, attachment_id):
     try:
         ext = request.args.get("ext", "markdown")
-        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
         response = await make_response(data)
         response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
 

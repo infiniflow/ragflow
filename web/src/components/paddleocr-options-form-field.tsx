@@ -83,7 +83,7 @@ export function PaddleOCROptionsFormField({
       >
         {(field) => (
           <RAGFlowSelect
-            value={field.value || 'PaddleOCR-VL'}
+            value={field.value || undefined}
             onChange={field.onChange}
             options={algorithmOptions}
             placeholder={t('common.selectPlaceholder', 'Select value')}

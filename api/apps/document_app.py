@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
-import asyncio
 import json
 import os.path
 import pathlib
@@ -27,18 +26,20 @@ from api.db import VALID_FILE_TYPES, FileType
 from api.db.db_models import Task
 from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
-from common.metadata_utils import meta_filter, convert_conditions
+from api.db.services.doc_metadata_service import DocMetadataService
+from common.metadata_utils import meta_filter, convert_conditions, turn2jsonschema
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.db.services.user_service import UserTenantService
-from common.misc_utils import get_uuid
+from common.misc_utils import get_uuid, thread_pool_exec
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
     server_error_response,
-    validate_request, get_request_json,
+    validate_request,
+    get_request_json,
 )
 from api.utils.file_utils import filename_type, thumbnail
 from common.file_utils import get_project_base_directory
@@ -85,8 +86,9 @@ async def upload():
     if not check_kb_team_permission(kb, current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
-    err, files = await asyncio.to_thread(FileService.upload_document, kb, file_objs, current_user.id)
+    err, files = await thread_pool_exec(FileService.upload_document, kb, file_objs, current_user.id)
     if err:
+        files = [f[0] for f in files] if files else []
         return get_json_result(data=files, message="\n".join(err), code=RetCode.SERVER_ERROR)
 
     if not files:
@@ -225,6 +227,7 @@ async def list_docs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
+        
     tenants = UserTenantService.query(user_id=current_user.id)
     for tenant in tenants:
         if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
@@ -279,7 +282,7 @@ async def list_docs():
     doc_ids_filter = None
     metas = None
     if metadata_condition or metadata:
-        metas = DocumentService.get_flatted_meta_by_kbs([kb_id])
+        metas = DocMetadataService.get_flatted_meta_by_kbs([kb_id])
 
     if metadata_condition:
         doc_ids_filter = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
@@ -344,6 +347,8 @@ async def list_docs():
                 doc_item["thumbnail"] = f"/v1/document/image/{kb_id}-{doc_item['thumbnail']}"
             if doc_item.get("source_type"):
                 doc_item["source_type"] = doc_item["source_type"].split("/")[0]
+            if doc_item["parser_config"].get("metadata"):
+                doc_item["parser_config"]["metadata"] = turn2jsonschema(doc_item["parser_config"]["metadata"])
 
         return get_json_result(data={"total": tol, "docs": docs})
     except Exception as e:
@@ -397,7 +402,11 @@ async def doc_infos():
         if not DocumentService.accessible(doc_id, current_user.id):
             return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     docs = DocumentService.get_by_ids(doc_ids)
-    return get_json_result(data=list(docs.dicts()))
+    docs_list = list(docs.dicts())
+    # Add meta_fields for each document
+    for doc in docs_list:
+        doc["meta_fields"] = DocMetadataService.get_document_metadata(doc["id"])
+    return get_json_result(data=docs_list)
 
 
 @manager.route("/metadata/summary", methods=["POST"])  # noqa: F821
@@ -405,6 +414,7 @@ async def doc_infos():
 async def metadata_summary():
     req = await get_request_json()
     kb_id = req.get("kb_id")
+    doc_ids = req.get("doc_ids")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
 
@@ -416,7 +426,7 @@ async def metadata_summary():
         return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
 
     try:
-        summary = DocumentService.get_metadata_summary(kb_id)
+        summary = DocMetadataService.get_metadata_summary(kb_id, doc_ids)
         return get_json_result(data={"summary": summary})
     except Exception as e:
         return server_error_response(e)
@@ -424,35 +434,19 @@ async def metadata_summary():
 
 @manager.route("/metadata/update", methods=["POST"])  # noqa: F821
 @login_required
+@validate_request("doc_ids")
 async def metadata_update():
     req = await get_request_json()
     kb_id = req.get("kb_id")
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-
-    tenants = UserTenantService.query(user_id=current_user.id)
-    for tenant in tenants:
-        if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
-            break
-    else:
-        return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
-
-    selector = req.get("selector", {}) or {}
+    document_ids = req.get("doc_ids")
     updates = req.get("updates", []) or []
     deletes = req.get("deletes", []) or []
 
-    if not isinstance(selector, dict):
-        return get_json_result(data=False, message="selector must be an object.", code=RetCode.ARGUMENT_ERROR)
+    if not kb_id:
+        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
+
     if not isinstance(updates, list) or not isinstance(deletes, list):
         return get_json_result(data=False, message="updates and deletes must be lists.", code=RetCode.ARGUMENT_ERROR)
-
-    metadata_condition = selector.get("metadata_condition", {}) or {}
-    if metadata_condition and not isinstance(metadata_condition, dict):
-        return get_json_result(data=False, message="metadata_condition must be an object.", code=RetCode.ARGUMENT_ERROR)
-
-    document_ids = selector.get("document_ids", []) or []
-    if document_ids and not isinstance(document_ids, list):
-        return get_json_result(data=False, message="document_ids must be a list.", code=RetCode.ARGUMENT_ERROR)
 
     for upd in updates:
         if not isinstance(upd, dict) or not upd.get("key") or "value" not in upd:
@@ -461,24 +455,8 @@ async def metadata_update():
         if not isinstance(d, dict) or not d.get("key"):
             return get_json_result(data=False, message="Each delete requires key.", code=RetCode.ARGUMENT_ERROR)
 
-    kb_doc_ids = KnowledgebaseService.list_documents_by_ids([kb_id])
-    target_doc_ids = set(kb_doc_ids)
-    if document_ids:
-        invalid_ids = set(document_ids) - set(kb_doc_ids)
-        if invalid_ids:
-            return get_json_result(data=False, message=f"These documents do not belong to dataset {kb_id}: {', '.join(invalid_ids)}", code=RetCode.ARGUMENT_ERROR)
-        target_doc_ids = set(document_ids)
-
-    if metadata_condition:
-        metas = DocumentService.get_flatted_meta_by_kbs([kb_id])
-        filtered_ids = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
-        target_doc_ids = target_doc_ids & filtered_ids
-        if metadata_condition.get("conditions") and not target_doc_ids:
-            return get_json_result(data={"updated": 0, "matched_docs": 0})
-
-    target_doc_ids = list(target_doc_ids)
-    updated = DocumentService.batch_update_metadata(kb_id, target_doc_ids, updates, deletes)
-    return get_json_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
+    updated = DocMetadataService.batch_update_metadata(kb_id, document_ids, updates, deletes)
+    return get_json_result(data={"updated": updated, "matched_docs": len(document_ids)})
 
 
 @manager.route("/update_metadata_setting", methods=["POST"])  # noqa: F821
@@ -532,31 +510,61 @@ async def change_status():
         return get_json_result(data=False, message='"Status" must be either 0 or 1!', code=RetCode.ARGUMENT_ERROR)
 
     result = {}
+    has_error = False
     for doc_id in doc_ids:
         if not DocumentService.accessible(doc_id, current_user.id):
             result[doc_id] = {"error": "No authorization."}
+            has_error = True
             continue
 
         try:
             e, doc = DocumentService.get_by_id(doc_id)
             if not e:
                 result[doc_id] = {"error": "No authorization."}
+                has_error = True
                 continue
             e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
             if not e:
                 result[doc_id] = {"error": "Can't find this dataset!"}
+                has_error = True
+                continue
+            current_status = str(doc.status)
+            if current_status == status:
+                result[doc_id] = {"status": status}
                 continue
             if not DocumentService.update_by_id(doc_id, {"status": str(status)}):
                 result[doc_id] = {"error": "Database error (Document update)!"}
+                has_error = True
                 continue
 
             status_int = int(status)
-            if not settings.docStoreConn.update({"doc_id": doc_id}, {"available_int": status_int}, search.index_name(kb.tenant_id), doc.kb_id):
-                result[doc_id] = {"error": "Database error (docStore update)!"}
+            if getattr(doc, "chunk_num", 0) > 0:
+                try:
+                    ok = settings.docStoreConn.update(
+                        {"doc_id": doc_id},
+                        {"available_int": status_int},
+                        search.index_name(kb.tenant_id),
+                        doc.kb_id,
+                    )
+                except Exception as exc:
+                    msg = str(exc)
+                    if "3022" in msg:
+                        result[doc_id] = {"error": "Document store table missing."}
+                    else:
+                        result[doc_id] = {"error": f"Document store update failed: {msg}"}
+                    has_error = True
+                    continue
+                if not ok:
+                    result[doc_id] = {"error": "Database error (docStore update)!"}
+                    has_error = True
+                    continue
             result[doc_id] = {"status": status}
         except Exception as e:
             result[doc_id] = {"error": f"Internal server error: {str(e)}"}
+            has_error = True
 
+    if has_error:
+        return get_json_result(data=result, message="Partial failure", code=RetCode.SERVER_ERROR)
     return get_json_result(data=result)
 
 
@@ -573,7 +581,7 @@ async def rm():
         if not DocumentService.accessible4deletion(doc_id, current_user.id):
             return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
-    errors = await asyncio.to_thread(FileService.delete_docs, doc_ids, current_user.id)
+    errors = await thread_pool_exec(FileService.delete_docs, doc_ids, current_user.id)
 
     if errors:
         return get_json_result(data=False, message=errors, code=RetCode.SERVER_ERROR)
@@ -586,10 +594,11 @@ async def rm():
 @validate_request("doc_ids", "run")
 async def run():
     req = await get_request_json()
+    uid = current_user.id
     try:
         def _run_sync():
             for doc_id in req["doc_ids"]:
-                if not DocumentService.accessible(doc_id, current_user.id):
+                if not DocumentService.accessible(doc_id, uid):
                     return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
             kb_table_num_map = {}
@@ -608,7 +617,9 @@ async def run():
                     return get_data_error_result(message="Document not found!")
 
                 if str(req["run"]) == TaskStatus.CANCEL.value:
-                    if str(doc.run) == TaskStatus.RUNNING.value:
+                    tasks = list(TaskService.query(doc_id=id))
+                    has_unfinished_task = any((task.progress or 0) < 1 for task in tasks)
+                    if str(doc.run) in [TaskStatus.RUNNING.value, TaskStatus.CANCEL.value] or has_unfinished_task:
                         cancel_all_task_of(id)
                     else:
                         return get_data_error_result(message="Cannot cancel a task that is not in RUNNING status")
@@ -635,7 +646,7 @@ async def run():
 
             return get_json_result(data=True)
 
-        return await asyncio.to_thread(_run_sync)
+        return await thread_pool_exec(_run_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -645,9 +656,10 @@ async def run():
 @validate_request("doc_id", "name")
 async def rename():
     req = await get_request_json()
+    uid = current_user.id
     try:
         def _rename_sync():
-            if not DocumentService.accessible(req["doc_id"], current_user.id):
+            if not DocumentService.accessible(req["doc_id"], uid):
                 return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
             e, doc = DocumentService.get_by_id(req["doc_id"])
@@ -686,14 +698,14 @@ async def rename():
                 )
             return get_json_result(data=True)
 
-        return await asyncio.to_thread(_rename_sync)
+        return await thread_pool_exec(_rename_sync)
 
     except Exception as e:
         return server_error_response(e)
 
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
-# @login_required
+@login_required
 async def get(doc_id):
     try:
         e, doc = DocumentService.get_by_id(doc_id)
@@ -701,7 +713,7 @@ async def get(doc_id):
             return get_data_error_result(message="Document not found!")
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
-        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, b, n)
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
         response = await make_response(data)
 
         ext = re.search(r"\.([^.]+)$", doc.name.lower())
@@ -723,7 +735,7 @@ async def get(doc_id):
 async def download_attachment(attachment_id):
     try:
         ext = request.args.get("ext", "markdown")
-        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, current_user.id, attachment_id)
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, current_user.id, attachment_id)
         response = await make_response(data)
         response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
 
@@ -796,7 +808,7 @@ async def get_image(image_id):
         if len(arr) != 2:
             return get_data_error_result(message="Image not found.")
         bkt, nm = image_id.split("-")
-        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, bkt, nm)
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         response = await make_response(data)
         response.headers.set("Content-Type", "image/JPEG")
         return response
@@ -904,7 +916,7 @@ async def set_meta():
         if not e:
             return get_data_error_result(message="Document not found!")
 
-        if not DocumentService.update_by_id(req["doc_id"], {"meta_fields": meta}):
+        if not DocMetadataService.update_document_metadata(req["doc_id"], meta):
             return get_data_error_result(message="Database error (meta updates)!")
 
         return get_json_result(data=True)

@@ -29,7 +29,8 @@ import requests
 from quart import (
     Response,
     jsonify,
-    request
+    request,
+    has_app_context,
 )
 from werkzeug.exceptions import BadRequest as WerkzeugBadRequest
 
@@ -48,8 +49,14 @@ from api.db.services.tenant_llm_service import LLMFactoriesService
 from common.connection_utils import timeout
 from common.constants import RetCode
 from common import settings
+from common.misc_utils import thread_pool_exec
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
+
+def _safe_jsonify(payload: dict):
+    if has_app_context():
+        return jsonify(payload)
+    return payload
 
 
 async def _coerce_request_data() -> dict:
@@ -119,7 +126,7 @@ def get_data_error_result(code=RetCode.DATA_ERROR, message="Sorry! Data missing!
             continue
         else:
             response[key] = value
-    return jsonify(response)
+    return _safe_jsonify(response)
 
 
 def server_error_response(e):
@@ -225,7 +232,7 @@ def active_required(func):
 
 def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=None):
     response = {"code": code, "message": message, "data": data}
-    return jsonify(response)
+    return _safe_jsonify(response)
 
 
 def apikey_required(func):
@@ -246,16 +253,16 @@ def apikey_required(func):
 
 def build_error_result(code=RetCode.FORBIDDEN, message="success"):
     response = {"code": code, "message": message}
-    response = jsonify(response)
-    response.status_code = code
+    response = _safe_jsonify(response)
+    if hasattr(response, "status_code"):
+        response.status_code = code
     return response
 
 
 def construct_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=None):
     if data is None:
-        return jsonify({"code": code, "message": message})
-    else:
-        return jsonify({"code": code, "message": message, "data": data})
+        return _safe_jsonify({"code": code, "message": message})
+    return _safe_jsonify({"code": code, "message": message, "data": data})
 
 
 def token_required(func):
@@ -314,7 +321,7 @@ def get_result(code=RetCode.SUCCESS, message="", data=None, total=None):
     else:
         response["message"] = message or "Error"
 
-    return jsonify(response)
+    return _safe_jsonify(response)
 
 
 def get_error_data_result(
@@ -328,7 +335,7 @@ def get_error_data_result(
             continue
         else:
             response[key] = value
-    return jsonify(response)
+    return _safe_jsonify(response)
 
 
 def get_error_argument_result(message="Invalid arguments"):
@@ -693,7 +700,7 @@ async def is_strong_enough(chat_model, embedding_model):
         nonlocal chat_model, embedding_model
         if embedding_model:
             await asyncio.wait_for(
-                asyncio.to_thread(embedding_model.encode, ["Are you strong enough!?"]),
+                thread_pool_exec(embedding_model.encode, ["Are you strong enough!?"]),
                 timeout=10
             )
 

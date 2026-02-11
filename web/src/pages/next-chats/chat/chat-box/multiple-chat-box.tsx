@@ -39,6 +39,7 @@ import { useSendMessage } from '../../hooks/use-send-chat-message';
 import { useSendMultipleChatMessage } from '../../hooks/use-send-multiple-message';
 import { buildMessageItemReference } from '../../utils';
 import { useAddChatBox } from '../use-add-box';
+import { useShowInternet } from '../use-show-internet';
 import { useSetDefaultModel } from './use-set-default-model';
 
 type MultipleChatBoxProps = {
@@ -226,6 +227,8 @@ export function MultipleChatBox({
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
+  const showInternet = useShowInternet();
+
   return (
     <section className="h-full flex flex-col px-5">
       <div className="flex gap-4 flex-1 px-5 pb-14 min-h-0">
@@ -252,6 +255,7 @@ export function MultipleChatBox({
           sendDisabled={sendDisabled}
           sendLoading={sendLoading}
           value={value}
+          resize="vertical"
           onInputChange={handleInputChange}
           onPressEnter={handlePressEnter}
           conversationId={conversationId}
@@ -260,6 +264,8 @@ export function MultipleChatBox({
           }
           stopOutputMessage={stopOutputMessage}
           onUpload={handleUploadFile}
+          showReasoning
+          showInternet={showInternet}
         />
       </div>
       {visible && (

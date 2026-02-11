@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
 import json
 import logging
 import re
@@ -21,7 +20,6 @@ import math
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 
-from rag.prompts.generator import relevant_chunks_with_toc
 from rag.nlp import rag_tokenizer, query
 import numpy as np
 from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByExpr, DocStoreConnection
@@ -30,6 +28,7 @@ from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common import settings
 
+from common.misc_utils import thread_pool_exec
 
 def index_name(uid): return f"ragflow_{uid}"
 
@@ -51,7 +50,7 @@ class Dealer:
         group_docs: list[list] | None = None
 
     async def get_vector(self, txt, emb_mdl, topk=10, similarity=0.1):
-        qv, _ = await asyncio.to_thread(emb_mdl.encode_queries, txt)
+        qv, _ = await thread_pool_exec(emb_mdl.encode_queries, txt)
         shape = np.array(qv).shape
         if len(shape) > 1:
             raise Exception(
@@ -115,7 +114,7 @@ class Dealer:
             matchText, keywords = self.qryr.question(qst, min_match=0.3)
             if emb_mdl is None:
                 matchExprs = [matchText]
-                res = await asyncio.to_thread(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit,
+                res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit,
                                             idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
@@ -128,7 +127,7 @@ class Dealer:
                 fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
                 matchExprs = [matchText, matchDense, fusionExpr]
 
-                res = await asyncio.to_thread(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit,
+                res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit,
                                             idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
@@ -136,12 +135,12 @@ class Dealer:
                 # If result is empty, try again with lower min_match
                 if total == 0:
                     if filters.get("doc_id"):
-                        res = await asyncio.to_thread(self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
+                        res = await thread_pool_exec(self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
                         total = self.dataStore.get_total(res)
                     else:
                         matchText, _ = self.qryr.question(qst, min_match=0.1)
                         matchDense.extra_options["similarity"] = 0.17
-                        res = await asyncio.to_thread(self.dataStore.search, src, highlightFields, filters, [matchText, matchDense, fusionExpr],
+                        res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, [matchText, matchDense, fusionExpr],
                                                     orderBy, offset, limit, idx_names, kb_ids,
                                                     rank_feature=rank_feature)
                         total = self.dataStore.get_total(res)
@@ -435,7 +434,9 @@ class Dealer:
 
         sorted_idx = np.argsort(sim_np * -1)
 
-        valid_idx = [int(i) for i in sorted_idx if sim_np[i] >= similarity_threshold]
+        # When vector_similarity_weight is 0, similarity_threshold is not meaningful for term-only scores.
+        post_threshold = 0.0 if vector_similarity_weight <= 0 else similarity_threshold
+        valid_idx = [int(i) for i in sorted_idx if sim_np[i] >= post_threshold]
         filtered_count = len(valid_idx)
         ranks["total"] = int(filtered_count)
 
@@ -591,6 +592,7 @@ class Dealer:
         return {a.replace(".", "_"): max(1, c) for a, c in tag_fea}
 
     async def retrieval_by_toc(self, query: str, chunks: list[dict], tenant_ids: list[str], chat_mdl, topn: int = 6):
+        from rag.prompts.generator import relevant_chunks_with_toc # moved from the top of the file to avoid circular import
         if not chunks:
             return []
         idx_nms = [index_name(tid) for tid in tenant_ids]
@@ -625,7 +627,7 @@ class Dealer:
             if cid in id2idx:
                 chunks[id2idx[cid]]["similarity"] += sim
                 continue
-            chunk = self.dataStore.get(cid, idx_nms, kb_ids)
+            chunk = self.dataStore.get(cid, idx_nms[0], kb_ids)
             if not chunk:
                 continue
             d = {
@@ -675,7 +677,7 @@ class Dealer:
 
         vector_size = 1024
         for id, cks in mom_chunks.items():
-            chunk = self.dataStore.get(id, idx_nms, [ck["kb_id"] for ck in cks])
+            chunk = self.dataStore.get(id, idx_nms[0], [ck["kb_id"] for ck in cks])
             d = {
                 "chunk_id": id,
                 "content_ltks": " ".join([ck["content_ltks"] for ck in cks]),

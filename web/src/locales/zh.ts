@@ -56,6 +56,7 @@ export default {
       zendeskDescription: '连接 Zendesk，同步工单、文章及其他内容。',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
       selected: '已选择',
+      seeAll: '查看全部',
     },
     login: {
       loginTitle: '登录账户',
@@ -175,11 +176,16 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        selectFiles: '已选择 {{count}} 个文件',
+        type: '类型',
+        fieldNameInvalid: '字段名称只能包含字母或下划线。',
+        builtIn: '内置',
+        generation: '生成',
         toMetadataSettingTip: '在配置中设置自动元数据',
         toMetadataSetting: '生成设置',
         descriptionTip:
           '提供描述或示例来指导大语言模型为此字段提取值。如果留空，将依赖字段名称。',
-        restrictTDefinedValuesTip:
+        restrictDefinedValuesTip:
           '枚举模式：限制大语言模型提取的值只能匹配预设值。在下方定义值。',
         valueExists: '值已存在。确认合并重复项并组合所有关联文件。',
         fieldNameExists: '字段名已存在。确认合并重复项并组合所有关联文件。',
@@ -188,10 +194,10 @@ export default {
         fieldExists: '字段名已存在。',
         fieldSetting: '字段设置',
         changesAffectNewParses: '更改仅影响新的解析。',
-        editMetadataForDataset: '查看和编辑元数据 ',
+        // editMetadataForDataset: '查看和编辑元数据 ',
         restrictDefinedValues: '限制为已定义的值',
         metadataGenerationSettings: '元数据生成设置',
-        manageMetadataForDataset: '管理此数据集的元数据',
+        // manageMetadataForDataset: '管理此数据集的元数据',
         manageMetadata: '管理元数据',
         metadata: '元数据',
         values: '值',
@@ -417,7 +423,7 @@ export default {
       linkSourceSetTip: '管理与此数据集的数据源链接',
       linkDataSource: '链接数据源',
       tocExtractionTip:
-        '对于已有的chunk生成层级结构的目录信息（每个文件一个目录）。在查询时，激活`目录增强`后，系统会用大模型去判断用户问题和哪些目录项相关，从而找到相关的chunk。',
+        '对于已有的chunk生成层级结构的目录信息（每个文件一个目录）。在查询时，激活`Page Index`后，系统会用大模型去判断用户问题和哪些目录项相关，从而找到相关的chunk。',
       deleteGenerateModalContent: `
         <p>删除生成的 <strong class='text-text-primary'>{{type}}</strong> 结果
           将从此数据集中移除所有派生实体和关系。
@@ -745,8 +751,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '与存在惩罚类似，这减少了模型频繁重复相同单词的倾向。',
       maxTokens: '最大token数',
       maxTokensMessage: '最大token数是必填项',
-      maxTokensTip:
-        '这设置了模型输出的最大长度，以标记（单词或单词片段）的数量来衡量。',
+      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       quote: '显示引文',
@@ -825,10 +830,15 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       chatSetting: '聊天设置',
       avatarHidden: '隐藏头像',
       locale: '地区',
-      tocEnhance: '目录增强',
-      tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
+      tocEnhance: 'PageIndex',
+      tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
+      batchDeleteSessions: '批量删除',
+      deleteSelectedConfirm: '删除选中的 {count} 个会话？',
     },
     setting: {
+      Verify: '验证',
+      keyValid: '你的 API 密钥有效。',
+      keyInvalid: '你的 API 密钥无效。',
       deleteModel: '删除模型',
       modelEmptyTip: '暂无可用模型,<br>请先在右侧面板添加模型。',
       sourceEmptyTip: '暂未添加任何数据源，请从下方选择一个进行连接。',
@@ -928,8 +938,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       profileDescription: '在此更新您的照片和个人详细信息。',
       maxTokens: '最大token数',
       maxTokensMessage: '最大token数是必填项',
-      maxTokensTip:
-        '这设置了模型输出的最大长度，以标记（单词或单词片段）的数量来衡量。',
+      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       password: '密码',
@@ -1044,10 +1053,6 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       'eu-central-1': '欧洲 (法兰克福)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       'ap-southeast-2': '亚太地区 (悉尼)',
-      addHunyuanSID: '混元 Secret ID',
-      HunyuanSIDMessage: '请输入 Secret ID',
-      addHunyuanSK: '混元 Secret Key',
-      HunyuanSKMessage: '请输入 Secret Key',
       addTencentCloudSID: '腾讯云 Secret ID',
       TencentCloudSIDMessage: '请输入 Secret ID',
       addTencentCloudSK: '腾讯云 Secret Key',
@@ -1138,6 +1143,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         modelNameRequired: '模型名称为必填项',
         apiUrlRequired: 'PaddleOCR API URL 为必填项',
       },
+      showToc: '显示目录',
+      hideToc: '隐藏目录',
     },
     message: {
       registered: '注册成功',
@@ -1891,7 +1898,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       keywords: '关键词',
       questions: '问题',
       metadata: '元数据',
-      toc: '目录',
+      toc: 'PageIndex',
       fieldName: '结果目的地',
       prompts: {
         system: {
@@ -2180,6 +2187,24 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       memoryTitle: '尚未创建记忆',
       notFoundMemory: '未查询到记忆',
       addNow: '立即添加',
+    },
+
+    explore: {
+      title: '探索',
+      canvasList: '画布列表',
+      sessions: '会话列表',
+      newSession: '新建会话',
+      newSessionLabel: '开始新对话',
+      deleteSession: '删除会话',
+      searchCanvas: '搜索画布...',
+      searchSessions: '搜索会话...',
+      noCanvasSelected: '请选择一个画布',
+      noSessionSelected: '请选择一个会话或创建新会话',
+      noSessionsFound: '未找到会话',
+      createFirstSession: '创建您的第一个会话',
+      noCanvasFound: '未找到画布',
+      deleteSelectedConfirm: '确定要删除 {{count}} 个会话吗？',
+      batchDeleteSessions: '删除会话',
     },
   },
 };

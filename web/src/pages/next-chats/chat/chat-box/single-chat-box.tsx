@@ -18,6 +18,7 @@ import {
 import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
 import { useSendMessage } from '../../hooks/use-send-chat-message';
 import { buildMessageItemReference } from '../../utils';
+import { useShowInternet } from '../use-show-internet';
 
 interface IProps {
   controller: AbortController;
@@ -54,6 +55,8 @@ export function SingleChatBox({
   const sendDisabled = useSendButtonDisabled(value);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
+
+  const showInternet = useShowInternet();
 
   useEffect(() => {
     const messages = conversation?.message;
@@ -109,6 +112,7 @@ export function SingleChatBox({
         sendDisabled={sendDisabled}
         sendLoading={sendLoading}
         value={value}
+        resize="vertical"
         onInputChange={handleInputChange}
         onPressEnter={handlePressEnter}
         conversationId={conversationId}
@@ -119,6 +123,8 @@ export function SingleChatBox({
         onUpload={handleUploadFile}
         isUploading={isUploading}
         removeFile={removeFile}
+        showReasoning
+        showInternet={showInternet}
       />
       {visible && (
         <PdfSheet

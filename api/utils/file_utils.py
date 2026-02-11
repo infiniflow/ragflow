@@ -84,28 +84,6 @@ def thumbnail_img(filename, blob):
         buffered = BytesIO()
         image.save(buffered, format="png")
         return buffered.getvalue()
-
-    elif re.match(r".*\.(ppt|pptx)$", filename):
-        import aspose.pydrawing as drawing
-        import aspose.slides as slides
-
-        try:
-            with slides.Presentation(BytesIO(blob)) as presentation:
-                buffered = BytesIO()
-                scale = 0.03
-                img = None
-                for _ in range(10):
-                    # https://reference.aspose.com/slides/python-net/aspose.slides/slide/get_thumbnail/#float-float
-                    presentation.slides[0].get_thumbnail(scale, scale).save(buffered, drawing.imaging.ImageFormat.png)
-                    img = buffered.getvalue()
-                    if len(img) >= 64000:
-                        scale = scale / 2.0
-                        buffered = BytesIO()
-                    else:
-                        break
-                return img
-        except Exception:
-            pass
     return None
 
 

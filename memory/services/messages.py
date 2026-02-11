@@ -248,6 +248,21 @@ class MessageService:
         return ids_to_remove, current_size
 
     @classmethod
+    def get_missing_field_messages(cls, memory_id: str, uid: str, field_name: str):
+        select_fields = ["message_id", "content"]
+        _index_name = index_name(uid)
+        res = settings.msgStoreConn.get_missing_field_message(
+            select_fields=select_fields,
+            index_name=_index_name,
+            memory_id=memory_id,
+            field_name=field_name
+        )
+        if not res:
+            return []
+        docs = settings.msgStoreConn.get_fields(res, select_fields)
+        return list(docs.values())
+
+    @classmethod
     def get_by_message_id(cls, memory_id: str, message_id: int, uid: str):
         index = index_name(uid)
         doc_id = f'{memory_id}_{message_id}'

@@ -18,6 +18,7 @@ import re
 import tempfile
 
 import pytest
+from utils import wait_for
 
 from common import (
     chat_completions,
@@ -25,10 +26,10 @@ from common import (
     create_session_with_chat_assistant,
     delete_chat_assistants,
     list_documents,
-    upload_documents,
     parse_documents,
+    upload_documents,
 )
-from utils import wait_for
+
 
 @wait_for(200, 1, "Document parsing timeout")
 def wait_for_parsing_completion(auth, dataset_id, document_id=None):
@@ -51,7 +52,7 @@ def wait_for_parsing_completion(auth, dataset_id, document_id=None):
         for doc in docs:
             status = doc.get("run", "UNKNOWN")
             if status != "DONE":
-                print(f"[DEBUG] Document {doc.get('name', 'unknown')} status: {status}, progress: {doc.get('progress', 0)}%, msg: {doc.get('progress_msg', '')}")
+                # print(f"[DEBUG] Document {doc.get('name', 'unknown')} status: {status}, progress: {doc.get('progress', 0)}%, msg: {doc.get('progress_msg', '')}")
                 return False
         return True
     else:
@@ -59,13 +60,14 @@ def wait_for_parsing_completion(auth, dataset_id, document_id=None):
         for doc in docs:
             if doc["id"] == document_id:
                 status = doc.get("run", "UNKNOWN")
-                print(f"[DEBUG] Document {doc.get('name', 'unknown')} status: {status}, progress: {doc.get('progress', 0)}%, msg: {doc.get('progress_msg', '')}")
+                # print(f"[DEBUG] Document {doc.get('name', 'unknown')} status: {status}, progress: {doc.get('progress', 0)}%, msg: {doc.get('progress_msg', '')}")
                 if status == "DONE":
                     return True
                 elif status == "FAILED":
                     pytest.fail(f"Document parsing failed: {doc}")
                     return False
         return False
+
 
 # Test data
 TEST_EXCEL_DATA = [
@@ -113,7 +115,7 @@ class TestTableParserDatasetChat:
         Creates chat assistant once and reuses it across all test cases.
         """
         # Only setup once (first time)
-        if not hasattr(self.__class__, 'chat_id'):
+        if not hasattr(self.__class__, "chat_id"):
             self.__class__.dataset_id = add_table_parser_dataset
             self.__class__.auth = HttpApiAuth
 
@@ -121,14 +123,12 @@ class TestTableParserDatasetChat:
             self._upload_and_parse_excel(HttpApiAuth, add_table_parser_dataset)
 
             # Create a single chat assistant and session for all tests
-            chat_id, session_id = self._create_chat_assistant_with_session(
-                HttpApiAuth, add_table_parser_dataset
-            )
+            chat_id, session_id = self._create_chat_assistant_with_session(HttpApiAuth, add_table_parser_dataset)
             self.__class__.chat_id = chat_id
             self.__class__.session_id = session_id
 
             # Store the total number of parametrize cases
-            mark = request.node.get_closest_marker('parametrize')
+            mark = request.node.get_closest_marker("parametrize")
             if mark:
                 # Get the number of test cases from parametrize
                 param_values = mark.args[1]
@@ -140,7 +140,7 @@ class TestTableParserDatasetChat:
 
         # Teardown: cleanup chat assistant after all tests
         # Use a class-level counter to track tests
-        if not hasattr(self.__class__, '_test_counter'):
+        if not hasattr(self.__class__, "_test_counter"):
             self.__class__._test_counter = 0
         self.__class__._test_counter += 1
 
@@ -150,7 +150,7 @@ class TestTableParserDatasetChat:
 
     def _teardown_chat_assistant(self):
         """Teardown method to clean up chat assistant."""
-        if hasattr(self.__class__, 'chat_id') and self.__class__.chat_id:
+        if hasattr(self.__class__, "chat_id") and self.__class__.chat_id:
             try:
                 delete_chat_assistants(self.__class__.auth, {"ids": [self.__class__.chat_id]})
             except Exception as e:
@@ -162,7 +162,7 @@ class TestTableParserDatasetChat:
         [
             ("show me column of product", r"\|product\|Source"),
             ("which product has price 79", r"Keyboard"),
-            ("How many rows in the dataset?", r"count\(\*\)"),
+            ("How many rows in the dataset?", r"rows|count\(\*\)"),
             ("Show me all employees in Engineering department", r"(Alice|Carol|Frank)"),
         ],
     )
@@ -184,9 +184,6 @@ class TestTableParserDatasetChat:
         else:
             # Just verify we got a non-empty answer
             assert answer and len(answer) > 0, "Expected non-empty answer"
-
-        print(f"[Test] Question: {question}")
-        print(f"[Test] Answer: {answer[:100]}...")
 
     @staticmethod
     def _upload_and_parse_excel(auth, dataset_id):

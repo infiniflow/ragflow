@@ -9,7 +9,7 @@ mysql:
   user: '${MYSQL_USER:-root}'
   password: '${MYSQL_PASSWORD:-infini_rag_flow}'
   host: '${MYSQL_HOST:-mysql}'
-  port: 3306
+  port: ${MYSQL_PORT:-3306}
   max_connections: 900
   stale_timeout: 300
   max_allowed_packet: ${MYSQL_MAX_PACKET:-1073741824}
@@ -81,6 +81,8 @@ user_default_llm:
 #   region: '${REGION}'
 #   bucket: '${BUCKET}'
 #   prefix_path: '${OSS_PREFIX_PATH}'
+#   signature_version: 's3'
+#   addressing_style: 'virtual'
 # azure:
 #   auth_type: 'sas'
 #   container_url: 'container_url'

@@ -2,6 +2,7 @@ import { RAGFlowFormItem } from '@/components/ragflow-form';
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -9,12 +10,15 @@ import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { RAGFlowSelect, RAGFlowSelectOptionType } from '@/components/ui/select';
 import { LLMFactory } from '@/constants/llm';
+import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
+import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { LLMHeader } from '../../components/llm-header';
+import VerifyButton from '../verify-button';
 
 const FormSchema = z.object({
   llm_name: z.string().min(1, {
@@ -33,6 +37,9 @@ export interface IModalProps<T> {
   visible: boolean;
   hideModal: () => void;
   onOk?: (data: T) => Promise<boolean>;
+  onVerify?: (
+    postBody: any,
+  ) => Promise<boolean | void | VerifyResult | undefined>;
   loading?: boolean;
 }
 
@@ -44,6 +51,7 @@ const PaddleOCRModal = ({
   visible,
   hideModal,
   onOk,
+  onVerify,
   loading,
 }: IModalProps<PaddleOCRFormValues>) => {
   const { t } = useTranslation();
@@ -113,22 +121,29 @@ const PaddleOCRModal = ({
                 />
               )}
             </RAGFlowFormItem>
-            <div className="flex justify-end space-x-2">
-              <button
-                type="button"
-                onClick={hideModal}
-                className="btn btn-secondary"
-              >
-                {t('common.cancel')}
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="btn btn-primary"
-              >
-                {t('common.add')}
-              </button>
-            </div>
+            {onVerify && (
+              <VerifyButton
+                onVerify={onVerify as (postBody: any) => Promise<VerifyResult>}
+              />
+            )}
+            <DialogFooter>
+              <div className="flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={hideModal}
+                  className="btn btn-secondary"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="btn btn-primary"
+                >
+                  {t('common.add')}
+                </button>
+              </div>
+            </DialogFooter>
           </form>
         </Form>
       </DialogContent>
@@ -136,4 +151,4 @@ const PaddleOCRModal = ({
   );
 };
 
-export default PaddleOCRModal;
+export default memo(PaddleOCRModal);
