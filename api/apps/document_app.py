@@ -26,6 +26,7 @@ from api.db import VALID_FILE_TYPES, FileType
 from api.db.db_models import Task
 from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
+from api.db.services.doc_metadata_service import DocMetadataService
 from common.metadata_utils import meta_filter, convert_conditions, turn2jsonschema
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -281,7 +282,7 @@ async def list_docs():
     doc_ids_filter = None
     metas = None
     if metadata_condition or metadata:
-        metas = DocumentService.get_flatted_meta_by_kbs([kb_id])
+        metas = DocMetadataService.get_flatted_meta_by_kbs([kb_id])
 
     if metadata_condition:
         doc_ids_filter = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
@@ -401,7 +402,11 @@ async def doc_infos():
         if not DocumentService.accessible(doc_id, current_user.id):
             return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     docs = DocumentService.get_by_ids(doc_ids)
-    return get_json_result(data=list(docs.dicts()))
+    docs_list = list(docs.dicts())
+    # Add meta_fields for each document
+    for doc in docs_list:
+        doc["meta_fields"] = DocMetadataService.get_document_metadata(doc["id"])
+    return get_json_result(data=docs_list)
 
 
 @manager.route("/metadata/summary", methods=["POST"])  # noqa: F821
@@ -421,7 +426,7 @@ async def metadata_summary():
         return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
 
     try:
-        summary = DocumentService.get_metadata_summary(kb_id, doc_ids)
+        summary = DocMetadataService.get_metadata_summary(kb_id, doc_ids)
         return get_json_result(data={"summary": summary})
     except Exception as e:
         return server_error_response(e)
@@ -432,9 +437,13 @@ async def metadata_summary():
 @validate_request("doc_ids")
 async def metadata_update():
     req = await get_request_json()
+    kb_id = req.get("kb_id")
     document_ids = req.get("doc_ids")
     updates = req.get("updates", []) or []
     deletes = req.get("deletes", []) or []
+
+    if not kb_id:
+        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
 
     if not isinstance(updates, list) or not isinstance(deletes, list):
         return get_json_result(data=False, message="updates and deletes must be lists.", code=RetCode.ARGUMENT_ERROR)
@@ -446,8 +455,8 @@ async def metadata_update():
         if not isinstance(d, dict) or not d.get("key"):
             return get_json_result(data=False, message="Each delete requires key.", code=RetCode.ARGUMENT_ERROR)
 
-    updated = DocumentService.batch_update_metadata(None, document_ids, updates, deletes)
-    return get_json_result(data={"updated": updated})
+    updated = DocMetadataService.batch_update_metadata(kb_id, document_ids, updates, deletes)
+    return get_json_result(data={"updated": updated, "matched_docs": len(document_ids)})
 
 
 @manager.route("/update_metadata_setting", methods=["POST"])  # noqa: F821
@@ -608,7 +617,9 @@ async def run():
                     return get_data_error_result(message="Document not found!")
 
                 if str(req["run"]) == TaskStatus.CANCEL.value:
-                    if str(doc.run) == TaskStatus.RUNNING.value:
+                    tasks = list(TaskService.query(doc_id=id))
+                    has_unfinished_task = any((task.progress or 0) < 1 for task in tasks)
+                    if str(doc.run) in [TaskStatus.RUNNING.value, TaskStatus.CANCEL.value] or has_unfinished_task:
                         cancel_all_task_of(id)
                     else:
                         return get_data_error_result(message="Cannot cancel a task that is not in RUNNING status")
@@ -694,7 +705,7 @@ async def rename():
 
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
-# @login_required
+@login_required
 async def get(doc_id):
     try:
         e, doc = DocumentService.get_by_id(doc_id)
@@ -905,7 +916,7 @@ async def set_meta():
         if not e:
             return get_data_error_result(message="Document not found!")
 
-        if not DocumentService.update_by_id(req["doc_id"], {"meta_fields": meta}):
+        if not DocMetadataService.update_document_metadata(req["doc_id"], meta):
             return get_data_error_result(message="Database error (meta updates)!")
 
         return get_json_result(data=True)

@@ -81,7 +81,7 @@ class TestChatAssistantCreate:
         chat_assistant = client.create_chat(name="avatar_test", avatar=encode_avatar(fn), dataset_ids=[])
         assert chat_assistant.name == "avatar_test"
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "llm, expected_message",
         [
@@ -137,7 +137,7 @@ class TestChatAssistantCreate:
                 assert attrgetter("frequency_penalty")(chat_assistant.llm) == 0.7
                 assert attrgetter("max_tokens")(chat_assistant.llm) == 512
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "prompt, expected_message",
         [

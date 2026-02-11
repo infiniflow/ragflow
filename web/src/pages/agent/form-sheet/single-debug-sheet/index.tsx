@@ -60,6 +60,8 @@ const SingleDebugSheet = ({
             isNext={false}
             loading={loading}
             submitButtonDisabled={list.length === 0}
+            className="flex-1 overflow-auto min-h-0 pb-5"
+            maxHeight="max-h-[83vh]"
           ></DebugContent>
           {!isEmpty(data) ? (
             <div
