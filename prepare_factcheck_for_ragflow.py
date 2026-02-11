@@ -1,6 +1,5 @@
-import os
 from pathlib import Path
-import re
+
 
 def extract_qa_from_article(content, filename):
     """Extract Q&A pairs from fact-check article"""
