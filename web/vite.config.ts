@@ -70,7 +70,14 @@ export default defineConfig(({ mode, command }) => {
           changeOrigin: true,
           ws: true,
         },
-        '^/(api|v1)': {
+
+        '/api': {
+          target: 'http://127.0.0.1:9380/',
+          changeOrigin: true,
+          ws: true,
+        },
+
+        '/v1': {
           target: 'http://127.0.0.1:9380/',
           changeOrigin: true,
           ws: true,

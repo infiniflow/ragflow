@@ -1,5 +1,10 @@
 import { lazy, memo, Suspense } from 'react';
-import { createBrowserRouter, Navigate, redirect, type RouteObject } from 'react-router';
+import {
+  createBrowserRouter,
+  Navigate,
+  redirect,
+  type RouteObject,
+} from 'react-router';
 import FallbackComponent from './components/fallback-component';
 import { IS_ENTERPRISE } from './pages/admin/utils';
 import authorizationUtil from './utils/authorization-util';
@@ -22,11 +27,11 @@ export enum Routes {
   MemoryMessage = '/memory-message',
   MemorySetting = '/memory-setting',
   AgentList = '/agent-list',
-  Searches = '/next-searches',
-  Search = '/next-search',
-  SearchShare = '/next-search/share',
-  Chats = '/next-chats',
-  Chat = '/next-chat',
+  Searches = '/searches',
+  Search = '/search',
+  SearchShare = '/search/share',
+  Chats = '/chats',
+  Chat = '/chat',
   Files = '/files',
   ProfileSetting = '/profile-setting',
   Profile = '/profile',
