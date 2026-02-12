@@ -64,6 +64,9 @@ class DocumentSource(str, Enum):
     BITBUCKET = "bitbucket"
     ZENDESK = "zendesk"
     PAPERLESS_NGX = "paperless_ngx"
+    SEAFILE = "seafile"
+    MYSQL = "mysql"
+    POSTGRESQL = "postgresql"
 
 
 class FileOrigin(str, Enum):

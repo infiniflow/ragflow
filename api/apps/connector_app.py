@@ -74,7 +74,7 @@ async def set_connector():
             "source": req["source"],
             "input_type": InputType.POLL,
             "config": req["config"],
-            "refresh_freq": int(req.get("refresh_freq", 30)),
+            "refresh_freq": int(req.get("refresh_freq", 5)),
             "prune_freq": int(req.get("prune_freq", 720)),
             "timeout_secs": int(req.get("timeout_secs", 60 * 29)),
             "status": TaskStatus.SCHEDULE,

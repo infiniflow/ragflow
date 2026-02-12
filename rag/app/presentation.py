@@ -163,7 +163,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 logging.warning(f"{error_msg} for {filename}.")
                 raise NotImplementedError(error_msg)
             
-            binary_data = binary if binary else open(filename, 'rb').read()
+            if binary:
+                binary_data = binary
+            else:
+                with open(filename, 'rb') as f:
+                    binary_data = f.read()
             doc_parsed = tika_parser.from_buffer(BytesIO(binary_data))
             
             if doc_parsed.get("content", None) is not None:

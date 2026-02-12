@@ -31,7 +31,7 @@ import * as ReactDOM from 'react-dom';
 
 import { $createVariableNode } from './variable-node';
 
-import { JsonSchemaDataType } from '@/pages/agent/constant';
+import { JsonSchemaDataType, VariableRegex } from '@/pages/agent/constant';
 import {
   useFindAgentStructuredOutputLabel,
   useShowSecondaryMenu,
@@ -299,7 +299,7 @@ export default function VariablePickerMenuPlugin({
   // Handles variable references in the format {variable_name}.
   const parseLineContent = useCallback(
     (line: string, paragraph: ReturnType<typeof $createParagraphNode>) => {
-      const regex = /{([^}]*)}/g;
+      const regex = VariableRegex;
       let match;
       let lastIndex = 0;
 

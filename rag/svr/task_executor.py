@@ -165,6 +165,8 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
         if cancel:
             raise TaskCanceledException(msg)
         logging.info(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}")
+    except TaskCanceledException:
+        raise
     except DoesNotExist:
         logging.warning(f"set_progress({task_id}) got exception DoesNotExist")
     except Exception as e:
@@ -693,6 +695,8 @@ async def run_dataflow(task: dict):
             for i, ck in enumerate(chunks):
                 v = vects[i].tolist()
                 ck["q_%d_vec" % len(v)] = v
+        except TaskCanceledException:
+            raise
         except Exception as e:
             set_progress(task_id, prog=-1, msg=f"[ERROR]: {e}")
             PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id,
@@ -960,8 +964,9 @@ async def do_handle_task(task):
     task_tenant_id = task["tenant_id"]
     task_embedding_id = task["embd_id"]
     task_language = task["language"]
-    task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
-    task["llm_id"] = task_llm_id
+    doc_task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
+    kb_task_llm_id = task['kb_parser_config'].get("llm_id") or task["llm_id"]
+    task['llm_id'] = kb_task_llm_id
     task_dataset_id = task["kb_id"]
     task_doc_id = task["doc_id"]
     task_document_name = task["name"]
@@ -1032,7 +1037,7 @@ async def do_handle_task(task):
             return
 
         # bind LLM for raptor
-        chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
+        chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=kb_task_llm_id, lang=task_language)
         # run RAPTOR
         async with kg_limiter:
             chunks, token_count = await run_raptor_for_kb(
@@ -1076,7 +1081,7 @@ async def do_handle_task(task):
 
         graphrag_conf = kb_parser_config.get("graphrag", {})
         start_ts = timer()
-        chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
+        chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=kb_task_llm_id, lang=task_language)
         with_resolution = graphrag_conf.get("resolution", False)
         with_community = graphrag_conf.get("community", False)
         async with kg_limiter:
@@ -1101,6 +1106,7 @@ async def do_handle_task(task):
         return
     else:
         # Standard chunking methods
+        task['llm_id'] = doc_task_llm_id
         start_ts = timer()
         chunks = await build_chunks(task, progress_callback)
         logging.info("Build document {}: {:.2f}s".format(task_document_name, timer() - start_ts))
@@ -1111,6 +1117,8 @@ async def do_handle_task(task):
         start_ts = timer()
         try:
             token_count, vector_size = await embedding(chunks, embedding_model, task_parser_config, progress_callback)
+        except TaskCanceledException:
+            raise
         except Exception as e:
             error_message = "Generate embedding error:{}".format(str(e))
             progress_callback(-1, error_message)
@@ -1128,12 +1136,16 @@ async def do_handle_task(task):
 
     async def _maybe_insert_chunks(_chunks):
         if has_canceled(task_id):
-            return True
+            progress_callback(-1, msg="Task has been canceled.")
+            return False
         insert_result = await insert_chunks(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
         return bool(insert_result)
 
     try:
         if not await _maybe_insert_chunks(chunks):
+            return
+        if has_canceled(task_id):
+            progress_callback(-1, msg="Task has been canceled.")
             return
 
         logging.info(
@@ -1203,6 +1215,12 @@ async def handle_task():
         DONE_TASKS += 1
         CURRENT_TASKS.pop(task_id, None)
         logging.info(f"handle_task done for task {json.dumps(task)}")
+    except TaskCanceledException as e:
+        DONE_TASKS += 1
+        CURRENT_TASKS.pop(task_id, None)
+        logging.info(
+            f"handle_task canceled for task {task_id}: {getattr(e, 'msg', str(e))}"
+        )
     except Exception as e:
         FAILED_TASKS += 1
         CURRENT_TASKS.pop(task_id, None)

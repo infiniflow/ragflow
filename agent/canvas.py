@@ -78,13 +78,14 @@ class Graph:
         }
         """
 
-    def __init__(self, dsl: str, tenant_id=None, task_id=None):
+    def __init__(self, dsl: str, tenant_id=None, task_id=None, custom_header=None):
         self.path = []
         self.components = {}
         self.error = ""
         self.dsl = json.loads(dsl)
         self._tenant_id = tenant_id
         self.task_id = task_id if task_id else get_uuid()
+        self.custom_header = custom_header
         self._thread_pool = ThreadPoolExecutor(max_workers=5)
         self.load()
 
@@ -94,6 +95,7 @@ class Graph:
         for k, cpn in self.components.items():
             cpn_nms.add(cpn["obj"]["component_name"])
             param = component_class(cpn["obj"]["component_name"] + "Param")()
+            cpn["obj"]["params"]["custom_header"] = self.custom_header
             param.update(cpn["obj"]["params"])
             try:
                 param.check()
@@ -278,7 +280,7 @@ class Graph:
 
 class Canvas(Graph):
 
-    def __init__(self, dsl: str, tenant_id=None, task_id=None, canvas_id=None):
+    def __init__(self, dsl: str, tenant_id=None, task_id=None, canvas_id=None, custom_header=None):
         self.globals = {
             "sys.query": "",
             "sys.user_id": tenant_id,
@@ -287,7 +289,7 @@ class Canvas(Graph):
             "sys.history": []
         }
         self.variables = {}
-        super().__init__(dsl, tenant_id, task_id)
+        super().__init__(dsl, tenant_id, task_id, custom_header=custom_header)
         self._id = canvas_id
 
     def load(self):
