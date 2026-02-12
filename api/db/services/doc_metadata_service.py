@@ -231,8 +231,9 @@ class DocMetadataService:
                             new_values.append(item)
                     else:
                         new_values.append(item)
-                # Remove duplicates while preserving order
-                processed[key] = list(dict.fromkeys(new_values))
+                # Remove duplicates while preserving order.
+                # Use string-based dedupe to support unhashable values (e.g. dict entries).
+                processed[key] = dedupe_list(new_values)
             else:
                 processed[key] = value
 
