@@ -16,8 +16,6 @@
 import pytest
 import sys
 from pathlib import Path
-import types
-import json
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from session_stub import load_session_module
