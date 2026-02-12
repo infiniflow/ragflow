@@ -16,8 +16,8 @@ Released on February 10, 2026.
 ### New features
 
 - Memory
-  - Introduces a series of memory management APIs.
-  - Outputs Memory extraction log to the console for debugging and tracing.
+  - Introduces memory management APIs (HTTP and Python).
+  - Outputs Memory extraction log to the console.
 - Dataset
   - Supports batch metadata management.
   - Renames "ToC (Table of Contents)" to "PageIndex". See [here](./guides/dataset/extract_table_of_contents.md).
@@ -47,6 +47,16 @@ Released on February 10, 2026.
 
 - Zendesk
 - Bitbucket
+
+### API changes
+
+#### HTTP API
+
+[Memory management API](./references/http_api_reference.md#memory-management)
+
+#### Python API
+
+[Memory management API](./references/python_api_reference.md#memory-management)
 
 ## v0.23.1
 
