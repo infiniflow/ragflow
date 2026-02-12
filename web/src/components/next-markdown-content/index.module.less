@@ -10,6 +10,25 @@
     padding-left: 10px;
     border-left: 4px solid #ccc;
   }
+
+  // RTL Support
+  &[dir='rtl'] {
+    text-align: right;
+
+    :global(section.think) {
+      padding-left: 0;
+      padding-right: 10px;
+      border-left: none;
+      border-right: 2px solid #d5d3d3;
+    }
+
+    :global(blockquote) {
+      padding-left: 0;
+      padding-right: 10px;
+      border-left: none;
+      border-right: 4px solid #ccc;
+    }
+  }
 }
 
 .referencePopoverWrapper {
@@ -36,6 +55,11 @@
   .chunkText;
   max-height: 45vh;
   overflow-y: auto;
+
+  // RTL Support
+  &[dir='rtl'] {
+    text-align: right;
+  }
 }
 .documentLink {
   padding: 0;

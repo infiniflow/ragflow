@@ -8,6 +8,7 @@ import {
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import {
   currentReg,
+  parseCitationIndex,
   preprocessLaTeX,
   replaceTextByOldReg,
   replaceThinkToSection,
@@ -41,7 +42,8 @@ import { Button } from './ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
-const getChunkIndex = (match: string) => Number(match.replace(/\[|\]/g, ''));
+const getChunkIndex = (match: string) =>
+  parseCitationIndex(match.replace(/\[|\]/g, ''));
 
 const FloatingChatWidgetMarkdown = ({
   reference,

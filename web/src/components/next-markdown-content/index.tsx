@@ -18,10 +18,12 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 
 import {
   currentReg,
+  parseCitationIndex,
   preprocessLaTeX,
   replaceTextByOldReg,
   replaceThinkToSection,
 } from '@/utils/chat';
+import { getDirAttribute } from '@/utils/text-direction';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { cn } from '@/lib/utils';
@@ -37,7 +39,7 @@ import {
 } from '../ui/hover-card';
 import styles from './index.module.less';
 
-const getChunkIndex = (match: string) => Number(match);
+const getChunkIndex = (match: string) => parseCitationIndex(match);
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
 function MarkdownContent({
   reference,
@@ -171,6 +173,7 @@ function MarkdownContent({
                 __html: DOMPurify.sanitize(chunkItem?.content ?? ''),
               }}
               className={classNames(styles.chunkContentText, 'w-full')}
+              dir="auto"
             ></div>
             {documentId && (
               <div className="flex gap-1">
@@ -215,9 +218,9 @@ function MarkdownContent({
         return (
           <HoverCard key={i}>
             <HoverCardTrigger>
-              <span className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap">
+              <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
                 Fig. {chunkIndex + 1}
-              </span>
+              </bdi>
             </HoverCardTrigger>
             <HoverCardContent className="max-w-3xl">
               {renderPopoverContent(chunkIndex)}
@@ -236,8 +239,14 @@ function MarkdownContent({
       rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
       remarkPlugins={[remarkGfm, remarkMath]}
       className={styles.markdownContentWrapper}
+      dir={getDirAttribute(content)}
       components={
         {
+          p: ({ children, ...props }: any) => (
+            <p dir="auto" {...props}>
+              {children}
+            </p>
+          ),
           'custom-typography': ({ children }: { children: string }) =>
             renderReference(children),
           code(props: any) {

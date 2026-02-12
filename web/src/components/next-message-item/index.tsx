@@ -21,6 +21,7 @@ import { INodeEvent, MessageEventType } from '@/hooks/use-send-message';
 import { cn } from '@/lib/utils';
 import { AgentChatContext } from '@/pages/agent/context';
 import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workflow-timeline';
+import { getDirAttribute } from '@/utils/text-direction';
 import { isEmpty } from 'lodash';
 import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
 import MarkdownContent from '../next-markdown-content';
@@ -149,6 +150,7 @@ function MessageItem({
           [styles.messageUserText]: !isAssistant,
           'bg-bg-card': !isAssistant,
         })}
+        dir={getDirAttribute(messageContent)}
       >
         {item.data ? (
           children

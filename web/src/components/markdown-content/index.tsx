@@ -2,6 +2,7 @@ import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
+import { getDirAttribute } from '@/utils/text-direction';
 import DOMPurify from 'dompurify';
 import { useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
@@ -19,6 +20,7 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import {
   currentReg,
+  parseCitationIndex,
   preprocessLaTeX,
   replaceTextByOldReg,
   replaceThinkToSection,
@@ -35,7 +37,7 @@ import {
 } from '../ui/hover-card';
 import styles from './index.module.less';
 
-const getChunkIndex = (match: string) => Number(match);
+const getChunkIndex = (match: string) => parseCitationIndex(match);
 
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
 const MarkdownContent = ({
@@ -169,6 +171,7 @@ const MarkdownContent = ({
                 __html: DOMPurify.sanitize(chunkItem?.content ?? ''),
               }}
               className={classNames(styles.chunkContentText)}
+              dir="auto"
             ></div>
             {documentId && (
               <section className="flex gap-1">
@@ -213,9 +216,9 @@ const MarkdownContent = ({
         return (
           <HoverCard key={i}>
             <HoverCardTrigger>
-              <span className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap">
+              <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
                 Fig. {chunkIndex + 1}
-              </span>
+              </bdi>
             </HoverCardTrigger>
             <HoverCardContent className="max-w-3xl">
               {getPopoverContent(chunkIndex)}
@@ -234,8 +237,14 @@ const MarkdownContent = ({
       rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
       remarkPlugins={[remarkGfm, remarkMath]}
       className={styles.markdownContentWrapper}
+      dir={getDirAttribute(content)}
       components={
         {
+          p: ({ children, ...props }: any) => (
+            <p dir="auto" {...props}>
+              {children}
+            </p>
+          ),
           'custom-typography': ({ children }: { children: string }) =>
             renderReference(children),
           code(props: any) {
