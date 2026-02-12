@@ -16,7 +16,7 @@ Released on February 10, 2026.
 ### New features
 
 - Memory
-  - Introduces APIs and an SDK for developer integration.
+  - Introduces a series of memory management APIs.
   - Outputs Memory extraction log to the console for debugging and tracing.
 - Dataset
   - Supports batch metadata management.
@@ -28,9 +28,9 @@ Released on February 10, 2026.
   - Adds a new "Thinking" mode and removes the previous "Reasoning" configuration option.
   - Optimizes retrieval strategies for deep-research scenarios, enhancing recall accuracy.
 - Admin
-  - Supports configuring multiple Admin accounts.
+  - Supports multiple Admin accounts.
 - Model configuration center
-  - Adds a model connection test feature when adding new models.
+  - Adds model connection test for new models.
 
 ### MySQL alternative
 
