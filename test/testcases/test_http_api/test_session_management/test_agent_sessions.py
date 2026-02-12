@@ -15,6 +15,9 @@
 #
 import requests
 import pytest
+import types
+from pathlib import Path
+import sys
 from common import (
     create_agent,
     create_agent_session,
@@ -24,6 +27,9 @@ from common import (
     list_agents,
 )
 from configs import HOST_ADDRESS, VERSION
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from session_stub import load_session_module
 
 AGENT_TITLE = "test_agent_http"
 MINIMAL_DSL = {
@@ -131,3 +137,134 @@ class TestAgentSessions:
         body = res.json()
         assert body.get("code") != 0, body
         assert "not found" in body.get("message", "").lower(), body
+
+
+@pytest.mark.asyncio
+async def test_create_agent_session_agent_not_found(monkeypatch):
+    mod = load_session_module(monkeypatch)
+    mod.UserCanvasService.get_by_id = classmethod(lambda cls, _id: (False, None))
+    resp = await mod.create_agent_session("tenant", "agent")
+    assert resp["code"] != 0
+    assert resp["message"] == "Agent not found."
+
+
+@pytest.mark.asyncio
+async def test_create_agent_session_access_denied(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    cvs = types.SimpleNamespace(id="agent", dsl="{}")
+    mod.UserCanvasService.get_by_id = classmethod(lambda cls, _id: (True, cvs))
+    mod.UserCanvasService.query = classmethod(lambda cls, **_kwargs: [])
+
+    resp = await mod.create_agent_session("tenant", "agent")
+    assert resp["code"] != 0
+    assert resp["message"] == "You cannot access the agent."
+
+
+@pytest.mark.asyncio
+async def test_list_agent_sessions_invalid_owner(monkeypatch):
+    mod = load_session_module(monkeypatch)
+    mod.UserCanvasService.query = classmethod(lambda cls, **_kwargs: [])
+    resp = await mod.list_agent_session("tenant", "agent")
+    assert resp["code"] != 0
+    assert "You don't own the agent" in resp["message"]
+
+
+@pytest.mark.asyncio
+async def test_list_agent_sessions_desc_false_and_empty(monkeypatch):
+    mod = load_session_module(monkeypatch)
+    mod.UserCanvasService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(id="agent")])
+
+    captured = {}
+
+    def _get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, _id, user_id, include_dsl):
+        captured["desc"] = desc
+        return 0, []
+
+    mod.API4ConversationService.get_list = classmethod(lambda cls, *args, **kwargs: _get_list(*args, **kwargs))
+    mod._stub_request.args = {"desc": "false"}
+    resp = await mod.list_agent_session("tenant", "agent")
+    assert resp["code"] == 0
+    assert resp["data"] == []
+    assert captured["desc"] is False
+
+
+@pytest.mark.asyncio
+async def test_list_agent_sessions_reference_mapping_guards(monkeypatch):
+    mod = load_session_module(monkeypatch)
+    mod.UserCanvasService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(id="agent")])
+
+    convs = [
+        {
+            "id": "c1",
+            "dialog_id": "agent",
+            "message": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "ok", "prompt": "p"}],
+            "reference": "not-list",
+        },
+        {
+            "id": "c2",
+            "dialog_id": "agent",
+            "message": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "ok"}],
+            "reference": [{"chunks": ["bad", {"chunk_id": "ch1", "content": "c"}]}],
+        },
+    ]
+
+    mod.API4ConversationService.get_list = classmethod(
+        lambda cls, *args, **kwargs: (2, [dict(item) for item in convs])
+    )
+
+    resp = await mod.list_agent_session("tenant", "agent")
+    assert resp["code"] == 0
+    data = resp["data"]
+    assert data[0]["messages"][1].get("prompt") is None
+    assert data[0]["messages"][1]["reference"] == []
+    assert data[1]["messages"][1]["reference"][0]["id"] == "ch1"
+
+
+@pytest.mark.asyncio
+async def test_delete_agent_sessions_not_owner(monkeypatch):
+    mod = load_session_module(monkeypatch)
+    mod.UserCanvasService.query = classmethod(lambda cls, **_kwargs: [])
+    resp = await mod.delete_agent_session("tenant", "agent")
+    assert resp["code"] != 0
+    assert "You don't own the agent" in resp["message"]
+
+
+@pytest.mark.asyncio
+async def test_delete_agent_sessions_partial_errors_and_duplicates(monkeypatch):
+    mod = load_session_module(monkeypatch)
+    mod.UserCanvasService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(id="agent")])
+    mod._stub_request._json = {"ids": ["s1", "s2"]}
+
+    async def _get_request_json():
+        return {"ids": ["s1", "s2"]}
+
+    mod.get_request_json = _get_request_json
+
+    mod.API4ConversationService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(id="s1"), types.SimpleNamespace(id="s2")])
+
+    def _query_by_id(**kwargs):
+        if kwargs.get("id") == "s1":
+            return []
+        return [types.SimpleNamespace(id=kwargs.get("id"))]
+
+    mod.API4ConversationService.query = classmethod(lambda cls, **kwargs: _query_by_id(**kwargs) if "id" in kwargs else [types.SimpleNamespace(id="s1"), types.SimpleNamespace(id="s2")])
+
+    mod.check_duplicate_ids = lambda ids, _kind="session": (ids, [])
+    resp = await mod.delete_agent_session("tenant", "agent")
+    assert resp["code"] == 0
+    assert "Partially deleted" in resp.get("message", "")
+
+    mod.API4ConversationService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(id="s1")])
+    mod.check_duplicate_ids = lambda ids, _kind="session": (["s1"], ["duplicate s1"])
+    mod.API4ConversationService.query = classmethod(lambda cls, **kwargs: [types.SimpleNamespace(id="s1")] if "id" in kwargs else [types.SimpleNamespace(id="s1")])
+    resp = await mod.delete_agent_session("tenant", "agent")
+    assert resp["code"] == 0
+    assert "Partially deleted" in resp.get("message", "")
+
+    mod.API4ConversationService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(id="s1")])
+    mod.check_duplicate_ids = lambda ids, _kind="session": (["s1"], ["duplicate s1"])
+    mod.API4ConversationService.query = classmethod(lambda cls, **kwargs: [] if "id" in kwargs else [types.SimpleNamespace(id="s1")])
+    resp = await mod.delete_agent_session("tenant", "agent")
+    assert resp["code"] != 0
+    assert "duplicate" in resp.get("message", "")

@@ -112,14 +112,12 @@ class TestDocumentMetadata:
         assert len(res["data"]) == 1, res
         assert res["data"][0]["id"] == doc_id, res
 
-    ## The inputs has been changed to add 'doc_ids'
-    ## TODO: 
-    #@pytest.mark.p2
-    #def test_metadata_summary(self, WebApiAuth, add_document_func):
-    #    kb_id, _ = add_document_func
-    #    res = document_metadata_summary(WebApiAuth, {"kb_id": kb_id})
-    #    assert res["code"] == 0, res
-    #    assert isinstance(res["data"]["summary"], dict), res
+    @pytest.mark.p2
+    def test_metadata_summary_success(self, WebApiAuth, add_document_func):
+        kb_id, doc_id = add_document_func
+        res = document_metadata_summary(WebApiAuth, {"kb_id": kb_id, "doc_ids": [doc_id]})
+        assert res["code"] == 0, res
+        assert "summary" in res.get("data", {}), res
 
     ## The inputs has been changed to deprecate 'selector'
     ## TODO: 
@@ -254,6 +252,12 @@ class TestDocumentMetadataNegative:
         assert "metadata" in res["message"], res
 
     @pytest.mark.p3
+    def test_update_metadata_setting_no_auth(self, WebApiAuth):
+        res = document_update_metadata_setting(WebApiAuth, {"doc_id": "invalid_doc", "metadata": {}})
+        assert res["code"] == 109, res
+        assert "No authorization" in res["message"], res
+
+    @pytest.mark.p3
     def test_change_status_invalid_status(self, WebApiAuth, add_document_func):
         _, doc_id = add_document_func
         res = document_change_status(WebApiAuth, {"doc_ids": [doc_id], "status": "2"})
@@ -287,6 +291,28 @@ class TestDocumentMetadataNegative:
         kb_id, doc_id = add_document_func
         payload = {"kb_id": kb_id, "doc_ids": [doc_id], **payload}
         res = document_metadata_update(WebApiAuth, payload)
+        assert res["code"] != 0, res
+        assert expected_message in res.get("message", ""), res
+
+    @pytest.mark.p3
+    def test_metadata_update_missing_kb_id(self, WebApiAuth, add_document_func):
+        _, doc_id = add_document_func
+        payload = {"doc_ids": [doc_id], "updates": [], "deletes": []}
+        res = document_metadata_update(WebApiAuth, payload)
+        assert res["code"] == 101, res
+        assert "KB ID" in res["message"], res
+
+    @pytest.mark.p3
+    @pytest.mark.parametrize(
+        "payload, expected_message",
+        [
+            ({"run_status": ["BAD"]}, "Invalid filter run status conditions"),
+            ({"types": ["BADTYPE"]}, "Invalid filter conditions"),
+        ],
+    )
+    def test_filter_invalid_filters(self, WebApiAuth, add_dataset_func, payload, expected_message):
+        kb_id = add_dataset_func
+        res = document_filter(WebApiAuth, {"kb_id": kb_id, **payload})
         assert res["code"] != 0, res
         assert expected_message in res.get("message", ""), res
 

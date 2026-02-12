@@ -41,12 +41,26 @@ class TestAuthorization:
 
 class TestDocumentCreate:
     @pytest.mark.p3
+    def test_create_missing_kb_id(self, WebApiAuth):
+        res = create_document(WebApiAuth, {"name": "ragflow_test.txt"})
+        assert res["code"] == 101, res
+        assert "kb_id" in res["message"].lower(), res
+
+    @pytest.mark.p3
     def test_filename_empty(self, WebApiAuth, add_dataset_func):
         kb_id = add_dataset_func
         payload = {"name": "", "kb_id": kb_id}
         res = create_document(WebApiAuth, payload)
         assert res["code"] == 101, res
         assert res["message"] == "File name can't be empty.", res
+
+    @pytest.mark.p3
+    def test_filename_whitespace_only(self, WebApiAuth, add_dataset_func):
+        kb_id = add_dataset_func
+        payload = {"name": "   ", "kb_id": kb_id}
+        res = create_document(WebApiAuth, payload)
+        assert res["code"] == 101, res
+        assert "empty" in res["message"].lower(), res
 
     @pytest.mark.p2
     def test_filename_max_length(self, WebApiAuth, add_dataset_func, tmp_path):
@@ -61,6 +75,16 @@ class TestDocumentCreate:
         res = create_document(WebApiAuth, {"name": "ragflow_test.txt", "kb_id": "invalid_kb_id"})
         assert res["code"] == 102, res
         assert res["message"] == "Can't find this dataset!", res
+
+    @pytest.mark.p2
+    def test_duplicate_name(self, WebApiAuth, add_dataset_func):
+        kb_id = add_dataset_func
+        payload = {"name": "dup_name.txt", "kb_id": kb_id}
+        res = create_document(WebApiAuth, payload)
+        assert res["code"] == 0, res
+        res = create_document(WebApiAuth, payload)
+        assert res["code"] != 0, res
+        assert "Duplicated" in res.get("message", ""), res
 
     @pytest.mark.p3
     def test_filename_special_characters(self, WebApiAuth, add_dataset_func):

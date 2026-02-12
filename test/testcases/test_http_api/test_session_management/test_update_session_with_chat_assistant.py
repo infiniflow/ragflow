@@ -15,8 +15,14 @@
 #
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from random import randint
+import types
 
 import pytest
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from session_stub import load_session_module
 from common import delete_chat_assistants, list_session_with_chat_assistants, update_session_with_chat_assistant
 from configs import INVALID_API_TOKEN, INVALID_ID_32, SESSION_WITH_CHAT_NAME_LIMIT
 from libs.auth import RAGFlowHttpApiAuth
@@ -67,6 +73,21 @@ class TestSessionWithChatAssistantUpdate:
             assert res["data"][0]["name"] == payload["name"]
         else:
             assert res["message"] == expected_message
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "payload, expected_message",
+        [
+            ({"message": []}, "`message` can not be change"),
+            ({"messages": []}, "`message` can not be change"),
+            ({"reference": []}, "`reference` can not be change"),
+        ],
+    )
+    def test_immutable_fields(self, HttpApiAuth, add_sessions_with_chat_assistant_func, payload, expected_message):
+        chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
+        res = update_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, session_ids[0], payload)
+        assert res["code"] == 102, res
+        assert expected_message in res.get("message", ""), res
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -147,3 +168,74 @@ class TestSessionWithChatAssistantUpdate:
         res = update_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, session_ids[0], {"name": "valid_name"})
         assert res["code"] == 102
         assert res["message"] == "You do not own the session"
+
+
+@pytest.mark.asyncio
+async def test_update_session_not_found(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    async def _get_request_json():
+        return {"name": "new"}
+
+    mod.get_request_json = _get_request_json
+    mod.ConversationService.query = classmethod(lambda cls, **_kwargs: [])
+
+    resp = await mod.update("tenant", "chat", "session")
+    assert resp["code"] != 0
+    assert resp["message"] == "Session does not exist"
+
+
+@pytest.mark.asyncio
+async def test_update_session_not_owned(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    async def _get_request_json():
+        return {"name": "new"}
+
+    mod.get_request_json = _get_request_json
+    mod.ConversationService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(id="session")])
+    mod.DialogService.query = classmethod(lambda cls, **_kwargs: [])
+
+    resp = await mod.update("tenant", "chat", "session")
+    assert resp["code"] != 0
+    assert resp["message"] == "You do not own the session"
+
+
+@pytest.mark.asyncio
+async def test_update_session_immutable_fields(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    async def _get_request_json():
+        return {"message": [{"role": "user", "content": "hi"}]}
+
+    mod.get_request_json = _get_request_json
+    mod.ConversationService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(id="session")])
+    mod.DialogService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(id="chat")])
+
+    resp = await mod.update("tenant", "chat", "session")
+    assert resp["code"] != 0
+    assert "message" in resp["message"]
+
+    async def _get_request_json_ref():
+        return {"reference": ["ref"]}
+
+    mod.get_request_json = _get_request_json_ref
+    resp = await mod.update("tenant", "chat", "session")
+    assert resp["code"] != 0
+    assert "reference" in resp["message"]
+
+
+@pytest.mark.asyncio
+async def test_update_session_empty_name(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    async def _get_request_json():
+        return {"name": ""}
+
+    mod.get_request_json = _get_request_json
+    mod.ConversationService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(id="session")])
+    mod.DialogService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(id="chat")])
+
+    resp = await mod.update("tenant", "chat", "session")
+    assert resp["code"] != 0
+    assert "`name` can not be empty." in resp["message"]

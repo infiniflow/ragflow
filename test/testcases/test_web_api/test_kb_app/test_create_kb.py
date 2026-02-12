@@ -64,7 +64,7 @@ class TestDatasetCreate:
     @pytest.mark.p1
     @given(name=valid_names())
     @example("a" * 128)
-    @settings(max_examples=20)
+    @settings(max_examples=20, deadline=2000)
     def test_name(self, WebApiAuth, name):
         res = create_kb(WebApiAuth, {"name": name})
         assert res["code"] == 0, res

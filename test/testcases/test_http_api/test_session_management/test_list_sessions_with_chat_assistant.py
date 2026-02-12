@@ -16,6 +16,12 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
+import sys
+from pathlib import Path
+import types
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from session_stub import load_session_module
 from common import delete_chat_assistants, list_session_with_chat_assistants
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
@@ -42,6 +48,12 @@ class TestAuthorization:
 
 
 class TestSessionsWithChatAssistantList:
+    @pytest.mark.p2
+    def test_invalid_chat_owner(self, HttpApiAuth):
+        res = list_session_with_chat_assistants(HttpApiAuth, "invalid_chat_assistant_id")
+        assert res["code"] == 102, res
+        assert "You don't own the assistant" in res.get("message", ""), res
+
     @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
@@ -248,3 +260,45 @@ class TestSessionsWithChatAssistantList:
         res = list_session_with_chat_assistants(HttpApiAuth, chat_assistant_id)
         assert res["code"] == 102
         assert "You don't own the assistant" in res["message"]
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_invalid_owner(monkeypatch):
+    mod = load_session_module(monkeypatch)
+    mod.DialogService.query = classmethod(lambda cls, **_kwargs: [])
+    resp = await mod.list_session("tenant", "chat")
+    assert resp["code"] != 0
+    assert "You don't own the assistant" in resp["message"]
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_desc_false_and_reference_mapping(monkeypatch):
+    mod = load_session_module(monkeypatch)
+    mod.DialogService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(id="chat")])
+    captured = {}
+
+    def _get_list(chat_id, page_number, items_per_page, orderby, desc, _id, name, user_id):
+        captured["desc"] = desc
+        return [
+            {
+                "id": "s1",
+                "dialog_id": chat_id,
+                "message": [
+                    {"role": "user", "content": "hi"},
+                    {"role": "assistant", "content": "ok", "prompt": "p"},
+                ],
+                "reference": [
+                    {"chunks": [{"chunk_id": "c1", "content_with_weight": "ref"}]}
+                ],
+            }
+        ]
+
+    mod.ConversationService.get_list = classmethod(lambda cls, *args, **kwargs: _get_list(*args, **kwargs))
+    mod._stub_request.args = {"desc": "false"}
+
+    resp = await mod.list_session("tenant", "chat")
+    assert resp["code"] == 0
+    data = resp["data"][0]
+    assert captured["desc"] is False
+    assert "prompt" not in data["messages"][1]
+    assert data["messages"][1]["reference"][0]["id"] == "c1"

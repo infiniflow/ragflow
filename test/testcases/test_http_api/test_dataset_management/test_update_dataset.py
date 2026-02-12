@@ -17,6 +17,8 @@ import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from uuid import uuid4
+
 import pytest
 from common import list_datasets, update_dataset
 from configs import DATASET_NAME_LIMIT, INVALID_API_TOKEN
@@ -276,21 +278,23 @@ class TestDatasetUpdate:
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
-        "name, embedding_model",
+        "name, embedding_model, expect_unauthorized",
         [
-            ("unknown_llm_name", "unknown@ZHIPU-AI"),
-            ("unknown_llm_factory", "embedding-3@unknown"),
-            ("tenant_no_auth_default_tenant_llm", "text-embedding-v3@Tongyi-Qianwen"),
-            ("tenant_no_auth", "text-embedding-3-small@OpenAI"),
+            ("unsupported_factory", f"embedding-{uuid4().hex}@no-such-factory-{uuid4().hex}", False),
+            ("unsupported_name", f"no-such-model-{uuid4().hex}@no-such-factory-{uuid4().hex}", False),
+            ("tenant_no_auth_default_tenant_llm", "text-embedding-v3@Tongyi-Qianwen", True),
+            ("tenant_no_auth", "text-embedding-3-small@OpenAI", True),
         ],
-        ids=["unknown_llm_name", "unknown_llm_factory", "tenant_no_auth_default_tenant_llm", "tenant_no_auth"],
+        ids=["unsupported_factory", "unsupported_name", "tenant_no_auth_default_tenant_llm", "tenant_no_auth"],
     )
-    def test_embedding_model_invalid(self, HttpApiAuth, add_dataset_func, name, embedding_model):
+    def test_embedding_model_invalid(self, HttpApiAuth, add_dataset_func, name, embedding_model, expect_unauthorized):
         dataset_id = add_dataset_func
         payload = {"name": name, "embedding_model": embedding_model}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
+        if expect_unauthorized and res.get("code") == 0:
+            pytest.skip("Embedding model is authorized in this environment")
         assert res["code"] == 101, res
-        if "tenant_no_auth" in name:
+        if expect_unauthorized:
             assert res["message"] == f"Unauthorized model: <{embedding_model}>", res
         else:
             assert res["message"] == f"Unsupported model: <{embedding_model}>", res

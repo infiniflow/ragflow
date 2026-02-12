@@ -14,6 +14,13 @@
 #  limitations under the License.
 #
 import pytest
+from pathlib import Path
+import sys
+import types
+import json
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from session_stub import load_session_module
 from common import (
     bulk_upload_documents,
     chat_completions_openai,
@@ -138,6 +145,7 @@ class TestChatCompletionsOpenAI:
             ({"extra_body": "bad"}, "extra_body must be an object"),
             ({"extra_body": {"reference_metadata": "bad"}}, "reference_metadata must be an object"),
             ({"extra_body": {"reference_metadata": {"fields": "bad"}}}, "reference_metadata.fields must be an array"),
+            ({"extra_body": {"metadata_condition": "bad"}}, "metadata_condition must be an object"),
             ({"messages": []}, "You have to provide messages"),
             ({"messages": [{"role": "assistant", "content": "hello"}]}, "last content of this conversation"),
         ],
@@ -157,3 +165,176 @@ class TestChatCompletionsOpenAI:
         res = chat_completions_openai(HttpApiAuth, chat_id, base_payload)
         assert res.get("code") != 0 or "error" in res, res
         assert expected_message in res.get("message", "") or expected_message in res.get("error", ""), res
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_metadata_condition_type(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    async def _get_request_json():
+        return {
+            "model": "model",
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": False,
+            "extra_body": {"metadata_condition": "bad"},
+        }
+
+    mod.get_request_json = _get_request_json
+    mod.DialogService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(kb_ids=[])])
+
+    resp = await mod.chat_completion_openai_like("tenant", "chat")
+    assert resp["code"] != 0
+    assert "metadata_condition" in resp["message"]
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_metadata_condition_doc_ids(monkeypatch):
+    mod = load_session_module(monkeypatch)
+    captured = {}
+
+    async def _get_request_json():
+        return {
+            "model": "model",
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": True,
+            "extra_body": {"metadata_condition": {"conditions": [{"name": "author"}]}},
+        }
+
+    async def _async_chat(_dia, _msg, _stream, **kwargs):
+        captured.update(kwargs)
+        if False:
+            yield None
+
+    mod.get_request_json = _get_request_json
+    mod.DialogService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(kb_ids=["kb"])])
+    mod.meta_filter = lambda _metas, _conditions, _logic: []
+    mod.async_chat = _async_chat
+
+    resp = await mod.chat_completion_openai_like("tenant", "chat")
+    assert isinstance(resp, mod.Response)
+    assert captured["doc_ids"] == "-999"
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_message_filtering(monkeypatch):
+    mod = load_session_module(monkeypatch)
+    captured = {}
+
+    async def _get_request_json():
+        return {
+            "model": "model",
+            "messages": [
+                {"role": "system", "content": "sys"},
+                {"role": "assistant", "content": "assistant"},
+                {"role": "user", "content": "hello"},
+            ],
+            "stream": False,
+        }
+
+    async def _async_chat(_dia, msg, _stream, **_kwargs):
+        captured["msg"] = msg
+        yield {"answer": "ok"}
+
+    mod.get_request_json = _get_request_json
+    mod.DialogService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(kb_ids=[])])
+    mod.async_chat = _async_chat
+
+    resp = await mod.chat_completion_openai_like("tenant", "chat")
+    assert resp["choices"][0]["message"]["content"] == "ok"
+    assert all(m["role"] != "system" for m in captured["msg"])
+    assert captured["msg"][0]["role"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_stream_reasoning_and_reference(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    async def _get_request_json():
+        return {
+            "model": "model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+            "extra_body": {"reference": True},
+        }
+
+    async def _async_chat(_dia, _msg, _stream, **_kwargs):
+        yield {"start_to_think": True}
+        yield {"answer": "think"}
+        yield {"end_to_think": True}
+        yield {"answer": "hello"}
+        yield {"final": True, "answer": "final", "reference": {"chunks": [{"chunk_id": "c1", "content": "ref"}]}}
+
+    mod.get_request_json = _get_request_json
+    mod.DialogService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(kb_ids=[])])
+    mod.async_chat = _async_chat
+
+    resp = await mod.chat_completion_openai_like("tenant", "chat")
+    payloads = []
+    done = False
+    async for line in resp.response:
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            done = True
+            continue
+        payloads.append(json.loads(data))
+
+    assert done is True
+    last = payloads[-1]
+    delta = last["choices"][0]["delta"]
+    assert delta["reference"][0]["id"] == "c1"
+    assert delta["final_content"] == "final"
+    assert last["usage"]["total_tokens"] == last["usage"]["prompt_tokens"] + last["usage"]["completion_tokens"]
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_stream_error_chunk(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    async def _get_request_json():
+        return {
+            "model": "model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        }
+
+    async def _async_chat(_dia, _msg, _stream, **_kwargs):
+        raise RuntimeError("boom")
+        if False:
+            yield None
+
+    mod.get_request_json = _get_request_json
+    mod.DialogService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(kb_ids=[])])
+    mod.async_chat = _async_chat
+
+    resp = await mod.chat_completion_openai_like("tenant", "chat")
+    lines = []
+    async for line in resp.response:
+        lines.append(line)
+    assert any("**ERROR**" in line for line in lines)
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_non_stream_reference(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    async def _get_request_json():
+        return {
+            "model": "model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": False,
+            "extra_body": {"reference": True, "metadata_condition": {"conditions": [{"name": "author"}]}},
+        }
+
+    async def _async_chat(_dia, _msg, _stream, **kwargs):
+        assert kwargs.get("doc_ids") == "-999"
+        yield {"answer": "ok", "reference": {"chunks": [{"chunk_id": "c1", "content": "ref"}]}}
+
+    mod.get_request_json = _get_request_json
+    mod.DialogService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(kb_ids=["kb"])])
+    mod.meta_filter = lambda _metas, _conditions, _logic: []
+    mod.async_chat = _async_chat
+
+    resp = await mod.chat_completion_openai_like("tenant", "chat")
+    assert resp["choices"][0]["message"]["reference"][0]["id"] == "c1"

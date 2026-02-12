@@ -13,7 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from pathlib import Path
 from time import sleep
+import shutil
 
 import pytest
 from common import (
@@ -41,6 +43,13 @@ from utils.file_utils import (
     create_ppt_file,
     create_txt_file,
 )
+
+
+def pytest_sessionstart(session):
+    root = Path(__file__).resolve().parents[2]
+    for path in root.rglob("__pycache__"):
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
 
 
 @wait_for(30, 1, "Document parsing timeout")
@@ -91,6 +100,7 @@ def clear_datasets(request, HttpApiAuth):
     def cleanup():
         delete_datasets(HttpApiAuth, {"ids": None})
 
+    delete_datasets(HttpApiAuth, {"ids": None})
     request.addfinalizer(cleanup)
 
 
@@ -108,9 +118,10 @@ def clear_session_with_chat_assistants(request, HttpApiAuth, add_chat_assistants
         for chat_assistant_id in chat_assistant_ids:
             delete_session_with_chat_assistants(HttpApiAuth, chat_assistant_id)
 
-    request.addfinalizer(cleanup)
-
     _, _, chat_assistant_ids = add_chat_assistants
+    for chat_assistant_id in chat_assistant_ids:
+        delete_session_with_chat_assistants(HttpApiAuth, chat_assistant_id)
+    request.addfinalizer(cleanup)
 
 
 @pytest.fixture(scope="class")

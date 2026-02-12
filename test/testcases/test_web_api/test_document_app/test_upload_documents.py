@@ -95,6 +95,13 @@ class TestDocumentsUpload:
         assert res["message"] == "No file part!", res
 
     @pytest.mark.p3
+    def test_upload_missing_kb_id(self, WebApiAuth, tmp_path):
+        fp = create_txt_file(tmp_path / "ragflow_test.txt")
+        res = upload_documents(WebApiAuth, {}, [fp])
+        assert res["code"] == 101, res
+        assert "KB ID" in res["message"], res
+
+    @pytest.mark.p3
     def test_empty_file(self, WebApiAuth, add_dataset_func, tmp_path):
         kb_id = add_dataset_func
         fp = tmp_path / "empty.txt"

@@ -19,6 +19,11 @@ import pytest
 from common import create_session_with_chat_assistant, delete_chat_assistants, list_session_with_chat_assistants
 from configs import INVALID_API_TOKEN, SESSION_WITH_CHAT_NAME_LIMIT
 from libs.auth import RAGFlowHttpApiAuth
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from session_stub import load_session_module
 
 
 @pytest.mark.p1
@@ -117,3 +122,18 @@ class TestSessionWithChatAssistantCreate:
         res = create_session_with_chat_assistant(HttpApiAuth, chat_assistant_ids[0], {"name": "valid_name"})
         assert res["code"] == 102
         assert res["message"] == "You do not own the assistant."
+
+
+@pytest.mark.asyncio
+async def test_create_session_invalid_owner(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    async def _get_request_json():
+        return {"name": "session"}
+
+    mod.get_request_json = _get_request_json
+    mod.DialogService.query = classmethod(lambda cls, **_kwargs: [])
+
+    resp = await mod.create("tenant", "chat-id")
+    assert resp["code"] != 0
+    assert resp["message"] == "You do not own the assistant."

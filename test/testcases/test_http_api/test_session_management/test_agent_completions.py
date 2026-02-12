@@ -14,6 +14,13 @@
 #  limitations under the License.
 #
 import pytest
+import sys
+from pathlib import Path
+import types
+import json
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from session_stub import load_session_module
 from common import (
     agent_completions,
     create_agent,
@@ -94,3 +101,68 @@ class TestAgentCompletions:
         else:
             assert isinstance(res["data"], str), res
             assert res["data"].startswith("**ERROR**"), res
+
+
+@pytest.mark.asyncio
+async def test_agent_completions_stream_trace_and_done(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    async def _get_request_json():
+        return {"stream": True, "return_trace": True}
+
+    async def _agent_completion(**_kwargs):
+        yield "data:{\"event\": \"bad\"}\n\n"
+        yield "data:{\"event\": \"node_finished\", \"data\": {\"component_id\": \"c1\"}}\n\n"
+        yield "data:{\"event\": \"message\", \"data\": {\"content\": \"hi\"}}\n\n"
+        yield "data:{\"event\": \"message_end\", \"data\": {}}\n\n"
+
+    mod.get_request_json = _get_request_json
+    mod.agent_completion = _agent_completion
+
+    resp = await mod.agent_completions("tenant", "agent")
+    lines = []
+    async for line in resp.response:
+        lines.append(line)
+
+    assert any("trace" in line for line in lines)
+    assert any(line.strip() == "data:[DONE]" or "data:[DONE]" in line for line in lines)
+    assert "text/event-stream" in resp.headers.get("Content-Type", "")
+
+
+@pytest.mark.asyncio
+async def test_agent_completions_non_stream_reference_trace(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    async def _get_request_json():
+        return {"stream": False, "return_trace": True}
+
+    async def _agent_completion(**_kwargs):
+        yield "data:{\"event\": \"message\", \"data\": {\"content\": \"a\", \"reference\": {\"r1\": 1}}}\n\n"
+        yield "data:{\"event\": \"node_finished\", \"data\": {\"component_id\": \"c1\"}}\n\n"
+        yield "data:{\"event\": \"message\", \"data\": {\"content\": \"b\", \"reference\": {\"r2\": 2}}}\n\n"
+
+    mod.get_request_json = _get_request_json
+    mod.agent_completion = _agent_completion
+
+    resp = await mod.agent_completions("tenant", "agent")
+    data = resp["data"]["data"]
+    assert data["content"] == "ab"
+    assert data["reference"] == {"r1": 1, "r2": 2}
+    assert "trace" in data
+
+
+@pytest.mark.asyncio
+async def test_agent_completions_non_stream_bad_json_error(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    async def _get_request_json():
+        return {"stream": False}
+
+    async def _agent_completion(**_kwargs):
+        yield "data:{bad json}\n\n"
+
+    mod.get_request_json = _get_request_json
+    mod.agent_completion = _agent_completion
+
+    resp = await mod.agent_completions("tenant", "agent")
+    assert resp["data"].startswith("**ERROR**")

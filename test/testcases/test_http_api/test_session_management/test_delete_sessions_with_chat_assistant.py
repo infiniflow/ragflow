@@ -16,6 +16,12 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
+import sys
+from pathlib import Path
+import types
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from session_stub import load_session_module
 from common import batch_add_sessions_with_chat_assistant, delete_session_with_chat_assistants, list_session_with_chat_assistants
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
@@ -170,3 +176,41 @@ class TestSessionWithChatAssistantDelete:
         if res["code"] != 0:
             assert False, res
         assert len(res["data"]) == remaining
+
+
+@pytest.mark.asyncio
+async def test_delete_sessions_all_errors(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    async def _get_request_json():
+        return {"ids": ["s1"]}
+
+    mod.get_request_json = _get_request_json
+    mod.DialogService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(id="chat")])
+    mod.ConversationService.query = classmethod(lambda cls, **kwargs: [] if "id" in kwargs else [types.SimpleNamespace(id="s1")])
+
+    resp = await mod.delete("tenant", "chat")
+    assert resp["code"] != 0
+    assert "doesn't own the session" in resp["message"]
+
+
+@pytest.mark.asyncio
+async def test_delete_sessions_duplicates_partial(monkeypatch):
+    mod = load_session_module(monkeypatch)
+
+    async def _get_request_json():
+        return {"ids": ["s1", "s1"]}
+
+    mod.get_request_json = _get_request_json
+    mod.DialogService.query = classmethod(lambda cls, **_kwargs: [types.SimpleNamespace(id="chat")])
+    mod.ConversationService.query = classmethod(lambda cls, **kwargs: [types.SimpleNamespace(id="s1")] if "id" in kwargs else [types.SimpleNamespace(id="s1")])
+
+    mod.check_duplicate_ids = lambda ids, _kind="session": (["s1"], ["duplicate s1"])
+    resp = await mod.delete("tenant", "chat")
+    assert resp["code"] == 0
+    assert "Partially deleted" in resp.get("message", "")
+
+    mod.ConversationService.query = classmethod(lambda cls, **kwargs: [] if "id" in kwargs else [types.SimpleNamespace(id="s1")])
+    resp = await mod.delete("tenant", "chat")
+    assert resp["code"] != 0
+    assert "duplicate" in resp.get("message", "")

@@ -86,8 +86,21 @@ def _load_app_init_module(monkeypatch):
     constants_mod.API_VERSION = "v1"
     monkeypatch.setitem(sys.modules, "api.constants", constants_mod)
 
+    api_pkg = types.ModuleType("api")
+    api_pkg.__path__ = []
+    sys.modules["api"] = api_pkg
+
+    apps_pkg = types.ModuleType("api.apps")
+    apps_pkg.__path__ = []
+    sys.modules["api.apps"] = apps_pkg
+
+    utils_pkg = types.ModuleType("api.utils")
+    utils_pkg.__path__ = []
+    sys.modules["api.utils"] = utils_pkg
+
     module_name = "api.apps_test_init"
     module = types.ModuleType(module_name)
+    module.__package__ = "api.apps"
     module.__file__ = str(file_path)
     sys.modules[module_name] = module
     exec(compile(source, str(file_path), "exec"), module.__dict__)

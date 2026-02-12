@@ -760,7 +760,9 @@ async def change_parser():
 
     def reset_doc():
         nonlocal doc
-        e = DocumentService.update_by_id(doc.id, {"pipeline_id": req["pipeline_id"], "parser_id": req["parser_id"], "progress": 0, "progress_msg": "", "run": TaskStatus.UNSTART.value})
+        pipeline_id = req.get("pipeline_id", doc.pipeline_id)
+        parser_id = req.get("parser_id", doc.parser_id)
+        e = DocumentService.update_by_id(doc.id, {"pipeline_id": pipeline_id, "parser_id": parser_id, "progress": 0, "progress_msg": "", "run": TaskStatus.UNSTART.value})
         if not e:
             return get_data_error_result(message="Document not found!")
         if doc.token_num > 0:
