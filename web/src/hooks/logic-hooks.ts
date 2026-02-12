@@ -10,6 +10,7 @@ import {
   Message,
 } from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { changeLanguageAsync } from '@/locales/config';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { buildMessageUuid } from '@/utils/chat';
@@ -55,9 +56,9 @@ export const useChangeLanguage = () => {
   const { saveSetting } = useSaveSetting();
 
   const changeLanguage = (lng: string) => {
-    i18n.changeLanguage(
-      LanguageTranslationMap[lng as keyof typeof LanguageTranslationMap],
-    );
+    const targetLng =
+      LanguageTranslationMap[lng as keyof typeof LanguageTranslationMap];
+    changeLanguageAsync(targetLng);
     saveSetting({ language: lng });
   };
 

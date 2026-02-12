@@ -1,6 +1,6 @@
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { Toaster } from '@/components/ui/toaster';
-import i18n from '@/locales/config';
+import i18n, { changeLanguageAsync } from '@/locales/config';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { configResponsive } from 'ahooks';
 import { App, ConfigProvider, ConfigProviderProps, theme } from 'antd';
@@ -130,10 +130,9 @@ function Root({ children }: React.PropsWithChildren) {
 
 const RootProvider = ({ children }: React.PropsWithChildren) => {
   useEffect(() => {
-    // Because the language is saved in the backend, a token is required to obtain the api. However, the login page cannot obtain the language through the getUserInfo api, so the language needs to be saved in localstorage.
     const lng = storage.getLanguage();
     if (lng) {
-      i18n.changeLanguage(lng);
+      changeLanguageAsync(lng);
     }
   }, []);
 

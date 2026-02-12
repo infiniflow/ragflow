@@ -11,6 +11,7 @@ import {
   IUserInfo,
 } from '@/interfaces/database/user-setting';
 import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
+import { changeLanguageAsync } from '@/locales/config';
 import userService, {
   addTenantUser,
   agreeTenant,
@@ -54,11 +55,11 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
     queryFn: async () => {
       const { data } = await userService.user_info();
       if (data.code === 0) {
-        i18n.changeLanguage(
+        const targetLng =
           LanguageTranslationMap[
             data.data.language as keyof typeof LanguageTranslationMap
-          ],
-        );
+          ];
+        await changeLanguageAsync(targetLng);
       }
       return data?.data ?? {};
     },
