@@ -207,6 +207,7 @@ export default {
         description: '描述',
         fieldName: '字段名称',
         editMetadata: '编辑元数据',
+        addMetadata: '添加元数据',
         deleteWarn: '此 {{field}} 将从所有关联文件中移除',
         deleteManageFieldAllWarn:
           '此字段及其所有对应值将从所有关联的文件中删除。',
