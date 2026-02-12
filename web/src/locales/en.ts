@@ -232,6 +232,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         description: 'Description',
         fieldName: 'Field name',
         editMetadata: 'Edit metadata',
+        addMetadata: 'Add metadata',
         deleteWarn: 'This {{field}} will be removed from all associated files',
         deleteManageFieldAllWarn:
           'This field and all its corresponding values will be deleted from all associated files.',
