@@ -16,7 +16,6 @@
 import requests
 import pytest
 import types
-import json
 from pathlib import Path
 import sys
 
