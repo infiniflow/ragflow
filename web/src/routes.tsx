@@ -1,7 +1,8 @@
 import { lazy, memo, Suspense } from 'react';
-import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
+import { createBrowserRouter, Navigate, redirect, type RouteObject } from 'react-router';
 import FallbackComponent from './components/fallback-component';
 import { IS_ENTERPRISE } from './pages/admin/utils';
+import authorizationUtil from './utils/authorization-util';
 
 export enum Routes {
   Root = '/',
@@ -21,11 +22,11 @@ export enum Routes {
   MemoryMessage = '/memory-message',
   MemorySetting = '/memory-setting',
   AgentList = '/agent-list',
-  Searches = '/next-searches',
-  Search = '/next-search',
-  SearchShare = '/next-search/share',
-  Chats = '/next-chats',
-  Chat = '/next-chat',
+  Searches = '/searches',
+  Search = '/search',
+  SearchShare = '/search/share',
+  Chats = '/chats',
+  Chat = '/chat',
   Files = '/files',
   ProfileSetting = '/profile-setting',
   Profile = '/profile',
@@ -141,7 +142,16 @@ const routeConfigOptions = [
     path: Routes.Root,
     layout: false,
     Component: () => import('@/layouts/next'),
-    wrappers: ['@/wrappers/auth'],
+    loader: ({ request }) => {
+      const url = new URL(request.url);
+      const auth = url.searchParams.get('auth');
+      if (auth) {
+        authorizationUtil.setAuthorization(auth);
+        url.searchParams.delete('auth');
+        return redirect(`${url.pathname}${url.search}`);
+      }
+      return null;
+    },
     children: [
       {
         path: Routes.Root,
