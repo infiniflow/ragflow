@@ -547,18 +547,10 @@ class Canvas(Graph):
                             yield decorate("message", {"content": "", "audio_binary": self.tts(tts_mdl, buff_m)})
                             buff_m = ""
                         cpn_obj.set_output("content", _m)
-                        cite = re.search(r"\[ID:[ 0-9]+\]", _m)
                     else:
                         yield decorate("message", {"content": cpn_obj.output("content")})
-                        cite = re.search(r"\[ID:[ 0-9]+\]",  cpn_obj.output("content"))
 
-                    message_end = {}
-                    if cpn_obj.get_param("status"):
-                        message_end["status"] = cpn_obj.get_param("status")
-                    if isinstance(cpn_obj.output("attachment"), dict):
-                        message_end["attachment"] = cpn_obj.output("attachment")
-                    if cite:
-                        message_end["reference"] = self.get_reference()
+                    message_end = self._build_message_end(cpn_obj)
                     yield decorate("message_end", message_end)
 
                     while partials:
@@ -819,6 +811,22 @@ class Canvas(Graph):
         if not self.retrieval:
             return {"chunks": {}, "doc_aggs": {}}
         return self.retrieval[-1]
+
+    def _has_reference(self) -> bool:
+        ref = self.get_reference()
+        if not isinstance(ref, dict):
+            return False
+        return bool(ref.get("chunks") or ref.get("doc_aggs"))
+
+    def _build_message_end(self, cpn_obj) -> dict:
+        message_end = {}
+        if cpn_obj.get_param("status"):
+            message_end["status"] = cpn_obj.get_param("status")
+        if isinstance(cpn_obj.output("attachment"), dict):
+            message_end["attachment"] = cpn_obj.output("attachment")
+        if self._has_reference():
+            message_end["reference"] = self.get_reference()
+        return message_end
 
     def add_memory(self, user:str, assist:str, summ: str):
         self.memory.append((user, assist, summ))

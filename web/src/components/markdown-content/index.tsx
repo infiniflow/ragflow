@@ -20,6 +20,7 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import {
   currentReg,
+  parseCitationIndex,
   preprocessLaTeX,
   replaceTextByOldReg,
   replaceThinkToSection,
@@ -36,7 +37,7 @@ import {
 } from '../ui/hover-card';
 import styles from './index.module.less';
 
-const getChunkIndex = (match: string) => Number(match);
+const getChunkIndex = (match: string) => parseCitationIndex(match);
 
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
 const MarkdownContent = ({
