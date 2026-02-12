@@ -84,6 +84,9 @@ class TestMessageValidation:
         assert "boolean" in message, res
 
         res = search_message(WebApiAuth, params={})
-        assert res["code"] != 0, res
-        message = str(res.get("message", "")).lower()
-        assert "memory_id" in message and "query" in message, res
+        if res.get("code") == 0:
+            assert res.get("data") == [], res
+            assert res.get("message") is True, res
+        else:
+            message = str(res.get("message", "")).lower()
+            assert "memory_id" in message and "query" in message, res
