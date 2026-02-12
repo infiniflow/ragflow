@@ -19,13 +19,14 @@ from api.db.services.memory_service import MemoryService
 from api.db.services.user_service import UserTenantService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.task_service import TaskService
-from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default
+from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default, queue_save_to_memory_task, query_message
 from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
 from memory.services.messages import MessageService
 from memory.utils.prompt_util import PromptAssembler
 from common.constants import MemoryType, ForgettingPolicy
 from common.exceptions import ArgumentException, NotFoundException
+from common.time_utils import current_timestamp, timestamp_to_date
 
 
 async def create_memory(memory_info: dict):
@@ -169,6 +170,16 @@ async def delete_memory(memory_id):
 
 
 async def list_memory(filter_params: dict, keywords: str, page: int=1, page_size: int = 50):
+    """
+    :param filter_params: {
+        "memory_type": list[str],
+        "tenant_id": list[str],
+        "storage_type": str
+    }
+    :param keywords: str
+    :param page: int
+    :param page_size: int
+    """
     filter_dict: dict = {"storage_type": filter_params.get("storage_type")}
     tenant_ids = filter_params.get("tenant_id")
     if not filter_params.get("tenant_id"):
@@ -221,3 +232,104 @@ async def get_memory_messages(memory_id, agent_ids: list[str], keywords: str, pa
         for extract_msg in message["extract"]:
             extract_msg["agent_name"] = agent_name_mapping.get(extract_msg["agent_id"], "Unknown")
     return {"messages": messages, "storage_type": memory.storage_type}
+
+
+async def add_message(memory_ids: list[str], message_dict: dict):
+    """
+    :param memory_ids: list[str]
+    :param message_dict: {
+        "agent_id": str,
+        "session_id": str,
+        "user_input": str,
+        "agent_response": str,
+        "message_type": str
+    }
+    """
+    return await queue_save_to_memory_task(memory_ids, message_dict)
+
+
+async def forget_message(memory_id: str, message_id: int):
+    memory = MemoryService.get_by_memory_id(memory_id)
+    if not memory:
+        raise NotFoundException(f"Memory '{memory_id}' not found.")
+
+    forget_time = timestamp_to_date(current_timestamp())
+    update_succeed = MessageService.update_message(
+        {"memory_id": memory_id, "message_id": int(message_id)},
+        {"forget_at": forget_time},
+        memory.tenant_id, memory_id)
+    if update_succeed:
+        return True
+    raise Exception(f"Failed to forget message '{message_id}' in memory '{memory_id}'.")
+
+
+async def update_message_status(memory_id: str, message_id: int, status: bool):
+    memory = MemoryService.get_by_memory_id(memory_id)
+    if not memory:
+        raise NotFoundException(f"Memory '{memory_id}' not found.")
+
+    update_succeed = MessageService.update_message(
+        {"memory_id": memory_id, "message_id": int(message_id)},
+        {"status": status},
+        memory.tenant_id, memory_id)
+    if update_succeed:
+        return True
+    raise Exception(f"Failed to set status for message '{message_id}' in memory '{memory_id}'.")
+
+
+async def search_message(filter_dict: dict, params: dict):
+    """
+    :param filter_dict: {
+        "memory_id": list[str],
+        "agent_id": str,
+        "session_id": str
+    }
+    :param params: {
+        "query": str,
+        "similarity_threshold": float,
+        "keywords_similarity_weight": float,
+        "top_n": int
+    }
+    """
+    return query_message(filter_dict, params)
+
+
+async def get_messages(memory_ids: list[str], agent_id: str = "", session_id: str = "", limit: int = 10):
+    """
+    Get recent messages from specified memories.
+
+    :param memory_ids: list of memory IDs
+    :param agent_id: optional agent ID for filtering
+    :param session_id: optional session ID for filtering
+    :param limit: maximum number of messages to return
+    :return: list of recent messages
+    """
+    memory_list = MemoryService.get_by_ids(memory_ids)
+    uids = [memory.tenant_id for memory in memory_list]
+    res = MessageService.get_recent_messages(
+        uids,
+        memory_ids,
+        agent_id,
+        session_id,
+        limit
+    )
+    return res
+
+
+async def get_message_content(memory_id: str, message_id: int):
+    """
+    Get content of a specific message from a memory.
+
+    :param memory_id: memory ID
+    :param message_id: message ID
+    :return: message content
+    :raises NotFoundException: if memory or message not found
+    """
+    memory = MemoryService.get_by_memory_id(memory_id)
+    if not memory:
+        raise NotFoundException(f"Memory '{memory_id}' not found.")
+
+    res = MessageService.get_by_message_id(memory_id, message_id, memory.tenant_id)
+    if res:
+        return res
+    raise NotFoundException(f"Message '{message_id}' in memory '{memory_id}' not found.")
