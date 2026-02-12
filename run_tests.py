@@ -42,7 +42,7 @@ class TestRunner:
         self.parallel = False
         self.verbose = False
         self.markers = ""
-
+        self.test = ""
         # Python interpreter path
         self.python = sys.executable
 
@@ -95,7 +95,8 @@ EXAMPLES:
 
     def build_pytest_command(self) -> List[str]:
         """Build the pytest command arguments"""
-        cmd = ["pytest", str(self.ut_dir)]
+        test_path = str(self.ut_dir / self.test) if self.test else str(self.ut_dir)
+        cmd = ["pytest", test_path]
 
         # Add test path
 
@@ -243,7 +244,7 @@ Examples:
             self.parallel = args.parallel
             self.verbose = args.verbose
             self.markers = args.markers
-
+            self.test = args.test
             return True
 
         except SystemExit:
