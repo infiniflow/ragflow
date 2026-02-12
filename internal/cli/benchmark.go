@@ -54,6 +54,22 @@ func (c *RAGFlowClient) runBenchmarkSingle(concurrency, iterations int, nestedCm
 	startTime := time.Now()
 	responseList := make([]*Response, 0, iterations)
 
+	// For search_on_datasets, convert dataset names to IDs first
+	if commandType == "search_on_datasets" && iterations > 1 {
+		datasets, _ := nestedCmd.Params["datasets"].(string)
+		datasetNames := strings.Split(datasets, ",")
+		datasetIDs := make([]string, 0, len(datasetNames))
+		for _, name := range datasetNames {
+			name = strings.TrimSpace(name)
+			id, err := c.getDatasetID(name)
+			if err != nil {
+				return err
+			}
+			datasetIDs = append(datasetIDs, id)
+		}
+		nestedCmd.Params["dataset_ids"] = datasetIDs
+	}
+
 	// Check if command supports native benchmark (iterations > 1)
 	supportsNative := false
 	if iterations > 1 {
@@ -138,6 +154,22 @@ func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nest
 	results := make([]map[string]interface{}, concurrency)
 	var wg sync.WaitGroup
 
+	// For search_on_datasets, convert dataset names to IDs first
+	if nestedCmd.Type == "search_on_datasets" {
+		datasets, _ := nestedCmd.Params["datasets"].(string)
+		datasetNames := strings.Split(datasets, ",")
+		datasetIDs := make([]string, 0, len(datasetNames))
+		for _, name := range datasetNames {
+			name = strings.TrimSpace(name)
+			id, err := c.getDatasetID(name)
+			if err != nil {
+				return err
+			}
+			datasetIDs = append(datasetIDs, id)
+		}
+		nestedCmd.Params["dataset_ids"] = datasetIDs
+	}
+
 	startTime := time.Now()
 
 	// Launch concurrent workers
@@ -211,16 +243,14 @@ func (c *RAGFlowClient) executeBenchmarkSilent(cmd *Command, iterations int) []*
 			resp, err = c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), true, "admin", nil, nil)
 		case "search_on_datasets":
 			question, _ := cmd.Params["question"].(string)
-			datasets, _ := cmd.Params["datasets"].(string)
-			datasetIDs := strings.Split(datasets, ",")
-			for i := range datasetIDs {
-				datasetIDs[i] = strings.TrimSpace(datasetIDs[i])
-			}
+			datasetIDs, _ := cmd.Params["dataset_ids"].([]string)
 			payload := map[string]interface{}{
-				"dataset_ids": datasetIDs,
-				"question":    question,
+				"kb_id":                    datasetIDs,
+				"question":                 question,
+				"similarity_threshold":     0.2,
+				"vector_similarity_weight": 0.3,
 			}
-			resp, err = c.HTTPClient.Request("POST", "/retrieval", true, "web", nil, payload)
+			resp, err = c.HTTPClient.Request("POST", "/chunk/retrieval_test", false, "web", nil, payload)
 		default:
 		// For other commands, we would need to add specific handling
 		// For now, mark as failed

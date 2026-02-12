@@ -311,6 +311,51 @@ func readPasswordFallback() (string, error) {
 	return strings.TrimSpace(password), nil
 }
 
+// getDatasetID gets dataset ID by name
+func (c *RAGFlowClient) getDatasetID(datasetName string) (string, error) {
+	resp, err := c.HTTPClient.Request("POST", "/kb/list", false, "web", nil, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to list datasets: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("failed to list datasets: HTTP %d", resp.StatusCode)
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return "", fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok || code != 0 {
+		msg, _ := resJSON["message"].(string)
+		return "", fmt.Errorf("failed to list datasets: %s", msg)
+	}
+
+	data, ok := resJSON["data"].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("invalid response format")
+	}
+
+	kbs, ok := data["kbs"].([]interface{})
+	if !ok {
+		return "", fmt.Errorf("invalid response format: kbs not found")
+	}
+
+	for _, kb := range kbs {
+		if kbMap, ok := kb.(map[string]interface{}); ok {
+			if name, _ := kbMap["name"].(string); name == datasetName {
+				if id, _ := kbMap["id"].(string); id != "" {
+					return id, nil
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("dataset '%s' not found", datasetName)
+}
+
 // SearchOnDatasets searches for chunks in specified datasets
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
 func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (map[string]interface{}, error) {
@@ -328,10 +373,16 @@ func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (map[string]interface{}, 
 		return nil, fmt.Errorf("datasets not provided")
 	}
 
-	// Parse dataset IDs (comma-separated)
-	datasetIDs := strings.Split(datasets, ",")
-	for i := range datasetIDs {
-		datasetIDs[i] = strings.TrimSpace(datasetIDs[i])
+	// Parse dataset names (comma-separated) and convert to IDs
+	datasetNames := strings.Split(datasets, ",")
+	datasetIDs := make([]string, 0, len(datasetNames))
+	for _, name := range datasetNames {
+		name = strings.TrimSpace(name)
+		id, err := c.getDatasetID(name)
+		if err != nil {
+			return nil, err
+		}
+		datasetIDs = append(datasetIDs, id)
 	}
 
 	// Check for benchmark iterations
@@ -388,11 +439,15 @@ func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (map[string]interface{}, 
 	for _, chunk := range chunks {
 		if chunkMap, ok := chunk.(map[string]interface{}); ok {
 			row := map[string]interface{}{
-				"id":          chunkMap["id"],
-				"content":     chunkMap["content"],
-				"document_id": chunkMap["document_id"],
-				"dataset_id":  chunkMap["dataset_id"],
-				"similarity":  chunkMap["similarity"],
+				"id":                chunkMap["chunk_id"],
+				"content":           chunkMap["content_with_weight"],
+				"document_id":       chunkMap["doc_id"],
+				"dataset_id":        chunkMap["kb_id"],
+				"docnm_kwd":         chunkMap["docnm_kwd"],
+				"image_id":          chunkMap["image_id"],
+				"similarity":        chunkMap["similarity"],
+				"term_similarity":   chunkMap["term_similarity"],
+				"vector_similarity": chunkMap["vector_similarity"],
 			}
 			tableData = append(tableData, row)
 		}
