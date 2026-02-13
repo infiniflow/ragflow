@@ -16,8 +16,8 @@ Released on February 10, 2026.
 ### New features
 
 - Memory
-  - Introduces APIs and an SDK for developer integration.
-  - Outputs Memory extraction log to the console for debugging and tracing.
+  - Introduces memory management APIs (HTTP and Python).
+  - Outputs Memory extraction log to the console.
 - Dataset
   - Supports batch metadata management.
   - Renames "ToC (Table of Contents)" to "PageIndex". See [here](./guides/dataset/extract_table_of_contents.md).
@@ -28,9 +28,9 @@ Released on February 10, 2026.
   - Adds a new "Thinking" mode and removes the previous "Reasoning" configuration option.
   - Optimizes retrieval strategies for deep-research scenarios, enhancing recall accuracy.
 - Admin
-  - Supports configuring multiple Admin accounts.
+  - Supports multiple Admin accounts.
 - Model configuration center
-  - Adds a model connection test feature when adding new models.
+  - Adds model connection test for new models.
 
 ### MySQL alternative
 
@@ -47,6 +47,16 @@ Released on February 10, 2026.
 
 - Zendesk
 - Bitbucket
+
+### API changes
+
+#### HTTP API
+
+[Memory management API](./references/http_api_reference.md#memory-management)
+
+#### Python API
+
+[Memory management API](./references/python_api_reference.md#memory-management)
 
 ## v0.23.1
 
