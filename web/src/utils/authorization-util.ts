@@ -49,9 +49,7 @@ const storage = {
 
 export const getAuthorization = () => {
   const auth = getSearchValue('auth');
-  const authorization = auth
-    ? 'Bearer ' + auth
-    : storage.getAuthorization() || '';
+  const authorization = auth ? auth : storage.getAuthorization() || '';
 
   return authorization;
 };
