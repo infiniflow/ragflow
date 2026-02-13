@@ -1,6 +1,6 @@
 import { FileMimeType } from '@/constants/common';
+import { UploadFile } from '@/interfaces/antd-compat';
 import fileManagerService from '@/services/file-manager-service';
-import { UploadFile } from 'antd';
 
 export const transformFile2Base64 = (
   val: any,

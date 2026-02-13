@@ -5,7 +5,7 @@ import authorizationUtil, {
   getAuthorization,
   redirectToLogin,
 } from '@/utils/authorization-util';
-import { notification } from 'antd';
+import notification from '@/utils/notification';
 import axios from 'axios';
 import { convertTheKeysOfTheObjectToSnake } from './common-util';
 
