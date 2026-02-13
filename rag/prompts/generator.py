@@ -197,9 +197,7 @@ async def keyword_extraction(chat_mdl, content, topn=3):
 
     msg = [{"role": "system", "content": rendered_prompt}, {"role": "user", "content": "Output: "}]
     _, msg = message_fit_in(msg, chat_mdl.max_length)
-    kwd = await chat_mdl.async_chat(rendered_prompt, msg[1:], {"temperature": 0.2})
-    if isinstance(kwd, tuple):
-        kwd = kwd[0]
+    kwd, _ = await chat_mdl.async_chat(rendered_prompt, msg[1:], {"temperature": 0.2})
     kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         return ""
@@ -212,9 +210,7 @@ async def question_proposal(chat_mdl, content, topn=3):
 
     msg = [{"role": "system", "content": rendered_prompt}, {"role": "user", "content": "Output: "}]
     _, msg = message_fit_in(msg, chat_mdl.max_length)
-    kwd = await chat_mdl.async_chat(rendered_prompt, msg[1:], {"temperature": 0.2})
-    if isinstance(kwd, tuple):
-        kwd = kwd[0]
+    kwd, _ = await chat_mdl.async_chat(rendered_prompt, msg[1:], {"temperature": 0.2})
     kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         return ""
@@ -250,7 +246,7 @@ async def full_question(tenant_id=None, llm_id=None, messages=[], language=None,
         language=language,
     )
 
-    ans = await chat_mdl.async_chat(rendered_prompt, [{"role": "user", "content": "Output: "}])
+    ans, _ = await chat_mdl.async_chat(rendered_prompt, [{"role": "user", "content": "Output: "}])
     ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
     return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
 
@@ -269,7 +265,7 @@ async def cross_languages(tenant_id, llm_id, query, languages=[]):
     rendered_user_prompt = PROMPT_JINJA_ENV.from_string(CROSS_LANGUAGES_USER_PROMPT_TEMPLATE).render(query=query,
                                                                                                      languages=languages)
 
-    ans = await chat_mdl.async_chat(rendered_sys_prompt, [{"role": "user", "content": rendered_user_prompt}],
+    ans, _ = await chat_mdl.async_chat(rendered_sys_prompt, [{"role": "user", "content": rendered_user_prompt}],
                                     {"temperature": 0.2})
     ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
     if ans.find("**ERROR**") >= 0:
@@ -292,9 +288,7 @@ async def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
 
     msg = [{"role": "system", "content": rendered_prompt}, {"role": "user", "content": "Output: "}]
     _, msg = message_fit_in(msg, chat_mdl.max_length)
-    kwd = await chat_mdl.async_chat(rendered_prompt, msg[1:], {"temperature": 0.5})
-    if isinstance(kwd, tuple):
-        kwd = kwd[0]
+    kwd, _ = await chat_mdl.async_chat(rendered_prompt, msg[1:], {"temperature": 0.5})
     kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         raise Exception(kwd)
@@ -383,9 +377,7 @@ async def analyze_task_async(chat_mdl, prompt, task_name, tools_description: lis
     else:
         template = PROMPT_JINJA_ENV.from_string(ANALYZE_TASK_SYSTEM + "\n\n" + ANALYZE_TASK_USER)
     context = template.render(task=task_name, context=context, agent_prompt=prompt, tools_desc=tools_desc)
-    kwd = await chat_mdl.async_chat(context, [{"role": "user", "content": "Please analyze it."}])
-    if isinstance(kwd, tuple):
-        kwd = kwd[0]
+    kwd, _ = await chat_mdl.async_chat(context, [{"role": "user", "content": "Please analyze it."}])
     kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         return ""
@@ -404,12 +396,11 @@ async def next_step_async(chat_mdl, history: list, tools_description: list[dict]
         hist[-1]["content"] += user_prompt
     else:
         hist.append({"role": "user", "content": user_prompt})
-    json_str = await chat_mdl.async_chat(
+    json_str, tk_cnt = await chat_mdl.async_chat(
         template.render(task_analysis=task_desc, desc=desc, today=datetime.datetime.now().strftime("%Y-%m-%d")),
         hist[1:],
         stop=["<|stop|>"],
     )
-    tk_cnt = num_tokens_from_string(json_str)
     json_str = re.sub(r"^.*</think>", "", json_str, flags=re.DOTALL)
     return json_str, tk_cnt
 
@@ -425,7 +416,7 @@ async def reflect_async(chat_mdl, history: list[dict], tool_call_res: list[Tuple
     else:
         hist.append({"role": "user", "content": user_prompt})
     _, msg = message_fit_in(hist, chat_mdl.max_length)
-    ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
+    ans, _ = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
     ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
     return """
 **Observation**
@@ -452,7 +443,7 @@ async def tool_call_summary(chat_mdl, name: str, params: dict, result: str, user
                                     result=result)
     user_prompt = "→ Summary: "
     _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
-    ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
+    ans, _ = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
     return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
 
 
@@ -463,7 +454,7 @@ async def rank_memories_async(chat_mdl, goal: str, sub_goal: str, tool_call_summ
                                     results=[{"i": i, "content": s} for i, s in enumerate(tool_call_summaries)])
     user_prompt = " → rank: "
     _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
-    ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:], stop="<|stop|>")
+    ans, _ = await chat_mdl.async_chat(msg[0]["content"], msg[1:], stop="<|stop|>")
     return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
 
 
@@ -479,7 +470,7 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: di
         constraints=json.dumps(constraints) if constraints else None
     )
     user_prompt = "Generate filters:"
-    ans = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}])
+    ans, _ = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}])
     ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
     try:
         ans = json_repair.loads(ans)
@@ -503,7 +494,7 @@ async def gen_json(system_prompt: str, user_prompt: str, chat_mdl, gen_conf={}, 
     for _ in range(max_retry):
         if ans and err:
             msg[-1]["content"] += f"\nGenerated JSON is as following:\n{ans}\nBut exception while loading:\n{err}\nPlease reconsider and correct it."
-        ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:], gen_conf=gen_conf)
+        ans, _ = await chat_mdl.async_chat(msg[0]["content"], msg[1:], gen_conf=gen_conf)
         ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
         try:
             res = json_repair.loads(ans)
@@ -897,7 +888,7 @@ async def gen_metadata(chat_mdl, schema: dict, content: str):
     system_prompt = template.render(content=content, schema=schema)
     user_prompt = "Output: "
     _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
-    ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
+    ans, _ = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
     return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
 
 
