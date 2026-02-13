@@ -212,6 +212,7 @@ export function NextMessageInput({
           className="min-h-10 max-h-40 w-full border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
           disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}
+          data-testid="chat-textarea"
           autoSize={{ minRows: 1, maxRows: 8 }}
           resize={resize}
         />

@@ -65,7 +65,7 @@ export default function SearchList() {
   }, [isCreate, openCreateModalFun, searchUrl, setSearchUrl]);
 
   return (
-    <section className="w-full h-full flex flex-col">
+    <section className="w-full h-full flex flex-col" data-testid="search-list">
       {(!list?.data?.search_apps?.length ||
         list?.data?.search_apps?.length <= 0) &&
         !searchString && (
@@ -77,6 +77,7 @@ export default function SearchList() {
               type={EmptyCardType.Search}
               isSearch={!!searchString}
               onClick={() => openCreateModalFun()}
+              dataTestId="search-empty-create"
             />
           </div>
         )}
@@ -95,6 +96,7 @@ export default function SearchList() {
                 onClick={() => {
                   openCreateModalFun();
                 }}
+                data-testid="create-search"
               >
                 <Plus className="h-4 w-4" />
                 {t('createSearch')}
@@ -112,6 +114,7 @@ export default function SearchList() {
                   type={EmptyCardType.Search}
                   isSearch={!!searchString}
                   onClick={() => openCreateModalFun()}
+                  dataTestId="search-empty-create"
                 />
               </div>
             )}

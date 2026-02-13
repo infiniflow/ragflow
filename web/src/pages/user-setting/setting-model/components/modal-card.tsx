@@ -70,7 +70,11 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
   };
 
   return (
-    <div className={`w-full rounded-lg border border-border-button`}>
+    <div
+      className={`w-full rounded-lg border border-border-button`}
+      data-testid="added-model-card"
+      data-provider={item.name}
+    >
       {/* Header */}
       <div className="flex h-16  items-center justify-between p-4 cursor-pointer transition-colors text-text-secondary">
         <div className="flex items-center space-x-3">
@@ -90,6 +94,7 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
               handleApiKeyClick();
             }}
             className="px-3 py-1 text-sm    rounded-md transition-colors flex items-center space-x-1 border border-border-default"
+            data-testid="provider-apikey-button"
           >
             <SettingOutlined />
             <span>

@@ -58,6 +58,7 @@ export function UploadAgentForm({ hideModal, onOk }: IModalProps<any>) {
                   onValueChange={field.onChange}
                   maxFileCount={1}
                   accept={{ '*.json': [FileMimeType.Json] }}
+                  data-testid="agent-import-file"
                 />
               </FormControl>
               <FormMessage />

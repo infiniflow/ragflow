@@ -67,6 +67,7 @@ function UploadForm({ submit, showParseOnCreation }: UploadFormProps) {
               <Switch
                 onCheckedChange={field.onChange}
                 checked={field.value}
+                data-testid="parse-on-creation-toggle"
               ></Switch>
             )}
           </RAGFlowFormItem>
@@ -77,6 +78,7 @@ function UploadForm({ submit, showParseOnCreation }: UploadFormProps) {
               value={field.value}
               onValueChange={field.onChange}
               accept={{ '*': [] }}
+              data-testid="dataset-upload-dropzone"
             />
           )}
         </RAGFlowFormItem>
@@ -97,7 +99,7 @@ export function FileUploadDialog({
 
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent>
+      <DialogContent data-testid="dataset-upload-modal">
         <DialogHeader>
           <DialogTitle>{t('fileManager.uploadFile')}</DialogTitle>
         </DialogHeader>

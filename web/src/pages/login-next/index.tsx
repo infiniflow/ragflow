@@ -29,7 +29,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { BgSvg } from './bg';
-import FlipCard3D from './card';
+import FlipCard3D, { AuthFaceContext } from './card';
 import './index.less';
 
 const Login = () => {
@@ -42,6 +42,11 @@ const Login = () => {
     useLoginWithChannel();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
   const [isLoginPage, setIsLoginPage] = useState(true);
+
+  const [isUserInteracting, setIsUserInteracting] = useState(true);
+  const [authState, setAuthState] = useState<
+    'idle' | 'loading' | 'success' | 'error'
+  >('idle');
 
   const loading =
     signLoading ||
@@ -59,10 +64,17 @@ const Login = () => {
   }, [isLogin, navigate]);
 
   const handleLoginWithChannel = async (channel: string) => {
-    await loginWithChannel(channel);
+    setAuthState('loading');
+    try {
+      await loginWithChannel(channel);
+      setAuthState('success');
+    } catch (error) {
+      setAuthState('error');
+    }
   };
 
   const changeTitle = () => {
+    setAuthState('idle');
     setIsLoginPage(title !== 'login');
     if (title === 'login' && !registerEnabled) {
       return;
@@ -71,11 +83,12 @@ const Login = () => {
     setTimeout(() => {
       setTitle(title === 'login' ? 'register' : 'login');
     }, 200);
+    // setTitle((title) => (title === 'login' ? 'register' : 'login'));
   };
 
   const FormSchema = z
     .object({
-      nickname: z.string(),
+      nickname: z.string().optional(),
       email: z
         .string()
         .email()
@@ -103,8 +116,12 @@ const Login = () => {
     resolver: zodResolver(FormSchema),
   });
 
-  const onCheck = async (params: z.infer<typeof FormSchema>) => {
+  const onCheck = async (params) => {
+    console.log('params', params);
     try {
+      setAuthState('loading');
+      // const params = await form.validateFields();
+
       const rsaPassWord = rsaPsw(params.password) as string;
 
       if (title === 'login') {
@@ -113,7 +130,10 @@ const Login = () => {
           password: rsaPassWord,
         });
         if (code === 0) {
+          setAuthState('success');
           navigate('/');
+        } else {
+          setAuthState('error');
         }
       } else {
         const code = await register({
@@ -122,10 +142,14 @@ const Login = () => {
           password: rsaPassWord,
         });
         if (code === 0) {
+          setAuthState('success');
           setTitle('login');
+        } else {
+          setAuthState('error');
         }
       }
     } catch (errorInfo) {
+      setAuthState('error');
       console.log('Failed:', errorInfo);
     }
   };
@@ -148,7 +172,7 @@ const Login = () => {
         color={'rgb(128, 255, 248)'}
       />
       <div className=" h-[inherit] relative overflow-auto">
-        <BgSvg isPaused />
+        <BgSvg isPaused={isUserInteracting} />
 
         <div className="absolute top-3 flex flex-col items-center mb-12 w-full text-text-primary">
           <div className="flex items-center mb-4 w-full pl-10 pt-10 ">
@@ -182,27 +206,34 @@ const Login = () => {
               </div>
               <div className=" w-full max-w-[540px] bg-bg-component backdrop-blur-sm rounded-2xl shadow-xl pt-14 pl-10 pr-10 pb-2 border border-border-button ">
                 <Form {...form}>
-                  <form
-                    className="flex flex-col gap-8 text-text-primary "
-                    onSubmit={form.handleSubmit(onCheck)}
-                  >
-                    <FormField
-                      control={form.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel required>{t('emailLabel')}</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder={t('emailPlaceholder')}
-                              autoComplete="email"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                  <AuthFaceContext.Consumer>
+                    {(face) => (
+                      <form
+                        className="flex flex-col gap-8 text-text-primary "
+                        onSubmit={form.handleSubmit((data) => onCheck(data))}
+                        data-testid="auth-form"
+                        data-auth-mode={title}
+                        data-active={face?.active ? 'true' : 'false'}
+                        data-auth-face={face?.face ?? 'unknown'}
+                      >
+                        <FormField
+                          control={form.control}
+                          name="email"
+                          render={({ field }) => (
+                            <FormItem data-testid="auth-email">
+                              <FormLabel required>{t('emailLabel')}</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder={t('emailPlaceholder')}
+                                  autoComplete="email"
+                                  data-testid="auth-email"
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
                     {title === 'register' && (
                       <FormField
                         control={form.control}
@@ -214,6 +245,7 @@ const Login = () => {
                               <Input
                                 placeholder={t('nicknamePlaceholder')}
                                 autoComplete="username"
+                                data-testid="auth-nickname"
                                 {...field}
                               />
                             </FormControl>
@@ -223,24 +255,25 @@ const Login = () => {
                       />
                     )}
 
-                    <FormField
-                      control={form.control}
-                      name="password"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel required>{t('passwordLabel')}</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Input
-                                type={'password'}
-                                placeholder={t('passwordPlaceholder')}
-                                autoComplete={
-                                  title === 'login'
-                                    ? 'current-password'
-                                    : 'new-password'
-                                }
-                                {...field}
-                              />
+                        <FormField
+                          control={form.control}
+                          name="password"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel required>{t('passwordLabel')}</FormLabel>
+                              <FormControl>
+                                <div className="relative" data-testid="auth-password">
+                                  <Input
+                                    type={'password'}
+                                    placeholder={t('passwordPlaceholder')}
+                                    autoComplete={
+                                      title === 'login'
+                                        ? 'current-password'
+                                        : 'new-password'
+                                    }
+                                    data-testid="auth-password"
+                                    {...field}
+                                  />
                               {/* <button
                                 type="button"
                                 className="absolute inset-y-0 right-0 pr-3 flex items-center"
@@ -252,12 +285,12 @@ const Login = () => {
                                   <Eye className="h-4 w-4 text-gray-500" />
                                 )}
                               </button> */}
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                                </div>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
                     {title === 'login' && (
                       <FormField
@@ -288,36 +321,39 @@ const Login = () => {
                         )}
                       />
                     )}
-                    <ButtonLoading
-                      type="submit"
-                      loading={loading}
-                      className="bg-metallic-gradient border-b-[#00BEB4] border-b-2 hover:bg-metallic-gradient hover:border-b-[#02bcdd] w-full my-8"
-                    >
-                      {title === 'login' ? t('login') : t('continue')}
-                    </ButtonLoading>
-                    {title === 'login' && channels && channels.length > 0 && (
-                      <div className="mt-3 border">
-                        {channels.map((item) => (
-                          <Button
-                            variant={'transparent'}
-                            key={item.channel}
-                            onClick={() => handleLoginWithChannel(item.channel)}
-                            style={{ marginTop: 10 }}
-                          >
-                            <div className="flex items-center">
-                              <SvgIcon
-                                name={item.icon || 'sso'}
-                                width={20}
-                                height={20}
-                                style={{ marginRight: 5 }}
-                              />
-                              Sign in with {item.display_name}
-                            </div>
-                          </Button>
-                        ))}
-                      </div>
+                        <ButtonLoading
+                          type="submit"
+                          loading={loading}
+                          className="bg-metallic-gradient border-b-[#00BEB4] border-b-2 hover:bg-metallic-gradient hover:border-b-[#02bcdd] w-full my-8"
+                          data-testid="auth-submit"
+                        >
+                          {title === 'login' ? t('login') : t('continue')}
+                        </ButtonLoading>
+                        {title === 'login' && channels && channels.length > 0 && (
+                          <div className="mt-3 border">
+                            {channels.map((item) => (
+                              <Button
+                                variant={'transparent'}
+                                key={item.channel}
+                                onClick={() => handleLoginWithChannel(item.channel)}
+                                style={{ marginTop: 10 }}
+                              >
+                                <div className="flex items-center">
+                                  <SvgIcon
+                                    name={item.icon || 'sso'}
+                                    width={20}
+                                    height={20}
+                                    style={{ marginRight: 5 }}
+                                  />
+                                  Sign in with {item.display_name}
+                                </div>
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+                      </form>
                     )}
-                  </form>
+                  </AuthFaceContext.Consumer>
                 </Form>
 
                 {title === 'login' && registerEnabled && (
@@ -328,6 +364,7 @@ const Login = () => {
                         variant={'transparent'}
                         onClick={changeTitle}
                         className="text-accent-primary/90 hover:text-accent-primary hover:bg-transparent font-medium border-none transition-colors duration-200"
+                        data-testid="auth-toggle-register"
                       >
                         {t('signUp')}
                       </Button>
@@ -342,6 +379,7 @@ const Login = () => {
                         variant={'transparent'}
                         onClick={changeTitle}
                         className="text-accent-primary/90 hover:text-accent-primary hover:bg-transparent font-medium border-none transition-colors duration-200"
+                        data-testid="auth-toggle-login"
                       >
                         {t('login')}
                       </Button>
@@ -352,6 +390,11 @@ const Login = () => {
             </div>
           </FlipCard3D>
         </div>
+        <div
+          data-testid="auth-status"
+          data-state={authState}
+          className="sr-only"
+        />
       </div>
     </>
   );

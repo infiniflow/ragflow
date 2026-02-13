@@ -90,6 +90,7 @@ export default function Agents() {
             isSearch={!!searchString}
             type={EmptyCardType.Agent}
             // onClick={() => showCreatingModal()}
+            dataTestId="agents-empty-create"
           >
             <div className="flex flex-col gap-y-5 text-text-secondary text-sm pt-5">
               <div
@@ -117,7 +118,7 @@ export default function Agents() {
           </EmptyAppCard>
         </div>
       )}
-      <section className="flex flex-col w-full flex-1">
+      <section className="flex flex-col w-full flex-1" data-testid="agents-list">
         {(!!data?.length || searchString) && (
           <>
             <div className="px-8 pt-8 ">
@@ -132,12 +133,12 @@ export default function Agents() {
               >
                 <DropdownMenu>
                   <DropdownMenuTrigger>
-                    <Button>
+                    <Button data-testid="create-agent">
                       <Plus className="h-4 w-4" />
                       {t('flow.createGraph')}
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent>
+                  <DropdownMenuContent data-testid="agent-create-menu">
                     <DropdownMenuItem
                       justifyBetween={false}
                       onClick={showCreatingModal}
@@ -153,6 +154,7 @@ export default function Agents() {
                       {t('flow.createFromTemplate')}
                     </DropdownMenuItem>
                     <DropdownMenuItem
+                      data-testid="agent-import-json"
                       justifyBetween={false}
                       onClick={handleImportJson}
                     >
@@ -172,16 +174,18 @@ export default function Agents() {
                   isSearch={!!searchString}
                   type={EmptyCardType.Agent}
                   onClick={() => showCreatingModal()}
+                  dataTestId="agents-empty-create"
                 />
               </div>
             )}
             <div className="flex-1 overflow-auto">
               <CardContainer className="max-h-[calc(100dvh-280px)] overflow-auto px-8">
-                {data.map((x) => {
+                {data.map((x, index) => {
                   return (
                     <AgentCard
                       key={x.id}
                       data={x}
+                      index={index}
                       showAgentRenameModal={showAgentRenameModal}
                     ></AgentCard>
                   );

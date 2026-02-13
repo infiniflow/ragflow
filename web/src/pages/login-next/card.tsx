@@ -1,6 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import './index.less';
 
+type AuthFace = 'front' | 'back';
+type AuthFaceContextValue = {
+  active: boolean;
+  face: AuthFace;
+};
+
+export const AuthFaceContext = React.createContext<AuthFaceContextValue | null>(
+  null,
+);
+
 type IProps = {
   children: React.ReactNode;
   isLoginPage: boolean;
@@ -24,6 +34,8 @@ const FlipCard3D = (props: IProps) => {
       CSS.supports('-ms-backface-visibility', 'hidden')
     );
   };
+  const frontInertProps = (isFlipped ? { inert: '' } : {}) as React.HTMLAttributes<HTMLDivElement>;
+  const backInertProps = (!isFlipped ? { inert: '' } : {}) as React.HTMLAttributes<HTMLDivElement>;
   return (
     <>
       {isBackfaceVisibilitySupported() && (
@@ -32,18 +44,42 @@ const FlipCard3D = (props: IProps) => {
             className={`relative w-full h-full transition-transform transform-style-3d ${isFlipped ? 'rotate-y-180' : ''}`}
           >
             {/* Front Face */}
-            <div className="absolute inset-0 flex items-center justify-center backface-hidden rotate-y-0">
-              {children}
+            <div
+              className={`absolute inset-0 flex items-center justify-center backface-hidden rotate-y-0 ${
+                isFlipped ? 'pointer-events-none' : 'pointer-events-auto'
+              }`}
+              data-testid={!isFlipped ? 'auth-card-active' : undefined}
+              data-face="front"
+              aria-hidden={isFlipped}
+              {...frontInertProps}
+            >
+              <AuthFaceContext.Provider value={{ active: !isFlipped, face: 'front' }}>
+                {children}
+              </AuthFaceContext.Provider>
             </div>
 
             {/* Back Face */}
-            <div className="absolute inset-0 flex items-center justify-center backface-hidden rotate-y-180">
-              {children}
+            <div
+              className={`absolute inset-0 flex items-center justify-center backface-hidden rotate-y-180 ${
+                isFlipped ? 'pointer-events-auto' : 'pointer-events-none'
+              }`}
+              data-testid={isFlipped ? 'auth-card-active' : undefined}
+              data-face="back"
+              aria-hidden={!isFlipped}
+              {...backInertProps}
+            >
+              <AuthFaceContext.Provider value={{ active: isFlipped, face: 'back' }}>
+                {children}
+              </AuthFaceContext.Provider>
             </div>
           </div>
         </div>
       )}
-      {!isBackfaceVisibilitySupported() && <>{children}</>}
+      {!isBackfaceVisibilitySupported() && (
+        <AuthFaceContext.Provider value={{ active: true, face: 'front' }}>
+          {children}
+        </AuthFaceContext.Provider>
+      )}
     </>
   );
 };

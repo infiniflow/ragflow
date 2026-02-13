@@ -11,10 +11,26 @@ interface IProps {
 
 function Dot({ run }: { run: RunningStatus }) {
   const runningStatus = RunningStatusMap[run];
+  const state =
+    run === RunningStatus.UNSTART
+      ? 'idle'
+      : run === RunningStatus.RUNNING
+        ? 'running'
+        : run === RunningStatus.DONE
+          ? 'success'
+          : run === RunningStatus.FAIL
+            ? 'failed'
+            : run === RunningStatus.CANCEL
+              ? 'cancel'
+              : run === RunningStatus.SCHEDULE
+                ? 'scheduled'
+                : 'unknown';
   return (
     <span
       className={'size-1 inline-block rounded'}
       style={{ backgroundColor: runningStatus.color }}
+      data-testid="document-parse-status"
+      data-state={state}
     ></span>
   );
 }

@@ -86,6 +86,8 @@ const ApiKeyModal = ({
       okText={t('save')}
       cancelText={t('cancel')}
       className="!w-[600px]"
+      contentTestId="apikey-modal"
+      okButtonTestId="apikey-save"
     >
       <Form {...form}>
         <div className="space-y-4 py-4">
@@ -105,6 +107,7 @@ const ApiKeyModal = ({
                     {...field}
                     onKeyDown={handleKeyDown}
                     className="w-full"
+                    data-testid="apikey-input"
                   />
                 </FormControl>
                 <FormMessage />

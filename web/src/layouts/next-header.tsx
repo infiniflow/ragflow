@@ -86,6 +86,12 @@ export function Header() {
   );
 
   const options = useMemo(() => {
+    const navTestIds: Record<string, string> = {
+      [Routes.Chats]: 'nav-chat',
+      [Routes.Searches]: 'nav-search',
+      [Routes.Agents]: 'nav-agent',
+    };
+
     return tagsData.map((tag) => {
       const HeaderIcon = tag.icon;
 
@@ -97,6 +103,7 @@ export function Header() {
             <span>{tag.name}</span>
           ),
         value: tag.path,
+        dataTestId: navTestIds[tag.path],
       };
     });
   }, [tagsData]);
@@ -128,7 +135,10 @@ export function Header() {
   }, [pathname]);
 
   return (
-    <section className="py-5 px-10 flex justify-between items-center ">
+    <section
+      className="py-5 px-10 flex justify-between items-center "
+      data-testid="top-nav"
+    >
       <div className="flex items-center gap-4">
         <img
           src={'/logo.svg'}

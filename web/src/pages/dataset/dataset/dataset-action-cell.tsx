@@ -109,6 +109,7 @@ export function DatasetActionCell({
           className="border-none hover:bg-bg-card text-text-primary"
           size={'sm'}
           disabled={isRunning}
+          data-testid="document-delete"
         >
           <Trash2 />
         </Button>

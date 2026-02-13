@@ -69,6 +69,11 @@ export function SideBar() {
                     'bg-bg-base text-text-secondary': active !== item.key,
                   })}
                   onClick={handleMenuClick(item.key)}
+                  data-testid={
+                    item.key === Routes.Model
+                      ? 'settings-nav-model-providers'
+                      : undefined
+                  }
                 >
                   <section className="flex items-center gap-2.5">
                     {item.key === Routes.Mcp ? (
