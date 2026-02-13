@@ -1,6 +1,7 @@
 import { LlmIcon } from '@/components/svg-icon';
 import message from '@/components/ui/message';
 import { LlmModelType } from '@/constants/knowledge';
+import { DefaultOptionType } from '@/interfaces/antd-compat';
 import { ResponseGetType } from '@/interfaces/database/base';
 import {
   IFactory,
@@ -16,7 +17,6 @@ import {
 import userService from '@/services/user-service';
 import { getLLMIconName, getRealModelName } from '@/utils/llm-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { DefaultOptionType } from 'antd/es/select';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
