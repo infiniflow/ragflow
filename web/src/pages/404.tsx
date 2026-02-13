@@ -1,10 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { Routes } from '@/routes';
-import { useLocation } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 
 const NoFoundPage = () => {
   const location = useLocation();
-
+  const navigate = useNavigate();
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh]">
       <div className="text-6xl font-bold text-text-secondary mb-4">404</div>
@@ -13,9 +13,8 @@ const NoFoundPage = () => {
       </div>
       <Button
         onClick={() => {
-          window.open(
+          navigate(
             location.pathname.startsWith(Routes.Admin) ? Routes.Admin : '/',
-            '_self',
           );
         }}
       >
