@@ -47,6 +47,7 @@ export default {
       submit: 'Absenden',
       clear: 'Leeren',
       embedIntoSite: 'In Webseite einbetten',
+      openInNewTab: 'In neuem Tab öffnen',
       previousPage: 'Zurück',
       nextPage: 'Weiter',
       add: 'Hinzufügen',

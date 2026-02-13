@@ -52,6 +52,7 @@ export default {
       submit: 'Invia',
       clear: 'Cancella',
       embedIntoSite: 'Incorpora nella pagina web',
+      openInNewTab: 'Apri in una nuova scheda',
       previousPage: 'Precedente',
       nextPage: 'Successivo',
       add: 'Aggiungi',

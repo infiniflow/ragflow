@@ -44,6 +44,7 @@ export default {
       submit: 'Отправить',
       clear: 'Очистить',
       embedIntoSite: 'Встроить на веб-страницу',
+      openInNewTab: 'Открыть в новой вкладке',
       previousPage: 'Назад',
       nextPage: 'Вперед',
       add: 'Добавить',
