@@ -26,6 +26,7 @@ export default {
       chinese: 'Китайский упрощенный',
       traditionalChinese: 'Китайский традиционный',
       russian: 'Русский',
+      bulgarian: 'Болгарский',
       language: 'Язык',
       languageMessage: 'Пожалуйста, укажите ваш язык!',
       languagePlaceholder: 'выберите ваш язык',

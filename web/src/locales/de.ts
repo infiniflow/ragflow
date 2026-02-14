@@ -28,6 +28,7 @@ export default {
       chinese: 'Vereinfachtes Chinesisch',
       traditionalChinese: 'Traditionelles Chinesisch',
       russian: 'Russisch',
+      bulgarian: 'Bulgarisch',
       german: 'Deutsch',
       language: 'Sprache',
       languageMessage: 'Bitte geben Sie Ihre Sprache ein!',

@@ -27,6 +27,7 @@ export default {
       chinese: 'Cinese semplificato',
       traditionalChinese: 'Cinese tradizionale',
       russian: 'Russo',
+      bulgarian: 'Bulgaro',
       italian: 'Italiano',
       german: 'Tedesco',
       french: 'Francese',
