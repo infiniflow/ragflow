@@ -2107,6 +2107,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       japanese: '日语',
       korean: '韩语',
       vietnamese: '越南语',
+      bulgarian: '保加利亚语',
     },
     pagination: {
       total: '总共 {{total}} 条',

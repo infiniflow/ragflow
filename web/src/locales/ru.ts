@@ -2036,6 +2036,7 @@ export default {
       korean: 'Корейский',
       vietnamese: 'Вьетнамский',
       russian: 'Русский',
+      bulgarian: 'Болгарский',
     },
     pagination: {
       total: 'Всего {{total}}',

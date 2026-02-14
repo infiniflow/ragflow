@@ -1190,6 +1190,7 @@ Quanto sopra è il contenuto che devi riassumere.`,
       korean: 'Coreano',
       vietnamese: 'Vietnamita',
       russian: 'Russo',
+      bulgarian: 'Bulgaro',
     },
     pagination: {
       total: 'Totale {{total}}',

@@ -27,6 +27,7 @@ export default {
       chinese: 'Опростен китайски',
       traditionalChinese: 'Традиционен китайски',
       russian: 'Руски',
+      bulgarian: 'Български',
       language: 'Език',
       languageMessage: 'Моля, въведете вашия език!',
       languagePlaceholder: 'изберете вашия език',
@@ -2373,6 +2374,7 @@ Important structured information may include: names, dates, locations, events, k
       korean: 'Корейски',
       vietnamese: 'Виетнамски',
       russian: 'Руски',
+      bulgarian: 'Български',
     },
     pagination: {
       total: 'Общо {{total}}',
