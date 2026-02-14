@@ -159,42 +159,6 @@ class ESConnectionBase(DocStoreConnection):
         except Exception as e:
             self.logger.exception(f"Error creating document metadata index {index_name}: {e}")
 
-    def refresh_idx(self, index_name: str):
-        """
-        Refresh an index.
-        """
-        try:
-            self.es.indices.refresh(index=index_name)
-        except Exception as e:
-            self.logger.warning(f"Failed to refresh index {index_name}: {e}")
-
-    def count_idx(self, index_name: str) -> int:
-        """
-        Count documents in an index.
-        """
-        try:
-            res = self.es.count(index=index_name)
-            return res.get("count", 0)
-        except Exception as e:
-            self.logger.warning(f"Failed to count index {index_name}: {e}")
-            return 0
-
-    def update_doc_metadata_field(self, index_name: str, doc_id: str, data: dict):
-        """
-        Partial update of document metadata.
-        """
-        try:
-            self.es.update(
-                index=index_name,
-                id=doc_id,
-                refresh=True,
-                doc=data
-            )
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to update metadata for doc {doc_id} in index {index_name}: {e}")
-            raise e
-
     def delete_idx(self, index_name: str, dataset_id: str):
         if len(dataset_id) > 0:
             # The index need to be alive after any kb deletion since all kb under this tenant are in one index.

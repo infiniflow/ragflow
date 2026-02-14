@@ -235,34 +235,6 @@ class DocStoreConnection(ABC):
         """
         raise NotImplementedError("Not implemented")
 
-    @abstractmethod
-    def create_doc_meta_idx(self, index_name: str):
-        """
-        Create a document metadata index.
-        """
-        raise NotImplementedError("Not implemented")
-
-    @abstractmethod
-    def refresh_idx(self, index_name: str):
-        """
-        Refresh an index.
-        """
-        raise NotImplementedError("Not implemented")
-
-    @abstractmethod
-    def count_idx(self, index_name: str) -> int:
-        """
-        Count documents in an index.
-        """
-        raise NotImplementedError("Not implemented")
-
-    @abstractmethod
-    def update_doc_metadata_field(self, index_name: str, doc_id: str, data: dict):
-        """
-        Partial update of document metadata.
-        """
-        raise NotImplementedError("Not implemented")
-
     """
     Helper functions for search result
     """

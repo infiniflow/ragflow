@@ -316,7 +316,7 @@ class DocMetadataService:
             # Force ES refresh to make metadata immediately available for search
             if not settings.DOC_ENGINE_INFINITY:
                 try:
-                    settings.docStoreConn.refresh_idx(index_name)
+                    settings.docStoreConn.es.indices.refresh(index=index_name)
                     logging.debug(f"Refreshed metadata index: {index_name}")
                 except Exception as e:
                     logging.warning(f"Failed to refresh metadata index {index_name}: {e}")
@@ -380,11 +380,12 @@ class DocMetadataService:
 
                 if doc_exists:
                     try:
-                        # Use doc store partial update API - much more efficient than delete+insert
-                        settings.docStoreConn.update_doc_metadata_field(
-                            index_name=index_name,
-                            doc_id=doc_id,
-                            data={"meta_fields": processed_meta}
+                        # Use ES partial update API - much more efficient than delete+insert
+                        settings.docStoreConn.es.update(
+                            index=index_name,
+                            id=doc_id,
+                            refresh=True,  # Make changes immediately visible
+                            doc={"meta_fields": processed_meta}
                         )
                         logging.debug(f"Successfully updated metadata for document {doc_id} using partial update")
                         return True
@@ -506,11 +507,12 @@ class DocMetadataService:
 
             logging.debug(f"[DROP EMPTY TABLE] Table {index_name} exists, checking if empty...")
 
-            # Use doc store count API for accurate count
+            # Use ES count API for accurate count
             # Note: No need to refresh since delete operation already uses refresh=True
             try:
-                total_count = settings.docStoreConn.count_idx(index_name)
-                logging.debug(f"[DROP EMPTY TABLE] Doc store count result: {total_count} documents")
+                count_response = settings.docStoreConn.es.count(index=index_name)
+                total_count = count_response['count']
+                logging.debug(f"[DROP EMPTY TABLE] ES count API result: {total_count} documents")
                 is_empty = (total_count == 0)
             except Exception as e:
                 logging.warning(f"[DROP EMPTY TABLE] Count API failed, falling back to search: {e}")

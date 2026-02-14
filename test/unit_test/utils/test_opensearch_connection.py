@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 # Add project root to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from common.config_utils import get_base_config
 from common.doc_store.doc_store_base import DocStoreConnection, MatchDenseExpr, MatchTextExpr
@@ -14,7 +14,8 @@ from rag.utils.opensearch_conn import OSConnection
 
 # ----------------- Helper functions ------------------------------
 
-def _ensure_opensearch_config()  -> bool:
+
+def _ensure_opensearch_config() -> bool:
     """
     Ensure settings.OS is populated when running tests outside the app.
     init_settings() is only called when the server starts; when running pytest
@@ -54,32 +55,30 @@ def _enshure_live_opensearch_connection() -> bool:
 
 
 # ----------------- Tests ------------------------------
-@pytest.mark.skipif(not _ensure_opensearch_config(), reason="No OpenSearch configuration found")
 def test_opensearch_connection_parity():
     """
-    Verify that OSConnection has the required methods for metadata parity.
-    Skips only when OpenSearch is unreachable; loads config from service_conf if needed.
+    Verify OpenSearch connector parity with expected non-generic behavior.
+
+    This test is static and does not require a live OpenSearch instance.
     """
+    current_dir = Path(__file__).resolve().parent
+    project_root = current_dir.parent.parent.parent
+    opensearch_conn_path = project_root / "rag" / "utils" / "opensearch_conn.py"
+    source_code = opensearch_conn_path.read_text(encoding="utf-8")
 
-    try:
-        os_conn = OSConnection()
+    tree = ast.parse(source_code)
+    os_connection_class = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "OSConnection")
+    class_methods = {node.name for node in os_connection_class.body if isinstance(node, ast.FunctionDef)}
 
-        # 1. Check for methods
-        assert hasattr(os_conn, 'create_doc_meta_idx'), "OSConnection missing create_doc_meta_idx"
-        assert hasattr(os_conn, 'refresh_idx'), "OSConnection missing refresh_idx"
-        assert hasattr(os_conn, 'count_idx'), "OSConnection missing count_idx"
-        assert hasattr(os_conn, 'update_doc_metadata_field'), "OSConnection missing update_doc_metadata_field"
+    # Keep only behaviorally relevant parity checks after generic rollback.
+    assert "create_doc_meta_idx" in class_methods, "OSConnection should implement create_doc_meta_idx"
+    assert "search" in class_methods, "OSConnection should implement search"
+    assert "insert" in class_methods, "OSConnection should implement insert"
+    assert "update" in class_methods, "OSConnection should implement update"
+    assert "delete" in class_methods, "OSConnection should implement delete"
 
-        # 2. Check for .es alias
-        assert hasattr(os_conn, 'es'), "OSConnection missing .es alias"
-        assert os_conn.es == os_conn.os, ".es alias does not point to .os client"
-
-    except Exception as e:
-        # Skip only on connection/network issues (OpenSearch not running or unreachable)
-        err_str = str(e).lower()
-        if any(x in err_str for x in ("connection", "timeout", "unhealthy", "refused")):
-            pytest.skip(f"OpenSearch not reachable: {e}")
-        raise
+    # Verify compatibility alias remains in constructor source.
+    assert "self.es = self.os" in source_code, "OSConnection should keep .es alias for compatibility paths"
 
 
 def test_metadata_mapping_exists():
@@ -125,18 +124,13 @@ def test_memory_opensearch_connector_implements_docstore_abstract_methods():
     memory_conn_path = project_root / "memory" / "utils" / "opensearch_conn.py"
 
     tree = ast.parse(memory_conn_path.read_text(encoding="utf-8"))
-    os_connection_class = next(
-        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "OSConnection"
-    )
+    os_connection_class = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "OSConnection")
     class_methods = {node.name for node in os_connection_class.body if isinstance(node, ast.FunctionDef)}
 
     required_methods = set(DocStoreConnection.__abstractmethods__)
     missing_methods = sorted(required_methods - class_methods)
 
-    assert not missing_methods, (
-        "memory.utils.opensearch_conn.OSConnection misses required DocStoreConnection "
-        f"methods: {missing_methods}"
-    )
+    assert not missing_methods, f"memory.utils.opensearch_conn.OSConnection misses required DocStoreConnection methods: {missing_methods}"
 
 
 @pytest.mark.skipif(not _enshure_live_opensearch_connection(), reason="No OpenSearch configuration or instance found")
@@ -161,7 +155,7 @@ def test_live_opensearch_metadata_ops():
         docs = [
             {"id": "doc_1", "kb_id": kb_id, "meta_fields": {"tags": ["a", "b"], "status": "new"}},
             {"id": "doc_2", "kb_id": kb_id, "meta_fields": {"tags": ["b", "c"], "status": "active"}},
-            {"id": "doc_3", "kb_id": "other_kb", "meta_fields": {"tags": ["d"], "status": "new"}}
+            {"id": "doc_3", "kb_id": "other_kb", "meta_fields": {"tags": ["d"], "status": "new"}},
         ]
         print(f"[LIVE] Inserting {len(docs)} documents...")
         res = os_conn.insert(docs, index_name)
@@ -183,7 +177,7 @@ def test_live_opensearch_metadata_ops():
             offset=0,
             limit=10,
             index_names=index_name,
-            knowledgebase_ids=[kb_id, "other_kb"]
+            knowledgebase_ids=[kb_id, "other_kb"],
         )
         total = os_conn.get_total(search_res)
         assert total == 2, f"Expected 2 'new' documents, got {total}"
