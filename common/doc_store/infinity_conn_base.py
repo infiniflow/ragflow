@@ -418,6 +418,41 @@ class InfinityConnectionBase(DocStoreConnection):
             self.logger.warning(f"INFINITY indexExist {str(e)}")
         return False
 
+    def refresh_idx(self, index_name: str):
+        """
+        Infinity doesn't have an explicit refresh operation.
+        """
+        pass
+
+    def count_idx(self, index_name: str) -> int:
+        """
+        Count documents in a table using search.
+        """
+        try:
+            # We use search with limit 1 to get the total count
+            res = self.search(
+                select_fields=["id"],
+                highlight_fields=[],
+                condition={},
+                match_expressions=[],
+                order_by=OrderByExpr(),
+                offset=0,
+                limit=1,
+                index_names=index_name,
+                dataset_ids=[""]
+            )
+            return self.get_total(res)
+        except Exception as e:
+            self.logger.warning(f"Failed to count Infinity table {index_name}: {e}")
+            return 0
+
+    def update_doc_metadata_field(self, index_name: str, doc_id: str, data: dict):
+        """
+        Infinity doesn't support partial updates well.
+        Returning False to trigger fallback to insert+delete in DocMetadataService.
+        """
+        return False
+
     """
     CRUD operations
     """

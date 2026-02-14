@@ -200,6 +200,17 @@
         }
       },
       {
+        "dense_vector": {
+          "match": "*_3072_vec",
+          "mapping": {
+            "type": "dense_vector",
+            "index": true,
+            "similarity": "cosine",
+            "dims": 3072
+          }
+        }
+      },
+      {
         "binary": {
           "match": "*_bin",
           "mapping": {

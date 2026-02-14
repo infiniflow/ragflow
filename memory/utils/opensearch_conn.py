@@ -133,6 +133,47 @@ class OSConnection(DocStoreConnection):
             logger.exception(f"OSConnection.index_exist({indexName}) got exception")
             return False
 
+    def create_doc_meta_idx(self, index_name: str):
+        if self.index_exist(index_name):
+            return True
+        try:
+            fp_mapping = os.path.join(get_project_base_directory(), "conf", "doc_meta_os_mapping.json")
+            if not os.path.exists(fp_mapping):
+                logger.error(f"Document metadata mapping file not found at {fp_mapping}")
+                return False
+            with open(fp_mapping, "r") as f:
+                doc_meta_mapping = json.load(f)
+            return IndicesClient(self.os).create(index=index_name, body=doc_meta_mapping)
+        except Exception:
+            logger.exception(f"OSConnection.create_doc_meta_idx({index_name}) got exception")
+            return False
+
+    def refresh_idx(self, index_name: str):
+        try:
+            self.os.indices.refresh(index=index_name)
+        except Exception:
+            logger.exception(f"OSConnection.refresh_idx({index_name}) got exception")
+
+    def count_idx(self, index_name: str) -> int:
+        try:
+            response = self.os.count(index=index_name)
+            return int(response.get("count", 0))
+        except Exception:
+            logger.exception(f"OSConnection.count_idx({index_name}) got exception")
+            return 0
+
+    def update_doc_metadata_field(self, index_name: str, doc_id: str, data: dict):
+        try:
+            self.os.update(index=index_name, id=doc_id, refresh=True, body={"doc": data})
+            return True
+        except Exception:
+            logger.exception(
+                "OSConnection.update_doc_metadata_field(index=%s, doc_id=%s) got exception",
+                index_name,
+                doc_id,
+            )
+            return False
+
     @staticmethod
     def convert_field_name(field_name: str, use_tokenized_content=False) -> str:
         match field_name:
@@ -528,3 +569,61 @@ class OSConnection(DocStoreConnection):
             m = {n: v for n, v in message.items() if n in fields}
             if m: res_fields[doc["id"]] = m
         return res_fields
+
+    def get_doc_ids(self, res):
+        if not res or "hits" not in res:
+            return []
+        return [d["_id"] for d in res["hits"]["hits"]]
+
+    def get_highlight(self, res, keywords: list[str], field_name: str):
+        highlighted_text: dict[str, str] = {}
+        if not res or "hits" not in res:
+            return highlighted_text
+        for d in res["hits"]["hits"]:
+            doc_highlight = d.get("highlight")
+            if not doc_highlight:
+                continue
+            snippets = list(doc_highlight.items())[0][1]
+            highlighted_text[d["_id"]] = "...".join(snippets)
+        return highlighted_text
+
+    def get_aggregation(self, res, field_name: str):
+        agg_field = f"aggs_{field_name}"
+        if not res or "aggregations" not in res or agg_field not in res["aggregations"]:
+            return []
+        buckets = res["aggregations"][agg_field]["buckets"]
+        return [(bucket["key"], bucket["doc_count"]) for bucket in buckets]
+
+    def sql(self, sql: str, fetch_size: int, format: str):
+        logger.debug(f"OSConnection.sql get sql: {sql}")
+        sql = re.sub(r"[ `]+", " ", sql)
+        sql = sql.replace("%", "")
+
+        replacements = []
+        for match in re.finditer(r" ([a-z_]+_l?tks)( like | ?= ?)'([^']+)'", sql):
+            fld, value = match.group(1), match.group(3)
+            os_match = " MATCH({}, '{}', 'operator=OR;minimum_should_match=30%') ".format(
+                fld, fine_grained_tokenize(tokenize(value))
+            )
+            replacements.append((f"{match.group(1)}{match.group(2)}'{match.group(3)}'", os_match))
+
+        for source, target in replacements:
+            sql = sql.replace(source, target, 1)
+        logger.debug(f"OSConnection.sql to os: {sql}")
+
+        for _ in range(ATTEMPT_TIME):
+            try:
+                return self.os.sql.query(
+                    body={"query": sql, "fetch_size": fetch_size},
+                    format=format,
+                    request_timeout="2s",
+                )
+            except ConnectionTimeout:
+                logger.exception("OSConnection.sql timeout")
+                self._connect()
+                continue
+            except Exception:
+                logger.exception("OSConnection.sql got exception")
+                return None
+        logger.error(f"OSConnection.sql timeout for {ATTEMPT_TIME} times!")
+        return None

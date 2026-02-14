@@ -213,6 +213,17 @@
       },
       {
         "knn_vector": {
+          "match": "*_3072_vec",
+          "mapping": {
+            "type": "knn_vector",
+            "index": true,
+            "space_type": "cosinesimil",
+            "dimension": 3072
+          }
+        }
+      },
+      {
+        "knn_vector": {
           "match": "*_4096_vec",
           "mapping": {
             "type": "knn_vector",
