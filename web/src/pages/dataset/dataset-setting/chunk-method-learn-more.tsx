@@ -5,7 +5,7 @@ import { X } from 'lucide-react';
 import { useState } from 'react';
 import CategoryPanel from './category-panel';
 
-export default ({ parserId }: { parserId: string }) => {
+const ChunkMethodLearnMore = ({ parserId }: { parserId: string }) => {
   const [visible, setVisible] = useState(false);
 
   return (
@@ -37,3 +37,5 @@ export default ({ parserId }: { parserId: string }) => {
     </div>
   );
 };
+
+export default ChunkMethodLearnMore;

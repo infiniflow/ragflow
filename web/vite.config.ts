@@ -113,6 +113,13 @@ export default defineConfig(({ mode, command }) => {
             //   return 'components';
             // }
 
+            if (id.includes('src/locales/') && id.endsWith('.ts')) {
+              const match = id.match(/src\/locales\/([^/]+)\.ts$/);
+              if (match) {
+                return `locale-${match[1]}`;
+              }
+            }
+
             if (id.includes('node_modules')) {
               if (id.includes('node_modules/d3')) {
                 return 'd3';

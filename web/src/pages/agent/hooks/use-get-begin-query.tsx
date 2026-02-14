@@ -1,5 +1,6 @@
 import { AgentGlobals, AgentStructuredOutputField } from '@/constants/agent';
 import { useFetchAgent } from '@/hooks/use-agent-request';
+import { DefaultOptionType } from '@/interfaces/antd-compat';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import {
   buildNodeOutputOptions,
@@ -7,7 +8,6 @@ import {
   buildUpstreamNodeOutputOptions,
   isAgentStructured,
 } from '@/utils/canvas-util';
-import { DefaultOptionType } from 'antd/es/select';
 import { t } from 'i18next';
 import { flatten, isEmpty, toLower } from 'lodash';
 import get from 'lodash/get';

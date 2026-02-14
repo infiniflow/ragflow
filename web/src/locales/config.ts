@@ -3,73 +3,35 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 import { initReactI18next } from 'react-i18next';
 
 import { LanguageAbbreviation } from '@/constants/common';
-import translation_de from './de';
-import translation_en from './en';
-import translation_es from './es';
-import translation_fr from './fr';
-import translation_id from './id';
-import translation_it from './it';
-import translation_ja from './ja';
-import translation_pt_br from './pt-br';
-import translation_ru from './ru';
 import { createTranslationTable, flattenObject } from './until';
-import translation_vi from './vi';
-import translation_zh from './zh';
-import translation_zh_traditional from './zh-traditional';
+
+import translation_en from './en';
+
+const languageImports: Record<string, () => Promise<{ default: any }>> = {
+  [LanguageAbbreviation.Zh]: () => import('./zh'),
+  [LanguageAbbreviation.ZhTraditional]: () => import('./zh-traditional'),
+  [LanguageAbbreviation.Id]: () => import('./id'),
+  [LanguageAbbreviation.Ja]: () => import('./ja'),
+  [LanguageAbbreviation.Es]: () => import('./es'),
+  [LanguageAbbreviation.Vi]: () => import('./vi'),
+  [LanguageAbbreviation.Ru]: () => import('./ru'),
+  [LanguageAbbreviation.PtBr]: () => import('./pt-br'),
+  [LanguageAbbreviation.De]: () => import('./de'),
+  [LanguageAbbreviation.Fr]: () => import('./fr'),
+  [LanguageAbbreviation.It]: () => import('./it'),
+};
+
+const enFlattened = flattenObject(translation_en);
+
+export const translationTable = createTranslationTable(
+  [enFlattened],
+  ['English'],
+);
 
 const resources = {
   [LanguageAbbreviation.En]: translation_en,
-  [LanguageAbbreviation.Zh]: translation_zh,
-  [LanguageAbbreviation.ZhTraditional]: translation_zh_traditional,
-  [LanguageAbbreviation.Id]: translation_id,
-  [LanguageAbbreviation.Ja]: translation_ja,
-  [LanguageAbbreviation.Es]: translation_es,
-  [LanguageAbbreviation.Vi]: translation_vi,
-  [LanguageAbbreviation.Ru]: translation_ru,
-  [LanguageAbbreviation.PtBr]: translation_pt_br,
-  [LanguageAbbreviation.De]: translation_de,
-  [LanguageAbbreviation.Fr]: translation_fr,
-  [LanguageAbbreviation.It]: translation_it,
 };
-const enFlattened = flattenObject(translation_en);
-const viFlattened = flattenObject(translation_vi);
-const ruFlattened = flattenObject(translation_ru);
-const esFlattened = flattenObject(translation_es);
-const zhFlattened = flattenObject(translation_zh);
-const jaFlattened = flattenObject(translation_ja);
-const pt_brFlattened = flattenObject(translation_pt_br);
-const zh_traditionalFlattened = flattenObject(translation_zh_traditional);
-const deFlattened = flattenObject(translation_de);
-const frFlattened = flattenObject(translation_fr);
-const itFlattened = flattenObject(translation_it);
-export const translationTable = createTranslationTable(
-  [
-    enFlattened,
-    viFlattened,
-    ruFlattened,
-    esFlattened,
-    zhFlattened,
-    zh_traditionalFlattened,
-    jaFlattened,
-    pt_brFlattened,
-    deFlattened,
-    frFlattened,
-    itFlattened,
-  ],
-  [
-    'English',
-    'Vietnamese',
-    'ru',
-    'Spanish',
-    'zh',
-    'zh-TRADITIONAL',
-    'ja',
-    'pt-BR',
-    'Deutsch',
-    'French',
-    'Italian',
-  ],
-);
+
 i18n
   .use(initReactI18next)
   .use(LanguageDetector)
@@ -84,5 +46,44 @@ i18n
       escapeValue: false,
     },
   });
+
+export const loadLanguageAsync = async (lng: string): Promise<void> => {
+  if (i18n.hasResourceBundle(lng, 'translation')) {
+    return;
+  }
+
+  const importFn = languageImports[lng];
+  if (!importFn) {
+    console.warn(`Language ${lng} is not supported for lazy loading`);
+    return;
+  }
+
+  try {
+    const module = await importFn();
+    const translationData = module.default?.translation || module.default;
+    i18n.addResourceBundle(lng, 'translation', translationData);
+
+    const flattened = flattenObject({ translation: translationData });
+    translationTable.push(flattened);
+  } catch (error) {
+    console.error(`Failed to load language ${lng}:`, error);
+  }
+};
+
+export const changeLanguageAsync = async (lng: string): Promise<void> => {
+  if (lng !== 'en' && !i18n.hasResourceBundle(lng, 'translation')) {
+    await loadLanguageAsync(lng);
+  }
+  await i18n.changeLanguage(lng);
+};
+
+export const initLanguage = async (): Promise<void> => {
+  const currentLng = i18n.language || localStorage.getItem('lng') || 'en';
+
+  if (currentLng !== 'en' && languageImports[currentLng]) {
+    await loadLanguageAsync(currentLng);
+    await i18n.changeLanguage(currentLng);
+  }
+};
 
 export default i18n;

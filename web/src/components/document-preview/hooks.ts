@@ -165,3 +165,24 @@ export const useFetchDocx = (filePath: string) => {
 
   return { succeed, containerRef, error };
 };
+
+export const useCatchDocumentError = (url: string) => {
+  const httpHeaders = useMemo(() => {
+    return {
+      [Authorization]: getAuthorization(),
+    };
+  }, []);
+  const [error, setError] = useState<string>('');
+
+  const fetchDocument = useCallback(async () => {
+    const { data } = await axios.get(url, { headers: httpHeaders });
+    if (data.code !== 0) {
+      setError(data?.message);
+    }
+  }, [url, httpHeaders]);
+  useEffect(() => {
+    fetchDocument();
+  }, [fetchDocument]);
+
+  return error;
+};
