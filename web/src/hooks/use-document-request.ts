@@ -469,8 +469,8 @@ export const useGetDocumentUrl = (documentId?: string) => {
   const getDocumentUrl = useCallback(
     (id?: string) => {
       return auth
-        ? `${ExternalApi}/v1/documents/${documentId || id}`
-        : `${api_host}/document/get/${documentId || id}`;
+        ? `${ExternalApi}/v1/documents/${id || documentId}`
+        : `${api_host}/document/get/${id || documentId}`;
     },
     [documentId, auth],
   );

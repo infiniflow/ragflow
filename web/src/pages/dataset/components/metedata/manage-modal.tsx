@@ -552,7 +552,9 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
               {metadataType === MetadataType.Setting ||
               metadataType === MetadataType.SingleFileSetting
                 ? t('knowledgeDetails.metadata.fieldSetting')
-                : t('knowledgeDetails.metadata.editMetadata')}
+                : isAddValueMode
+                  ? t('knowledgeDetails.metadata.addMetadata')
+                  : t('knowledgeDetails.metadata.editMetadata')}
             </div>
           }
           type={metadataType}
@@ -569,7 +571,6 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
           isShowValueSwitch={isShowValueSwitch}
           isShowType={true}
           isVerticalShowValue={isVerticalShowValue}
-          isAddValueMode={isAddValueMode}
           //   handleDeleteSingleValue={handleDeleteSingleValue}
           //   handleDeleteSingleRow={handleDeleteSingleRow}
         />
