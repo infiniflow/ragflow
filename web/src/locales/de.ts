@@ -1030,13 +1030,41 @@ Beispiel: Virtual Hosted Style`,
       seafileDescription:
         'Verbinden Sie sich mit Ihrem SeaFile-Server, um Dateien und Dokumente aus Ihren Bibliotheken zu synchronisieren.',
       seafileUrlTip:
-        'Die Basis-URL Ihres SeaFile-Servers (z.B. https://seafile.example.com). Fügen Sie kein /api2 oder andere Pfade hinzu.',
+        'Die vollstaendige URL Ihres SeaFile-Servers inklusive Protokoll. Beispiel: https://seafile.example.com - Kein abschliessender Schraegstrich und kein Pfad nach der Domain.',
+      seafileSyncScopeTip:
+        'Legt fest, was synchronisiert wird: ' +
+        '(1) Gesamtes Konto - Synchronisiert alle Bibliotheken, auf die Ihr Token Zugriff hat. Erfordert einen Konto-API-Token. ' +
+        '(2) Einzelne Bibliothek - Synchronisiert alle Dateien innerhalb einer bestimmten Bibliothek. Erfordert die Bibliotheks-ID und entweder einen Konto-API-Token oder einen Bibliotheks-API-Token. ' +
+        '(3) Bestimmtes Verzeichnis - Synchronisiert nur Dateien in einem bestimmten Ordner innerhalb einer Bibliothek. Erfordert die Bibliotheks-ID, den Ordnerpfad innerhalb dieser Bibliothek und entweder einen Konto-API-Token oder einen Bibliotheks-API-Token.',
       seafileTokenTip:
-        'Erstellen Sie ein API-Token in SeaFile: Gehen Sie zu Einstellungen → API-Token → Token erstellen. Das Token ermöglicht den Zugriff auf alle für Ihr Konto sichtbaren Bibliotheken.',
+        'Ihr kontoweiter SeaFile-API-Token. ' +
+        'Gewährt Zugriff auf alle fuer Ihr Konto sichtbaren Bibliotheken. ' +
+        'Erforderlich bei Synchronisierungsumfang "Gesamtes Konto". ' +
+        'Für "Einzelne Bibliothek" oder "Bestimmtes Verzeichnis" können Sie alternativ einen Bibliotheks-API-Token verwenden.',
+      seafileRepoTokenTip:
+        'Ein bibliotheksbezogener API-Token, der nur Zugriff auf eine bestimmte Bibliothek gewährt. ' +
+        'Kann anstelle des Konto-API-Tokens für "Einzelne Bibliothek" und "Bestimmtes Verzeichnis" verwendet werden.',
+      seafileRepoIdTip:
+        'Die eindeutige Kennung (UUID) der SeaFile-Bibliothek. ' +
+        'Sie finden diese in der Adressleiste Ihres Browsers, wenn Sie die Bibliothek in der SeaFile-Weboberflaeche öffnen. ' +
+        'Beispiel: 7a9e1b3c-4d5f-6a7b-8c9d-0e1f2a3b4c5d. ' +
+        'Erforderlich bei Synchronisierungsumfang "Einzelne Bibliothek" oder "Bestimmtes Verzeichnis".',
+      seafileSyncPathTip:
+        'Der absolute Pfad des zu synchronisierenden Ordners innerhalb der oben angegebenen Bibliothek. ' +
+        'Muss mit einem Schraegstrich beginnen. ' +
+        'Alle Dateien und Unterordner unter diesem Pfad werden rekursiv einbezogen. ' +
+        'Beispiel: /Dokumente/Berichte. ' +
+        'Wichtig: Der Ordner muss innerhalb der angegebenen Bibliothek existieren. ' +
+        'Pfade ausserhalb der Bibliothek werden nicht unterstuetzt. ' +
+        'Wird nur verwendet bei Synchronisierungsumfang "Bestimmtes Verzeichnis".',
       seafileIncludeSharedTip:
-        'Wenn aktiviert, werden auch Bibliotheken synchronisiert, die andere Benutzer mit Ihnen geteilt haben.',
+        'Wenn aktiviert, werden auch Bibliotheken synchronisiert, die andere Benutzer mit Ihnen geteilt haben. ' +
+        'Wenn deaktiviert, werden nur Bibliotheken synchronisiert, die Ihrem Konto gehoeren. ' +
+        'Gilt nur bei Synchronisierungsumfang "Gesamtes Konto".',
       seafileBatchSizeTip:
-        'Anzahl der Dokumente, die pro Batch verarbeitet werden. Höhere Werte können die Leistung verbessern, benötigen aber mehr Arbeitsspeicher. Standard: 100.',
+        'Anzahl der Dokumente, die pro Durchlauf verarbeitet und zurueckgegeben werden. ' +
+        'Ein kleinerer Wert verbraucht weniger Arbeitsspeicher, kann aber insgesamt langsamer sein. ' +
+        'Standardwert: 100.',
       jiraDescription:
         'Verbinden Sie Ihren Jira-Arbeitsbereich, um Vorgänge, Kommentare und Anhänge zu synchronisieren.',
       jiraBaseUrlTip:
