@@ -1,8 +1,16 @@
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { Toaster } from '@/components/ui/toaster';
-import i18n, { changeLanguageAsync } from '@/locales/config';
+import i18n from '@/locales/config';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { configResponsive } from 'ahooks';
+import { App, ConfigProvider, ConfigProviderProps, theme } from 'antd';
+import pt_BR from 'antd/lib/locale/pt_BR';
+import deDE from 'antd/locale/de_DE';
+import enUS from 'antd/locale/en_US';
+import ru_RU from 'antd/locale/ru_RU';
+import vi_VN from 'antd/locale/vi_VN';
+import zhCN from 'antd/locale/zh_CN';
+import zh_HK from 'antd/locale/zh_HK';
 import dayjs from 'dayjs';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
@@ -10,9 +18,9 @@ import localeData from 'dayjs/plugin/localeData';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import weekYear from 'dayjs/plugin/weekYear';
 import weekday from 'dayjs/plugin/weekday';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { RouterProvider } from 'react-router';
-import { ThemeProvider } from './components/theme-provider';
+import { ThemeProvider, useTheme } from './components/theme-provider';
 import { SidebarProvider } from './components/ui/sidebar';
 import { TooltipProvider } from './components/ui/tooltip';
 import { ThemeEnum } from './constants/common';
@@ -61,6 +69,7 @@ if (process.env.NODE_ENV === 'development') {
     },
   );
 }
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -70,23 +79,42 @@ const queryClient = new QueryClient({
   },
 });
 
+type Locale = ConfigProviderProps['locale'];
+
 function Root({ children }: React.PropsWithChildren) {
-  useEffect(() => {
-    const lng = storage.getLanguage();
-    if (lng) {
-      document.documentElement.lang = lng;
-    }
-  }, []);
+  const { theme: themeragflow } = useTheme();
+  const getLocale = (lng: string) =>
+    AntLanguageMap[lng as keyof typeof AntLanguageMap] ?? enUS;
+
+  const [locale, setLocal] = useState<Locale>(getLocale(storage.getLanguage()));
 
   i18n.on('languageChanged', function (lng: string) {
     storage.setLanguage(lng);
+    setLocal(getLocale(lng));
     document.documentElement.lang = lng;
   });
 
   return (
-    <SidebarProvider className="h-full">
-      <div className="w-full h-dvh relative">{children}</div>
-    </SidebarProvider>
+    <>
+      <ConfigProvider
+        theme={{
+          token: {
+            fontFamily: 'Inter',
+          },
+          algorithm:
+            themeragflow === 'dark'
+              ? theme.darkAlgorithm
+              : theme.defaultAlgorithm,
+        }}
+        locale={locale}
+      >
+        <SidebarProvider className="h-full">
+          <App className="w-full h-dvh relative">{children}</App>
+        </SidebarProvider>
+        <Sonner position={'top-right'} expand richColors closeButton></Sonner>
+        <Toaster />
+      </ConfigProvider>
+    </>
   );
 }
 
@@ -94,7 +122,7 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
   useEffect(() => {
     const lng = storage.getLanguage();
     if (lng) {
-      changeLanguageAsync(lng);
+      i18n.changeLanguage(lng);
     }
   }, []);
 
@@ -106,8 +134,6 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
           storageKey="ragflow-ui-theme"
         >
           <Root>{children}</Root>
-          <Sonner position={'top-right'} expand richColors closeButton></Sonner>
-          <Toaster />
         </ThemeProvider>
       </QueryClientProvider>
     </TooltipProvider>
