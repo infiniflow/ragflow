@@ -844,11 +844,65 @@ export const DataSourceFormFields = {
       tooltip: t('setting.seafileUrlTip'),
     },
     {
-      label: 'API Token',
+      label: 'Sync Scope',
+      name: 'config.sync_scope',
+      type: FormFieldType.Select,
+      required: true,
+      defaultValue: 'account',
+      options: [
+        { label: 'Entire Account',       value: 'account'   },
+        { label: 'Single Library',        value: 'library'   },
+        { label: 'Specific Directory',    value: 'directory'  },
+      ],
+      tooltip: t('setting.seafileSyncScopeTip'),
+    },
+    {
+      label: 'Account API Token',
       name: 'config.credentials.seafile_token',
       type: FormFieldType.Password,
-      required: true,
+      required: false,
       tooltip: t('setting.seafileTokenTip'),
+      // Shown for all scopes; required when scope = account
+      visibilityCondition: undefined,
+    },
+    {
+      label: 'Library (Repo) Token',
+      name: 'config.credentials.repo_token',
+      type: FormFieldType.Password,
+      required: false,
+      tooltip: t('setting.seafileRepoTokenTip'),
+      // Only relevant for library / directory scope
+      visibilityCondition: {
+        field: 'config.sync_scope',
+        values: ['library', 'directory'],
+      },
+    },
+
+    {
+      label: 'Library (Repo) ID',
+      name: 'config.repo_id',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'e.g. 7a9e1b3c-4d5f-6a7b-8c9d-0e1f2a3b4c5d',
+      tooltip: t('setting.seafileRepoIdTip'),
+      // Required when scope = library or directory
+      visibilityCondition: {
+        field: 'config.sync_scope',
+        values: ['library', 'directory'],
+      },
+    },
+    {
+      label: 'Directory Path',
+      name: 'config.sync_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '/Documents/Reports',
+      tooltip: t('setting.seafileSyncPathTip'),
+      // Only for directory scope
+      visibilityCondition: {
+        field: 'config.sync_scope',
+        values: ['directory'],
+      },
     },
     {
       label: 'Include Shared Libraries',
@@ -857,6 +911,11 @@ export const DataSourceFormFields = {
       required: false,
       defaultValue: true,
       tooltip: t('setting.seafileIncludeSharedTip'),
+      // Only meaningful for account scope
+      visibilityCondition: {
+        field: 'config.sync_scope',
+        values: ['account'],
+      },
     },
     {
       label: 'Batch Size',
@@ -1253,10 +1312,14 @@ export const DataSourceFormDefaultValues = {
     source: DataSourceKey.SEAFILE,
     config: {
       seafile_url: '',
-      include_shared: true,
+      sync_scope: 'account', 
+      repo_id: '',             
+      sync_path: '',            
+      include_shared: true,     
       batch_size: 100,
       credentials: {
-        seafile_token: '',
+        seafile_token: '',   
+        repo_token: '',          
       },
     },
   },
