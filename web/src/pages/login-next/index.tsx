@@ -181,6 +181,7 @@ const Login = () => {
                 </h2>
               </div>
               <div className=" w-full max-w-[540px] bg-bg-component backdrop-blur-sm rounded-2xl shadow-xl pt-14 pl-10 pr-10 pb-2 border border-border-button ">
+                {!config?.disablePasswordLogin && (
                 <Form {...form}>
                   <form
                     className="flex flex-col gap-8 text-text-primary "
@@ -241,17 +242,6 @@ const Login = () => {
                                 }
                                 {...field}
                               />
-                              {/* <button
-                                type="button"
-                                className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                                onClick={() => setShowPassword(!showPassword)}
-                              >
-                                {showPassword ? (
-                                  <EyeOff className="h-4 w-4 text-gray-500" />
-                                ) : (
-                                  <Eye className="h-4 w-4 text-gray-500" />
-                                )}
-                              </button> */}
                             </div>
                           </FormControl>
                           <FormMessage />
@@ -295,32 +285,35 @@ const Login = () => {
                     >
                       {title === 'login' ? t('login') : t('continue')}
                     </ButtonLoading>
-                    {title === 'login' && channels && channels.length > 0 && (
-                      <div className="mt-3 border">
-                        {channels.map((item) => (
-                          <Button
-                            variant={'transparent'}
-                            key={item.channel}
-                            onClick={() => handleLoginWithChannel(item.channel)}
-                            style={{ marginTop: 10 }}
-                          >
-                            <div className="flex items-center">
-                              <SvgIcon
-                                name={item.icon || 'sso'}
-                                width={20}
-                                height={20}
-                                style={{ marginRight: 5 }}
-                              />
-                              Sign in with {item.display_name}
-                            </div>
-                          </Button>
-                        ))}
-                      </div>
-                    )}
                   </form>
                 </Form>
+                )}
 
-                {title === 'login' && registerEnabled && (
+                {title === 'login' && channels && channels.length > 0 && (
+                  <div className={config?.disablePasswordLogin ? 'py-8' : 'mt-3 border'}>
+                    {channels.map((item) => (
+                      <Button
+                        variant={'transparent'}
+                        key={item.channel}
+                        onClick={() => handleLoginWithChannel(item.channel)}
+                        style={{ marginTop: 10 }}
+                        className={config?.disablePasswordLogin ? 'w-full' : ''}
+                      >
+                        <div className="flex items-center">
+                          <SvgIcon
+                            name={item.icon || 'sso'}
+                            width={20}
+                            height={20}
+                            style={{ marginRight: 5 }}
+                          />
+                          Sign in with {item.display_name}
+                        </div>
+                      </Button>
+                    ))}
+                  </div>
+                )}
+
+                {!config?.disablePasswordLogin && title === 'login' && registerEnabled && (
                   <div className="mt-10 text-right">
                     <p className="text-text-disabled text-sm">
                       {t('signInTip')}
@@ -334,7 +327,7 @@ const Login = () => {
                     </p>
                   </div>
                 )}
-                {title === 'register' && (
+                {!config?.disablePasswordLogin && title === 'register' && (
                   <div className="mt-10 text-right">
                     <p className="text-text-disabled text-sm">
                       {t('signUpTip')}

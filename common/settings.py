@@ -92,6 +92,8 @@ kg_retriever = None
 # user registration switch
 REGISTER_ENABLED = 1
 
+# SSO-only mode: hide password login form
+DISABLE_PASSWORD_LOGIN = False
 
 # sandbox-executor-manager
 SANDBOX_HOST = None
@@ -183,6 +185,17 @@ def init_settings():
     global REGISTER_ENABLED
     try:
         REGISTER_ENABLED = int(os.environ.get("REGISTER_ENABLED", "1"))
+    except Exception:
+        pass
+
+    global DISABLE_PASSWORD_LOGIN
+    try:
+        env_val = os.environ.get("DISABLE_PASSWORD_LOGIN", "").lower()
+        if env_val in ("1", "true", "yes"):
+            DISABLE_PASSWORD_LOGIN = True
+        else:
+            authentication_conf = get_base_config("authentication", {})
+            DISABLE_PASSWORD_LOGIN = bool(authentication_conf.get("disable_password_login", False))
     except Exception:
         pass
 
