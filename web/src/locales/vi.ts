@@ -18,6 +18,7 @@ export default {
       portugueseBr: 'Tiếng Bồ Đào Nha (Brazil)',
       chinese: 'Tiếng Trung giản thể',
       traditionalChinese: 'Tiếng Trung phồn thể',
+      bulgarian: 'Tiếng Bulgaria',
       language: 'Ngôn ngữ',
       languageMessage: 'Vui lòng chọn ngôn ngữ của bạn!',
       languagePlaceholder: 'chọn ngôn ngữ của bạn',

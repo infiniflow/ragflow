@@ -27,6 +27,7 @@ export default {
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
       russian: 'Russian',
+      bulgarian: 'Bulgarian',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -2363,6 +2364,7 @@ Important structured information may include: names, dates, locations, events, k
       korean: 'Korean',
       vietnamese: 'Vietnamese',
       russian: 'Russian',
+      bulgarian: 'Bulgarian',
     },
     pagination: {
       total: 'Total {{total}}',

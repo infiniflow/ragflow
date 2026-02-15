@@ -19,6 +19,7 @@ export default {
       portugueseBr: 'Portugis (Brasil)',
       chinese: 'Cina',
       traditionalChinese: 'Cina Tradisional',
+      bulgarian: 'Bulgaria',
       language: 'Bahasa',
       languageMessage: 'Silakan masukkan bahasa Anda!',
       languagePlaceholder: 'Pilih bahasa Anda',

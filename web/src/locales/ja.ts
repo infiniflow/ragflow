@@ -19,6 +19,7 @@ export default {
       portugueseBr: 'ポルトガル語 (ブラジル)',
       chinese: '中国語（簡体字）',
       traditionalChinese: '中国語（繁体字）',
+      bulgarian: 'ブルガリア語',
       language: '言語',
       languageMessage: 'あなたの言語を入力してください！',
       languagePlaceholder: 'あなたの言語を選択してください',

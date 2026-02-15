@@ -19,6 +19,7 @@ const languageImports: Record<string, () => Promise<{ default: any }>> = {
   [LanguageAbbreviation.De]: () => import('./de'),
   [LanguageAbbreviation.Fr]: () => import('./fr'),
   [LanguageAbbreviation.It]: () => import('./it'),
+  [LanguageAbbreviation.Bg]: () => import('./bg'),
 };
 
 const enFlattened = flattenObject(translation_en);
