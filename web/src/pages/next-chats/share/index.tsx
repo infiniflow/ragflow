@@ -10,7 +10,7 @@ import {
   useFetchExternalChatInfo,
   useFetchNextConversationSSE,
 } from '@/hooks/use-chat-request';
-import i18n from '@/locales/config';
+import i18n, { changeLanguageAsync } from '@/locales/config';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import React, { forwardRef, useMemo } from 'react';
 import { useSendButtonDisabled } from '../hooks/use-button-disabled';
@@ -54,7 +54,7 @@ const ChatContainer = () => {
   }, [from]);
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
-      i18n.changeLanguage(locale);
+      changeLanguageAsync(locale);
     }
   }, [locale, visibleAvatar]);
 
@@ -116,6 +116,7 @@ const ChatContainer = () => {
                 value={value}
                 disabled={hasError}
                 sendDisabled={sendDisabled}
+                resize="vertical"
                 conversationId={conversationId}
                 onInputChange={handleInputChange}
                 onPressEnter={handlePressEnter}

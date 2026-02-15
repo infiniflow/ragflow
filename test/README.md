@@ -33,7 +33,7 @@ uv pip install sdk/python
 ```env
 COMPOSE_PROFILES=${COMPOSE_PROFILES},tei-cpu
 TEI_MODEL=BAAI/bge-small-en-v1.5
-RAGFLOW_IMAGE=infiniflow/ragflow:v0.23.1 #Replace with the image you are using
+RAGFLOW_IMAGE=infiniflow/ragflow:v0.24.0 #Replace with the image you are using
 
 ```
 

@@ -1557,15 +1557,17 @@ wheels = [
 
 [[package]]
 name = "dashscope"
-version = "1.20.11"
+version = "1.25.11"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "aiohttp" },
+    { name = "certifi" },
+    { name = "cryptography" },
     { name = "requests" },
     { name = "websocket-client" },
 ]
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/25/21/0ddfa1aae7f45b3039d10d61ede77dedfc70d24ff946e7d0ecb92e9a2c85/dashscope-1.20.11-py3-none-any.whl", hash = "sha256:7367802c5ae136c6c1f4f8a16f9aba628e97adefae8afdebce6bbf518d0065d1", size = 1264221, upload-time = "2024-10-14T05:30:25.083Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/30/15/35551e6c6d3ea19df754ed32aa5f281b2052ef9e1ff1538f2708f74f3312/dashscope-1.25.11-py3-none-any.whl", hash = "sha256:93e86437f5f30e759e98292f0490e44eff00c337968363f27d29dd42ec7cc07c", size = 1342054, upload-time = "2026-02-03T02:49:48.711Z" },
 ]
 
 [[package]]
@@ -6116,7 +6118,7 @@ wheels = [
 
 [[package]]
 name = "ragflow"
-version = "0.23.1"
+version = "0.24.0"
 source = { virtual = "." }
 dependencies = [
     { name = "agentrun-sdk" },
@@ -6271,7 +6273,7 @@ requires-dist = [
     { name = "cn2an", specifier = "==0.5.22" },
     { name = "cohere", specifier = "==5.6.2" },
     { name = "crawl4ai", specifier = ">=0.4.0,<1.0.0" },
-    { name = "dashscope", specifier = "==1.20.11" },
+    { name = "dashscope", specifier = "==1.25.11" },
     { name = "deepl", specifier = "==1.18.0" },
     { name = "demjson3", specifier = "==3.0.6" },
     { name = "discord-py", specifier = "==2.3.2" },
