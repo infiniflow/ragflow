@@ -95,6 +95,13 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToAgentExplore = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.Agent}/${id}/explore`);
+    },
+    [navigate],
+  );
+
   const navigateToAgentLogs = useCallback(
     (id: string) => () => {
       navigate(`${Routes.AgentLogPage}/${id}`);
@@ -176,7 +183,7 @@ export const useNavigatePage = () => {
 
   const navigateToDataflowResult = useCallback(
     (props: NavigateToDataflowResultProps) => () => {
-      let params: string[] = [];
+      const params: string[] = [];
       Object.keys(props).forEach((key) => {
         if (props[key as keyof typeof props]) {
           params.push(`${key}=${props[key as keyof typeof props]}`);
@@ -203,6 +210,7 @@ export const useNavigatePage = () => {
     navigateToChunk,
     navigateToAgents,
     navigateToAgent,
+    navigateToAgentExplore,
     navigateToAgentLogs,
     navigateToAgentTemplates,
     navigateToSearchList,

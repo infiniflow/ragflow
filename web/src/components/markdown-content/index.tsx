@@ -1,6 +1,7 @@
 import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
+import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
 import { getDirAttribute } from '@/utils/text-direction';
 import DOMPurify from 'dompurify';
@@ -20,6 +21,7 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import {
   currentReg,
+  parseCitationIndex,
   preprocessLaTeX,
   replaceTextByOldReg,
   replaceThinkToSection,
@@ -36,7 +38,7 @@ import {
 } from '../ui/hover-card';
 import styles from './index.module.less';
 
-const getChunkIndex = (match: string) => Number(match);
+const getChunkIndex = (match: string) => parseCitationIndex(match);
 
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
 const MarkdownContent = ({
@@ -231,48 +233,48 @@ const MarkdownContent = ({
     [getPopoverContent],
   );
 
+  const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+
   return (
-    <Markdown
-      rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
-      remarkPlugins={[remarkGfm, remarkMath]}
-      className={styles.markdownContentWrapper}
-      dir={getDirAttribute(content)}
-      components={
-        {
-          p: ({ children, ...props }: any) => (
-            <p dir="auto" {...props}>
-              {children}
-            </p>
-          ),
-          'custom-typography': ({ children }: { children: string }) =>
-            renderReference(children),
-          code(props: any) {
-            const { children, className, ...rest } = props;
-            const restProps = omit(rest, 'node');
-            const match = /language-(\w+)/.exec(className || '');
-            return match ? (
-              <SyntaxHighlighter
-                {...restProps}
-                PreTag="div"
-                language={match[1]}
-                wrapLongLines
-              >
-                {String(children).replace(/\n$/, '')}
-              </SyntaxHighlighter>
-            ) : (
-              <code
-                {...restProps}
-                className={classNames(className, 'text-wrap')}
-              >
-                {children}
-              </code>
-            );
-          },
-        } as any
-      }
-    >
-      {contentWithCursor}
-    </Markdown>
+    <div dir={dir} className={styles.markdownContentWrapper}>
+      <Markdown
+        rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        components={
+          {
+            p: ({ children, node, ...props }: any) => (
+              <p {...props}>{children}</p>
+            ),
+            'custom-typography': ({ children }: { children: string }) =>
+              renderReference(children),
+            code(props: any) {
+              const { children, className, ...rest } = props;
+              const restProps = omit(rest, 'node');
+              const match = /language-(\w+)/.exec(className || '');
+              return match ? (
+                <SyntaxHighlighter
+                  {...restProps}
+                  PreTag="div"
+                  language={match[1]}
+                  wrapLongLines
+                >
+                  {String(children).replace(/\n$/, '')}
+                </SyntaxHighlighter>
+              ) : (
+                <code
+                  {...restProps}
+                  className={classNames(className, 'text-wrap')}
+                >
+                  {children}
+                </code>
+              );
+            },
+          } as any
+        }
+      >
+        {contentWithCursor}
+      </Markdown>
+    </div>
   );
 };
 

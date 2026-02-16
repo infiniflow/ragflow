@@ -61,12 +61,12 @@ const filterNestedList = (
       return false;
     })
     .map((item) => {
-      if (item.list && item.list.length > 0) {
-        return {
-          ...item,
-          list: filterNestedList(item.list, searchTerm),
-        };
-      }
+      // if (item.list && item.list.length > 0) {
+      //   return {
+      //     ...item,
+      //     list: filterNestedList(item.list, searchTerm),
+      //   };
+      // }
       return item;
     });
 };

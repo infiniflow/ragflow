@@ -202,9 +202,11 @@ export default function SearchingView({
                       <div key={index}>
                         <div className="w-full flex flex-col">
                           <div className="w-full highlightContent">
-                            <ImageWithPopover
-                              id={chunk.image_id || chunk.img_id}
-                            ></ImageWithPopover>
+                            {(chunk.image_id || chunk.img_id) && (
+                              <ImageWithPopover
+                                id={chunk.image_id || chunk.img_id}
+                              ></ImageWithPopover>
+                            )}
                             <Popover>
                               <PopoverTrigger asChild>
                                 <div
@@ -245,7 +247,7 @@ export default function SearchingView({
                           </div>
                         </div>
                         {index < chunks.length - 1 && (
-                          <div className="w-full border-b border-border-default/80 mt-6"></div>
+                          <div className="w-full border-b border-border-default/80 mt-6 mb-2"></div>
                         )}
                       </div>
                     );
