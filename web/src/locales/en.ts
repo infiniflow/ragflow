@@ -1065,6 +1065,22 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       postgresqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      firecrawlDescription:
+        'Connect Firecrawl to crawl a website and sync extracted markdown pages.',
+      firecrawlStartUrlTip:
+        'The root URL to crawl (for example, https://docs.example.com).',
+      firecrawlApiUrlTip:
+        'Firecrawl API base URL. Keep default unless you use a self-hosted Firecrawl endpoint.',
+      firecrawlMaxPagesTip:
+        'Optional limit for crawled pages per run to control usage and costs.',
+      firecrawlIncludePathsTip:
+        'Optional path filters to include. Example: /docs,/blog.',
+      firecrawlExcludePathsTip:
+        'Optional path filters to exclude. Example: /changelog,/private.',
+      firecrawlBatchSizeTip:
+        'Number of crawled pages processed per batch before indexing.',
+      firecrawlTimeoutTip:
+        'Maximum time to wait for Firecrawl crawl completion before failing the sync.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',

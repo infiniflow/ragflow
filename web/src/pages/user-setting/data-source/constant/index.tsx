@@ -38,6 +38,7 @@ export enum DataSourceKey {
   SEAFILE = 'seafile',
   MYSQL = 'mysql',
   POSTGRESQL = 'postgresql',
+  FIRECRAWL = 'firecrawl',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -172,6 +173,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'PostgreSQL',
       description: t(`setting.${DataSourceKey.POSTGRESQL}Description`),
       icon: <SvgIcon name={'data-source/postgresql'} width={38} />,
+    },
+    [DataSourceKey.FIRECRAWL]: {
+      name: 'Firecrawl',
+      description: t(`setting.${DataSourceKey.FIRECRAWL}Description`),
+      icon: <span className="text-xl">🔥</span>,
     },
   };
 };
@@ -967,6 +973,65 @@ export const DataSourceFormFields = {
       tooltip: t('setting.postgresqlContentColumnsTip'),
     },
   ],
+  [DataSourceKey.FIRECRAWL]: [
+    {
+      label: 'Firecrawl API Key',
+      name: 'config.credentials.firecrawl_api_key',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Start URL',
+      name: 'config.start_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://example.com/docs',
+      tooltip: t('setting.firecrawlStartUrlTip'),
+    },
+    {
+      label: 'API URL',
+      name: 'config.api_url',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'https://api.firecrawl.dev',
+      tooltip: t('setting.firecrawlApiUrlTip'),
+    },
+    {
+      label: 'Max Pages',
+      name: 'config.max_pages',
+      type: FormFieldType.Number,
+      required: false,
+      tooltip: t('setting.firecrawlMaxPagesTip'),
+    },
+    {
+      label: 'Include Paths',
+      name: 'config.include_paths',
+      type: FormFieldType.Tag,
+      required: false,
+      tooltip: t('setting.firecrawlIncludePathsTip'),
+    },
+    {
+      label: 'Exclude Paths',
+      name: 'config.exclude_paths',
+      type: FormFieldType.Tag,
+      required: false,
+      tooltip: t('setting.firecrawlExcludePathsTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      tooltip: t('setting.firecrawlBatchSizeTip'),
+    },
+    {
+      label: 'Crawl Timeout (seconds)',
+      name: 'config.crawl_timeout_seconds',
+      type: FormFieldType.Number,
+      required: false,
+      tooltip: t('setting.firecrawlTimeoutTip'),
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -1293,6 +1358,23 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         username: '',
         password: '',
+      },
+    },
+  },
+  [DataSourceKey.FIRECRAWL]: {
+    name: '',
+    source: DataSourceKey.FIRECRAWL,
+    config: {
+      api_url: 'https://api.firecrawl.dev',
+      start_url: '',
+      max_pages: 100,
+      include_paths: [],
+      exclude_paths: [],
+      batch_size: 2,
+      poll_interval_seconds: 2,
+      crawl_timeout_seconds: 300,
+      credentials: {
+        firecrawl_api_key: '',
       },
     },
   },
