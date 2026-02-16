@@ -5,15 +5,6 @@ import {
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
 import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Switch } from '@/components/ui/switch';
@@ -25,9 +16,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { RunningStatus } from '@/constants/knowledge';
 import { Pagination } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
-import { replaceText } from '@/pages/dataset/process-log-modal';
+import ProcessLogModal, {
+  ILogInfo,
+  replaceText,
+} from '@/pages/dataset/process-log-modal';
 import { MemoryOptions } from '@/pages/memories/constants';
 import {
   ColumnDef,
@@ -72,11 +67,11 @@ const columnHelper = createColumnHelper<IMessageInfo>();
 
 function getTaskStatus(progress: number) {
   if (progress >= 1) {
-    return 'success';
+    return RunningStatus.DONE;
   } else if (progress > 0 && progress < 1) {
-    return 'running';
+    return RunningStatus.RUNNING;
   } else {
-    return 'failed';
+    return RunningStatus.FAIL;
   }
 }
 
@@ -109,6 +104,21 @@ export function MemoryTable({
 
   const disabledRowFunc = (row: Row<IMessageInfo>) => {
     return row.original.forget_at !== 'None' && !!row.original.forget_at;
+  };
+
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [logInfo, setLogInfo] = useState<ILogInfo>();
+  const showLog = (row: Row<IMessageInfo>) => {
+    const task = row.original.task;
+    const logDetail = {
+      startTime: dayjs(task.create_time)
+        .locale(document.documentElement.lang)
+        .format('MM/DD/YYYY HH:mm:ss'),
+      status: getTaskStatus(task.progress),
+      details: task.progress_msg,
+    } as unknown as ILogInfo;
+    setLogInfo(logDetail);
+    setIsModalVisible(true);
   };
   // Define columns for the memory table
   const columns: ColumnDef<IMessageInfo>[] = useMemo(
@@ -233,83 +243,22 @@ export function MemoryTable({
           const taskStatus = getTaskStatus(task.progress);
 
           return (
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button
-                  variant="transparent"
-                  size="icon"
-                  className="border-0 size-8"
-                >
-                  <div
-                    className={cn('size-1 rounded-full', {
-                      'bg-state-success': taskStatus === 'success',
-                      'bg-state-error': taskStatus === 'failed',
-                      'bg-state-warning': taskStatus === 'running',
-                    })}
-                  />
-                </Button>
-              </DialogTrigger>
-
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>{t('memory.taskLogDialog.title')}</DialogTitle>
-                </DialogHeader>
-
-                <dl className="space-y-4">
-                  <div className="grid grid-rows-2 grid-cols-2 grid-flow-col items-center gap-x-4 gap-y-1">
-                    <dt className="text-text-secondary">
-                      {t('memory.taskLogDialog.startTime')}
-                    </dt>
-                    <dd className="text-sm">
-                      {dayjs(task.create_time)
-                        .locale(document.documentElement.lang)
-                        .format('MM/DD/YYYY HH:mm:ss')}
-                    </dd>
-
-                    <dt className="text-text-secondary">
-                      {t('memory.taskLogDialog.status')}
-                    </dt>
-                    <dd className="text-sm">
-                      <div
-                        className={cn(
-                          'inline-flex items-center gap-1 text-xs rounded-full px-2 py-1',
-                          {
-                            'text-state-success bg-state-success-5':
-                              taskStatus === 'success',
-                            'text-state-error bg-state-error-5':
-                              taskStatus === 'failed',
-                            'text-state-warning bg-state-warning-5':
-                              taskStatus === 'running',
-                          },
-                        )}
-                      >
-                        <div className="size-1 rounded-full bg-current" />
-                        {t(`memory.taskLogDialog.${taskStatus}`)}
-                      </div>
-                    </dd>
-                  </div>
-
-                  <div className="space-y-1">
-                    <dt className="text-text-secondary">
-                      {t('memory.taskLogDialog.details')}
-                    </dt>
-                    <dd className="text-sm">
-                      <div className="bg-bg-card rounded-lg p-2 max-h-64 overflow-auto">
-                        <pre>
-                          <code>{task.progress_msg}</code>
-                        </pre>
-                      </div>
-                    </dd>
-                  </div>
-                </dl>
-
-                <DialogFooter>
-                  <DialogClose asChild>
-                    <Button variant="ghost">{t('common.close')}</Button>
-                  </DialogClose>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <Button
+              variant="transparent"
+              size="icon"
+              className="border-0 size-8"
+              onClick={() => {
+                showLog(row);
+              }}
+            >
+              <div
+                className={cn('size-1 rounded-full', {
+                  'bg-state-success': taskStatus === RunningStatus.DONE,
+                  'bg-state-error': taskStatus === RunningStatus.FAIL,
+                  'bg-state-warning': taskStatus === RunningStatus.RUNNING,
+                })}
+              />
+            </Button>
           );
         },
       }),
@@ -504,6 +453,16 @@ export function MemoryTable({
             )}
           </div>
         </Modal>
+      )}
+
+      {isModalVisible && (
+        <ProcessLogModal
+          title={t('memory.taskLogDialog.title')}
+          visible={isModalVisible}
+          onCancel={() => setIsModalVisible(false)}
+          translateKey="memory.taskLogDialog"
+          logInfo={logInfo as unknown as ILogInfo}
+        />
       )}
 
       <div className="flex items-center justify-end  absolute bottom-3 right-3">
