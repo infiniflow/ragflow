@@ -55,7 +55,6 @@ services:
       - cluster.routing.allocation.disk.watermark.high=3gb
       - cluster.routing.allocation.disk.watermark.flood_stage=2gb
       - http.port=9201
-      - "reindex.remote.whitelist=es01:9200"
     mem_limit: ${MEM_LIMIT}
     ulimits:
       memlock:
@@ -63,31 +62,6 @@ services:
         hard: -1
     healthcheck:
       test: ["CMD-SHELL", "curl http://localhost:9201"]
-      interval: 10s
-      timeout: 10s
-      retries: 120
-    networks:
-      - ragflow
-    restart: unless-stopped
-
-  opensearch-dashboards:
-    profiles:
-      - opensearch
-    image: hub.icert.top/opensearchproject/opensearch-dashboards:2.19.1
-    ports:
-      - ${OS_DASHBOARDS_PORT}:5601
-    env_file: .env
-    volumes:
-      - os_dashboards_data:/usr/share/opensearch-dashboards/data
-    environment:
-      - OPENSEARCH_HOSTS=http://opensearch01:9201
-      - OPENSEARCH_USERNAME=admin
-      - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}
-    depends_on:
-      opensearch01:
-        condition: service_started
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
       interval: 10s
       timeout: 10s
       retries: 120
@@ -344,8 +318,6 @@ volumes:
   tei_data:
     driver: local
   kibana_data:
-    driver: local
-  os_dashboards_data:
     driver: local
 
 networks:

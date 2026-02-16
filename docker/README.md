@@ -32,32 +32,6 @@ The [.env](./.env) file contains important environment variables for Docker.
   The port used to expose the Elasticsearch service to the host machine, allowing **external** access to the service running inside the Docker container.  Defaults to `1200`.
 - `ELASTIC_PASSWORD`  
   The password for Elasticsearch.
-### OpenSearch
-
-- `OS_PORT`  
-  The port used to expose the OpenSearch service to the host machine, allowing **external** access to the service running inside the Docker container.  Defaults to `1201`.
-- `OPENSEARCH_PASSWORD`  
-  The password for OpenSearch.
-- `OS_DASHBOARDS_PORT`  
-  The port used to expose the OpenSearch Dashboards service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `5602`.
-
-#### Data Migration from Elasticsearch
-
-If you have existing data in Elasticsearch and wish to migrate it to OpenSearch, follow these steps:
-
-1.  **Enable both services**:
-    ```bash
-    docker compose --profile elasticsearch --profile opensearch up -d
-    ```
-2.  **Run the migration script**:
-    ```bash
-    python tools/migrate_es_to_os.py
-    ```
-    *Note: Ensure you have `elasticsearch` and `opensearch-py` installed in your Python environment.*
-3.  **Verify the data** in OpenSearch Dashboards (`http://localhost:5602`).
-4.  **Switch to OpenSearch** by ensuring `DOC_ENGINE=opensearch` in `.env` and restart RAGFlow.
-
-
 
 ### Kibana
 
