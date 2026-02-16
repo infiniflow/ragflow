@@ -1,33 +1,19 @@
 .markdownContentWrapper {
   :global(section.think) {
-    padding-left: 10px;
+    padding-inline-start: 10px;
     color: #8b8b8b;
-    border-left: 2px solid #d5d3d3;
+    border-inline-start: 2px solid #d5d3d3;
     margin-bottom: 10px;
     font-size: 12px;
   }
   :global(blockquote) {
-    padding-left: 10px;
-    border-left: 4px solid #ccc;
+    padding-inline-start: 10px;
+    border-inline-start: 4px solid #ccc;
   }
 
   // RTL Support
   &[dir='rtl'] {
-    text-align: right;
-
-    :global(section.think) {
-      padding-left: 0;
-      padding-right: 10px;
-      border-left: none;
-      border-right: 2px solid #d5d3d3;
-    }
-
-    :global(blockquote) {
-      padding-left: 0;
-      padding-right: 10px;
-      border-left: none;
-      border-right: 4px solid #ccc;
-    }
+    text-align: start;
   }
 }
 
@@ -58,7 +44,7 @@
 
   // RTL Support
   &[dir='rtl'] {
-    text-align: right;
+    text-align: start;
   }
 }
 .documentLink {
