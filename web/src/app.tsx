@@ -99,7 +99,8 @@ function Root({ children }: React.PropsWithChildren) {
       <ConfigProvider
         theme={{
           token: {
-            fontFamily: 'Inter',
+            fontFamily:
+              "'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif",
           },
           algorithm:
             themeragflow === 'dark'
