@@ -334,7 +334,7 @@ class DocMetadataService:
         """
         Update document metadata in ES/Infinity.
 
-        For Elasticsearch: Uses partial update to directly update the meta_fields field.
+        For Elasticsearch/OpenSearch: Uses partial update to directly update the meta_fields field.
         For Infinity: Falls back to delete+insert (Infinity doesn't support partial updates well).
 
         Args:
@@ -366,24 +366,36 @@ class DocMetadataService:
 
             logging.debug(f"[update_document_metadata] Updating doc_id: {doc_id}, kb_id: {kb_id}, meta_fields: {processed_meta}")
 
-            # For Elasticsearch, use efficient partial update
+            # For Elasticsearch/OpenSearch, use efficient partial update
+            # but only if the document already exists in the metadata index
             if not settings.DOC_ENGINE_INFINITY:
-                try:
-                    # Use ES partial update API - much more efficient than delete+insert
-                    settings.docStoreConn.es.update(
-                        index=index_name,
-                        id=doc_id,
-                        refresh=True,  # Make changes immediately visible
-                        doc={"meta_fields": processed_meta}
-                    )
-                    logging.debug(f"Successfully updated metadata for document {doc_id} using ES partial update")
-                    return True
-                except Exception as e:
-                    logging.error(f"ES partial update failed for document {doc_id}: {e}")
-                    # Fall back to delete+insert if partial update fails
-                    logging.info(f"Falling back to delete+insert for document {doc_id}")
+                # Check if the metadata index and document exist before attempting partial update
+                doc_exists = False
+                if settings.docStoreConn.index_exist(index_name, ""):
+                    try:
+                        existing = settings.docStoreConn.get(doc_id, index_name, [""])
+                        doc_exists = existing is not None
+                    except Exception:
+                        doc_exists = False
 
-            # For Infinity or as fallback: use delete+insert
+                if doc_exists:
+                    try:
+                        # Use ES partial update API - much more efficient than delete+insert
+                        settings.docStoreConn.es.update(
+                            index=index_name,
+                            id=doc_id,
+                            refresh=True,  # Make changes immediately visible
+                            doc={"meta_fields": processed_meta}
+                        )
+                        logging.debug(f"Successfully updated metadata for document {doc_id} using partial update")
+                        return True
+                    except Exception as e:
+                        logging.error(f"Partial update failed for document {doc_id}: {e}")
+                        logging.info(f"Falling back to delete+insert for document {doc_id}")
+                else:
+                    logging.debug(f"Document {doc_id} not found in metadata index, using insert")
+
+            # For Infinity, missing docs, or as fallback: use delete+insert
             logging.debug(f"[update_document_metadata] Using delete+insert method for doc_id: {doc_id}")
             cls.delete_document_metadata(doc_id, skip_empty_check=True)
             return cls.insert_document_metadata(doc_id, processed_meta)
