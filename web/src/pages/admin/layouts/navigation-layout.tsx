@@ -10,6 +10,7 @@ import {
   LucideSquareUserRound,
   LucideUserCog,
   LucideUserStar,
+  LucideZap,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -44,6 +45,11 @@ const AdminNavigationLayout = () => {
         path: Routes.AdminUserManagement,
         name: t('admin.userManagement'),
         icon: <LucideUserCog className="size-[1em]" />,
+      },
+      {
+        path: Routes.AdminSandboxSettings,
+        name: t('admin.sandboxSettings'),
+        icon: <LucideZap className="size-[1em]" />,
       },
       ...(IS_ENTERPRISE
         ? [

@@ -35,7 +35,7 @@ from api.db.services.conversation_service import ConversationService
 from api.db.services.conversation_service import async_iframe_completion as iframe_completion
 from api.db.services.conversation_service import async_completion as rag_completion
 from api.db.services.dialog_service import DialogService, async_ask, async_chat, gen_mindmap
-from api.db.services.document_service import DocumentService
+from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter, convert_conditions, meta_filter
@@ -147,7 +147,7 @@ async def chat_completion(tenant_id, chat_id):
         return get_error_data_result(message="metadata_condition must be an object.")
 
     if metadata_condition and req.get("question"):
-        metas = DocumentService.get_meta_by_kbs(dia.kb_ids or [])
+        metas = DocMetadataService.get_flatted_meta_by_kbs(dia.kb_ids or [])
         filtered_doc_ids = meta_filter(
             metas,
             convert_conditions(metadata_condition),
@@ -192,6 +192,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 
     - If `stream` is True, the final answer and reference information will appear in the **last chunk** of the stream.
     - If `stream` is False, the reference will be included in `choices[0].message.reference`.
+    - If `extra_body.reference_metadata.include` is True, each reference chunk may include `document_metadata` in both streaming and non-streaming responses.
 
     Example usage:
 
@@ -206,7 +207,12 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 
     Alternatively, you can use Python's `OpenAI` client:
 
+    NOTE: Streaming via `client.chat.completions.create(stream=True, ...)` does
+    not return `reference` currently. The only way to return `reference` is
+    non-stream mode with `with_raw_response`.
+
     from openai import OpenAI
+    import json
 
     model = "model"
     client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/chats_openai/<chat_id>")
@@ -214,17 +220,20 @@ async def chat_completion_openai_like(tenant_id, chat_id):
     stream = True
     reference = True
 
-    completion = client.chat.completions.create(
-        model=model,
+    request_kwargs = dict(
+        model="model",
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Who are you?"},
             {"role": "assistant", "content": "I am an AI assistant named..."},
             {"role": "user", "content": "Can you tell me how to install neovim"},
         ],
-        stream=stream,
         extra_body={
             "reference": reference,
+            "reference_metadata": {
+                "include": True,
+                "fields": ["author", "year", "source"],
+            },
             "metadata_condition": {
                 "logic": "and",
                 "conditions": [
@@ -235,19 +244,25 @@ async def chat_completion_openai_like(tenant_id, chat_id):
                     }
                 ]
             }
-        }
+        },
     )
 
     if stream:
-    for chunk in completion:
-        print(chunk)
-        if reference and chunk.choices[0].finish_reason == "stop":
-            print(f"Reference:\n{chunk.choices[0].delta.reference}")
-            print(f"Final content:\n{chunk.choices[0].delta.final_content}")
+        completion = client.chat.completions.create(stream=True, **request_kwargs)
+        for chunk in completion:
+            print(chunk)
     else:
-        print(completion.choices[0].message.content)
-        if reference:
-            print(completion.choices[0].message.reference)
+        resp = client.chat.completions.with_raw_response.create(
+            stream=False, **request_kwargs
+        )
+        print("status:", resp.http_response.status_code)
+        raw_text = resp.http_response.text
+        print("raw:", raw_text)
+
+        data = json.loads(raw_text)
+        print("assistant:", data["choices"][0]["message"].get("content"))
+        print("reference:", data["choices"][0]["message"].get("reference"))
+
     """
     req = await get_request_json()
 
@@ -256,6 +271,13 @@ async def chat_completion_openai_like(tenant_id, chat_id):
         return get_error_data_result("extra_body must be an object.")
 
     need_reference = bool(extra_body.get("reference", False))
+    reference_metadata = extra_body.get("reference_metadata") or {}
+    if reference_metadata and not isinstance(reference_metadata, dict):
+        return get_error_data_result("reference_metadata must be an object.")
+    include_reference_metadata = bool(reference_metadata.get("include", False))
+    metadata_fields = reference_metadata.get("fields")
+    if metadata_fields is not None and not isinstance(metadata_fields, list):
+        return get_error_data_result("reference_metadata.fields must be an array.")
 
     messages = req.get("messages", [])
     # To prevent empty [] input
@@ -279,7 +301,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 
     doc_ids_str = None
     if metadata_condition:
-        metas = DocumentService.get_meta_by_kbs(dia.kb_ids or [])
+        metas = DocMetadataService.get_flatted_meta_by_kbs(dia.kb_ids or [])
         filtered_doc_ids = meta_filter(
             metas,
             convert_conditions(metadata_condition),
@@ -381,7 +403,11 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             response["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": token_used, "total_tokens": prompt_tokens + token_used}
             if need_reference:
                 reference_payload = final_reference if final_reference is not None else last_ans.get("reference", [])
-                response["choices"][0]["delta"]["reference"] = chunks_format(reference_payload)
+                response["choices"][0]["delta"]["reference"] = _build_reference_chunks(
+                    reference_payload,
+                    include_metadata=include_reference_metadata,
+                    metadata_fields=metadata_fields,
+                )
                 response["choices"][0]["delta"]["final_content"] = final_answer if final_answer is not None else full_content
             yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
             yield "data:[DONE]\n\n"
@@ -431,7 +457,11 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             ],
         }
         if need_reference:
-            response["choices"][0]["message"]["reference"] = chunks_format(answer.get("reference", {}))
+            response["choices"][0]["message"]["reference"] = _build_reference_chunks(
+                answer.get("reference", {}),
+                include_metadata=include_reference_metadata,
+                metadata_fields=metadata_fields,
+            )
 
         return jsonify(response)
 
@@ -1084,7 +1114,7 @@ async def retrieval_test_embedded():
                 chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
 
         if meta_data_filter:
-            metas = DocumentService.get_meta_by_kbs(kb_ids)
+            metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
             local_doc_ids = await apply_meta_data_filter(meta_data_filter, metas, _question, chat_mdl, local_doc_ids)
 
         tenants = UserTenantService.query(user_id=tenant_id)
@@ -1327,3 +1357,45 @@ async def tts(tenant_id):
     resp.headers.add_header("X-Accel-Buffering", "no")
 
     return resp
+
+
+def _build_reference_chunks(reference, include_metadata=False, metadata_fields=None):
+    chunks = chunks_format(reference)
+    if not include_metadata:
+        return chunks
+
+    doc_ids_by_kb = {}
+    for chunk in chunks:
+        kb_id = chunk.get("dataset_id")
+        doc_id = chunk.get("document_id")
+        if not kb_id or not doc_id:
+            continue
+        doc_ids_by_kb.setdefault(kb_id, set()).add(doc_id)
+
+    if not doc_ids_by_kb:
+        return chunks
+
+    meta_by_doc = {}
+    for kb_id, doc_ids in doc_ids_by_kb.items():
+        meta_map = DocMetadataService.get_metadata_for_documents(list(doc_ids), kb_id)
+        if meta_map:
+            meta_by_doc.update(meta_map)
+
+    if metadata_fields is not None:
+        metadata_fields = {f for f in metadata_fields if isinstance(f, str)}
+        if not metadata_fields:
+            return chunks
+
+    for chunk in chunks:
+        doc_id = chunk.get("document_id")
+        if not doc_id:
+            continue
+        meta = meta_by_doc.get(doc_id)
+        if not meta:
+            continue
+        if metadata_fields is not None:
+            meta = {k: v for k, v in meta.items() if k in metadata_fields}
+        if meta:
+            chunk["document_metadata"] = meta
+
+    return chunks

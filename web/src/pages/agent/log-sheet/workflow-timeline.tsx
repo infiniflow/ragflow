@@ -22,7 +22,7 @@ import {
 import { ITraceData } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { t } from 'i18next';
-import { get, isEmpty, isEqual, uniqWith } from 'lodash';
+import { get, isEmpty } from 'lodash';
 import { useCallback, useEffect, useMemo } from 'react';
 import { Operator } from '../constant';
 import { JsonViewer } from '../form/components/json-viewer';
@@ -88,7 +88,7 @@ function getInputsOrOutputs(
     return inputsOrOutputs[0] || {};
   }
 
-  return uniqWith(inputsOrOutputs, isEqual); // TODO: Violence should not be used to
+  return inputsOrOutputs;
 }
 export const WorkFlowTimeline = ({
   currentEventListWithoutMessage,

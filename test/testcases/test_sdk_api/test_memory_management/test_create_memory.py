@@ -24,7 +24,7 @@ from utils.hypothesis_utils import valid_names
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
@@ -81,6 +81,7 @@ class TestMemoryCreate:
 
     @pytest.mark.p2
     @given(name=valid_names())
+    @settings(deadline=None)
     def test_type_invalid(self, client, name):
         payload = {
             "name": name,

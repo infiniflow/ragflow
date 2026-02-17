@@ -9,7 +9,14 @@ import {
   useSetDocumentStatus,
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { Ban, CircleCheck, CircleX, PenIcon, Play, Trash2 } from 'lucide-react';
+import {
+  Ban,
+  CircleCheck,
+  CircleX,
+  Cylinder,
+  Play,
+  Trash2,
+} from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -37,10 +44,12 @@ export function useBulkOperateDataset({
     if (!documents.length) {
       return 0;
     }
-    return documents.reduce((acc, cur) => {
-      return acc + cur.chunk_num;
-    }, 0);
-  }, [documents]);
+    return documents
+      .filter((item) => selectedRowKeys.includes(item.id) && item.id)
+      ?.reduce((acc, cur) => {
+        return acc + cur.chunk_num;
+      }, 0);
+  }, [documents, selectedRowKeys]);
 
   const runDocument = useCallback(
     async (run: number, option?: { delete: boolean; apply_kb: boolean }) => {
@@ -130,6 +139,11 @@ export function useBulkOperateDataset({
       onClick: handleCancelClick,
     },
     {
+      id: 'batch-metadata',
+      label: t('knowledgeDetails.metadata.metadata'),
+      icon: <Cylinder />,
+    },
+    {
       id: 'delete',
       label: t('common.delete'),
       icon: <Trash2 />,
@@ -139,11 +153,6 @@ export function useBulkOperateDataset({
           setRowSelection({});
         }
       },
-    },
-    {
-      id: 'batch-metadata',
-      label: t('knowledgeDetails.metadata.metadata'),
-      icon: <PenIcon />,
     },
   ];
 

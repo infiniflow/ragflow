@@ -40,11 +40,13 @@ import {
   util,
 } from '../../components/metedata/hooks/use-manage-modal';
 
+import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import {
   IBuiltInMetadataItem,
   IMetaDataReturnJSONSettings,
 } from '../../components/metedata/interface';
 import { ManageMetadataModal } from '../../components/metedata/manage-modal';
+import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
 import {
   useHandleKbEmbedding,
   useHasParsedDocument,
@@ -378,6 +380,7 @@ export function AutoMetadata({
   const location = useLocation();
   const form = useFormContext();
   const datasetContext = useContext(DataSetContext);
+  const { knowledgeBase } = useKnowledgeBaseContext();
   const {
     manageMetadataVisible,
     showManageMetadataModal,
@@ -396,16 +399,31 @@ export function AutoMetadata({
       type: type,
       record: otherData,
       builtInMetadata,
+      secondTitle: knowledgeBase ? (
+        <div className="w-full flex items-center gap-1 text-sm text-text-secondary">
+          <RAGFlowAvatar
+            avatar={knowledgeBase.avatar}
+            name={knowledgeBase.name}
+            className="size-8"
+          ></RAGFlowAvatar>
+          <div className=" text-text-primary text-base space-y-1 overflow-hidden">
+            {knowledgeBase.name}
+          </div>
+        </div>
+      ) : (
+        <></>
+      ),
     });
-  }, [form, otherData, showManageMetadataModal, type]);
+  }, [form, otherData, showManageMetadataModal, knowledgeBase, type]);
 
   useEffect(() => {
     const locationState = location.state as
       | { openMetadata?: boolean }
       | undefined;
     if (locationState?.openMetadata && !datasetContext?.loading) {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         handleClickOpenMetadata();
+        clearTimeout(timer);
       }, 0);
       locationState.openMetadata = false;
       history.replace({ ...location }, locationState);
@@ -475,6 +493,7 @@ export function AutoMetadata({
           isShowValueSwitch={true}
           isVerticalShowValue={false}
           builtInMetadata={metadataConfig.builtInMetadata}
+          secondTitle={metadataConfig.secondTitle}
           success={(data?: {
             metadata?: IMetaDataReturnJSONSettings;
             builtInMetadata?: IBuiltInMetadataItem[];

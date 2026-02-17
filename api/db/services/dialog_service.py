@@ -28,14 +28,14 @@ from api.db.services.file_service import FileService
 from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
 from api.db.services.common_service import CommonService
-from api.db.services.document_service import DocumentService
+from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
 from api.db.services.tenant_llm_service import TenantLLMService
 from common.time_utils import current_timestamp, datetime_format
-from graphrag.general.mind_map_extractor import MindMapExtractor
+from rag.graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.advanced_rag import DeepResearcher
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
@@ -355,7 +355,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
 
     if dialog.meta_data_filter:
-        metas = DocumentService.get_meta_by_kbs(dialog.kb_ids)
+        metas = DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids)
         attachments = await apply_meta_data_filter(
             dialog.meta_data_filter,
             metas,
@@ -586,7 +586,12 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
     logging.debug(f"use_sql: Question: {question}")
 
     # Determine which document engine we're using
-    doc_engine = "infinity" if settings.DOC_ENGINE_INFINITY else "es"
+    if settings.DOC_ENGINE_INFINITY:
+        doc_engine = "infinity"
+    elif settings.DOC_ENGINE_OCEANBASE:
+        doc_engine = "oceanbase"
+    else:
+        doc_engine = "es"
 
     # Construct the full table name
     # For Elasticsearch: ragflow_{tenant_id} (kb_id is in WHERE clause)
@@ -601,10 +606,21 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         table_name = base_table
         logging.debug(f"use_sql: Using ES/OS table name: {table_name}")
 
+    def is_row_count_question(q: str) -> bool:
+        q = (q or "").lower()
+        if not re.search(r"\bhow many rows\b|\bnumber of rows\b|\brow count\b", q):
+            return False
+        return bool(re.search(r"\bdataset\b|\btable\b|\bspreadsheet\b|\bexcel\b", q))
+
     # Generate engine-specific SQL prompts
     if doc_engine == "infinity":
         # Build Infinity prompts with JSON extraction context
         json_field_names = list(field_map.keys())
+        row_count_override = (
+            f"SELECT COUNT(*) AS rows FROM {table_name}"
+            if is_row_count_question(question)
+            else None
+        )
         sys_prompt = """You are a Database Administrator. Write SQL for a table with JSON 'chunk_data' column.
 
 JSON Extraction: json_extract_string(chunk_data, '$.FieldName')
@@ -633,8 +649,45 @@ Write SQL using json_extract_string() with exact field names. Include doc_id, do
             "\n".join([f"  - {field}" for field in json_field_names]),
             question
         )
+    elif doc_engine == "oceanbase":
+        # Build OceanBase prompts with JSON extraction context
+        json_field_names = list(field_map.keys())
+        row_count_override = (
+            f"SELECT COUNT(*) AS rows FROM {table_name}"
+            if is_row_count_question(question)
+            else None
+        )
+        sys_prompt = """You are a Database Administrator. Write SQL for a table with JSON 'chunk_data' column.
+
+JSON Extraction: json_extract_string(chunk_data, '$.FieldName')
+Numeric Cast: CAST(json_extract_string(chunk_data, '$.FieldName') AS INTEGER/FLOAT)
+NULL Check: json_extract_isnull(chunk_data, '$.FieldName') == false
+
+RULES:
+1. Use EXACT field names (case-sensitive) from the list below
+2. For SELECT: include doc_id, docnm_kwd, and json_extract_string() for requested fields
+3. For COUNT: use COUNT(*) or COUNT(DISTINCT json_extract_string(...))
+4. Add AS alias for extracted field names
+5. DO NOT select 'content' field
+6. Only add NULL check (json_extract_isnull() == false) in WHERE clause when:
+   - Question asks to "show me" or "display" specific columns
+   - Question mentions "not null" or "excluding null"
+   - Add NULL check for count specific column
+   - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
+7. Output ONLY the SQL, no explanations"""
+        user_prompt = """Table: {}
+Fields (EXACT case): {}
+{}
+Question: {}
+Write SQL using json_extract_string() with exact field names. Include doc_id, docnm_kwd for data queries. Only SQL.""".format(
+            table_name,
+            ", ".join(json_field_names),
+            "\n".join([f"  - {field}" for field in json_field_names]),
+            question
+        )
     else:
         # Build ES/OS prompts with direct field access
+        row_count_override = None
         sys_prompt = """You are a Database Administrator. Write SQL queries.
 
 RULES:
@@ -657,8 +710,11 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
     tried_times = 0
 
     async def get_table():
-        nonlocal sys_prompt, user_prompt, question, tried_times
-        sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
+        nonlocal sys_prompt, user_prompt, question, tried_times, row_count_override
+        if row_count_override:
+            sql = row_count_override
+        else:
+            sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
         logging.debug(f"use_sql: Raw SQL from LLM: {repr(sql[:500])}")
         # Remove think blocks if present (format: </think>...)
         sql = re.sub(r"</think>\n.*?\n\s*", "", sql, flags=re.DOTALL)
@@ -703,7 +759,7 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
     except Exception as e:
         logging.warning(f"use_sql: Initial SQL execution FAILED with error: {e}")
         # Build retry prompt with error information
-        if doc_engine == "infinity":
+        if doc_engine in ("infinity", "oceanbase"):
             # Build Infinity error retry prompt
             json_field_names = list(field_map.keys())
             user_prompt = """
@@ -1048,7 +1104,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
 
     if meta_data_filter:
-        metas = DocumentService.get_meta_by_kbs(kb_ids)
+        metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
     kbinfos = await retriever.retrieval(
@@ -1124,7 +1180,7 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         rerank_mdl = LLMBundle(tenant_id, LLMType.RERANK, rerank_id)
 
     if meta_data_filter:
-        metas = DocumentService.get_meta_by_kbs(kb_ids)
+        metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
     ranks = await settings.retriever.retrieval(

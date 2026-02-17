@@ -78,10 +78,10 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         try:
             callback(0.4, "Use CV LLM to describe the picture.")
             cv_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, lang=lang)
-            img_binary = io.BytesIO()
-            img.save(img_binary, format="JPEG")
-            img_binary.seek(0)
-            ans = cv_mdl.describe(img_binary.read())
+            with io.BytesIO() as img_binary:
+                img.save(img_binary, format="JPEG")
+                img_binary.seek(0)
+                ans = cv_mdl.describe(img_binary.read())
             callback(0.8, "CV LLM respond: %s ..." % ans[:32])
             txt += "\n" + ans
             tokenize(doc, txt, eng)
@@ -105,6 +105,12 @@ def vision_llm_chunk(binary, vision_model, prompt=None, callback=None):
     txt = ""
 
     try:
+        # Skip tiny crops that fail provider image-size limits.
+        if hasattr(img, "size"):
+            min_side = 11
+            if img.size[0] < min_side or img.size[1] < min_side:
+                callback(0.0, f"Skip tiny image for VLM: {img.size[0]}x{img.size[1]}")
+                return ""
         with io.BytesIO() as img_binary:
             try:
                 img.save(img_binary, format="JPEG")

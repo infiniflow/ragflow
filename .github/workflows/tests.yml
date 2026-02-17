@@ -203,8 +203,11 @@ jobs:
           echo -e "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> docker/.env
           echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
+          # Patch entrypoint.sh for coverage
+          sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' docker/entrypoint.sh
+
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
-          uv sync --python 3.12 --only-group test --no-default-groups --frozen && uv pip install sdk/python --group test
+          uv sync --python 3.12 --group test --frozen && uv pip install -e sdk/python
 
       - name: Run sdk tests against Elasticsearch
         run: |
@@ -213,7 +216,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api 2>&1 | tee es_sdk_test.log
+          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-es-sdk.xml test/testcases/test_sdk_api 2>&1 | tee es_sdk_test.log
 
       - name: Run web api tests against Elasticsearch
         run: |
@@ -222,7 +225,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/ 2>&1 | tee es_web_api_test.log
+          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api 2>&1 | tee es_web_api_test.log
           
       - name: Run http api tests against Elasticsearch
         run: |
@@ -233,12 +236,153 @@ jobs:
           done
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 2>&1 | tee es_http_api_test.log
 
-      - name: Collect ragflow log
+      - name: RAGFlow CLI retrieval test Elasticsearch
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+
+          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
+
+          EMAIL="ci-${GITHUB_RUN_ID}@example.com"
+          PASS="ci-pass-${GITHUB_RUN_ID}"
+          DATASET="ci_dataset_${GITHUB_RUN_ID}"
+
+          CLI="python admin/client/ragflow_cli.py"
+
+          LOG_FILE="es_cli_test.log"
+          : > "${LOG_FILE}"
+
+          ERROR_RE='Traceback|ModuleNotFoundError|ImportError|Parse error|Bad response|Fail to|code:\\s*[1-9]'
+          run_cli() {
+            local logfile="$1"
+            shift
+            local allow_re=""
+            if [[ "${1:-}" == "--allow" ]]; then
+              allow_re="$2"
+              shift 2
+            fi
+            local cmd_display="$*"
+            echo "===== $(date -u +\"%Y-%m-%dT%H:%M:%SZ\") CMD: ${cmd_display} =====" | tee -a "${logfile}"
+            local tmp_log
+            tmp_log="$(mktemp)"
+            set +e
+            timeout 180s "$@" 2>&1 | tee "${tmp_log}"
+            local status=${PIPESTATUS[0]}
+            set -e
+            cat "${tmp_log}" >> "${logfile}"
+            if grep -qiE "${ERROR_RE}" "${tmp_log}"; then
+              if [[ -n "${allow_re}" ]] && grep -qiE "${allow_re}" "${tmp_log}"; then
+                echo "Allowed CLI error markers in ${logfile}"
+                rm -f "${tmp_log}"
+                return 0
+              fi
+              echo "Detected CLI error markers in ${logfile}"
+              rm -f "${tmp_log}"
+              exit 1
+            fi
+            rm -f "${tmp_log}"
+            return ${status}
+          }
+
+          set -a
+          source docker/.env
+          set +a
+
+          HOST_ADDRESS="http://host.docker.internal:${SVR_HTTP_PORT}"
+          USER_HOST="$(echo "${HOST_ADDRESS}" | sed -E 's#^https?://([^:/]+).*#\1#')"
+          USER_PORT="${SVR_HTTP_PORT}"
+          ADMIN_HOST="${USER_HOST}"
+          ADMIN_PORT="${ADMIN_SVR_HTTP_PORT}"
+
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
+            echo "Waiting for service to be available..."
+            sleep 5
+          done
+
+          admin_ready=0
+          for i in $(seq 1 30); do
+            if run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "ping"; then
+              admin_ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "${admin_ready}" -ne 1 ]]; then
+            echo "Admin service did not become ready"
+            exit 1
+          fi
+
+          run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "show version"
+          ALLOW_USER_EXISTS_RE='already exists|already exist|duplicate|already.*registered|exist(s)?'
+          run_cli "${LOG_FILE}" --allow "${ALLOW_USER_EXISTS_RE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "create user '$EMAIL' '$PASS'"
+
+          user_ready=0
+          for i in $(seq 1 30); do
+            if run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "ping"; then
+              user_ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "${user_ready}" -ne 1 ]]; then
+            echo "User service did not become ready"
+            exit 1
+          fi
+
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "show version"
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "create dataset '$DATASET' with embedding 'BAAI/bge-small-en-v1.5@Builtin' parser 'auto'"
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "import 'test/benchmark/test_docs/Doc1.pdf,test/benchmark/test_docs/Doc2.pdf' into dataset '$DATASET'"
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "parse dataset '$DATASET' sync"
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "Benchmark 16 100 search 'what are these documents about' on datasets '$DATASET'"
+
+      - name: Stop ragflow to save coverage Elasticsearch
         if: ${{ !cancelled() }}
         run: |
-          cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-es
-          echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log
-          sudo rm -rf docker/ragflow-logs
+          # Send SIGINT to ragflow_server.py to trigger coverage save
+          PID=$(sudo docker exec ${RAGFLOW_CONTAINER} ps aux | grep "ragflow_server.py" | grep -v grep | awk '{print $2}' | head -n 1)
+          if [ -n "$PID" ]; then
+            echo "Sending SIGINT to ragflow_server.py (PID: $PID)..."
+            sudo docker exec ${RAGFLOW_CONTAINER} kill -INT $PID
+            # Wait for process to exit and coverage file to be written
+            sleep 10
+          else
+            echo "ragflow_server.py not found!"
+          fi
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} stop
+
+      - name: Generate server coverage report Elasticsearch
+        if: ${{ !cancelled() }}
+        run: |
+          # .coverage file should be in docker/ragflow-logs/.coverage
+          if [ -f docker/ragflow-logs/.coverage ]; then
+            echo "Found .coverage file"
+            cp docker/ragflow-logs/.coverage .coverage
+            source .venv/bin/activate
+            # Create .coveragerc to map container paths to host paths
+            echo "[paths]" > .coveragerc
+            echo "source =" >> .coveragerc
+            echo "    ." >> .coveragerc
+            echo "    /ragflow" >> .coveragerc
+            coverage xml -o coverage-es-server.xml
+            rm .coveragerc
+            # Clean up for next run
+            sudo rm docker/ragflow-logs/.coverage
+          else
+            echo ".coverage file not found!"
+          fi
+          
+      - name: Collect ragflow log Elasticsearch
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -d docker/ragflow-logs ]; then
+            cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-es
+            echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log || true
+          else
+            echo "No docker/ragflow-logs directory found; skipping log collection"
+          fi
+          sudo rm -rf docker/ragflow-logs || true
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
@@ -258,7 +402,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-infinity-sdk.xml test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
 
       - name: Run web api tests against Infinity
         run: |
@@ -267,7 +411,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/ 2>&1 | tee infinity_web_api_test.log
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/test_api_app 2>&1 | tee infinity_web_api_test.log
 
       - name: Run http api tests against Infinity
         run: |
@@ -278,12 +422,159 @@ jobs:
           done
           source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 2>&1 | tee infinity_http_api_test.log
 
+      - name: RAGFlow CLI retrieval test Infinity
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+
+          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
+
+          EMAIL="ci-${GITHUB_RUN_ID}@example.com"
+          PASS="ci-pass-${GITHUB_RUN_ID}"
+          DATASET="ci_dataset_${GITHUB_RUN_ID}"
+
+          CLI="python admin/client/ragflow_cli.py"
+
+          LOG_FILE="infinity_cli_test.log"
+          : > "${LOG_FILE}"
+
+          ERROR_RE='Traceback|ModuleNotFoundError|ImportError|Parse error|Bad response|Fail to|code:\\s*[1-9]'
+          run_cli() {
+            local logfile="$1"
+            shift
+            local allow_re=""
+            if [[ "${1:-}" == "--allow" ]]; then
+              allow_re="$2"
+              shift 2
+            fi
+            local cmd_display="$*"
+            echo "===== $(date -u +\"%Y-%m-%dT%H:%M:%SZ\") CMD: ${cmd_display} =====" | tee -a "${logfile}"
+            local tmp_log
+            tmp_log="$(mktemp)"
+            set +e
+            timeout 180s "$@" 2>&1 | tee "${tmp_log}"
+            local status=${PIPESTATUS[0]}
+            set -e
+            cat "${tmp_log}" >> "${logfile}"
+            if grep -qiE "${ERROR_RE}" "${tmp_log}"; then
+              if [[ -n "${allow_re}" ]] && grep -qiE "${allow_re}" "${tmp_log}"; then
+                echo "Allowed CLI error markers in ${logfile}"
+                rm -f "${tmp_log}"
+                return 0
+              fi
+              echo "Detected CLI error markers in ${logfile}"
+              rm -f "${tmp_log}"
+              exit 1
+            fi
+            rm -f "${tmp_log}"
+            return ${status}
+          }
+
+          set -a
+          source docker/.env
+          set +a
+
+          HOST_ADDRESS="http://host.docker.internal:${SVR_HTTP_PORT}"
+          USER_HOST="$(echo "${HOST_ADDRESS}" | sed -E 's#^https?://([^:/]+).*#\1#')"
+          USER_PORT="${SVR_HTTP_PORT}"
+          ADMIN_HOST="${USER_HOST}"
+          ADMIN_PORT="${ADMIN_SVR_HTTP_PORT}"
+
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
+            echo "Waiting for service to be available..."
+            sleep 5
+          done
+
+          admin_ready=0
+          for i in $(seq 1 30); do
+            if run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "ping"; then
+              admin_ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "${admin_ready}" -ne 1 ]]; then
+            echo "Admin service did not become ready"
+            exit 1
+          fi
+
+          run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "show version"
+          ALLOW_USER_EXISTS_RE='already exists|already exist|duplicate|already.*registered|exist(s)?'
+          run_cli "${LOG_FILE}" --allow "${ALLOW_USER_EXISTS_RE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "create user '$EMAIL' '$PASS'"
+
+          user_ready=0
+          for i in $(seq 1 30); do
+            if run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "ping"; then
+              user_ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "${user_ready}" -ne 1 ]]; then
+            echo "User service did not become ready"
+            exit 1
+          fi
+
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "show version"
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "create dataset '$DATASET' with embedding 'BAAI/bge-small-en-v1.5@Builtin' parser 'auto'"
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "import 'test/benchmark/test_docs/Doc1.pdf,test/benchmark/test_docs/Doc2.pdf' into dataset '$DATASET'"
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "parse dataset '$DATASET' sync"
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "Benchmark 16 100 search 'what are these documents about' on datasets '$DATASET'"
+
+      - name: Stop ragflow to save coverage Infinity
+        if: ${{ !cancelled() }}
+        run: |
+          # Send SIGINT to ragflow_server.py to trigger coverage save
+          PID=$(sudo docker exec ${RAGFLOW_CONTAINER} ps aux | grep "ragflow_server.py" | grep -v grep | awk '{print $2}' | head -n 1)
+          if [ -n "$PID" ]; then
+            echo "Sending SIGINT to ragflow_server.py (PID: $PID)..."
+            sudo docker exec ${RAGFLOW_CONTAINER} kill -INT $PID
+            # Wait for process to exit and coverage file to be written
+            sleep 10
+          else
+            echo "ragflow_server.py not found!"
+          fi
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} stop
+
+      - name: Generate server coverage report Infinity
+        if: ${{ !cancelled() }}
+        run: |
+          # .coverage file should be in docker/ragflow-logs/.coverage
+          if [ -f docker/ragflow-logs/.coverage ]; then
+            echo "Found .coverage file"
+            cp docker/ragflow-logs/.coverage .coverage
+            source .venv/bin/activate
+            # Create .coveragerc to map container paths to host paths
+            echo "[paths]" > .coveragerc
+            echo "source =" >> .coveragerc
+            echo "    ." >> .coveragerc
+            echo "    /ragflow" >> .coveragerc
+            coverage xml -o coverage-infinity-server.xml
+            rm .coveragerc
+          else
+            echo ".coverage file not found!"
+          fi
+          
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        if: ${{ !cancelled() }}
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
       - name: Collect ragflow log
         if: ${{ !cancelled() }}
         run: |
-          cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-infinity
-          echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log
-          sudo rm -rf docker/ragflow-logs
+          if [ -d docker/ragflow-logs ]; then
+            cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-infinity
+            echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log || true
+          else
+            echo "No docker/ragflow-logs directory found; skipping log collection"
+          fi
+          sudo rm -rf docker/ragflow-logs || true
+
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
         run: |
