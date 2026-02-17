@@ -1,0 +1,13 @@
+.documentContainer {
+  width: 100%;
+  // height: calc(100vh - 284px);
+  height: calc(100vh - 180px);
+  position: relative;
+  :global(.PdfHighlighter) {
+    overflow-x: hidden;
+  }
+  :global(.Highlight--scrolledTo .Highlight__part) {
+    overflow-x: hidden;
+    background-color: rgba(255, 226, 143, 1);
+  }
+}

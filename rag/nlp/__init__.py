@@ -302,14 +302,9 @@ def split_with_pattern(d, pattern: str, content: str, eng) -> list:
 def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=None):
     res = []
     # wrap up as es documents
-    # 过滤掉空chunk，但保留原始顺序
-    valid_chunks = []
     for ii, ck in enumerate(chunks):
         if len(ck.strip()) == 0:
             continue
-        valid_chunks.append((ii, ck))
-
-    for idx, (original_idx, ck) in enumerate(valid_chunks):
         logging.debug("-- {}".format(ck))
         d = copy.deepcopy(doc)
         if pdf_parser:
@@ -320,10 +315,7 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
             except NotImplementedError:
                 pass
         else:
-            add_positions(d, [[original_idx] * 5])
-
-        d["chunk_id"] = original_idx # 临时保存原始ID，后续可能需要
-        d["chunk_index_int"] = idx # 新增排序字段：chunk_index_int，表示在有效chunk中的顺序
+            add_positions(d, [[ii] * 5])
 
         if child_delimiters_pattern:
             d["mom_with_weight"] = ck

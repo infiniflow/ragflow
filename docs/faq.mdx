@@ -535,12 +535,6 @@ The table below summarizes the most frequently used MinerU environment variables
 | `MINERU_APISERVER`     | URL of the MinerU API service      | _unset_                             | `MINERU_APISERVER=http://your-mineru-server:8886`                                              |
 | `MINERU_BACKEND`       | MinerU parsing backend             | `pipeline`                          | `MINERU_BACKEND=pipeline\|vlm-transformers\|vlm-vllm-engine\|vlm-mlx-engine\|vlm-vllm-async-engine\|vlm-http-client` |
 | `MINERU_SERVER_URL`    | URL of remote vLLM server (for `vlm-http-client`) | _unset_ | `MINERU_SERVER_URL=http://your-vllm-server-ip:30000`                                           |
-
-> Note: The MinerU parser also supports a few parser-level options that are configured in parser settings (not as environment variables). Important ones:
->
-> - `mineru_batch_size` (default 30) controls pages per batch; valid values are 1..500 and values will be clamped on the server-side if out of range.
-> - `mineru_strict_mode` (default true) is currently a backend-only option (requires no UI change to function). If you want to expose it in the frontend, add a boolean form field and propagate it into `parser_config` as `mineru_strict_mode`.
-
 | `MINERU_OUTPUT_DIR`    | Directory for MinerU output files  | System-defined temporary directory  | `MINERU_OUTPUT_DIR=/home/ragflow/mineru/output`                                                |
 | `MINERU_DELETE_OUTPUT` | Whether to delete MinerU output directory when a temp dir is used | `1` (delete temp output) | `MINERU_DELETE_OUTPUT=0`                                                                       |
 

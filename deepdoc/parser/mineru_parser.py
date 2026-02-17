@@ -21,7 +21,6 @@ import shutil
 import sys
 import tempfile
 import threading
-import time
 import zipfile
 from dataclasses import dataclass
 from io import BytesIO
@@ -32,16 +31,12 @@ from typing import Any, Callable, Optional
 import numpy as np
 import pdfplumber
 import requests
-import requests.exceptions
 from PIL import Image
 from strenum import StrEnum
 
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
-# Use a module-level registry key to share a single Lock object without mutating
-# sys.path or other global import state. Storing a Lock under a well-known key in
-# sys.modules is acceptable, but avoid inserting unrelated paths into sys.path.
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
 
@@ -84,9 +79,7 @@ LANGUAGE_TO_MINERU_MAP = {
 class MinerUBackend(StrEnum):
     """MinerU processing backend options."""
 
-    HYBRID_AUTO_ENGINE = "hybrid-auto-engine"  # Hybrid auto engine with automatic optimization (default in MinerU 2.7.0+)
-    HYBRID = "hybrid"  # Hybrid backend combining multiple processing strategies
-    PIPELINE = "pipeline"  # Traditional multimodel pipeline
+    PIPELINE = "pipeline"  # Traditional multimodel pipeline (default)
     VLM_TRANSFORMERS = "vlm-transformers"  # Vision-language model using HuggingFace Transformers
     VLM_MLX_ENGINE = "vlm-mlx-engine"  # Faster, requires Apple Silicon and macOS 13.5+
     VLM_VLLM_ENGINE = "vlm-vllm-engine"  # Local vLLM engine, requires local GPU
@@ -127,20 +120,9 @@ class MinerUParseMethod(StrEnum):
 
 @dataclass
 class MinerUParseOptions:
-    """Options for MinerU PDF parsing.
+    """Options for MinerU PDF parsing."""
 
-    Notes:
-    - `batch_size` default is 30; valid range is [1, 500]. Values outside this range
-      will be clamped to a safe default or upper bound by the parser.
-    - `start_page` and `end_page` are 0-based. If both provided, `start_page` must
-      be <= `end_page` otherwise validation will fail.
-    - `strict_mode` is a backend-only option (default True) that requires all
-      batches to succeed; it is currently not exposed in the UI. To expose it
-      in the frontend, add a boolean field (e.g., `mineru_strict_mode`) to the
-      MinerU parser form and propagate it into `parser_config`.
-    """
-
-    backend: MinerUBackend = MinerUBackend.HYBRID_AUTO_ENGINE
+    backend: MinerUBackend = MinerUBackend.PIPELINE
     lang: Optional[MinerULanguage] = None  # language for OCR (pipeline backend only)
     method: MinerUParseMethod = MinerUParseMethod.AUTO
     server_url: Optional[str] = None
@@ -148,12 +130,6 @@ class MinerUParseOptions:
     parse_method: str = "raw"
     formula_enable: bool = True
     table_enable: bool = True
-    batch_size: int = 30  # Number of pages per batch for large PDFs (clamped to [1,500])
-    start_page: Optional[int] = None  # Starting page (0-based, inclusive)
-    end_page: Optional[int] = None  # Ending page (0-based, exclusive; matches MinerU API semantics)
-    strict_mode: bool = True  # If True (default), all batches must succeed; if False, allow partial success with warnings
-    exif_correction: bool = True
-
 
 
 class MinerUParser(RAGFlowPdfParser):
@@ -227,7 +203,7 @@ class MinerUParser(RAGFlowPdfParser):
     def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
         reason = ""
 
-        valid_backends = ["hybrid-auto-engine", "hybrid", "pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
+        valid_backends = ["pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
         if backend not in valid_backends:
             reason = f"[MinerU] Invalid backend '{backend}'. Valid backends are: {valid_backends}"
             self.logger.warning(reason)
@@ -264,66 +240,14 @@ class MinerUParser(RAGFlowPdfParser):
 
         return True, reason
 
-    def _validate_parse_options(self, options: MinerUParseOptions) -> None:
-        """Validate parse options for MinerUParser.
-
-        Raises:
-            ValueError: If options are invalid (e.g., start_page > end_page).
-        """
-        # Validate start_page and end_page types and ranges
-        if options.start_page is not None and not isinstance(options.start_page, int):
-            raise ValueError(f"[MinerU] start_page must be an int or None, got {type(options.start_page).__name__}")
-        if options.end_page is not None and not isinstance(options.end_page, int):
-            raise ValueError(f"[MinerU] end_page must be an int or None, got {type(options.end_page).__name__}")
-        if options.start_page is not None and options.start_page < 0:
-            raise ValueError(f"[MinerU] start_page must be >= 0, got {options.start_page}")
-        if options.end_page is not None and options.end_page < 0:
-            raise ValueError(f"[MinerU] end_page must be >= 0, got {options.end_page}")
-        # With our semantics end_page is exclusive (0-based), therefore start_page must be strictly
-        # less than end_page when both are provided to refer to a non-empty page range.
-        if options.start_page is not None and options.end_page is not None and options.start_page >= options.end_page:
-            raise ValueError(f"[MinerU] start_page ({options.start_page}) must be < end_page ({options.end_page})")
-
-        # Validate batch_size and clamp to reasonable bounds
-        if not isinstance(options.batch_size, int) or options.batch_size <= 0:
-            self.logger.warning(f"[MinerU] invalid batch_size {options.batch_size}, resetting to default 30")
-            options.batch_size = 30
-        elif options.batch_size > 500:
-            self.logger.warning(f"[MinerU] batch_size {options.batch_size} is unusually large; capping to 500")
-            options.batch_size = 500
-
-        # strict_mode: ensure boolean and log note because it's currently not exposed in UI
-        if not isinstance(options.strict_mode, bool):
-            self.logger.warning(f"[MinerU] strict_mode must be boolean, got {type(options.strict_mode).__name__}; coercing to bool")
-            options.strict_mode = bool(options.strict_mode)
-        # Document strict_mode behaviour in help text to aid frontend developers
-        if options.strict_mode:
-            self.logger.info("[MinerU] strict_mode is enabled; note: this option currently has no UI control and is backend-only. If you want to expose it in the UI, add a toggle in the mineru form and update translation strings.")
-
     def _run_mineru(
         self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None
     ) -> Path:
         return self._run_mineru_api(input_path, output_dir, options, callback)
 
-    def _get_total_pages(self, pdf_path: Path) -> int:
-        """Return total pages of a PDF using pdfplumber (0 on failure)."""
-        try:
-            with pdfplumber.open(pdf_path) as pdf:
-                return len(pdf.pages)
-        except Exception as e:
-            self.logger.warning(f"[MinerU] Could not determine total pages for {pdf_path}: {e}")
-            return 0
-
-    def _run_mineru_api_single_batch(
-        self,
-        input_path: Path,
-        output_dir: Path,
-        options: MinerUParseOptions,
-        start_page: int,
-        end_page: int,
-        callback: Optional[Callable] = None,
+    def _run_mineru_api(
+        self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None
     ) -> Path:
-        """Run MinerU API for a single page range batch and return the output directory."""
         pdf_file_path = str(input_path)
 
         if not os.path.exists(pdf_file_path):
@@ -347,11 +271,8 @@ class MinerUParser(RAGFlowPdfParser):
             "return_content_list": True,
             "return_images": True,
             "response_format_zip": True,
-            "start_page_id": start_page,
-            "end_page_id": end_page,
-            "batch_size": options.batch_size,
-            "exif_correction": options.exif_correction,
-            "strict_mode": options.strict_mode,
+            "start_page_id": 0,
+            "end_page_id": 99999,
         }
 
         if options.server_url:
@@ -359,7 +280,8 @@ class MinerUParser(RAGFlowPdfParser):
         elif self.mineru_server_url:
             data["server_url"] = self.mineru_server_url
 
-        self.logger.info(f"[MinerU] request batch pages={start_page}-{end_page} {data=}")
+        self.logger.info(f"[MinerU] request {data=}")
+        self.logger.info(f"[MinerU] request {options=}")
 
         headers = {"Accept": "application/json"}
         try:
@@ -399,103 +321,6 @@ class MinerUParser(RAGFlowPdfParser):
             raise RuntimeError(f"[MinerU] api failed with exception {e}")
         self.logger.info("[MinerU] Api completed successfully.")
         return Path(output_path)
-
-    def _run_mineru_api(
-        self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None
-    ) -> Path:
-        """Top-level MinerU API runner: supports automatic batching when start/end not set."""
-        # Validate options
-        try:
-            self._validate_parse_options(options)
-        except ValueError as ve:
-            raise RuntimeError(f"[MinerU] invalid parse options: {ve}")
-
-        pdf_file_path = str(input_path)
-        if not os.path.exists(pdf_file_path):
-            raise RuntimeError(f"[MinerU] PDF file not exists: {pdf_file_path}")
-
-        # Decision logging: what was provided and configured
-        start_set = options.start_page is not None
-        end_set = options.end_page is not None
-        self.logger.info(f"[MinerU] batching_decision: start_set={start_set}, end_set={end_set}, batch_size={options.batch_size}, strict_mode={options.strict_mode}")
-
-        # If user explicitly set page range, prefer single batch unless the range covers the whole document
-        if start_set or end_set:
-            s = options.start_page if start_set else 0
-            e = options.end_page if end_set else 99999
-            try:
-                total_pages = self._get_total_pages(input_path)
-            except Exception as exc:
-                total_pages = 0
-                self.logger.warning(f"[MinerU] could not read total pages while evaluating explicit range: {exc}")
-
-            self.logger.info(f"[MinerU] explicit_range_detected: start={s}, end={e}, total_pages={total_pages}")
-
-            # If explicit range appears to be the full document, allow automatic batching
-            if s == 0 and total_pages and e >= total_pages:
-                self.logger.info(f"[MinerU] Explicit page range covers full document ({s}-{e}) and total_pages={total_pages}; enabling automatic batching")
-                # fall through to automatic batching logic below
-            else:
-                self.logger.info(f"[MinerU] Running single batch for explicit range {s}-{e}")
-                return self._run_mineru_api_single_batch(input_path, output_dir, options, s, e, callback=callback)
-
-        # Automatic batching if batch_size positive
-        if options.batch_size and options.batch_size > 0:
-            total_pages = self._get_total_pages(input_path)
-            self.logger.info(f"[MinerU] Auto-batching check: total_pages={total_pages}, batch_size={options.batch_size}")
-            if total_pages == 0:
-                self.logger.warning("[MinerU] Could not determine total pages; falling back to single batch")
-                return self._run_mineru_api_single_batch(input_path, output_dir, options, 0, 99999, callback=callback)
-            if total_pages <= options.batch_size:
-                self.logger.info(f"[MinerU] total_pages ({total_pages}) <= batch_size ({options.batch_size}); using single batch")
-                return self._run_mineru_api_single_batch(input_path, output_dir, options, 0, 99999, callback=callback)
-
-            batches = []
-            for batch_start in range(0, total_pages, options.batch_size):
-                batch_end = min(batch_start + options.batch_size - 1, total_pages - 1)
-                batches.append((batch_start, batch_end))
-
-            merged_outputs = []
-            failed_batches = []
-            for idx, (bs, be) in enumerate(batches):
-                try:
-                    self.logger.info(f"[MinerU] processing batch {idx+1}/{len(batches)} pages {bs}-{be}")
-                    batch_out_dir = self._run_mineru_api_single_batch(input_path, output_dir, options, bs, be, callback=None)
-                    batch_outputs = self._read_output(batch_out_dir, Path(pdf_file_path).stem, method=str(options.method), backend=str(options.backend))
-                    # Adjust page indices if present (batch-level -> global)
-                    for item in batch_outputs:
-                        if isinstance(item, dict) and item.get("page_idx") is not None:
-                            item["page_idx"] = item["page_idx"] + bs
-                    merged_outputs.extend(batch_outputs)
-                    # Cleanup batch outputs if requested
-                    if options.delete_output:
-                        try:
-                            import shutil
-
-                            shutil.rmtree(batch_out_dir)
-                        except Exception:
-                            pass
-                except Exception as e:
-                    self.logger.warning(f"[MinerU] batch {idx+1} failed pages {bs}-{be}: {e}")
-                    failed_batches.append((bs, be, str(e)))
-                    if options.strict_mode:
-                        raise RuntimeError(f"[MinerU] Batch {idx+1} failed and strict_mode=True: {e}")
-
-            # Write merged content list to a merged output dir
-            pdf_file_name = Path(pdf_file_path).stem.strip()
-            merged_output_path = tempfile.mkdtemp(prefix=f"{pdf_file_name}_{options.method}_merged_", dir=str(output_dir))
-            merged_json_path = Path(merged_output_path) / f"{pdf_file_name}_content_list.json"
-            with open(merged_json_path, "w", encoding="utf-8") as f:
-                json.dump(merged_outputs, f, ensure_ascii=False)
-
-            # If some batches failed and strict_mode is True we would have raised before; otherwise log warning
-            if failed_batches:
-                self.logger.warning(f"[MinerU] {len(failed_batches)} batches failed: {failed_batches}")
-
-            return Path(merged_output_path)
-
-        # Default: single pass over entire document
-        return self._run_mineru_api_single_batch(input_path, output_dir, options, 0, 99999, callback=callback)
 
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=600, callback=None):
         self.page_from = page_from
@@ -766,30 +591,6 @@ class MinerUParser(RAGFlowPdfParser):
         mineru_method_raw_str = parser_cfg.get('mineru_parse_method', 'auto')
         enable_formula = parser_cfg.get('mineru_formula_enable', True)
         enable_table = parser_cfg.get('mineru_table_enable', True)
-        start_page = parser_cfg.get('mineru_start_page', None)
-        end_page = parser_cfg.get('mineru_end_page', None)
-        batch_size = parser_cfg.get('mineru_batch_size', 30)
-        strict_mode = parser_cfg.get('mineru_strict_mode', True)
-        
-        # Handle pages parameter - MinerU only supports single continuous page range
-        pages = parser_cfg.get('pages', [])
-        if pages and len(pages) > 0:
-            if len(pages) == 1:
-                # Single page range
-                page_range = pages[0]
-                if isinstance(page_range, list) and len(page_range) == 2:
-                    start_page = page_range[0] - 1  # Convert to 0-based indexing
-                    end_page = page_range[1]  # end_page is exclusive in MinerU API
-                    self.logger.info(f"[MinerU] Using page range: {page_range} (0-based: {start_page} to {end_page})")
-                else:
-                    self.logger.warning(f"[MinerU] Invalid page range format: {page_range}")
-            else:
-                # Multiple page ranges - MinerU doesn't support this, use first range
-                self.logger.warning(f"[MinerU] Multiple page ranges not supported, using first range: {pages[0]}")
-                page_range = pages[0]
-                if isinstance(page_range, list) and len(page_range) == 2:
-                    start_page = page_range[0] - 1  # Convert to 0-based indexing
-                    end_page = page_range[1]  # end_page is exclusive in MinerU API
 
         # remove spaces, or mineru crash, and _read_output fail too
         file_path = Path(filepath)
@@ -838,10 +639,6 @@ class MinerUParser(RAGFlowPdfParser):
                 parse_method=parse_method,
                 formula_enable=enable_formula,
                 table_enable=enable_table,
-                batch_size=batch_size,
-                start_page=start_page,
-                end_page=end_page,
-                strict_mode=strict_mode,
             )
             final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback)
             outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)

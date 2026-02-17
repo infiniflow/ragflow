@@ -133,7 +133,6 @@ jobs:
         run: |
           uv sync --python 3.12 --group test --frozen
           source .venv/bin/activate
-          export PYTHONPATH=$GITHUB_WORKSPACE:$PYTHONPATH
           which pytest || echo "pytest not in PATH"
           echo "Start to run unit test"
           python3 run_tests.py

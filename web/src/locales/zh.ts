@@ -326,9 +326,6 @@ export default {
       taskPageSize: '任务页面大小',
       taskPageSizeMessage: '请输入您的任务页面大小！',
       taskPageSizeTip: `如果使用布局识别，PDF 文件将被分成连续的组。 布局分析将在组之间并行执行，以提高处理速度。 “任务页面大小”决定组的大小。 页面大小越大，将页面之间的连续文本分割成不同块的机会就越低。`,
-      mineruStrictMode: '严格模式',
-      mineruStrictModeTip:
-        '要求所有批次都成功；禁用时允许部分成功（后端选项）。',
       addPage: '新增页面',
       greaterThan: '当前值必须大于起始值！',
       greaterThanPrevious: '当前值必须大于之前的值！',

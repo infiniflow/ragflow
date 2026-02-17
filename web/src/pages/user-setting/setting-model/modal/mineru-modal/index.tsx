@@ -24,43 +24,24 @@ import { z } from 'zod';
 import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../verify-button';
 
-const FormSchema = z
-  .object({
-    llm_name: z.string().min(1, {
-      message: t('setting.mineru.modelNameRequired'),
-    }),
-    mineru_apiserver: z.string().url(),
-    mineru_output_dir: z.string().optional(),
-    mineru_backend: z.enum([
-      'pipeline',
-      'hybrid-auto-engine',
-      'hybrid',
-      'vlm-transformers',
-      'vlm-vllm-engine',
-      'vlm-http-client',
-      'vlm-mlx-engine',
-      'vlm-vllm-async-engine',
-      'vlm-lmdeploy-engine',
-    ]),
-    // mineru_server_url is optional; allow empty string for optional cases to avoid validation failure when the field is empty
-    mineru_server_url: z.string().url().or(z.literal('')).optional(),
-    mineru_start_page: z.number().min(0).optional(),
-    mineru_end_page: z.number().min(0).optional(),
-    mineru_batch_size: z.number().min(1).max(500).optional(),
-    mineru_strict_mode: z.boolean().optional(),
-    mineru_delete_output: z.boolean(),
-  })
-  .superRefine((data, ctx) => {
-    const start = data.mineru_start_page;
-    const end = data.mineru_end_page;
-    if (typeof start === 'number' && typeof end === 'number' && start > end) {
-      ctx.addIssue({
-        path: ['mineru_end_page'],
-        message: t('knowledgeConfiguration.mineruEndPageTip'),
-        code: 'custom',
-      });
-    }
-  });
+const FormSchema = z.object({
+  llm_name: z.string().min(1, {
+    message: t('setting.mineru.modelNameRequired'),
+  }),
+  mineru_apiserver: z.string().url(),
+  mineru_output_dir: z.string().optional(),
+  mineru_backend: z.enum([
+    'pipeline',
+    'vlm-transformers',
+    'vlm-vllm-engine',
+    'vlm-http-client',
+    'vlm-mlx-engine',
+    'vlm-vllm-async-engine',
+    'vlm-lmdeploy-engine',
+  ]),
+  mineru_server_url: z.string().url().optional(),
+  mineru_delete_output: z.boolean(),
+});
 
 export type MinerUFormValues = z.infer<typeof FormSchema>;
 
@@ -79,8 +60,6 @@ const MinerUModal = ({
 
   const backendOptions = buildOptions([
     'pipeline',
-    'hybrid-auto-engine',
-    'hybrid',
     'vlm-transformers',
     'vlm-vllm-engine',
     'vlm-http-client',
@@ -92,7 +71,7 @@ const MinerUModal = ({
   const form = useForm<MinerUFormValues>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
-      mineru_backend: 'hybrid-auto-engine',
+      mineru_backend: 'pipeline',
       mineru_delete_output: true,
     },
   });

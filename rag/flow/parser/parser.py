@@ -272,22 +272,13 @@ class Parser(ProcessBase):
             ocr_model = LLMBundle(tenant_id, LLMType.OCR, llm_name=parser_model_name, lang=conf.get("lang", "Chinese"))
             pdf_parser = ocr_model.mdl
 
-            # Ensure we forward any pipeline-level parser_config into the underlying OCR parser
-            parser_cfg = conf.get("parser_config", {})
-            self._canvas and hasattr(self._canvas, "task_id") and self._canvas.task_id  # touch to avoid unused
             lines, _ = pdf_parser.parse_pdf(
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
                 parse_method=conf.get("mineru_parse_method", "raw"),
                 lang=conf.get("lang", "Chinese"),
-                parser_config=parser_cfg,
             )
-            # Log parser_config for debugging if present
-            if parser_cfg:
-                import logging
-
-                logging.getLogger(__name__).debug(f"Parser forwarded parser_config to MinerU: {parser_cfg}")
             bboxes = []
             for t, poss in lines:
                 box = {

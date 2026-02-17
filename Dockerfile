@@ -5,9 +5,6 @@ SHELL ["/bin/bash", "-c"]
 
 ARG NEED_MIRROR=0
 
-ARG GIT_COMMIT=unknown
-ENV RAGFLOW_COMMIT=$GIT_COMMIT
-
 WORKDIR /ragflow
 
 # Copy models downloaded via download_deps.py
@@ -168,10 +165,6 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     # Ensure pip is available in the venv for runtime package installation (fixes #12651)
     .venv/bin/python3 -m ensurepip --upgrade
 
-# Copy SDK after dependencies are installed to avoid invalidating build cache
-# caused by changing SDK files which are not needed for dependency resolution
-COPY sdk sdk
-
 COPY web web
 COPY docs docs
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
@@ -218,5 +211,4 @@ RUN chmod +x ./entrypoint*.sh
 COPY --from=builder /ragflow/web/dist /ragflow/web/dist
 
 COPY --from=builder /ragflow/VERSION /ragflow/VERSION
-RUN echo "${RAGFLOW_COMMIT:-$(cat /ragflow/VERSION 2>/dev/null || echo unknown)}" > /etc/ragflow_commit
 ENTRYPOINT ["./entrypoint.sh"]

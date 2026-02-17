@@ -1,0 +1,43 @@
+{
+  "components": {
+            "begin": {
+                "obj":{
+                    "component_name": "Begin",
+                    "params": {
+                      "prologue": "Hi there!"
+                    }
+                },
+                "downstream": ["answer:0"],
+                "upstream": []
+            },
+            "answer:0": {
+                "obj": {
+                    "component_name": "Answer",
+                    "params": {}
+                },
+                "downstream": ["exesql:0"],
+                "upstream": ["begin", "exesql:0"]
+            },
+            "exesql:0": {
+                "obj": {
+                    "component_name": "ExeSQL",
+                    "params": {
+                                    "database": "rag_flow",
+                                    "username": "root",
+                                    "host": "mysql",
+                                    "port": 3306,
+                                    "password": "infini_rag_flow",
+				    "top_n": 3
+                    }
+                },
+                "downstream": ["answer:0"],
+                "upstream": ["answer:0"]
+            }
+  },
+  "history": [],
+  "messages": [],
+  "reference": {},
+  "path": [],
+  "answer": []
+}
+

@@ -90,7 +90,7 @@ class Dealer:
 
         src = req.get("fields",
                       ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
-                       "doc_id", "page_num_int", "top_int", "chunk_index_int", "create_timestamp_flt", "knowledge_graph_kwd",
+                       "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
                        "question_kwd", "question_tks", "doc_type_kwd",
                        "available_int", "content_with_weight", "mom_id", PAGERANK_FLD, TAG_FLD])
         kwds = set([])
@@ -100,7 +100,7 @@ class Dealer:
         if not qst:
             if req.get("sort"):
                 orderBy.asc("page_num_int")
-                orderBy.asc("chunk_index_int")
+                orderBy.asc("top_int")
                 orderBy.desc("create_timestamp_flt")
             res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
             total = self.dataStore.get_total(res)
@@ -475,7 +475,6 @@ class Dealer:
                 "term_similarity": float(tsim[i]),
                 "vector": chunk.get(vector_column, zero_vector),
                 "positions": position_int,
-                "chunk_index_int": chunk.get("chunk_index_int", 0),
                 "doc_type_kwd": chunk.get("doc_type_kwd", ""),
                 "mom_id": chunk.get("mom_id", ""),
             }
@@ -525,7 +524,7 @@ class Dealer:
 
         fields_set = set(fields or [])
         if sort_by_position:
-            for need in ("page_num_int", "position_int", "top_int", "chunk_index_int"):
+            for need in ("page_num_int", "position_int", "top_int"):
                 if need not in fields_set:
                     fields_set.add(need)
         fields = list(fields_set)
@@ -533,7 +532,8 @@ class Dealer:
         orderBy = OrderByExpr()
         if sort_by_position:
             orderBy.asc("page_num_int")
-            orderBy.asc("chunk_index_int")
+            orderBy.asc("position_int")
+            orderBy.asc("top_int")
 
         res = []
         bs = 128

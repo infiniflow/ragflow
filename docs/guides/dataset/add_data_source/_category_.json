@@ -1,0 +1,11 @@
+{
+  "label": "Add data source",
+  "position": 18,
+  "link": {
+    "type": "generated-index",
+    "description": "Add various data sources"
+  },
+  "customProps": {
+    "categoryIcon": "LucideServer"
+  }
+}

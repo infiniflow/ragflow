@@ -1,0 +1,18 @@
+---
+sidebar_position: 1
+slug: /accelerate_doc_indexing
+---
+
+# Accelerate indexing
+import APITable from '@site/src/components/APITable';
+
+A checklist to speed up document parsing and indexing.
+
+---
+
+Please note that some of your settings may consume a significant amount of time. If you often find that document parsing is time-consuming, here is a checklist to consider:
+
+- On the configuration page of your dataset, switch off **Use RAPTOR to enhance retrieval**.
+- Extracting knowledge graph (GraphRAG) is time-consuming.
+- Disable **Auto-keyword** and **Auto-question** on the configuration page of your dataset, as both depend on the LLM.
+- **v0.17.0+:** If all PDFs in your dataset are plain text and do not require GPU-intensive processes like OCR (Optical Character Recognition), TSR (Table Structure Recognition), or DLA (Document Layout Analysis), you can choose **Naive** over **DeepDoc** or other time-consuming large model options in the **Document parser** dropdown. This will substantially reduce document parsing time.

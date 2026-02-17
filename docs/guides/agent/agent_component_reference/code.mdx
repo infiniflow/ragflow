@@ -1,0 +1,227 @@
+---
+sidebar_position: 13
+slug: /code_component
+sidebar_custom_props: {
+  categoryIcon: LucideCodeXml
+}
+---
+# Code component
+
+A component that enables users to integrate Python or JavaScript codes into their Agent for dynamic data processing.
+
+---
+
+## Scenarios
+
+A **Code** component is essential when you need to integrate complex code logic (Python or JavaScript) into your Agent for dynamic data processing.
+
+## Prerequisites
+
+### 1. Ensure gVisor is properly installed
+
+We use gVisor to isolate code execution from the host system. Please follow [the official installation guide](https://gvisor.dev/docs/user_guide/install/) to install gVisor, ensuring your operating system is compatible before proceeding.
+
+### 2. Ensure Sandbox is properly installed
+
+RAGFlow Sandbox is a secure, pluggable code execution backend. It serves as the code executor for the **Code** component. Please follow the [instructions here](https://github.com/infiniflow/ragflow/tree/main/sandbox) to install RAGFlow Sandbox.
+
+:::note Docker client version
+The executor manager image now bundles Docker CLI `29.1.0` (API 1.44+). Older images shipped Docker 24.x and will fail against newer Docker daemons with `client version 1.43 is too old`. Pull the latest `infiniflow/sandbox-executor-manager:latest` or rebuild it in `./sandbox/executor_manager` if you encounter this error.
+:::
+
+:::tip NOTE
+If your RAGFlow Sandbox is not working, please be sure to consult the [Troubleshooting](#troubleshooting) section in this document. We assure you that it addresses 99.99% of the issues!
+:::
+
+### 3. (Optional) Install necessary dependencies
+
+If you need to import your own Python or JavaScript packages into Sandbox, please follow the commands provided in the [How to import my own Python or JavaScript packages into Sandbox?](#how-to-import-my-own-python-or-javascript-packages-into-sandbox) section to install the additional dependencies. 
+
+### 4. Enable Sandbox-specific settings in RAGFlow
+
+Ensure all Sandbox-specific settings are enabled in **ragflow/docker/.env**.
+
+### 5. Restart the service after making changes
+
+Any changes to the configuration or environment *require* a full service restart to take effect.
+
+## Configurations 
+
+### Input
+
+You can specify multiple input sources for the **Code** component. Click **+ Add variable** in the **Input variables** section to include the desired input variables. 
+
+### Code
+
+This field allows you to enter and edit your source code.
+
+:::danger IMPORTANT
+If your code implementation includes defined variables, whether input or output variables, ensure they are also specified in the corresponding **Input** or **Output** sections.
+:::
+
+#### A Python code example
+
+```Python 
+    def main(arg1: str, arg2: str) -> dict:
+        return {
+            "result": arg1 + arg2,
+        }
+```
+
+#### A JavaScript code example
+
+```JavaScript
+
+    const axios = require('axios');
+    async function main(args) {
+      try {
+        const response = await axios.get('https://github.com/infiniflow/ragflow');
+        console.log('Body:', response.data);
+      } catch (error) {
+        console.error('Error:', error.message);
+      }
+    }
+```
+
+### Return values
+
+You define the output variable(s) of the **Code** component here.
+
+:::danger IMPORTANT
+If you define output variables here, ensure they are also defined in your code implementation; otherwise, their values will be `null`. The following are two examples:
+
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_object_output.jpg)
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_nested_object_output.png)
+:::
+
+### Output
+
+The defined output variable(s) will be auto-populated here.
+
+## Troubleshooting
+
+### `HTTPConnectionPool(host='sandbox-executor-manager', port=9385): Read timed out.`
+
+**Root cause**  
+
+- You did not properly install gVisor and `runsc` was not recognized as a valid Docker runtime.
+- You did not pull the required base images for the runners and no runner was started.
+
+**Solution**
+
+For the gVisor issue:
+
+1. Install [gVisor](https://gvisor.dev/docs/user_guide/install/).
+2. Restart Docker.
+3. Run the following to double check:
+
+   ```bash
+   docker run --rm --runtime=runsc hello-world
+   ```
+
+For the base image issue, pull the required base images:
+
+```bash
+docker pull infiniflow/sandbox-base-nodejs:latest
+docker pull infiniflow/sandbox-base-python:latest
+```
+
+### `docker: Error response from daemon: client version 1.43 is too old. Minimum supported API version is 1.44`
+
+**Root cause**
+
+Your executor manager image includes Docker CLI 24.x (API 1.43), but the host Docker daemon, e.g., Docker 25+ / 29.x, now requires API 1.44+.
+
+**Solution**
+
+Pull the latest executor manager image or rebuild it in `./sandbox/executor_manager` to upgrade the built-in Docker client:
+
+```bash
+docker pull infiniflow/sandbox-executor-manager:latest
+# or
+docker build -t sandbox-executor-manager:latest ./sandbox/executor_manager
+```
+
+### `HTTPConnectionPool(host='none', port=9385): Max retries exceeded.`
+
+**Root cause**  
+
+`sandbox-executor-manager` is not mapped in `/etc/hosts`.
+
+**Solution**  
+
+Add a new entry to `/etc/hosts`:
+
+`127.0.0.1 es01 infinity mysql minio redis sandbox-executor-manager`
+
+### `Container pool is busy`
+
+**Root cause**  
+
+All runners are currently in use, executing tasks. 
+
+**Solution**  
+
+Please try again shortly or increase the pool size in the configuration to improve availability and reduce waiting times.
+
+
+## Frequently asked questions
+
+### How to import my own Python or JavaScript packages into Sandbox?
+
+To import your Python packages, update **sandbox_base_image/python/requirements.txt** to install the required dependencies. For example, to add the `openpyxl` package, proceed with the following command lines:
+
+```bash {4,6}
+(ragflow) ➜ ragflow/sandbox main ✓ pwd # make sure you are in the right directory
+/home/infiniflow/workspace/ragflow/sandbox
+
+(ragflow) ➜ ragflow/sandbox main ✓ echo "openpyxl" >> sandbox_base_image/python/requirements.txt # add the package to the requirements.txt file
+
+(ragflow) ➜ ragflow/sandbox main ✗ cat sandbox_base_image/python/requirements.txt # make sure the package is added
+numpy
+pandas
+requests
+openpyxl # here it is
+
+(ragflow) ➜ ragflow/sandbox main ✗ make # rebuild the docker image, this command will rebuild the image and start the service immediately. To build image only, using `make build` instead.
+
+(ragflow) ➜ ragflow/sandbox main ✗ docker exec -it sandbox_python_0 /bin/bash # entering container to check if the package is installed
+
+
+# in the container
+nobody@ffd8a7dd19da:/workspace$ python # launch python shell
+Python 3.11.13 (main, Aug 12 2025, 22:46:03) [GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import openpyxl # import the package to verify installation
+>>>
+# That's okay!
+```
+
+To import your JavaScript packages, navigate to `sandbox_base_image/nodejs` and use `npm` to install the required packages. For example, to add the `lodash` package, run the following commands:
+
+```bash
+(ragflow) ➜ ragflow/sandbox main ✓ pwd
+/home/infiniflow/workspace/ragflow/sandbox
+
+(ragflow) ➜ ragflow/sandbox main ✓ cd sandbox_base_image/nodejs
+
+(ragflow) ➜ ragflow/sandbox/sandbox_base_image/nodejs main ✓ npm install lodash 
+
+(ragflow) ➜ ragflow/sandbox/sandbox_base_image/nodejs main ✓ cd ../.. # go back to sandbox root directory
+
+(ragflow) ➜ ragflow/sandbox main ✗ make # rebuild the docker image, this command will rebuild the image and start the service immediately. To build image only, using `make build` instead.
+
+(ragflow) ➜ ragflow/sandbox main ✗ docker exec -it sandbox_nodejs_0 /bin/bash # entering container to check if the package is installed
+
+# in the container
+nobody@dd4bbcabef63:/workspace$ npm list lodash # verify via npm list
+/workspace
+`-- lodash@4.17.21 extraneous
+
+nobody@dd4bbcabef63:/workspace$ ls node_modules | grep lodash # or verify via listing node_modules
+lodash
+
+# That's okay!
+```

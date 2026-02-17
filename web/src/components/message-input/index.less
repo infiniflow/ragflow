@@ -1,0 +1,37 @@
+.messageInputWrapper {
+  margin-right: 20px;
+  padding: '0px 0px 10px 0px';
+  border: 1px solid #d9d9d9;
+  &:hover {
+    border-color: #40a9ff;
+    box-shadow: #40a9ff;
+  }
+  border-radius: 8px;
+  :global(.ant-input-affix-wrapper) {
+    border-bottom-right-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+}
+
+.documentCard {
+  :global(.ant-card-body) {
+    padding: 10px;
+    position: relative;
+    width: 100%;
+  }
+}
+.listWrapper {
+  padding: 0 10px;
+  overflow: auto;
+  max-height: 170px;
+  width: 100%;
+}
+.inputWrapper {
+  border-radius: 8px;
+}
+.deleteIcon {
+  position: absolute;
+  right: -4px;
+  top: -4px;
+  color: #d92d20;
+}

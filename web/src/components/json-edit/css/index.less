@@ -1,0 +1,83 @@
+.jsoneditor {
+  border: none;
+  color: rgb(var(--text-primary));
+  overflow: auto;
+  scrollbar-width: none;
+  background-color: var(--bg-base);
+  .jsoneditor-menu {
+    background-color: var(--bg-base);
+    // border-color: var(--border-button);
+    border-bottom: thin solid var(--border-button);
+  }
+  .jsoneditor-navigation-bar {
+    border-bottom: 1px solid var(--border-button);
+    background-color: var(--bg-input);
+  }
+  .jsoneditor-tree {
+    background: var(--bg-base);
+  }
+  .jsoneditor-highlight {
+    background-color: var(--bg-card);
+  }
+}
+.jsoneditor-popover,
+.jsoneditor-schema-error,
+div.jsoneditor td,
+div.jsoneditor textarea,
+div.jsoneditor th,
+div.jsoneditor-field,
+div.jsoneditor-value,
+pre.jsoneditor-preview {
+  font-family: consolas, menlo, monaco, 'Ubuntu Mono', source-code-pro,
+    monospace;
+  font-size: 14px;
+  color: rgb(var(--text-primary));
+}
+
+div.jsoneditor-field.jsoneditor-highlight,
+div.jsoneditor-field[contenteditable='true']:focus,
+div.jsoneditor-field[contenteditable='true']:hover,
+div.jsoneditor-value.jsoneditor-highlight,
+div.jsoneditor-value[contenteditable='true']:focus,
+div.jsoneditor-value[contenteditable='true']:hover {
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-button);
+  border-radius: 2px;
+}
+
+.jsoneditor-selected,
+.jsoneditor-contextmenu .jsoneditor-menu li ul {
+  background: var(--bg-base);
+}
+
+.jsoneditor-contextmenu .jsoneditor-menu button {
+  color: rgb(var(--text-secondary));
+}
+.jsoneditor-menu a.jsoneditor-poweredBy {
+  display: none;
+}
+.ace-jsoneditor .ace_scroller {
+  background-color: var(--bg-base);
+}
+.jsoneditor-statusbar {
+  border-top: 1px solid var(--border-button);
+  background-color: var(--bg-base);
+  color: rgb(var(--text-primary));
+}
+.jsoneditor-menu > .jsoneditor-modes > button,
+.jsoneditor-menu > button {
+  // color: rgb(var(--text-secondary));
+  background-color: var(--text-disabled);
+}
+
+.jsoneditor-menu > .jsoneditor-modes > button:active,
+.jsoneditor-menu > .jsoneditor-modes > button:focus,
+.jsoneditor-menu > button:active,
+.jsoneditor-menu > button:focus {
+  background-color: rgb(var(--text-secondary));
+}
+.jsoneditor-menu > .jsoneditor-modes > button:hover,
+.jsoneditor-menu > button:hover {
+  background-color: rgb(var(--text-secondary));
+  border: 1px solid var(--border-button);
+}

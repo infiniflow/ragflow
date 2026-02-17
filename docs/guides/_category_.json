@@ -1,0 +1,11 @@
+{
+  "label": "Guides",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "description": "Guides for RAGFlow users and developers."
+  },
+  "customProps": {
+    "sidebarIcon": "LucideBookMarked"
+  }
+}

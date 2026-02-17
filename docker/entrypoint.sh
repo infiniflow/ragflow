@@ -63,14 +63,6 @@ fi
 
 HOST_ID="$DEFAULT_HOST_ID"
 
-if [[ -f /etc/ragflow_commit ]]; then
-  echo "RAGFlow commit: $(cat /etc/ragflow_commit)"
-elif [[ -n "${RAGFLOW_COMMIT}" ]]; then
-  echo "RAGFlow commit: ${RAGFLOW_COMMIT}"
-else
-  echo "RAGFlow commit: unknown"
-fi
-
 # Parse arguments
 for arg in "$@"; do
   case $arg in
