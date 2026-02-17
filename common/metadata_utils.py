@@ -19,15 +19,15 @@ from typing import Any, Callable, Dict
 
 import json_repair
 
-from rag.prompts.generator import gen_meta_filter
-
-
 def convert_conditions(metadata_condition):
     if metadata_condition is None:
         metadata_condition = {}
     op_mapping = {
         "is": "=",
-        "not is": "≠"
+        "not is": "≠",
+        ">=": "≥",
+        "<=": "≤",
+        "!=": "≠"
     }
     return [
         {
@@ -47,24 +47,66 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
         for input, docids in v2docs.items():
 
             if operator in ["=", "≠", ">", "<", "≥", "≤"]:
-                try:
-                    if isinstance(input, list):
-                        input = input[0]
-                    input = ast.literal_eval(input)
-                    value = ast.literal_eval(value)
-                except Exception:
-                    pass
-            if isinstance(input, str):
-                input = input.lower()
-            if isinstance(value, str):
-                value = value.lower()
+                # Check if input is in YYYY-MM-DD date format
+                input_str = str(input).strip()
+                value_str = str(value).strip()
+
+                # Strict date format detection: YYYY-MM-DD (must be 10 chars with correct format)
+                is_input_date = (
+                    len(input_str) == 10 and
+                    input_str[4] == '-' and
+                    input_str[7] == '-' and
+                    input_str[:4].isdigit() and
+                    input_str[5:7].isdigit() and
+                    input_str[8:10].isdigit()
+                )
+
+                is_value_date = (
+                    len(value_str) == 10 and
+                    value_str[4] == '-' and
+                    value_str[7] == '-' and
+                    value_str[:4].isdigit() and
+                    value_str[5:7].isdigit() and
+                    value_str[8:10].isdigit()
+                )
+
+                if is_value_date:
+                    # Query value is in date format
+                    if is_input_date:
+                        # Data is also in date format: perform date comparison
+                        input = input_str
+                        value = value_str
+                    else:
+                        # Data is not in date format: skip this record (no match)
+                        continue
+                else:
+                    # Query value is not in date format: use original logic
+                    try:
+                        if isinstance(input, list):
+                            input = input[0]
+                        input = ast.literal_eval(input)
+                        value = ast.literal_eval(value)
+                    except Exception:
+                        pass
+
+                    # Convert strings to lowercase
+                    if isinstance(input, str):
+                        input = input.lower()
+                    if isinstance(value, str):
+                        value = value.lower()
+            else:
+                # Non-comparison operators: maintain original logic
+                if isinstance(input, str):
+                    input = input.lower()
+                if isinstance(value, str):
+                    value = value.lower()
 
             matched = False
             try:
                 if operator == "contains":
-                    matched = input in value if not isinstance(input, list) else all(i in value for i in input)
+                    matched = str(input).find(value) >= 0 if not isinstance(input, list) else any(str(i).find(value) >= 0 for i in input)
                 elif operator == "not contains":
-                    matched = input not in value if not isinstance(input, list) else all(i not in value for i in input)
+                    matched = str(input).find(value) == -1 if not isinstance(input, list) else all(str(i).find(value) == -1 for i in input)
                 elif operator == "in":
                     matched = input in value if not isinstance(input, list) else all(i in value for i in input)
                 elif operator == "not in":
@@ -96,20 +138,24 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
                 ids.extend(docids)
         return ids
 
-    for k, v2docs in metas.items():
-        for f in filters:
-            if k != f["key"]:
-                continue
+    for f in filters:
+        k = f["key"]
+        if k not in metas:
+            # Key not found in metas: treat as no match
+            ids = []
+        else:
+            v2docs = metas[k]
             ids = filter_out(v2docs, f["op"], f["value"])
-            if not doc_ids:
-                doc_ids = set(ids)
+
+        if not doc_ids:
+            doc_ids = set(ids)
+        else:
+            if logic == "and":
+                doc_ids = doc_ids & set(ids)
+                if not doc_ids:
+                    return []
             else:
-                if logic == "and":
-                    doc_ids = doc_ids & set(ids)
-                else:
-                    doc_ids = doc_ids | set(ids)
-            if not doc_ids:
-                return []
+                doc_ids = doc_ids | set(ids)
     return list(doc_ids)
 
 
@@ -133,6 +179,8 @@ async def apply_meta_data_filter(
         list of doc_ids, ["-999"] when manual filters yield no result, or None
         when auto/semi_auto filters return empty.
     """
+    from rag.prompts.generator import gen_meta_filter # move from the top of the file to avoid circular import
+
     doc_ids = list(base_doc_ids) if base_doc_ids else []
 
     if not meta_data_filter:
@@ -146,11 +194,22 @@ async def apply_meta_data_filter(
         if not doc_ids:
             return None
     elif method == "semi_auto":
-        selected_keys = meta_data_filter.get("semi_auto", [])
+        selected_keys = []
+        constraints = {}
+        for item in meta_data_filter.get("semi_auto", []):
+            if isinstance(item, str):
+                selected_keys.append(item)
+            elif isinstance(item, dict):
+                key = item.get("key")
+                op = item.get("op")
+                selected_keys.append(key)
+                if op:
+                    constraints[key] = op
+
         if selected_keys:
             filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
             if filtered_metas:
-                filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question)
+                filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
                 doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
                 if not doc_ids:
                     return None

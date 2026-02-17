@@ -239,6 +239,7 @@ class RAGFlowPdfParser:
         best_score = -1
         best_angle = 0
         best_img = table_img
+        score_0 = None
 
         for angle, name in rotations:
             # Rotate image
@@ -276,6 +277,8 @@ class RAGFlowPdfParser:
                 combined_score = 0
 
             results[angle] = {"avg_confidence": avg_score, "total_regions": total_regions, "combined_score": combined_score}
+            if angle == 0:
+                score_0 = combined_score
 
             logging.debug(f"Table orientation {angle}°: avg_conf={avg_score:.4f}, regions={total_regions}, combined={combined_score:.4f}")
 
@@ -283,6 +286,16 @@ class RAGFlowPdfParser:
                 best_score = combined_score
                 best_angle = angle
                 best_img = rotated_img
+
+        # Absolute threshold rule:
+        # Only choose non-0° if it exceeds 0° by more than 0.2 and 0° score is below 0.8.
+        if best_angle != 0 and score_0 is not None:
+            if not (best_score - score_0 > 0.2 and score_0 < 0.8):
+                best_angle = 0
+                best_img = table_img
+                best_score = score_0
+
+        results[best_angle] = results.get(best_angle, {"avg_confidence": 0, "total_regions": 0, "combined_score": 0})
 
         logging.info(f"Best table orientation: {best_angle}° (score={best_score:.4f})")
 
@@ -353,8 +366,6 @@ class RAGFlowPdfParser:
                     self.rotated_table_imgs[table_index] = rotated_img
                     imgs.append(rotated_img)
 
-                    if best_angle != 0:
-                        logging.info(f"Table {table_index} on page {p}: rotated {best_angle}° for better recognition")
                 else:
                     imgs.append(table_img)
                     self.table_rotations[table_index] = {"page": p, "original_pos": (left, top, right, bott), "best_angle": 0, "scores": {}, "rotated_size": table_img.size}
@@ -449,6 +460,90 @@ class RAGFlowPdfParser:
         """
         tbcnt = np.cumsum(tbcnt)
 
+        def _table_region(layout, page_index):
+            table_x0 = layout["x0"]
+            table_top = layout["top"]
+            table_x1 = layout["x1"]
+            table_bottom = layout["bottom"]
+            table_top_cum = table_top + self.page_cum_height[page_index]
+            table_bottom_cum = table_bottom + self.page_cum_height[page_index]
+            return table_x0, table_top, table_x1, table_bottom, table_top_cum, table_bottom_cum
+
+        def _collect_table_boxes(page_index, table_x0, table_x1, table_top_cum, table_bottom_cum):
+            indices = [
+                i
+                for i, b in enumerate(self.boxes)
+                if (
+                    b.get("page_number") == page_index + self.page_from
+                    and b.get("layout_type") == "table"
+                    and b["x0"] >= table_x0 - 5
+                    and b["x1"] <= table_x1 + 5
+                    and b["top"] >= table_top_cum - 5
+                    and b["bottom"] <= table_bottom_cum + 5
+                )
+            ]
+            original_boxes = [self.boxes[i] for i in indices]
+            insert_at = indices[0] if indices else len(self.boxes)
+            for i in reversed(indices):
+                self.boxes.pop(i)
+            return original_boxes, insert_at
+
+        def _restore_boxes(original_boxes, insert_at):
+            for b in original_boxes:
+                self.boxes.insert(insert_at, b)
+                insert_at += 1
+            return insert_at
+
+        def _map_rotated_point(x, y, angle, width, height):
+            # Map a point from rotated image coords back to original image coords.
+            if angle == 0:
+                return x, y
+            if angle == 90:
+                # clockwise 90: original->rotated (x', y') = (y, width - x)
+                # inverse:
+                return width - y, x
+            if angle == 180:
+                return width - x, height - y
+            if angle == 270:
+                # clockwise 270: original->rotated (x', y') = (height - y, x)
+                # inverse:
+                return y, height - x
+            return x, y
+
+        def _insert_ocr_boxes(ocr_results, page_index, table_x0, table_top, insert_at, table_index, best_angle, table_w_px, table_h_px):
+            added = 0
+            for bbox, (text, conf) in ocr_results:
+                if conf < 0.5:
+                    continue
+                mapped = [_map_rotated_point(p[0], p[1], best_angle, table_w_px, table_h_px) for p in bbox]
+                x_coords = [p[0] for p in mapped]
+                y_coords = [p[1] for p in mapped]
+                box_x0 = min(x_coords) / ZM
+                box_x1 = max(x_coords) / ZM
+                box_top = min(y_coords) / ZM
+                box_bottom = max(y_coords) / ZM
+                new_box = {
+                    "text": text,
+                    "x0": box_x0 + table_x0,
+                    "x1": box_x1 + table_x0,
+                    "top": box_top + table_top + self.page_cum_height[page_index],
+                    "bottom": box_bottom + table_top + self.page_cum_height[page_index],
+                    "page_number": page_index + self.page_from,
+                    "layout_type": "table",
+                    "layoutno": f"table-{table_index}",
+                    "_rotated": True,
+                    "_rotation_angle": best_angle,
+                    "_table_index": table_index,
+                    "_rotated_x0": box_x0,
+                    "_rotated_x1": box_x1,
+                    "_rotated_top": box_top,
+                    "_rotated_bottom": box_bottom,
+                }
+                self.boxes.insert(insert_at, new_box)
+                insert_at += 1
+                added += 1
+            return added
+
         for tbl_info in table_layouts:
             table_index = tbl_info["table_index"]
             page = tbl_info["page"]
@@ -463,82 +558,42 @@ class RAGFlowPdfParser:
             if rotated_img is None:
                 continue
 
-            # If table was rotated, re-OCR the rotated image
-            if best_angle != 0:
-                logging.info(f"Re-OCR table {table_index} on page {page} with rotation {best_angle}°")
+            # If no rotation, keep original OCR boxes untouched.
+            if best_angle == 0:
+                continue
 
-                # Perform OCR on rotated image
-                img_array = np.array(rotated_img)
-                ocr_results = self.ocr(img_array)
+            # Table region is defined by layout's x0, top, x1, bottom (page-local coords)
+            table_x0, table_top, table_x1, table_bottom, table_top_cum, table_bottom_cum = _table_region(layout, page)
+            original_boxes, insert_at = _collect_table_boxes(page, table_x0, table_x1, table_top_cum, table_bottom_cum)
 
-                if not ocr_results:
-                    logging.warning(f"No OCR results for rotated table {table_index}")
-                    continue
+            logging.info(f"Re-OCR table {table_index} on page {page} with rotation {best_angle}°")
 
-                # Remove original text boxes from this table region in self.boxes
-                # Table region is defined by layout's x0, top, x1, bottom
-                table_x0 = layout["x0"]
-                table_top = layout["top"]
-                table_x1 = layout["x1"]
-                table_bottom = layout["bottom"]
+            # Perform OCR on rotated image
+            img_array = np.array(rotated_img)
+            ocr_results = self.ocr(img_array)
 
-                # Filter out original boxes within the table region
-                original_box_count = len(self.boxes)
-                self.boxes = [
-                    b
-                    for b in self.boxes
-                    if not (
-                        b.get("page_number") == page + self.page_from
-                        and b.get("layout_type") == "table"
-                        and b["x0"] >= table_x0 - 5
-                        and b["x1"] <= table_x1 + 5
-                        and b["top"] >= table_top - 5
-                        and b["bottom"] <= table_bottom + 5
-                    )
-                ]
-                removed_count = original_box_count - len(self.boxes)
-                logging.debug(f"Removed {removed_count} original boxes from table {table_index}")
+            if not ocr_results:
+                logging.warning(f"No OCR results for rotated table {table_index}, restoring originals")
+                _restore_boxes(original_boxes, insert_at)
+                continue
 
-                # Add new OCR results to self.boxes
-                # OCR coordinates are relative to rotated image, need to preserve
-                rotated_width, rotated_height = rotated_img.size
+            # Add new OCR results to self.boxes
+            # OCR coordinates are relative to rotated image, map back to original table coords
+            table_w_px = right - left
+            table_h_px = bott - top
+            added = _insert_ocr_boxes(
+                ocr_results,
+                page,
+                table_x0,
+                table_top,
+                insert_at,
+                table_index,
+                best_angle,
+                table_w_px,
+                table_h_px,
+            )
 
-                for bbox, (text, conf) in ocr_results:
-                    if conf < 0.5:  # Filter low confidence results
-                        continue
-
-                    # bbox format: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
-                    x_coords = [p[0] for p in bbox]
-                    y_coords = [p[1] for p in bbox]
-
-                    # Coordinates in rotated image
-                    box_x0 = min(x_coords) / ZM
-                    box_x1 = max(x_coords) / ZM
-                    box_top = min(y_coords) / ZM
-                    box_bottom = max(y_coords) / ZM
-
-                    # Create new box, mark as from rotated table
-                    new_box = {
-                        "text": text,
-                        "x0": box_x0 + table_x0,  # Coordinates relative to page
-                        "x1": box_x1 + table_x0,
-                        "top": box_top + table_top + self.page_cum_height[page],
-                        "bottom": box_bottom + table_top + self.page_cum_height[page],
-                        "page_number": page + self.page_from,
-                        "layout_type": "table",
-                        "layoutno": f"table-{table_index}",
-                        "_rotated": True,
-                        "_rotation_angle": best_angle,
-                        "_table_index": table_index,
-                        # Save original coordinates in rotated image for table reconstruction
-                        "_rotated_x0": box_x0,
-                        "_rotated_x1": box_x1,
-                        "_rotated_top": box_top,
-                        "_rotated_bottom": box_bottom,
-                    }
-                    self.boxes.append(new_box)
-
-                logging.info(f"Added {len(ocr_results)} OCR results from rotated table {table_index}")
+            logging.info(f"Added {added} OCR results from rotated table {table_index}")
 
     def __ocr(self, pagenum, img, chars, ZM=3, device_id: int | None = None):
         start = timer()
@@ -1116,7 +1171,30 @@ class RAGFlowPdfParser:
 
         def cropout(bxs, ltype, poss):
             nonlocal ZM
-            pn = set([b["page_number"] - 1 for b in bxs])
+            max_page_index = len(self.page_images) - 1
+
+            def local_page_index(page_number):
+                idx = page_number - 1 if page_number > 0 else 0
+                if idx > max_page_index and self.page_from:
+                    idx = page_number - 1 - self.page_from
+                return idx
+
+            pn = set()
+            for b in bxs:
+                idx = local_page_index(b["page_number"])
+                if 0 <= idx <= max_page_index:
+                    pn.add(idx)
+                else:
+                    logging.warning(
+                        "Skip out-of-range page_number %s (page_from=%s, pages=%s)",
+                        b.get("page_number"),
+                        self.page_from,
+                        len(self.page_images),
+                    )
+
+            if not pn:
+                return None
+
             if len(pn) < 2:
                 pn = list(pn)[0]
                 ht = self.page_cum_height[pn]
@@ -1135,12 +1213,16 @@ class RAGFlowPdfParser:
                 return self.page_images[pn].crop((left * ZM, top * ZM, right * ZM, bott * ZM))
             pn = {}
             for b in bxs:
-                p = b["page_number"] - 1
-                if p not in pn:
-                    pn[p] = []
-                pn[p].append(b)
+                p = local_page_index(b["page_number"])
+                if 0 <= p <= max_page_index:
+                    if p not in pn:
+                        pn[p] = []
+                    pn[p].append(b)
             pn = sorted(pn.items(), key=lambda x: x[0])
             imgs = [cropout(arr, ltype, poss) for p, arr in pn]
+            imgs = [img for img in imgs if img is not None]
+            if not imgs:
+                return None
             pic = Image.new("RGB", (int(np.max([i.size[0] for i in imgs])), int(np.sum([m.size[1] for m in imgs]))), (245, 245, 245))
             height = 0
             for img in imgs:
@@ -1161,10 +1243,16 @@ class RAGFlowPdfParser:
             poss = []
 
             if separate_tables_figures:
-                figure_results.append((cropout(bxs, "figure", poss), [txt]))
+                img = cropout(bxs, "figure", poss)
+                if img is None:
+                    continue
+                figure_results.append((img, [txt]))
                 figure_positions.append(poss)
             else:
-                res.append((cropout(bxs, "figure", poss), [txt]))
+                img = cropout(bxs, "figure", poss)
+                if img is None:
+                    continue
+                res.append((img, [txt]))
                 positions.append(poss)
 
         for k, bxs in tables.items():
@@ -1174,7 +1262,10 @@ class RAGFlowPdfParser:
 
             poss = []
 
-            res.append((cropout(bxs, "table", poss), self.tbl_det.construct_table(bxs, html=return_html, is_english=self.is_english)))
+            img = cropout(bxs, "table", poss)
+            if img is None:
+                continue
+            res.append((img, self.tbl_det.construct_table(bxs, html=return_html, is_english=self.is_english)))
             positions.append(poss)
 
         if separate_tables_figures:

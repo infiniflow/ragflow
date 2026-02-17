@@ -1,15 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
-import { DateInput } from '@/components/ui/input-date';
 import { formatDate } from '@/utils/date';
 import { ColumnDef, Row, Table } from '@tanstack/react-table';
-import {
-  ListChevronsDownUp,
-  ListChevronsUpDown,
-  Settings,
-  Trash2,
-} from 'lucide-react';
+import { ListChevronsDownUp, Settings, Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -51,12 +46,16 @@ export const useMetadataColumns = ({
     onOk: () => {},
     onCancel: () => {},
   });
-  const [expanded, setExpanded] = useState(true);
+  // const [expanded, setExpanded] = useState(true);
   const [editingValue, setEditingValue] = useState<{
     field: string;
     value: string;
     newValue: string;
   } | null>(null);
+  const [rowExpandedStates, setRowExpandedStates] = useState<
+    Record<string, boolean>
+  >({});
+
   const isSettingsMode =
     metadataType === MetadataType.Setting ||
     metadataType === MetadataType.SingleFileSetting ||
@@ -142,21 +141,7 @@ export const useMetadataColumns = ({
           </div>
         ),
       },
-      // ...(showTypeColumn
-      //   ? ([
-      //       {
-      //         accessorKey: 'valueType',
-      //         header: () => <span>Type</span>,
-      //         cell: ({ row }) => (
-      //           <div className="text-sm">
-      //             {getMetadataValueTypeLabel(
-      //               row.original.valueType as IMetaDataTableData['valueType'],
-      //             )}
-      //           </div>
-      //         ),
-      //       },
-      //     ] as ColumnDef<IMetaDataTableData>[])
-      //   : []),
+
       {
         accessorKey: 'description',
         header: () => <span>{t('knowledgeDetails.metadata.description')}</span>,
@@ -182,7 +167,7 @@ export const useMetadataColumns = ({
         header: () => (
           <div className="flex items-center">
             <span>{t('knowledgeDetails.metadata.values')}</span>
-            <div
+            {/* <div
               className="ml-2 p-1 cursor-pointer"
               onClick={() => {
                 setExpanded(!expanded);
@@ -194,16 +179,25 @@ export const useMetadataColumns = ({
                 <ListChevronsUpDown size={14} />
               )}
               {expanded}
-            </div>
+            </div> */}
           </div>
         ),
         cell: ({ row }) => {
           const values = row.getValue('values') as Array<string>;
-          const displayedValues = expanded ? values : values.slice(0, 2);
+          const isRowExpanded = rowExpandedStates[row.original.field] ?? false;
+
+          const toggleRowExpanded = () => {
+            setRowExpandedStates((prev) => ({
+              ...prev,
+              [row.original.field]: !isRowExpanded,
+            }));
+          };
+
+          const displayedValues = isRowExpanded ? values : values.slice(0, 2);
           const hasMore = Array.isArray(values) && values.length > 2;
 
           return (
-            <div className="flex flex-col gap-1">
+            <div className="flex gap-1">
               <div className="flex flex-wrap gap-1">
                 {displayedValues?.map((value: string) => {
                   const isEditing =
@@ -215,10 +209,9 @@ export const useMetadataColumns = ({
                     <div key={value}>
                       {row.original.valueType ===
                         metadataValueTypeEnum.time && (
-                        <DateInput
+                        <DatePicker
                           value={new Date(editingValue.newValue)}
                           onChange={(value) => {
-                            console.log('value', value);
                             const newValue = {
                               ...editingValue,
                               newValue: formatDate(
@@ -228,13 +221,7 @@ export const useMetadataColumns = ({
                             };
                             setEditingValue(newValue);
                             saveEditedValue(newValue);
-                            // onValueChange(index, formatDate(value), true);
                           }}
-                          // openChange={(open) => {
-                          //   console.log('open', open);
-                          //   if (!open) {
-                          //   }
-                          // }}
                           showTimeSelect={true}
                         />
                       )}
@@ -249,7 +236,7 @@ export const useMetadataColumns = ({
                               newValue: e.target.value,
                             })
                           }
-                          onBlur={saveEditedValue}
+                          onBlur={() => saveEditedValue()}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               saveEditedValue();
@@ -316,10 +303,37 @@ export const useMetadataColumns = ({
                     </Button>
                   );
                 })}
-                {hasMore && !expanded && (
-                  <div className="text-text-secondary self-end">...</div>
-                )}
               </div>
+              {hasMore && !isRowExpanded && (
+                <Button
+                  variant={'ghost'}
+                  className="border border-border-button h-auto px-2 py-1"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleRowExpanded();
+                  }}
+                >
+                  <div className="text-text-secondary">
+                    +{values.length - 2}
+                  </div>
+                </Button>
+              )}
+              {hasMore && isRowExpanded && (
+                // <div className="self-end mt-1">
+                <Button
+                  variant={'ghost'}
+                  className="bg-transparent px-2 py-1"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleRowExpanded();
+                  }}
+                >
+                  <div className="text-text-secondary">
+                    <ListChevronsDownUp size={14} />
+                  </div>
+                </Button>
+                // </div>
+              )}
             </div>
           );
         },
@@ -390,10 +404,10 @@ export const useMetadataColumns = ({
     isDeleteSingleValue,
     handleEditValueRow,
     metadataType,
-    expanded,
+    // expanded,
     editingValue,
     saveEditedValue,
-    showTypeColumn,
+    rowExpandedStates,
   ]);
 
   return {

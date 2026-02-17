@@ -78,8 +78,9 @@ export const EmptyAppCard = (props: {
   className?: string;
   isSearch?: boolean;
   size?: 'small' | 'large';
+  children?: React.ReactNode;
 }) => {
-  const { type, showIcon, className, isSearch } = props;
+  const { type, showIcon, className, isSearch, children } = props;
   let defaultClass = '';
   let style = {};
   switch (props.size) {
@@ -96,20 +97,17 @@ export const EmptyAppCard = (props: {
       break;
   }
   return (
-    <div
-      className=" cursor-pointer "
-      onClick={isSearch ? undefined : props.onClick}
-    >
+    <div onClick={isSearch ? undefined : props.onClick}>
       <EmptyCard
         icon={showIcon ? EmptyCardData[type].icon : undefined}
         title={
           isSearch ? EmptyCardData[type].notFound : EmptyCardData[type].title
         }
-        className={className}
+        className={cn('cursor-pointer ', className)}
         style={style}
         // description={EmptyCardData[type].description}
       >
-        {!isSearch && (
+        {!isSearch && !children && (
           <div
             className={cn(
               defaultClass,
@@ -119,6 +117,7 @@ export const EmptyAppCard = (props: {
             <Plus size={24} />
           </div>
         )}
+        {children}
       </EmptyCard>
     </div>
   );

@@ -19,7 +19,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
-import { Routes } from '@/routes';
 import {
   flexRender,
   getCoreRowModel,
@@ -69,6 +68,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     builtInMetadata,
     success,
     documentIds,
+    secondTitle,
   } = props;
   const { t } = useTranslation();
   const [valueData, setValueData] = useState<IMetaDataTableData>({
@@ -316,9 +316,11 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
         <>
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <div>{t('knowledgeDetails.metadata.metadata')}</div>
+              <div className="w-1/2">
+                {secondTitle || t('knowledgeDetails.metadata.metadata')}
+              </div>
               <div>
-                {metadataType === MetadataType.Manage && (
+                {/* {metadataType === MetadataType.Manage && (
                   <Button
                     variant={'ghost'}
                     className="border border-border-button"
@@ -329,7 +331,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                   >
                     {t('knowledgeDetails.metadata.toMetadataSetting')}
                   </Button>
-                )}
+                )} */}
                 {isCanAdd && activeTab !== 'built-in' && (
                   <Button
                     variant={'ghost'}
@@ -338,6 +340,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                     onClick={handAddValueRow}
                   >
                     <Plus />
+                    {t('common.add')}
                   </Button>
                 )}
               </div>
@@ -549,7 +552,9 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
               {metadataType === MetadataType.Setting ||
               metadataType === MetadataType.SingleFileSetting
                 ? t('knowledgeDetails.metadata.fieldSetting')
-                : t('knowledgeDetails.metadata.editMetadata')}
+                : isAddValueMode
+                  ? t('knowledgeDetails.metadata.addMetadata')
+                  : t('knowledgeDetails.metadata.editMetadata')}
             </div>
           }
           type={metadataType}
@@ -564,9 +569,8 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
           isAddValue={isAddValue || isAddValueMode}
           isShowDescription={isShowDescription}
           isShowValueSwitch={isShowValueSwitch}
-          isShowType={isSettingsMode}
+          isShowType={true}
           isVerticalShowValue={isVerticalShowValue}
-          isAddValueMode={isAddValueMode}
           //   handleDeleteSingleValue={handleDeleteSingleValue}
           //   handleDeleteSingleRow={handleDeleteSingleRow}
         />

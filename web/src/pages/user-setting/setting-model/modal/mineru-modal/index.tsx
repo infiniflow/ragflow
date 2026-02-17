@@ -13,13 +13,16 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { LLMFactory } from '@/constants/llm';
 import { IModalProps } from '@/interfaces/common';
+import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
+import { memo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { LLMHeader } from '../../components/llm-header';
+import VerifyButton from '../verify-button';
 
 const FormSchema = z
   .object({
@@ -65,8 +68,13 @@ const MinerUModal = ({
   visible,
   hideModal,
   onOk,
+  onVerify,
   loading,
-}: IModalProps<MinerUFormValues>) => {
+}: IModalProps<MinerUFormValues> & {
+  onVerify?: (
+    postBody: any,
+  ) => Promise<boolean | void | VerifyResult | undefined>;
+}) => {
   const { t } = useTranslation();
 
   const backendOptions = buildOptions([
@@ -173,16 +181,23 @@ const MinerUModal = ({
                 />
               )}
             </RAGFlowFormItem>
+            {onVerify && (
+              <VerifyButton
+                onVerify={onVerify as (postBody: any) => Promise<VerifyResult>}
+              />
+            )}
           </form>
         </Form>
         <DialogFooter>
-          <ButtonLoading type="submit" form="mineru-form" loading={loading}>
-            {t('common.save', 'Save')}
-          </ButtonLoading>
+          <div className="flex gap-2">
+            <ButtonLoading type="submit" form="mineru-form" loading={loading}>
+              {t('common.save', 'Save')}
+            </ButtonLoading>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 };
 
-export default MinerUModal;
+export default memo(MinerUModal);

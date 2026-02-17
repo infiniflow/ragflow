@@ -19,6 +19,7 @@ export default {
       portugueseBr: 'Portugués (Brasil)',
       chinese: 'Chino simplificado',
       traditionalChinese: 'Chino tradicional',
+      bulgarian: 'Búlgaro',
       language: 'Idioma',
       languageMessage: '¡Por favor ingresa tu idioma!',
       languagePlaceholder: 'Selecciona tu idioma',
@@ -162,13 +163,16 @@ export default {
     knowledgeConfiguration: {
       paddleocrOptions: 'Opciones de PaddleOCR',
       paddleocrApiUrl: 'URL de API de PaddleOCR',
-      paddleocrApiUrlTip: 'La URL del endpoint de la API para el servicio PaddleOCR',
+      paddleocrApiUrlTip:
+        'La URL del endpoint de la API para el servicio PaddleOCR',
       paddleocrApiUrlPlaceholder: 'ej: https://servidor-paddleocr.com/api',
       paddleocrAccessToken: 'Token de acceso de AI Studio',
-      paddleocrAccessTokenTip: 'Token de acceso para la API de PaddleOCR (opcional)',
+      paddleocrAccessTokenTip:
+        'Token de acceso para la API de PaddleOCR (opcional)',
       paddleocrAccessTokenPlaceholder: 'Su token de AI Studio (opcional)',
       paddleocrAlgorithm: 'Algoritmo de PaddleOCR',
-      paddleocrAlgorithmTip: 'Algoritmo a utilizar para el análisis de PaddleOCR',
+      paddleocrAlgorithmTip:
+        'Algoritmo a utilizar para el análisis de PaddleOCR',
       paddleocrSelectAlgorithm: 'Seleccionar algoritmo',
       paddleocrModelNamePlaceholder: 'ej: paddleocr-desde-env-1',
     },
@@ -244,8 +248,7 @@ export default {
         'Similar a la penalización por presencia, esto reduce la tendencia del modelo a repetir las mismas palabras con frecuencia.',
       maxTokens: 'Máximo de tokens',
       maxTokensMessage: 'El máximo de tokens es obligatorio',
-      maxTokensTip:
-        'Esto establece la longitud máxima de la salida del modelo, medida en el número de tokens (palabras o piezas de palabras).',
+      maxTokensTip: `El tamaño máximo de contexto del modelo; un valor no válido o incorrecto provocará un error. Valor predeterminado: 512.`,
       maxTokensInvalidMessage:
         'Por favor, ingresa un número válido para Max Tokens.',
       maxTokensMinMessage: 'Max Tokens no puede ser menor que 0.',
@@ -300,8 +303,7 @@ export default {
       profileDescription: 'Actualiza tu foto y tus datos personales aquí.',
       maxTokens: 'Máximo de tokens',
       maxTokensMessage: 'El máximo de tokens es obligatorio',
-      maxTokensTip:
-        'Esto establece la longitud máxima de la salida del modelo, medida en el número de tokens (palabras o piezas de palabras).',
+      maxTokensTip: `El tamaño máximo de contexto del modelo; un valor no válido o incorrecto provocará un error. Valor predeterminado: 512.`,
       maxTokensInvalidMessage:
         'Por favor, ingresa un número válido para Max Tokens.',
       maxTokensMinMessage: 'Max Tokens no puede ser menor que 0.',
@@ -395,14 +397,15 @@ export default {
       baseUrlNameMessage: '¡Por favor ingresa tu URL base!',
       paddleocr: {
         apiUrl: 'URL de la API de PaddleOCR',
-        apiUrlPlaceholder: 'Por ejemplo: https://paddleocr-server.com/layout-parsing',
+        apiUrlPlaceholder:
+          'Por ejemplo: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token de acceso de AI Studio',
         accessTokenPlaceholder: 'Su token de AI Studio (opcional)',
         algorithm: 'Algoritmo de PaddleOCR',
         selectAlgorithm: 'Seleccionar algoritmo',
         modelNamePlaceholder: 'Por ejemplo: paddleocr-from-env-1',
         modelNameRequired: 'El nombre del modelo es obligatorio',
-        apiUrlRequired: 'La URL de la API de PaddleOCR es obligatoria'
+        apiUrlRequired: 'La URL de la API de PaddleOCR es obligatoria',
       },
       vision: '¿Soporta visión?',
       ollamaLink: 'Cómo integrar {{name}}',
@@ -427,10 +430,6 @@ export default {
       'eu-central-1': 'Europa (Frankfurt)',
       'us-gov-west-1': 'AWS GovCloud (EE. UU. Oeste)',
       'ap-southeast-2': 'Asia Pacífico (Sídney)',
-      addHunyuanSID: 'ID Secreto de Hunyuan',
-      HunyuanSIDMessage: '¡Por favor ingresa tu ID Secreto!',
-      addHunyuanSK: 'Clave Secreta de Hunyuan',
-      HunyuanSKMessage: '¡Por favor ingresa tu Clave Secreta!',
       addTencentCloudSID: 'ID Secreto de TencentCloud',
       TencentCloudSIDMessage: '¡Por favor ingresa tu ID Secreto!',
       addTencentCloudSK: 'Clave Secreta de TencentCloud',

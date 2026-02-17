@@ -1,4 +1,5 @@
 import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
+import message from '@/components/ui/message';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
@@ -7,7 +8,6 @@ import {
 } from '@/hooks/logic-hooks';
 import { useCreateNextSharedConversation } from '@/hooks/use-chat-request';
 import { Message } from '@/interfaces/database/chat';
-import { message } from 'antd';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
 import { useCallback, useEffect, useState } from 'react';
@@ -66,14 +66,19 @@ export const useSendSharedMessage = () => {
   const [hasError, setHasError] = useState(false);
 
   const sendMessage = useCallback(
-    async (message: Message, id?: string) => {
+    async (
+      message: Message,
+      id?: string,
+      enableThinking?: boolean,
+      enableInternet?: boolean,
+    ) => {
       const res = await send({
         conversation_id: id ?? conversationId,
         quote: true,
         question: message.content,
         session_id: get(derivedMessages, '0.session_id'),
-        reasoning: message.reasoning,
-        internet: message.internet,
+        reasoning: enableThinking,
+        internet: enableInternet,
       });
 
       if (isCompletionError(res)) {
@@ -86,14 +91,18 @@ export const useSendSharedMessage = () => {
   );
 
   const handleSendMessage = useCallback(
-    async (message: Message) => {
+    async (
+      message: Message,
+      enableThinking?: boolean,
+      enableInternet?: boolean,
+    ) => {
       if (conversationId !== '') {
-        sendMessage(message);
+        sendMessage(message, undefined, enableThinking, enableInternet);
       } else {
         const data = await setConversation('user id');
         if (data.code === 0) {
           const id = data.data.id;
-          sendMessage(message, id);
+          sendMessage(message, id, enableThinking, enableInternet);
         }
       }
     },
@@ -120,11 +129,10 @@ export const useSendSharedMessage = () => {
   }, [answer, addNewestAnswer]);
 
   const handlePressEnter = useCallback(
-    (
-      ...[
-        { enableThinking, enableInternet },
-      ]: NextMessageInputOnPressEnterParameter
-    ) => {
+    ({
+      enableThinking,
+      enableInternet,
+    }: NextMessageInputOnPressEnterParameter) => {
       if (trim(value) === '') return;
       const id = uuid();
       if (done) {
@@ -135,13 +143,15 @@ export const useSendSharedMessage = () => {
           id,
           role: MessageType.User,
         });
-        handleSendMessage({
-          content: value.trim(),
-          id,
-          role: MessageType.User,
-          reasoning: enableThinking,
-          internet: enableInternet,
-        });
+        handleSendMessage(
+          {
+            content: value.trim(),
+            id,
+            role: MessageType.User,
+          },
+          enableThinking,
+          enableInternet,
+        );
       }
     },
     [addNewestQuestion, done, handleSendMessage, setValue, value],

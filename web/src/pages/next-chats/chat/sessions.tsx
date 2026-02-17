@@ -12,7 +12,14 @@ import {
   useRemoveConversation,
 } from '@/hooks/use-chat-request';
 import { cn } from '@/lib/utils';
-import { Check, PanelLeftClose, Plus, Trash2 } from 'lucide-react';
+import {
+  Check,
+  CopyX,
+  PanelLeftClose,
+  Plus,
+  Trash2,
+  Undo2,
+} from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
@@ -148,7 +155,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
               className="size-6"
               onClick={exitSelectionMode}
             >
-              <img src="/return2.png" alt="返回" className="h-4 w-4" />
+              <Undo2 size={16} />
             </Button>
             <ConfirmDeleteDialog
               onOk={handleBatchDelete}
@@ -188,11 +195,12 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
               {selectionMode && allSelected ? (
                 <Check className="h-4 w-4" />
               ) : (
-                <img
-                  src="/batch_delete2.png"
-                  alt="批量删除"
-                  className="h-4 w-4"
-                />
+                <CopyX className="h-4 w-4" />
+                // <img
+                //   src="/batch_delete2.png"
+                //   alt="批量删除"
+                //   className="h-4 w-4"
+                // />
               )}
             </Button>
           </div>

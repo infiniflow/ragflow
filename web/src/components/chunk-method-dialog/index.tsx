@@ -140,15 +140,13 @@ export function ChunkMethodDialog({
         pages: z
           .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
           .optional(),
-        metadata: z
+        metadata: z.any().optional(),
+        built_in_metadata: z
           .array(
-            z
-              .object({
-                key: z.string().optional(),
-                description: z.string().optional(),
-                enum: z.array(z.string().optional()).optional(),
-              })
-              .optional(),
+            z.object({
+              key: z.string().optional(),
+              type: z.string().optional(),
+            }),
           )
           .optional(),
         enable_metadata: z.boolean().optional(),

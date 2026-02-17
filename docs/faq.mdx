@@ -43,11 +43,11 @@ You can find the RAGFlow version number on the **System** page of the UI:
 If you build RAGFlow from source, the version number is also in the system log:
 
 ```
-        ____   ___    ______ ______ __               
+        ____   ___    ______ ______ __
        / __ \ /   |  / ____// ____// /____  _      __
       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
 2025-02-18 10:10:43,835 INFO     1445658 RAGFlow version: v0.15.0-50-g6daae7f2
 ```
@@ -177,7 +177,7 @@ To fix this issue, use https://hf-mirror.com instead:
 3. Start up the server:
 
    ```bash
-   docker compose up -d 
+   docker compose up -d
    ```
 
 ---
@@ -210,11 +210,11 @@ You will not log in to RAGFlow unless the server is fully initialized. Run `dock
 *The server is successfully initialized, if your system displays the following:*
 
 ```
-     ____   ___    ______ ______ __               
+     ____   ___    ______ ______ __
     / __ \ /   |  / ____// ____// /____  _      __
    / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-  / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
- /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/  
+  / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+ /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
  * Running on all addresses (0.0.0.0)
  * Running on http://127.0.0.1:9380
@@ -317,7 +317,7 @@ The status of a Docker container status does not necessarily reflect the status 
    $ docker ps
    ```
 
-   *The status of a healthy Elasticsearch component should look as follows:*  
+   *The status of a healthy Elasticsearch component should look as follows:*
 
    ```
    91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
@@ -370,7 +370,7 @@ Yes, we do. See the Python files under the **rag/app** folder.
    $ docker ps
    ```
 
-   *The status of a healthy Elasticsearch component should look as follows:*  
+   *The status of a healthy Elasticsearch component should look as follows:*
 
    ```bash
    cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
@@ -453,7 +453,7 @@ See [Upgrade RAGFlow](./guides/upgrade_ragflow.mdx) for more information.
 
 To switch your document engine from Elasticsearch to [Infinity](https://github.com/infiniflow/infinity):
 
-1. Stop all running containers:  
+1. Stop all running containers:
 
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
@@ -463,7 +463,7 @@ To switch your document engine from Elasticsearch to [Infinity](https://github.c
    :::
 
 2. In **docker/.env**, set `DOC_ENGINE=${DOC_ENGINE:-infinity}`
-3. Restart your Docker image: 
+3. Restart your Docker image:
 
    ```bash
    $ docker compose -f docker-compose.yml up -d
@@ -508,12 +508,12 @@ From v0.22.0 onwards, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF pa
       - `"vlm-mlx-engine"`
       - `"vlm-vllm-async-engine"`
       - `"vlm-lmdeploy-engine"`.
-   - `MINERU_SERVER_URL`: (optional) The downstream vLLM HTTP server (e.g., `http://vllm-host:30000`). Applicable when `MINERU_BACKEND` is set to `"vlm-http-client"`. 
+   - `MINERU_SERVER_URL`: (optional) The downstream vLLM HTTP server (e.g., `http://vllm-host:30000`). Applicable when `MINERU_BACKEND` is set to `"vlm-http-client"`.
    - `MINERU_OUTPUT_DIR`: (optional) The local directory for holding the outputs of the MinerU API service (zip/JSON) before ingestion.
    - `MINERU_DELETE_OUTPUT`: Whether to delete temporary output when a temporary directory is used:
      - `1`: Delete.
      - `0`: Retain.
-3. In the web UI, navigate to your dataset's **Configuration** page and find the **Ingestion pipeline** section:  
+3. In the web UI, navigate to your dataset's **Configuration** page and find the **Ingestion pipeline** section:
    - If you decide to use a chunking method from the **Built-in** dropdown, ensure it supports PDF parsing, then select **MinerU** from the **PDF parser** dropdown.
    - If you use a custom ingestion pipeline instead, select **MinerU** in the **PDF parser** section of the **Parser** component.
 
@@ -606,7 +606,7 @@ This method uses PaddleOCR's official API service with an access token.
 - If using custom ingestion pipeline, select **PaddleOCR** in the **Parser** component
 
 **Notes:**
-- To obtain the API URL, visit the [PaddleOCR official website](https://aistudio.baidu.com/paddleocr/task), click the **API** button in the upper-left corner, choose the example code for the specific algorithm you want to use (e.g., PaddleOCR-VL), and copy the `API_URL`.
+- To obtain the API URL, visit the [PaddleOCR official website](https://aistudio.baidu.com/paddleocr), click the **API** button, choose the example code for the specific algorithm you want to use (e.g., PaddleOCR-VL), and copy the `API_URL`.
 - Access tokens can be obtained from the [AI Studio platform](https://aistudio.baidu.com/account/accessToken).
 - This method requires internet connectivity to reach the official PaddleOCR API.
 

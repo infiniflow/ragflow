@@ -115,7 +115,7 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
             content={{
               node: (
                 <ConfirmDeleteDialogNode>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 border-0.5 text-text-secondary border-border-button rounded-lg px-3 py-4">
                     <LlmIcon name={item.name} />
                     {item.name}
                   </div>

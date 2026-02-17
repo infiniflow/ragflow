@@ -26,6 +26,7 @@ export default {
       chinese: 'Китайский упрощенный',
       traditionalChinese: 'Китайский традиционный',
       russian: 'Русский',
+      bulgarian: 'Болгарский',
       language: 'Язык',
       languageMessage: 'Пожалуйста, укажите ваш язык!',
       languagePlaceholder: 'выберите ваш язык',
@@ -329,7 +330,7 @@ export default {
         'Обновите конфигурацию вашей базы знаний здесь, особенно метод чанкинга.',
       name: 'Название базы знаний',
       photo: 'Фото базы знаний',
-      photoTip: 'Вы можете загрузить файл размером до 4 МБ',
+      photoTip: 'Вы можете загрузить изображение до 4 МБ.',
       description: 'Описание',
       language: 'Язык документа',
       languageMessage: 'Пожалуйста, укажите ваш язык!',
@@ -513,7 +514,8 @@ export default {
       paddleocrOptions: 'Параметры PaddleOCR',
       paddleocrApiUrl: 'URL API PaddleOCR',
       paddleocrApiUrlTip: 'URL конечной точки API сервиса PaddleOCR',
-      paddleocrApiUrlPlaceholder: 'Например: https://paddleocr-server.com/layout-parsing',
+      paddleocrApiUrlPlaceholder:
+        'Например: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Токен доступа AI Studio',
       paddleocrAccessTokenTip: 'Токен доступа к API PaddleOCR (необязательно)',
       paddleocrAccessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
@@ -627,7 +629,7 @@ export default {
         'Подобно штрафу за присутствие, это снижает тенденцию модели часто повторять одни и те же слова.',
       maxTokens: 'Макс. токенов',
       maxTokensMessage: 'Макс. токенов обязательно',
-      maxTokensTip: `Это устанавливает максимальную длину вывода модели, измеряемую в количестве токенов (слов или частей слов). По умолчанию 512. Если отключено, вы снимаете ограничение на максимальное количество токенов, позволяя модели определять количество токенов в своих ответах.`,
+      maxTokensTip: `Максимальный размер контекста mодель; недопустимое или неверное значение приведёт к ошибке. По умолчанию 512.`,
       maxTokensInvalidMessage:
         'Пожалуйста, введите действительное число для Макс. Токенов.',
       maxTokensMinMessage: 'Макс. Токенов не может быть меньше 0.',
@@ -836,7 +838,7 @@ export default {
       profileDescription: 'Обновите ваше фото и личные данные здесь.',
       maxTokens: 'Макс. Токенов',
       maxTokensMessage: 'Макс. Токенов обязательно',
-      maxTokensTip: `Это устанавливает максимальную длину вывода модели, измеряемую в количестве токенов (слов или частей слов). По умолчанию 512. Если отключено, вы снимаете ограничение на максимальное количество токенов, позволяя модели определять количество токенов в своих ответах.`,
+      maxTokensTip: `Максимальный размер контекста mодель; недопустимое или неверное значение приведёт к ошибке. По умолчанию 512.`,
       maxTokensInvalidMessage:
         'Пожалуйста, введите действительное число для Макс. Токенов.',
       maxTokensMinMessage: 'Макс. Токенов не может быть меньше 0.',
@@ -979,10 +981,6 @@ export default {
       'sa-east-1': 'Южная Америка (Сан-Паулу)',
       'us-gov-east-1': 'AWS GovCloud (US-East)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
-      addHunyuanSID: 'Hunyuan Secret ID',
-      HunyuanSIDMessage: 'Пожалуйста, введите ваш Secret ID',
-      addHunyuanSK: 'Hunyuan Secret Key',
-      HunyuanSKMessage: 'Пожалуйста, введите ваш Secret Key',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Пожалуйста, введите ваш Secret ID',
       addTencentCloudSK: 'TencentCloud Secret Key',
@@ -1047,14 +1045,15 @@ export default {
       mcp: 'MCP',
       paddleocr: {
         apiUrl: 'URL API PaddleOCR',
-        apiUrlPlaceholder: 'Например: https://paddleocr-server.com/layout-parsing',
+        apiUrlPlaceholder:
+          'Например: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Токен доступа AI Studio',
         accessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
         algorithm: 'Алгоритм PaddleOCR',
         selectAlgorithm: 'Выбрать алгоритм',
         modelNamePlaceholder: 'Например: paddleocr-from-env-1',
         modelNameRequired: 'Имя модели является обязательным',
-        apiUrlRequired: 'URL API PaddleOCR является обязательным'
+        apiUrlRequired: 'URL API PaddleOCR является обязательным',
       },
     },
     message: {
@@ -1746,7 +1745,7 @@ export default {
       conversational: 'Диалоговый',
       task: 'Задача',
       beginInputTip:
-        'Определяя входные параметры, это содержимое может быть доступно другим компонентам в последующих процессах.',
+        'Параметры ввода, определённые здесь, могут быть доступны компонентам в последующем рабочем процессе.',
       query: 'Переменные запроса',
       queryRequired: 'Запрос обязателен',
       queryTip: 'Выберите переменную, которую хотите использовать',
@@ -2038,6 +2037,7 @@ export default {
       korean: 'Корейский',
       vietnamese: 'Вьетнамский',
       russian: 'Русский',
+      bulgarian: 'Болгарский',
     },
     pagination: {
       total: 'Всего {{total}}',
