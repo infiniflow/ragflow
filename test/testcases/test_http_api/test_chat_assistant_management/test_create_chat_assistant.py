@@ -211,10 +211,7 @@ class TestChatAssistantCreate:
         if expected_code == 0:
             if prompt:
                 for k, v in prompt.items():
-                    if k == "keywords_similarity_weight":
-                        assert res["data"]["prompt"][k] == 1 - v
-                    else:
-                        assert res["data"]["prompt"][k] == v
+                    assert res["data"]["prompt"][k] == v
             else:
                 assert res["data"]["prompt"]["similarity_threshold"] == 0.2
                 assert res["data"]["prompt"]["keywords_similarity_weight"] == 0.7
