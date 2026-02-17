@@ -149,27 +149,29 @@ async def update(tenant_id, chat_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message="You do not own the chat")
     req = await get_request_json()
-    ids = req.get("dataset_ids", [])
     if "show_quotation" in req:
         req["do_refer"] = req.pop("show_quotation")
-    if ids:
-        for kb_id in ids:
-            kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
-            if not kbs:
-                return get_error_data_result(f"You don't own the dataset {kb_id}")
-            kbs = KnowledgebaseService.query(id=kb_id)
-            kb = kbs[0]
-            if kb.chunk_num == 0:
-                return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
 
-        kbs = KnowledgebaseService.get_by_ids(ids)
-        embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
-        embd_count = list(set(embd_ids))
-        if len(embd_count) > 1:
-            return get_result(message='Datasets use different embedding models."', code=RetCode.AUTHENTICATION_ERROR)
+    if "dataset_ids" in req:
+        ids = req.get("dataset_ids", [])
+        if ids:
+            for kb_id in ids:
+                kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
+                if not kbs:
+                    return get_error_data_result(f"You don't own the dataset {kb_id}")
+                kbs = KnowledgebaseService.query(id=kb_id)
+                kb = kbs[0]
+                if kb.chunk_num == 0:
+                    return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
+
+            kbs = KnowledgebaseService.get_by_ids(ids)
+            embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
+            embd_count = list(set(embd_ids))
+            if len(embd_count) > 1:
+                return get_result(message='Datasets use different embedding models."', code=RetCode.AUTHENTICATION_ERROR)
+
         req["kb_ids"] = ids
-    else:
-        req["kb_ids"] = []
+
     llm = req.get("llm")
     if llm:
         if "model_name" in llm:

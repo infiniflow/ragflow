@@ -215,10 +215,12 @@ def delete_chat_assistants(auth, payload=None):
     return res.json()
 
 
-def batch_create_chat_assistants(auth, num):
+def batch_create_chat_assistants(auth, num, dataset_ids=None):
+    if not dataset_ids:
+        dataset_ids = []
     chat_assistant_ids = []
     for i in range(num):
-        res = create_chat_assistant(auth, {"name": f"test_chat_assistant_{i}", "dataset_ids": []})
+        res = create_chat_assistant(auth, {"name": f"test_chat_assistant_{i}", "dataset_ids": dataset_ids})
         chat_assistant_ids.append(res["data"]["id"])
     return chat_assistant_ids
 
