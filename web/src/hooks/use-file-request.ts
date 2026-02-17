@@ -1,4 +1,5 @@
 import message from '@/components/ui/message';
+import { PaginationProps } from '@/interfaces/antd-compat';
 import {
   IFetchFileListResult,
   IFolder,
@@ -8,7 +9,6 @@ import fileManagerService from '@/services/file-manager-service';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { PaginationProps } from 'antd';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
