@@ -139,12 +139,26 @@ class Base(ABC):
         reasoning_start = False
 
         request_kwargs = {"model": self.model_name, "messages": history, "stream": True, **gen_conf}
+        # Request usage data in the final streaming chunk (OpenAI API feature)
+        request_kwargs["stream_options"] = {"include_usage": True}
         stop = kwargs.get("stop")
         if stop:
             request_kwargs["stop"] = stop
 
         response = await self.async_client.chat.completions.create(**request_kwargs)
+        final_usage = None  # Will store usage dict from final chunk if available
         async for resp in response:
+            # Check for usage data in chunk (sent with stream_options.include_usage)
+            if hasattr(resp, "usage") and resp.usage:
+                try:
+                    final_usage = {
+                        "prompt_tokens": getattr(resp.usage, "prompt_tokens", 0) or 0,
+                        "completion_tokens": getattr(resp.usage, "completion_tokens", 0) or 0,
+                        "total_tokens": getattr(resp.usage, "total_tokens", 0) or 0
+                    }
+                except Exception:
+                    pass  # Ignore usage extraction errors, will fall back to tiktoken
+
             if not resp.choices:
                 continue
             if not resp.choices[0].delta.content:
@@ -158,9 +172,9 @@ class Base(ABC):
             else:
                 reasoning_start = False
                 ans = resp.choices[0].delta.content
-            tol = total_token_count_from_response(resp)
-            if not tol:
-                tol = num_tokens_from_string(resp.choices[0].delta.content)
+
+            # For per-chunk counting, use tiktoken as fallback
+            tol = num_tokens_from_string(resp.choices[0].delta.content)
 
             finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
             if finish_reason == "length":
@@ -170,21 +184,40 @@ class Base(ABC):
                     ans += LENGTH_NOTIFICATION_EN
             yield ans, tol
 
+        # If we captured real usage from the API, yield it as a special marker
+        if final_usage:
+            yield ("__final_usage__", final_usage)
+
     async def async_chat_streamly(self, system, history, gen_conf: dict = {}, **kwargs):
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
         total_tokens = 0
+        api_provided_usage = None
 
         for attempt in range(self.max_retries + 1):
             try:
-                async for delta_ans, tol in self._async_chat_streamly(history, gen_conf, **kwargs):
+                async for item in self._async_chat_streamly(history, gen_conf, **kwargs):
+                    # Handle special final usage marker from API
+                    if isinstance(item, tuple) and len(item) == 2:
+                        if item[0] == "__final_usage__":
+                            api_provided_usage = item[1]
+                            continue
+                        delta_ans, tol = item
+                    else:
+                        delta_ans, tol = item, 0
+
                     ans = delta_ans
                     total_tokens += tol
                     yield ans
 
-                yield total_tokens
+                # Prefer API-provided usage (dict) over accumulated tiktoken count (int)
+                if api_provided_usage:
+                    final_tokens = api_provided_usage  # dict with prompt/completion/total
+                else:
+                    final_tokens = total_tokens  # int (fallback)
+                yield final_tokens
                 return
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
