@@ -18,6 +18,7 @@ export default {
       portugueseBr: '葡萄牙語 (巴西)',
       chinese: '簡體中文',
       traditionalChinese: '繁體中文',
+      bulgarian: '保加利亞語',
       language: '語言',
       languageMessage: '請輸入語言',
       languagePlaceholder: '請選擇語言',
