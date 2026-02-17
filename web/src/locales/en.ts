@@ -27,6 +27,7 @@ export default {
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
       russian: 'Russian',
+      bulgarian: 'Bulgarian',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -232,6 +233,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         description: 'Description',
         fieldName: 'Field name',
         editMetadata: 'Edit metadata',
+        addMetadata: 'Add metadata',
         deleteWarn: 'This {{field}} will be removed from all associated files',
         deleteManageFieldAllWarn:
           'This field and all its corresponding values will be deleted from all associated files.',
@@ -2362,6 +2364,7 @@ Important structured information may include: names, dates, locations, events, k
       korean: 'Korean',
       vietnamese: 'Vietnamese',
       russian: 'Russian',
+      bulgarian: 'Bulgarian',
     },
     pagination: {
       total: 'Total {{total}}',

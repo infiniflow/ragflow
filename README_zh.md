@@ -218,7 +218,7 @@
    > 如果你遇到 Docker 镜像拉不下来的问题，可以在 **docker/.env** 文件内根据变量 `RAGFLOW_IMAGE` 的注释提示选择华为云或者阿里云的相应镜像。
    >
    > - 华为云镜像名：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow`
-   > - 阿里云镜像名：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow`
+   > - 阿里云镜像名：`infiniflow-registry.cn-shanghai.cr.aliyuncs.com/infiniflow/ragflow`
 
 4. 服务器启动成功后再次确认服务器状态：
 
