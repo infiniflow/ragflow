@@ -369,7 +369,10 @@ async def chat_completion_openai_like(tenant_id, chat_id):
                     if ans.get("final"):
                         if ans.get("answer"):
                             full_content = ans["answer"]
-                        final_answer = ans.get("answer") or full_content
+                            response["choices"][0]["delta"]["content"] = full_content
+                            response["choices"][0]["delta"]["reasoning_content"] = None
+                            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
+                        final_answer = full_content
                         final_reference = ans.get("reference", {})
                         continue
                     if ans.get("start_to_think"):
