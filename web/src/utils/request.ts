@@ -109,16 +109,20 @@ request.interceptors.response.use(async (response: Response, options) => {
   }
 
   const data: ResponseType = await response?.clone()?.json();
+  let isRedirecting = false;
+
   if (data?.code === 100) {
     message.error(data?.message);
-  } else if (data?.code === 401) {
-    notification.error({
-      message: data?.message,
-      description: data?.message,
-      duration: 3,
-    });
-    authorizationUtil.removeAll();
-    redirectToLogin();
+  } else if (data?.code === 401 || response.status === 401) {
+    if (!isRedirecting) {
+      notification.error({
+        message: data?.message,
+        description: data?.message,
+        duration: 3,
+      });
+      authorizationUtil.removeAll();
+      redirectToLogin();
+    }
   } else if (data?.code !== 0) {
     notification.error({
       message: `${i18n.t('message.hint')} : ${data?.code}`,
