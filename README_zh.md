@@ -85,6 +85,9 @@
 
 ## 🔥 近期更新
 
+- 2026-02-12 支持 Memory 提取状态与日志追踪，并提供 HTTP API 和 Python SDK。
+- 2026-02-12 支持 Agent 会话管理
+- 2026-02-12 支持知识库多文件 Metadata 的批量管理
 - 2025-12-26 支持AI代理的“记忆”功能。
 - 2025-11-19 支持 Gemini 3 Pro。
 - 2025-11-12 支持从 Confluence、S3、Notion、Discord、Google Drive 进行数据同步。
