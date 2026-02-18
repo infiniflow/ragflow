@@ -25,6 +25,9 @@ env:
 
   # The password for Elasticsearch
   ELASTIC_PASSWORD: infini_rag_flow_helm
+  # if using elastic-cloud deployment, set enabled: false
+  # ES_HOST: 'https://xxxx'
+  # ELASTIC_API_KEY: replace-if-used-elastic-cloud
 
   # The password for OpenSearch.
   # At least one uppercase letter, one lowercase letter, one digit, and one special character
@@ -130,6 +133,7 @@ infinity:
     type: ClusterIP
 
 elasticsearch:
+  enabled: true
   image:
     repository: elasticsearch
     tag: "8.11.3"
