@@ -20,9 +20,10 @@ minio:
   bucket: '${MINIO_BUCKET:-}'
   prefix_path: '${MINIO_PREFIX_PATH:-}'
 es:
-  hosts: 'http://${ES_HOST:-es01}:9200'
+  hosts: '${ES_HOST:-http://es01:9200}'
   username: '${ES_USER:-elastic}'
   password: '${ELASTIC_PASSWORD:-infini_rag_flow}'
+  api_key: '${ELASTIC_API_KEY:-}'
 os:
   hosts: 'http://${OS_HOST:-opensearch01}:9201'
   username: '${OS_USER:-admin}'
