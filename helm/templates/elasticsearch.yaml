@@ -1,4 +1,5 @@
 {{- if eq .Values.env.DOC_ENGINE "elasticsearch" -}}
+{{- if .Values.elasticsearch.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -128,4 +129,5 @@ spec:
       port: 9200
       targetPort: http
   type: {{ .Values.elasticsearch.service.type }}
+{{- end }}
 {{- end -}}
