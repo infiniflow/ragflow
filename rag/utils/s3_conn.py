@@ -155,15 +155,11 @@ class RAGFlowS3:
             return False
 
     def health(self):
-        bucket = self.bucket
-        fnm = "txtxtxtxt1"
-        fnm, binary = f"{self.prefix_path}/{fnm}" if self.prefix_path else fnm, b"_t@@@1"
-        if not self._physical_bucket_exists(bucket):
-            self.conn[0].create_bucket(Bucket=bucket)
-            logging.debug(f"create bucket {bucket} ********")
-
-        r = self.conn[0].upload_fileobj(BytesIO(binary), bucket, fnm)
-        return r
+        try:
+            self.conn[0].list_buckets(MaxBuckets=1)
+            return True
+        except Exception:
+            return False
 
     def get_properties(self, bucket, key):
         return {}
