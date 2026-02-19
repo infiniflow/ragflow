@@ -221,7 +221,7 @@ export function MinerUOptionsFormField({
             value={field.value ?? ''}
             onChange={(e) =>
               field.onChange(
-                e.target.value ? parseInt(e.target.value, 10) : null,
+                e.target.value ? parseInt(e.target.value, 10) : undefined,
               )
             }
             placeholder="Optional"
@@ -245,7 +245,7 @@ export function MinerUOptionsFormField({
             value={field.value ?? ''}
             onChange={(e) =>
               field.onChange(
-                e.target.value ? parseInt(e.target.value, 10) : null,
+                e.target.value ? parseInt(e.target.value, 10) : undefined,
               )
             }
             placeholder="Optional"

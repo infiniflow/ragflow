@@ -307,7 +307,21 @@ class MinerUParser(RAGFlowPdfParser):
     def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
         reason = ""
 
-        valid_backends = ["pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
+        valid_backends = [
+            "pipeline",
+            "hybrid-auto-engine",
+            "hybrid-transformers",
+            "hybrid-vllm-engine",
+            "hybrid-vllm-async-engine",
+            "hybrid-lmdeploy-engine",
+            "vlm-auto-engine",
+            "vlm-http-client",
+            "vlm-transformers",
+            "vlm-vllm-engine",
+            "vlm-mlx-engine",
+            "vlm-vllm-async-engine",
+            "vlm-lmdeploy-engine",
+        ]
         if backend not in valid_backends:
             reason = f"[MinerU] Invalid backend '{backend}'. Valid backends are: {valid_backends}"
             self.logger.warning(reason)
@@ -392,9 +406,13 @@ class MinerUParser(RAGFlowPdfParser):
             )
 
         # Batch processing: split into multiple API calls
+        # Use from_page/to_page range if specified, otherwise use full range
+        batch_start_page = from_page if from_page > 0 else 0
+        batch_end_page = min(to_page, total_pages) if total_pages > 0 else MAX_PAGE_NUMBER
+        
         batches = []
-        for batch_start in range(0, total_pages, options.batch_size):
-            batch_end = min(batch_start + options.batch_size - 1, total_pages - 1)
+        for batch_start in range(batch_start_page, batch_end_page, options.batch_size):
+            batch_end = min(batch_start + options.batch_size - 1, batch_end_page - 1)
             batch_info = BatchInfo(
                 batch_idx=len(batches),
                 start_page=batch_start,
@@ -512,13 +530,21 @@ class MinerUParser(RAGFlowPdfParser):
             overall_status=overall_status
         )
 
+        # In strict mode, raise an error if any batch failed
+        if options.strict_mode and failed_batches:
+            error_msg = f"[MinerU] Strict mode: {len(failed_batches)}/{len(batches)} batches failed. Failed batches: {[(b.start_page, b.end_page, b.error_type) for b in failed_batches]}"
+            self.logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
         self.logger.info(f"[MinerU] Batch processing completed: {successful_batches}/{len(batches)} successful, overall_status={overall_status}")
 
         # Write merged content to output directory
-        # For simplicity, we save the merged result to the first batch's output path
+        # Use the expected filename format: {pdf_file_name}_content_list.json
         if merged_content_list:
             import json
-            merged_json_path = Path(output_path) / "content_list.json"
+            # Use the original PDF filename stem for consistency with _read_output
+            content_filename = f"{pdf_file_name}_content_list.json"
+            merged_json_path = Path(output_path) / content_filename
             with open(merged_json_path, "w", encoding="utf-8") as f:
                 json.dump(merged_content_list, f, ensure_ascii=False, indent=2)
             self.logger.info(f"[MinerU] Saved merged content to {merged_json_path}")
@@ -599,8 +625,14 @@ class MinerUParser(RAGFlowPdfParser):
                             callback(0.40, f"[MinerU] Unzip to {output_path}...")
                     else:
                         self.logger.warning(f"[MinerU] not zip returned from api: {content_type}")
+        except requests.exceptions.Timeout as e:
+            raise RuntimeError(f"[MinerU] API timeout: {e}") from e
+        except requests.exceptions.HTTPError as e:
+            raise RuntimeError(f"[MinerU] API HTTP error: {e}") from e
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"[MinerU] API request failed: {e}") from e
         except Exception as e:
-            raise RuntimeError(f"[MinerU] api failed with exception {e}")
+            raise RuntimeError(f"[MinerU] API failed with exception: {e}") from e
         self.logger.info(f"[MinerU] Api completed successfully for pages {start_page}-{end_page}.")
         return Path(output_path)
 
