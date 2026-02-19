@@ -40,6 +40,12 @@ LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
 
+# Constants for MinerU API
+MAX_PAGE_NUMBER = 99999  # Maximum page number for MinerU API (effectively unlimited)
+API_TIMEOUT_SECONDS = 7200  # API timeout: 2 hours for large PDF processing
+MAX_RETRIES_5XX = 3  # Maximum retries for 5xx server errors
+RETRY_BACKOFF_BASE = 2  # Base for exponential backoff (seconds)
+
 
 class MinerUContentType(StrEnum):
     IMAGE = "image"
@@ -81,11 +87,17 @@ class MinerUBackend(StrEnum):
     """MinerU processing backend options."""
 
     PIPELINE = "pipeline"  # Traditional multimodel pipeline (default)
+    HYBRID_AUTO_ENGINE = "hybrid-auto-engine"  # Hybrid auto engine with automatic optimization (default in MinerU 2.7.0+)
+    HYBRID_TRANSFORMERS = "hybrid-transformers"  # Hybrid backend using HuggingFace Transformers
+    HYBRID_VLLM_ENGINE = "hybrid-vllm-engine"  # Hybrid backend using local vLLM engine
+    HYBRID_VLLM_ASYNC_ENGINE = "hybrid-vllm-async-engine"  # Hybrid backend using async vLLM engine
+    HYBRID_LMDEPLOY_ENGINE = "hybrid-lmdeploy-engine"  # Hybrid backend using LMDeploy engine
+    VLM_AUTO_ENGINE = "vlm-auto-engine"  # VLM auto engine with automatic optimization
     VLM_TRANSFORMERS = "vlm-transformers"  # Vision-language model using HuggingFace Transformers
-    VLM_MLX_ENGINE = "vlm-mlx-engine"  # Faster, requires Apple Silicon and macOS 13.5+
     VLM_VLLM_ENGINE = "vlm-vllm-engine"  # Local vLLM engine, requires local GPU
     VLM_VLLM_ASYNC_ENGINE = "vlm-vllm-async-engine"  # Asynchronous vLLM engine, new in MinerU API
     VLM_LMDEPLOY_ENGINE = "vlm-lmdeploy-engine"  # LMDeploy engine
+    VLM_MLX_ENGINE = "vlm-mlx-engine"  # Faster, requires Apple Silicon and macOS 13.5+
     VLM_HTTP_CLIENT = "vlm-http-client"  # HTTP client for remote vLLM server (CPU only)
 
 
@@ -131,6 +143,57 @@ class MinerUParseOptions:
     parse_method: str = "raw"
     formula_enable: bool = True
     table_enable: bool = True
+    batch_size: int = 30  # Number of pages per batch for large PDFs
+    start_page: Optional[int] = None  # Starting page (0-based, for manual pagination)
+    end_page: Optional[int] = None  # Ending page (0-based, for manual pagination)
+    strict_mode: bool = True  # If True (default), all batches must succeed
+
+
+# Batch processing related classes
+class BatchStatus(StrEnum):
+    """Status of a batch processing task."""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    SUCCESS = "success"
+    FAILED = "failed"
+    TIMEOUT = "timeout"
+    ABORTED = "aborted"
+
+
+class BatchErrorType(StrEnum):
+    """Type of error encountered during batch processing."""
+    TIMEOUT = "timeout"
+    SERVER_ERROR_5XX = "server_error_5xx"
+    CLIENT_ERROR_4XX = "client_error_4xx"
+    NETWORK_ERROR = "network_error"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class BatchInfo:
+    """Information about a batch processing task."""
+    batch_idx: int
+    start_page: int
+    end_page: int
+    status: BatchStatus = BatchStatus.PENDING
+    error_type: Optional[BatchErrorType] = None
+    error_message: Optional[str] = None
+    retry_count: int = 0
+    content_count: int = 0  # Number of content blocks extracted
+
+
+@dataclass
+class BatchProcessingResult:
+    """Result of batch processing operation."""
+    total_batches: int
+    successful_batches: int
+    failed_batches: list = None
+    total_content_blocks: int = 0
+    overall_status: str = "unknown"  # "success", "partial_success", "failed"
+
+    def __post_init__(self):
+        if self.failed_batches is None:
+            self.failed_batches = []
 
 
 class MinerUParser(RAGFlowPdfParser):
@@ -139,10 +202,50 @@ class MinerUParser(RAGFlowPdfParser):
         self.mineru_server_url = mineru_server_url.rstrip("/")
         self.outlines = []
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.batch_processing_result = None  # Store batch processing result
 
     @staticmethod
     def _is_zipinfo_symlink(member: zipfile.ZipInfo) -> bool:
         return (member.external_attr >> 16) & 0o170000 == 0o120000
+
+    # Error classification and retry methods
+    def _classify_error(self, exception: Exception) -> BatchErrorType:
+        """Classify the type of error encountered."""
+        if isinstance(exception, requests.exceptions.Timeout):
+            return BatchErrorType.TIMEOUT
+        elif isinstance(exception, requests.exceptions.HTTPError):
+            if hasattr(exception, 'response') and exception.response is not None:
+                status_code = exception.response.status_code
+                if 500 <= status_code < 600:
+                    return BatchErrorType.SERVER_ERROR_5XX
+                elif 400 <= status_code < 500:
+                    return BatchErrorType.CLIENT_ERROR_4XX
+            return BatchErrorType.UNKNOWN
+        elif isinstance(exception, requests.exceptions.ConnectionError):
+            return BatchErrorType.NETWORK_ERROR
+        elif isinstance(exception, requests.exceptions.RequestException):
+            return BatchErrorType.NETWORK_ERROR
+        else:
+            return BatchErrorType.UNKNOWN
+
+    def _should_retry(self, error_type: BatchErrorType, retry_count: int) -> bool:
+        """Determine if a batch should be retried based on error type."""
+        if error_type == BatchErrorType.SERVER_ERROR_5XX:
+            return retry_count < MAX_RETRIES_5XX
+        return False
+
+    def _calculate_backoff_delay(self, retry_count: int) -> float:
+        """Calculate exponential backoff delay."""
+        return RETRY_BACKOFF_BASE ** retry_count
+
+    def _get_total_pages(self, pdf_path: Path) -> int:
+        """Get total number of pages in PDF."""
+        try:
+            with pdfplumber.open(str(pdf_path)) as pdf:
+                return len(pdf.pages)
+        except Exception as e:
+            self.logger.warning(f"[MinerU] Could not get page count: {e}")
+            return 0
 
     def _extract_zip_no_root(self, zip_path, extract_to, root_dir):
         self.logger.info(f"[MinerU] Extract zip: zip_path={zip_path}, extract_to={extract_to}, root_hint={root_dir}")
@@ -242,13 +345,191 @@ class MinerUParser(RAGFlowPdfParser):
         return True, reason
 
     def _run_mineru(
-        self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None
+        self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None,
+        from_page: int = 0, to_page: int = MAX_PAGE_NUMBER
     ) -> Path:
-        return self._run_mineru_api(input_path, output_dir, options, callback)
+        return self._run_mineru_api(input_path, output_dir, options, callback, from_page, to_page)
 
     def _run_mineru_api(
-        self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None
+        self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None,
+        from_page: int = 0, to_page: int = MAX_PAGE_NUMBER
     ) -> Path:
+        """Run MinerU API with optional batch processing support."""
+        pdf_file_path = str(input_path)
+
+        if not os.path.exists(pdf_file_path):
+            raise RuntimeError(f"[MinerU] PDF file not exists: {pdf_file_path}")
+
+        pdf_file_name = Path(pdf_file_path).stem.strip()
+
+        # Determine if we need to batch process
+        # Auto-batching: if no manual page range specified and batch_size > 0
+        need_batching = (
+            options.start_page is None and 
+            options.end_page is None and 
+            options.batch_size > 0
+        )
+
+        total_pages = 0
+        if need_batching:
+            # Get total pages for automatic batching
+            total_pages = self._get_total_pages(input_path)
+            if total_pages == 0:
+                self.logger.warning("[MinerU] Could not determine total pages, processing without batching")
+                need_batching = False
+            elif total_pages <= options.batch_size:
+                self.logger.info(f"[MinerU] PDF has {total_pages} pages, batch_size={options.batch_size}, no batching needed")
+                need_batching = False
+            else:
+                self.logger.info(f"[MinerU] Batch processing enabled: total_pages={total_pages}, batch_size={options.batch_size}")
+
+        if not need_batching:
+            # Process entire document or specified page range (no batching)
+            return self._run_mineru_api_single_batch(
+                input_path, output_dir, options, callback,
+                start_page=options.start_page if options.start_page is not None else from_page,
+                end_page=options.end_page if options.end_page is not None else to_page
+            )
+
+        # Batch processing: split into multiple API calls
+        batches = []
+        for batch_start in range(0, total_pages, options.batch_size):
+            batch_end = min(batch_start + options.batch_size - 1, total_pages - 1)
+            batch_info = BatchInfo(
+                batch_idx=len(batches),
+                start_page=batch_start,
+                end_page=batch_end,
+                status=BatchStatus.PENDING
+            )
+            batches.append(batch_info)
+
+        self.logger.info(f"[MinerU] Processing {len(batches)} batches: {[(b.start_page, b.end_page) for b in batches]}")
+
+        # Create a single output directory for merged results
+        output_path = tempfile.mkdtemp(prefix=f"{pdf_file_name}_{options.method}_merged_", dir=str(output_dir))
+        merged_content_list = []
+        failed_batches = []
+        successful_batches = 0
+
+        for batch_info in batches:
+            batch_idx = batch_info.batch_idx
+            batch_start = batch_info.start_page
+            batch_end = batch_info.end_page
+
+            self.logger.info(f"[MinerU] Processing batch {batch_idx + 1}/{len(batches)}: pages {batch_start}-{batch_end}")
+            batch_info.status = BatchStatus.PROCESSING
+
+            if callback:
+                progress = 0.20 + (batch_idx / len(batches)) * 0.50  # Progress from 20% to 70%
+                callback(progress, f"[MinerU] Processing batch {batch_idx + 1}/{len(batches)}: pages {batch_start}-{batch_end}")
+
+            # Retry loop for this batch
+            batch_succeeded = False
+            while True:
+                try:
+                    # Process this batch
+                    batch_output_path = self._run_mineru_api_single_batch(
+                        input_path, output_dir, options, None,  # No callback for individual batches
+                        start_page=batch_start,
+                        end_page=batch_end
+                    )
+
+                    # Read the batch results
+                    batch_content_list = self._read_output(
+                        batch_output_path, pdf_file_name,
+                        method=str(options.method), backend=str(options.backend)
+                    )
+
+                    # Adjust page indices in batch results to reflect global page numbers
+                    for item in batch_content_list:
+                        if "page_idx" in item and isinstance(item["page_idx"], int):
+                            item["page_idx"] = item["page_idx"] + batch_start
+
+                    merged_content_list.extend(batch_content_list)
+                    batch_info.content_count = len(batch_content_list)
+                    batch_info.status = BatchStatus.SUCCESS
+                    successful_batches += 1
+                    batch_succeeded = True
+                    break  # Success, exit retry loop
+
+                except Exception as batch_err:
+                    # Classify the error
+                    error_type = self._classify_error(batch_err)
+                    batch_info.error_type = error_type
+                    batch_info.error_message = str(batch_err)
+
+                    self.logger.error(
+                        f"[MinerU] Batch {batch_idx + 1} failed (pages {batch_start}-{batch_end}): "
+                        f"error_type={error_type}, retry_count={batch_info.retry_count}, error={batch_err}"
+                    )
+
+                    # Determine if we should retry
+                    if self._should_retry(error_type, batch_info.retry_count):
+                        # Calculate delay before incrementing retry count
+                        delay = self._calculate_backoff_delay(batch_info.retry_count)
+                        batch_info.retry_count += 1
+                        self.logger.info(
+                            f"[MinerU] Retrying batch {batch_idx + 1} after {delay}s delay "
+                            f"(attempt {batch_info.retry_count}/{MAX_RETRIES_5XX})"
+                        )
+
+                        if callback:
+                            callback(progress, f"[MinerU] Retrying batch {batch_idx + 1}/{len(batches)} after error (attempt {batch_info.retry_count})")
+
+                        # Use blocking sleep for synchronous retry logic
+                        import time
+                        time.sleep(delay)
+                        continue  # Retry
+                    else:
+                        # No retry, mark as failed
+                        if error_type == BatchErrorType.TIMEOUT:
+                            batch_info.status = BatchStatus.TIMEOUT
+                            self.logger.warning(f"[MinerU] Batch {batch_idx + 1} timed out, aborting this batch")
+                        else:
+                            batch_info.status = BatchStatus.FAILED
+                            self.logger.warning(f"[MinerU] Batch {batch_idx + 1} failed, no retry available")
+
+                        failed_batches.append(batch_info)
+
+                        if callback:
+                            callback(progress, f"[MinerU] Batch {batch_idx + 1}/{len(batches)} failed: {error_type}")
+
+                        break  # Exit retry loop
+
+        # Store batch processing result for reporting
+        if successful_batches == len(batches):
+            overall_status = "success"
+        elif successful_batches > 0:
+            overall_status = "partial_success"
+        else:
+            overall_status = "failed"
+
+        self.batch_processing_result = BatchProcessingResult(
+            total_batches=len(batches),
+            successful_batches=successful_batches,
+            failed_batches=failed_batches,
+            total_content_blocks=len(merged_content_list),
+            overall_status=overall_status
+        )
+
+        self.logger.info(f"[MinerU] Batch processing completed: {successful_batches}/{len(batches)} successful, overall_status={overall_status}")
+
+        # Write merged content to output directory
+        # For simplicity, we save the merged result to the first batch's output path
+        if merged_content_list:
+            import json
+            merged_json_path = Path(output_path) / "content_list.json"
+            with open(merged_json_path, "w", encoding="utf-8") as f:
+                json.dump(merged_content_list, f, ensure_ascii=False, indent=2)
+            self.logger.info(f"[MinerU] Saved merged content to {merged_json_path}")
+
+        return Path(output_path)
+
+    def _run_mineru_api_single_batch(
+        self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None,
+        start_page: int = 0, end_page: int = MAX_PAGE_NUMBER
+    ) -> Path:
+        """Run a single MinerU API call for a page range."""
         pdf_file_path = str(input_path)
 
         if not os.path.exists(pdf_file_path):
@@ -272,8 +553,8 @@ class MinerUParser(RAGFlowPdfParser):
             "return_content_list": True,
             "return_images": True,
             "response_format_zip": True,
-            "start_page_id": 0,
-            "end_page_id": 99999,
+            "start_page_id": start_page,
+            "end_page_id": end_page,
         }
 
         if options.server_url:
@@ -286,7 +567,7 @@ class MinerUParser(RAGFlowPdfParser):
 
         headers = {"Accept": "application/json"}
         try:
-            self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')}")
+            self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')} pages {start_page}-{end_page}")
             if callback:
                 callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/file_parse")
             with open(pdf_file_path, "rb") as pdf_file:
@@ -296,7 +577,7 @@ class MinerUParser(RAGFlowPdfParser):
                     files=files,
                     data=data,
                     headers=headers,
-                    timeout=1800,
+                    timeout=API_TIMEOUT_SECONDS,  # 2 hours for large PDF processing
                     stream=True,
                 ) as response:
                     response.raise_for_status()
@@ -320,7 +601,7 @@ class MinerUParser(RAGFlowPdfParser):
                         self.logger.warning(f"[MinerU] not zip returned from api: {content_type}")
         except Exception as e:
             raise RuntimeError(f"[MinerU] api failed with exception {e}")
-        self.logger.info("[MinerU] Api completed successfully.")
+        self.logger.info(f"[MinerU] Api completed successfully for pages {start_page}-{end_page}.")
         return Path(output_path)
 
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=600, callback=None):
@@ -579,6 +860,8 @@ class MinerUParser(RAGFlowPdfParser):
             server_url: Optional[str] = None,
             delete_output: bool = True,
             parse_method: str = "raw",
+            from_page: int = 0,
+            to_page: int = MAX_PAGE_NUMBER,
             **kwargs,
     ) -> tuple:
         import shutil
@@ -592,6 +875,20 @@ class MinerUParser(RAGFlowPdfParser):
         mineru_method_raw_str = parser_cfg.get('mineru_parse_method', 'auto')
         enable_formula = parser_cfg.get('mineru_formula_enable', True)
         enable_table = parser_cfg.get('mineru_table_enable', True)
+        
+        # Batch processing configuration
+        batch_size = parser_cfg.get('mineru_batch_size', 30)
+        try:
+            batch_size = max(1, int(batch_size))
+        except (ValueError, TypeError):
+            batch_size = 30
+        
+        # Manual page range
+        start_page = parser_cfg.get('mineru_start_page', None)
+        end_page = parser_cfg.get('mineru_end_page', None)
+        
+        # Strict mode
+        strict_mode = parser_cfg.get('mineru_strict_mode', True)
 
         # remove spaces, or mineru crash, and _read_output fail too
         file_path = Path(filepath)
@@ -640,8 +937,12 @@ class MinerUParser(RAGFlowPdfParser):
                 parse_method=parse_method,
                 formula_enable=enable_formula,
                 table_enable=enable_table,
+                batch_size=batch_size,
+                start_page=start_page,
+                end_page=end_page,
+                strict_mode=strict_mode,
             )
-            final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback)
+            final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback, from_page=from_page, to_page=to_page)
             outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:

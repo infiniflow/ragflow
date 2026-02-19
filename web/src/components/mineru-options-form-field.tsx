@@ -1,4 +1,5 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { LLMFactory } from '@/constants/llm';
@@ -172,6 +173,82 @@ export function MinerUOptionsFormField({
           <Switch
             checked={field.value ?? true}
             onCheckedChange={field.onChange}
+          />
+        )}
+      </RAGFlowFormItem>
+
+      <div className="text-sm font-medium text-text-secondary mt-4">
+        {t(
+          'knowledgeConfiguration.mineruBatchOptions',
+          'Batch Processing Options',
+        )}
+      </div>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_batch_size')}
+        label={t('knowledgeConfiguration.mineruBatchSize', 'Batch Size')}
+        tooltip={t(
+          'knowledgeConfiguration.mineruBatchSizeTip',
+          'Number of pages to process per batch for large PDFs. Larger values use more memory but may be faster. Default is 30.',
+        )}
+        horizontal={true}
+      >
+        {(field) => (
+          <Input
+            type="number"
+            min={1}
+            max={500}
+            value={field.value ?? 30}
+            onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 30)}
+            placeholder="30"
+          />
+        )}
+      </RAGFlowFormItem>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_start_page')}
+        label={t('knowledgeConfiguration.mineruStartPage', 'Start Page')}
+        tooltip={t(
+          'knowledgeConfiguration.mineruStartPageTip',
+          'Starting page number for processing (0-based). Leave empty to start from the beginning.',
+        )}
+        horizontal={true}
+      >
+        {(field) => (
+          <Input
+            type="number"
+            min={0}
+            value={field.value ?? ''}
+            onChange={(e) =>
+              field.onChange(
+                e.target.value ? parseInt(e.target.value, 10) : null,
+              )
+            }
+            placeholder="Optional"
+          />
+        )}
+      </RAGFlowFormItem>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_end_page')}
+        label={t('knowledgeConfiguration.mineruEndPage', 'End Page')}
+        tooltip={t(
+          'knowledgeConfiguration.mineruEndPageTip',
+          'Ending page number for processing (0-based, inclusive). Leave empty to process until the end.',
+        )}
+        horizontal={true}
+      >
+        {(field) => (
+          <Input
+            type="number"
+            min={0}
+            value={field.value ?? ''}
+            onChange={(e) =>
+              field.onChange(
+                e.target.value ? parseInt(e.target.value, 10) : null,
+              )
+            }
+            placeholder="Optional"
           />
         )}
       </RAGFlowFormItem>
