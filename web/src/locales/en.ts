@@ -46,6 +46,7 @@ export default {
       submit: 'Submit',
       clear: 'Clear',
       embedIntoSite: 'Embed into webpage',
+      openInNewTab: 'Chat in new tab',
       previousPage: 'Previous',
       nextPage: 'Next',
       add: 'Add',
