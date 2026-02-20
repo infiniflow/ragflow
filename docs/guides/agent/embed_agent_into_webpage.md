@@ -20,6 +20,6 @@ You can use iframe to embed an agent into a third-party webpage.
    - **Enable Streaming Responses**: Enable streaming for widget mode
    - **Locale**: Select the language for the embedded agent
 5. Copy the generated iframe code and embed it into your webpage.
-6. **Open in new tab**: Click the "Open in new tab" button to preview the agent in a separate browser tab with your configured settings. This allows you to test the agent before embedding it.
+6. **Chat in new tab**: Click the "Chat in new tab" button to preview the agent in a separate browser tab with your configured settings. This allows you to test the agent before embedding it.
 
 ![Embed_agent](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/embed_agent_into_webpage.jpg)

@@ -44,7 +44,7 @@ export default {
       submit: '提交',
       clear: '清空',
       embedIntoSite: '嵌入网站',
-      openInNewTab: '在新标签页中打开',
+      openInNewTab: '在新标签页中聊天',
       previousPage: '上一页',
       nextPage: '下一页',
       add: '添加',

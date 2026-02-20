@@ -35,7 +35,7 @@ export default {
       pleaseInput: 'Por favor, insira',
       submit: 'Enviar',
       embedIntoSite: 'Incorporar no site',
-      openInNewTab: 'Abrir em nova aba',
+      openInNewTab: 'Chat em nova aba',
       previousPage: 'Anterior',
       nextPage: 'Próxima',
     },
