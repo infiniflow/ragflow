@@ -263,6 +263,8 @@ services:
     ports:
       - ${TEI_PORT-6380}:80
     env_file: .env
+    volumes:
+      - /data:/data
     networks:
       - ragflow
     command: ["--model-id", "/data/${TEI_MODEL}", "--auto-truncate"]
