@@ -487,6 +487,25 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_orphaned_parsing_docs(cls):
+        """Get documents stuck in 'Parsing' state (run=RUNNING, progress > 0 and < 1).
+
+        These are documents that were being parsed when the system crashed/rebooted.
+        Their tasks may have been lost from the Redis queue while MySQL still shows
+        them as running.
+        """
+        fields = [cls.model.id, cls.model.kb_id, cls.model.progress, cls.model.run]
+        docs = cls.model.select(*fields).where(
+            cls.model.status == StatusEnum.VALID.value,
+            ~(cls.model.type == FileType.VIRTUAL.value),
+            cls.model.run == TaskStatus.RUNNING.value,
+            cls.model.progress > 0,
+            cls.model.progress < 1,
+        )
+        return list(docs.dicts())
+
+    @classmethod
+    @DB.connection_context()
     def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
         num = cls.model.update(token_num=cls.model.token_num + token_num,
                                chunk_num=cls.model.chunk_num + chunk_num,

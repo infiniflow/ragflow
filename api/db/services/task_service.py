@@ -174,6 +174,26 @@ class TaskService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_incomplete_tasks_by_doc_ids(cls, doc_ids: list[str]):
+        """Get incomplete tasks (progress >= 0 and < 1) for the given document IDs."""
+        if not doc_ids:
+            return []
+        fields = [
+            cls.model.id,
+            cls.model.doc_id,
+            cls.model.from_page,
+            cls.model.to_page,
+            cls.model.priority,
+        ]
+        tasks = cls.model.select(*fields).where(
+            cls.model.doc_id.in_(doc_ids),
+            cls.model.progress >= 0,
+            cls.model.progress < 1,
+        )
+        return list(tasks.dicts())
+
+    @classmethod
+    @DB.connection_context()
     def get_tasks_progress_by_doc_ids(cls, doc_ids: list[str]):
         """Retrieve all tasks associated with specific documents.
 
@@ -462,6 +482,44 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         assert REDIS_CONN.queue_product(
             settings.get_svr_queue_name(priority), message=unfinished_task
         ), "Can't access Redis. Please check the Redis' status."
+
+
+def requeue_orphaned_tasks():
+    """Re-queue orphaned tasks after a system crash or reboot.
+
+    When the system crashes during document parsing, Redis loses queued tasks
+    while MySQL retains the 'Parsing' state. This function detects such orphaned
+    documents and re-queues their incomplete tasks into Redis.
+    """
+    orphaned_docs = DocumentService.get_orphaned_parsing_docs()
+    if not orphaned_docs:
+        return 0
+
+    doc_ids = [d["id"] for d in orphaned_docs]
+    incomplete_tasks = TaskService.get_incomplete_tasks_by_doc_ids(doc_ids)
+    if not incomplete_tasks:
+        # No incomplete tasks found; reset orphaned docs to failed state
+        for doc_id in doc_ids:
+            DocumentService.update_by_id(doc_id, {
+                "run": TaskStatus.FAIL.value,
+                "progress_msg": "Task lost after system restart. No incomplete tasks found to re-queue.",
+            })
+        return 0
+
+    requeued = 0
+    for task in incomplete_tasks:
+        priority = task.get("priority", 0) or 0
+        queue_name = settings.get_svr_queue_name(priority)
+        if REDIS_CONN.queue_product(queue_name, message=task):
+            requeued += 1
+        else:
+            logging.warning(f"Failed to re-queue orphaned task {task['id']} for doc {task['doc_id']}")
+
+    logging.info(
+        f"Orphaned task reconciliation: found {len(orphaned_docs)} orphaned docs, "
+        f"re-queued {requeued}/{len(incomplete_tasks)} tasks"
+    )
+    return requeued
 
 
 def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: dict):

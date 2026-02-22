@@ -63,7 +63,7 @@ from common.constants import LLMType, ParserType, PipelineTaskType
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.llm_service import LLMBundle
-from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
+from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID, requeue_orphaned_tasks
 from api.db.services.file2document_service import File2DocumentService
 from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
@@ -1382,6 +1382,19 @@ async def main():
 
     report_task = asyncio.create_task(report_status())
     tasks = []
+
+    # Reconcile orphaned tasks on startup (only first worker to avoid duplicates)
+    try:
+        reconcile_lock = RedisDistributedLock("orphaned_task_reconciliation", timeout=60)
+        if reconcile_lock.acquire():
+            try:
+                requeued = requeue_orphaned_tasks()
+                if requeued:
+                    logging.info(f"Re-queued {requeued} orphaned tasks from previous crash/reboot")
+            finally:
+                reconcile_lock.release()
+    except Exception as e:
+        logging.warning(f"Orphaned task reconciliation failed: {e}")
 
     logging.info(f"RAGFlow ingestion is ready after {time.time() - start_ts}s initialization.")
     try:
