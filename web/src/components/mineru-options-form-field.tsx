@@ -7,6 +7,23 @@ import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 const parseMethodOptions = buildOptions(['auto', 'txt', 'ocr']);
+
+const backendOptions = buildOptions([
+  { label: 'Pipeline (Default)', value: 'pipeline' },
+  { label: 'Hybrid Auto Engine', value: 'hybrid-auto-engine' },
+  { label: 'Hybrid Transformers', value: 'hybrid-transformers' },
+  { label: 'Hybrid vLLM Engine', value: 'hybrid-vllm-engine' },
+  { label: 'Hybrid vLLM Async', value: 'hybrid-vllm-async-engine' },
+  { label: 'Hybrid LMDeploy', value: 'hybrid-lmdeploy-engine' },
+  { label: 'VLM Auto Engine', value: 'vlm-auto-engine' },
+  { label: 'VLM Transformers', value: 'vlm-transformers' },
+  { label: 'VLM vLLM Engine', value: 'vlm-vllm-engine' },
+  { label: 'VLM vLLM Async', value: 'vlm-vllm-async-engine' },
+  { label: 'VLM LMDeploy', value: 'vlm-lmdeploy-engine' },
+  { label: 'VLM MLX (Apple Silicon)', value: 'vlm-mlx-engine' },
+  { label: 'VLM HTTP Client', value: 'vlm-http-client' },
+]);
+
 const languageOptions = buildOptions([
   'English',
   'Chinese',
@@ -74,6 +91,25 @@ export function MinerUOptionsFormField({
             value={field.value || 'auto'}
             onChange={field.onChange}
             options={parseMethodOptions}
+            placeholder={t('common.selectPlaceholder', 'Select value')}
+          />
+        )}
+      </RAGFlowFormItem>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_backend')}
+        label={t('knowledgeConfiguration.mineruBackend', 'Backend')}
+        tooltip={t(
+          'knowledgeConfiguration.mineruBackendTip',
+          'MinerU processing backend. Pipeline is the default. hybrid-* and vlm-* options require GPU.',
+        )}
+        horizontal={true}
+      >
+        {(field) => (
+          <RAGFlowSelect
+            value={field.value || 'pipeline'}
+            onChange={field.onChange}
+            options={backendOptions}
             placeholder={t('common.selectPlaceholder', 'Select value')}
           />
         )}

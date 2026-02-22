@@ -127,6 +127,21 @@ export function ChunkMethodDialog({
         mineru_formula_enable: z.boolean().optional(),
         mineru_table_enable: z.boolean().optional(),
         mineru_lang: z.string().optional(),
+        mineru_backend: z.enum([
+          'pipeline',
+          'hybrid-auto-engine',
+          'hybrid-transformers',
+          'hybrid-vllm-engine',
+          'hybrid-vllm-async-engine',
+          'hybrid-lmdeploy-engine',
+          'vlm-auto-engine',
+          'vlm-transformers',
+          'vlm-vllm-engine',
+          'vlm-vllm-async-engine',
+          'vlm-lmdeploy-engine',
+          'vlm-mlx-engine',
+          'vlm-http-client',
+        ]).optional(),
         // raptor: z
         //   .object({
         //     use_raptor: z.boolean().optional(),
