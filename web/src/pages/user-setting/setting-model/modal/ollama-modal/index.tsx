@@ -73,6 +73,13 @@ const OllamaModal = ({
       'embedding',
       'image2text',
     ]),
+    [LLMFactory.Ollama]: buildModelTypeOptions([
+      'chat',
+      'embedding',
+      'rerank',
+      'image2text',
+      'speech2text',
+    ]),
     [LLMFactory.Xinference]: buildModelTypeOptions([
       'chat',
       'embedding',

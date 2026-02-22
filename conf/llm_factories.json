@@ -911,7 +911,7 @@
         {
             "name": "Ollama",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,SPEECH2TEXT,MODERATION",
             "status": "1",
             "rank": "830",
             "llm": []
