@@ -133,6 +133,115 @@ class MinerUParseOptions:
     table_enable: bool = True
 
 
+
+def _is_continuation(prev_text: str, next_text: str, prev_tag: str, next_tag: str) -> bool:
+    """Detect if next_text is a cross-page continuation of prev_text.
+
+    Heuristics:
+    1. prev_text must NOT end with terminal punctuation (.?!:;)
+    2. Tags must be from adjacent pages
+    3. next_text must not start with a paragraph/section number pattern
+    """
+    if not prev_text or not next_text:
+        return False
+
+    # Check terminal punctuation
+    stripped = prev_text.rstrip()
+    if stripped and stripped[-1] in '.?!:;':
+        return False
+
+    # Extract page numbers from tags like "@@207\t100.0\t500.0\t50.0\t800.0##"
+    try:
+        prev_pn = re.findall(r"@@([0-9-]+)\t", prev_tag)
+        next_pn = re.findall(r"@@([0-9-]+)\t", next_tag)
+        if not prev_pn or not next_pn:
+            return False
+        prev_last = int(prev_pn[0].split('-')[-1])
+        next_first = int(next_pn[0].split('-')[0])
+        if next_first != prev_last + 1:
+            return False
+    except (ValueError, IndexError):
+        return False
+
+    # Don't merge if next section starts with a paragraph number (e.g., "123. The")
+    if re.match(r'^\d+\.\s', next_text.lstrip()):
+        return False
+
+    return True
+
+
+def _merge_tags(tag1: str, tag2: str) -> str:
+    """Merge two position tags into a multi-page tag with combined bounding box.
+
+    E.g., '@@207\\t10.0\\t500.0\\t50.0\\t800.0##' + '@@208\\t10.0\\t500.0\\t20.0\\t400.0##'
+    -> '@@207-208\\t10.0\\t500.0\\t20.0\\t800.0##'
+    """
+    try:
+        m1 = re.search(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##", tag1)
+        m2 = re.search(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##", tag2)
+        if not m1 or not m2:
+            return tag1
+        first_page = m1.group(1).split('-')[0]
+        last_page = m2.group(1).split('-')[-1]
+        # Union of bounding boxes
+        x0 = min(float(m1.group(2)), float(m2.group(2)))
+        x1 = max(float(m1.group(3)), float(m2.group(3)))
+        top = min(float(m1.group(4)), float(m2.group(4)))
+        bott = max(float(m1.group(5)), float(m2.group(5)))
+        return f"@@{first_page}-{last_page}\t{x0:.1f}\t{x1:.1f}\t{top:.1f}\t{bott:.1f}##"
+    except (IndexError, ValueError):
+        return tag1
+
+
+def _merge_cross_page_sections(sections: list, parse_method: str = None) -> list:
+    """Scan adjacent sections and merge cross-page paragraph continuations.
+
+    Handles the three tuple formats used by _transfer_to_sections:
+    - default: (text, tag)
+    - manual:  (text, type, tag)
+    - paper:   (text_with_tag, type)
+    """
+    if not sections or len(sections) < 2:
+        return sections
+
+    def _get_text_and_tag(item):
+        """Extract text and tag from a section tuple."""
+        if parse_method == "manual" and len(item) == 3:
+            return item[0], item[2]
+        elif parse_method == "paper" and len(item) == 2:
+            # Tag is embedded at end of text: "some text@@207\t...##"
+            m = re.search(r"(@@[0-9-]+\t[0-9.\t]+##)", item[0])
+            if m:
+                text = item[0][:m.start()]
+                return text, m.group(1)
+            return item[0], ""
+        else:
+            return item[0], item[1] if len(item) >= 2 else ""
+
+    def _rebuild(item, new_text, new_tag):
+        """Rebuild a section tuple with merged text and tag."""
+        if parse_method == "manual" and len(item) == 3:
+            return (new_text, item[1], new_tag)
+        elif parse_method == "paper" and len(item) == 2:
+            return (new_text + new_tag, item[1])
+        else:
+            return (new_text, new_tag)
+
+    merged = [sections[0]]
+    for i in range(1, len(sections)):
+        prev_text, prev_tag = _get_text_and_tag(merged[-1])
+        next_text, next_tag = _get_text_and_tag(sections[i])
+
+        if _is_continuation(prev_text, next_text, prev_tag, next_tag):
+            combined_text = prev_text.rstrip() + ' ' + next_text.lstrip()
+            combined_tag = _merge_tags(prev_tag, next_tag)
+            merged[-1] = _rebuild(merged[-1], combined_text, combined_tag)
+        else:
+            merged.append(sections[i])
+
+    return merged
+
+
 class MinerUParser(RAGFlowPdfParser):
     def __init__(self, mineru_path: str = "mineru", mineru_api: str = "", mineru_server_url: str = ""):
         self.mineru_api = mineru_api.rstrip("/")
@@ -563,7 +672,7 @@ class MinerUParser(RAGFlowPdfParser):
                 sections.append((section + self._line_tag(output), output["type"]))
             else:
                 sections.append((section, self._line_tag(output)))
-        return sections
+        return _merge_cross_page_sections(sections, parse_method)
 
     def _transfer_to_tables(self, outputs: list[dict[str, Any]]):
         return []
