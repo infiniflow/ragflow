@@ -9,6 +9,7 @@ import {
 import { BlurInput } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
+import { getDirAttribute } from '@/utils/text-direction';
 import { Plus, X } from 'lucide-react';
 import { useCallback } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
@@ -50,6 +51,7 @@ export function DynamicVariableForm() {
       <div className="space-y-5">
         {fields.map((field, index) => {
           const typeField = `${name}.${index}.key`;
+          const keyValue = form.watch(typeField);
           return (
             <div key={field.id} className="flex w-full items-center gap-2">
               <FormField
@@ -61,6 +63,7 @@ export function DynamicVariableForm() {
                       <BlurInput
                         {...field}
                         placeholder={t('common.pleaseInput')}
+                        dir={getDirAttribute(keyValue || '')}
                       ></BlurInput>
                     </FormControl>
                     <FormMessage />
