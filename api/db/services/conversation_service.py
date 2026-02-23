@@ -180,11 +180,14 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
             async for ans in async_chat(dia, msg, True, **kwargs):
                 ans = structure_answer(conv, ans, message_id, session_id)
                 yield "data:" + json.dumps({"code": 0, "data": ans}, ensure_ascii=False) + "\n\n"
-            ConversationService.update_by_id(conv.id, conv.to_dict())
+        except GeneratorExit:
+            logging.info(f"Stream stopped by client for session {session_id}")
         except Exception as e:
             yield "data:" + json.dumps({"code": 500, "message": str(e),
                                         "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
                                        ensure_ascii=False) + "\n\n"
+        finally:
+            ConversationService.update_by_id(conv.id, conv.to_dict())
         yield "data:" + json.dumps({"code": 0, "data": True}, ensure_ascii=False) + "\n\n"
 
     else:
@@ -254,11 +257,14 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
                 ans = structure_answer(conv, ans, message_id, session_id)
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans},
                                            ensure_ascii=False) + "\n\n"
-            API4ConversationService.append_message(conv.id, conv.to_dict())
+        except GeneratorExit:
+            logging.info(f"Stream stopped by client for iframe session {session_id}")
         except Exception as e:
             yield "data:" + json.dumps({"code": 500, "message": str(e),
                                         "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
                                        ensure_ascii=False) + "\n\n"
+        finally:
+            API4ConversationService.append_message(conv.id, conv.to_dict())
         yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
     else:
