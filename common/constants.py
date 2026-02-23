@@ -241,7 +241,7 @@ MINERU_ENV_KEYS = ["MINERU_APISERVER", "MINERU_OUTPUT_DIR", "MINERU_BACKEND", "M
 MINERU_DEFAULT_CONFIG = {
     "MINERU_APISERVER": "",
     "MINERU_OUTPUT_DIR": "",
-    "MINERU_BACKEND": "pipeline",
+    "MINERU_BACKEND": "hybrid-auto-engine",  # Recommended by MinerU (v2.7.0+)
     "MINERU_SERVER_URL": "",
     "MINERU_DELETE_OUTPUT": 1,
 }

@@ -22,11 +22,12 @@ import sys
 import tempfile
 import threading
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
 from typing import Any, Callable, Optional
+import time
 
 import numpy as np
 import pdfplumber
@@ -35,6 +36,12 @@ from PIL import Image
 from strenum import StrEnum
 
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
+
+# Constants
+MAX_PAGE_NUMBER = 99999  # Maximum page number for MinerU API (effectively unlimited)
+API_TIMEOUT_SECONDS = 7200  # API timeout: 2 hours for large PDF processing
+MAX_RETRIES_5XX = 3  # Maximum retries for 5xx server errors
+RETRY_BACKOFF_BASE = 2  # Base for exponential backoff (seconds)
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
@@ -78,15 +85,21 @@ LANGUAGE_TO_MINERU_MAP = {
 
 
 class MinerUBackend(StrEnum):
-    """MinerU processing backend options."""
+    """MinerU processing backend options.
+    
+    Reference: https://github.com/opendatalab/MinerU
+    """
 
     PIPELINE = "pipeline"  # Traditional multimodel pipeline (default)
+    VLM_AUTO_ENGINE = "vlm-auto-engine"  # High accuracy via local computing power (Chinese/English only)
+    VLM_HTTP_CLIENT = "vlm-http-client"  # High accuracy via remote computing power (OpenAI compatible)
+    HYBRID_AUTO_ENGINE = "hybrid-auto-engine"  # Next-generation high accuracy (local, multi-language)
+    HYBRID_HTTP_CLIENT = "hybrid-http-client"  # High accuracy via remote (requires some local compute)
     VLM_TRANSFORMERS = "vlm-transformers"  # Vision-language model using HuggingFace Transformers
     VLM_MLX_ENGINE = "vlm-mlx-engine"  # Faster, requires Apple Silicon and macOS 13.5+
     VLM_VLLM_ENGINE = "vlm-vllm-engine"  # Local vLLM engine, requires local GPU
-    VLM_VLLM_ASYNC_ENGINE = "vlm-vllm-async-engine"  # Asynchronous vLLM engine, new in MinerU API
+    VLM_VLLM_ASYNC_ENGINE = "vlm-vllm-async-engine"  # Asynchronous vLLM engine
     VLM_LMDEPLOY_ENGINE = "vlm-lmdeploy-engine"  # LMDeploy engine
-    VLM_HTTP_CLIENT = "vlm-http-client"  # HTTP client for remote vLLM server (CPU only)
 
 
 class MinerULanguage(StrEnum):
@@ -121,9 +134,13 @@ class MinerUParseMethod(StrEnum):
 
 @dataclass
 class MinerUParseOptions:
-    """Options for MinerU PDF parsing."""
+    """Options for MinerU PDF parsing.
+    
+    Default backend is hybrid-auto-engine (recommended by MinerU).
+    Reference: https://github.com/opendatalab/MinerU
+    """
 
-    backend: MinerUBackend = MinerUBackend.PIPELINE
+    backend: MinerUBackend = MinerUBackend.HYBRID_AUTO_ENGINE  # Recommended: hybrid-auto-engine
     lang: Optional[MinerULanguage] = None  # language for OCR (pipeline backend only)
     method: MinerUParseMethod = MinerUParseMethod.AUTO
     server_url: Optional[str] = None
@@ -131,6 +148,10 @@ class MinerUParseOptions:
     parse_method: str = "raw"
     formula_enable: bool = True
     table_enable: bool = True
+    batch_size: int = 30  # Number of pages per batch for large PDFs
+    start_page: Optional[int] = None  # Starting page (0-based)
+    end_page: Optional[int] = None  # Ending page (0-based, inclusive)
+    strict_mode: bool = True  # If True, all batches must succeed
 
 
 class MinerUParser(RAGFlowPdfParser):
@@ -204,7 +225,20 @@ class MinerUParser(RAGFlowPdfParser):
     def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
         reason = ""
 
-        valid_backends = ["pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
+        # All supported backends including MinerU official and extended options
+        valid_backends = [
+            "pipeline",
+            "vlm-auto-engine",        # MinerU official: VLM auto engine
+            "vlm-http-client",         # MinerU official: VLM HTTP client
+            "hybrid-auto-engine",      # MinerU official: Hybrid auto engine (recommended)
+            "hybrid-http-client",      # MinerU official: Hybrid HTTP client
+            # Extended backends (may require additional setup)
+            "vlm-transformers",
+            "vlm-vllm-engine",
+            "vlm-mlx-engine",
+            "vlm-vllm-async-engine",
+            "vlm-lmdeploy-engine",
+        ]
         if backend not in valid_backends:
             reason = f"[MinerU] Invalid backend '{backend}'. Valid backends are: {valid_backends}"
             self.logger.warning(reason)
