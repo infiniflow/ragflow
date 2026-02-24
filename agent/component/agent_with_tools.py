@@ -383,7 +383,10 @@ class Agent(LLM, ToolBase):
             token_count += tk or 0
             hist.append({"role": "assistant", "content": response})
             try:
-                functions = json_repair.loads(re.sub(r"```.*", "", response))
+                # Remove markdown code fences properly
+                cleaned_response = re.sub(r"^.*```json\s*", "", response, flags=re.DOTALL)
+                cleaned_response = re.sub(r"```\s*$", "", cleaned_response, flags=re.DOTALL)
+                functions = json_repair.loads(cleaned_response)
                 if not isinstance(functions, list):
                     raise TypeError(f"List should be returned, but `{functions}`")
                 for f in functions:
