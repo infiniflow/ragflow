@@ -205,20 +205,32 @@ class MinerUParser(RAGFlowPdfParser):
         self.batch_processing_result: Optional[BatchProcessingResult] = None
 
     def _classify_error(self, exception: Exception) -> BatchErrorType:
-        """Classify the type of error encountered."""
-        if isinstance(exception, requests.exceptions.Timeout):
+        """Classify the type of error encountered.
+        
+        This method attempts to unwrap wrapped exceptions (e.g., RuntimeError
+        raised with an underlying requests exception as __cause__) so that
+        HTTP/timeout/network errors are correctly detected.
+        """
+        # Unwrap the underlying exception if present (e.g., raised from ...)
+        root_exception = exception
+        if getattr(root_exception, "__cause__", None) is not None:
+            root_exception = root_exception.__cause__
+        elif getattr(root_exception, "__context__", None) is not None:
+            root_exception = root_exception.__context__
+
+        if isinstance(root_exception, requests.exceptions.Timeout):
             return BatchErrorType.TIMEOUT
-        elif isinstance(exception, requests.exceptions.HTTPError):
-            if hasattr(exception, 'response') and exception.response is not None:
-                status_code = exception.response.status_code
+        elif isinstance(root_exception, requests.exceptions.HTTPError):
+            if hasattr(root_exception, "response") and root_exception.response is not None:
+                status_code = root_exception.response.status_code
                 if 500 <= status_code < 600:
                     return BatchErrorType.SERVER_ERROR_5XX
                 elif 400 <= status_code < 500:
                     return BatchErrorType.CLIENT_ERROR_4XX
             return BatchErrorType.UNKNOWN
-        elif isinstance(exception, requests.exceptions.ConnectionError):
+        elif isinstance(root_exception, requests.exceptions.ConnectionError):
             return BatchErrorType.NETWORK_ERROR
-        elif isinstance(exception, requests.exceptions.RequestException):
+        elif isinstance(root_exception, requests.exceptions.RequestException):
             return BatchErrorType.NETWORK_ERROR
         else:
             return BatchErrorType.UNKNOWN
@@ -368,17 +380,19 @@ class MinerUParser(RAGFlowPdfParser):
             self.logger.warning(reason)
             return False, reason
 
-        if backend == "vlm-http-client":
+        # HTTP client backends require server_url
+        http_client_backends = ["vlm-http-client", "hybrid-http-client"]
+        if backend in http_client_backends:
             resolved_server = server_url or self.mineru_server_url
             if not resolved_server:
-                reason = "[MinerU] MINERU_SERVER_URL required for vlm-http-client backend."
+                reason = f"[MinerU] MINERU_SERVER_URL required for {backend} backend."
                 self.logger.warning(reason)
                 return False, reason
             try:
                 server_ok = self._is_http_endpoint_valid(resolved_server)
-                self.logger.info(f"[MinerU] vlm-http-client server check reachable={server_ok} url={resolved_server}")
+                self.logger.info(f"[MinerU] {backend} server check reachable={server_ok} url={resolved_server}")
             except Exception as exc:
-                self.logger.warning(f"[MinerU] vlm-http-client server probe failed: {resolved_server}: {exc}")
+                self.logger.warning(f"[MinerU] {backend} server probe failed: {resolved_server}: {exc}")
 
         return True, reason
 
@@ -395,7 +409,7 @@ class MinerUParser(RAGFlowPdfParser):
         pdf_file_path = str(input_path)
         pdf_file_name = Path(pdf_file_path).stem.strip()
         
-        batch_suffix = f"_p{start_page}-{end_page}" if start_page > 0 or end_page < 99999 else ""
+        batch_suffix = f"_p{start_page}-{end_page}" if start_page > 0 or end_page < MAX_PAGE_NUMBER else ""
         output_path = tempfile.mkdtemp(prefix=f"{pdf_file_name}_{options.method}{batch_suffix}_", dir=str(output_dir))
         output_zip_path = os.path.join(str(output_dir), f"{Path(output_path).name}.zip")
 
@@ -438,14 +452,19 @@ class MinerUParser(RAGFlowPdfParser):
                                           timeout=API_TIMEOUT_SECONDS)
 
             response.raise_for_status()
-            if response.headers.get("Content-Type") == "application/zip":
+            content_type = response.headers.get("Content-Type", "")
+            
+            # Use startswith instead of strict equality to handle "application/zip; charset=binary"
+            if content_type.startswith("application/zip"):
                 self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
 
                 if callback:
                     callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
 
+                # Stream response to disk instead of loading entire content into memory
                 with open(output_zip_path, "wb") as f:
-                    f.write(response.content)
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
 
                 self.logger.info(f"[MinerU] Unzip to {output_path}...")
                 self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
@@ -453,8 +472,8 @@ class MinerUParser(RAGFlowPdfParser):
                 if callback:
                     callback(0.40, f"[MinerU] Unzip to {output_path}...")
             else:
-                self.logger.warning(f"[MinerU] not zip returned from api: {response.headers.get('Content-Type')}")
-                raise RuntimeError(f"[MinerU] Unexpected response type: {response.headers.get('Content-Type')}")
+                self.logger.warning(f"[MinerU] not zip returned from api: {content_type}")
+                raise RuntimeError(f"[MinerU] Unexpected response type: {content_type}")
         except requests.exceptions.Timeout as e:
             raise RuntimeError(f"[MinerU] API request timed out after {API_TIMEOUT_SECONDS} seconds: {e}")
         except requests.exceptions.RequestException as e:
@@ -565,13 +584,15 @@ class MinerUParser(RAGFlowPdfParser):
                     
                     self.logger.info(f"[MinerU] Batch {batch_idx + 1} succeeded: {len(batch_content_list)} blocks extracted")
                     
-                    # Clean up batch output if needed
+                    # NOTE: In batch mode, _read_output resolves img_path/table_img_path/equation_img_path
+                    # to absolute paths inside batch_output_path. Deleting this directory would leave
+                    # broken file paths in the merged content_list.json.
+                    # Therefore, we skip cleanup in batch processing mode to preserve asset paths.
                     if options.delete_output:
-                        try:
-                            import shutil
-                            shutil.rmtree(batch_output_path)
-                        except Exception as cleanup_err:
-                            self.logger.warning(f"[MinerU] Failed to clean up batch output {batch_output_path}: {cleanup_err}")
+                        self.logger.info(
+                            f"[MinerU] Skipping deletion of batch output {batch_output_path} "
+                            "to preserve asset paths in merged content_list"
+                        )
                     
                     break  # Success, exit retry loop
                     
