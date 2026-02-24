@@ -137,8 +137,11 @@ def thumbnail_img(filename, blob):
             return None
 
     if re.match(r".*\.(ppt|pptx)$", filename):
-        import aspose.pydrawing as drawing
-        import aspose.slides as slides
+        try:
+            import aspose.pydrawing as drawing
+            import aspose.slides as slides
+        except ImportError:
+            return None
 
         try:
             with slides.Presentation(BytesIO(blob)) as presentation:
