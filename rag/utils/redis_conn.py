@@ -18,6 +18,7 @@ import asyncio
 import logging
 import json
 import uuid
+import functools
 
 import valkey as redis
 from common.decorator import singleton
@@ -32,6 +33,56 @@ except Exception:
         REDIS = settings.get_base_config("redis", {})
     except Exception:
         REDIS = {}
+
+
+def redis_reconnect_decorator(default_return=None):
+    """
+    Decorator to handle Redis exceptions and reconnect logic
+    
+    Args:
+        default_return: Default value to return when an exception occurs
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            try:
+                if not self.REDIS:
+                    self.__open__()
+                    if not self.REDIS:
+                        return default_return
+                return func(self, *args, **kwargs)
+            except Exception as e:
+                method_name = func.__name__
+                logging.warning(f"RedisDB.{method_name} got exception: {e}")
+                self.__open__()
+                return default_return
+        return wrapper
+    return decorator
+
+
+def redis_retry_decorator(max_retries=3, default_return=None):
+    """
+    Decorator to add retry logic for Redis operations
+    
+    Args:
+        max_retries: Maximum number of retry attempts
+        default_return: Default value to return when all retries fail
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            for _ in range(max_retries):
+                try:
+                    if not self.REDIS:
+                        self.__open__()
+                    return func(self, *args, **kwargs)
+                except Exception as e:
+                    method_name = func.__name__
+                    logging.warning(f"RedisDB.{method_name} got exception: {e}")
+                    self.__open__()
+            return default_return
+        return wrapper
+    return decorator
 
 
 class RedisMsg:
@@ -170,269 +221,174 @@ class RedisDB:
     def is_alive(self):
         return self.REDIS is not None
 
+    @redis_reconnect_decorator(default_return=None)
     def exist(self, k):
-        if not self.REDIS:
-            return None
-        try:
-            return self.REDIS.exists(k)
-        except Exception as e:
-            logging.warning("RedisDB.exist " + str(k) + " got exception: " + str(e))
-            self.__open__()
+        return self.REDIS.exists(k)
 
+    @redis_reconnect_decorator(default_return=None)
     def get(self, k):
-        if not self.REDIS:
-            return None
-        try:
-            return self.REDIS.get(k)
-        except Exception as e:
-            logging.warning("RedisDB.get " + str(k) + " got exception: " + str(e))
-            self.__open__()
+        return self.REDIS.get(k)
 
+    @redis_reconnect_decorator(default_return=False)
     def set_obj(self, k, obj, exp=3600):
-        try:
-            self.REDIS.set(k, json.dumps(obj, ensure_ascii=False), exp)
-            return True
-        except Exception as e:
-            logging.warning("RedisDB.set_obj " + str(k) + " got exception: " + str(e))
-            self.__open__()
-        return False
+        self.REDIS.set(k, json.dumps(obj, ensure_ascii=False), exp)
+        return True
 
+    @redis_reconnect_decorator(default_return=False)
     def set(self, k, v, exp=3600):
-        try:
-            self.REDIS.set(k, v, exp)
-            return True
-        except Exception as e:
-            logging.warning("RedisDB.set " + str(k) + " got exception: " + str(e))
-            self.__open__()
-        return False
+        self.REDIS.set(k, v, exp)
+        return True
 
+    @redis_reconnect_decorator(default_return=False)
     def sadd(self, key: str, member: str):
-        try:
-            self.REDIS.sadd(key, member)
-            return True
-        except Exception as e:
-            logging.warning("RedisDB.sadd " + str(key) + " got exception: " + str(e))
-            self.__open__()
-        return False
+        self.REDIS.sadd(key, member)
+        return True
 
+    @redis_reconnect_decorator(default_return=False)
     def srem(self, key: str, member: str):
-        try:
-            self.REDIS.srem(key, member)
-            return True
-        except Exception as e:
-            logging.warning("RedisDB.srem " + str(key) + " got exception: " + str(e))
-            self.__open__()
-        return False
+        self.REDIS.srem(key, member)
+        return True
 
+    @redis_reconnect_decorator(default_return=None)
     def smembers(self, key: str):
-        try:
-            res = self.REDIS.smembers(key)
-            return res
-        except Exception as e:
-            logging.warning(
-                "RedisDB.smembers " + str(key) + " got exception: " + str(e)
-            )
-            self.__open__()
-        return None
+        return self.REDIS.smembers(key)
 
+    @redis_reconnect_decorator(default_return=False)
     def zadd(self, key: str, member: str, score: float):
-        try:
-            self.REDIS.zadd(key, {member: score})
-            return True
-        except Exception as e:
-            logging.warning("RedisDB.zadd " + str(key) + " got exception: " + str(e))
-            self.__open__()
-        return False
+        self.REDIS.zadd(key, {member: score})
+        return True
 
+    @redis_reconnect_decorator(default_return=0)
     def zcount(self, key: str, min: float, max: float):
-        try:
-            res = self.REDIS.zcount(key, min, max)
-            return res
-        except Exception as e:
-            logging.warning("RedisDB.zcount " + str(key) + " got exception: " + str(e))
-            self.__open__()
-        return 0
+        return self.REDIS.zcount(key, min, max)
 
+    @redis_reconnect_decorator(default_return=None)
     def zpopmin(self, key: str, count: int):
-        try:
-            res = self.REDIS.zpopmin(key, count)
-            return res
-        except Exception as e:
-            logging.warning("RedisDB.zpopmin " + str(key) + " got exception: " + str(e))
-            self.__open__()
-        return None
+        return self.REDIS.zpopmin(key, count)
 
+    @redis_reconnect_decorator(default_return=None)
     def zrangebyscore(self, key: str, min: float, max: float):
-        try:
-            res = self.REDIS.zrangebyscore(key, min, max)
-            return res
-        except Exception as e:
-            logging.warning(
-                "RedisDB.zrangebyscore " + str(key) + " got exception: " + str(e)
-            )
-            self.__open__()
-        return None
+        return self.REDIS.zrangebyscore(key, min, max)
 
+    @redis_reconnect_decorator(default_return=0)
     def zremrangebyscore(self, key: str, min: float, max: float):
-        try:
-            res = self.REDIS.zremrangebyscore(key, min, max)
-            return res
-        except Exception as e:
-            logging.warning(
-                f"RedisDB.zremrangebyscore {key} got exception: {e}"
-            )
-            self.__open__()
-        return 0
+        return self.REDIS.zremrangebyscore(key, min, max)
 
+    @redis_reconnect_decorator(default_return=0)
     def incrby(self, key: str, increment: int):
         return self.REDIS.incrby(key, increment)
 
+    @redis_reconnect_decorator(default_return=0)
     def decrby(self, key: str, decrement: int):
         return self.REDIS.decrby(key, decrement)
 
+    @redis_reconnect_decorator(default_return=-1)
     def generate_auto_increment_id(self, key_prefix: str = "id_generator", namespace: str = "default",
                                    increment: int = 1, ensure_minimum: int | None = None) -> int:
         redis_key = f"{key_prefix}:{namespace}"
 
-        try:
-            # Use pipeline for atomicity
-            pipe = self.REDIS.pipeline()
+        # Use pipeline for atomicity
+        pipe = self.REDIS.pipeline()
 
-            # Check if key exists
-            pipe.exists(redis_key)
+        # Check if key exists
+        pipe.exists(redis_key)
 
-            # Get/Increment
-            if ensure_minimum is not None:
-                # Ensure minimum value
-                pipe.get(redis_key)
-                results = pipe.execute()
+        # Get/Increment
+        if ensure_minimum is not None:
+            # Ensure minimum value
+            pipe.get(redis_key)
+            results = pipe.execute()
 
-                if results[0] == 0:  # Key doesn't exist
-                    start_id = max(1, ensure_minimum)
-                    pipe.set(redis_key, start_id)
+            if results[0] == 0:  # Key doesn't exist
+                start_id = max(1, ensure_minimum)
+                pipe.set(redis_key, start_id)
+                pipe.execute()
+                return start_id
+            else:
+                current = int(results[1])
+                if current < ensure_minimum:
+                    pipe.set(redis_key, ensure_minimum)
                     pipe.execute()
-                    return start_id
-                else:
-                    current = int(results[1])
-                    if current < ensure_minimum:
-                        pipe.set(redis_key, ensure_minimum)
-                        pipe.execute()
-                        return ensure_minimum
+                    return ensure_minimum
 
-            # Increment operation
-            next_id = self.REDIS.incrby(redis_key, increment)
+        # Increment operation
+        next_id = self.REDIS.incrby(redis_key, increment)
 
-            # If it's the first time, set a reasonable initial value
-            if next_id == increment:
-                self.REDIS.set(redis_key, 1 + increment)
-                return 1 + increment
+        # If it's the first time, set a reasonable initial value
+        if next_id == increment:
+            self.REDIS.set(redis_key, 1 + increment)
+            return 1 + increment
 
-            return next_id
+        return next_id
 
-        except Exception as e:
-            logging.warning("RedisDB.generate_auto_increment_id got exception: " + str(e))
-            self.__open__()
-        return -1
-
+    @redis_reconnect_decorator(default_return=False)
     def transaction(self, key, value, exp=3600):
-        try:
-            pipeline = self.REDIS.pipeline(transaction=True)
-            pipeline.set(key, value, exp, nx=True)
-            pipeline.execute()
-            return True
-        except Exception as e:
-            logging.warning(
-                "RedisDB.transaction " + str(key) + " got exception: " + str(e)
-            )
-            self.__open__()
-        return False
+        pipeline = self.REDIS.pipeline(transaction=True)
+        pipeline.set(key, value, exp, nx=True)
+        pipeline.execute()
+        return True
 
+    @redis_retry_decorator(default_return=False)
     def queue_product(self, queue, message) -> bool:
-        for _ in range(3):
-            try:
-                payload = {"message": json.dumps(message)}
-                self.REDIS.xadd(queue, payload)
-                return True
-            except Exception as e:
-                logging.exception(
-                    "RedisDB.queue_product " + str(queue) + " got exception: " + str(e)
-                )
-                self.__open__()
-        return False
+        payload = {"message": json.dumps(message)}
+        self.REDIS.xadd(queue, payload)
+        return True
 
+    @redis_retry_decorator(default_return=None)
     def queue_consumer(self, queue_name, group_name, consumer_name, msg_id=b">") -> RedisMsg:
         """https://redis.io/docs/latest/commands/xreadgroup/"""
-        for _ in range(3):
+        try:
+            group_info = self.REDIS.xinfo_groups(queue_name)
+            if not any(gi["name"] == group_name for gi in group_info):
+                self.REDIS.xgroup_create(queue_name, group_name, id="0", mkstream=True)
+        except redis.exceptions.ResponseError as e:
+            if "no such key" in str(e).lower():
+                self.REDIS.xgroup_create(queue_name, group_name, id="0", mkstream=True)
+            elif "busygroup" in str(e).lower():
+                logging.warning("Group already exists, continue.")
+                pass
+            else:
+                raise
+
+        args = {
+            "groupname": group_name,
+            "consumername": consumer_name,
+            "count": 1,
+            "block": 5,
+            "streams": {queue_name: msg_id},
+        }
+        messages = self.REDIS.xreadgroup(**args)
+        if not messages:
+            return None
+        stream, element_list = messages[0]
+        if not element_list:
+            return None
+        msg_id, payload = element_list[0]
+        res = RedisMsg(self.REDIS, queue_name, group_name, msg_id, payload)
+        return res
+
+    @redis_reconnect_decorator(default_return=None)
+    def get_unacked_iterator(self, queue_names: list[str], group_name, consumer_name):
+        for queue_name in queue_names:
             try:
-
-                try:
-                    group_info = self.REDIS.xinfo_groups(queue_name)
-                    if not any(gi["name"] == group_name for gi in group_info):
-                        self.REDIS.xgroup_create(queue_name, group_name, id="0", mkstream=True)
-                except redis.exceptions.ResponseError as e:
-                    if "no such key" in str(e).lower():
-                        self.REDIS.xgroup_create(queue_name, group_name, id="0", mkstream=True)
-                    elif "busygroup" in str(e).lower():
-                        logging.warning("Group already exists, continue.")
-                        pass
-                    else:
-                        raise
-
-                args = {
-                    "groupname": group_name,
-                    "consumername": consumer_name,
-                    "count": 1,
-                    "block": 5,
-                    "streams": {queue_name: msg_id},
-                }
-                messages = self.REDIS.xreadgroup(**args)
-                if not messages:
-                    return None
-                stream, element_list = messages[0]
-                if not element_list:
-                    return None
-                msg_id, payload = element_list[0]
-                res = RedisMsg(self.REDIS, queue_name, group_name, msg_id, payload)
-                return res
+                group_info = self.REDIS.xinfo_groups(queue_name)
             except Exception as e:
                 if str(e) == 'no such key':
-                    pass
-                else:
-                    logging.exception(
-                        "RedisDB.queue_consumer "
-                        + str(queue_name)
-                        + " got exception: "
-                        + str(e)
-                    )
-                    self.__open__()
-        return None
-
-    def get_unacked_iterator(self, queue_names: list[str], group_name, consumer_name):
-        try:
-            for queue_name in queue_names:
-                try:
-                    group_info = self.REDIS.xinfo_groups(queue_name)
-                except Exception as e:
-                    if str(e) == 'no such key':
-                        logging.warning(f"RedisDB.get_unacked_iterator queue {queue_name} doesn't exist")
-                        continue
-                if not any(gi["name"] == group_name for gi in group_info):
-                    logging.warning(f"RedisDB.get_unacked_iterator queue {queue_name} group {group_name} doesn't exist")
+                    logging.warning(f"RedisDB.get_unacked_iterator queue {queue_name} doesn't exist")
                     continue
-                current_min = 0
-                while True:
-                    payload = self.queue_consumer(queue_name, group_name, consumer_name, current_min)
-                    if not payload:
-                        break
-                    current_min = payload.get_msg_id()
-                    logging.info(f"RedisDB.get_unacked_iterator {queue_name} {consumer_name} {current_min}")
-                    yield payload
-        except Exception:
-            logging.exception(
-                "RedisDB.get_unacked_iterator got exception: "
-            )
-            self.__open__()
+            if not any(gi["name"] == group_name for gi in group_info):
+                logging.warning(f"RedisDB.get_unacked_iterator queue {queue_name} group {group_name} doesn't exist")
+                continue
+            current_min = 0
+            while True:
+                payload = self.queue_consumer(queue_name, group_name, consumer_name, current_min)
+                if not payload:
+                    break
+                current_min = payload.get_msg_id()
+                logging.info(f"RedisDB.get_unacked_iterator {queue_name} {consumer_name} {current_min}")
+                yield payload
 
+    @redis_reconnect_decorator(default_return=[])
     def get_pending_msg(self, queue, group_name):
         try:
             messages = self.REDIS.xpending_range(queue, group_name, '-', '+', 10)
@@ -440,37 +396,26 @@ class RedisDB:
         except Exception as e:
             if 'No such key' not in (str(e) or ''):
                 logging.warning(
-                    "RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e)
+                    f"RedisDB.get_pending_msg {queue} got exception: {e}"
                 )
-        return []
+            return []
 
+    @redis_retry_decorator(default_return=None)
     def requeue_msg(self, queue: str, group_name: str, msg_id: str):
-        for _ in range(3):
-            try:
-                messages = self.REDIS.xrange(queue, msg_id, msg_id)
-                if messages:
-                    self.REDIS.xadd(queue, messages[0][1])
-                    self.REDIS.xack(queue, group_name, msg_id)
-            except Exception as e:
-                logging.warning(
-                    "RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e)
-                )
-                self.__open__()
+        messages = self.REDIS.xrange(queue, msg_id, msg_id)
+        if messages:
+            self.REDIS.xadd(queue, messages[0][1])
+            self.REDIS.xack(queue, group_name, msg_id)
 
+    @redis_retry_decorator(default_return=None)
     def queue_info(self, queue, group_name) -> dict | None:
-        for _ in range(3):
-            try:
-                groups = self.REDIS.xinfo_groups(queue)
-                for group in groups:
-                    if group["name"] == group_name:
-                        return group
-            except Exception as e:
-                logging.warning(
-                    "RedisDB.queue_info " + str(queue) + " got exception: " + str(e)
-                )
-                self.__open__()
+        groups = self.REDIS.xinfo_groups(queue)
+        for group in groups:
+            if group["name"] == group_name:
+                return group
         return None
 
+    @redis_reconnect_decorator(default_return=False)
     def delete_if_equal(self, key: str, expected_value: str) -> bool:
         """
         Do following atomically:
@@ -478,14 +423,10 @@ class RedisDB:
         """
         return bool(self.lua_delete_if_equal(keys=[key], args=[expected_value], client=self.REDIS))
 
+    @redis_reconnect_decorator(default_return=False)
     def delete(self, key) -> bool:
-        try:
-            self.REDIS.delete(key)
-            return True
-        except Exception as e:
-            logging.warning("RedisDB.delete " + str(key) + " got exception: " + str(e))
-            self.__open__()
-        return False
+        self.REDIS.delete(key)
+        return True
 
 
 REDIS_CONN = RedisDB()
