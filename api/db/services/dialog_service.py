@@ -378,6 +378,7 @@ BAD_CITATION_PATTERNS = [
     re.compile(r"【\s*ID\s*[: ]*\s*(\d+)\s*】"),  # 【ID: 12】
     re.compile(r"ref\s*(\d+)", flags=re.IGNORECASE),  # ref12、REF 12
 ]
+CITATION_MARKER_PATTERN = re.compile(r"\[(?:ID:)?([0-9\u0660-\u0669\u06F0-\u06F9]+)\]")
 
 
 def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
@@ -647,7 +648,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
             idx = set([])
             normalized_answer = normalize_arabic_digits(answer) or ""
-            if embd_mdl and not re.search(r"\[ID:([0-9]+)\]", normalized_answer):
+            if embd_mdl and not CITATION_MARKER_PATTERN.search(normalized_answer):
                 answer, idx = retriever.insert_citations(
                     answer,
                     [ck["content_ltks"] for ck in kbinfos["chunks"]],
@@ -657,7 +658,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     vtweight=dialog.vector_similarity_weight,
                 )
             else:
-                for match in re.finditer(r"\[ID:([0-9]+)\]", normalized_answer):
+                for match in CITATION_MARKER_PATTERN.finditer(normalized_answer):
                     i = int(match.group(1))
                     if i < len(kbinfos["chunks"]):
                         idx.add(i)
