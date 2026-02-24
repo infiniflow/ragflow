@@ -107,7 +107,7 @@ export default function Dataset() {
       secondTitle: (
         <>
           {t('knowledgeDetails.metadata.selectFiles', {
-            count: documents.length,
+            count: selectedCount,
           })}
         </>
       ),
