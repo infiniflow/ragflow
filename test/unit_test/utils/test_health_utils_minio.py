@@ -17,7 +17,6 @@
 Unit tests for MinIO health check (check_minio_alive) and scheme/verify helpers.
 Covers SSL/HTTPS and certificate verification (issues #13158, #13159).
 """
-import pytest
 from unittest.mock import patch, Mock
 
 

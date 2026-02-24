@@ -20,8 +20,6 @@ Covers issue #13158.
 import ssl
 from unittest.mock import patch
 
-import pytest
-
 
 class TestBuildMinioHttpClient:
     """Test _build_minio_http_client helper."""
