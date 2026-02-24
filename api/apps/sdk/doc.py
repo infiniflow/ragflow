@@ -423,7 +423,7 @@ async def download(tenant_id, dataset_id, document_id):
 async def download_doc(document_id):
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!"')
+        return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
