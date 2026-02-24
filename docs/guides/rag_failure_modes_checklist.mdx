@@ -1,94 +1,138 @@
+| id                      | title                        | sidebar_label               |
+| ----------------------- | ---------------------------- | --------------------------- |
+| rag-failure-modes-checklist | RAG failure modes checklist | RAG failure modes checklist |
+
+# RAG failure modes checklist
+
+Retrieval-Augmented Generation (RAG) systems rarely “fail” because of a single metric like accuracy or latency.  
+In practice, debugging a production RAG application means looking at **patterns of incidents** across the whole
+pipeline, not just one bad answer.
+
+This page gives a small, opinionated checklist of common RAG failure patterns and how they typically show up when
+you inspect runs and evaluations in RAGFlow.
+
+It is inspired by an **MIT-licensed open-source 16-problem RAG failure map** used in several evaluation projects,
+and adapted here to match RAGFlow’s terminology and tooling.
+
 ---
-id: rag-failure-modes-checklist
-title: RAG failure modes checklist
-sidebar_label: RAG failure modes checklist
----
-
-Retrieval-Augmented Generation (RAG) systems often "fail" in ways that are
-hard to see from a single metric like accuracy or latency. In practice,
-debugging a production RAG application means looking at *patterns* of
-incidents across the whole pipeline, not just one bad answer.
-
-This page provides a small, opinionated checklist of common RAG failure
-patterns and how they typically show up when you inspect runs and
-evaluations in RAGFlow.
-
-It is inspired by an MIT-licensed open-source 16-problem RAG failure map
-that catalogues pipeline-level incident types used in several RAG
-evaluation projects, and adapted here to match RAGFlow’s terminology and
-tooling.
 
 ## Why a failure-modes view?
 
-RAGFlow already gives you traces, evals, and dataset views. The checklist
-below is about *how to read what you see*:
+RAGFlow already gives you traces, evals, and dataset views.  
+The checklist below is about **how to read what you see**:
 
 - When an evaluation score is low, what kind of failure is it?
 - When a trace looks noisy, is it a retrieval issue, a prompt issue, or data quality?
-- When metrics are "good on average" but users still complain, what should you look at next?
+- When metrics are “good on average” but users still complain, what should you look at next?
 
-Thinking in explicit failure modes makes it easier to design better eval
-datasets, to triage incidents, and to communicate problems to the rest of
-your team.
+Thinking in explicit failure modes makes it easier to design better eval datasets, to triage incidents, and to
+communicate problems to the rest of your team.
 
-## Common failure patterns and how they appear in RAGFlow
-
-The table below gives a small subset of practical patterns, phrased in
-RAGFlow terms. It is not exhaustive, but it covers many of the problems
-that show up first in real-world deployments.
-
-| Pattern | What you typically see in RAGFlow | What to check next |
-| --- | --- | --- |
-| **Retriever coverage gap** | Relevant ground-truth passages are missing from retrieved context. Retrieval evals show low recall or relevance, while answer quality also suffers. | Inspect top-k retrieved chunks for a few low-scoring examples. Check chunking strategy, filters, and index freshness (outdated or partial ingestion). |
-| **Context is noisy or off-topic** | Retrieval scores are mixed: some chunks are relevant, others are clearly unrelated. Answers sometimes drift toward the wrong chunk. | Look at similarity distributions, filters, and ranking. Reduce k, tighten filters, or adjust retriever configuration to avoid pulling in "near but wrong" documents. |
-| **Answer hallucination on top of good retrieval** | Retrieval evals look solid, but answer evals show contradictions, extra invented facts, or over-confident guesses. | Compare answer text against retrieved context in a few runs. Tighten system prompts, add explicit "answer only from context" instructions, or add guardrail checks for unsupported claims. |
-| **Prompt / tool routing mismatch** | Traces show the wrong tools being called or the wrong prompt template chosen for a query type, even though retrieval itself looks reasonable. | Inspect traces with routing decisions and tool calls. Check routing logic, fallbacks, and any hard-coded assumptions that no longer match your use cases. |
-| **Eval dataset or label skew** | Offline evals say the system is "good", but interactive sessions or new traffic segments hit very different failure modes. | Segment eval datasets by user type, query source, or domain. Make sure eval coverage reflects your real production distribution, not just a narrow test set. |
-
-You can extend this table with your own patterns that are specific to your
-domain. The important thing is that each row describes **a recognizable
-incident type** that your team can quickly label and discuss.
+---
 
 ## How to use this checklist with RAGFlow
 
-A simple way to apply this checklist is:
+A simple way to use this page in day-to-day work:
 
-1. **Pick a small batch of problematic runs**  
-   For example, choose 20–50 low-scoring eval examples or traces from a
-   specific time window.
+1. **Start from a symptom**  
+   - Low eval scores on a dataset.  
+   - A single bad run reported by a user.  
+   - A noisy trace or strange tool behavior.
 
-2. **Label each run with one primary failure pattern**  
-   Use the table above to tag each run with the main pattern you see.
-   If none of the rows fit, add a new pattern that better describes it.
+2. **Find the closest pattern**  
+   - Scan the table below for the pattern whose “Typical symptom in RAGFlow” matches what you see.  
+   - It does not need to be perfect; pick the closest one first.
 
-3. **Count how often each pattern occurs**  
-   This gives you a qualitative "incident distribution" on top of your
-   quantitative metrics.
+3. **Use the “Where to look in RAGFlow” column**  
+   - Go to the suggested views (traces, evals, datasets, knowledge base, or system logs).  
+   - Confirm or reject the hypothesis.
 
-4. **Prioritize fixes by pattern, not by single examples**  
-   For example, if most incidents are "retriever coverage gap", focus on
-   ingestion, chunking, and retriever configuration before tuning prompts.
+4. **Record the failure mode**  
+   - Tag the run, add a comment, or track it in your own incident system using the pattern ID (P01–P12).  
+   - Over time you will see which patterns dominate your incidents.
 
-5. **Turn patterns into checks and dashboards**  
-   Once a pattern is recurring, consider adding targeted evals, filters,
-   or dashboards in RAGFlow that make this failure easier to spot early.
+You can also adapt these IDs into your own internal taxonomy if you already have an incident process.
 
-Over time, many teams end up with a small internal catalog of named RAG
-failure modes. The 16-problem RAG failure map mentioned above is one such
-catalog; this page is a simplified adaptation that you can evolve to fit
-your own RAGFlow setup.
+---
 
-## Next steps
+## Core failure patterns (P01–P12)
 
-If you already have eval datasets and traces in RAGFlow, you can start
-applying this checklist immediately:
+The table below lists 12 reusable patterns.  
+Each describes **what goes wrong**, **how it tends to look in RAGFlow**, and **where to investigate**.
 
-- Take your next batch of failed or low-scoring runs.
-- Walk through them with the table above in mind.
-- Decide which patterns are most common for your application.
-- Capture one or two patterns as internal runbooks so the whole team can
-  recognize them.
+| ID  | Pattern name                                       | Typical symptom in RAGFlow                                                                                  | Where to look in RAGFlow                           |
+| --- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| P01 | Retrieval hallucination / grounding drift          | Answers look fluent and confident, but contradict the retrieved documents or cite facts that are not there. | Trace view (answer vs. retrieved documents), evals with “groundedness” or “factuality” scores |
+| P02 | Chunk boundary or segmentation bug                 | Key sentences are cut in the middle, or relevant context is split across chunks so no single chunk is useful. | Knowledge base / document preview, chunk metadata, retrieval examples |
+| P03 | Embedding mismatch (semantic vs vector distance)   | Top-k results look “close” by vector distance, but human reviewers judge them as off-topic or shallow matches. | Vector search results, embedding configuration, eval datasets that directly check retrieval relevance |
+| P04 | Index skew or staleness                            | Users see old or missing data even though the source of truth has been updated; evals pass on old snapshots. | Ingestion jobs, index timestamps, dataset versions, deployment timeline |
+| P05 | Query rewriting or router misalignment             | Similar user questions get routed to different tools or datasets; some flows never hit the right collection. | Router / tool selection traces, query rewrite logs, routing rules |
+| P06 | Long-chain reasoning drift                         | Multi-step tasks start correctly but violate earlier constraints in later steps (dates, prices, policies, etc.). | Multi-hop traces, intermediate tool outputs, step-by-step evals |
+| P07 | Tool-call misuse or ungrounded tools               | LLM calls tools with wrong arguments, or calls tools when the answer is already in context; wasted latency and quota. | Tool call spans, arguments vs. retrieved context, cost / latency breakdown |
+| P08 | Session memory leak / missing context              | Follow-up questions ignore important details from earlier turns, or accidentally reuse stale context from another session. | Conversation history, session identifiers, memory storage / retrieval configuration |
+| P09 | Evaluation blind spots                             | Evals look “green” but users still report obvious failures; dataset examples are too easy or not representative. | Eval dataset definitions, label guidelines, score distributions vs. real incidents |
+| P10 | Startup ordering / dependency not ready            | Newly deployed versions show spikes of 5xx, empty retrievals, or missing models during the first minutes after release. | Deployment logs, health checks, first-run traces after deploy |
+| P11 | Config or secrets drift across environments        | The same flow works locally but fails in staging or prod; model names, endpoints, or API keys differ silently. | Environment configs, secret management, environment-specific traces |
+| P12 | Multi-tenant / multi-agent interference            | Requests from different tenants or agents interfere with each other’s state, tools, or rate limits.         | Tenant IDs and agent IDs in traces, shared resources (indexes, caches, queues) |
 
-As your system grows, your failure-modes catalog can grow with it, and
-RAGFlow becomes not only an observability layer but also a shared language
-for how your RAG system fails and improves.
+You do not need to use all 12.  
+It is completely fine to start with 3–5 that match your most common issues, then refine or extend the list.
+
+---
+
+## From symptom to pattern: a few examples
+
+Here are three concrete “reading patterns” you can apply inside RAGFlow.
+
+### Example A – Good retrieval, bad answer
+
+- Retrieval evals show high relevance.  
+- Traces confirm that the correct document is in the top-k results.  
+- The model still answers incorrectly or adds extra facts.
+
+This is usually **P01 – Retrieval hallucination / grounding drift**:
+
+- The retriever does its job, but the answer prompt does not strictly tie the response to the retrieved context.  
+- Fixes tend to involve tighter answer prompts, better instructions around quoting sources, or adding explicit groundedness evals.
+
+### Example B – Noisy trace, weak retrieval
+
+- User reports “it answers something, but not what I asked”.  
+- Trace shows multiple tool calls and retries.  
+- Retrieved chunks are partially related but miss the critical detail.
+
+This often indicates a mix of **P02 – Chunk boundary or segmentation bug** and **P03 – Embedding mismatch**:
+
+- Check how documents were split and whether important sentences are being cut.  
+- Check embedding model, normalization, and distance metric.  
+- Add a small retrieval-only eval dataset to isolate the problem from answer generation.
+
+### Example C – Everything is green except production
+
+- Automated evals are mostly high.  
+- Synthetic test questions pass.  
+- Real user traffic still contains surprising failures that evals never catch.
+
+This is classic **P09 – Evaluation blind spots**:
+
+- Your eval set covers only a narrow slice of real queries.  
+- Real incidents fall into different patterns (P01–P08, P10–P12) that were never sampled.  
+- The fix is to feed real incidents back into new eval datasets and label them with the appropriate failure mode.
+
+---
+
+## Extending the checklist for your team
+
+This page is intentionally small. It is meant as a **starting vocabulary**, not a finished ontology.
+
+When you see repeated patterns in your own RAGFlow traces:
+
+- Copy the table and add **team-specific variants** (for example, splitting P03 into separate patterns for different indexes).  
+- Attach pattern IDs (P01–P12 or your own) to incidents, tickets, or run tags.  
+- Use the distribution of failure modes to prioritize engineering work:
+  - If most incidents are P02/P03, invest in ingestion and indexing.  
+  - If most incidents are P01/P06/P07, focus on prompts, tools, and chain design.  
+  - If many incidents are P09/P10/P11, improve deployment, configs, and eval datasets.
+
+Over time, this checklist should evolve into **your own RAG incident map**, built on top of RAGFlow’s traces and
+evaluations, and tailored to your stack and users.
