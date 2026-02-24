@@ -111,7 +111,7 @@ def get(canvas_id):
 def getsse(canvas_id):
     token = request.headers.get('Authorization').split()
     if len(token) != 2:
-        return get_data_error_result(message='Authorization is not valid!"')
+        return get_data_error_result(message='Authorization is not valid!')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
