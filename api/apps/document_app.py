@@ -113,7 +113,7 @@ async def web_crawl():
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
         raise LookupError("Can't find this dataset!")
-    if check_kb_team_permission(kb, current_user.id):
+    if not check_kb_team_permission(kb, current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     blob = html2pdf(url)
