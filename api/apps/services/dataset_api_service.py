@@ -24,7 +24,7 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
-from api.db.services.user_service import TenantService
+from api.db.services.user_service import TenantService, UserService
 from common.constants import FileSource, StatusEnum
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
 
@@ -207,6 +207,20 @@ def list_datasets(tenant_id: str, args: dict):
     """
     kb_id = args.get("id")
     name = args.get("name")
+    keywords = args.get("keywords", "")
+    page = int(args.get("page", 1))
+    page_size = int(args.get("page_size", 30))
+    parser_id = args.get("parser_id")
+    orderby = args.get("orderby", "create_time")
+    desc_arg = args.get("desc", "true")
+    if isinstance(desc_arg, str):
+        desc = desc_arg.lower() != "false"
+    elif isinstance(desc_arg, bool):
+        desc = desc_arg
+    else:
+        # unknown type, default to True
+        desc = True
+
     if kb_id:
         kbs = KnowledgebaseService.get_kb_by_id(kb_id, tenant_id)
         if not kbs:
@@ -215,21 +229,32 @@ def list_datasets(tenant_id: str, args: dict):
         kbs = KnowledgebaseService.get_kb_by_name(name, tenant_id)
         if not kbs:
             return False, f"User '{tenant_id}' lacks permission for dataset '{name}'"
-
-    tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+    if args.get("owner_ids", []):
+        tenant_ids = args["owner_ids"]
+    else:
+        tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+        tenant_ids = [m["tenant_id"] for m in tenants]
     kbs, total = KnowledgebaseService.get_list(
-        [m["tenant_id"] for m in tenants],
+        tenant_ids,
         tenant_id,
-        args["page"],
-        args["page_size"],
-        args["orderby"],
-        args["desc"],
+        page,
+        page_size,
+        orderby,
+        desc,
         kb_id,
         name,
+        keywords,
+        parser_id
     )
-
+    users = UserService.get_by_ids([m["tenant_id"] for m in kbs])
+    user_map = {m.id: m.to_dict() for m in users}
     response_data_list = []
     for kb in kbs:
+        user_dict = user_map.get(kb["tenant_id"], {})
+        kb.update({
+            "nickname": user_dict.get("nickname", ""),
+            "tenant_avatar": user_dict.get("avatar", "")
+        })
         response_data_list.append(remap_dictionary_keys(kb))
     return True, {"data": response_data_list, "total": total}
 

@@ -230,6 +230,17 @@ def active_required(func):
     return wrapper
 
 
+def add_tenant_id_to_kwargs(func):
+    @wraps(func)
+    async def wrapper(**kwargs):
+        from api.apps import current_user
+        kwargs["tenant_id"] = current_user.id
+        if inspect.iscoroutinefunction(func):
+            return await func(**kwargs)
+        return func(**kwargs)
+    return wrapper
+
+
 def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=None):
     response = {"code": code, "message": message, "data": data}
     return _safe_jsonify(response)

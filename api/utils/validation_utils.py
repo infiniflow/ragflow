@@ -724,4 +724,8 @@ class BaseListReq(BaseModel):
         return validate_uuid1_hex(v)
 
 
-class ListDatasetReq(BaseListReq): ...
+class ListDatasetReq(BaseListReq):
+
+    keywords: Annotated[str | None, Field(default="")]
+    parser_id: Annotated[str | None, Field(default=None)]
+    owner_ids: Annotated[list[str] | None, Field(default=None)]

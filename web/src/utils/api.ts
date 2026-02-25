@@ -57,23 +57,30 @@ export default {
   // knowledge base
 
   check_embedding: `${api_host}/kb/check_embedding`,
-  kb_list: `${api_host}/kb/list`,
-  create_kb: `${api_host}/kb/create`,
-  update_kb: `${api_host}/kb/update`,
-  rm_kb: `${api_host}/kb/rm`,
+  kb_list: `${ExternalApi}${api_host}/datasets`,
+  create_kb: `${ExternalApi}${api_host}/datasets`,
+  update_kb: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}`,
+  rm_kb: `${ExternalApi}${api_host}/datasets`,
   get_kb_detail: `${api_host}/kb/detail`,
   getKnowledgeGraph: (knowledgeId: string) =>
-    `${api_host}/kb/${knowledgeId}/knowledge_graph`,
+    `${ExternalApi}${api_host}/datasets/${knowledgeId}/knowledge_graph`,
+  deleteKnowledgeGraph: (knowledgeId: string) =>
+    `${ExternalApi}${api_host}/datasets/${knowledgeId}/knowledge_graph`,
   getMeta: `${api_host}/kb/get_meta`,
   getKnowledgeBasicInfo: `${api_host}/kb/basic_info`,
   // data pipeline log
   fetchDataPipelineLog: `${api_host}/kb/list_pipeline_logs`,
   get_pipeline_detail: `${api_host}/kb/pipeline_log_detail`,
   fetchPipelineDatasetLogs: `${api_host}/kb/list_pipeline_dataset_logs`,
-  runGraphRag: `${api_host}/kb/run_graphrag`,
-  traceGraphRag: `${api_host}/kb/trace_graphrag`,
-  runRaptor: `${api_host}/kb/run_raptor`,
-  traceRaptor: `${api_host}/kb/trace_raptor`,
+  runGraphRag: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}/run_graphrag`,
+  traceGraphRag: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}/trace_graphrag`,
+  runRaptor: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}/run_raptor`,
+  traceRaptor: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}/trace_raptor`,
   unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
     `${api_host}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
   pipelineRerun: `${api_host}/canvas/rerun`,

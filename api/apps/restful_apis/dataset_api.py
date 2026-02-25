@@ -19,7 +19,7 @@ from peewee import OperationalError
 from quart import request
 from common.constants import RetCode
 from api.apps import login_required, current_user
-from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_result
+from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_result, add_tenant_id_to_kwargs
 from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
@@ -33,6 +33,7 @@ from api.apps.services import dataset_api_service
 
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
 @login_required
+@add_tenant_id_to_kwargs
 async def create(tenant_id: str=None):
     """
     Create a new dataset.
@@ -108,6 +109,7 @@ async def create(tenant_id: str=None):
 
 @manager.route("/datasets", methods=["DELETE"])  # noqa: F821
 @login_required
+@add_tenant_id_to_kwargs
 async def delete(tenant_id):
     """
     Delete datasets.
@@ -166,6 +168,7 @@ async def delete(tenant_id):
 
 @manager.route("/datasets/<dataset_id>", methods=["PUT"])  # noqa: F821
 @login_required
+@add_tenant_id_to_kwargs
 async def update(tenant_id, dataset_id):
     """
     Update a dataset.
@@ -252,6 +255,7 @@ async def update(tenant_id, dataset_id):
 
 @manager.route("/datasets", methods=["GET"])  # noqa: F821
 @login_required
+@add_tenant_id_to_kwargs
 def list_datasets(tenant_id):
     """
     List datasets.
@@ -328,6 +332,7 @@ def list_datasets(tenant_id):
 
 @manager.route('/datasets/<dataset_id>/knowledge_graph', methods=['GET'])  # noqa: F821
 @login_required
+@add_tenant_id_to_kwargs
 async def knowledge_graph(tenant_id, dataset_id):
     try:
         success, result = await dataset_api_service.get_knowledge_graph(dataset_id, tenant_id)
@@ -346,6 +351,7 @@ async def knowledge_graph(tenant_id, dataset_id):
 
 @manager.route('/datasets/<dataset_id>/knowledge_graph', methods=['DELETE'])  # noqa: F821
 @login_required
+@add_tenant_id_to_kwargs
 def delete_knowledge_graph(tenant_id, dataset_id):
     try:
         success, result = dataset_api_service.delete_knowledge_graph(dataset_id, tenant_id)
@@ -364,6 +370,7 @@ def delete_knowledge_graph(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/run_graphrag", methods=["POST"])  # noqa: F821
 @login_required
+@add_tenant_id_to_kwargs
 def run_graphrag(tenant_id, dataset_id):
     try:
         success, result = dataset_api_service.run_graphrag(dataset_id, tenant_id)
@@ -378,6 +385,7 @@ def run_graphrag(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/trace_graphrag", methods=["GET"])  # noqa: F821
 @login_required
+@add_tenant_id_to_kwargs
 def trace_graphrag(tenant_id, dataset_id):
     try:
         success, result = dataset_api_service.trace_graphrag(dataset_id, tenant_id)
@@ -392,6 +400,7 @@ def trace_graphrag(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/run_raptor", methods=["POST"])  # noqa: F821
 @login_required
+@add_tenant_id_to_kwargs
 def run_raptor(tenant_id, dataset_id):
     try:
         success, result = dataset_api_service.run_raptor(dataset_id, tenant_id)
@@ -406,6 +415,7 @@ def run_raptor(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/trace_raptor", methods=["GET"])  # noqa: F821
 @login_required
+@add_tenant_id_to_kwargs
 def trace_raptor(tenant_id, dataset_id):
     try:
         success, result = dataset_api_service.trace_raptor(dataset_id, tenant_id)
