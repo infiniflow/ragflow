@@ -117,11 +117,11 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _load_doc_module():
+def _load_doc_module(monkeypatch):
     repo_root = Path(__file__).resolve().parents[4]
     common_pkg = ModuleType("common")
     common_pkg.__path__ = [str(repo_root / "common")]
-    sys.modules["common"] = common_pkg
+    monkeypatch.setitem(sys.modules, "common", common_pkg)
 
     deepdoc_pkg = ModuleType("deepdoc")
     deepdoc_parser_pkg = ModuleType("deepdoc.parser")
@@ -140,16 +140,16 @@ def _load_doc_module():
     deepdoc_parser_pkg.ExcelParser = _StubExcelParser
     deepdoc_parser_pkg.DocxParser = _StubDocxParser
     deepdoc_pkg.parser = deepdoc_parser_pkg
-    sys.modules["deepdoc"] = deepdoc_pkg
-    sys.modules["deepdoc.parser"] = deepdoc_parser_pkg
+    monkeypatch.setitem(sys.modules, "deepdoc", deepdoc_pkg)
+    monkeypatch.setitem(sys.modules, "deepdoc.parser", deepdoc_parser_pkg)
 
     deepdoc_excel_module = ModuleType("deepdoc.parser.excel_parser")
     deepdoc_excel_module.RAGFlowExcelParser = _StubExcelParser
-    sys.modules["deepdoc.parser.excel_parser"] = deepdoc_excel_module
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.excel_parser", deepdoc_excel_module)
     deepdoc_parser_utils = ModuleType("deepdoc.parser.utils")
     deepdoc_parser_utils.get_text = lambda *_args, **_kwargs: ""
-    sys.modules["deepdoc.parser.utils"] = deepdoc_parser_utils
-    sys.modules["xgboost"] = ModuleType("xgboost")
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.utils", deepdoc_parser_utils)
+    monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
 
     module_path = repo_root / "api" / "apps" / "sdk" / "doc.py"
     spec = importlib.util.spec_from_file_location("test_doc_sdk_routes_unit", module_path)
@@ -185,14 +185,14 @@ def _patch_docstore(monkeypatch, module, **kwargs):
 
 @pytest.mark.p2
 class TestDocRoutesUnit:
-    def test_chunk_positions_validation_error(self):
-        module = _load_doc_module()
+    def test_chunk_positions_validation_error(self, monkeypatch):
+        module = _load_doc_module(monkeypatch)
         with pytest.raises(ValueError) as exc_info:
             module.Chunk(positions=[[1, 2, 3, 4]])
         assert "length of 5" in str(exc_info.value)
 
     def test_upload_validation_and_upload_error(self, monkeypatch):
-        module = _load_doc_module()
+        module = _load_doc_module(monkeypatch)
 
         class _FileObj:
             def __init__(self, name):
@@ -217,7 +217,7 @@ class TestDocRoutesUnit:
         assert res["message"] == "upload failed"
 
     def test_update_doc_guards_and_error_paths(self, monkeypatch):
-        module = _load_doc_module()
+        module = _load_doc_module(monkeypatch)
         doc = _DummyDoc()
         monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [])
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
@@ -267,7 +267,7 @@ class TestDocRoutesUnit:
         assert "Document rename" in res["message"]
 
     def test_update_doc_chunk_method_enabled_and_db_error(self, monkeypatch):
-        module = _load_doc_module()
+        module = _load_doc_module(monkeypatch)
         visual_doc = _DummyDoc(parser_id="naive", doc_type=module.FileType.VISUAL)
         kb = SimpleNamespace(tenant_id="tenant-1")
         monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [1])
@@ -333,7 +333,7 @@ class TestDocRoutesUnit:
         assert res["message"] == "Database operation failed"
 
     def test_download_and_download_doc_errors(self, monkeypatch):
-        module = _load_doc_module()
+        module = _load_doc_module(monkeypatch)
         _patch_send_file(monkeypatch, module)
         _patch_storage(monkeypatch, module, file_stream=b"")
         res = _run(module.download.__wrapped__("tenant-1", "ds-1", ""))
@@ -380,7 +380,7 @@ class TestDocRoutesUnit:
         assert res["filename"] == "doc.txt"
 
     def test_list_docs_metadata_filters(self, monkeypatch):
-        module = _load_doc_module()
+        module = _load_doc_module(monkeypatch)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
         monkeypatch.setattr(module, "request", SimpleNamespace(args=_DummyArgs()))
         res = module.list_docs.__wrapped__("ds-1", "tenant-1")
@@ -439,7 +439,7 @@ class TestDocRoutesUnit:
         assert res["data"]["docs"] == []
 
     def test_metadata_summary_and_batch_update(self, monkeypatch):
-        module = _load_doc_module()
+        module = _load_doc_module(monkeypatch)
         monkeypatch.setattr(module, "convert_conditions", lambda cond: cond)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"selector": {}}))
@@ -543,7 +543,7 @@ class TestDocRoutesUnit:
         assert res["data"]["matched_docs"] == 1
 
     def test_delete_branches(self, monkeypatch):
-        module = _load_doc_module()
+        module = _load_doc_module(monkeypatch)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
         res = _run(module.delete.__wrapped__("tenant-1", "ds-1"))
         assert "don't own the dataset" in res["message"]
@@ -579,7 +579,7 @@ class TestDocRoutesUnit:
         assert "Duplicate document ids" in res["message"]
 
     def test_parse_branches(self, monkeypatch):
-        module = _load_doc_module()
+        module = _load_doc_module(monkeypatch)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
         res = _run(module.parse.__wrapped__("tenant-1", "ds-1"))
         assert "don't own the dataset" in res["message"]
@@ -615,7 +615,7 @@ class TestDocRoutesUnit:
         assert "Duplicate document ids" in res["message"]
 
     def test_stop_parsing_branches(self, monkeypatch):
-        module = _load_doc_module()
+        module = _load_doc_module(monkeypatch)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
         res = _run(module.stop_parsing.__wrapped__("tenant-1", "ds-1"))
         assert "don't own the dataset" in res["message"]
@@ -656,7 +656,7 @@ class TestDocRoutesUnit:
         assert res["code"] == 0
 
     def test_list_chunks_branches(self, monkeypatch):
-        module = _load_doc_module()
+        module = _load_doc_module(monkeypatch)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
         res = _run(module.list_chunks.__wrapped__("tenant-1", "ds-1", "doc-1"))
         assert "don't own the dataset" in res["message"]
@@ -693,13 +693,13 @@ class TestDocRoutesUnit:
         assert res["data"]["chunks"][0]["id"] == "chunk-1"
 
     def test_add_chunk_access_guard(self, monkeypatch):
-        module = _load_doc_module()
+        module = _load_doc_module(monkeypatch)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
         res = _run(module.add_chunk.__wrapped__("tenant-1", "ds-1", "doc-1"))
         assert "don't own the dataset" in res["message"]
 
     def test_rm_chunk_branches(self, monkeypatch):
-        module = _load_doc_module()
+        module = _load_doc_module(monkeypatch)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
         res = _run(module.rm_chunk.__wrapped__("tenant-1", "ds-1", "doc-1"))
         assert "don't own the dataset" in res["message"]
@@ -724,7 +724,7 @@ class TestDocRoutesUnit:
         assert res["data"]["errors"] == ["Duplicate chunk ids: c1"]
 
     def test_update_chunk_branches(self, monkeypatch):
-        module = _load_doc_module()
+        module = _load_doc_module(monkeypatch)
         _patch_docstore(monkeypatch, module, get=lambda *_args, **_kwargs: None)
         res = _run(module.update_chunk.__wrapped__("tenant-1", "ds-1", "doc-1", "chunk-1"))
         assert "Can't find this chunk" in res["message"]
@@ -773,7 +773,7 @@ class TestDocRoutesUnit:
         assert res["code"] == 0
 
     def test_retrieval_validation_matrix(self, monkeypatch):
-        module = _load_doc_module()
+        module = _load_doc_module(monkeypatch)
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"dataset_ids": "bad"}))
         res = _run(module.retrieval_test.__wrapped__("tenant-1"))
         assert "`dataset_ids` should be a list" in res["message"]

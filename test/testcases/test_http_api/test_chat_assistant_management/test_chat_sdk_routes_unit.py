@@ -167,8 +167,17 @@ def test_create_internal_failure_paths(monkeypatch):
         {"name": "chat-rerank", "dataset_ids": [], "prompt": {"rerank_model": "unknown-rerank-model"}},
     )
     monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    rerank_query_calls = []
+
+    def _mock_tenant_llm_query(**kwargs):
+        rerank_query_calls.append(kwargs)
+        return False
+
+    monkeypatch.setattr(module.TenantLLMService, "query", _mock_tenant_llm_query)
     res = _run(module.create.__wrapped__("tenant-1"))
     assert "`rerank_model` unknown-rerank-model doesn't exist" in res["message"]
+    assert rerank_query_calls[-1]["model_type"] == "rerank"
+    assert rerank_query_calls[-1]["llm_name"] == "unknown-rerank-model"
 
     _set_request_json(monkeypatch, module, {"name": "chat-tenant", "dataset_ids": [], "tenant_id": "tenant-forbidden"})
     res = _run(module.create.__wrapped__("tenant-1"))
