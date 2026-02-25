@@ -223,10 +223,12 @@ class ParserParam(ProcessParamBase):
 class Parser(ProcessBase):
     component_name = "Parser"
 
-    def _pdf(self, name, blob):
+    def _pdf(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
+        abstract_enabled = kwargs.get("abstract", False)
+        author_enabled = kwargs.get("author", False)
 
         raw_parse_method = conf.get("parse_method", "")
         parser_model_name = None
@@ -399,6 +401,69 @@ class Parser(ProcessBase):
             elif layout == "table":
                 b["doc_type_kwd"] = "table"
 
+        # Get authors
+        if author_enabled:
+
+            def _begin(txt):
+                if not isinstance(txt, str):
+                    return False
+                return re.match(
+                    r"[0-9. 一、i]*(introduction|abstract|摘要|引言|keywords|key words|关键词|background|背景|目录|前言|contents)",
+                    txt.lower().strip(),
+                )
+
+            i = 0
+            while i < min(32, len(bboxes) - 1):
+                b = bboxes[i]
+                i += 1
+                layout_type = b.get("layout_type", "")
+                layoutno = b.get("layoutno", "")
+                is_title = "title" in str(layout_type).lower() or "title" in str(layoutno).lower()
+                if not is_title:
+                    continue
+
+                title_txt = b.get("text", "")
+                if _begin(title_txt):
+                    break
+
+                for j in range(3):
+                    next_idx = i + j
+                    if next_idx >= len(bboxes):
+                        break
+                    candidate = bboxes[next_idx].get("text", "")
+                    if _begin(candidate):
+                        break
+                    if isinstance(candidate, str) and "@" in candidate:
+                        break
+                    bboxes[next_idx]["author"] = True
+                break
+
+        # Get abstract
+        if abstract_enabled:
+            i = 0
+            abstract_idx = None
+            while i + 1 < min(32, len(bboxes)):
+                b = bboxes[i]
+                i += 1
+                txt = b.get("text", "")
+                if not isinstance(txt, str):
+                    continue
+                txt = txt.lower().strip()
+                if re.match(r"(abstract|摘要)", txt):
+                    if len(txt.split()) > 32 or len(txt) > 64:
+                        abstract_idx = i - 1
+                        break
+                    next_txt = bboxes[i].get("text", "") if i < len(bboxes) else ""
+                    if isinstance(next_txt, str):
+                        next_txt = next_txt.lower().strip()
+                        if len(next_txt.split()) > 32 or len(next_txt) > 64:
+                            abstract_idx = i
+                    i += 1
+                    break
+            if abstract_idx is not None:
+                bboxes[abstract_idx]["abstract"] = True
+
+
         if conf.get("output_format") == "json":
             self.set_output("json", bboxes)
         if conf.get("output_format") == "markdown":
@@ -412,7 +477,7 @@ class Parser(ProcessBase):
                 mkdn += b.get("text", "") + "\n"
             self.set_output("markdown", mkdn)
 
-    def _spreadsheet(self, name, blob):
+    def _spreadsheet(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Spreadsheet.")
         conf = self._param.setups["spreadsheet"]
         self.set_output("output_format", conf["output_format"])
@@ -497,7 +562,7 @@ class Parser(ProcessBase):
             elif conf.get("output_format") == "markdown":
                 self.set_output("markdown", spreadsheet_parser.markdown(blob))
 
-    def _word(self, name, blob):
+    def _word(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Word Processor Document")
         conf = self._param.setups["word"]
         self.set_output("output_format", conf["output_format"])
@@ -519,7 +584,7 @@ class Parser(ProcessBase):
             markdown_text = docx_parser.to_markdown(name, binary=blob)
             self.set_output("markdown", markdown_text)
 
-    def _slides(self, name, blob):
+    def _slides(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PowerPoint Document")
 
         conf = self._param.setups["slides"]
@@ -584,7 +649,7 @@ class Parser(ProcessBase):
             if conf.get("output_format") == "json":
                 self.set_output("json", sections)
 
-    def _markdown(self, name, blob):
+    def _markdown(self, name, blob, **kwargs):
         from functools import reduce
 
         from rag.app.naive import Markdown as naive_markdown_parser
@@ -625,7 +690,7 @@ class Parser(ProcessBase):
         else:
             self.set_output("text", "\n".join([section_text for section_text, _ in sections]))
 
-    def _image(self, name, blob):
+    def _image(self, name, blob, **kwargs):
         from deepdoc.vision import OCR
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an image.")
@@ -660,7 +725,7 @@ class Parser(ProcessBase):
         }]
         self.set_output("json", json_result)
 
-    def _audio(self, name, blob):
+    def _audio(self, name, blob, **kwargs):
         import os
         import tempfile
 
@@ -679,7 +744,7 @@ class Parser(ProcessBase):
 
             self.set_output("text", txt)
 
-    def _video(self, name, blob):
+    def _video(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an video.")
 
         conf = self._param.setups["video"]
@@ -691,7 +756,7 @@ class Parser(ProcessBase):
 
         self.set_output("text", txt)
 
-    def _email(self, name, blob):
+    def _email(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an email.")
 
         email_content = {}
@@ -857,7 +922,10 @@ class Parser(ProcessBase):
         for p_type, conf in self._param.setups.items():
             if from_upstream.name.split(".")[-1].lower() not in conf.get("suffix", []):
                 continue
-            await thread_pool_exec(function_map[p_type], name, blob)
+            call_kwargs = dict(kwargs)
+            call_kwargs.pop("name", None)
+            call_kwargs.pop("blob", None)
+            await thread_pool_exec(function_map[p_type], name, blob, **call_kwargs)
             done = True
             break
 
