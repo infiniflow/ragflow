@@ -265,6 +265,8 @@ class LLMBundle(LLM4Tenant):
             generation.end()
 
     def _remove_reasoning_content(self, txt: str) -> str:
+        if txt is None:
+            return None
         first_think_start = txt.find("<think>")
         if first_think_start == -1:
             return txt

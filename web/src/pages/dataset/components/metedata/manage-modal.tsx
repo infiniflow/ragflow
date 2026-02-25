@@ -30,7 +30,6 @@ import {
 import { Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useHandleMenuClick } from '../../sidebar/hooks';
 import {
   getMetadataValueTypeLabel,
   MetadataType,
@@ -99,7 +98,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     otherData,
     documentIds,
   );
-  const { handleMenuClick } = useHandleMenuClick();
+  // const { handleMenuClick } = useHandleMenuClick();
   const [shouldSave, setShouldSave] = useState(false);
   const [isAddValueMode, setIsAddValueMode] = useState(false);
   const {
@@ -350,6 +349,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
               <BulkOperateBar
                 list={operateList}
                 count={selectedCount}
+                unit={t('knowledgeDetails.metadata.fields')}
               ></BulkOperateBar>
             )}
             {metadataType === MetadataType.Setting ||

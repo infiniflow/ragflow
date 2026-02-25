@@ -20,6 +20,7 @@ import inspect
 import json
 import logging
 import os
+import sys
 import time
 from copy import deepcopy
 from functools import wraps
@@ -118,7 +119,10 @@ def serialize_for_json(obj):
 
 
 def get_data_error_result(code=RetCode.DATA_ERROR, message="Sorry! Data missing!"):
-    logging.exception(Exception(message))
+    if sys.exc_info()[0] is not None:
+        logging.exception(message)
+    else:
+        logging.error(message)
     result_dict = {"code": code, "message": message}
     response = {}
     for key, value in result_dict.items():
