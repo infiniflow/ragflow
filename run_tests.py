@@ -42,6 +42,7 @@ class TestRunner:
         self.parallel = False
         self.verbose = False
         self.markers = ""
+        self.test = ""
 
         # Python interpreter path
         self.python = sys.executable
@@ -95,9 +96,15 @@ EXAMPLES:
 
     def build_pytest_command(self) -> List[str]:
         """Build the pytest command arguments"""
-        cmd = ["pytest", str(self.ut_dir)]
-
-        # Add test path
+        if self.test:
+            # If a specific test is provided, use it
+            test_path = self.project_root / 'test' / self.test
+            if not test_path.exists():
+                # Try relative to project root
+                test_path = self.project_root / self.test
+            cmd = ["pytest", str(test_path)]
+        else:
+            cmd = ["pytest", str(self.ut_dir)]
 
         # Add markers
         if self.markers:
@@ -243,6 +250,7 @@ Examples:
             self.parallel = args.parallel
             self.verbose = args.verbose
             self.markers = args.markers
+            self.test = args.test
 
             return True
 
