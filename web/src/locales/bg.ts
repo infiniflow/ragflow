@@ -265,7 +265,7 @@ export default {
       generate: 'Генерирай',
       raptor: 'RAPTOR',
       processingType: 'Тип обработка',
-      dataPipeline: 'Входящ конвейер',
+      dataPipeline: 'Превключете или конфигурирайте входящия конвейер.',
       operations: 'Операции',
       taskId: 'ID на задача',
       duration: 'Продължителност',
@@ -492,7 +492,7 @@ export default {
       linkPipelineSetTip:
         'Управлявайте свързването на входящ конвейер с този набор',
       default: 'По подразбиране',
-      dataPipeline: 'Входящ конвейер',
+      dataPipeline: 'Превключете или конфигурирайте входящия конвейер.',
       linkDataPipeline: 'Свържи входящ конвейер',
       enableAutoGenerate: 'Активирай автоматично генериране',
       teamPlaceholder: 'Моля, изберете екип.',
