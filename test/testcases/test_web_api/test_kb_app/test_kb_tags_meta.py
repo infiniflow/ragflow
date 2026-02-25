@@ -17,9 +17,11 @@ import uuid
 
 import pytest
 from common import (
+    delete_knowledge_graph,
     kb_basic_info,
     kb_get_meta,
     kb_update_metadata_setting,
+    knowledge_graph,
     list_tags,
     list_tags_from_kbs,
     rename_tags,
@@ -121,6 +123,20 @@ class TestAuthorization:
         assert res["code"] == expected_code, res
         assert expected_fragment in res["message"], res
 
+    @pytest.mark.p2
+    @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
+    def test_knowledge_graph_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
+        res = knowledge_graph(invalid_auth, "kb_id")
+        assert res["code"] == expected_code, res
+        assert expected_fragment in res["message"], res
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
+    def test_delete_knowledge_graph_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
+        res = delete_knowledge_graph(invalid_auth, "kb_id")
+        assert res["code"] == expected_code, res
+        assert expected_fragment in res["message"], res
+
 
 class TestKbTagsMeta:
     @pytest.mark.p2
@@ -205,6 +221,22 @@ class TestKbTagsMeta:
         assert res["data"]["id"] == kb_id, res
         assert res["data"]["parser_config"]["metadata"] == metadata, res
 
+    @pytest.mark.p2
+    def test_knowledge_graph(self, WebApiAuth, add_dataset):
+        kb_id = add_dataset
+        res = knowledge_graph(WebApiAuth, kb_id)
+        assert res["code"] == 0, res
+        assert isinstance(res["data"], dict), res
+        assert "graph" in res["data"], res
+        assert "mind_map" in res["data"], res
+
+    @pytest.mark.p2
+    def test_delete_knowledge_graph(self, WebApiAuth, add_dataset):
+        kb_id = add_dataset
+        res = delete_knowledge_graph(WebApiAuth, kb_id)
+        assert res["code"] == 0, res
+        assert res["data"] is True, res
+
 
 class TestKbTagsMetaNegative:
     @pytest.mark.p3
@@ -249,3 +281,15 @@ class TestKbTagsMetaNegative:
         assert res["code"] == 101, res
         assert "required argument are missing" in res["message"], res
         assert "metadata" in res["message"], res
+
+    @pytest.mark.p3
+    def test_knowledge_graph_invalid_kb(self, WebApiAuth):
+        res = knowledge_graph(WebApiAuth, "invalid_kb_id")
+        assert res["code"] == 109, res
+        assert "No authorization" in res["message"], res
+
+    @pytest.mark.p3
+    def test_delete_knowledge_graph_invalid_kb(self, WebApiAuth):
+        res = delete_knowledge_graph(WebApiAuth, "invalid_kb_id")
+        assert res["code"] == 109, res
+        assert "No authorization" in res["message"], res

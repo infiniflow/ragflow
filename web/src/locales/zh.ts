@@ -45,6 +45,7 @@ export default {
       submit: '提交',
       clear: '清空',
       embedIntoSite: '嵌入网站',
+      openInNewTab: '在新标签页中聊天',
       previousPage: '上一页',
       nextPage: '下一页',
       add: '添加',
@@ -177,6 +178,7 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        fields: '字段',
         selectFiles: '已选择 {{count}} 个文件',
         type: '类型',
         fieldNameInvalid: '字段名称只能包含字母或下划线。',
@@ -233,7 +235,7 @@ export default {
       generate: '生成',
       raptor: 'RAPTOR',
       processingType: '处理类型',
-      dataPipeline: '数据管道',
+      dataPipeline: '切换或配置 ingestion pipeline。',
       operations: '操作',
       taskId: '任务ID',
       duration: '耗时',
@@ -443,7 +445,7 @@ export default {
       editLinkDataPipeline: '编辑pipeline',
       linkPipelineSetTip: '管理与此数据集的数据管道链接',
       default: '默认',
-      dataPipeline: 'Ingestion pipeline',
+      dataPipeline: '切换或配置 ingestion pipeline。',
       linkDataPipeline: '关联pipeline',
       enableAutoGenerate: '是否启用自动生成',
       teamPlaceholder: '请选择团队',
