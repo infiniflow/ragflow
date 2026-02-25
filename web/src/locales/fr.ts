@@ -37,6 +37,7 @@ export default {
       pleaseInput: 'Veuillez saisir',
       submit: 'Soumettre',
       embedIntoSite: 'Intégrer dans la page web',
+      openInNewTab: 'Chat dans un nouvel onglet',
       previousPage: 'Précédent',
       nextPage: 'Suivant',
       add: 'Ajouter',
