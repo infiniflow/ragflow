@@ -135,14 +135,6 @@ class DocMetadataService:
                 if doc_id:
                     yield doc_id, doc
 
-        # Check if OceanBase SearchResult format
-        elif hasattr(results, 'chunks') and hasattr(results, 'total'):
-            # OceanBase format: SearchResult(total=int, chunks=[{...}, {...}])
-            for doc in results.chunks:
-                doc_id = cls._extract_doc_id(doc)
-                if doc_id:
-                    yield doc_id, doc
-
         # Handle list of dicts or other formats
         elif isinstance(results, list):
             for res in results:
@@ -155,6 +147,14 @@ class DocMetadataService:
                     doc_id = cls._extract_doc_id(doc)
                     if doc_id:
                         yield doc_id, doc
+
+        # Check if OceanBase SearchResult format
+        elif hasattr(results, 'chunks') and hasattr(results, 'total'):
+            # OceanBase format: SearchResult(total=int, chunks=[{...}, {...}])
+            for doc in results.chunks:
+                doc_id = cls._extract_doc_id(doc)
+                if doc_id:
+                    yield doc_id, doc
 
     @classmethod
     def _search_metadata(cls, kb_id: str, condition: Dict = None, limit: int = 10000):
