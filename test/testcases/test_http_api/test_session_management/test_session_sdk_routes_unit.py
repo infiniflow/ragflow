@@ -126,6 +126,22 @@ def _load_session_module(monkeypatch):
     deepdoc_excel_module.RAGFlowExcelParser = _StubExcelParser
     monkeypatch.setitem(sys.modules, "deepdoc.parser.excel_parser", deepdoc_excel_module)
 
+    deepdoc_mineru_module = ModuleType("deepdoc.parser.mineru_parser")
+
+    class _StubMinerUParser:
+        pass
+
+    deepdoc_mineru_module.MinerUParser = _StubMinerUParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.mineru_parser", deepdoc_mineru_module)
+
+    deepdoc_paddle_module = ModuleType("deepdoc.parser.paddleocr_parser")
+
+    class _StubPaddleOCRParser:
+        pass
+
+    deepdoc_paddle_module.PaddleOCRParser = _StubPaddleOCRParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.paddleocr_parser", deepdoc_paddle_module)
+
     deepdoc_parser_utils = ModuleType("deepdoc.parser.utils")
     deepdoc_parser_utils.get_text = lambda *_args, **_kwargs: ""
     monkeypatch.setitem(sys.modules, "deepdoc.parser.utils", deepdoc_parser_utils)
@@ -672,3 +688,440 @@ def test_delete_routes_partial_duplicate_unit(monkeypatch):
     monkeypatch.setattr(module.API4ConversationService, "delete_by_id", lambda *_args, **_kwargs: True)
     res = _run(inspect.unwrap(module.delete_agent_session)("tenant-1", "agent-1"))
     assert res["code"] == 0
+
+
+@pytest.mark.p2
+def test_delete_agent_session_error_matrix_unit(monkeypatch):
+    module = _load_session_module(monkeypatch)
+
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [SimpleNamespace(id="agent-1")])
+    monkeypatch.setattr(module.API4ConversationService, "delete_by_id", lambda *_args, **_kwargs: True)
+
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"ids": ["ok", "missing"]}))
+    monkeypatch.setattr(module, "check_duplicate_ids", lambda ids, _kind: (ids, []))
+
+    def _query_partial(**kwargs):
+        if "id" not in kwargs:
+            return [SimpleNamespace(id="ok"), SimpleNamespace(id="missing")]
+        if kwargs["id"] == "ok":
+            return [SimpleNamespace(id="ok")]
+        return []
+
+    monkeypatch.setattr(module.API4ConversationService, "query", _query_partial)
+    res = _run(inspect.unwrap(module.delete_agent_session)("tenant-1", "agent-1"))
+    assert res["data"]["success_count"] == 1
+    assert res["data"]["errors"] == ["The agent doesn't own the session missing"]
+
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"ids": ["missing"]}))
+
+    def _query_all_failed(**kwargs):
+        if "id" not in kwargs:
+            return [SimpleNamespace(id="missing")]
+        return []
+
+    monkeypatch.setattr(module.API4ConversationService, "query", _query_all_failed)
+    res = _run(inspect.unwrap(module.delete_agent_session)("tenant-1", "agent-1"))
+    assert res["message"] == "The agent doesn't own the session missing"
+
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"ids": ["ok", "ok"]}))
+    monkeypatch.setattr(module, "check_duplicate_ids", lambda ids, _kind: (["ok"], ["Duplicate session ids: ok"]))
+
+    def _query_duplicate(**kwargs):
+        if "id" not in kwargs:
+            return [SimpleNamespace(id="ok")]
+        if kwargs["id"] == "ok":
+            return [SimpleNamespace(id="ok")]
+        return []
+
+    monkeypatch.setattr(module.API4ConversationService, "query", _query_duplicate)
+    res = _run(inspect.unwrap(module.delete_agent_session)("tenant-1", "agent-1"))
+    assert res["data"]["success_count"] == 1
+    assert res["data"]["errors"] == ["Duplicate session ids: ok"]
+
+
+@pytest.mark.p2
+def test_sessions_ask_route_validation_and_stream_unit(monkeypatch):
+    module = _load_session_module(monkeypatch)
+    monkeypatch.setattr(module, "Response", _StubResponse)
+
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"dataset_ids": ["kb-1"]}))
+    res = _run(inspect.unwrap(module.ask_about)("tenant-1"))
+    assert res["message"] == "`question` is required."
+
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"question": "q"}))
+    res = _run(inspect.unwrap(module.ask_about)("tenant-1"))
+    assert res["message"] == "`dataset_ids` is required."
+
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"question": "q", "dataset_ids": "kb-1"}))
+    res = _run(inspect.unwrap(module.ask_about)("tenant-1"))
+    assert res["message"] == "`dataset_ids` should be a list."
+
+    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"question": "q", "dataset_ids": ["kb-1"]}))
+    res = _run(inspect.unwrap(module.ask_about)("tenant-1"))
+    assert res["message"] == "You don't own the dataset kb-1."
+
+    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [SimpleNamespace(chunk_num=0)])
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"question": "q", "dataset_ids": ["kb-1"]}))
+    res = _run(inspect.unwrap(module.ask_about)("tenant-1"))
+    assert res["message"] == "The dataset kb-1 doesn't own parsed file"
+
+    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [SimpleNamespace(chunk_num=1)])
+    captured = {}
+
+    async def _streaming_async_ask(question, kb_ids, uid):
+        captured["question"] = question
+        captured["kb_ids"] = kb_ids
+        captured["uid"] = uid
+        yield {"answer": "first"}
+        raise RuntimeError("ask stream boom")
+
+    monkeypatch.setattr(module, "async_ask", _streaming_async_ask)
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"question": "q", "dataset_ids": ["kb-1"]}))
+    resp = _run(inspect.unwrap(module.ask_about)("tenant-1"))
+    assert isinstance(resp, _StubResponse)
+    assert resp.headers.get("Content-Type") == "text/event-stream; charset=utf-8"
+    chunks = _run(_collect_stream(resp.body))
+    assert any('"answer": "first"' in chunk for chunk in chunks)
+    assert any('"code": 500' in chunk and "**ERROR**: ask stream boom" in chunk for chunk in chunks)
+    assert '"data": true' in chunks[-1].lower()
+    assert captured == {"question": "q", "kb_ids": ["kb-1"], "uid": "tenant-1"}
+
+
+@pytest.mark.p2
+def test_sessions_related_questions_prompt_build_unit(monkeypatch):
+    module = _load_session_module(monkeypatch)
+
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
+    res = _run(inspect.unwrap(module.related_questions)("tenant-1"))
+    assert res["message"] == "`question` is required."
+
+    captured = {}
+
+    class _FakeLLMBundle:
+        def __init__(self, *args, **kwargs):
+            captured["bundle_args"] = args
+            captured["bundle_kwargs"] = kwargs
+
+        async def async_chat(self, prompt, messages, options):
+            captured["prompt"] = prompt
+            captured["messages"] = messages
+            captured["options"] = options
+            return "1. First related\n2. Second related\nplain text"
+
+    monkeypatch.setattr(module, "LLMBundle", _FakeLLMBundle)
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"question": "solar energy", "industry": "renewables"}),
+    )
+    res = _run(inspect.unwrap(module.related_questions)("tenant-1"))
+    assert res["data"] == ["First related", "Second related"]
+    assert "Keep the term length between 2-4 words" in captured["prompt"]
+    assert "related terms can also help search engines" in captured["prompt"]
+    assert "Ensure all search terms are relevant to the industry: renewables." in captured["prompt"]
+    assert "Keywords: solar energy" in captured["messages"][0]["content"]
+    assert captured["options"] == {"temperature": 0.9}
+
+
+@pytest.mark.p2
+def test_chatbot_routes_auth_stream_nonstream_unit(monkeypatch):
+    module = _load_session_module(monkeypatch)
+    monkeypatch.setattr(module, "Response", _StubResponse)
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer"}))
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
+    res = _run(inspect.unwrap(module.chatbot_completions)("dialog-1"))
+    assert res["message"] == "Authorization is not valid!"
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer bad"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [])
+    res = _run(inspect.unwrap(module.chatbot_completions)("dialog-1"))
+    assert "API key is invalid" in res["message"]
+
+    stream_calls = []
+
+    async def _iframe_stream(dialog_id, **req):
+        stream_calls.append((dialog_id, dict(req)))
+        yield "data:stream-chunk"
+
+    monkeypatch.setattr(module, "iframe_completion", _iframe_stream)
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer ok"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"stream": True}))
+    resp = _run(inspect.unwrap(module.chatbot_completions)("dialog-1"))
+    assert isinstance(resp, _StubResponse)
+    assert resp.headers.get("Content-Type") == "text/event-stream; charset=utf-8"
+    _run(_collect_stream(resp.body))
+    assert stream_calls[-1][0] == "dialog-1"
+    assert stream_calls[-1][1]["quote"] is False
+
+    async def _iframe_nonstream(_dialog_id, **_req):
+        yield {"answer": "non-stream"}
+
+    monkeypatch.setattr(module, "iframe_completion", _iframe_nonstream)
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"stream": False, "quote": True}))
+    res = _run(inspect.unwrap(module.chatbot_completions)("dialog-1"))
+    assert res["data"]["answer"] == "non-stream"
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer"}))
+    res = _run(inspect.unwrap(module.chatbots_inputs)("dialog-1"))
+    assert res["message"] == "Authorization is not valid!"
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer invalid"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [])
+    res = _run(inspect.unwrap(module.chatbots_inputs)("dialog-1"))
+    assert "API key is invalid" in res["message"]
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer ok"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _dialog_id: (False, None))
+    res = _run(inspect.unwrap(module.chatbots_inputs)("dialog-404"))
+    assert res["message"] == "Can't find dialog by ID: dialog-404"
+
+
+@pytest.mark.p2
+def test_agentbot_routes_auth_stream_nonstream_unit(monkeypatch):
+    module = _load_session_module(monkeypatch)
+    monkeypatch.setattr(module, "Response", _StubResponse)
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer"}))
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
+    res = _run(inspect.unwrap(module.agent_bot_completions)("agent-1"))
+    assert res["message"] == "Authorization is not valid!"
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer bad"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [])
+    res = _run(inspect.unwrap(module.agent_bot_completions)("agent-1"))
+    assert "API key is invalid" in res["message"]
+
+    async def _agent_stream(*_args, **_kwargs):
+        yield "data:agent-stream"
+
+    monkeypatch.setattr(module, "agent_completion", _agent_stream)
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer ok"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"stream": True}))
+    resp = _run(inspect.unwrap(module.agent_bot_completions)("agent-1"))
+    assert isinstance(resp, _StubResponse)
+    assert resp.headers.get("Content-Type") == "text/event-stream; charset=utf-8"
+    _run(_collect_stream(resp.body))
+
+    async def _agent_nonstream(*_args, **_kwargs):
+        yield {"answer": "agent-non-stream"}
+
+    monkeypatch.setattr(module, "agent_completion", _agent_nonstream)
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"stream": False}))
+    res = _run(inspect.unwrap(module.agent_bot_completions)("agent-1"))
+    assert res["data"]["answer"] == "agent-non-stream"
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer"}))
+    res = _run(inspect.unwrap(module.begin_inputs)("agent-1"))
+    assert res["message"] == "Authorization is not valid!"
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer bad"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [])
+    res = _run(inspect.unwrap(module.begin_inputs)("agent-1"))
+    assert "API key is invalid" in res["message"]
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer ok"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _agent_id: (False, None))
+    res = _run(inspect.unwrap(module.begin_inputs)("agent-404"))
+    assert res["message"] == "Can't find agent by ID: agent-404"
+
+
+@pytest.mark.p2
+def test_searchbots_ask_embedded_auth_and_stream_unit(monkeypatch):
+    module = _load_session_module(monkeypatch)
+    monkeypatch.setattr(module, "Response", _StubResponse)
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer"}))
+    res = _run(inspect.unwrap(module.ask_about_embedded)())
+    assert res["message"] == "Authorization is not valid!"
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer bad"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [])
+    res = _run(inspect.unwrap(module.ask_about_embedded)())
+    assert "API key is invalid" in res["message"]
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer ok"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"question": "embedded q", "kb_ids": ["kb-1"], "search_id": "search-1"}),
+    )
+    monkeypatch.setattr(module.SearchService, "get_detail", lambda _search_id: {"search_config": {"mode": "test"}})
+    captured = {}
+
+    async def _embedded_async_ask(question, kb_ids, uid, search_config=None):
+        captured["question"] = question
+        captured["kb_ids"] = kb_ids
+        captured["uid"] = uid
+        captured["search_config"] = search_config
+        yield {"answer": "embedded-answer"}
+        raise RuntimeError("embedded stream boom")
+
+    monkeypatch.setattr(module, "async_ask", _embedded_async_ask)
+    resp = _run(inspect.unwrap(module.ask_about_embedded)())
+    assert isinstance(resp, _StubResponse)
+    assert resp.headers.get("Content-Type") == "text/event-stream; charset=utf-8"
+    chunks = _run(_collect_stream(resp.body))
+    assert any('"answer": "embedded-answer"' in chunk for chunk in chunks)
+    assert any('"code": 500' in chunk and "**ERROR**: embedded stream boom" in chunk for chunk in chunks)
+    assert '"data": true' in chunks[-1].lower()
+    assert captured["search_config"] == {"mode": "test"}
+
+
+@pytest.mark.p2
+def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
+    module = _load_session_module(monkeypatch)
+    handler = inspect.unwrap(module.retrieval_test_embedded)
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer"}))
+    res = _run(handler())
+    assert res["message"] == "Authorization is not valid!"
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer invalid"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [])
+    res = _run(handler())
+    assert "API key is invalid" in res["message"]
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer ok"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"kb_id": [], "question": "q"}))
+    res = _run(handler())
+    assert res["message"] == "Please specify dataset firstly."
+
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="")])
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"kb_id": "kb-1", "question": "q"}))
+    res = _run(handler())
+    assert res["message"] == "permission denined."
+
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"kb_id": ["kb-no-access"], "question": "q"}))
+    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-a")])
+    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [])
+    res = _run(handler())
+    assert "Only owner of dataset authorized for this operation." in res["message"]
+
+    llm_calls = []
+
+    def _fake_llm_bundle(tenant_id, llm_type, *args, **kwargs):
+        llm_calls.append((tenant_id, llm_type, args, kwargs))
+        return SimpleNamespace(tenant_id=tenant_id, llm_type=llm_type, args=args, kwargs=kwargs)
+
+    monkeypatch.setattr(module, "LLMBundle", _fake_llm_bundle)
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"kb_id": "kb-1", "question": "q", "meta_data_filter": {"method": "auto"}}),
+    )
+    monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kb_ids: [{"id": "doc-1"}])
+
+    async def _apply_filter(_meta_filter, _metas, _question, _chat_mdl, _local_doc_ids):
+        return ["doc-filtered"]
+
+    monkeypatch.setattr(module, "apply_meta_data_filter", _apply_filter)
+    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-a")])
+    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
+    res = _run(handler())
+    assert res["message"] == "Knowledgebase not found!"
+    assert any(call[1] == module.LLMType.CHAT for call in llm_calls)
+
+    llm_calls.clear()
+    retrieval_capture = {}
+
+    async def _fake_retrieval(
+        question,
+        embd_mdl,
+        tenant_ids,
+        kb_ids,
+        page,
+        size,
+        similarity_threshold,
+        vector_similarity_weight,
+        top,
+        local_doc_ids,
+        rerank_mdl=None,
+        highlight=None,
+        rank_feature=None,
+    ):
+        retrieval_capture.update(
+            {
+                "question": question,
+                "embd_mdl": embd_mdl,
+                "tenant_ids": tenant_ids,
+                "kb_ids": kb_ids,
+                "page": page,
+                "size": size,
+                "similarity_threshold": similarity_threshold,
+                "vector_similarity_weight": vector_similarity_weight,
+                "top": top,
+                "local_doc_ids": local_doc_ids,
+                "rerank_mdl": rerank_mdl,
+                "highlight": highlight,
+                "rank_feature": rank_feature,
+            }
+        )
+        return {"chunks": [{"id": "chunk-1", "vector": [0.1]}]}
+
+    async def _translate(_tenant_id, _chat_id, question, _langs):
+        return question + "-translated"
+
+    monkeypatch.setattr(module, "cross_languages", _translate)
+    monkeypatch.setattr(module, "label_question", lambda _question, _kbs: ["label-1"])
+    monkeypatch.setattr(module.settings, "retriever", SimpleNamespace(retrieval=_fake_retrieval))
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue(
+            {
+                "kb_id": "kb-1",
+                "question": "translated-q",
+                "doc_ids": ["doc-seed"],
+                "cross_languages": ["es"],
+                "search_id": "search-1",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        module.SearchService,
+        "get_detail",
+        lambda _search_id: {
+            "search_config": {
+                "meta_data_filter": {"method": "auto"},
+                "chat_id": "chat-for-filter",
+                "similarity_threshold": 0.42,
+                "vector_similarity_weight": 0.8,
+                "top_k": 7,
+                "rerank_id": "reranker-model",
+            }
+        },
+    )
+    monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kb_ids: [{"id": "doc-2"}])
+    monkeypatch.setattr(module, "apply_meta_data_filter", _apply_filter)
+    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-a")])
+    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
+    monkeypatch.setattr(
+        module.KnowledgebaseService,
+        "get_by_id",
+        lambda _kb_id: (True, SimpleNamespace(tenant_id="tenant-kb", embd_id="embd-model")),
+    )
+    res = _run(handler())
+    assert res["code"] == 0
+    assert res["data"]["labels"] == ["label-1"]
+    assert "vector" not in res["data"]["chunks"][0]
+    assert retrieval_capture["kb_ids"] == ["kb-1"]
+    assert retrieval_capture["tenant_ids"] == ["tenant-a"]
+    assert retrieval_capture["question"] == "translated-q-translated"
+    assert retrieval_capture["similarity_threshold"] == 0.42
+    assert retrieval_capture["vector_similarity_weight"] == 0.8
+    assert retrieval_capture["top"] == 7
+    assert retrieval_capture["local_doc_ids"] == ["doc-filtered"]
+    assert retrieval_capture["rank_feature"] == ["label-1"]
+    assert retrieval_capture["rerank_mdl"] is not None
+    assert any(call[1] == module.LLMType.EMBEDDING.value and call[3].get("llm_name") == "embd-model" for call in llm_calls)

@@ -80,6 +80,19 @@ def _load_auth_modules(monkeypatch):
     return oauth_module, oidc_module
 
 
+def _load_github_module(monkeypatch):
+    _load_auth_modules(monkeypatch)
+    repo_root = Path(__file__).resolve().parents[4]
+
+    sys.modules.pop("api.apps.auth.github", None)
+    github_path = repo_root / "api" / "apps" / "auth" / "github.py"
+    github_spec = importlib.util.spec_from_file_location("api.apps.auth.github", github_path)
+    github_module = importlib.util.module_from_spec(github_spec)
+    monkeypatch.setitem(sys.modules, "api.apps.auth.github", github_module)
+    github_spec.loader.exec_module(github_module)
+    return github_module
+
+
 def _load_auth_init_module(monkeypatch):
     _load_auth_modules(monkeypatch)
     repo_root = Path(__file__).resolve().parents[4]
@@ -349,3 +362,123 @@ def test_get_auth_client_type_inference_and_unsupported(monkeypatch):
 
     with pytest.raises(ValueError, match="Unsupported type: invalid"):
         auth_module.get_auth_client({"type": "invalid"})
+
+
+@pytest.mark.p2
+def test_github_oauth_client_init_and_normalize_unit(monkeypatch):
+    github_module = _load_github_module(monkeypatch)
+
+    client = github_module.GithubOAuthClient(_base_config())
+    assert client.authorization_url == "https://github.com/login/oauth/authorize"
+    assert client.token_url == "https://github.com/login/oauth/access_token"
+    assert client.userinfo_url == "https://api.github.com/user"
+    assert client.scope == "user:email"
+
+    normalized = client.normalize_user_info(
+        {
+            "email": "octo@example.com",
+            "login": "octocat",
+            "name": "Octo Cat",
+            "avatar_url": "https://avatar.example/octocat.png",
+        }
+    )
+    assert normalized.to_dict() == {
+        "email": "octo@example.com",
+        "username": "octocat",
+        "nickname": "Octo Cat",
+        "avatar_url": "https://avatar.example/octocat.png",
+    }
+
+    normalized_fallback = client.normalize_user_info({"email": "fallback@example.com"})
+    assert normalized_fallback.to_dict() == {
+        "email": "fallback@example.com",
+        "username": "fallback",
+        "nickname": "fallback",
+        "avatar_url": "",
+    }
+
+
+@pytest.mark.p2
+def test_github_fetch_user_info_sync_success_and_error_unit(monkeypatch):
+    github_module = _load_github_module(monkeypatch)
+    client = github_module.GithubOAuthClient(_base_config())
+
+    calls = []
+
+    def _fake_sync_request(method, url, headers=None, timeout=None):
+        calls.append((method, url, headers, timeout))
+        if url.endswith("/emails"):
+            return _FakeResponse(
+                [
+                    {"email": "other@example.com", "primary": False},
+                    {"email": "octo@example.com", "primary": True},
+                ]
+            )
+        return _FakeResponse({"login": "octocat", "name": "Octo Cat", "avatar_url": "https://avatar.example/octocat.png"})
+
+    monkeypatch.setattr(github_module, "sync_request", _fake_sync_request)
+    info = client.fetch_user_info("sync-token")
+
+    assert info.to_dict() == {
+        "email": "octo@example.com",
+        "username": "octocat",
+        "nickname": "Octo Cat",
+        "avatar_url": "https://avatar.example/octocat.png",
+    }
+    assert [call[1] for call in calls] == [
+        "https://api.github.com/user",
+        "https://api.github.com/user/emails",
+    ]
+    assert all(call[2]["Authorization"] == "Bearer sync-token" for call in calls)
+    assert all(call[3] == 7 for call in calls)
+
+    def _sync_request_raises(*_args, **_kwargs):
+        return _FakeResponse(err=RuntimeError("status boom"))
+
+    monkeypatch.setattr(github_module, "sync_request", _sync_request_raises)
+    with pytest.raises(ValueError, match="Failed to fetch github user info: status boom"):
+        client.fetch_user_info("sync-token")
+
+
+@pytest.mark.p2
+def test_github_fetch_user_info_async_success_and_error_unit(monkeypatch):
+    github_module = _load_github_module(monkeypatch)
+    client = github_module.GithubOAuthClient(_base_config())
+
+    calls = []
+
+    async def _fake_async_request(method, url, headers=None, **kwargs):
+        calls.append((method, url, headers, kwargs.get("timeout")))
+        if url.endswith("/emails"):
+            return _FakeResponse(
+                [
+                    {"email": "other@example.com", "primary": False},
+                    {"email": "octo-async@example.com", "primary": True},
+                ]
+            )
+        return _FakeResponse(
+            {"login": "octocat-async", "name": "Octo Async", "avatar_url": "https://avatar.example/octo-async.png"}
+        )
+
+    monkeypatch.setattr(github_module, "async_request", _fake_async_request)
+    info = asyncio.run(client.async_fetch_user_info("async-token"))
+
+    assert info.to_dict() == {
+        "email": "octo-async@example.com",
+        "username": "octocat-async",
+        "nickname": "Octo Async",
+        "avatar_url": "https://avatar.example/octo-async.png",
+    }
+    assert [call[1] for call in calls] == [
+        "https://api.github.com/user",
+        "https://api.github.com/user/emails",
+    ]
+    assert all(call[2]["Authorization"] == "Bearer async-token" for call in calls)
+    assert all(call[3] == 7 for call in calls)
+
+    async def _async_request_raises(*_args, **_kwargs):
+        return _FakeResponse(err=RuntimeError("async status boom"))
+
+    monkeypatch.setattr(github_module, "async_request", _async_request_raises)
+    with pytest.raises(ValueError, match="Failed to fetch github user info: async status boom"):
+        asyncio.run(client.async_fetch_user_info("async-token"))
