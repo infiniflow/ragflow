@@ -80,6 +80,31 @@ def _load_auth_modules(monkeypatch):
     return oauth_module, oidc_module
 
 
+def _load_auth_init_module(monkeypatch):
+    _load_auth_modules(monkeypatch)
+    repo_root = Path(__file__).resolve().parents[4]
+
+    github_mod = ModuleType("api.apps.auth.github")
+
+    class _StubGithubOAuthClient:
+        def __init__(self, config):
+            self.config = config
+
+    github_mod.GithubOAuthClient = _StubGithubOAuthClient
+    monkeypatch.setitem(sys.modules, "api.apps.auth.github", github_mod)
+
+    init_path = repo_root / "api" / "apps" / "auth" / "__init__.py"
+    init_spec = importlib.util.spec_from_file_location(
+        "api.apps.auth",
+        init_path,
+        submodule_search_locations=[str(repo_root / "api" / "apps" / "auth")],
+    )
+    init_module = importlib.util.module_from_spec(init_spec)
+    monkeypatch.setitem(sys.modules, "api.apps.auth", init_module)
+    init_spec.loader.exec_module(init_module)
+    return init_module
+
+
 def _base_config():
     return {
         "issuer": "https://issuer.example",
@@ -288,3 +313,39 @@ def test_normalize_user_info_passthrough(monkeypatch):
         "nickname": "User",
         "avatar_url": "picture-url",
     }
+
+
+@pytest.mark.p2
+def test_get_auth_client_type_inference_and_unsupported(monkeypatch):
+    auth_module = _load_auth_init_module(monkeypatch)
+
+    class _FakeOAuth2Client:
+        def __init__(self, config):
+            self.config = config
+
+    class _FakeOidcClient:
+        def __init__(self, config):
+            self.config = config
+
+    class _FakeGithubClient:
+        def __init__(self, config):
+            self.config = config
+
+    monkeypatch.setattr(
+        auth_module,
+        "CLIENT_TYPES",
+        {
+            "oauth2": _FakeOAuth2Client,
+            "oidc": _FakeOidcClient,
+            "github": _FakeGithubClient,
+        },
+    )
+
+    oidc_client = auth_module.get_auth_client({"issuer": "https://issuer.example"})
+    assert isinstance(oidc_client, _FakeOidcClient)
+
+    oauth_client = auth_module.get_auth_client({})
+    assert isinstance(oauth_client, _FakeOAuth2Client)
+
+    with pytest.raises(ValueError, match="Unsupported type: invalid"):
+        auth_module.get_auth_client({"type": "invalid"})
