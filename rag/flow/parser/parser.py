@@ -37,6 +37,7 @@ from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
+from rag.nlp import bullets_category, docx_question_level
 from rag.utils.base64_image import image2id
 
 
@@ -222,6 +223,39 @@ class ParserParam(ProcessParamBase):
 
 class Parser(ProcessBase):
     component_name = "Parser"
+
+    @staticmethod
+    def _extract_word_title_texts(doc, to_page=100000):
+        if not doc or not getattr(doc, "paragraphs", None):
+            return set()
+
+        pn = 0
+        lines = []
+        level_set = set()
+        bull = bullets_category([p.text for p in doc.paragraphs])
+        for p in doc.paragraphs:
+            if pn > to_page:
+                break
+            question_level, p_text = docx_question_level(p, bull)
+            if not p_text.strip("\n"):
+                continue
+            lines.append((question_level, p_text))
+            level_set.add(question_level)
+            for run in p.runs:
+                if "lastRenderedPageBreak" in run._element.xml:
+                    pn += 1
+                    continue
+                if "w:br" in run._element.xml and 'type="page"' in run._element.xml:
+                    pn += 1
+
+        if not lines or not level_set:
+            return set()
+
+        sorted_levels = sorted(level_set)
+        h2_level = sorted_levels[1] if len(sorted_levels) > 1 else 1
+        h2_level = sorted_levels[-2] if h2_level == sorted_levels[-1] and len(sorted_levels) > 2 else h2_level
+
+        return {txt.strip() for level, txt in lines if level <= h2_level and isinstance(txt, str) and txt.strip()}
 
     def _pdf(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
@@ -570,19 +604,24 @@ class Parser(ProcessBase):
 
         if conf.get("output_format") == "json":
             main_sections = docx_parser(name, binary=blob)
+            title_texts = self._extract_word_title_texts(getattr(docx_parser, "doc", None))
             sections = []
             tbls = []
             for text, image, html in main_sections:
-                sections.append((text, image))
+                section = {"text": text, "image": image}
+                text_key = text.strip() if isinstance(text, str) else ""
+                if text_key and text_key in title_texts:
+                    section["title"] = True
+                sections.append(section)
                 tbls.append(((None, html), ""))
 
-            sections = [{"text": section[0], "image": section[1]} for section in sections if section]
             sections.extend([{"text": tb, "image": None, "doc_type_kwd": "table"} for ((_, tb), _) in tbls])
 
             self.set_output("json", sections)
         elif conf.get("output_format") == "markdown":
             markdown_text = docx_parser.to_markdown(name, binary=blob)
             self.set_output("markdown", markdown_text)
+
 
     def _slides(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PowerPoint Document")
