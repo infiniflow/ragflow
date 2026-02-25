@@ -148,6 +148,35 @@ class TestAddChunk:
         else:
             assert res["message"] == expected_message, res
 
+    @pytest.mark.p2
+    def test_get_chunk_not_found(self, WebApiAuth):
+        res = get_chunk(WebApiAuth, {"chunk_id": "missing_chunk_id"})
+        assert res["code"] != 0, res
+        assert "Chunk not found" in res["message"], res
+
+    @pytest.mark.p2
+    def test_create_chunk_with_tag_fields(self, WebApiAuth, add_document):
+        _, doc_id = add_document
+        res = list_chunks(WebApiAuth, {"doc_id": doc_id})
+        if res["code"] == 0:
+            chunks_count = res["data"]["doc"]["chunk_num"]
+        else:
+            chunks_count = 0
+
+        payload = {
+            "doc_id": doc_id,
+            "content_with_weight": "chunk with tags",
+            "tag_feas": [0.1, 0.2],
+            "important_kwd": ["tag"],
+            "question_kwd": ["question"],
+        }
+        res = add_chunk(WebApiAuth, payload)
+        assert res["code"] == 0, res
+        assert res["data"]["chunk_id"], res
+        res = list_chunks(WebApiAuth, {"doc_id": doc_id})
+        assert res["code"] == 0, res
+        assert res["data"]["doc"]["chunk_num"] == chunks_count + 1, res
+
     @pytest.mark.p3
     @pytest.mark.parametrize(
         "doc_id, expected_code, expected_message",
