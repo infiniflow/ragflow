@@ -37,7 +37,7 @@ from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
-from rag.nlp import bullets_category, docx_question_level
+from rag.nlp import BULLET_PATTERN, bullets_category, docx_question_level, not_bullet
 from rag.utils.base64_image import image2id
 
 
@@ -225,37 +225,80 @@ class Parser(ProcessBase):
     component_name = "Parser"
 
     @staticmethod
-    def _extract_word_title_texts(doc, to_page=100000):
+    def _extract_word_title_lines(doc, to_page=100000):
+        lines = []
         if not doc or not getattr(doc, "paragraphs", None):
-            return set()
+            return lines
 
         pn = 0
-        lines = []
-        level_set = set()
         bull = bullets_category([p.text for p in doc.paragraphs])
         for p in doc.paragraphs:
             if pn > to_page:
                 break
             question_level, p_text = docx_question_level(p, bull)
-            if not p_text.strip("\n"):
-                continue
             lines.append((question_level, p_text))
-            level_set.add(question_level)
             for run in p.runs:
                 if "lastRenderedPageBreak" in run._element.xml:
                     pn += 1
                     continue
                 if "w:br" in run._element.xml and 'type="page"' in run._element.xml:
                     pn += 1
+        return lines
 
-        if not lines or not level_set:
+    @staticmethod
+    def _extract_markdown_title_lines(sections):
+        lines = []
+        if not sections:
+            return lines
+
+        section_texts = []
+        for section in sections:
+            text = section[0] if isinstance(section, tuple) else section
+            if not isinstance(text, str):
+                continue
+            text = text.strip()
+            if text:
+                section_texts.append(text)
+
+        if not section_texts:
+            return lines
+
+        bull = bullets_category(section_texts)
+        if bull < 0:
+            return lines
+
+        bullet_patterns = BULLET_PATTERN[bull]
+        default_level = len(bullet_patterns) + 1
+        for text in section_texts:
+            level = default_level
+            for idx, pattern in enumerate(bullet_patterns, start=1):
+                if re.match(pattern, text) and not not_bullet(text):
+                    level = idx
+                    break
+            lines.append((level, text))
+        return lines
+
+    @staticmethod
+    def _extract_title_texts(lines):
+        normalized_lines = []
+        level_set = set()
+        for level, txt in lines or []:
+            if not isinstance(txt, str):
+                continue
+            txt = txt.strip()
+            if not txt:
+                continue
+            normalized_lines.append((level, txt))
+            level_set.add(level)
+
+        if not normalized_lines or not level_set:
             return set()
 
         sorted_levels = sorted(level_set)
         h2_level = sorted_levels[1] if len(sorted_levels) > 1 else 1
         h2_level = sorted_levels[-2] if h2_level == sorted_levels[-1] and len(sorted_levels) > 2 else h2_level
 
-        return {txt.strip() for level, txt in lines if level <= h2_level and isinstance(txt, str) and txt.strip()}
+        return {txt for level, txt in normalized_lines if level <= h2_level}
 
     def _pdf(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
@@ -604,7 +647,8 @@ class Parser(ProcessBase):
 
         if conf.get("output_format") == "json":
             main_sections = docx_parser(name, binary=blob)
-            title_texts = self._extract_word_title_texts(getattr(docx_parser, "doc", None))
+            title_lines = self._extract_word_title_lines(getattr(docx_parser, "doc", None))
+            title_texts = self._extract_title_texts(title_lines)
             sections = []
             tbls = []
             for text, image, html in main_sections:
@@ -709,11 +753,16 @@ class Parser(ProcessBase):
 
         if conf.get("output_format") == "json":
             json_results = []
+            title_lines = self._extract_markdown_title_lines(sections)
+            title_texts = self._extract_title_texts(title_lines)
 
             for idx, (section_text, _) in enumerate(sections):
                 json_result = {
                     "text": section_text,
                 }
+                text_key = section_text.strip() if isinstance(section_text, str) else ""
+                if text_key and text_key in title_texts:
+                    json_result["title"] = True
 
                 images = []
                 if section_images and len(section_images) > idx and section_images[idx] is not None:
