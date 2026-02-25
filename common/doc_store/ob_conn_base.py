@@ -24,7 +24,8 @@ from typing import Any
 
 from pymysql.converters import escape_string
 from pyobvector import ObVecClient, FtsIndexParam, FtsParser, VECTOR
-from sqlalchemy import Column, Table
+from sqlalchemy import Column, JSON, Table
+from sqlalchemy.dialects.mysql import VARCHAR
 
 from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr
 
@@ -36,6 +37,15 @@ fulltext_index_name_template = "fts_idx_%s"
 fulltext_search_template = "MATCH (%s) AGAINST ('%s' IN NATURAL LANGUAGE MODE)"
 vector_search_template = "cosine_distance(%s, '%s')"
 vector_column_pattern = re.compile(r"q_(?P<vector_size>\d+)_vec")
+
+# Document metadata table columns
+doc_meta_columns = [
+    Column("id", VARCHAR(256), primary_key=True, comment="document id"),
+    Column("kb_id", VARCHAR(256), nullable=False, comment="knowledge base id"),
+    Column("meta_fields", JSON, nullable=True, comment="document metadata fields"),
+]
+doc_meta_column_names = [col.name for col in doc_meta_columns]
+doc_meta_column_types = {col.name: col.type for col in doc_meta_columns}
 
 
 def get_value_str(value: Any) -> str:
@@ -266,18 +276,8 @@ class OBConnectionBase(DocStoreConnection):
         Table name pattern: ragflow_doc_meta_{tenant_id}
         - Per-tenant metadata table for storing document metadata fields
         """
-        from sqlalchemy import JSON
-        from sqlalchemy.dialects.mysql import VARCHAR
-
         table_name = index_name
         lock_prefix = self.get_lock_prefix()
-
-        # Define columns for document metadata table
-        doc_meta_columns = [
-            Column("id", VARCHAR(256), primary_key=True, comment="document id"),
-            Column("kb_id", VARCHAR(256), nullable=False, comment="knowledge base id"),
-            Column("meta_fields", JSON, nullable=True, comment="document metadata fields"),
-        ]
 
         try:
             # Create table with distributed lock
@@ -319,11 +319,17 @@ class OBConnectionBase(DocStoreConnection):
 
     def index_exist(self, index_name: str, dataset_id: str = None) -> bool:
         """Check if index/table exists."""
-        # For doc_meta tables, use index_name directly as table name
+        # For doc_meta tables, use index_name directly and only check table existence
+        # (metadata tables don't have fulltext/vector indexes that chunk tables have)
         if index_name.startswith("ragflow_doc_meta_"):
-            table_name = index_name
-        else:
-            table_name = self.get_table_name(index_name, dataset_id) if dataset_id else index_name
+            if index_name in self._table_exists_cache:
+                return True
+            if not self.client.check_table_exists(index_name):
+                return False
+            with self._table_exists_cache_lock:
+                self._table_exists_cache.add(index_name)
+            return True
+        table_name = self.get_table_name(index_name, dataset_id) if dataset_id else index_name
         return self._check_table_exists_cached(table_name)
 
     """
