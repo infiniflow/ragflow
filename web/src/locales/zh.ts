@@ -26,6 +26,7 @@ export default {
       portugueseBr: '葡萄牙语 (巴西)',
       chinese: '简体中文',
       traditionalChinese: '繁体中文',
+      bulgarian: '保加利亚语',
       language: '语言',
       languageMessage: '请输入语言',
       languagePlaceholder: '请选择语言',
@@ -176,6 +177,7 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        fields: '字段',
         selectFiles: '已选择 {{count}} 个文件',
         type: '类型',
         fieldNameInvalid: '字段名称只能包含字母或下划线。',
@@ -207,6 +209,7 @@ export default {
         description: '描述',
         fieldName: '字段名称',
         editMetadata: '编辑元数据',
+        addMetadata: '添加元数据',
         deleteWarn: '此 {{field}} 将从所有关联文件中移除',
         deleteManageFieldAllWarn:
           '此字段及其所有对应值将从所有关联的文件中删除。',
@@ -2106,6 +2109,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       japanese: '日语',
       korean: '韩语',
       vietnamese: '越南语',
+      bulgarian: '保加利亚语',
     },
     pagination: {
       total: '总共 {{total}} 条',
