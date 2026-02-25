@@ -434,6 +434,11 @@ def update_chunk(auth, payload=None, *, headers=HEADERS):
     return res.json()
 
 
+def switch_chunks(auth, payload=None, *, headers=HEADERS):
+    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/switch", headers=headers, auth=auth, json=payload)
+    return res.json()
+
+
 def delete_chunks(auth, payload=None, *, headers=HEADERS):
     res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/rm", headers=headers, auth=auth, json=payload)
     return res.json()

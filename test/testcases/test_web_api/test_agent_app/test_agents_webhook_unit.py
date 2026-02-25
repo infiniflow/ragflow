@@ -14,6 +14,9 @@
 #  limitations under the License.
 #
 import asyncio
+import base64
+import hashlib
+import hmac
 import importlib.util
 import json
 import sys
@@ -138,19 +141,29 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _default_webhook_params(*, security=None, methods=None, content_types="application/json"):
+def _default_webhook_params(
+    *,
+    security=None,
+    methods=None,
+    content_types="application/json",
+    schema=None,
+    execution_mode="Immediately",
+    response=None,
+):
     return {
         "mode": "Webhook",
         "methods": methods if methods is not None else ["POST"],
         "security": security if security is not None else {},
         "content_types": content_types,
-        "schema": {
+        "schema": schema
+        if schema is not None
+        else {
             "query": {"properties": {}, "required": []},
             "headers": {"properties": {}, "required": []},
             "body": {"properties": {}, "required": []},
         },
-        "execution_mode": "Immediately",
-        "response": {},
+        "execution_mode": execution_mode,
+        "response": response if response is not None else {},
     }
 
 
@@ -803,3 +816,393 @@ def test_webhook_trace_polling_branches(monkeypatch):
     assert [event["ts"] for event in res["data"]["events"]] == [101.2, 102.5]
     assert res["data"]["next_since_ts"] == 102.5
     assert res["data"]["finished"] is True
+
+
+@pytest.mark.p2
+def test_webhook_parse_request_form_and_raw_body_paths(monkeypatch):
+    module = _load_agents_app(monkeypatch)
+    _patch_background_task(monkeypatch, module)
+
+    security = {"auth_type": "none"}
+
+    def _run_with(params, req):
+        cvs = _make_webhook_cvs(module, params=params)
+        monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id, _cvs=cvs: (True, _cvs))
+        monkeypatch.setattr(module, "request", req)
+        res = _run(module.webhook("agent-1"))
+        assert hasattr(res, "status_code"), res
+        assert res.status_code == 200
+
+    _run_with(
+        _default_webhook_params(security=security, content_types="application/x-www-form-urlencoded"),
+        _DummyRequest(
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            form={"a": "1", "b": "2"},
+            json_body={},
+        ),
+    )
+
+    _run_with(
+        _default_webhook_params(security=security, content_types="text/plain"),
+        _DummyRequest(headers={"Content-Type": "text/plain"}, raw_body=b'{"k": 1}', json_body={}),
+    )
+
+    _run_with(
+        _default_webhook_params(security=security, content_types="text/plain"),
+        _DummyRequest(headers={"Content-Type": "text/plain"}, raw_body=b"{bad-json}", json_body={}),
+    )
+
+    _run_with(
+        _default_webhook_params(security=security, content_types="text/plain"),
+        _DummyRequest(headers={"Content-Type": "text/plain"}, raw_body=b"", json_body={}),
+    )
+
+    class _BrokenRawRequest(_DummyRequest):
+        async def get_data(self):
+            raise RuntimeError("raw read failed")
+
+    _run_with(
+        _default_webhook_params(security=security, content_types="text/plain"),
+        _BrokenRawRequest(headers={"Content-Type": "text/plain"}, json_body={}),
+    )
+
+
+@pytest.mark.p2
+def test_webhook_schema_extract_cast_defaults_and_validation_errors(monkeypatch):
+    module = _load_agents_app(monkeypatch)
+    _patch_background_task(monkeypatch, module)
+
+    base_schema = {
+        "query": {
+            "properties": {
+                "q_file": {"type": "file"},
+                "q_object": {"type": "object"},
+                "q_boolean": {"type": "boolean"},
+                "q_number": {"type": "number"},
+                "q_string": {"type": "string"},
+                "q_array": {"type": "array<string>"},
+                "q_null": {"type": "null"},
+                "q_default_none": {},
+            },
+            "required": [],
+        },
+        "headers": {"properties": {"Content-Type": {"type": "string"}}, "required": []},
+        "body": {
+            "properties": {
+                "bool_true": {"type": "boolean"},
+                "bool_false": {"type": "boolean"},
+                "number_int": {"type": "number"},
+                "number_float": {"type": "number"},
+                "obj": {"type": "object"},
+                "arr": {"type": "array<number>"},
+                "text": {"type": "string"},
+                "file_list": {"type": "file"},
+                "unknown": {"type": "mystery"},
+            },
+            "required": [
+                "bool_true",
+                "number_int",
+                "obj",
+                "arr",
+                "text",
+                "file_list",
+                "unknown",
+            ],
+        },
+    }
+
+    params = _default_webhook_params(
+        security={"auth_type": "none"},
+        content_types="application/json",
+        schema=base_schema,
+    )
+    cvs = _make_webhook_cvs(module, params=params)
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
+    monkeypatch.setattr(
+        module,
+        "request",
+        _DummyRequest(
+            headers={"Content-Type": "application/json"},
+            args={},
+            json_body={
+                "bool_true": "true",
+                "bool_false": "0",
+                "number_int": "-3",
+                "number_float": "2.5",
+                "obj": '{"a": 1}',
+                "arr": "[1, 2]",
+                "text": "hello",
+                "file_list": ["f1"],
+                "unknown": "mystery",
+            },
+        ),
+    )
+    res = _run(module.webhook("agent-1"))
+    assert hasattr(res, "status_code"), res
+    assert res.status_code == 200
+
+    failure_cases = [
+        (
+            {"query": {"properties": {}, "required": []}, "headers": {"properties": {}, "required": []}, "body": {"properties": {"must": {"type": "string"}}, "required": ["must"]}},
+            {},
+            "missing required field",
+        ),
+        (
+            {"query": {"properties": {}, "required": []}, "headers": {"properties": {}, "required": []}, "body": {"properties": {"flag": {"type": "boolean"}}, "required": ["flag"]}},
+            {"flag": "maybe"},
+            "auto-cast failed",
+        ),
+        (
+            {"query": {"properties": {}, "required": []}, "headers": {"properties": {}, "required": []}, "body": {"properties": {"num": {"type": "number"}}, "required": ["num"]}},
+            {"num": "abc"},
+            "auto-cast failed",
+        ),
+        (
+            {"query": {"properties": {}, "required": []}, "headers": {"properties": {}, "required": []}, "body": {"properties": {"obj": {"type": "object"}}, "required": ["obj"]}},
+            {"obj": "[]"},
+            "auto-cast failed",
+        ),
+        (
+            {"query": {"properties": {}, "required": []}, "headers": {"properties": {}, "required": []}, "body": {"properties": {"arr": {"type": "array<number>"}}, "required": ["arr"]}},
+            {"arr": "{}"},
+            "auto-cast failed",
+        ),
+        (
+            {"query": {"properties": {}, "required": []}, "headers": {"properties": {}, "required": []}, "body": {"properties": {"num": {"type": "number"}}, "required": ["num"]}},
+            {"num": []},
+            "type mismatch",
+        ),
+        (
+            {"query": {"properties": {}, "required": []}, "headers": {"properties": {}, "required": []}, "body": {"properties": {"arr": {"type": "array<number>"}}, "required": ["arr"]}},
+            {"arr": 3},
+            "type mismatch",
+        ),
+        (
+            {"query": {"properties": {}, "required": []}, "headers": {"properties": {}, "required": []}, "body": {"properties": {"arr": {"type": "array<number>"}}, "required": ["arr"]}},
+            {"arr": [1, "x"]},
+            "type mismatch",
+        ),
+        (
+            {"query": {"properties": {}, "required": []}, "headers": {"properties": {}, "required": []}, "body": {"properties": {"file": {"type": "file"}}, "required": ["file"]}},
+            {"file": "inline-file"},
+            "type mismatch",
+        ),
+    ]
+
+    for schema, body_payload, expected_substring in failure_cases:
+        params = _default_webhook_params(
+            security={"auth_type": "none"},
+            content_types="application/json",
+            schema=schema,
+        )
+        cvs = _make_webhook_cvs(module, params=params)
+        monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id, _cvs=cvs: (True, _cvs))
+        monkeypatch.setattr(
+            module,
+            "request",
+            _DummyRequest(headers={"Content-Type": "application/json"}, json_body=body_payload),
+        )
+        res = _run(module.webhook("agent-1"))
+        _assert_bad_request(res, expected_substring)
+
+
+@pytest.mark.p2
+def test_webhook_immediate_response_status_and_template_validation(monkeypatch):
+    module = _load_agents_app(monkeypatch)
+    _patch_background_task(monkeypatch, module)
+
+    def _run_case(response_cfg):
+        params = _default_webhook_params(
+            security={"auth_type": "none"},
+            content_types="application/json",
+            response=response_cfg,
+        )
+        cvs = _make_webhook_cvs(module, params=params)
+        monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id, _cvs=cvs: (True, _cvs))
+        monkeypatch.setattr(module, "request", _DummyRequest(headers={"Content-Type": "application/json"}, json_body={}))
+        return _run(module.webhook("agent-1"))
+
+    _assert_bad_request(_run_case({"status": "abc"}), "Invalid response status code")
+    _assert_bad_request(_run_case({"status": 500}), "must be between 200 and 399")
+
+    empty_res = _run_case({"status": 204, "body_template": ""})
+    assert empty_res.status_code == 204
+    assert empty_res.content_type == "application/json"
+    assert _run(empty_res.get_data(as_text=True)) == "null"
+
+    json_res = _run_case({"status": 201, "body_template": '{"ok": true}'})
+    assert json_res.status_code == 201
+    assert json_res.content_type == "application/json"
+    assert json.loads(_run(json_res.get_data(as_text=True))) == {"ok": True}
+
+    plain_res = _run_case({"status": 202, "body_template": "plain-text"})
+    assert plain_res.status_code == 202
+    assert plain_res.content_type == "text/plain"
+    assert _run(plain_res.get_data(as_text=True)) == "plain-text"
+
+
+@pytest.mark.p2
+def test_webhook_background_run_success_and_error_trace_paths(monkeypatch):
+    module = _load_agents_app(monkeypatch)
+
+    redis_store = {}
+
+    def redis_get(key):
+        return redis_store.get(key)
+
+    def redis_set_obj(key, obj, _ttl):
+        redis_store[key] = json.dumps(obj)
+
+    monkeypatch.setattr(module.REDIS_CONN, "get", redis_get)
+    monkeypatch.setattr(module.REDIS_CONN, "set_obj", redis_set_obj)
+
+    update_calls = []
+    monkeypatch.setattr(module.UserCanvasService, "update_by_id", lambda *_args, **_kwargs: update_calls.append(True))
+
+    tasks = []
+
+    def _capture_task(coro):
+        tasks.append(coro)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(module.asyncio, "create_task", _capture_task)
+
+    class _CanvasSuccess(_StubCanvas):
+        async def run(self, **_kwargs):
+            yield {"event": "message", "data": {"content": "ok"}}
+
+        def __str__(self):
+            return "{}"
+
+    monkeypatch.setattr(module, "Canvas", _CanvasSuccess)
+
+    params = _default_webhook_params(security={"auth_type": "none"}, content_types="application/json")
+    cvs = _make_webhook_cvs(module, params=params)
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
+    monkeypatch.setattr(
+        module,
+        "request",
+        _DummyRequest(path="/api/v1/webhook_test/agent-1", headers={"Content-Type": "application/json"}, json_body={}),
+    )
+
+    res = _run(module.webhook("agent-1"))
+    assert res.status_code == 200
+    assert len(tasks) == 1
+    _run(tasks.pop(0))
+    assert update_calls == [True]
+
+    key = "webhook-trace-agent-1-logs"
+    trace_obj = json.loads(redis_store[key])
+    ws = next(iter(trace_obj["webhooks"].values()))
+    events = ws["events"]
+    assert any(event.get("event") == "message" for event in events)
+    assert any(event.get("event") == "finished" and event.get("success") is True for event in events)
+
+    class _CanvasError(_StubCanvas):
+        async def run(self, **_kwargs):
+            raise RuntimeError("run failed")
+            yield {}
+
+    monkeypatch.setattr(module, "Canvas", _CanvasError)
+    tasks.clear()
+    redis_store.clear()
+    cvs = _make_webhook_cvs(module, params=params)
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id, _cvs=cvs: (True, _cvs))
+    res = _run(module.webhook("agent-1"))
+    assert res.status_code == 200
+    _run(tasks.pop(0))
+    trace_obj = json.loads(redis_store[key])
+    ws = next(iter(trace_obj["webhooks"].values()))
+    events = ws["events"]
+    assert any(event.get("event") == "error" for event in events)
+    assert any(event.get("event") == "finished" and event.get("success") is False for event in events)
+
+    log_messages = []
+    monkeypatch.setattr(module.logging, "exception", lambda msg, *_args, **_kwargs: log_messages.append(str(msg)))
+    monkeypatch.setattr(module.REDIS_CONN, "get", lambda _key: "{")
+    monkeypatch.setattr(module.REDIS_CONN, "set_obj", lambda *_args, **_kwargs: None)
+    tasks.clear()
+    cvs = _make_webhook_cvs(module, params=params)
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id, _cvs=cvs: (True, _cvs))
+    _run(module.webhook("agent-1"))
+    _run(tasks.pop(0))
+    assert any("Failed to append webhook trace" in msg for msg in log_messages)
+
+
+@pytest.mark.p2
+def test_webhook_sse_success_and_exception_paths(monkeypatch):
+    module = _load_agents_app(monkeypatch)
+
+    redis_store = {}
+    monkeypatch.setattr(module.REDIS_CONN, "get", lambda key: redis_store.get(key))
+    monkeypatch.setattr(module.REDIS_CONN, "set_obj", lambda key, obj, _ttl: redis_store.__setitem__(key, json.dumps(obj)))
+
+    params = _default_webhook_params(
+        security={"auth_type": "none"},
+        content_types="application/json",
+        execution_mode="Deferred",
+    )
+    cvs = _make_webhook_cvs(module, params=params)
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
+
+    class _CanvasSSESuccess(_StubCanvas):
+        async def run(self, **_kwargs):
+            yield {"event": "message", "data": {"content": "x", "start_to_think": True}}
+            yield {"event": "message", "data": {"content": "y", "end_to_think": True}}
+            yield {"event": "message", "data": {"content": "Hello"}}
+            yield {"event": "message_end", "data": {"status": "201"}}
+
+    monkeypatch.setattr(module, "Canvas", _CanvasSSESuccess)
+    monkeypatch.setattr(
+        module,
+        "request",
+        _DummyRequest(path="/api/v1/webhook_test/agent-1", headers={"Content-Type": "application/json"}, json_body={}),
+    )
+    res = _run(module.webhook("agent-1"))
+    assert res.status_code == 201
+    payload = json.loads(_run(res.get_data(as_text=True)))
+    assert payload == {"message": "<think></think>Hello", "success": True, "code": 201}
+
+    class _CanvasSSEError(_StubCanvas):
+        async def run(self, **_kwargs):
+            raise RuntimeError("sse failed")
+            yield {}
+
+    monkeypatch.setattr(module, "Canvas", _CanvasSSEError)
+    monkeypatch.setattr(
+        module,
+        "request",
+        _DummyRequest(path="/api/v1/webhook_test/agent-1", headers={"Content-Type": "application/json"}, json_body={}),
+    )
+    res = _run(module.webhook("agent-1"))
+    assert res.status_code == 400
+    payload = json.loads(_run(res.get_data(as_text=True)))
+    assert payload["code"] == 400
+    assert payload["success"] is False
+    assert "sse failed" in payload["message"]
+
+
+@pytest.mark.p2
+def test_webhook_trace_encoded_id_generation(monkeypatch):
+    module = _load_agents_app(monkeypatch)
+
+    webhooks_obj = {
+        "webhooks": {
+            "101.0": {
+                "events": [{"event": "message", "ts": 101.2}],
+            }
+        }
+    }
+    monkeypatch.setattr(module.REDIS_CONN, "get", lambda _key: json.dumps(webhooks_obj))
+    monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args({"since_ts": "100.0"})))
+    res = _run(module.webhook_trace("agent-1"))
+    assert res["code"] == module.RetCode.SUCCESS
+
+    expected = base64.urlsafe_b64encode(
+        hmac.new(
+            b"webhook_id_secret",
+            b"101.0",
+            hashlib.sha256,
+        ).digest()
+    ).decode("utf-8").rstrip("=")
+    assert res["data"]["webhook_id"] == expected
