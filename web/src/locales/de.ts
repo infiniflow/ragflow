@@ -48,6 +48,7 @@ export default {
       submit: 'Absenden',
       clear: 'Leeren',
       embedIntoSite: 'In Webseite einbetten',
+      openInNewTab: 'Chat in neuem Tab',
       previousPage: 'Zurück',
       nextPage: 'Weiter',
       add: 'Hinzufügen',

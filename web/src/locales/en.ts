@@ -46,6 +46,7 @@ export default {
       submit: 'Submit',
       clear: 'Clear',
       embedIntoSite: 'Embed into webpage',
+      openInNewTab: 'Chat in new tab',
       previousPage: 'Previous',
       nextPage: 'Next',
       add: 'Add',
@@ -198,6 +199,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       metadata: {
+        fields: 'fields',
         selectFiles: 'Selected {{count}} files',
         type: 'Type',
         fieldNameInvalid: 'Field name can only contain letters or underscores.',

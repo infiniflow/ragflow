@@ -45,6 +45,7 @@ export default {
       submit: '提交',
       clear: '清空',
       embedIntoSite: '嵌入网站',
+      openInNewTab: '在新标签页中聊天',
       previousPage: '上一页',
       nextPage: '下一页',
       add: '添加',
@@ -177,6 +178,7 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        fields: '字段',
         selectFiles: '已选择 {{count}} 个文件',
         type: '类型',
         fieldNameInvalid: '字段名称只能包含字母或下划线。',
