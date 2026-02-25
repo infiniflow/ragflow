@@ -292,7 +292,7 @@ def knowledge_graph(auth, dataset_id, params=None, *, headers=HEADERS):
 
 
 def delete_knowledge_graph(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
-    res = requests.delete(url=f"{HOST_ADDRESS}{KB_APP_URL}/{dataset_id}/delete_knowledge_graph", headers=headers, auth=auth, json=payload, data=data)
+    res = requests.delete(url=f"{HOST_ADDRESS}{KB_APP_URL}/{dataset_id}/knowledge_graph", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 

@@ -50,11 +50,13 @@ def _install_rag_llm_stubs():
         rag_pkg = types.ModuleType("rag")
         rag_pkg.__path__ = []
         rag_pkg.__package__ = "rag"
+        rag_pkg.__file__ = __file__
         sys.modules["rag"] = rag_pkg
 
     llm_pkg = types.ModuleType("rag.llm")
     llm_pkg.__path__ = []
     llm_pkg.__package__ = "rag.llm"
+    llm_pkg.__file__ = __file__
     sys.modules["rag.llm"] = llm_pkg
     rag_pkg.llm = llm_pkg
 
@@ -67,6 +69,7 @@ def _install_rag_llm_stubs():
             sub_mod = types.ModuleType(full_name)
             sys.modules[full_name] = sub_mod
         sub_mod.__package__ = "rag.llm"
+        sub_mod.__file__ = __file__
         sub_mod.__getattr__ = _make_stub_getattr(full_name)
         setattr(llm_pkg, submodule, sub_mod)
 

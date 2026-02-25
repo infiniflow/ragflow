@@ -66,3 +66,15 @@ class TestGetRecentMessage:
         for message in res["data"]:
             assert message["session_id"] == session_id, message
 
+    @pytest.mark.p2
+    def test_get_recent_messages_missing_memory_id(self, WebApiAuth):
+        res = get_recent_message(WebApiAuth, params={})
+        assert res["code"] == 101, res
+        assert "memory_ids is required" in res["message"], res
+
+    @pytest.mark.p2
+    def test_get_recent_messages_csv_memory_ids(self, WebApiAuth):
+        memory_id = self.memory_id
+        res = get_recent_message(WebApiAuth, params={"memory_id": f"{memory_id},{memory_id}"})
+        assert res["code"] == 0, res
+        assert isinstance(res["data"], list), res
