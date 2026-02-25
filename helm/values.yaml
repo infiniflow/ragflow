@@ -26,7 +26,9 @@ env:
   # The password for Elasticsearch
   ELASTIC_PASSWORD: infini_rag_flow_helm
   # if using elastic-cloud deployment, set enabled: false
-  # ES_HOST: 'https://xxxx'
+  # ES_HOST: chiffre.cloudhostingdomain.com
+  # ES_HOST_PROTO: https://  # can be https:// or http://
+  # ES_HOST_PORT: 443      # define it even if it's 80 or 443, the default is 9200
   # ELASTIC_API_KEY: replace-if-used-elastic-cloud
 
   # The password for OpenSearch.
