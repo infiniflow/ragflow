@@ -17,7 +17,7 @@ import json
 import os.path
 import pathlib
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from quart import request, make_response
 from api.apps import current_user, login_required
 from api.common.check_team_permission import check_kb_team_permission
@@ -48,6 +48,18 @@ from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_heade
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search, rag_tokenizer
 from common import settings
+
+
+def _is_safe_download_filename(name: str) -> bool:
+    if not name or name in {".", ".."}:
+        return False
+    if "\x00" in name or len(name) > 255:
+        return False
+    if name != PurePosixPath(name).name:
+        return False
+    if name != PureWindowsPath(name).name:
+        return False
+    return True
 
 
 @manager.route("/upload", methods=["POST"])  # noqa: F821
@@ -874,7 +886,11 @@ async def parse():
         r = re.search(r"filename=\"([^\"]+)\"", str(res_headers))
         if not r or not r.group(1):
             return get_json_result(data=False, message="Can't not identify downloaded file", code=RetCode.ARGUMENT_ERROR)
-        f = File(r.group(1), os.path.join(download_path, r.group(1)))
+        filename = r.group(1).strip()
+        if not _is_safe_download_filename(filename):
+            return get_json_result(data=False, message="Invalid downloaded filename", code=RetCode.ARGUMENT_ERROR)
+        filepath = os.path.join(download_path, filename)
+        f = File(filename, filepath)
         txt = FileService.parse_docs([f], current_user.id)
         return get_json_result(data=txt)
 
