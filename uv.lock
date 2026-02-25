@@ -223,7 +223,7 @@ wheels = [
 
 [[package]]
 name = "akshare"
-version = "1.18.28"
+version = "1.18.29"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "akracer", marker = "sys_platform == 'linux'" },
@@ -243,9 +243,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "xlrd" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/82/bb/adc8a84358f304e8651503e5254803eb4c279d3043f17311567f5b507144/akshare-1.18.28.tar.gz", hash = "sha256:0b80a9a391ddb590d434022cf9afa848f90b192c094d12ea56f59eb87f859d0e", size = 862435, upload-time = "2026-02-24T14:59:06.497Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/25/fd/d3f112073c6997fe0e18621e3a2646b5d82526516997ebd60255e4d92664/akshare-1.18.29.tar.gz", hash = "sha256:e4b721f65c5436aefd770e84c5db53527430667f4a26e646d19c16b644c7cc17", size = 862449, upload-time = "2026-02-25T06:22:05.061Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d7/07/e3569f570acbcb0e347b1eb44a6e74e851ec64ffa7c8ae85016cecc9565e/akshare-1.18.28-py3-none-any.whl", hash = "sha256:26b8f40f2d63e56f5ff0f45efe420580dbbcb6604125aeb2fa2e691bb424b576", size = 1083934, upload-time = "2026-02-24T14:59:05.087Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/52/c7/323b8e438072f3f3f1b37c7b6c5dfb35d5139a9326e423a6d2f8d47f6d4b/akshare-1.18.29-py3-none-any.whl", hash = "sha256:6b04d7fe0c263da20ce59f7db20d4c6af452a7b222bf2255109220039d1efadb", size = 1083940, upload-time = "2026-02-25T06:22:03.537Z" },
 ]
 
 [[package]]
@@ -1039,11 +1039,11 @@ wheels = [
 
 [[package]]
 name = "chardet"
-version = "6.0.0.post1"
+version = "5.2.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/7f/42/fb9436c103a881a377e34b9f58d77b5f503461c702ff654ebe86151bcfe9/chardet-6.0.0.post1.tar.gz", hash = "sha256:6b78048c3c97c7b2ed1fbad7a18f76f5a6547f7d34dbab536cc13887c9a92fa4", size = 12521798, upload-time = "2026-02-22T15:09:17.925Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f3/0d/f7b6ab21ec75897ed80c17d79b15951a719226b9fababf1e40ea74d69079/chardet-5.2.0.tar.gz", hash = "sha256:1b3b6ff479a8c414bc3fa2c0852995695c4a026dcd6d0633b2dd092ca39c1cf7", size = 2069618, upload-time = "2023-08-01T19:23:02.662Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/66/42/5de54f632c2de53cd3415b3703383d5fff43a94cbc0567ef362515261a21/chardet-6.0.0.post1-py3-none-any.whl", hash = "sha256:c894a36800549adf7bb5f2af47033281b75fdfcd2aa0f0243be0ad22a52e2dcb", size = 627245, upload-time = "2026-02-22T15:09:15.876Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/38/6f/f5fbc992a329ee4e0f288c1fe0e2ad9485ed064cac731ed2fe47dcc38cbf/chardet-5.2.0-py3-none-any.whl", hash = "sha256:e1cf59446890a00105fe7b7912492ea04b6e6f06d4b742b2c788469e34c82970", size = 199385, upload-time = "2023-08-01T19:23:00.661Z" },
 ]
 
 [[package]]
@@ -6188,6 +6188,7 @@ dependencies = [
     { name = "bio" },
     { name = "boxsdk" },
     { name = "captcha" },
+    { name = "chardet" },
     { name = "cn2an" },
     { name = "cohere" },
     { name = "crawl4ai" },
@@ -6325,6 +6326,7 @@ requires-dist = [
     { name = "bio", specifier = "==1.7.1" },
     { name = "boxsdk", specifier = ">=10.1.0" },
     { name = "captcha", specifier = ">=0.7.1" },
+    { name = "chardet", specifier = ">=5.2.0,<6.0.0" },
     { name = "cn2an", specifier = "==0.5.22" },
     { name = "cohere", specifier = "==5.6.2" },
     { name = "crawl4ai", specifier = ">=0.4.0,<1.0.0" },
