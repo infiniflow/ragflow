@@ -986,7 +986,7 @@ class OBConnection(OBConnectionBase):
                     for field, order in order_by.fields:
                         if isinstance(column_types[field], ARRAY):
                             f = field + "_sort"
-                            fields_expr += f", array_to_string({field}, ',') AS {f}"
+                            fields_expr += f", array_avg({field}) AS {f}"
                             field = f
                         order = "ASC" if order == 0 else "DESC"
                         orders.append(f"{field} {order}")
