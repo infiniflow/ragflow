@@ -136,31 +136,10 @@ def thumbnail_img(filename, blob):
         except Exception:
             return None
 
+    # PPT/PPTX thumbnail would require a licensed library; skip and return None.
     if re.match(r".*\.(ppt|pptx)$", filename):
-        try:
-            import aspose.pydrawing as drawing
-            import aspose.slides as slides
-        except ImportError:
-            return None
+        return None
 
-        try:
-            with slides.Presentation(BytesIO(blob)) as presentation:
-                if not presentation.slides or len(presentation.slides) == 0:
-                    return None
-                buffered = BytesIO()
-                scale = 0.03
-                img = None
-                for _ in range(10):
-                    presentation.slides[0].get_thumbnail(scale, scale).save(buffered, drawing.imaging.ImageFormat.png)
-                    img = buffered.getvalue()
-                    if len(img) >= 64000:
-                        scale = scale / 2.0
-                        buffered = BytesIO()
-                    else:
-                        break
-                return img
-        except Exception:
-            pass
     return None
 
 
