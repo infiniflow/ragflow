@@ -55,6 +55,24 @@ class _BBox:
     y1: float
 
 
+def _extract_bbox_from_prov(item, prov_attr: str = "prov") -> Optional[_BBox]:
+    prov = getattr(item, prov_attr, None)
+    if not prov:
+        return None
+    
+    prov_item = prov[0] if isinstance(prov, list) else prov
+    pn = getattr(prov_item, "page_no", None)
+    bb = getattr(prov_item, "bbox", None)
+    if pn is None or bb is None:
+        return None
+    
+    coords = [getattr(bb, attr) for attr in ("l", "t", "r", "b")]
+    if None in coords:
+        return None
+    
+    return _BBox(page_no=int(pn), x0=coords[0], y0=coords[1], x1=coords[2], y1=coords[3])
+
+
 class DoclingParser(RAGFlowPdfParser):
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -168,30 +186,18 @@ class DoclingParser(RAGFlowPdfParser):
 
     def _iter_doc_items(self, doc) -> Iterable[tuple[str, Any, Optional[_BBox]]]:
         for t in getattr(doc, "texts", []):
-            parent=getattr(t, "parent", "")
-            ref=getattr(parent,"cref","")
-            label=getattr(t, "label", "")
-            if (label in ("section_header","text",) and ref in ("#/body",)) or label in ("list_item",):
+            parent = getattr(t, "parent", "")
+            ref = getattr(parent, "cref", "")
+            label = getattr(t, "label", "")
+            if (label in ("section_header", "text") and ref in ("#/body",)) or label in ("list_item",):
                 text = getattr(t, "text", "") or ""
-                bbox = None
-                if getattr(t, "prov", None):
-                    pn = getattr(t.prov[0], "page_no", None)
-                    bb = getattr(t.prov[0], "bbox", None)
-                    bb = [getattr(bb, "l", None),getattr(bb, "t", None),getattr(bb, "r", None),getattr(bb, "b", None)]
-                    if pn and bb and len(bb) == 4:
-                        bbox = _BBox(page_no=int(pn), x0=bb[0], y0=bb[1], x1=bb[2], y1=bb[3])
+                bbox = _extract_bbox_from_prov(t)
                 yield (DoclingContentType.TEXT.value, text, bbox)
 
         for item in getattr(doc, "texts", []):
             if getattr(item, "label", "") in ("FORMULA",):
                 text = getattr(item, "text", "") or ""
-                bbox = None
-                if getattr(item, "prov", None):
-                    pn = getattr(item.prov, "page_no", None)
-                    bb = getattr(item.prov, "bbox", None)
-                    bb = [getattr(bb, "l", None),getattr(bb, "t", None),getattr(bb, "r", None),getattr(bb, "b", None)]
-                    if pn and bb and len(bb) == 4:
-                        bbox = _BBox(int(pn), bb[0], bb[1], bb[2], bb[3])
+                bbox = _extract_bbox_from_prov(item)
                 yield (DoclingContentType.EQUATION.value, text, bbox)
 
     def _transfer_to_sections(self, doc, parse_method: str) -> list[tuple[str, str]]:
@@ -248,16 +254,9 @@ class DoclingParser(RAGFlowPdfParser):
         for tab in getattr(doc, "tables", []):
             img = None
             positions = ""
-            if getattr(tab, "prov", None):
-                pn = getattr(tab.prov[0], "page_no", None)
-                bb = getattr(tab.prov[0], "bbox", None)
-                if pn is not None and bb is not None:
-                    left = getattr(bb, "l", None)
-                    top = getattr(bb, "t", None)
-                    right = getattr(bb, "r", None)
-                    bott = getattr(bb, "b", None)
-                    if None not in (left, top, right, bott):
-                        img, positions = self.cropout_docling_table(int(pn), (float(left), float(top), float(right), float(bott)))
+            bbox = _extract_bbox_from_prov(tab)
+            if bbox:
+                img, positions = self.cropout_docling_table(bbox.page_no, (bbox.x0, bbox.y0, bbox.x1, bbox.y1))
             html = ""
             try:
                 html = tab.export_to_html(doc=doc)
@@ -267,16 +266,9 @@ class DoclingParser(RAGFlowPdfParser):
         for pic in getattr(doc, "pictures", []):
             img = None
             positions = ""
-            if getattr(pic, "prov", None):
-                pn = getattr(pic.prov[0], "page_no", None)
-                bb = getattr(pic.prov[0], "bbox", None)
-                if pn is not None and bb is not None:
-                    left = getattr(bb, "l", None)
-                    top = getattr(bb, "t", None)
-                    right = getattr(bb, "r", None)
-                    bott = getattr(bb, "b", None)
-                    if None not in (left, top, right, bott):
-                        img, positions = self.cropout_docling_table(int(pn), (float(left), float(top), float(right), float(bott)))
+            bbox = _extract_bbox_from_prov(pic)
+            if bbox:
+                img, positions = self.cropout_docling_table(bbox.page_no, (bbox.x0, bbox.y0, bbox.x1, bbox.y1))
             captions = ""
             try:
                 captions = pic.caption_text(doc=doc)
