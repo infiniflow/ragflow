@@ -78,19 +78,17 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
     logging.info(
         f"Super user initialized. email: {email},A default password has been set; changing the password after login is strongly recommended.")
 
-    chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
-    msg = asyncio.run(chat_mdl.async_chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={}))
-    if msg.find("ERROR: ") == 0:
-        logging.error(
-            "'{}' doesn't work. {}".format(
-                tenant["llm_id"],
-                msg))
-    embd_mdl = LLMBundle(tenant["id"], LLMType.EMBEDDING, tenant["embd_id"])
-    v, c = embd_mdl.encode(["Hello!"])
-    if c == 0:
-        logging.error(
-            "'{}' doesn't work!".format(
-                tenant["embd_id"]))
+    if tenant["llm_id"]:
+        chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
+        msg = asyncio.run(chat_mdl.async_chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={}))
+        if msg.find("ERROR: ") == 0:
+            logging.error("'{}' doesn't work. {}".format( tenant["llm_id"], msg))
+
+    if tenant["embd_id"]:
+        embd_mdl = LLMBundle(tenant["id"], LLMType.EMBEDDING, tenant["embd_id"])
+        v, c = embd_mdl.encode(["Hello!"])
+        if c == 0:
+            logging.error("'{}' doesn't work!".format(tenant["embd_id"]))
 
 
 def init_llm_factory():
