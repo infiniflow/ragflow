@@ -34,7 +34,8 @@ from common.doc_store.doc_store_base import MatchExpr, OrderByExpr, FusionExpr, 
 from common.doc_store.ob_conn_base import (
     OBConnectionBase, get_value_str,
     vector_search_template, vector_column_pattern,
-    fulltext_index_name_template,
+    fulltext_index_name_template, doc_meta_column_names,
+    doc_meta_column_types,
 )
 from common.float_utils import get_float
 from rag.nlp import rag_tokenizer
@@ -135,8 +136,9 @@ class SearchResult(BaseModel):
 
 
 def get_column_value(column_name: str, value: Any) -> Any:
-    if column_name in column_types:
-        column_type = column_types[column_name]
+    # Check chunk table columns first, then doc_meta table columns
+    column_type = column_types.get(column_name) or doc_meta_column_types.get(column_name)
+    if column_type:
         if isinstance(column_type, String):
             return str(value)
         elif isinstance(column_type, Integer):
@@ -658,6 +660,12 @@ class OBConnection(OBConnectionBase):
             return result
 
         output_fields = select_fields.copy()
+        if "*" in output_fields:
+            if index_names[0].startswith("ragflow_doc_meta_"):
+                output_fields = doc_meta_column_names.copy()
+            else:
+                output_fields = column_names.copy()
+
         if "id" not in output_fields:
             output_fields = ["id"] + output_fields
         if "_score" in output_fields:
