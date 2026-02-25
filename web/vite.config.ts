@@ -70,7 +70,12 @@ export default defineConfig(({ mode, command }) => {
           changeOrigin: true,
           ws: true,
         },
-        '^/(api|v1)': {
+        '/api': {
+          target: 'http://127.0.0.1:9380/',
+          changeOrigin: true,
+          ws: true,
+        },
+        '/v1': {
           target: 'http://127.0.0.1:9380/',
           changeOrigin: true,
           ws: true,
@@ -112,6 +117,13 @@ export default defineConfig(({ mode, command }) => {
             // if (id.includes('src/components')) {
             //   return 'components';
             // }
+
+            if (id.includes('src/locales/') && id.endsWith('.ts')) {
+              const match = id.match(/src\/locales\/([^/]+)\.ts$/);
+              if (match) {
+                return `locale-${match[1]}`;
+              }
+            }
 
             if (id.includes('node_modules')) {
               if (id.includes('node_modules/d3')) {

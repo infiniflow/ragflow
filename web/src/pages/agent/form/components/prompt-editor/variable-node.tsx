@@ -38,7 +38,7 @@ export class VariableNode extends DecoratorNode<ReactNode> {
 
   createDOM(): HTMLElement {
     const dom = document.createElement('span');
-    dom.className = 'mr-1';
+    dom.className = 'variable-node [&+.variable-node]:ml-[.25em]';
 
     return dom;
   }
@@ -53,16 +53,18 @@ export class VariableNode extends DecoratorNode<ReactNode> {
     );
     if (this.__parentLabel) {
       content = (
-        <div className="flex items-center gap-1 text-text-primary ">
-          <div>{this.__icon}</div>
-          <div>{this.__parentLabel}</div>
-          <div className="text-text-disabled mr-1">/</div>
+        <div className="flex items-center gap-1 text-text-primary">
+          <div className="contents after:content-['/'] after:text-text-disabled">
+            {this.__icon}
+            {this.__parentLabel}
+          </div>
+
           {content}
         </div>
       );
     }
     return (
-      <div className="bg-accent-primary-5 text-sm inline-flex items-center rounded-md px-2 py-1">
+      <div className="bg-accent-primary-5 text-sm inline-flex items-center rounded-md px-2 py-1 align-middle">
         {content}
       </div>
     );
