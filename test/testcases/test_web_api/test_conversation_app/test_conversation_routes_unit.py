@@ -16,13 +16,13 @@
 
 import asyncio
 import importlib.util
-import json
 import sys
 from copy import deepcopy
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+from anyio import Path as AsyncPath
 
 
 class _DummyManager:
@@ -95,7 +95,7 @@ class _DummyUploadedFile:
 
     async def save(self, path):
         self.saved_path = path
-        Path(path).write_bytes(b"audio-bytes")
+        await AsyncPath(path).write_bytes(b"audio-bytes")
 
 
 def _run(coro):
