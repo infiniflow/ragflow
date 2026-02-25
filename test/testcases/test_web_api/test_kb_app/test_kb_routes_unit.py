@@ -667,3 +667,382 @@ def test_list_pipeline_logs_validation_branches(monkeypatch):
     res = _run(inspect.unwrap(module.list_pipeline_logs)())
     assert res["code"] == module.RetCode.DATA_ERROR, res
     assert "Create data filter is abnormal." in res["message"], res
+
+
+@pytest.mark.p2
+def test_list_pipeline_logs_filter_and_exception_branches(monkeypatch):
+    module = _load_kb_module(monkeypatch)
+
+    _set_request_args(
+        monkeypatch,
+        module,
+        {
+            "kb_id": "kb-1",
+            "page": "1",
+            "page_size": "10",
+            "desc": "false",
+            "create_date_from": "2025-02-01",
+            "create_date_to": "2025-01-01",
+        },
+    )
+
+    _set_request_json(monkeypatch, module, {"operation_status": ["BAD_STATUS"]})
+    res = _run(inspect.unwrap(module.list_pipeline_logs)())
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "operation_status" in res["message"], res
+
+    _set_request_json(monkeypatch, module, {"types": ["bad_type"]})
+    res = _run(inspect.unwrap(module.list_pipeline_logs)())
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "Invalid filter conditions" in res["message"], res
+
+    def _raise_file_logs(*_args, **_kwargs):
+        raise RuntimeError("logs boom")
+
+    _set_request_json(monkeypatch, module, {"suffix": [".txt"]})
+    monkeypatch.setattr(module.PipelineOperationLogService, "get_file_logs_by_kb_id", _raise_file_logs)
+    res = _run(inspect.unwrap(module.list_pipeline_logs)())
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "logs boom" in res["message"], res
+
+
+@pytest.mark.p2
+def test_list_pipeline_dataset_logs_branches(monkeypatch):
+    module = _load_kb_module(monkeypatch)
+
+    _set_request_args(monkeypatch, module, {})
+    _set_request_json(monkeypatch, module, {})
+    res = _run(inspect.unwrap(module.list_pipeline_dataset_logs)())
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR, res
+    assert "KB ID" in res["message"], res
+
+    _set_request_args(
+        monkeypatch,
+        module,
+        {
+            "kb_id": "kb-1",
+            "desc": "false",
+            "create_date_from": "2025-01-01",
+            "create_date_to": "2025-02-01",
+        },
+    )
+    _set_request_json(monkeypatch, module, {})
+    res = _run(inspect.unwrap(module.list_pipeline_dataset_logs)())
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "Create data filter is abnormal." in res["message"], res
+
+    _set_request_args(
+        monkeypatch,
+        module,
+        {
+            "kb_id": "kb-1",
+            "page": "1",
+            "page_size": "10",
+            "desc": "false",
+            "create_date_from": "2025-02-01",
+            "create_date_to": "2025-01-01",
+        },
+    )
+    _set_request_json(monkeypatch, module, {"operation_status": ["NOT_A_STATUS"]})
+    res = _run(inspect.unwrap(module.list_pipeline_dataset_logs)())
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "operation_status" in res["message"], res
+
+    _set_request_args(
+        monkeypatch,
+        module,
+        {
+            "kb_id": "kb-1",
+            "page": "1",
+            "page_size": "10",
+            "desc": "true",
+            "create_date_from": "2025-02-01",
+            "create_date_to": "2025-01-01",
+        },
+    )
+    _set_request_json(monkeypatch, module, {"operation_status": []})
+    monkeypatch.setattr(
+        module.PipelineOperationLogService,
+        "get_dataset_logs_by_kb_id",
+        lambda *_args, **_kwargs: ([{"id": "l1"}], 1),
+    )
+    res = _run(inspect.unwrap(module.list_pipeline_dataset_logs)())
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert res["data"]["total"] == 1, res
+    assert res["data"]["logs"][0]["id"] == "l1", res
+
+    def _raise_dataset_logs(*_args, **_kwargs):
+        raise RuntimeError("dataset logs boom")
+
+    monkeypatch.setattr(module.PipelineOperationLogService, "get_dataset_logs_by_kb_id", _raise_dataset_logs)
+    res = _run(inspect.unwrap(module.list_pipeline_dataset_logs)())
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "dataset logs boom" in res["message"], res
+
+
+@pytest.mark.p2
+def test_pipeline_log_detail_and_delete_routes_branches(monkeypatch):
+    module = _load_kb_module(monkeypatch)
+
+    _set_request_args(monkeypatch, module, {})
+    _set_request_json(monkeypatch, module, {})
+    res = _run(inspect.unwrap(module.delete_pipeline_logs)())
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR, res
+    assert "KB ID" in res["message"], res
+
+    deleted_ids = []
+
+    def _delete_by_ids(log_ids):
+        deleted_ids.extend(log_ids)
+
+    monkeypatch.setattr(module.PipelineOperationLogService, "delete_by_ids", _delete_by_ids)
+    _set_request_args(monkeypatch, module, {"kb_id": "kb-1"})
+    _set_request_json(monkeypatch, module, {})
+    res = _run(inspect.unwrap(module.delete_pipeline_logs)())
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert res["data"] is True, res
+    assert deleted_ids == [], deleted_ids
+
+    _set_request_json(monkeypatch, module, {"log_ids": ["l1", "l2"]})
+    res = _run(inspect.unwrap(module.delete_pipeline_logs)())
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert deleted_ids == ["l1", "l2"], deleted_ids
+
+    _set_request_args(monkeypatch, module, {})
+    res = inspect.unwrap(module.pipeline_log_detail)()
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR, res
+    assert "Pipeline log ID" in res["message"], res
+
+    _set_request_args(monkeypatch, module, {"log_id": "missing"})
+    monkeypatch.setattr(module.PipelineOperationLogService, "get_by_id", lambda _log_id: (False, None))
+    res = inspect.unwrap(module.pipeline_log_detail)()
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "Invalid pipeline log ID" in res["message"], res
+
+    class _Log:
+        def to_dict(self):
+            return {"id": "log-1", "status": "ok"}
+
+    monkeypatch.setattr(module.PipelineOperationLogService, "get_by_id", lambda _log_id: (True, _Log()))
+    res = inspect.unwrap(module.pipeline_log_detail)()
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert res["data"]["id"] == "log-1", res
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "route_name,task_attr,response_key,task_type",
+    [
+        ("run_graphrag", "graphrag_task_id", "graphrag_task_id", "graphrag"),
+        ("run_raptor", "raptor_task_id", "raptor_task_id", "raptor"),
+        ("run_mindmap", "mindmap_task_id", "mindmap_task_id", "mindmap"),
+    ],
+)
+def test_run_pipeline_task_routes_branch_matrix(monkeypatch, route_name, task_attr, response_key, task_type):
+    module = _load_kb_module(monkeypatch)
+    route = inspect.unwrap(getattr(module, route_name))
+
+    def _make_kb(task_id):
+        payload = {
+            "id": "kb-1",
+            "tenant_id": "tenant-1",
+            "graphrag_task_id": "",
+            "raptor_task_id": "",
+            "mindmap_task_id": "",
+        }
+        payload[task_attr] = task_id
+        return SimpleNamespace(**payload)
+
+    warnings = []
+    monkeypatch.setattr(module.logging, "warning", lambda msg, *_args, **_kwargs: warnings.append(msg))
+
+    _set_request_json(monkeypatch, module, {"kb_id": ""})
+    res = _run(route())
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "KB ID" in res["message"], res
+
+    _set_request_json(monkeypatch, module, {"kb_id": "kb-1"})
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
+    res = _run(route())
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "Invalid Knowledgebase ID" in res["message"], res
+
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _make_kb("task-running")))
+    monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (True, SimpleNamespace(progress=0)))
+    res = _run(route())
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "already running" in res["message"], res
+
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _make_kb("task-stale")))
+    monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (False, None))
+    monkeypatch.setattr(module.DocumentService, "get_by_kb_id", lambda **_kwargs: ([], 0))
+    res = _run(route())
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "No documents in Knowledgebase kb-1" in res["message"], res
+    assert warnings, "Expected warning for stale task id"
+
+    queue_calls = {}
+
+    def _queue_stub(**kwargs):
+        queue_calls.update(kwargs)
+        return "queued-task-id"
+
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _make_kb("")))
+    monkeypatch.setattr(
+        module.DocumentService,
+        "get_by_kb_id",
+        lambda **_kwargs: ([{"id": "doc-1"}, {"id": "doc-2"}], 2),
+    )
+    monkeypatch.setattr(module, "queue_raptor_o_graphrag_tasks", _queue_stub)
+    monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: False)
+    res = _run(route())
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert res["data"][response_key] == "queued-task-id", res
+    assert queue_calls["ty"] == task_type, queue_calls
+    assert queue_calls["doc_ids"] == ["doc-1", "doc-2"], queue_calls
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "route_name,task_attr,empty_on_missing_task,error_text",
+    [
+        ("trace_graphrag", "graphrag_task_id", True, ""),
+        ("trace_raptor", "raptor_task_id", False, "RAPTOR Task Not Found or Error Occurred"),
+        ("trace_mindmap", "mindmap_task_id", False, "Mindmap Task Not Found or Error Occurred"),
+    ],
+)
+def test_trace_pipeline_task_routes_branch_matrix(monkeypatch, route_name, task_attr, empty_on_missing_task, error_text):
+    module = _load_kb_module(monkeypatch)
+    route = inspect.unwrap(getattr(module, route_name))
+
+    def _make_kb(task_id):
+        payload = {
+            "id": "kb-1",
+            "tenant_id": "tenant-1",
+            "graphrag_task_id": "",
+            "raptor_task_id": "",
+            "mindmap_task_id": "",
+        }
+        payload[task_attr] = task_id
+        return SimpleNamespace(**payload)
+
+    _set_request_args(monkeypatch, module, {"kb_id": ""})
+    res = route()
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "KB ID" in res["message"], res
+
+    _set_request_args(monkeypatch, module, {"kb_id": "kb-1"})
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
+    res = route()
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "Invalid Knowledgebase ID" in res["message"], res
+
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _make_kb("")))
+    res = route()
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert res["data"] == {}, res
+
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _make_kb("task-1")))
+    monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (False, None))
+    res = route()
+    if empty_on_missing_task:
+        assert res["code"] == module.RetCode.SUCCESS, res
+        assert res["data"] == {}, res
+    else:
+        assert res["code"] == module.RetCode.DATA_ERROR, res
+        assert error_text in res["message"], res
+
+    monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (True, _DummyTask("task-1", 1)))
+    res = route()
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert res["data"]["id"] == "task-1", res
+
+
+@pytest.mark.p2
+def test_unbind_task_branch_matrix(monkeypatch):
+    module = _load_kb_module(monkeypatch)
+    route = inspect.unwrap(module.delete_kb_task)
+
+    _set_request_args(monkeypatch, module, {"kb_id": ""})
+    res = route()
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "KB ID" in res["message"], res
+
+    _set_request_args(monkeypatch, module, {"kb_id": "missing", "pipeline_task_type": module.PipelineTaskType.GRAPH_RAG})
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
+    res = route()
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert res["data"] is True, res
+
+    kb = SimpleNamespace(
+        id="kb-1",
+        tenant_id="tenant-1",
+        graphrag_task_id="graph-task",
+        raptor_task_id="raptor-task",
+        mindmap_task_id="mindmap-task",
+    )
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
+    _set_request_args(monkeypatch, module, {"kb_id": "kb-1", "pipeline_task_type": "unknown"})
+    res = route()
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "Invalid task type" in res["message"], res
+
+    cancelled = []
+    deleted = []
+    update_payloads = []
+    monkeypatch.setattr(module.REDIS_CONN, "set", lambda key, value: cancelled.append((key, value)))
+    monkeypatch.setattr(module.search, "index_name", lambda _tenant_id: "idx")
+    monkeypatch.setattr(module.settings, "docStoreConn", SimpleNamespace(delete=lambda *args, **_kwargs: deleted.append(args)))
+
+    def _record_update(_kb_id, payload):
+        update_payloads.append((_kb_id, payload))
+        return True
+
+    monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", _record_update)
+
+    _set_request_args(monkeypatch, module, {"kb_id": "kb-1", "pipeline_task_type": module.PipelineTaskType.GRAPH_RAG})
+    res = route()
+    assert res["code"] == module.RetCode.SUCCESS, res
+
+    _set_request_args(monkeypatch, module, {"kb_id": "kb-1", "pipeline_task_type": module.PipelineTaskType.RAPTOR})
+    res = route()
+    assert res["code"] == module.RetCode.SUCCESS, res
+
+    _set_request_args(monkeypatch, module, {"kb_id": "kb-1", "pipeline_task_type": module.PipelineTaskType.MINDMAP})
+    res = route()
+    assert res["code"] == module.RetCode.SUCCESS, res
+
+    assert ("graph-task-cancel", "x") in cancelled, cancelled
+    assert ("raptor-task-cancel", "x") in cancelled, cancelled
+    assert ("mindmap-task-cancel", "x") in cancelled, cancelled
+    assert len(deleted) == 2, deleted
+    assert any(payload.get("graphrag_task_id") == "" for _, payload in update_payloads), update_payloads
+    assert any(payload.get("raptor_task_id") == "" for _, payload in update_payloads), update_payloads
+    assert any(payload.get("mindmap_task_id") == "" for _, payload in update_payloads), update_payloads
+
+    class _FlakyPipelineType:
+        def __init__(self, target):
+            self.target = target
+            self.calls = 0
+
+        def __eq__(self, other):
+            self.calls += 1
+            if self.calls == 1:
+                return other == self.target
+            return False
+
+    _set_request_args(
+        monkeypatch,
+        module,
+        {"kb_id": "kb-1", "pipeline_task_type": _FlakyPipelineType(module.PipelineTaskType.GRAPH_RAG)},
+    )
+    res = route()
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "Internal Error: Invalid task type" in res["message"], res
+
+    monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(module, "server_error_response", lambda e: module.get_json_result(code=module.RetCode.EXCEPTION_ERROR, message=str(e)))
+    _set_request_args(monkeypatch, module, {"kb_id": "kb-1", "pipeline_task_type": module.PipelineTaskType.GRAPH_RAG})
+    res = route()
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "cannot delete task" in res["message"], res
