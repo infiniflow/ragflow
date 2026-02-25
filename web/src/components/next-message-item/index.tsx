@@ -21,6 +21,7 @@ import { INodeEvent, MessageEventType } from '@/hooks/use-send-message';
 import { cn } from '@/lib/utils';
 import { AgentChatContext } from '@/pages/agent/context';
 import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workflow-timeline';
+import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
 import { isEmpty } from 'lodash';
 import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
@@ -150,7 +151,7 @@ function MessageItem({
           [styles.messageUserText]: !isAssistant,
           'bg-bg-card': !isAssistant,
         })}
-        dir={getDirAttribute(messageContent)}
+        dir={getDirAttribute(messageContent.replace(citationMarkerReg, ''))}
       >
         {item.data ? (
           children
