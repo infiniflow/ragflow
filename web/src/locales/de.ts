@@ -263,7 +263,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       generate: 'Generieren',
       raptor: 'RAPTOR',
       processingType: 'Verarbeitungstyp',
-      dataPipeline: 'Dateneingabe-Pipeline',
+      dataPipeline: 'Wechseln oder konfigurieren Sie die Ingestion-Pipeline.',
       operations: 'Operationen',
       taskId: 'Aufgaben-ID',
       duration: 'Dauer',
@@ -493,7 +493,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       linkPipelineSetTip:
         'Verknüpfung der Dateneingabe-Pipeline mit diesem Datensatz verwalten',
       default: 'Standard',
-      dataPipeline: 'Dateneingabe-Pipeline',
+      dataPipeline: 'Wechseln oder konfigurieren Sie die Ingestion-Pipeline.',
       linkDataPipeline: 'Dateneingabe-Pipeline verknüpfen',
       enableAutoGenerate: 'Automatische Generierung aktivieren',
       teamPlaceholder: 'Bitte wählen Sie ein Team.',

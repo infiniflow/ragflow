@@ -114,3 +114,13 @@ class TestMemoryList:
                       "embd_id", "llm_id", "permissions", "description", "memory_size", "forgetting_policy",
                       "temperature", "system_prompt", "user_prompt"]:
             assert hasattr(memory, field), memory_config
+
+    @pytest.mark.p2
+    def test_get_config_invalid_memory_id_raises(self, client):
+        memory_list = client.list_memory()
+        assert len(memory_list["memory_list"]) > 0, str(memory_list)
+        memory = memory_list["memory_list"][0]
+        memory.id = "missing-memory-id-for-config"
+        with pytest.raises(Exception) as exception_info:
+            memory.get_config()
+        assert str(exception_info.value), exception_info
