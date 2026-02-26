@@ -134,12 +134,18 @@ def _load_dataset_module(monkeypatch):
     repo_root = Path(__file__).resolve().parents[4]
 
     quart_mod = ModuleType("quart")
+    quart_mod.Request = type("Request", (), {})
     quart_mod.request = SimpleNamespace(args=_DummyArgs())
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
     api_pkg = ModuleType("api")
     api_pkg.__path__ = [str(repo_root / "api")]
     monkeypatch.setitem(sys.modules, "api", api_pkg)
+
+    utils_pkg = ModuleType("api.utils")
+    utils_pkg.__path__ = [str(repo_root / "api" / "utils")]
+    monkeypatch.setitem(sys.modules, "api.utils", utils_pkg)
+    api_pkg.utils = utils_pkg
 
     apps_pkg = ModuleType("api.apps")
     apps_pkg.__path__ = [str(repo_root / "api" / "apps")]
@@ -374,24 +380,20 @@ def _load_dataset_module(monkeypatch):
     api_utils_mod.verify_embedding_availability = lambda _embd_id, _tenant_id: (True, None)
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
-    validation_mod = ModuleType("api.utils.validation_utils")
-
-    class _Req:
-        pass
-
     async def _parse_json(*_args, **_kwargs):
         return {}, None
 
     def _parse_args(*_args, **_kwargs):
         return {"name": "", "page": 1, "page_size": 30, "orderby": "create_time", "desc": True}, None
 
-    validation_mod.CreateDatasetReq = _Req
-    validation_mod.DeleteDatasetReq = _Req
-    validation_mod.ListDatasetReq = _Req
-    validation_mod.UpdateDatasetReq = _Req
+    validation_spec = importlib.util.spec_from_file_location(
+        "api.utils.validation_utils", repo_root / "api" / "utils" / "validation_utils.py"
+    )
+    validation_mod = importlib.util.module_from_spec(validation_spec)
+    monkeypatch.setitem(sys.modules, "api.utils.validation_utils", validation_mod)
+    validation_spec.loader.exec_module(validation_mod)
     validation_mod.validate_and_parse_json_request = _parse_json
     validation_mod.validate_and_parse_request_args = _parse_args
-    monkeypatch.setitem(sys.modules, "api.utils.validation_utils", validation_mod)
 
     rag_pkg = ModuleType("rag")
     rag_pkg.__path__ = []
