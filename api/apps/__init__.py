@@ -99,8 +99,13 @@ def _load_user():
     if not authorization:
         return None
 
+    normalized_authorization = authorization.strip()
+    auth_parts = normalized_authorization.split(maxsplit=1)
+    if len(auth_parts) == 2 and auth_parts[0].lower() in {"bearer", "token", "jwt"}:
+        normalized_authorization = auth_parts[1].strip()
+
     try:
-        access_token = str(jwt.loads(authorization))
+        access_token = str(jwt.loads(normalized_authorization))
 
         if not access_token or not access_token.strip():
             logging.warning("Authentication attempt with empty access token")
