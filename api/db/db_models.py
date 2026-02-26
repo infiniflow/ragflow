@@ -29,7 +29,6 @@ from quart_auth import AuthUser
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from peewee import (
     fn,
-    IntegrityError,
     InterfaceError,
     OperationalError,
     ProgrammingError,
