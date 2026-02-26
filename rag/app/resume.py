@@ -301,7 +301,7 @@ def parse_with_llm(text: str,tenant_id, lang="chinese") -> Optional[dict]:
         结构化的简历信息字典，失败返回 None
     """
     try:
-        from rag.llm.llm_service import LLMBundle
+        from api.db.services.llm_service import LLMBundle
         from common.constants import LLMType
 
         llm = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, lang=lang)
