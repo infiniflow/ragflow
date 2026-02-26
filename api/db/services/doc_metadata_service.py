@@ -157,14 +157,14 @@ class DocMetadataService:
                     yield doc_id, doc
 
     @classmethod
-    def _search_metadata(cls, kb_id: str, condition: Dict = None, limit: int = 10000):
+    def _search_metadata(cls, kb_id: str, condition: Dict = None):
         """
         Common search logic for metadata queries.
+        Uses pagination internally to retrieve ALL data from the index.
 
         Args:
             kb_id: Knowledge base ID
             condition: Optional search condition (defaults to {"kb_id": kb_id})
-            limit: Max results to return
 
         Returns:
             Search results from ES/Infinity, or empty list if index doesn't exist
@@ -190,17 +190,67 @@ class DocMetadataService:
 
         order_by = OrderByExpr()
 
-        return settings.docStoreConn.search(
-            select_fields=["*"],
-            highlight_fields=[],
-            condition=condition,
-            match_expressions=[],
-            order_by=order_by,
-            offset=0,
-            limit=limit,
-            index_names=index_name,
-            knowledgebase_ids=[kb_id]
-        )
+        page_size = 1000
+        all_results = []
+        page = 0
+
+        while True:
+            results = settings.docStoreConn.search(
+                select_fields=["*"],
+                highlight_fields=[],
+                condition=condition,
+                match_expressions=[],
+                order_by=order_by,
+                offset=page * page_size,
+                limit=page_size,
+                index_names=index_name,
+                knowledgebase_ids=[kb_id]
+            )
+
+            # Handle different result formats
+            if results is None:
+                break
+
+            # Extract docs from results
+            page_docs = []
+            total_count = None  # Used for Infinity to determine if more results exist
+
+            # Check for Infinity format first (DataFrame, total) tuple
+            if isinstance(results, tuple) and len(results) == 2:
+                df, total_count = results
+                if hasattr(df, 'iterrows'):
+                    # Pandas DataFrame from Infinity
+                    page_docs = df.to_dict('records')
+                else:
+                    page_docs = list(df) if df else []
+            # Check for ES format (dict with 'hits' key)
+            elif isinstance(results, dict) and 'hits' in results:
+                hits = results.get('hits', {}).get('hits', [])
+                page_docs = [hit.get('_source', {}) for hit in hits]
+            # Handle list/iterable results
+            elif hasattr(results, '__iter__') and not isinstance(results, dict):
+                page_docs = list(results)
+            else:
+                page_docs = []
+
+            if not page_docs:
+                break
+
+            all_results.extend(page_docs)
+            page += 1
+
+            # Determine if there are more results to fetch
+            # For Infinity: use total_count if available
+            if total_count is not None:
+                if len(all_results) >= total_count:
+                    break
+            else:
+                # For ES or other: check if we got fewer than page_size
+                if len(page_docs) < page_size:
+                    break
+
+        logging.debug(f"[_search_metadata] Retrieved {len(all_results)} total results for kb_id: {kb_id}")
+        return all_results
 
     @classmethod
     def _split_combined_values(cls, meta_fields: Dict) -> Dict:
