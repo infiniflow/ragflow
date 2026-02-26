@@ -312,3 +312,9 @@ class TestChatAssistantsList:
         res = list_chat_assistants(HttpApiAuth)
         assert res["code"] == 0
         assert len(res["data"]) == 5
+
+    @pytest.mark.p2
+    def test_desc_false_parse_branch_p2(self, HttpApiAuth):
+        res = list_chat_assistants(HttpApiAuth, params={"desc": "False", "orderby": "create_time"})
+        assert res["code"] == 0
+        assert is_sorted(res["data"], "create_time", False)
