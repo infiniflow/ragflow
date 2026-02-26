@@ -70,7 +70,6 @@
     "ahooks": "^3.7.10",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
-    "antd": "^5.12.7",
     "axios": "^1.12.0",
     "class-variance-authority": "^0.7.0",
     "classnames": "^2.5.1",
