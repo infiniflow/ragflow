@@ -1,0 +1,22 @@
+# RAGFlow Dev Environment Override
+# Usage:
+#   docker compose --env-file .env.dev -p ragflow-dev \
+#     -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Middleware services (mysql, es, redis, minio) are already parameterized
+# in docker-compose-base.yml via ${CONTAINER_PREFIX}, ${NETWORK_NAME},
+# and port variables. All dev values come from .env.dev via --env-file.
+# No middleware overrides needed here.
+
+services:
+  ragflow-gpu:
+    env_file: .env.dev
+    volumes:
+      - /home/calvin/ragflow-mineru/libs:/ragflow/uv_tools/libs
+      - ./nginx/ragflow.dev.conf:/etc/nginx/conf.d/ragflow.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ../scripts/docker/patches/llm_factories.json:/ragflow/conf/llm_factories.json:ro
+
+networks:
+  ragflow-dev-net:
+    driver: bridge

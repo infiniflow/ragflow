@@ -156,20 +156,8 @@ TEMPLATE_FILE="${CONF_DIR}/service_conf.yaml.template"
 CONF_FILE="${CONF_DIR}/service_conf.yaml"
 
 rm -f "${CONF_FILE}"
-DEF_ENV_VALUE_PATTERN="\$\{([^:]+):-([^}]+)\}"
 while IFS= read -r line || [[ -n "$line" ]]; do
-    if [[ "$line" =~ DEF_ENV_VALUE_PATTERN ]]; then
-        varname="${BASH_REMATCH[1]}"
-        default="${BASH_REMATCH[2]}"
-
-        if [ -n "${!varname}" ]; then
-            eval "echo \"$line"\" >> "${CONF_FILE}"
-        else
-            echo "$line" | sed -E "s/\\\$\{[^:]+:-([^}]+)\}/\1/g" >> "${CONF_FILE}"
-        fi
-    else
-        eval "echo \"$line\"" >> "${CONF_FILE}"
-    fi
+    eval "echo \"$line\"" >> "${CONF_FILE}"
 done < "${TEMPLATE_FILE}"
 
 export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
@@ -206,16 +194,87 @@ function start_mcp_server() {
 }
 
 function ensure_docling() {
-    [[ "${USE_DOCLING}" == "true" ]] || { echo "[docling] disabled by USE_DOCLING"; return 0; }
-    DOCLING_PIN="${DOCLING_VERSION:-==2.71.0}"
-    "$PY" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
-      || uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
+    [[ "${USE_DOCLING}" == "true" ]] || return 0
+
+    # Use same directory as torch to avoid duplicate downloads
+    local libs_dir="/ragflow/uv_tools/libs"
+    local marker="${libs_dir}/.docling_installed"
+    local docling_version="${DOCLING_VERSION:-==2.58.0}"
+
+    # Check if already installed in persistent directory
+    if [[ -f "${marker}" ]]; then
+        echo "[docling] Using cached docling from ${libs_dir}"
+        export PYTHONPATH="${libs_dir}:${PYTHONPATH:-}"
+        return 0
+    fi
+
+    echo "[docling] Installing docling${docling_version} to persistent cache..."
+    mkdir -p "${libs_dir}"
+
+    python3 -c 'import pip' >/dev/null 2>&1 || python3 -m ensurepip --upgrade || true
+
+    # Install docling to persistent directory (shares with torch)
+    if python3 -m pip install --target "${libs_dir}" "docling${docling_version}" \
+        -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir; then
+        echo "installed at $(date)" > "${marker}"
+        export PYTHONPATH="${libs_dir}:${PYTHONPATH:-}"
+        echo "[docling] Installation complete: ${libs_dir}"
+    else
+        echo "[docling] WARNING: Failed to install docling"
+        return 1
+    fi
 }
 
+function ensure_mineru() {
+    [[ "${USE_MINERU}" == "true" ]] || { echo "[mineru] disabled by USE_MINERU"; return 0; }
+
+    if [[ -n "${MINERU_APISERVER}" ]]; then
+        echo "[mineru] Using external API server: ${MINERU_APISERVER}"
+        echo "[mineru] Local installation skipped (deployed externally)"
+        return 0
+    else
+        echo "[mineru] WARNING: USE_MINERU=true but MINERU_APISERVER not configured"
+        echo "[mineru] Please set MINERU_APISERVER in docker/.env"
+        return 1
+    fi
+}
+
+function ensure_torch() {
+    # Skip if DEVICE=cpu
+    [[ "${DEVICE}" != "cpu" ]] || { echo "[torch] DEVICE=cpu, skipping torch installation"; return 0; }
+
+    # Unified libs directory for all heavy dependencies
+    local libs_dir="/ragflow/uv_tools/libs"
+    local marker="${libs_dir}/.torch_installed"
+    local torch_version="${TORCH_VERSION:->=2.5.0,<3.0.0}"
+
+    # Check if already installed in persistent directory
+    if [[ -f "${marker}" ]]; then
+        echo "[torch] Using cached pytorch from ${libs_dir}"
+        export PYTHONPATH="${libs_dir}:${PYTHONPATH:-}"
+        return 0
+    fi
+
+    echo "[torch] Installing pytorch ${torch_version} to persistent cache..."
+    mkdir -p "${libs_dir}"
+
+    # Install torch to persistent directory
+    if python3 -m pip install --target "${libs_dir}" "torch${torch_version}" -i https://pypi.tuna.tsinghua.edu.cn/simple; then
+        echo "installed at $(date)" > "${marker}"
+        export PYTHONPATH="${libs_dir}:${PYTHONPATH:-}"
+        echo "[torch] Installation complete: ${libs_dir}"
+    else
+        echo "[torch] WARNING: Failed to install pytorch"
+        return 1
+    fi
+}
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
+# Order matters: torch first (docling depends on it)
+ensure_torch
 ensure_docling
+ensure_mineru
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."

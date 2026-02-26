@@ -43,7 +43,7 @@ services:
       - ./entrypoint.sh:/ragflow/entrypoint.sh
     env_file: .env
     networks:
-      - ragflow
+      - ${NETWORK_NAME:-ragflow}
     restart: unless-stopped
     # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
     # If you use Docker Desktop, the --add-host flag is optional. This flag ensures that the host's internal IP is exposed to the Prometheus container.
@@ -91,7 +91,7 @@ services:
       - ./entrypoint.sh:/ragflow/entrypoint.sh
     env_file: .env
     networks:
-      - ragflow
+      - ${NETWORK_NAME:-ragflow}
     restart: unless-stopped
     # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
     # If you use Docker Desktop, the --add-host flag is optional. This flag ensures that the host's internal IP is exposed to the Prometheus container.
