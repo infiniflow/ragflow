@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
-import { DateInput } from '@/components/ui/input-date';
 import { formatDate } from '@/utils/date';
 import { ColumnDef, Row, Table } from '@tanstack/react-table';
 import { ListChevronsDownUp, Settings, Trash2 } from 'lucide-react';
@@ -209,7 +209,7 @@ export const useMetadataColumns = ({
                     <div key={value}>
                       {row.original.valueType ===
                         metadataValueTypeEnum.time && (
-                        <DateInput
+                        <DatePicker
                           value={new Date(editingValue.newValue)}
                           onChange={(value) => {
                             const newValue = {

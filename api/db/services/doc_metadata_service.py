@@ -102,13 +102,13 @@ class DocMetadataService:
     @classmethod
     def _iter_search_results(cls, results):
         """
-        Iterate over search results in various formats (DataFrame, ES, list).
+        Iterate over search results in various formats (DataFrame, ES, OceanBase, list).
 
         Yields:
             Tuple of (doc_id, doc_dict) for each document
 
         Args:
-            results: Search results from ES/Infinity in any format
+            results: Search results from ES/Infinity/OceanBase in any format
         """
         # Handle tuple return from Infinity: (DataFrame, int)
         # Check this FIRST because pandas DataFrames also have __getitem__
@@ -147,6 +147,14 @@ class DocMetadataService:
                     doc_id = cls._extract_doc_id(doc)
                     if doc_id:
                         yield doc_id, doc
+
+        # Check if OceanBase SearchResult format
+        elif hasattr(results, 'chunks') and hasattr(results, 'total'):
+            # OceanBase format: SearchResult(total=int, chunks=[{...}, {...}])
+            for doc in results.chunks:
+                doc_id = cls._extract_doc_id(doc)
+                if doc_id:
+                    yield doc_id, doc
 
     @classmethod
     def _search_metadata(cls, kb_id: str, condition: Dict = None, limit: int = 10000):
@@ -231,8 +239,9 @@ class DocMetadataService:
                             new_values.append(item)
                     else:
                         new_values.append(item)
-                # Remove duplicates while preserving order
-                processed[key] = list(dict.fromkeys(new_values))
+                # Remove duplicates while preserving order.
+                # Use string-based dedupe to support unhashable values (e.g. dict entries).
+                processed[key] = dedupe_list(new_values)
             else:
                 processed[key] = value
 
@@ -366,7 +375,7 @@ class DocMetadataService:
             logging.debug(f"[update_document_metadata] Updating doc_id: {doc_id}, kb_id: {kb_id}, meta_fields: {processed_meta}")
 
             # For Elasticsearch, use efficient partial update
-            if not settings.DOC_ENGINE_INFINITY:
+            if not settings.DOC_ENGINE_INFINITY and not settings.DOC_ENGINE_OCEANBASE:
                 try:
                     # Use ES partial update API - much more efficient than delete+insert
                     settings.docStoreConn.es.update(
