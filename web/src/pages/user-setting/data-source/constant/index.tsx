@@ -12,6 +12,7 @@ import { IDataSourceInfoMap } from '../interface';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
 import { S3Constant } from './s3-constant';
+import { seafileConstant } from './seafile-constant'; 
 
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
@@ -834,98 +835,7 @@ export const DataSourceFormFields = {
       ],
     },
   ],
-  [DataSourceKey.SEAFILE]: [
-    {
-      label: 'SeaFile Server URL',
-      name: 'config.seafile_url',
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: 'https://seafile.example.com',
-      tooltip: t('setting.seafileUrlTip'),
-    },
-    {
-      label: 'Sync Scope',
-      name: 'config.sync_scope',
-      type: FormFieldType.Select,
-      required: true,
-      defaultValue: 'account',
-      options: [
-        { label: 'Entire Account',       value: 'account'   },
-        { label: 'Single Library',        value: 'library'   },
-        { label: 'Specific Directory',    value: 'directory'  },
-      ],
-      tooltip: t('setting.seafileSyncScopeTip'),
-    },
-    {
-      label: 'Account API Token',
-      name: 'config.credentials.seafile_token',
-      type: FormFieldType.Password,
-      required: false,
-      tooltip: t('setting.seafileTokenTip'),
-      // Shown for all scopes; required when scope = account
-      visibilityCondition: undefined,
-    },
-    {
-      label: 'Library (Repo) Token',
-      name: 'config.credentials.repo_token',
-      type: FormFieldType.Password,
-      required: false,
-      tooltip: t('setting.seafileRepoTokenTip'),
-      // Only relevant for library / directory scope
-      visibilityCondition: {
-        field: 'config.sync_scope',
-        values: ['library', 'directory'],
-      },
-    },
-
-    {
-      label: 'Library (Repo) ID',
-      name: 'config.repo_id',
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: 'e.g. 7a9e1b3c-4d5f-6a7b-8c9d-0e1f2a3b4c5d',
-      tooltip: t('setting.seafileRepoIdTip'),
-      // Required when scope = library or directory
-      visibilityCondition: {
-        field: 'config.sync_scope',
-        values: ['library', 'directory'],
-      },
-    },
-    {
-      label: 'Directory Path',
-      name: 'config.sync_path',
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: '/Documents/Reports',
-      tooltip: t('setting.seafileSyncPathTip'),
-      // Only for directory scope
-      visibilityCondition: {
-        field: 'config.sync_scope',
-        values: ['directory'],
-      },
-    },
-    {
-      label: 'Include Shared Libraries',
-      name: 'config.include_shared',
-      type: FormFieldType.Checkbox,
-      required: false,
-      defaultValue: true,
-      tooltip: t('setting.seafileIncludeSharedTip'),
-      // Only meaningful for account scope
-      visibilityCondition: {
-        field: 'config.sync_scope',
-        values: ['account'],
-      },
-    },
-    {
-      label: 'Batch Size',
-      name: 'config.batch_size',
-      type: FormFieldType.Number,
-      required: false,
-      placeholder: '100',
-      tooltip: t('setting.seafileBatchSizeTip'),
-    },
-  ],
+  [DataSourceKey.SEAFILE]: seafileConstant(t),
   [DataSourceKey.MYSQL]: [
     {
       label: 'Host',

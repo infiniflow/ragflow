@@ -1031,6 +1031,22 @@ Beispiel: Virtual Hosted Style`,
         'Verbinden Sie sich mit Ihrem SeaFile-Server, um Dateien und Dokumente aus Ihren Bibliotheken zu synchronisieren.',
       seafileUrlTip:
         'Die vollstaendige URL Ihres SeaFile-Servers inklusive Protokoll. Beispiel: https://seafile.example.com - Kein abschliessender Schraegstrich und kein Pfad nach der Domain.',
+      seafileAccountScopeTip:
+        'Synchronisiert alle Bibliotheken, die für den unten angegebenen Konto-API-Token sichtbar sind.',
+      seafileTokenPanelHeading: 
+        'Wählen Sie eine der folgenden Authentifizierungsmethoden:',
+      seafileTokenPanelAccountBullet: 
+        '- gewährt Zugriff auf alle Ihre Bibliotheken.',
+      seafileTokenPanelLibraryBullet: 
+        '- auf eine einzelne Bibliothek beschränkt (sicherer).',
+      seafileValidationAccountTokenRequired:
+        'Konto-API-Token ist erforderlich für den Umfang „Gesamtes Konto"',
+      seafileValidationTokenRequired:
+        'Geben Sie entweder einen Konto-API-Token oder einen Bibliotheks-Token an',
+      seafileValidationLibraryIdRequired: 
+        'Bibliotheks-ID ist erforderlich',
+      seafileValidationDirectoryPathRequired: 
+        'Verzeichnispfad ist erforderlich',
       seafileSyncScopeTip:
         'Legt fest, was synchronisiert wird: ' +
         '(1) Gesamtes Konto - Synchronisiert alle Bibliotheken, auf die Ihr Token Zugriff hat. Erfordert einen Konto-API-Token. ' +
