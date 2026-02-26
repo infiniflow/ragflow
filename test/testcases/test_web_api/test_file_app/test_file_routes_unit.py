@@ -331,6 +331,14 @@ def _load_file_app_module(monkeypatch):
         def update_by_id(*_args, **_kwargs):
             return True
 
+        @staticmethod
+        def get_by_ids(_file_ids):
+            return []
+
+        @staticmethod
+        def delete_by_id(_file_id):
+            return True
+
     file_service_mod.FileService = _StubFileService
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
     services_pkg.file_service = file_service_mod
@@ -994,3 +1002,225 @@ def test_get_file_branch_matrix_unit(monkeypatch):
     assert storage.calls == [("pf1", "loc1"), ("pf2", "loc2")]
     assert res.headers["extension"] == "abc"
     assert res.headers["content_type"] == "image/abc"
+
+
+@pytest.mark.p2
+def test_get_file_content_type_and_error_paths_unit(monkeypatch):
+    module = _load_file_app_module(monkeypatch)
+    monkeypatch.setattr(module, "check_file_team_permission", lambda _file, _uid: True)
+
+    class _Storage:
+        @staticmethod
+        def get(_bucket, _location):
+            return b"blob-data"
+
+    monkeypatch.setattr(module.settings, "STORAGE_IMPL", _Storage())
+    monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("pf2", "loc2"))
+
+    async def _make_response(data):
+        return _DummyResponse(data)
+
+    headers_calls = []
+
+    def _apply_headers(response, content_type, ext):
+        headers_calls.append((content_type, ext))
+        response.headers["content_type"] = content_type
+        response.headers["extension"] = ext
+
+    monkeypatch.setattr(module, "make_response", _make_response)
+    monkeypatch.setattr(module, "apply_safe_file_response_headers", _apply_headers)
+
+    monkeypatch.setattr(
+        module.FileService,
+        "get_by_id",
+        lambda _file_id: (
+            True,
+            _DummyFile("img", module.FileType.VISUAL.value, parent_id="pf1", location="loc1", name="image.abc"),
+        ),
+    )
+    res = _run(module.get("img"))
+    assert isinstance(res, _DummyResponse)
+    assert res.headers["content_type"] == "image/abc"
+    assert res.headers["extension"] == "abc"
+
+    monkeypatch.setattr(
+        module.FileService,
+        "get_by_id",
+        lambda _file_id: (
+            True,
+            _DummyFile("noext", module.FileType.DOC.value, parent_id="pf1", location="loc1", name="README"),
+        ),
+    )
+    res = _run(module.get("noext"))
+    assert isinstance(res, _DummyResponse)
+    assert res.headers["content_type"] is None
+    assert res.headers["extension"] is None
+    assert headers_calls == [("image/abc", "abc"), (None, None)]
+
+    monkeypatch.setattr(module.FileService, "get_by_id", lambda _file_id: (_ for _ in ()).throw(RuntimeError("get crash")))
+    monkeypatch.setattr(module, "server_error_response", lambda err: {"code": 500, "message": str(err)})
+    res = _run(module.get("boom"))
+    assert res["code"] == 500
+    assert "get crash" in res["message"]
+
+
+@pytest.mark.p2
+def test_move_recursive_branch_matrix_unit(monkeypatch):
+    module = _load_file_app_module(monkeypatch)
+    req_state = {"src_file_ids": ["f1"], "dest_file_id": "dest"}
+    _set_request_json(monkeypatch, module, req_state)
+
+    async def _thread_pool_exec(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_exec)
+    monkeypatch.setattr(module, "check_file_team_permission", lambda _file, _uid: True)
+
+    dest_folder = SimpleNamespace(id="dest")
+    monkeypatch.setattr(module.FileService, "get_by_id", lambda _file_id: (False, None))
+    res = _run(module.move())
+    assert res["message"] == "Parent folder not found!"
+
+    monkeypatch.setattr(module.FileService, "get_by_id", lambda _file_id: (True, dest_folder))
+    monkeypatch.setattr(module.FileService, "get_by_ids", lambda _file_ids: [])
+    res = _run(module.move())
+    assert res["message"] == "Source files not found!"
+
+    req_state["src_file_ids"] = ["f1", "f2"]
+    monkeypatch.setattr(module.FileService, "get_by_ids", lambda _file_ids: [_DummyFile("f1", module.FileType.DOC.value)])
+    res = _run(module.move())
+    assert res["message"] == "File or folder not found!"
+
+    req_state["src_file_ids"] = ["tenant-missing"]
+    monkeypatch.setattr(
+        module.FileService,
+        "get_by_ids",
+        lambda _file_ids: [_DummyFile("tenant-missing", module.FileType.DOC.value, tenant_id=None)],
+    )
+    res = _run(module.move())
+    assert res["message"] == "Tenant not found!"
+
+    req_state["src_file_ids"] = ["deny"]
+    monkeypatch.setattr(module.FileService, "get_by_ids", lambda _file_ids: [_DummyFile("deny", module.FileType.DOC.value)])
+    monkeypatch.setattr(module, "check_file_team_permission", lambda _file, _uid: False)
+    res = _run(module.move())
+    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
+    assert res["message"] == "No authorization."
+
+    monkeypatch.setattr(module, "check_file_team_permission", lambda _file, _uid: True)
+
+    req_state["src_file_ids"] = ["folder_existing", "folder_new", "doc_main"]
+    folder_existing = _DummyFile(
+        "folder_existing",
+        module.FileType.FOLDER.value,
+        tenant_id="tenant1",
+        parent_id="old_bucket",
+        location="",
+        name="existing-folder",
+    )
+    folder_new = _DummyFile(
+        "folder_new",
+        module.FileType.FOLDER.value,
+        tenant_id="tenant1",
+        parent_id="old_bucket",
+        location="",
+        name="new-folder",
+    )
+    doc_main = _DummyFile(
+        "doc_main",
+        module.FileType.DOC.value,
+        tenant_id="tenant1",
+        parent_id="old_bucket",
+        location="doc.bin",
+        name="doc.bin",
+    )
+    sub_doc = _DummyFile(
+        "sub_doc",
+        module.FileType.DOC.value,
+        tenant_id="tenant1",
+        parent_id="folder_existing",
+        location="sub.txt",
+        name="sub.txt",
+    )
+
+    monkeypatch.setattr(module.FileService, "get_by_ids", lambda _file_ids: [folder_existing, folder_new, doc_main])
+
+    inserted = []
+    deleted = []
+    updated = []
+    existing_dest = SimpleNamespace(id="dest-existing")
+    new_dest = SimpleNamespace(id="dest-new")
+
+    def _query(**kwargs):
+        if kwargs.get("name") == "existing-folder":
+            return [existing_dest]
+        if kwargs.get("name") == "new-folder":
+            return []
+        return []
+
+    def _insert(payload):
+        inserted.append(payload)
+        return new_dest
+
+    def _list_subfiles(parent_id):
+        if parent_id == "folder_existing":
+            return [sub_doc]
+        if parent_id == "folder_new":
+            return []
+        return []
+
+    class _Storage:
+        def __init__(self):
+            self.move_calls = []
+            self._collision = 0
+
+        def obj_exist(self, _bucket, location):
+            if location == "doc.bin" and self._collision == 0:
+                self._collision += 1
+                return True
+            return False
+
+        def move(self, old_parent, old_location, new_parent, new_location):
+            self.move_calls.append((old_parent, old_location, new_parent, new_location))
+
+    storage = _Storage()
+    monkeypatch.setattr(module.settings, "STORAGE_IMPL", storage)
+    monkeypatch.setattr(module.FileService, "query", _query)
+    monkeypatch.setattr(module.FileService, "insert", _insert)
+    monkeypatch.setattr(module.FileService, "list_all_files_by_parent_id", _list_subfiles)
+    monkeypatch.setattr(module.FileService, "delete_by_id", lambda file_id: deleted.append(file_id))
+    monkeypatch.setattr(module.FileService, "update_by_id", lambda file_id, payload: updated.append((file_id, payload)) or True)
+
+    res = _run(module.move())
+    assert res["code"] == module.RetCode.SUCCESS
+    assert res["data"] is True
+    assert inserted and inserted[0]["name"] == "new-folder"
+    assert set(deleted) == {"folder_existing", "folder_new"}
+    assert ("old_bucket", "doc.bin", "dest", "doc.bin_") in storage.move_calls
+    assert ("folder_existing", "sub.txt", "dest-existing", "sub.txt") in storage.move_calls
+    assert ("doc_main", {"parent_id": "dest", "location": "doc.bin_"}) in updated
+    assert ("sub_doc", {"parent_id": "dest-existing", "location": "sub.txt"}) in updated
+
+    req_state["src_file_ids"] = ["boom_doc"]
+    monkeypatch.setattr(
+        module.FileService,
+        "get_by_ids",
+        lambda _file_ids: [
+            _DummyFile("boom_doc", module.FileType.DOC.value, tenant_id="tenant1", parent_id="old_bucket", location="boom", name="boom")
+        ],
+    )
+
+    class _StorageBoom:
+        @staticmethod
+        def obj_exist(_bucket, _location):
+            return False
+
+        @staticmethod
+        def move(*_args, **_kwargs):
+            raise RuntimeError("storage down")
+
+    monkeypatch.setattr(module.settings, "STORAGE_IMPL", _StorageBoom())
+    monkeypatch.setattr(module, "server_error_response", lambda err: {"code": 500, "message": str(err)})
+    res = _run(module.move())
+    assert res["code"] == 500
+    assert "Move file failed at storage layer: storage down" in res["message"]
