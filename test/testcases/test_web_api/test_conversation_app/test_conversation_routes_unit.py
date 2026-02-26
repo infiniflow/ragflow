@@ -578,7 +578,189 @@ def test_sequence2txt_validation_and_transcription_paths(monkeypatch):
 @pytest.mark.p2
 def test_tts_request_parse_entry(monkeypatch):
     module = _load_conversation_module(monkeypatch)
-    _set_request_json(monkeypatch, module, {"text": "hello"})
+    _set_request_json(monkeypatch, module, {"text": "A。B"})
     monkeypatch.setattr(module.TenantService, "get_info_by", lambda _uid: [])
     res = _run(module.tts())
     assert res["message"] == "Tenant not found!"
+
+    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _uid: [{"tenant_id": "tenant-1", "tts_id": ""}])
+    res = _run(module.tts())
+    assert res["message"] == "No default TTS model is set"
+
+    class _TTSOk:
+        def tts(self, txt):
+            if not txt:
+                return []
+            yield f"chunk-{txt}".encode("utf-8")
+
+    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _uid: [{"tenant_id": "tenant-1", "tts_id": "tts-x"}])
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _TTSOk())
+    resp = _run(module.tts())
+    assert resp.mimetype == "audio/mpeg"
+    assert resp.headers.get("Cache-Control") == "no-cache"
+    assert resp.headers.get("Connection") == "keep-alive"
+    assert resp.headers.get("X-Accel-Buffering") == "no"
+    stream_text = _run(_read_sse_text(resp))
+    assert "chunk-A" in stream_text
+    assert "chunk-B" in stream_text
+
+    class _TTSErr:
+        def tts(self, _txt):
+            raise RuntimeError("tts boom")
+
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _TTSErr())
+    resp = _run(module.tts())
+    stream_text = _run(_read_sse_text(resp))
+    assert '"code": 500' in stream_text
+    assert "**ERROR**: tts boom" in stream_text
+
+
+@pytest.mark.p2
+def test_delete_msg_and_thumbup_matrix_unit(monkeypatch):
+    module = _load_conversation_module(monkeypatch)
+
+    updates = []
+    monkeypatch.setattr(module.ConversationService, "update_by_id", lambda conv_id, payload: updates.append((conv_id, payload)) or True)
+
+    _set_request_json(monkeypatch, module, {"conversation_id": "missing", "message_id": "pair-1"})
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (False, None))
+    res = _run(module.delete_msg.__wrapped__())
+    assert res["message"] == "Conversation not found!"
+
+    conv = _DummyConversation(
+        conv_id="conv-del",
+        message=[
+            {"id": "other", "role": "user"},
+            {"id": "pair-1", "role": "user"},
+            {"id": "pair-1", "role": "assistant"},
+        ],
+        reference=[{"chunks": [{"id": "c1"}]}],
+    )
+    _set_request_json(monkeypatch, module, {"conversation_id": "conv-del", "message_id": "pair-1"})
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv))
+    res = _run(module.delete_msg.__wrapped__())
+    assert res["code"] == 0
+    assert [m["id"] for m in res["data"]["message"]] == ["other"]
+    assert res["data"]["reference"] == []
+    assert updates[-1][0] == "conv-del"
+
+    _set_request_json(monkeypatch, module, {"conversation_id": "missing", "message_id": "assistant-1", "thumbup": True})
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (False, None))
+    res = _run(module.thumbup.__wrapped__())
+    assert res["message"] == "Conversation not found!"
+
+    conv_up = _DummyConversation(
+        conv_id="conv-up",
+        message=[{"id": "assistant-1", "role": "assistant", "feedback": "old"}],
+    )
+    _set_request_json(monkeypatch, module, {"conversation_id": "conv-up", "message_id": "assistant-1", "thumbup": True})
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv_up))
+    res = _run(module.thumbup.__wrapped__())
+    assert res["code"] == 0
+    assert res["data"]["message"][0]["thumbup"] is True
+    assert "feedback" not in res["data"]["message"][0]
+
+    conv_down = _DummyConversation(conv_id="conv-down", message=[{"id": "assistant-2", "role": "assistant"}])
+    _set_request_json(
+        monkeypatch,
+        module,
+        {"conversation_id": "conv-down", "message_id": "assistant-2", "thumbup": False, "feedback": "needs sources"},
+    )
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv_down))
+    res = _run(module.thumbup.__wrapped__())
+    assert res["code"] == 0
+    assert res["data"]["message"][0]["thumbup"] is False
+    assert res["data"]["message"][0]["feedback"] == "needs sources"
+
+
+@pytest.mark.p2
+def test_ask_about_stream_search_config_matrix_unit(monkeypatch):
+    module = _load_conversation_module(monkeypatch)
+    _set_request_json(monkeypatch, module, {"question": "q", "kb_ids": ["kb-1"], "search_id": "search-1"})
+    monkeypatch.setattr(module.SearchService, "get_detail", lambda _sid: {"search_config": {"mode": "test"}})
+
+    captured = {}
+
+    async def _fake_async_ask(question, kb_ids, uid, search_config=None):
+        captured["question"] = question
+        captured["kb_ids"] = kb_ids
+        captured["uid"] = uid
+        captured["search_config"] = search_config
+        yield {"answer": "first"}
+        raise RuntimeError("ask boom")
+
+    monkeypatch.setattr(module, "async_ask", _fake_async_ask)
+    resp = _run(module.ask_about.__wrapped__())
+    assert resp.headers["Content-Type"] == "text/event-stream; charset=utf-8"
+    sse_text = _run(_read_sse_text(resp))
+    assert '"answer": "first"' in sse_text
+    assert "**ERROR**: ask boom" in sse_text
+    assert '"data": true' in sse_text.lower()
+    assert captured == {"question": "q", "kb_ids": ["kb-1"], "uid": "user-1", "search_config": {"mode": "test"}}
+
+
+@pytest.mark.p2
+def test_mindmap_and_related_questions_matrix_unit(monkeypatch):
+    module = _load_conversation_module(monkeypatch)
+
+    def _search_detail(_sid):
+        return {
+            "tenant_id": "tenant-x",
+            "search_config": {
+                "kb_ids": ["kb-2", "kb-3"],
+                "chat_id": "chat-x",
+                "llm_setting": {"temperature": 0.2, "parameter": {"k": "v"}},
+            },
+        }
+
+    monkeypatch.setattr(module.SearchService, "get_detail", _search_detail)
+
+    _set_request_json(monkeypatch, module, {"question": "mindmap-q", "kb_ids": ["kb-1", "kb-2"], "search_id": "search-1"})
+    mindmap_calls = {}
+
+    async def _gen_ok(question, kb_ids, tenant_id, search_config):
+        mindmap_calls["question"] = question
+        mindmap_calls["kb_ids"] = set(kb_ids)
+        mindmap_calls["tenant_id"] = tenant_id
+        mindmap_calls["search_config"] = search_config
+        return {"nodes": [question]}
+
+    monkeypatch.setattr(module, "gen_mindmap", _gen_ok)
+    res = _run(module.mindmap.__wrapped__())
+    assert res["code"] == 0
+    assert res["data"] == {"nodes": ["mindmap-q"]}
+    assert mindmap_calls["kb_ids"] == {"kb-1", "kb-2", "kb-3"}
+    assert mindmap_calls["tenant_id"] == "tenant-x"
+    assert set(mindmap_calls["search_config"]["kb_ids"]) == {"kb-1", "kb-2", "kb-3"}
+
+    async def _gen_error(*_args, **_kwargs):
+        return {"error": "mindmap boom"}
+
+    monkeypatch.setattr(module, "gen_mindmap", _gen_error)
+    res = _run(module.mindmap.__wrapped__())
+    assert "mindmap boom" in res["message"]
+
+    llm_calls = {}
+
+    class _FakeChat:
+        async def async_chat(self, prompt, messages, options):
+            llm_calls["prompt"] = prompt
+            llm_calls["messages"] = messages
+            llm_calls["options"] = options
+            return "1. Alpha\n2. Beta\nignored"
+
+    def _fake_bundle(tenant_id, llm_type, chat_id):
+        llm_calls["bundle"] = (tenant_id, llm_type, chat_id)
+        return _FakeChat()
+
+    monkeypatch.setattr(module, "LLMBundle", _fake_bundle)
+    monkeypatch.setattr(module, "load_prompt", lambda name: f"prompt-{name}")
+    _set_request_json(monkeypatch, module, {"question": "solar", "search_id": "search-1"})
+    res = _run(module.related_questions.__wrapped__())
+    assert res["code"] == 0
+    assert res["data"] == ["Alpha", "Beta"]
+    assert llm_calls["bundle"][0] == "user-1"
+    assert llm_calls["bundle"][2] == "chat-x"
+    assert llm_calls["options"] == {"temperature": 0.2}
+    assert llm_calls["prompt"] == "prompt-related_question"
+    assert "Keywords: solar" in llm_calls["messages"][0]["content"]
