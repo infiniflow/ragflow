@@ -87,6 +87,10 @@ export function EmailFormWidgets() {
       ></InputFormField>
       <InputFormField name="email" label={t('senderEmail')}></InputFormField>
       <InputFormField
+        name="smtp_username"
+        label={t('smtpUsername')}
+      ></InputFormField>
+      <InputFormField
         name="password"
         label={t('authCode')}
         type="password"
@@ -103,6 +107,7 @@ export const EmailFormPartialSchema = {
   smtp_server: z.string(),
   smtp_port: z.number(),
   email: z.string(),
+  smtp_username: z.string(),
   password: z.string(),
   sender_name: z.string(),
 };

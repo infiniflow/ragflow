@@ -101,7 +101,6 @@ function Root({ children }: React.PropsWithChildren) {
       i18n.off('languageChanged', handleLanguageChanged);
     };
   }, []);
-
   return (
     <>
       <ConfigProvider

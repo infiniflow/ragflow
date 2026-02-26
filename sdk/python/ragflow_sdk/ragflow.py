@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from typing import Optional
+from typing import Optional, Any
 
 import requests
 
@@ -58,6 +58,7 @@ class RAGFlow:
         permission: str = "me",
         chunk_method: str = "naive",
         parser_config: Optional[DataSet.ParserConfig] = None,
+        auto_metadata_config: Optional[dict[str, Any]] = None,
     ) -> DataSet:
         payload = {
             "name": name,
@@ -69,6 +70,8 @@ class RAGFlow:
         }
         if parser_config is not None:
             payload["parser_config"] = parser_config.to_json()
+        if auto_metadata_config is not None:
+            payload["auto_metadata_config"] = auto_metadata_config
 
         res = self.post("/datasets", payload)
         res = res.json()
@@ -106,6 +109,26 @@ class RAGFlow:
             for data in res["data"]:
                 result_list.append(DataSet(self, data))
             return result_list
+        raise Exception(res["message"])
+
+    def get_auto_metadata(self, dataset_id: str) -> dict[str, Any]:
+        """
+        Retrieve auto-metadata configuration for a dataset via SDK.
+        """
+        res = self.get(f"/datasets/{dataset_id}/auto_metadata")
+        res = res.json()
+        if res.get("code") == 0:
+            return res["data"]
+        raise Exception(res["message"])
+
+    def update_auto_metadata(self, dataset_id: str, **config: Any) -> dict[str, Any]:
+        """
+        Update auto-metadata configuration for a dataset via SDK.
+        """
+        res = self.put(f"/datasets/{dataset_id}/auto_metadata", config)
+        res = res.json()
+        if res.get("code") == 0:
+            return res["data"]
         raise Exception(res["message"])
 
     def create_chat(self, name: str, avatar: str = "", dataset_ids=None, llm: Chat.LLM | None = None, prompt: Chat.Prompt | None = None) -> Chat:
