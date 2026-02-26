@@ -88,11 +88,19 @@ function Root({ children }: React.PropsWithChildren) {
 
   const [locale, setLocal] = useState<Locale>(getLocale(storage.getLanguage()));
 
-  i18n.on('languageChanged', function (lng: string) {
-    storage.setLanguage(lng);
-    setLocal(getLocale(lng));
-    document.documentElement.lang = lng;
-  });
+  useEffect(() => {
+    const handleLanguageChanged = (lng: string) => {
+      storage.setLanguage(lng);
+      setLocal(getLocale(lng));
+      document.documentElement.lang = lng;
+    };
+
+    i18n.on('languageChanged', handleLanguageChanged);
+
+    return () => {
+      i18n.off('languageChanged', handleLanguageChanged);
+    };
+  }, []);
 
   return (
     <>
