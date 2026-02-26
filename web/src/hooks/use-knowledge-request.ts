@@ -101,11 +101,11 @@ export const useTestRetrieval = () => {
   });
 
   useEffect(() => {
-    if (mountedRef.current) {
+    if (mountedRef.current && !!queryParams.question) {
       refetch();
     }
     mountedRef.current = true;
-  }, [page, pageSize, refetch, filterValue]);
+  }, [page, pageSize, refetch, filterValue, queryParams]);
 
   return {
     data,
