@@ -16,6 +16,12 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
+
+
+ARABIC_PRESENTATION_FORMS_RE = re.compile(r"[\uFB50-\uFDFF\uFE70-\uFEFF]")
+
 
 def normalize_arabic_digits(text: str | None) -> str | None:
     if text is None or not isinstance(text, str):
@@ -31,3 +37,12 @@ def normalize_arabic_digits(text: str | None) -> str | None:
         else:
             out.append(ch)
     return "".join(out)
+
+
+def normalize_arabic_presentation_forms(text: str | None) -> str | None:
+    """Normalize Arabic presentation forms to canonical text when present."""
+    if text is None or not isinstance(text, str):
+        return text
+    if not ARABIC_PRESENTATION_FORMS_RE.search(text):
+        return text
+    return unicodedata.normalize("NFKC", text)
