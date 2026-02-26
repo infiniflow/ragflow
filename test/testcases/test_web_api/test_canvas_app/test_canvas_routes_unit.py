@@ -238,10 +238,30 @@ def _load_canvas_module(monkeypatch):
                 to_dict=lambda: {"id": _canvas_id},
             )
 
+        @staticmethod
+        def get_by_tenant_ids(*_args, **_kwargs):
+            return [], 0
+
     class _StubAPI4ConversationService:
         @staticmethod
         def get_names(*_args, **_kwargs):
             return []
+
+        @staticmethod
+        def get_list(*_args, **_kwargs):
+            return 0, []
+
+        @staticmethod
+        def save(**_kwargs):
+            return True
+
+        @staticmethod
+        def get_by_id(_session_id):
+            return True, SimpleNamespace(to_dict=lambda: {"id": _session_id})
+
+        @staticmethod
+        def delete_by_id(*_args, **_kwargs):
+            return True
 
     async def _completion(*_args, **_kwargs):
         if False:
@@ -261,7 +281,10 @@ def _load_canvas_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.document_service", document_service_mod)
 
     file_service_mod = ModuleType("api.db.services.file_service")
-    file_service_mod.FileService = SimpleNamespace(upload_info=lambda *_args, **_kwargs: {"ok": True})
+    file_service_mod.FileService = SimpleNamespace(
+        upload_info=lambda *_args, **_kwargs: {"ok": True},
+        get_blob=lambda *_args, **_kwargs: b"",
+    )
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
 
     pipeline_log_service_mod = ModuleType("api.db.services.pipeline_operation_log_service")
@@ -285,6 +308,8 @@ def _load_canvas_module(monkeypatch):
     canvas_version_mod.UserCanvasVersionService = SimpleNamespace(
         insert=lambda **_kwargs: True,
         delete_all_versions=lambda *_args, **_kwargs: True,
+        list_by_canvas_id=lambda *_args, **_kwargs: [],
+        get_by_id=lambda *_args, **_kwargs: (True, None),
     )
     monkeypatch.setitem(sys.modules, "api.db.services.user_canvas_version", canvas_version_mod)
 
@@ -908,3 +933,483 @@ def test_reset_upload_input_form_debug_matrix_unit(monkeypatch):
     assert _DebugCanvas.last_component.reset_called is True
     assert _DebugCanvas.last_component.debug_inputs == {"p": {"value": "v"}}
     assert _DebugCanvas.last_component.invoked == {"p": "v"}
+
+
+@pytest.mark.p2
+def test_debug_sync_iter_and_exception_matrix_unit(monkeypatch):
+    module = _load_canvas_module(monkeypatch)
+
+    class _SyncDebugComponent(module.LLM):
+        def __init__(self):
+            self.invoked = {}
+
+        def reset(self):
+            return None
+
+        def set_debug_inputs(self, _params):
+            return None
+
+        def invoke(self, **kwargs):
+            self.invoked = kwargs
+
+        def output(self):
+            def _gen():
+                yield "S"
+                yield "Y"
+                yield "N"
+                yield "C"
+
+            return {"stream": partial(_gen)}
+
+    class _SyncDebugCanvas:
+        def __init__(self, *_args, **_kwargs):
+            self.message_id = ""
+            self.component = _SyncDebugComponent()
+
+        def reset(self):
+            return None
+
+        def get_component(self, _component_id):
+            return {"obj": self.component}
+
+    _set_request_json(
+        monkeypatch,
+        module,
+        {"id": "canvas-1", "component_id": "sync-node", "params": {"p": {"value": "v"}}},
+    )
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (True, SimpleNamespace(id="canvas-1", dsl={"n": 1})))
+    monkeypatch.setattr(module, "Canvas", _SyncDebugCanvas)
+    res = _run(inspect.unwrap(module.debug)())
+    assert res["code"] == module.RetCode.SUCCESS
+    assert res["data"]["stream"] == "SYNC"
+
+    monkeypatch.setattr(module, "Canvas", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("debug boom")))
+    res = _run(inspect.unwrap(module.debug)())
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR
+    assert "debug boom" in res["message"]
+
+
+@pytest.mark.p2
+def test_test_db_connect_dialect_matrix_unit(monkeypatch):
+    module = _load_canvas_module(monkeypatch)
+
+    class _FakeDB:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+            self.connected = 0
+            self.closed = 0
+
+        def connect(self):
+            self.connected += 1
+
+        def close(self):
+            self.closed += 1
+
+    mysql_objs = []
+    postgres_objs = []
+
+    def _mysql_ctor(*args, **kwargs):
+        obj = _FakeDB(*args, **kwargs)
+        mysql_objs.append(obj)
+        return obj
+
+    def _postgres_ctor(*args, **kwargs):
+        obj = _FakeDB(*args, **kwargs)
+        postgres_objs.append(obj)
+        return obj
+
+    monkeypatch.setattr(module, "MySQLDatabase", _mysql_ctor)
+    monkeypatch.setattr(module, "PostgresqlDatabase", _postgres_ctor)
+
+    def _run_case(payload):
+        _set_request_json(monkeypatch, module, payload)
+        return _run(inspect.unwrap(module.test_db_connect)())
+
+    req_base = {
+        "database": "db",
+        "username": "user",
+        "host": "host",
+        "port": 3306,
+        "password": "pwd",
+    }
+
+    res = _run_case({**req_base, "db_type": "mysql"})
+    assert res["code"] == module.RetCode.SUCCESS
+    assert mysql_objs[-1].connected == 1
+    assert mysql_objs[-1].closed == 1
+
+    res = _run_case({**req_base, "db_type": "mariadb"})
+    assert res["code"] == module.RetCode.SUCCESS
+    assert mysql_objs[-1].connected == 1
+
+    res = _run_case({**req_base, "db_type": "oceanbase"})
+    assert res["code"] == module.RetCode.SUCCESS
+    assert mysql_objs[-1].kwargs["charset"] == "utf8mb4"
+
+    res = _run_case({**req_base, "db_type": "postgres"})
+    assert res["code"] == module.RetCode.SUCCESS
+    assert postgres_objs[-1].closed == 1
+
+    mssql_calls = {}
+
+    class _MssqlCursor:
+        def execute(self, sql):
+            mssql_calls["sql"] = sql
+
+        def close(self):
+            mssql_calls["cursor_closed"] = True
+
+    class _MssqlConn:
+        def cursor(self):
+            mssql_calls["cursor_opened"] = True
+            return _MssqlCursor()
+
+        def close(self):
+            mssql_calls["conn_closed"] = True
+
+    pyodbc_mod = ModuleType("pyodbc")
+
+    def _pyodbc_connect(conn_str):
+        mssql_calls["conn_str"] = conn_str
+        return _MssqlConn()
+
+    pyodbc_mod.connect = _pyodbc_connect
+    monkeypatch.setitem(sys.modules, "pyodbc", pyodbc_mod)
+    res = _run_case({**req_base, "db_type": "mssql"})
+    assert res["code"] == module.RetCode.SUCCESS
+    assert "DRIVER={ODBC Driver 17 for SQL Server}" in mssql_calls["conn_str"]
+    assert mssql_calls["sql"] == "SELECT 1"
+
+    ibm_calls = {}
+    ibm_db_mod = ModuleType("ibm_db")
+
+    def _ibm_connect(conn_str, *_args):
+        ibm_calls["conn_str"] = conn_str
+        return "ibm-conn"
+
+    def _ibm_exec_immediate(conn, sql):
+        ibm_calls["exec"] = (conn, sql)
+        return "ibm-stmt"
+
+    ibm_db_mod.connect = _ibm_connect
+    ibm_db_mod.exec_immediate = _ibm_exec_immediate
+    ibm_db_mod.fetch_assoc = lambda stmt: ibm_calls.update({"fetch": stmt}) or {"one": 1}
+    ibm_db_mod.close = lambda conn: ibm_calls.update({"close": conn})
+    monkeypatch.setitem(sys.modules, "ibm_db", ibm_db_mod)
+    res = _run_case({**req_base, "db_type": "IBM DB2"})
+    assert res["code"] == module.RetCode.SUCCESS
+    assert ibm_calls["exec"] == ("ibm-conn", "SELECT 1 FROM sysibm.sysdummy1")
+
+    monkeypatch.setitem(sys.modules, "trino", None)
+    res = _run_case({**req_base, "db_type": "trino", "database": "catalog.schema"})
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR
+    assert "Missing dependency 'trino'" in res["message"]
+
+    trino_calls = {"connect": [], "auth": []}
+
+    class _TrinoCursor:
+        def execute(self, sql):
+            trino_calls["sql"] = sql
+
+        def fetchall(self):
+            trino_calls["fetched"] = True
+            return [(1,)]
+
+        def close(self):
+            trino_calls["cursor_closed"] = True
+
+    class _TrinoConn:
+        def cursor(self):
+            return _TrinoCursor()
+
+        def close(self):
+            trino_calls["conn_closed"] = True
+
+    trino_mod = ModuleType("trino")
+    trino_mod.BasicAuthentication = lambda user, password: trino_calls["auth"].append((user, password)) or ("auth", user)
+    trino_mod.dbapi = SimpleNamespace(connect=lambda **kwargs: trino_calls["connect"].append(kwargs) or _TrinoConn())
+    monkeypatch.setitem(sys.modules, "trino", trino_mod)
+
+    res = _run_case({**req_base, "db_type": "trino", "database": ""})
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR
+    assert "catalog.schema" in res["message"]
+
+    monkeypatch.setenv("TRINO_USE_TLS", "1")
+    res = _run_case({**req_base, "db_type": "trino", "database": "cat.schema"})
+    assert res["code"] == module.RetCode.SUCCESS
+    assert trino_calls["connect"][-1]["catalog"] == "cat"
+    assert trino_calls["connect"][-1]["schema"] == "schema"
+    assert trino_calls["auth"][-1] == ("user", "pwd")
+
+    res = _run_case({**req_base, "db_type": "trino", "database": "cat/schema"})
+    assert res["code"] == module.RetCode.SUCCESS
+    assert trino_calls["connect"][-1]["catalog"] == "cat"
+    assert trino_calls["connect"][-1]["schema"] == "schema"
+
+    res = _run_case({**req_base, "db_type": "trino", "database": "catalog"})
+    assert res["code"] == module.RetCode.SUCCESS
+    assert trino_calls["connect"][-1]["catalog"] == "catalog"
+    assert trino_calls["connect"][-1]["schema"] == "default"
+
+    res = _run_case({**req_base, "db_type": "unknown"})
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR
+    assert "Unsupported database type." in res["message"]
+
+    class _BoomDB(_FakeDB):
+        def connect(self):
+            raise RuntimeError("connect boom")
+
+    monkeypatch.setattr(module, "MySQLDatabase", lambda *_args, **_kwargs: _BoomDB())
+    res = _run_case({**req_base, "db_type": "mysql"})
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR
+    assert "connect boom" in res["message"]
+
+
+@pytest.mark.p2
+def test_canvas_history_list_and_setting_matrix_unit(monkeypatch):
+    module = _load_canvas_module(monkeypatch)
+
+    class _Version:
+        def __init__(self, version_id, update_time):
+            self.version_id = version_id
+            self.update_time = update_time
+
+        def to_dict(self):
+            return {"id": self.version_id, "update_time": self.update_time}
+
+    monkeypatch.setattr(
+        module.UserCanvasVersionService,
+        "list_by_canvas_id",
+        lambda _canvas_id: [_Version("v1", 1), _Version("v2", 5)],
+    )
+    res = module.getlistversion("canvas-1")
+    assert [item["id"] for item in res["data"]] == ["v2", "v1"]
+
+    monkeypatch.setattr(
+        module.UserCanvasVersionService,
+        "list_by_canvas_id",
+        lambda _canvas_id: (_ for _ in ()).throw(RuntimeError("history boom")),
+    )
+    res = module.getlistversion("canvas-1")
+    assert "Error getting history files: history boom" in res["message"]
+
+    monkeypatch.setattr(
+        module.UserCanvasVersionService,
+        "get_by_id",
+        lambda _version_id: (True, _Version("v3", 3)),
+    )
+    res = module.getversion("v3")
+    assert res["code"] == module.RetCode.SUCCESS
+    assert res["data"]["id"] == "v3"
+
+    monkeypatch.setattr(
+        module.UserCanvasVersionService,
+        "get_by_id",
+        lambda _version_id: (_ for _ in ()).throw(RuntimeError("version boom")),
+    )
+    res = module.getversion("v3")
+    assert "Error getting history file: version boom" in res["data"]
+
+    list_calls = []
+
+    def _get_by_tenant_ids(tenants, user_id, page_number, page_size, orderby, desc, keywords, canvas_category):
+        list_calls.append((tenants, user_id, page_number, page_size, orderby, desc, keywords, canvas_category))
+        return [{"id": "canvas-1"}], 1
+
+    monkeypatch.setattr(module.UserCanvasService, "get_by_tenant_ids", _get_by_tenant_ids)
+    monkeypatch.setattr(
+        module.TenantService,
+        "get_joined_tenants_by_user_id",
+        lambda _user_id: [{"tenant_id": "t1"}, {"tenant_id": "t2"}],
+    )
+
+    monkeypatch.setattr(
+        module,
+        "request",
+        _DummyRequest(
+            args=_Args(
+                {
+                    "keywords": "kw",
+                    "page": "2",
+                    "page_size": "3",
+                    "orderby": "update_time",
+                    "canvas_category": "agent",
+                    "desc": "false",
+                }
+            )
+        ),
+    )
+    res = module.list_canvas()
+    assert res["code"] == module.RetCode.SUCCESS
+    assert list_calls[-1][0] == ["t1", "t2", "user-1"]
+    assert list_calls[-1][2:6] == (2, 3, "update_time", False)
+
+    monkeypatch.setattr(module, "request", _DummyRequest(args=_Args({"owner_ids": "u1,u2", "desc": "true"})))
+    res = module.list_canvas()
+    assert res["code"] == module.RetCode.SUCCESS
+    assert list_calls[-1][0] == ["u1", "u2"]
+    assert list_calls[-1][2:4] == (0, 0)
+    assert list_calls[-1][5] is True
+
+    _set_request_json(monkeypatch, module, {"id": "canvas-1", "title": "T", "permission": "private"})
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)
+    res = _run(inspect.unwrap(module.setting)())
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+
+    _set_request_json(monkeypatch, module, {"id": "canvas-1", "title": "T", "permission": "private"})
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (False, None))
+    res = _run(inspect.unwrap(module.setting)())
+    assert res["message"] == "canvas not found."
+
+    updates = []
+    _set_request_json(
+        monkeypatch,
+        module,
+        {
+            "id": "canvas-1",
+            "title": "New title",
+            "permission": "private",
+            "description": "new desc",
+            "avatar": "avatar.png",
+        },
+    )
+    monkeypatch.setattr(
+        module.UserCanvasService,
+        "get_by_id",
+        lambda _canvas_id: (True, SimpleNamespace(to_dict=lambda: {"id": "canvas-1", "title": "Old"})),
+    )
+    monkeypatch.setattr(module.UserCanvasService, "update_by_id", lambda canvas_id, payload: updates.append((canvas_id, payload)) or 2)
+    res = _run(inspect.unwrap(module.setting)())
+    assert res["code"] == module.RetCode.SUCCESS
+    assert res["data"] == 2
+    assert updates[-1][0] == "canvas-1"
+    assert updates[-1][1]["title"] == "New title"
+    assert updates[-1][1]["description"] == "new desc"
+    assert updates[-1][1]["permission"] == "private"
+    assert updates[-1][1]["avatar"] == "avatar.png"
+
+
+@pytest.mark.p2
+def test_trace_and_sessions_matrix_unit(monkeypatch):
+    module = _load_canvas_module(monkeypatch)
+
+    monkeypatch.setattr(module, "request", _DummyRequest(args=_Args({"canvas_id": "c1", "message_id": "m1"})))
+    monkeypatch.setattr(module.REDIS_CONN, "get", lambda _key: None)
+    res = module.trace()
+    assert res["code"] == module.RetCode.SUCCESS
+    assert res["data"] == {}
+
+    monkeypatch.setattr(module.REDIS_CONN, "get", lambda _key: '{"event":"ok"}')
+    res = module.trace()
+    assert res["code"] == module.RetCode.SUCCESS
+    assert res["data"] == {"event": "ok"}
+
+    monkeypatch.setattr(module.REDIS_CONN, "get", lambda _key: (_ for _ in ()).throw(RuntimeError("trace boom")))
+    res = module.trace()
+    assert res is None
+
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(module, "request", _DummyRequest(args=_Args({})))
+    res = module.sessions("canvas-1")
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(module, "request", _DummyRequest(args=_Args({"desc": "false", "exp_user_id": "exp-1"})))
+    monkeypatch.setattr(module.API4ConversationService, "get_names", lambda _canvas_id, _exp_user_id: [{"id": "s1"}, {"id": "s2"}])
+    res = module.sessions("canvas-1")
+    assert res["code"] == module.RetCode.SUCCESS
+    assert res["data"]["total"] == 2
+
+    list_calls = []
+
+    def _get_list(*args, **kwargs):
+        list_calls.append((args, kwargs))
+        return 7, [{"id": "s3"}]
+
+    monkeypatch.setattr(module.API4ConversationService, "get_list", _get_list)
+    monkeypatch.setattr(
+        module,
+        "request",
+        _DummyRequest(args=_Args({"page": "3", "page_size": "9", "orderby": "update_time", "dsl": "false"})),
+    )
+    res = module.sessions("canvas-1")
+    assert res["code"] == module.RetCode.SUCCESS
+    assert res["data"]["total"] == 7
+    assert list_calls[-1][0][4] == "update_time"
+    assert list_calls[-1][0][5] is True
+    assert list_calls[-1][0][8] is False
+
+    monkeypatch.setattr(module, "get_json_result", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("result boom")))
+    res = module.sessions("canvas-1")
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR
+    assert "result boom" in res["message"]
+
+
+@pytest.mark.p2
+def test_session_crud_prompts_and_download_matrix_unit(monkeypatch):
+    module = _load_canvas_module(monkeypatch)
+
+    class _SessionCanvas:
+        def __init__(self, *_args, **_kwargs):
+            self.reset_called = False
+
+        def reset(self):
+            self.reset_called = True
+
+    _set_request_json(monkeypatch, module, {"name": "Sess1"})
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (True, SimpleNamespace(id="canvas-1", dsl={"n": 1})))
+    monkeypatch.setattr(module, "Canvas", _SessionCanvas)
+    monkeypatch.setattr(module, "get_uuid", lambda: "sess-1")
+    saved = []
+    monkeypatch.setattr(module.API4ConversationService, "save", lambda **kwargs: saved.append(kwargs))
+    res = _run(inspect.unwrap(module.set_session)("canvas-1"))
+    assert res["code"] == module.RetCode.SUCCESS
+    assert res["data"]["id"] == "sess-1"
+    assert isinstance(res["data"]["dsl"], str)
+    assert saved and saved[-1]["id"] == "sess-1"
+
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)
+    res = module.get_session("canvas-1", "sess-1")
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(module.API4ConversationService, "get_by_id", lambda _session_id: (True, SimpleNamespace(to_dict=lambda: {"id": _session_id})))
+    res = module.get_session("canvas-1", "sess-1")
+    assert res["code"] == module.RetCode.SUCCESS
+    assert res["data"]["id"] == "sess-1"
+
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)
+    res = module.del_session("canvas-1", "sess-1")
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(module.API4ConversationService, "delete_by_id", lambda _session_id: _session_id == "sess-1")
+    res = module.del_session("canvas-1", "sess-1")
+    assert res["code"] == module.RetCode.SUCCESS
+    assert res["data"] is True
+
+    rag_prompts_pkg = ModuleType("rag.prompts")
+    rag_prompts_pkg.__path__ = []
+    monkeypatch.setitem(sys.modules, "rag.prompts", rag_prompts_pkg)
+    rag_generator_mod = ModuleType("rag.prompts.generator")
+    rag_generator_mod.ANALYZE_TASK_SYSTEM = "SYS"
+    rag_generator_mod.ANALYZE_TASK_USER = "USER"
+    rag_generator_mod.NEXT_STEP = "NEXT"
+    rag_generator_mod.REFLECT = "REFLECT"
+    rag_generator_mod.CITATION_PROMPT_TEMPLATE = "CITE"
+    monkeypatch.setitem(sys.modules, "rag.prompts.generator", rag_generator_mod)
+
+    res = module.prompts()
+    assert res["code"] == module.RetCode.SUCCESS
+    assert res["data"]["task_analysis"] == "SYS\n\nUSER"
+    assert res["data"]["plan_generation"] == "NEXT"
+    assert res["data"]["reflection"] == "REFLECT"
+    assert res["data"]["citation_guidelines"] == "CITE"
+
+    monkeypatch.setattr(module, "request", _DummyRequest(args=_Args({"id": "f1", "created_by": "u1"})))
+    monkeypatch.setattr(module.FileService, "get_blob", lambda _created_by, _id: b"blob-data")
+    res = _run(module.download())
+    assert res == {"blob": b"blob-data"}

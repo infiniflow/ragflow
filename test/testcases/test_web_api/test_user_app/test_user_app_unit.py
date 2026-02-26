@@ -15,6 +15,7 @@
 #
 
 import asyncio
+import base64
 import importlib.util
 import sys
 from pathlib import Path
@@ -960,3 +961,364 @@ def test_logout_setting_profile_matrix_unit(monkeypatch):
     res = _run(module.user_profile())
     assert res["code"] == 0
     assert res["data"] == current_user.to_dict()
+
+
+@pytest.mark.p2
+def test_registration_helpers_and_register_route_matrix_unit(monkeypatch):
+    module = _load_user_app(monkeypatch)
+
+    deleted = {"user": 0, "tenant": 0, "user_tenant": 0, "tenant_llm": 0}
+    monkeypatch.setattr(module.UserService, "delete_by_id", lambda _user_id: deleted.__setitem__("user", deleted["user"] + 1))
+    monkeypatch.setattr(module.TenantService, "delete_by_id", lambda _tenant_id: deleted.__setitem__("tenant", deleted["tenant"] + 1))
+    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(id="ut-1")])
+    monkeypatch.setattr(module.UserTenantService, "delete_by_id", lambda _ut_id: deleted.__setitem__("user_tenant", deleted["user_tenant"] + 1))
+
+    class _DeleteQuery:
+        def where(self, *_args, **_kwargs):
+            return self
+
+        def execute(self):
+            deleted["tenant_llm"] += 1
+            return 1
+
+    monkeypatch.setattr(module.TenantLLM, "delete", lambda: _DeleteQuery())
+    module.rollback_user_registration("user-1")
+    assert deleted == {"user": 1, "tenant": 1, "user_tenant": 1, "tenant_llm": 1}, deleted
+
+    monkeypatch.setattr(module.UserService, "delete_by_id", lambda _user_id: (_ for _ in ()).throw(RuntimeError("u boom")))
+    monkeypatch.setattr(module.TenantService, "delete_by_id", lambda _tenant_id: (_ for _ in ()).throw(RuntimeError("t boom")))
+    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("ut boom")))
+
+    class _RaisingDeleteQuery:
+        def where(self, *_args, **_kwargs):
+            raise RuntimeError("llm boom")
+
+    monkeypatch.setattr(module.TenantLLM, "delete", lambda: _RaisingDeleteQuery())
+    module.rollback_user_registration("user-2")
+
+    monkeypatch.setattr(module.UserService, "save", lambda **_kwargs: False)
+    res = module.user_register(
+        "new-user",
+        {
+            "nickname": "new",
+            "email": "new@example.com",
+            "password": "pw",
+            "access_token": "tk",
+            "login_channel": "password",
+            "last_login_time": "2024-01-01 00:00:00",
+            "is_superuser": False,
+        },
+    )
+    assert res is None
+
+    monkeypatch.setattr(module.settings, "REGISTER_ENABLED", False)
+    _set_request_json(monkeypatch, module, {"nickname": "neo", "email": "neo@example.com", "password": "enc"})
+    res = _run(module.user_add())
+    assert res["code"] == module.RetCode.OPERATING_ERROR, res
+    assert "disabled" in res["message"], res
+
+    monkeypatch.setattr(module.settings, "REGISTER_ENABLED", True)
+    _set_request_json(monkeypatch, module, {"nickname": "neo", "email": "bad-email", "password": "enc"})
+    res = _run(module.user_add())
+    assert res["code"] == module.RetCode.OPERATING_ERROR, res
+    assert "Invalid email address" in res["message"], res
+
+    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [])
+    monkeypatch.setattr(module, "decrypt", lambda value: value)
+    monkeypatch.setattr(module, "get_uuid", lambda: "new-user-id")
+    rollback_calls = []
+    monkeypatch.setattr(module, "rollback_user_registration", lambda user_id: rollback_calls.append(user_id))
+
+    _set_request_json(monkeypatch, module, {"nickname": "neo", "email": "neo@example.com", "password": "enc"})
+    monkeypatch.setattr(module, "user_register", lambda _user_id, _payload: None)
+    res = _run(module.user_add())
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "Fail to register neo@example.com." in res["message"], res
+    assert rollback_calls == ["new-user-id"], rollback_calls
+
+    rollback_calls.clear()
+    monkeypatch.setattr(
+        module,
+        "user_register",
+        lambda _user_id, _payload: [_DummyUser("dup-1", "neo@example.com"), _DummyUser("dup-2", "neo@example.com")],
+    )
+    _set_request_json(monkeypatch, module, {"nickname": "neo", "email": "neo@example.com", "password": "enc"})
+    res = _run(module.user_add())
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "Same email: neo@example.com exists!" in res["message"], res
+    assert rollback_calls == ["new-user-id"], rollback_calls
+
+
+@pytest.mark.p2
+def test_tenant_info_and_set_tenant_info_exception_matrix_unit(monkeypatch):
+    module = _load_user_app(monkeypatch)
+
+    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _uid: [])
+    res = _run(module.tenant_info())
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "Tenant not found" in res["message"], res
+
+    def _raise_tenant_info(_uid):
+        raise RuntimeError("tenant info boom")
+
+    monkeypatch.setattr(module.TenantService, "get_info_by", _raise_tenant_info)
+    res = _run(module.tenant_info())
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "tenant info boom" in res["message"], res
+
+    _set_request_json(
+        monkeypatch,
+        module,
+        {"tenant_id": "tenant-1", "llm_id": "l", "embd_id": "e", "asr_id": "a", "img2txt_id": "i"},
+    )
+
+    def _raise_update(_tenant_id, _payload):
+        raise RuntimeError("tenant update boom")
+
+    monkeypatch.setattr(module.TenantService, "update_by_id", _raise_update)
+    res = _run(module.set_tenant_info())
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "tenant update boom" in res["message"], res
+
+
+@pytest.mark.p2
+def test_forget_captcha_and_send_otp_matrix_unit(monkeypatch):
+    module = _load_user_app(monkeypatch)
+
+    class _Headers(dict):
+        def set(self, key, value):
+            self[key] = value
+
+    async def _make_response(data):
+        return SimpleNamespace(data=data, headers=_Headers())
+
+    monkeypatch.setattr(module, "make_response", _make_response)
+
+    captcha_pkg = ModuleType("captcha")
+    captcha_image_mod = ModuleType("captcha.image")
+
+    class _ImageCaptcha:
+        def __init__(self, **_kwargs):
+            pass
+
+        def generate(self, text):
+            return SimpleNamespace(read=lambda: f"img:{text}".encode())
+
+    captcha_image_mod.ImageCaptcha = _ImageCaptcha
+    monkeypatch.setitem(sys.modules, "captcha", captcha_pkg)
+    monkeypatch.setitem(sys.modules, "captcha.image", captcha_image_mod)
+
+    _set_request_args(monkeypatch, module, {"email": ""})
+    res = _run(module.forget_get_captcha())
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR, res
+
+    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [])
+    _set_request_args(monkeypatch, module, {"email": "nobody@example.com"})
+    res = _run(module.forget_get_captcha())
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+
+    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [_DummyUser("u1", "ok@example.com")])
+    monkeypatch.setattr(module.secrets, "choice", lambda _allowed: "A")
+    _set_request_args(monkeypatch, module, {"email": "ok@example.com"})
+    res = _run(module.forget_get_captcha())
+    assert res.data.startswith(b"img:"), res
+    assert res.headers["Content-Type"] == "image/JPEG", res.headers
+    assert module.REDIS_CONN.get(module.captcha_key("ok@example.com")), module.REDIS_CONN.store
+
+    _set_request_json(monkeypatch, module, {"email": "", "captcha": ""})
+    res = _run(module.forget_send_otp())
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR, res
+
+    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [])
+    _set_request_json(monkeypatch, module, {"email": "none@example.com", "captcha": "AAAA"})
+    res = _run(module.forget_send_otp())
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+
+    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [_DummyUser("u1", "ok@example.com")])
+    _set_request_json(monkeypatch, module, {"email": "ok@example.com", "captcha": "AAAA"})
+    module.REDIS_CONN.store.pop(module.captcha_key("ok@example.com"), None)
+    res = _run(module.forget_send_otp())
+    assert res["code"] == module.RetCode.NOT_EFFECTIVE, res
+
+    module.REDIS_CONN.store[module.captcha_key("ok@example.com")] = "ABCD"
+    _set_request_json(monkeypatch, module, {"email": "ok@example.com", "captcha": "ZZZZ"})
+    res = _run(module.forget_send_otp())
+    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
+
+    monkeypatch.setattr(module.time, "time", lambda: 1000)
+    k_code, k_attempts, k_last, k_lock = module.otp_keys("ok@example.com")
+    module.REDIS_CONN.store[module.captcha_key("ok@example.com")] = "ABCD"
+    module.REDIS_CONN.store[k_last] = "990"
+    _set_request_json(monkeypatch, module, {"email": "ok@example.com", "captcha": "ABCD"})
+    res = _run(module.forget_send_otp())
+    assert res["code"] == module.RetCode.NOT_EFFECTIVE, res
+    assert "wait" in res["message"], res
+
+    module.REDIS_CONN.store[module.captcha_key("ok@example.com")] = "ABCD"
+    module.REDIS_CONN.store[k_last] = "bad-timestamp"
+    monkeypatch.setattr(module.secrets, "choice", lambda _allowed: "B")
+    monkeypatch.setattr(module.os, "urandom", lambda _n: b"\x00" * 16)
+    monkeypatch.setattr(module, "hash_code", lambda code, _salt: f"HASH_{code}")
+
+    async def _raise_send_email(*_args, **_kwargs):
+        raise RuntimeError("send email boom")
+
+    monkeypatch.setattr(module, "send_email_html", _raise_send_email)
+    _set_request_json(monkeypatch, module, {"email": "ok@example.com", "captcha": "ABCD"})
+    res = _run(module.forget_send_otp())
+    assert res["code"] == module.RetCode.SERVER_ERROR, res
+    assert "failed to send email" in res["message"], res
+
+    async def _ok_send_email(*_args, **_kwargs):
+        return True
+
+    module.REDIS_CONN.store[module.captcha_key("ok@example.com")] = "ABCD"
+    module.REDIS_CONN.store.pop(k_last, None)
+    monkeypatch.setattr(module, "send_email_html", _ok_send_email)
+    _set_request_json(monkeypatch, module, {"email": "ok@example.com", "captcha": "ABCD"})
+    res = _run(module.forget_send_otp())
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert res["data"] is True, res
+    assert module.REDIS_CONN.get(k_code), module.REDIS_CONN.store
+    assert module.REDIS_CONN.get(k_attempts) == 0, module.REDIS_CONN.store
+    assert module.REDIS_CONN.get(k_lock) is None, module.REDIS_CONN.store
+
+
+@pytest.mark.p2
+def test_forget_verify_otp_matrix_unit(monkeypatch):
+    module = _load_user_app(monkeypatch)
+    email = "ok@example.com"
+    k_code, k_attempts, k_last, k_lock = module.otp_keys(email)
+    salt = b"\x01" * 16
+    monkeypatch.setattr(module, "hash_code", lambda code, _salt: f"HASH_{code}")
+
+    _set_request_json(monkeypatch, module, {})
+    res = _run(module.forget_verify_otp())
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR, res
+
+    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [])
+    _set_request_json(monkeypatch, module, {"email": email, "otp": "ABCDEF"})
+    res = _run(module.forget_verify_otp())
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+
+    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [_DummyUser("u1", email)])
+    module.REDIS_CONN.store[k_lock] = "1"
+    _set_request_json(monkeypatch, module, {"email": email, "otp": "ABCDEF"})
+    res = _run(module.forget_verify_otp())
+    assert res["code"] == module.RetCode.NOT_EFFECTIVE, res
+    module.REDIS_CONN.store.pop(k_lock, None)
+
+    module.REDIS_CONN.store.pop(k_code, None)
+    _set_request_json(monkeypatch, module, {"email": email, "otp": "ABCDEF"})
+    res = _run(module.forget_verify_otp())
+    assert res["code"] == module.RetCode.NOT_EFFECTIVE, res
+
+    module.REDIS_CONN.store[k_code] = "broken"
+    _set_request_json(monkeypatch, module, {"email": email, "otp": "ABCDEF"})
+    res = _run(module.forget_verify_otp())
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+
+    module.REDIS_CONN.store[k_code] = f"HASH_CORRECT:{salt.hex()}"
+    module.REDIS_CONN.store[k_attempts] = "bad-int"
+    _set_request_json(monkeypatch, module, {"email": email, "otp": "wrong"})
+    res = _run(module.forget_verify_otp())
+    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
+    assert module.REDIS_CONN.get(k_attempts) == 1, module.REDIS_CONN.store
+
+    module.REDIS_CONN.store[k_code] = f"HASH_CORRECT:{salt.hex()}"
+    module.REDIS_CONN.store[k_attempts] = str(module.ATTEMPT_LIMIT - 1)
+    _set_request_json(monkeypatch, module, {"email": email, "otp": "wrong"})
+    res = _run(module.forget_verify_otp())
+    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
+    assert module.REDIS_CONN.get(k_lock) is not None, module.REDIS_CONN.store
+    module.REDIS_CONN.store.pop(k_lock, None)
+
+    module.REDIS_CONN.store[k_code] = f"HASH_ABCDEF:{salt.hex()}"
+    module.REDIS_CONN.store[k_attempts] = "0"
+    module.REDIS_CONN.store[k_last] = "1000"
+
+    def _set_with_verified_fail(key, value, _ttl=None):
+        if key == module._verified_key(email):
+            raise RuntimeError("verified set boom")
+        module.REDIS_CONN.store[key] = value
+
+    monkeypatch.setattr(module.REDIS_CONN, "set", _set_with_verified_fail)
+    _set_request_json(monkeypatch, module, {"email": email, "otp": "abcdef"})
+    res = _run(module.forget_verify_otp())
+    assert res["code"] == module.RetCode.SERVER_ERROR, res
+
+    monkeypatch.setattr(module.REDIS_CONN, "set", lambda key, value, _ttl=None: module.REDIS_CONN.store.__setitem__(key, value))
+    module.REDIS_CONN.store[k_code] = f"HASH_ABCDEF:{salt.hex()}"
+    module.REDIS_CONN.store[k_attempts] = "0"
+    module.REDIS_CONN.store[k_last] = "1000"
+    _set_request_json(monkeypatch, module, {"email": email, "otp": "abcdef"})
+    res = _run(module.forget_verify_otp())
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert module.REDIS_CONN.get(k_code) is None, module.REDIS_CONN.store
+    assert module.REDIS_CONN.get(k_attempts) is None, module.REDIS_CONN.store
+    assert module.REDIS_CONN.get(k_last) is None, module.REDIS_CONN.store
+    assert module.REDIS_CONN.get(k_lock) is None, module.REDIS_CONN.store
+    assert module.REDIS_CONN.get(module._verified_key(email)) == "1", module.REDIS_CONN.store
+
+
+@pytest.mark.p2
+def test_forget_reset_password_matrix_unit(monkeypatch):
+    module = _load_user_app(monkeypatch)
+    email = "reset@example.com"
+    v_key = module._verified_key(email)
+    user = _DummyUser("u-reset", email, nickname="reset-user")
+    pwd_a = base64.b64encode(b"new-password").decode()
+    pwd_b = base64.b64encode(b"confirm-password").decode()
+    pwd_same = base64.b64encode(b"same-password").decode()
+    monkeypatch.setattr(module, "decrypt", lambda value: value)
+
+    _set_request_json(monkeypatch, module, {"email": email, "new_password": pwd_same, "confirm_new_password": pwd_same})
+    module.REDIS_CONN.store.pop(v_key, None)
+    res = _run(module.forget_reset_password())
+    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
+
+    module.REDIS_CONN.store[v_key] = "1"
+    monkeypatch.setattr(module, "decrypt", lambda _value: "")
+    _set_request_json(monkeypatch, module, {"email": email, "new_password": "", "confirm_new_password": ""})
+    res = _run(module.forget_reset_password())
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR, res
+
+    monkeypatch.setattr(module, "decrypt", lambda value: value)
+    module.REDIS_CONN.store[v_key] = "1"
+    _set_request_json(monkeypatch, module, {"email": email, "new_password": pwd_a, "confirm_new_password": pwd_b})
+    res = _run(module.forget_reset_password())
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR, res
+    assert "do not match" in res["message"], res
+
+    module.REDIS_CONN.store[v_key] = "1"
+    monkeypatch.setattr(module.UserService, "query_user_by_email", lambda **_kwargs: [])
+    _set_request_json(monkeypatch, module, {"email": email, "new_password": pwd_same, "confirm_new_password": pwd_same})
+    res = _run(module.forget_reset_password())
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+
+    module.REDIS_CONN.store[v_key] = "1"
+    monkeypatch.setattr(module.UserService, "query_user_by_email", lambda **_kwargs: [user])
+
+    def _raise_update_password(_user_id, _new_pwd):
+        raise RuntimeError("reset boom")
+
+    monkeypatch.setattr(module.UserService, "update_user_password", _raise_update_password)
+    _set_request_json(monkeypatch, module, {"email": email, "new_password": pwd_same, "confirm_new_password": pwd_same})
+    res = _run(module.forget_reset_password())
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+
+    module.REDIS_CONN.store[v_key] = "1"
+    monkeypatch.setattr(module.UserService, "update_user_password", lambda _user_id, _new_pwd: True)
+    monkeypatch.setattr(module.REDIS_CONN, "delete", lambda _key: (_ for _ in ()).throw(RuntimeError("delete boom")))
+    _set_request_json(monkeypatch, module, {"email": email, "new_password": pwd_same, "confirm_new_password": pwd_same})
+    res = _run(module.forget_reset_password())
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert res["auth"] == user.get_id(), res
+
+    monkeypatch.setattr(module.REDIS_CONN, "delete", lambda key: module.REDIS_CONN.store.pop(key, None))
+    module.REDIS_CONN.store[v_key] = "1"
+    _set_request_json(monkeypatch, module, {"email": email, "new_password": pwd_same, "confirm_new_password": pwd_same})
+    res = _run(module.forget_reset_password())
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert res["auth"] == user.get_id(), res
+    assert module.REDIS_CONN.get(v_key) is None, module.REDIS_CONN.store
