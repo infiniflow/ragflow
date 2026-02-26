@@ -26,13 +26,20 @@ import {
   useSetDialog,
 } from '@/hooks/use-chat-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
-import { IClientConversation, IMessage } from '@/interfaces/database/chat';
+import { IClientConversation } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { isEmpty, omit, trim } from 'lodash';
 import { ListCheck, Plus, Trash2 } from 'lucide-react';
-import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useParams } from 'react-router';
 import { z } from 'zod';
@@ -43,7 +50,6 @@ import {
 import { useCreateConversationBeforeSendMessage } from '../../hooks/use-chat-url';
 import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
 import { useSendMessage } from '../../hooks/use-send-chat-message';
-import { useSendMultipleChatMessage } from '../../hooks/use-send-multiple-message';
 import {
   HandlePressEnterType,
   useSendSingleMessage,
@@ -68,9 +74,8 @@ type MultipleChatBoxProps = {
 type ChatCardProps = {
   id: string;
   idx: number;
-  derivedMessages: IMessage[];
-  sendLoading: boolean;
   conversation: IClientConversation;
+  setLoading(id: string, loading: boolean): void;
 } & Pick<
   MultipleChatBoxProps,
   'controller' | 'removeChatBox' | 'addChatBox' | 'chatBoxIds'
@@ -86,20 +91,20 @@ const ChatCard = forwardRef(function ChatCard(
     idx,
     addChatBox,
     chatBoxIds,
-    sendLoading,
     clickDocumentButton,
     conversation,
     value,
     setValue,
     files,
     clearFiles,
+    setLoading,
   }: ChatCardProps,
   ref,
 ) {
   const { id: dialogId } = useParams();
   const { setDialog } = useSetDialog();
 
-  const { removeMessageById, derivedMessages, handlePressEnter } =
+  const { removeMessageById, derivedMessages, handlePressEnter, sendLoading } =
     useSendSingleMessage({
       controller,
       value,
@@ -146,7 +151,15 @@ const ChatCard = forwardRef(function ChatCard(
     });
   }, [currentDialog, dialogId, form, setDialog]);
 
-  useImperativeHandle(ref, () => handlePressEnter);
+  useImperativeHandle(
+    ref,
+    (): HandlePressEnterType => (params) =>
+      handlePressEnter({ ...params, ...form.getValues() }),
+  );
+
+  useEffect(() => {
+    setLoading(id, sendLoading);
+  }, [id, sendLoading, setLoading]);
 
   return (
     <Card className="bg-transparent border flex-1 flex flex-col">
@@ -236,17 +249,26 @@ export function MultipleChatBox({
   const { createConversationBeforeSendMessage } =
     useCreateConversationBeforeSendMessage();
 
-  const { sendLoading, messageRecord } = useSendMultipleChatMessage(
-    controller,
-    chatBoxIds,
-  );
-
   const { createConversationBeforeUploadDocument } =
     useCreateConversationBeforeUploadDocument();
   const { conversationId } = useGetChatSearchParams();
   const disabled = useGetSendButtonDisabled();
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
+
+  const [chatBoxLoading, setChatBoxLoading] = useState<Map<string, boolean>>(
+    new Map(),
+  );
+
+  const setLoading = useCallback((id: string, loading: boolean) => {
+    setChatBoxLoading((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(id, loading);
+      return newMap;
+    });
+  }, []);
+
+  const allChatBoxLoading = [...chatBoxLoading.values()];
 
   const showInternet = useShowInternet();
 
@@ -297,15 +319,14 @@ export function MultipleChatBox({
             chatBoxIds={chatBoxIds}
             removeChatBox={removeChatBox}
             addChatBox={addChatBox}
-            derivedMessages={messageRecord[id]}
             ref={setFormRef(id)}
-            sendLoading={sendLoading}
             clickDocumentButton={clickDocumentButton}
             conversation={conversation}
             value={value}
             files={files}
             setValue={setValue}
             clearFiles={clearFiles}
+            setLoading={setLoading}
           ></ChatCard>
         ))}
       </div>
@@ -313,7 +334,7 @@ export function MultipleChatBox({
         <NextMessageInput
           disabled={disabled}
           sendDisabled={sendDisabled}
-          sendLoading={sendLoading}
+          sendLoading={allChatBoxLoading.some((loading) => loading)}
           value={value}
           resize="vertical"
           onInputChange={handleInputChange}
@@ -326,6 +347,8 @@ export function MultipleChatBox({
           onUpload={handleUploadFile}
           showReasoning
           showInternet={showInternet}
+          removeFile={removeFile}
+          isUploading={isUploading}
         />
       </div>
       {visible && (

@@ -59,6 +59,7 @@ export function useSendSingleMessage({
       messages,
       enableInternet,
       enableThinking,
+      ...params
     }: {
       message: IMessage;
       currentConversationId?: string;
@@ -75,6 +76,7 @@ export function useSendSingleMessage({
           ],
           reasoning: enableThinking,
           internet: enableInternet,
+          ...params,
         },
         controller,
       );
@@ -102,6 +104,7 @@ export function useSendSingleMessage({
       enableInternet,
       currentMessages,
       targetConversationId,
+      ...params
     }: NextMessageInputOnPressEnterParameter &
       CreateConversationBeforeSendMessageReturnType) => {
       const id = uuid();
@@ -128,6 +131,7 @@ export function useSendSingleMessage({
           },
           enableInternet,
           enableThinking,
+          ...params,
         });
       }
       clearFiles();
@@ -146,6 +150,7 @@ export function useSendSingleMessage({
     removeMessageById,
     removeMessagesAfterCurrentMessage,
     handlePressEnter,
+    sendLoading: !done,
   };
 }
 
