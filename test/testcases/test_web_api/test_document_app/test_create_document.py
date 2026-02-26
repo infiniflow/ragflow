@@ -13,7 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import string
+from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
@@ -21,6 +23,7 @@ from common import create_document, list_kbs
 from configs import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from utils.file_utils import create_txt_file
+from api.constants import FILE_NAME_LEN_LIMIT
 
 
 @pytest.mark.p1
@@ -90,3 +93,130 @@ class TestDocumentCreate:
 
         res = list_kbs(WebApiAuth, {"id": kb_id})
         assert res["data"]["kbs"][0]["doc_num"] == count, res
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+@pytest.mark.p2
+class TestDocumentCreateUnit:
+    def test_missing_kb_id(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        async def fake_request_json():
+            return {"kb_id": "", "name": "doc.txt"}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.create.__wrapped__())
+        assert res["code"] == 101
+        assert res["message"] == 'Lack of "KB ID"'
+
+    def test_filename_too_long(self, document_app_module, monkeypatch):
+        module = document_app_module
+        long_name = "a" * (FILE_NAME_LEN_LIMIT + 1)
+
+        async def fake_request_json():
+            return {"kb_id": "kb1", "name": long_name}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.create.__wrapped__())
+        assert res["code"] == 101
+        assert res["message"] == f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less."
+
+    def test_filename_whitespace(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        async def fake_request_json():
+            return {"kb_id": "kb1", "name": "   "}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.create.__wrapped__())
+        assert res["code"] == 101
+        assert res["message"] == "File name can't be empty."
+
+    def test_kb_not_found(self, document_app_module, monkeypatch):
+        module = document_app_module
+        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
+
+        async def fake_request_json():
+            return {"kb_id": "missing", "name": "doc.txt"}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.create.__wrapped__())
+        assert res["code"] == 102
+        assert res["message"] == "Can't find this dataset!"
+
+    def test_duplicate_name(self, document_app_module, monkeypatch):
+        module = document_app_module
+        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
+        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [object()])
+
+        async def fake_request_json():
+            return {"kb_id": "kb1", "name": "doc.txt"}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.create.__wrapped__())
+        assert res["code"] == 102
+        assert "Duplicated document name" in res["message"]
+
+    def test_root_folder_missing(self, document_app_module, monkeypatch):
+        module = document_app_module
+        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
+        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
+        monkeypatch.setattr(module.FileService, "get_kb_folder", lambda *_args, **_kwargs: None)
+
+        async def fake_request_json():
+            return {"kb_id": "kb1", "name": "doc.txt"}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.create.__wrapped__())
+        assert res["code"] == 102
+        assert res["message"] == "Cannot find the root folder."
+
+    def test_kb_folder_missing(self, document_app_module, monkeypatch):
+        module = document_app_module
+        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
+        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
+        monkeypatch.setattr(module.FileService, "get_kb_folder", lambda *_args, **_kwargs: {"id": "root"})
+        monkeypatch.setattr(module.FileService, "new_a_file_from_kb", lambda *_args, **_kwargs: None)
+
+        async def fake_request_json():
+            return {"kb_id": "kb1", "name": "doc.txt"}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.create.__wrapped__())
+        assert res["code"] == 102
+        assert res["message"] == "Cannot find the kb folder for this file."
+
+    def test_success(self, document_app_module, monkeypatch):
+        module = document_app_module
+        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
+        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
+        monkeypatch.setattr(module.FileService, "get_kb_folder", lambda *_args, **_kwargs: {"id": "root"})
+        monkeypatch.setattr(module.FileService, "new_a_file_from_kb", lambda *_args, **_kwargs: {"id": "folder"})
+
+        class _Doc:
+            def __init__(self, doc_id):
+                self.id = doc_id
+
+            def to_json(self):
+                return {"id": self.id, "name": "doc.txt", "kb_id": "kb1"}
+
+            def to_dict(self):
+                return {"id": self.id, "name": "doc.txt", "kb_id": "kb1"}
+
+        monkeypatch.setattr(module.DocumentService, "insert", lambda _doc: _Doc("doc1"))
+        monkeypatch.setattr(module.FileService, "add_file_from_kb", lambda *_args, **_kwargs: None)
+
+        async def fake_request_json():
+            return {"kb_id": "kb1", "name": "doc.txt"}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.create.__wrapped__())
+        assert res["code"] == 0
+        assert res["data"]["id"] == "doc1"

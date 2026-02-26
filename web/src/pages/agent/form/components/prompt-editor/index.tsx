@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils';
 import { JsonSchemaDataType } from '@/pages/agent/constant';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { Variable } from 'lucide-react';
-import { ReactNode, useCallback, useState } from 'react';
+import { forwardRef, ReactNode, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { EnterKeyPlugin } from './enter-key-plugin';
 import { PasteHandlerPlugin } from './paste-handler-plugin';
@@ -129,17 +129,20 @@ function PromptContent({
   );
 }
 
-export function PromptEditor({
-  value,
-  onChange,
-  onBlur,
-  placeholder,
-  showToolbar,
-  multiLine = true,
-  extraOptions,
-  baseOptions,
-  types,
-}: IProps) {
+export const PromptEditor = forwardRef(function PromptEditor(
+  {
+    value,
+    onChange,
+    onBlur,
+    placeholder,
+    showToolbar,
+    multiLine = true,
+    extraOptions,
+    baseOptions,
+    types,
+  }: IProps,
+  ref: React.Ref<HTMLDivElement>,
+) {
   const { t } = useTranslation();
   const initialConfig: InitialConfigType = {
     namespace: 'PromptEditor',
@@ -163,7 +166,7 @@ export function PromptEditor({
   );
 
   return (
-    <div className="relative">
+    <div ref={ref} className="relative">
       <LexicalComposer initialConfig={initialConfig}>
         <RichTextPlugin
           contentEditable={
@@ -176,10 +179,10 @@ export function PromptEditor({
           placeholder={
             <div
               className={cn(
-                'absolute top-1 left-2 text-text-disabled pointer-events-none',
+                '-z-10 absolute top-1 left-2 text-text-disabled pointer-events-none',
                 {
                   'truncate w-[90%]': !multiLine,
-                  'translate-y-10': multiLine,
+                  'translate-y-9': multiLine,
                 },
               )}
             >
@@ -202,4 +205,4 @@ export function PromptEditor({
       </LexicalComposer>
     </div>
   );
-}
+});

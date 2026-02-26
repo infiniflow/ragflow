@@ -13,6 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
+from types import SimpleNamespace
+
 import pytest
 from common import (
     document_change_status,
@@ -241,3 +244,170 @@ class TestDocumentMetadataNegative:
         res = document_set_meta(WebApiAuth, {"doc_id": doc_id, "meta": "[]"})
         assert res["code"] == 101, res
         assert "dictionary" in res["message"], res
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+@pytest.mark.p2
+class TestDocumentMetadataUnit:
+    def _allow_kb(self, module, monkeypatch, kb_id="kb1", tenant_id="tenant1"):
+        monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id=tenant_id)])
+        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: True if _kwargs.get("id") == kb_id else False)
+
+    def test_filter_missing_kb_id(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        async def fake_request_json():
+            return {}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.get_filter())
+        assert res["code"] == 101
+        assert "KB ID" in res["message"]
+
+    def test_filter_unauthorized(self, document_app_module, monkeypatch):
+        module = document_app_module
+        monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant1")])
+        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: False)
+
+        async def fake_request_json():
+            return {"kb_id": "kb1"}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.get_filter())
+        assert res["code"] == 103
+
+    def test_filter_invalid_filters(self, document_app_module, monkeypatch):
+        module = document_app_module
+        self._allow_kb(module, monkeypatch)
+
+        async def fake_request_json():
+            return {"kb_id": "kb1", "run_status": ["INVALID"]}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.get_filter())
+        assert res["code"] == 102
+        assert "Invalid filter run status" in res["message"]
+
+        async def fake_request_json_types():
+            return {"kb_id": "kb1", "types": ["INVALID"]}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json_types)
+        res = _run(module.get_filter())
+        assert res["code"] == 102
+        assert "Invalid filter conditions" in res["message"]
+
+    def test_filter_keywords_suffix(self, document_app_module, monkeypatch):
+        module = document_app_module
+        self._allow_kb(module, monkeypatch)
+        monkeypatch.setattr(module.DocumentService, "get_filter_by_kb_id", lambda *_args, **_kwargs: ({"run": {}}, 1))
+
+        async def fake_request_json():
+            return {"kb_id": "kb1", "keywords": "ragflow", "suffix": ["txt"]}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.get_filter())
+        assert res["code"] == 0
+        assert "filter" in res["data"]
+
+    def test_filter_exception(self, document_app_module, monkeypatch):
+        module = document_app_module
+        self._allow_kb(module, monkeypatch)
+
+        def raise_error(*_args, **_kwargs):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(module.DocumentService, "get_filter_by_kb_id", raise_error)
+
+        async def fake_request_json():
+            return {"kb_id": "kb1"}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.get_filter())
+        assert res["code"] == 100
+
+    def test_infos_meta_fields(self, document_app_module, monkeypatch):
+        module = document_app_module
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda *_args, **_kwargs: True)
+
+        class _Docs:
+            def dicts(self):
+                return [{"id": "doc1"}]
+
+        monkeypatch.setattr(module.DocumentService, "get_by_ids", lambda _ids: _Docs())
+        monkeypatch.setattr(module.DocMetadataService, "get_document_metadata", lambda _doc_id: {"author": "alice"})
+
+        async def fake_request_json():
+            return {"doc_ids": ["doc1"]}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.doc_infos())
+        assert res["code"] == 0
+        assert res["data"][0]["meta_fields"]["author"] == "alice"
+
+    def test_metadata_summary_missing_kb_id(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        async def fake_request_json():
+            return {"doc_ids": ["doc1"]}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.metadata_summary())
+        assert res["code"] == 101
+
+    def test_metadata_summary_unauthorized(self, document_app_module, monkeypatch):
+        module = document_app_module
+        monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant1")])
+        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: False)
+
+        async def fake_request_json():
+            return {"kb_id": "kb1", "doc_ids": ["doc1"]}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.metadata_summary())
+        assert res["code"] == 103
+
+    def test_metadata_summary_success_and_exception(self, document_app_module, monkeypatch):
+        module = document_app_module
+        self._allow_kb(module, monkeypatch)
+        monkeypatch.setattr(module.DocMetadataService, "get_metadata_summary", lambda *_args, **_kwargs: {"author": {"alice": 1}})
+
+        async def fake_request_json():
+            return {"kb_id": "kb1", "doc_ids": ["doc1"]}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.metadata_summary())
+        assert res["code"] == 0
+        assert "summary" in res["data"]
+
+        def raise_error(*_args, **_kwargs):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(module.DocMetadataService, "get_metadata_summary", raise_error)
+        res = _run(module.metadata_summary())
+        assert res["code"] == 100
+
+    def test_metadata_update_missing_kb_id(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        async def fake_request_json():
+            return {"doc_ids": ["doc1"], "updates": [], "deletes": []}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.metadata_update.__wrapped__())
+        assert res["code"] == 101
+        assert "KB ID" in res["message"]
+
+    def test_metadata_update_success(self, document_app_module, monkeypatch):
+        module = document_app_module
+        monkeypatch.setattr(module.DocMetadataService, "batch_update_metadata", lambda *_args, **_kwargs: 1)
+
+        async def fake_request_json():
+            return {"kb_id": "kb1", "doc_ids": ["doc1"], "updates": [{"key": "author", "value": "alice"}], "deletes": []}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.metadata_update.__wrapped__())
+        assert res["code"] == 0
+        assert res["data"]["matched_docs"] == 1

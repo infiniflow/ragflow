@@ -31,7 +31,7 @@ from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
 from api.utils.api_utils import get_json_result, get_request_json
 from api.utils.file_utils import filename_type
-from api.utils.web_utils import CONTENT_TYPE_MAP
+from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers
 from common import settings
 
 @manager.route('/upload', methods=['POST'])  # noqa: F821
@@ -364,12 +364,11 @@ async def get(file_id):
         response = await make_response(blob)
         ext = re.search(r"\.([^.]+)$", file.name.lower())
         ext = ext.group(1) if ext else None
+        content_type = None
         if ext:
-            if file.type == FileType.VISUAL.value:
-                content_type = CONTENT_TYPE_MAP.get(ext, f"image/{ext}")
-            else:
-                content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
-            response.headers.set("Content-Type", content_type)
+            fallback_prefix = "image" if file.type == FileType.VISUAL.value else "application"
+            content_type = CONTENT_TYPE_MAP.get(ext, f"{fallback_prefix}/{ext}")
+        apply_safe_file_response_headers(response, content_type, ext)
         return response
     except Exception as e:
         return server_error_response(e)

@@ -897,7 +897,7 @@ async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progre
         flds = list(mom_ck.keys())
         for fld in flds:
             if fld not in ["id", "content_with_weight", "doc_id", "docnm_kwd", "kb_id", "available_int",
-                           "position_int"]:
+                           "position_int", "create_timestamp_flt", "page_num_int", "top_int"]:
                 del mom_ck[fld]
         mothers.append(mom_ck)
 

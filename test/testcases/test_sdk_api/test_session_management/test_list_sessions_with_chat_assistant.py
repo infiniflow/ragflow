@@ -18,6 +18,20 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 class TestSessionsWithChatAssistantList:
+    @pytest.mark.p2
+    def test_list_sessions_raises_on_nonzero_response(self, add_sessions_with_chat_assistant, monkeypatch):
+        chat_assistant, _ = add_sessions_with_chat_assistant
+
+        class _DummyResponse:
+            def json(self):
+                return {"code": 1, "message": "boom"}
+
+        monkeypatch.setattr(chat_assistant, "get", lambda *_args, **_kwargs: _DummyResponse())
+
+        with pytest.raises(Exception) as exception_info:
+            chat_assistant.list_sessions()
+        assert "boom" in str(exception_info.value)
+
     @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_page_size, expected_message",

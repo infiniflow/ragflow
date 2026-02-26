@@ -147,3 +147,14 @@ class TestChunksList:
 
         chunks = document.list_chunks()
         assert len(chunks) == 30, str(chunks)
+
+    @pytest.mark.p2
+    def test_list_chunks_invalid_document_id_raises(self, add_chunks):
+        _, document, _ = add_chunks
+        invalid_document = document.__class__(
+            document.rag,
+            {"id": "missing-document-id-for-chunks", "dataset_id": document.dataset_id},
+        )
+        with pytest.raises(Exception) as exception_info:
+            invalid_document.list_chunks()
+        assert str(exception_info.value), exception_info

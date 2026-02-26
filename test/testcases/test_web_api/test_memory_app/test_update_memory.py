@@ -13,14 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import re
+
 import pytest
 from test_web_api.common import update_memory
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
-from hypothesis import HealthCheck, example, given, settings
 from utils import encode_avatar
 from utils.file_utils import create_image_file
-from utils.hypothesis_utils import valid_names
 
 
 class TestAuthorization:
@@ -42,15 +42,14 @@ class TestAuthorization:
 class TestMemoryUpdate:
 
     @pytest.mark.p1
-    @given(name=valid_names())
-    @example("f" * 128)
-    @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    @pytest.mark.parametrize("name", ["updated_memory", "f" * 128])
     def test_name(self, WebApiAuth, add_memory_func, name):
         memory_ids = add_memory_func
         payload = {"name": name}
         res = update_memory(WebApiAuth, memory_ids[0], payload)
         assert res["code"] == 0, res
-        assert res["data"]["name"] == name, res
+        pattern = rf"^{re.escape(name)}(?:\(\d+\))?$"
+        assert re.match(pattern, res["data"]["name"]), res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

@@ -49,3 +49,16 @@ class TestGetMessageContent:
         for field in ["content", "content_embed"]:
             assert field in content_res["data"]
             assert content_res["data"][field] is not None, content_res
+
+    @pytest.mark.p2
+    def test_get_message_content_invalid_memory_id(self, WebApiAuth):
+        res = get_message_content(WebApiAuth, "missing_memory_id", 1)
+        assert res["code"] == 404, res
+        assert "not found" in res["message"].lower(), res
+
+    @pytest.mark.p2
+    def test_get_message_content_invalid_message_id(self, WebApiAuth):
+        memory_id = self.memory_id
+        res = get_message_content(WebApiAuth, memory_id, 999999999)
+        assert res["code"] == 404, res
+        assert "not found" in res["message"].lower(), res

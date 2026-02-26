@@ -67,6 +67,14 @@ class TestDocumentsUpdated:
             document.update({"meta_fields": meta_fields})
 
     @pytest.mark.p2
+    def test_meta_fields_invalid_type_guard_p2(self, add_documents):
+        _, documents = add_documents
+        document = documents[0]
+        with pytest.raises(Exception) as exception_info:
+            document.update({"meta_fields": "not-a-dict"})
+        assert "meta_fields must be a dictionary" in str(exception_info.value), str(exception_info.value)
+
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "chunk_method, expected_message",
         [
