@@ -15,13 +15,27 @@
 #
 
 import logging
+import ssl
 import time
 from minio import Minio
 from minio.commonconfig import CopySource
 from minio.error import S3Error, ServerError, InvalidResponseError
 from io import BytesIO
+import urllib3
 from common.decorator import singleton
 from common import settings
+
+
+def _build_minio_http_client():
+    """
+    Build an optional urllib3 HTTP client for MinIO when using SSL/TLS.
+    Respects MINIO.verify (default True) to allow self-signed certificates
+    when set to False.
+    """
+    verify = settings.MINIO.get("verify", True)
+    if verify is True or verify == "true" or verify == "1":
+        return None
+    return urllib3.PoolManager(cert_reqs=ssl.CERT_NONE)
 
 
 @singleton
@@ -83,11 +97,17 @@ class RAGFlowMinio:
             pass
 
         try:
-            self.conn = Minio(settings.MINIO["host"],
-                              access_key=settings.MINIO["user"],
-                              secret_key=settings.MINIO["password"],
-                              secure=False
-                              )
+            secure = settings.MINIO.get("secure", False)
+            if isinstance(secure, str):
+                secure = secure.lower() in ("true", "1", "yes")
+            http_client = _build_minio_http_client()
+            self.conn = Minio(
+                settings.MINIO["host"],
+                access_key=settings.MINIO["user"],
+                secret_key=settings.MINIO["password"],
+                secure=secure,
+                http_client=http_client,
+            )
         except Exception:
             logging.exception(
                 "Fail to connect %s " % settings.MINIO["host"])

@@ -219,6 +219,13 @@ class TestDatasetsList:
         assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
+    def test_get_dataset_not_found_raises(self, client, monkeypatch):
+        monkeypatch.setattr(client, "list_datasets", lambda **_: [])
+        with pytest.raises(Exception) as exception_info:
+            client.get_dataset(name="missing-name-for-coverage")
+        assert "Dataset missing-name-for-coverage not found" in str(exception_info.value), str(exception_info.value)
+
+    @pytest.mark.p2
     def test_name_empty(self, client):
         params = {"name": ""}
         datasets = client.list_datasets(**params)

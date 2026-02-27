@@ -48,8 +48,15 @@ const storage = {
 };
 
 export const getAuthorization = () => {
+  const jwtAuth = getSearchValue('jwt_auth');
+  if (jwtAuth) {
+    return jwtAuth;
+  }
+
   const auth = getSearchValue('auth');
-  const authorization = auth ? auth : storage.getAuthorization() || '';
+  const authorization = auth
+    ? 'Bearer ' + auth
+    : storage.getAuthorization() || '';
 
   return authorization;
 };
