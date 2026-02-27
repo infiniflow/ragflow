@@ -16,6 +16,7 @@
 import asyncio
 import importlib.util
 import inspect
+import json
 import sys
 from functools import wraps
 from pathlib import Path
@@ -131,6 +132,16 @@ def _set_request_json(monkeypatch, module, payload):
     monkeypatch.setattr(module, "get_request_json", _request_json)
 
 
+@pytest.fixture(scope="session")
+def auth():
+    return "unit-auth"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def set_tenant_info():
+    return None
+
+
 def _load_mcp_server_app(monkeypatch):
     repo_root = Path(__file__).resolve().parents[4]
 
@@ -196,6 +207,28 @@ def _load_mcp_server_app(monkeypatch):
     api_utils_mod.validate_request = _validate_request
     api_utils_mod.get_mcp_tools = _get_mcp_tools
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
+
+    web_utils_mod = ModuleType("api.utils.web_utils")
+
+    def _get_float(data, key, default):
+        try:
+            return float(data.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    def _safe_json_parse(value):
+        if isinstance(value, (dict, list)):
+            return value
+        if value in (None, ""):
+            return {}
+        try:
+            return json.loads(value)
+        except (TypeError, ValueError):
+            return {}
+
+    web_utils_mod.get_float = _get_float
+    web_utils_mod.safe_json_parse = _safe_json_parse
+    monkeypatch.setitem(sys.modules, "api.utils.web_utils", web_utils_mod)
 
     module_name = "test_mcp_server_app_unit_module"
     module_path = repo_root / "api" / "apps" / "mcp_server_app.py"
@@ -706,3 +739,159 @@ def test_test_tool_missing_mcp_id(monkeypatch):
     _set_request_json(monkeypatch, module, {"mcp_id": "", "tool_name": "tool_a", "arguments": {"x": 1}})
     res = _run(module.test_tool.__wrapped__())
     assert "No MCP server ID provided" in res["message"]
+
+
+@pytest.mark.p2
+def test_test_tool_route_matrix_unit(monkeypatch):
+    module = _load_mcp_server_app(monkeypatch)
+
+    _set_request_json(monkeypatch, module, {"mcp_id": "", "tool_name": "tool_a", "arguments": {"x": 1}})
+    res = _run(module.test_tool.__wrapped__())
+    assert "No MCP server ID provided" in res["message"]
+
+    _set_request_json(monkeypatch, module, {"mcp_id": "id1", "tool_name": "", "arguments": {"x": 1}})
+    res = _run(module.test_tool.__wrapped__())
+    assert "Require provide tool name and arguments" in res["message"]
+
+    _set_request_json(monkeypatch, module, {"mcp_id": "id1", "tool_name": "tool_a", "arguments": {}})
+    res = _run(module.test_tool.__wrapped__())
+    assert "Require provide tool name and arguments" in res["message"]
+
+    _set_request_json(monkeypatch, module, {"mcp_id": "id1", "tool_name": "tool_a", "arguments": {"x": 1}})
+    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (False, None))
+    res = _run(module.test_tool.__wrapped__())
+    assert "Cannot find MCP server id1 for user tenant_1" in res["message"]
+
+    server_other = _DummyMCPServer(id="id1", name="srv", url="http://a", server_type="sse", tenant_id="other", variables={})
+    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (True, server_other))
+    res = _run(module.test_tool.__wrapped__())
+    assert "Cannot find MCP server id1 for user tenant_1" in res["message"]
+
+    server_ok = _DummyMCPServer(id="id1", name="srv", url="http://a", server_type="sse", tenant_id="tenant_1", variables={})
+    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (True, server_ok))
+    close_calls = []
+
+    async def _thread_pool_exec_success(func, *args):
+        if func is module.close_multiple_mcp_toolcall_sessions:
+            close_calls.append(args[0])
+            return None
+        return func(*args)
+
+    monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_exec_success)
+    res = _run(module.test_tool.__wrapped__())
+    assert res["code"] == 0
+    assert res["data"] == "ok"
+    assert close_calls and len(close_calls[-1]) == 1
+
+    async def _thread_pool_exec_raise(func, *args):
+        if func is module.close_multiple_mcp_toolcall_sessions:
+            return None
+        raise RuntimeError("tool call explode")
+
+    monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_exec_raise)
+    res = _run(module.test_tool.__wrapped__())
+    assert res["code"] == 100
+    assert "tool call explode" in res["message"]
+
+
+@pytest.mark.p2
+def test_cache_tool_route_matrix_unit(monkeypatch):
+    module = _load_mcp_server_app(monkeypatch)
+
+    _set_request_json(monkeypatch, module, {"mcp_id": "", "tools": [{"name": "tool_a"}]})
+    res = _run(module.cache_tool.__wrapped__())
+    assert "No MCP server ID provided" in res["message"]
+
+    _set_request_json(monkeypatch, module, {"mcp_id": "id1", "tools": [{"name": "tool_a"}]})
+    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (False, None))
+    res = _run(module.cache_tool.__wrapped__())
+    assert "Cannot find MCP server id1 for user tenant_1" in res["message"]
+
+    server_other = _DummyMCPServer(id="id1", name="srv", url="http://a", server_type="sse", tenant_id="other", variables={})
+    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (True, server_other))
+    res = _run(module.cache_tool.__wrapped__())
+    assert "Cannot find MCP server id1 for user tenant_1" in res["message"]
+
+    server_fail = _DummyMCPServer(id="id1", name="srv", url="http://a", server_type="sse", tenant_id="tenant_1", variables={})
+    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (True, server_fail))
+    monkeypatch.setattr(module.MCPServerService, "filter_update", lambda *_args, **_kwargs: False)
+    res = _run(module.cache_tool.__wrapped__())
+    assert "Failed to updated MCP server" in res["message"]
+
+    server_ok = _DummyMCPServer(
+        id="id1",
+        name="srv",
+        url="http://a",
+        server_type="sse",
+        tenant_id="tenant_1",
+        variables={"tools": {"old_tool": {"name": "old_tool"}}},
+    )
+    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (True, server_ok))
+    monkeypatch.setattr(module.MCPServerService, "filter_update", lambda *_args, **_kwargs: True)
+    _set_request_json(
+        monkeypatch,
+        module,
+        {
+            "mcp_id": "id1",
+            "tools": [{"name": "tool_a", "enabled": True}, {"bad": 1}, "x", {"name": "tool_b", "enabled": False}],
+        },
+    )
+    res = _run(module.cache_tool.__wrapped__())
+    assert res["code"] == 0
+    assert sorted(res["data"].keys()) == ["tool_a", "tool_b"]
+    assert server_ok.variables["tools"]["tool_b"]["enabled"] is False
+
+
+@pytest.mark.p2
+def test_test_mcp_route_matrix_unit(monkeypatch):
+    module = _load_mcp_server_app(monkeypatch)
+
+    _set_request_json(monkeypatch, module, {"url": "", "server_type": "sse"})
+    res = _run(module.test_mcp.__wrapped__())
+    assert "Invalid MCP url" in res["message"]
+
+    _set_request_json(monkeypatch, module, {"url": "http://a", "server_type": "invalid"})
+    res = _run(module.test_mcp.__wrapped__())
+    assert "Unsupported MCP server type" in res["message"]
+
+    close_calls = []
+
+    async def _thread_pool_exec_inner_error(func, *args):
+        if func is module.close_multiple_mcp_toolcall_sessions:
+            close_calls.append(args[0])
+            return None
+        if getattr(func, "__name__", "") == "get_tools":
+            raise RuntimeError("get tools explode")
+        return func(*args)
+
+    monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_exec_inner_error)
+    _set_request_json(monkeypatch, module, {"url": "http://a", "server_type": "sse"})
+    res = _run(module.test_mcp.__wrapped__())
+    assert res["code"] == 102
+    assert "Test MCP error: get tools explode" in res["message"]
+    assert close_calls and len(close_calls[-1]) == 1
+
+    close_calls_success = []
+
+    async def _thread_pool_exec_success(func, *args):
+        if func is module.close_multiple_mcp_toolcall_sessions:
+            close_calls_success.append(args[0])
+            return None
+        return func(*args)
+
+    monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_exec_success)
+    _set_request_json(monkeypatch, module, {"url": "http://a", "server_type": "sse"})
+    res = _run(module.test_mcp.__wrapped__())
+    assert res["code"] == 0
+    assert res["data"][0]["name"] == "tool_a"
+    assert all(tool["enabled"] is True for tool in res["data"])
+    assert close_calls_success and len(close_calls_success[-1]) == 1
+
+    def _raise_session(*_args, **_kwargs):
+        raise RuntimeError("session explode")
+
+    monkeypatch.setattr(module, "MCPToolCallSession", _raise_session)
+    _set_request_json(monkeypatch, module, {"url": "http://a", "server_type": "sse"})
+    res = _run(module.test_mcp.__wrapped__())
+    assert res["code"] == 100
+    assert "session explode" in res["message"]

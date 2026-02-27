@@ -21,4 +21,6 @@ class ParserFromUpstream(BaseModel):
 
     name: str
     file: dict | None = Field(default=None)
+    abstract: bool = False
+    author: bool = False
     model_config = ConfigDict(populate_by_name=True, extra="forbid")

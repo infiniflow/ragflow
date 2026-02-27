@@ -77,6 +77,15 @@ class _StubResponse:
         self.headers = _StubHeaders()
 
 
+class _DummyUploadFile:
+    def __init__(self, filename):
+        self.filename = filename
+        self.saved_path = None
+
+    async def save(self, path):
+        self.saved_path = path
+
+
 def _run(coro):
     return asyncio.run(coro)
 
@@ -94,6 +103,16 @@ async def _collect_stream(body):
                 item = item.decode("utf-8")
             items.append(item)
     return items
+
+
+@pytest.fixture(scope="session")
+def auth():
+    return "unit-auth"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def set_tenant_info():
+    return None
 
 
 def _load_session_module(monkeypatch):
@@ -1125,3 +1144,355 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
     assert retrieval_capture["rank_feature"] == ["label-1"]
     assert retrieval_capture["rerank_mdl"] is not None
     assert any(call[1] == module.LLMType.EMBEDDING.value and call[3].get("llm_name") == "embd-model" for call in llm_calls)
+
+    llm_calls.clear()
+
+    async def _fake_keyword_extraction(_chat_mdl, question):
+        return f"-{question}-keywords"
+
+    async def _fake_kg_retrieval(question, tenant_ids, kb_ids, _embd_mdl, _chat_mdl):
+        return {
+            "id": "kg-chunk",
+            "question": question,
+            "tenant_ids": tenant_ids,
+            "kb_ids": kb_ids,
+            "content_with_weight": 1,
+            "vector": [0.5],
+        }
+
+    monkeypatch.setattr(module, "keyword_extraction", _fake_keyword_extraction)
+    monkeypatch.setattr(module.settings, "kg_retriever", SimpleNamespace(retrieval=_fake_kg_retrieval))
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue(
+            {
+                "kb_id": "kb-1",
+                "question": "keyword-q",
+                "rerank_id": "manual-reranker",
+                "keyword": True,
+                "use_kg": True,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        module.KnowledgebaseService,
+        "get_by_id",
+        lambda _kb_id: (True, SimpleNamespace(tenant_id="tenant-kb", embd_id="embd-model")),
+    )
+    res = _run(handler())
+    assert res["code"] == 0
+    assert res["data"]["chunks"][0]["id"] == "kg-chunk"
+    assert all("vector" not in chunk for chunk in res["data"]["chunks"])
+    assert any(call[1] == module.LLMType.RERANK.value for call in llm_calls)
+
+    async def _raise_not_found(*_args, **_kwargs):
+        raise RuntimeError("x not_found y")
+
+    monkeypatch.setattr(module.settings, "retriever", SimpleNamespace(retrieval=_raise_not_found))
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"kb_id": "kb-1", "question": "q"}),
+    )
+    res = _run(handler())
+    assert res["message"] == "No chunk found! Check the chunk status please!"
+
+
+@pytest.mark.p2
+def test_searchbots_related_questions_embedded_matrix_unit(monkeypatch):
+    module = _load_session_module(monkeypatch)
+    handler = inspect.unwrap(module.related_questions_embedded)
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer"}))
+    res = _run(handler())
+    assert res["message"] == "Authorization is not valid!"
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer bad"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [])
+    res = _run(handler())
+    assert "API key is invalid" in res["message"]
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer ok"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="")])
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"question": "q"}))
+    res = _run(handler())
+    assert res["message"] == "permission denined."
+
+    captured = {}
+
+    class _FakeChatBundle:
+        async def async_chat(self, prompt, messages, options):
+            captured["prompt"] = prompt
+            captured["messages"] = messages
+            captured["options"] = options
+            return "1. Alpha\n2. Beta\nignored"
+
+    def _fake_bundle(*args, **_kwargs):
+        captured["bundle_args"] = args
+        return _FakeChatBundle()
+
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"question": "solar", "search_id": "search-1"}),
+    )
+    monkeypatch.setattr(
+        module.SearchService,
+        "get_detail",
+        lambda _search_id: {"search_config": {"chat_id": "chat-x", "llm_setting": {"temperature": 0.2}}},
+    )
+    monkeypatch.setattr(module, "LLMBundle", _fake_bundle)
+    res = _run(handler())
+    assert res["code"] == 0
+    assert res["data"] == ["Alpha", "Beta"]
+    assert captured["bundle_args"] == ("tenant-1", module.LLMType.CHAT, "chat-x")
+    assert captured["options"] == {"temperature": 0.2}
+    assert "Keywords: solar" in captured["messages"][0]["content"]
+
+
+@pytest.mark.p2
+def test_searchbots_detail_share_embedded_matrix_unit(monkeypatch):
+    module = _load_session_module(monkeypatch)
+    handler = inspect.unwrap(module.detail_share_embedded)
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer"}, args={"search_id": "s-1"}))
+    res = _run(handler())
+    assert res["message"] == "Authorization is not valid!"
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer bad"}, args={"search_id": "s-1"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [])
+    res = _run(handler())
+    assert "API key is invalid" in res["message"]
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer ok"}, args={"search_id": "s-1"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="")])
+    res = _run(handler())
+    assert res["message"] == "permission denined."
+
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-a")])
+    monkeypatch.setattr(module.SearchService, "query", lambda **_kwargs: [])
+    res = _run(handler())
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+    assert "Has no permission for this operation." in res["message"]
+
+    monkeypatch.setattr(module.SearchService, "query", lambda **_kwargs: [SimpleNamespace(id="s-1")])
+    monkeypatch.setattr(module.SearchService, "get_detail", lambda _sid: None)
+    res = _run(handler())
+    assert res["message"] == "Can't find this Search App!"
+
+    monkeypatch.setattr(module.SearchService, "get_detail", lambda _sid: {"id": "s-1", "name": "search-app"})
+    res = _run(handler())
+    assert res["code"] == 0
+    assert res["data"]["id"] == "s-1"
+
+
+@pytest.mark.p2
+def test_searchbots_mindmap_embedded_matrix_unit(monkeypatch):
+    module = _load_session_module(monkeypatch)
+    handler = inspect.unwrap(module.mindmap)
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer"}))
+    res = _run(handler())
+    assert res["message"] == "Authorization is not valid!"
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer bad"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [])
+    res = _run(handler())
+    assert "API key is invalid" in res["message"]
+
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer ok"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"question": "q", "kb_ids": ["kb-1"]}))
+
+    captured = {}
+
+    async def _gen_ok(question, kb_ids, tenant_id, search_config):
+        captured["params"] = (question, kb_ids, tenant_id, search_config)
+        return {"nodes": [question]}
+
+    monkeypatch.setattr(module, "gen_mindmap", _gen_ok)
+    res = _run(handler())
+    assert res["code"] == 0
+    assert res["data"] == {"nodes": ["q"]}
+    assert captured["params"] == ("q", ["kb-1"], "tenant-1", {})
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"question": "q2", "kb_ids": ["kb-1"], "search_id": "search-1"}),
+    )
+    monkeypatch.setattr(module.SearchService, "get_detail", lambda _sid: {"search_config": {"mode": "graph"}})
+    res = _run(handler())
+    assert res["code"] == 0
+    assert captured["params"] == ("q2", ["kb-1"], "tenant-1", {"mode": "graph"})
+
+    async def _gen_error(*_args, **_kwargs):
+        return {"error": "mindmap boom"}
+
+    monkeypatch.setattr(module, "gen_mindmap", _gen_error)
+    res = _run(handler())
+    assert "mindmap boom" in res["message"]
+
+
+@pytest.mark.p2
+def test_sequence2txt_embedded_validation_and_stream_matrix_unit(monkeypatch):
+    module = _load_session_module(monkeypatch)
+    handler = inspect.unwrap(module.sequence2txt)
+    monkeypatch.setattr(module, "Response", _StubResponse)
+    monkeypatch.setattr(module.tempfile, "mkstemp", lambda suffix: (11, f"/tmp/audio{suffix}"))
+    monkeypatch.setattr(module.os, "close", lambda _fd: None)
+
+    def _set_request(form, files):
+        monkeypatch.setattr(
+            module,
+            "request",
+            SimpleNamespace(form=_AwaitableValue(form), files=_AwaitableValue(files)),
+        )
+
+    _set_request({"stream": "false"}, {})
+    res = _run(handler("tenant-1"))
+    assert "Missing 'file' in multipart form-data" in res["message"]
+
+    _set_request({"stream": "false"}, {"file": _DummyUploadFile("bad.txt")})
+    res = _run(handler("tenant-1"))
+    assert "Unsupported audio format: .txt" in res["message"]
+
+    _set_request({"stream": "false"}, {"file": _DummyUploadFile("audio.wav")})
+    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _tid: [])
+    res = _run(handler("tenant-1"))
+    assert res["message"] == "Tenant not found!"
+
+    _set_request({"stream": "false"}, {"file": _DummyUploadFile("audio.wav")})
+    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _tid: [{"tenant_id": "tenant-1", "asr_id": ""}])
+    res = _run(handler("tenant-1"))
+    assert res["message"] == "No default ASR model is set"
+
+    class _SyncASR:
+        def transcription(self, _path):
+            return "transcribed text"
+
+        def stream_transcription(self, _path):
+            return []
+
+    _set_request({"stream": "false"}, {"file": _DummyUploadFile("audio.wav")})
+    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _tid: [{"tenant_id": "tenant-1", "asr_id": "asr-x"}])
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _SyncASR())
+    monkeypatch.setattr(module.os, "remove", lambda _path: (_ for _ in ()).throw(RuntimeError("cleanup fail")))
+    res = _run(handler("tenant-1"))
+    assert res["code"] == 0
+    assert res["data"]["text"] == "transcribed text"
+
+    class _StreamASR:
+        def transcription(self, _path):
+            return ""
+
+        def stream_transcription(self, _path):
+            yield {"event": "partial", "text": "hello"}
+
+    _set_request({"stream": "true"}, {"file": _DummyUploadFile("audio.wav")})
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _StreamASR())
+    monkeypatch.setattr(module.os, "remove", lambda _path: None)
+    resp = _run(handler("tenant-1"))
+    assert isinstance(resp, _StubResponse)
+    assert resp.content_type == "text/event-stream"
+    chunks = _run(_collect_stream(resp.body))
+    assert any('"event": "partial"' in chunk for chunk in chunks)
+
+    class _ErrorASR:
+        def transcription(self, _path):
+            return ""
+
+        def stream_transcription(self, _path):
+            raise RuntimeError("stream asr boom")
+
+    _set_request({"stream": "true"}, {"file": _DummyUploadFile("audio.wav")})
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _ErrorASR())
+    monkeypatch.setattr(module.os, "remove", lambda _path: (_ for _ in ()).throw(RuntimeError("cleanup boom")))
+    resp = _run(handler("tenant-1"))
+    chunks = _run(_collect_stream(resp.body))
+    assert any("stream asr boom" in chunk for chunk in chunks)
+
+
+@pytest.mark.p2
+def test_tts_embedded_stream_and_error_matrix_unit(monkeypatch):
+    module = _load_session_module(monkeypatch)
+    handler = inspect.unwrap(module.tts)
+    monkeypatch.setattr(module, "Response", _StubResponse)
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"text": "A。B"}))
+
+    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _tid: [])
+    res = _run(handler("tenant-1"))
+    assert res["message"] == "Tenant not found!"
+
+    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _tid: [{"tenant_id": "tenant-1", "tts_id": ""}])
+    res = _run(handler("tenant-1"))
+    assert res["message"] == "No default TTS model is set"
+
+    class _TTSOk:
+        def tts(self, txt):
+            if not txt:
+                return []
+            yield f"chunk-{txt}".encode("utf-8")
+
+    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _tid: [{"tenant_id": "tenant-1", "tts_id": "tts-x"}])
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _TTSOk())
+    resp = _run(handler("tenant-1"))
+    assert resp.mimetype == "audio/mpeg"
+    assert resp.headers.get("Cache-Control") == "no-cache"
+    assert resp.headers.get("Connection") == "keep-alive"
+    assert resp.headers.get("X-Accel-Buffering") == "no"
+    chunks = _run(_collect_stream(resp.body))
+    assert any("chunk-A" in chunk for chunk in chunks)
+    assert any("chunk-B" in chunk for chunk in chunks)
+
+    class _TTSErr:
+        def tts(self, _txt):
+            raise RuntimeError("tts boom")
+
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _TTSErr())
+    resp = _run(handler("tenant-1"))
+    chunks = _run(_collect_stream(resp.body))
+    assert any('"code": 500' in chunk and "**ERROR**: tts boom" in chunk for chunk in chunks)
+
+
+@pytest.mark.p2
+def test_build_reference_chunks_metadata_matrix_unit(monkeypatch):
+    module = _load_session_module(monkeypatch)
+
+    monkeypatch.setattr(module, "chunks_format", lambda _reference: [{"dataset_id": "kb-1", "document_id": "doc-1"}])
+    res = module._build_reference_chunks([], include_metadata=False)
+    assert res == [{"dataset_id": "kb-1", "document_id": "doc-1"}]
+
+    monkeypatch.setattr(module, "chunks_format", lambda _reference: [{"dataset_id": "kb-1"}, {"document_id": "doc-2"}])
+    res = module._build_reference_chunks([], include_metadata=True)
+    assert all("document_metadata" not in chunk for chunk in res)
+
+    monkeypatch.setattr(module, "chunks_format", lambda _reference: [{"dataset_id": "kb-1", "document_id": "doc-1"}])
+    monkeypatch.setattr(module.DocMetadataService, "get_metadata_for_documents", lambda _doc_ids, _kb_id: {"doc-1": {"author": "alice"}})
+    res = module._build_reference_chunks([], include_metadata=True, metadata_fields=[1, None])
+    assert "document_metadata" not in res[0]
+
+    source_chunks = [
+        {"dataset_id": "kb-1", "document_id": "doc-1"},
+        {"dataset_id": "kb-2", "document_id": "doc-2"},
+        {"dataset_id": "kb-1", "document_id": "doc-3"},
+        {"dataset_id": "kb-1", "document_id": None},
+    ]
+    monkeypatch.setattr(module, "chunks_format", lambda _reference: [dict(chunk) for chunk in source_chunks])
+
+    def _get_metadata(_doc_ids, kb_id):
+        if kb_id == "kb-1":
+            return {"doc-1": {"author": "alice", "year": 2024}}
+        if kb_id == "kb-2":
+            return {"doc-2": {"author": "bob", "tag": "rag"}}
+        return {}
+
+    monkeypatch.setattr(module.DocMetadataService, "get_metadata_for_documents", _get_metadata)
+    res = module._build_reference_chunks([], include_metadata=True, metadata_fields=["author", "missing", 3])
+    assert res[0]["document_metadata"] == {"author": "alice"}
+    assert res[1]["document_metadata"] == {"author": "bob"}
+    assert "document_metadata" not in res[2]
+    assert "document_metadata" not in res[3]
