@@ -29,7 +29,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { ChatSettings } from './app-settings/chat-settings';
-import { MultipleChatBox } from './chat-box/multiple-chat-box';
+import { MultipleChatBox } from './chat-box/next-multiple-chat-box';
 import { SingleChatBox } from './chat-box/single-chat-box';
 import { Sessions } from './sessions';
 import { useAddChatBox } from './use-add-box';
