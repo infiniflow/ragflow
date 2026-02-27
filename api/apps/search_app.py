@@ -25,9 +25,65 @@ from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import get_data_error_result, get_json_result, not_allowed_parameters, get_request_json, server_error_response, validate_request
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
+
+
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class SearchCreateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"name": "Search App", "description": "Optional description"}
+    })
+
+    name: str = Field(description="Search app name")
+    description: str | None = Field(default=None, description="Optional description")
+
+
+class SearchUpdateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "search_id": "search_123",
+            "tenant_id": "tenant_123",
+            "name": "Search App v2",
+            "search_config": {"kb_ids": ["kb_1"]},
+        }
+    })
+
+    search_id: str = Field(description="Search app ID")
+    tenant_id: str = Field(description="Tenant ID")
+    name: str = Field(description="Search app name")
+    search_config: dict = Field(description="Search app config (partial update allowed)")
+
+
+class SearchListBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"owner_ids": ["tenant_123"]}
+    })
+
+    owner_ids: list[str] | None = Field(default=None, description="Optional owner tenant IDs filter")
+
+
+class SearchRmBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"search_id": "search_123"}
+    })
+
+    search_id: str = Field(description="Search app ID")
 
 
 @manager.route("/create", methods=["post"])  # noqa: F821
+@set_operation_doc("Create a new search app.")
+@tag(["Search"])
+@document_request(SearchCreateBody, source=DataSource.JSON)
 @login_required
 @validate_request("name")
 async def create():
@@ -62,6 +118,9 @@ async def create():
 
 
 @manager.route("/update", methods=["post"])  # noqa: F821
+@set_operation_doc("Update an existing search app.")
+@tag(["Search"])
+@document_request(SearchUpdateBody, source=DataSource.JSON)
 @login_required
 @validate_request("search_id", "name", "search_config", "tenant_id")
 @not_allowed_parameters("id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
@@ -119,6 +178,8 @@ async def update():
 
 
 @manager.route("/detail", methods=["GET"])  # noqa: F821
+@set_operation_doc("Get search app details by ID.")
+@tag(["Search"])
 @login_required
 def detail():
     search_id = request.args["search_id"]
@@ -139,6 +200,9 @@ def detail():
 
 
 @manager.route("/list", methods=["POST"])  # noqa: F821
+@set_operation_doc("List search apps with optional filters.")
+@tag(["Search"])
+@document_request(SearchListBody, source=DataSource.JSON)
 @login_required
 async def list_search_app():
     keywords = request.args.get("keywords", "")
@@ -171,6 +235,9 @@ async def list_search_app():
 
 
 @manager.route("/rm", methods=["post"])  # noqa: F821
+@set_operation_doc("Remove a search app by ID.")
+@tag(["Search"])
+@document_request(SearchRmBody, source=DataSource.JSON)
 @login_required
 @validate_request("search_id")
 async def rm():

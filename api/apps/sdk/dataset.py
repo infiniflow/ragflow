@@ -18,8 +18,9 @@
 import logging
 import os
 import json
-from quart import request
 from peewee import OperationalError
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag, validate_querystring, validate_request as qs_validate_request
 from api.db.db_models import File
 from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
 from api.db.services.file2document_service import File2DocumentService
@@ -42,75 +43,44 @@ from api.utils.api_utils import (
 from api.utils.validation_utils import (
     AutoMetadataConfig,
     CreateDatasetReq,
-    DeleteDatasetReq,
     ListDatasetReq,
     UpdateDatasetReq,
-    validate_and_parse_json_request,
-    validate_and_parse_request_args,
 )
 from rag.nlp import search
 from common.constants import PAGERANK_FLD
 from common import settings
 
 
+class DeleteDatasetsBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"example": {"ids": ["dataset_id_1", "dataset_id_2"]}})
+    ids: list[str] | None = Field(
+        default=None,
+        description="Dataset IDs to delete. If omitted/null/empty, all accessible datasets are deleted.",
+    )
+
+
+class UpdateDatasetBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"example": {"name": "Dataset v2", "description": "Updated description"}})
+    name: str | None = Field(default=None, description="Dataset name")
+    avatar: str | None = Field(default=None, description="Base64-encoded avatar image")
+    description: str | None = Field(default=None, description="Dataset description")
+    embedding_model: str | None = Field(default=None, description="Embedding model name")
+    permission: str | None = Field(default=None, description="Dataset permission: me|team")
+    chunk_method: str | None = Field(default=None, description="Chunking method/parser id")
+    parser_config: dict | None = Field(default=None, description="Parser configuration")
+    pagerank: int | None = Field(default=None, description="Page rank")
+
+
+class EmptyBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"example": {}})
+
+
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
 @token_required
-async def create(tenant_id):
-    """
-    Create a new dataset.
-    ---
-    tags:
-      - Datasets
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-      - in: body
-        name: body
-        description: Dataset creation parameters.
-        required: true
-        schema:
-          type: object
-          required:
-            - name
-          properties:
-            name:
-              type: string
-              description: Dataset name (required).
-            avatar:
-              type: string
-              description: Optional base64-encoded avatar image.
-            description:
-              type: string
-              description: Optional dataset description.
-            embedding_model:
-              type: string
-              description: Optional embedding model name; if omitted, the tenant's default embedding model is used.
-            permission:
-              type: string
-              enum: ['me', 'team']
-              description: Visibility of the dataset (private to me or shared with team).
-            chunk_method:
-              type: string
-              enum: ["naive", "book", "email", "laws", "manual", "one", "paper",
-                     "picture", "presentation", "qa", "table", "tag"]
-              description: Chunking method; if omitted, defaults to "naive".
-            parser_config:
-              type: object
-              description: Optional parser configuration; server-side defaults will be applied.
-    responses:
-      200:
-        description: Successful operation.
-        schema:
-          type: object
-          properties:
-            data:
-              type: object
-    """
+@tag(["SDK Datasets"])
+@qs_validate_request(CreateDatasetReq)
+async def create(data: CreateDatasetReq, tenant_id):
+    """Create a new dataset."""
     # Field name transformations during model dump:
     # | Original       | Dump Output  |
     # |----------------|-------------|
@@ -174,47 +144,11 @@ async def create(tenant_id):
 
 @manager.route("/datasets", methods=["DELETE"])  # noqa: F821
 @token_required
-async def delete(tenant_id):
-    """
-    Delete datasets.
-    ---
-    tags:
-      - Datasets
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-      - in: body
-        name: body
-        description: Dataset deletion parameters.
-        required: true
-        schema:
-          type: object
-          required:
-            - ids
-          properties:
-            ids:
-              type: array or null
-              items:
-                type: string
-              description: |
-                Specifies the datasets to delete:
-                - If `null`, all datasets will be deleted.
-                - If an array of IDs, only the specified datasets will be deleted.
-                - If an empty array, no datasets will be deleted.
-    responses:
-      200:
-        description: Successful operation.
-        schema:
-          type: object
-    """
-    req, err = await validate_and_parse_json_request(request, DeleteDatasetReq)
-    if err is not None:
-        return get_error_argument_result(err)
+@tag(["SDK Datasets"])
+@qs_validate_request(DeleteDatasetsBody)
+async def delete(data: DeleteDatasetsBody, tenant_id):
+    """Delete one or more datasets."""
+    req = {"ids": data.ids}
 
     try:
         kb_id_instance_pairs = []
@@ -281,75 +215,18 @@ async def delete(tenant_id):
 
 @manager.route("/datasets/<dataset_id>", methods=["PUT"])  # noqa: F821
 @token_required
-async def update(tenant_id, dataset_id):
-    """
-    Update a dataset.
-    ---
-    tags:
-      - Datasets
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset to update.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-      - in: body
-        name: body
-        description: Dataset update parameters.
-        required: true
-        schema:
-          type: object
-          properties:
-            name:
-              type: string
-              description: New name of the dataset.
-            avatar:
-              type: string
-              description: Updated base64 encoding of the avatar.
-            description:
-              type: string
-              description: Updated description of the dataset.
-            embedding_model:
-              type: string
-              description: Updated embedding model Name.
-            permission:
-              type: string
-              enum: ['me', 'team']
-              description: Updated dataset permission.
-            chunk_method:
-              type: string
-              enum: ["naive", "book", "email", "laws", "manual", "one", "paper",
-                     "picture", "presentation", "qa", "table", "tag"
-                     ]
-              description: Updated chunking method.
-            pagerank:
-              type: integer
-              description: Updated page rank.
-            parser_config:
-              type: object
-              description: Updated parser configuration.
-    responses:
-      200:
-        description: Successful operation.
-        schema:
-          type: object
-    """
+@tag(["SDK Datasets"])
+@qs_validate_request(UpdateDatasetBody)
+async def update(data: UpdateDatasetBody, tenant_id, dataset_id):
+    """Update a dataset."""
     # Field name transformations during model dump:
     # | Original       | Dump Output  |
     # |----------------|-------------|
     # | embedding_model| embd_id     |
     # | chunk_method   | parser_id   |
-    extras = {"dataset_id": dataset_id}
-    req, err = await validate_and_parse_json_request(request, UpdateDatasetReq, extras=extras, exclude_unset=True)
-    if err is not None:
-        return get_error_argument_result(err)
+    validated = UpdateDatasetReq(**{**data.model_dump(exclude_unset=True), "dataset_id": dataset_id})
+    req = validated.model_dump(by_alias=True, exclude_unset=True)
+    req.pop("dataset_id", None)
 
     if not req:
         return get_error_argument_result(message="No properties were modified")
@@ -432,68 +309,14 @@ async def update(tenant_id, dataset_id):
 
 @manager.route("/datasets", methods=["GET"])  # noqa: F821
 @token_required
-def list_datasets(tenant_id):
-    """
-    List datasets.
-    ---
-    tags:
-      - Datasets
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: query
-        name: id
-        type: string
-        required: false
-        description: Dataset ID to filter.
-      - in: query
-        name: name
-        type: string
-        required: false
-        description: Dataset name to filter.
-      - in: query
-        name: page
-        type: integer
-        required: false
-        default: 1
-        description: Page number.
-      - in: query
-        name: page_size
-        type: integer
-        required: false
-        default: 30
-        description: Number of items per page.
-      - in: query
-        name: orderby
-        type: string
-        required: false
-        default: "create_time"
-        description: Field to order by.
-      - in: query
-        name: desc
-        type: boolean
-        required: false
-        default: true
-        description: Order in descending.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Successful operation.
-        schema:
-          type: array
-          items:
-            type: object
-    """
-    args, err = validate_and_parse_request_args(request, ListDatasetReq)
-    if err is not None:
-        return get_error_argument_result(err)
+@tag(["SDK Datasets"])
+@validate_querystring(ListDatasetReq)
+def list_datasets(query: ListDatasetReq, tenant_id):
+    """List datasets with optional filters."""
+    args = query.model_dump(exclude_unset=True)
 
     try:
-        kb_id = request.args.get("id")
+        kb_id = args.get("id")
         name = args.get("name")
         if kb_id:
             kbs = KnowledgebaseService.get_kb_by_id(kb_id, tenant_id)
@@ -528,6 +351,7 @@ def list_datasets(tenant_id):
 
 @manager.route("/datasets/<dataset_id>/auto_metadata", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Datasets"])
 def get_auto_metadata(tenant_id, dataset_id):
     """
     Get auto-metadata configuration for a dataset.
@@ -564,6 +388,8 @@ def get_auto_metadata(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/auto_metadata", methods=["PUT"])  # noqa: F821
 @token_required
+@tag(["SDK Datasets"])
+@document_request(AutoMetadataConfig, source=DataSource.JSON)
 async def update_auto_metadata(tenant_id, dataset_id):
     """
     Update auto-metadata configuration for a dataset.
@@ -605,7 +431,9 @@ async def update_auto_metadata(tenant_id, dataset_id):
 
 @manager.route('/datasets/<dataset_id>/knowledge_graph', methods=['GET'])  # noqa: F821
 @token_required
+@tag(["SDK Datasets"])
 async def knowledge_graph(tenant_id, dataset_id):
+    """Get dataset knowledge graph."""
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return get_result(
             data=False,
@@ -646,7 +474,9 @@ async def knowledge_graph(tenant_id, dataset_id):
 
 @manager.route('/datasets/<dataset_id>/knowledge_graph', methods=['DELETE'])  # noqa: F821
 @token_required
+@tag(["SDK Datasets"])
 def delete_knowledge_graph(tenant_id, dataset_id):
+    """Delete dataset knowledge graph."""
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return get_result(
             data=False,
@@ -662,7 +492,10 @@ def delete_knowledge_graph(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/run_graphrag", methods=["POST"])  # noqa: F821
 @token_required
-def run_graphrag(tenant_id,dataset_id):
+@tag(["SDK Datasets"])
+@qs_validate_request(EmptyBody)
+def run_graphrag(_data: EmptyBody, tenant_id, dataset_id):
+    """Run GraphRAG for a dataset."""
     if not dataset_id:
         return get_error_data_result(message='Lack of "Dataset ID"')
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
@@ -712,7 +545,9 @@ def run_graphrag(tenant_id,dataset_id):
 
 @manager.route("/datasets/<dataset_id>/trace_graphrag", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Datasets"])
 def trace_graphrag(tenant_id,dataset_id):
+    """Get GraphRAG task trace for a dataset."""
     if not dataset_id:
         return get_error_data_result(message='Lack of "Dataset ID"')
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
@@ -739,7 +574,10 @@ def trace_graphrag(tenant_id,dataset_id):
 
 @manager.route("/datasets/<dataset_id>/run_raptor", methods=["POST"])  # noqa: F821
 @token_required
-def run_raptor(tenant_id,dataset_id):
+@tag(["SDK Datasets"])
+@qs_validate_request(EmptyBody)
+def run_raptor(_data: EmptyBody, tenant_id, dataset_id):
+    """Run RAPTOR for a dataset."""
     if not dataset_id:
         return get_error_data_result(message='Lack of "Dataset ID"')
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
@@ -789,7 +627,9 @@ def run_raptor(tenant_id,dataset_id):
 
 @manager.route("/datasets/<dataset_id>/trace_raptor", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Datasets"])
 def trace_raptor(tenant_id,dataset_id):
+    """Get RAPTOR task trace for a dataset."""
     if not dataset_id:
         return get_error_data_result(message='Lack of "Dataset ID"')
 

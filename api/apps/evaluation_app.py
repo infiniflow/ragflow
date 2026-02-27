@@ -28,6 +28,8 @@ Provides REST API for RAG evaluation functionality including:
 from quart import request
 from api.apps import login_required, current_user
 from api.db.services.evaluation_service import EvaluationService
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
@@ -38,9 +40,68 @@ from api.utils.api_utils import (
 from common.constants import RetCode
 
 
+class EvaluationDatasetCreateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"name": "My dataset", "description": "Optional", "kb_ids": ["kb_1", "kb_2"]}
+    })
+
+    name: str = Field(description="Dataset name")
+    kb_ids: list[str] = Field(description="Knowledge base IDs")
+
+
+class EvaluationDatasetUpdateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"name": "New name", "description": "New description", "kb_ids": ["kb_1"]}
+    })
+
+
+class EvaluationCaseAddBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"question": "Test question", "reference_answer": "Optional"}
+    })
+
+    question: str = Field(description="Test question")
+
+
+class EvaluationCaseImportBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"cases": [{"question": "Q1"}, {"question": "Q2"}]}
+    })
+
+    cases: list[dict] = Field(description="List of test case objects")
+
+
+class EvaluationRunStartBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"dataset_id": "dataset_123", "dialog_id": "dialog_123", "name": "Run A"}
+    })
+
+    dataset_id: str = Field(description="Evaluation dataset ID")
+    dialog_id: str = Field(description="Dialog/assistant ID")
+
+
+class EvaluationCompareBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"run_ids": ["run_1", "run_2"]}
+    })
+
+    run_ids: list[str] = Field(description="Run IDs to compare")
+
+
+class EvaluationSingleBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"question": "Test question", "dialog_id": "dialog_123"}
+    })
+
+    question: str = Field(description="Question to evaluate")
+    dialog_id: str = Field(description="Dialog/assistant ID")
+
+
 # ==================== Dataset Management ====================
 
 @manager.route('/dataset/create', methods=['POST'])  # noqa: F821
+@tag(["Evaluation"])
+@document_request(EvaluationDatasetCreateBody, source=DataSource.JSON)
 @login_required
 @validate_request("name", "kb_ids")
 async def create_dataset():
@@ -83,6 +144,7 @@ async def create_dataset():
 
 
 @manager.route('/dataset/list', methods=['GET'])  # noqa: F821
+@tag(["Evaluation"])
 @login_required
 async def list_datasets():
     """
@@ -109,6 +171,7 @@ async def list_datasets():
 
 
 @manager.route('/dataset/<dataset_id>', methods=['GET'])  # noqa: F821
+@tag(["Evaluation"])
 @login_required
 async def get_dataset(dataset_id):
     """Get dataset details by ID"""
@@ -126,6 +189,8 @@ async def get_dataset(dataset_id):
 
 
 @manager.route('/dataset/<dataset_id>', methods=['PUT'])  # noqa: F821
+@tag(["Evaluation"])
+@document_request(EvaluationDatasetUpdateBody, source=DataSource.JSON)
 @login_required
 async def update_dataset(dataset_id):
     """
@@ -158,6 +223,7 @@ async def update_dataset(dataset_id):
 
 
 @manager.route('/dataset/<dataset_id>', methods=['DELETE'])  # noqa: F821
+@tag(["Evaluation"])
 @login_required
 async def delete_dataset(dataset_id):
     """Delete dataset (soft delete)"""
@@ -175,6 +241,8 @@ async def delete_dataset(dataset_id):
 # ==================== Test Case Management ====================
 
 @manager.route('/dataset/<dataset_id>/case/add', methods=['POST'])  # noqa: F821
+@tag(["Evaluation"])
+@document_request(EvaluationCaseAddBody, source=DataSource.JSON)
 @login_required
 @validate_request("question")
 async def add_test_case(dataset_id):
@@ -215,6 +283,8 @@ async def add_test_case(dataset_id):
 
 
 @manager.route('/dataset/<dataset_id>/case/import', methods=['POST'])  # noqa: F821
+@tag(["Evaluation"])
+@document_request(EvaluationCaseImportBody, source=DataSource.JSON)
 @login_required
 @validate_request("cases")
 async def import_test_cases(dataset_id):
@@ -258,6 +328,7 @@ async def import_test_cases(dataset_id):
 
 
 @manager.route('/dataset/<dataset_id>/cases', methods=['GET'])  # noqa: F821
+@tag(["Evaluation"])
 @login_required
 async def get_test_cases(dataset_id):
     """Get all test cases for a dataset"""
@@ -269,6 +340,7 @@ async def get_test_cases(dataset_id):
 
 
 @manager.route('/case/<case_id>', methods=['DELETE'])  # noqa: F821
+@tag(["Evaluation"])
 @login_required
 async def delete_test_case(case_id):
     """Delete a test case"""
@@ -286,6 +358,8 @@ async def delete_test_case(case_id):
 # ==================== Evaluation Execution ====================
 
 @manager.route('/run/start', methods=['POST'])  # noqa: F821
+@tag(["Evaluation"])
+@document_request(EvaluationRunStartBody, source=DataSource.JSON)
 @login_required
 @validate_request("dataset_id", "dialog_id")
 async def start_evaluation():
@@ -321,6 +395,7 @@ async def start_evaluation():
 
 
 @manager.route('/run/<run_id>', methods=['GET'])  # noqa: F821
+@tag(["Evaluation"])
 @login_required
 async def get_evaluation_run(run_id):
     """Get evaluation run details"""
@@ -339,6 +414,7 @@ async def get_evaluation_run(run_id):
 
 
 @manager.route('/run/<run_id>/results', methods=['GET'])  # noqa: F821
+@tag(["Evaluation"])
 @login_required
 async def get_run_results(run_id):
     """Get detailed results for an evaluation run"""
@@ -357,6 +433,7 @@ async def get_run_results(run_id):
 
 
 @manager.route('/run/list', methods=['GET'])  # noqa: F821
+@tag(["Evaluation"])
 @login_required
 async def list_evaluation_runs():
     """
@@ -376,6 +453,7 @@ async def list_evaluation_runs():
 
 
 @manager.route('/run/<run_id>', methods=['DELETE'])  # noqa: F821
+@tag(["Evaluation"])
 @login_required
 async def delete_evaluation_run(run_id):
     """Delete an evaluation run"""
@@ -389,6 +467,7 @@ async def delete_evaluation_run(run_id):
 # ==================== Analysis & Recommendations ====================
 
 @manager.route('/run/<run_id>/recommendations', methods=['GET'])  # noqa: F821
+@tag(["Evaluation"])
 @login_required
 async def get_recommendations(run_id):
     """Get configuration recommendations based on evaluation results"""
@@ -400,6 +479,8 @@ async def get_recommendations(run_id):
 
 
 @manager.route('/compare', methods=['POST'])  # noqa: F821
+@tag(["Evaluation"])
+@document_request(EvaluationCompareBody, source=DataSource.JSON)
 @login_required
 @validate_request("run_ids")
 async def compare_runs():
@@ -427,6 +508,7 @@ async def compare_runs():
 
 
 @manager.route('/run/<run_id>/export', methods=['GET'])  # noqa: F821
+@tag(["Evaluation"])
 @login_required
 async def export_results(run_id):
     """Export evaluation results as JSON/CSV"""
@@ -450,6 +532,8 @@ async def export_results(run_id):
 # ==================== Real-time Evaluation ====================
 
 @manager.route('/evaluate_single', methods=['POST'])  # noqa: F821
+@tag(["Evaluation"])
+@document_request(EvaluationSingleBody, source=DataSource.JSON)
 @login_required
 @validate_request("question", "dialog_id")
 async def evaluate_single():

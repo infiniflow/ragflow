@@ -23,6 +23,8 @@ from typing import Any
 
 from quart import request, make_response
 from google_auth_oauthlib.flow import Flow
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 
 from api.db import InputType
 from api.db.services.connector_service import ConnectorService, SyncLogsService
@@ -36,7 +38,70 @@ from api.apps import login_required, current_user
 from box_sdk_gen import BoxOAuth, OAuthConfig, GetAuthorizeUrlOptions
 
 
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class ConnectorSetBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "id": None,
+            "name": "My connector",
+            "source": "google-drive",
+            "config": {},
+            "refresh_freq": 5,
+            "prune_freq": 720,
+            "timeout_secs": 1740,
+        }
+    })
+
+
+class ConnectorResumeBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"resume": True}})
+    resume: bool = Field(description="True to resume, False to pause/cancel")
+
+
+class ConnectorRebuildBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"kb_id": "kb_123"}})
+    kb_id: str = Field(description="Knowledge base (dataset) ID")
+
+
+class ConnectorRmBody(BaseModel):
+    # Endpoint uses only path param; keep empty body for OpenAPI completeness.
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {}})
+
+
+class GoogleWebOAuthStartBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"credentials": {"web": {"client_id": "xxx", "client_secret": "yyy"}}}
+    })
+    credentials: dict | str = Field(description="Google OAuth client credentials JSON or object")
+
+
+class WebOAuthResultBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"flow_id": "uuid-flow-id"}})
+    flow_id: str = Field(description="OAuth flow id")
+
+
+class BoxWebOAuthStartBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"client_id": "xxx", "client_secret": "yyy", "redirect_uri": "https://example/callback"}
+    })
+    client_id: str = Field(description="Box app client id")
+    client_secret: str = Field(description="Box app client secret")
+    redirect_uri: str | None = Field(default=None, description="Optional redirect URI override")
+
+
 @manager.route("/set", methods=["POST"])  # noqa: F821
+@set_operation_doc("Create or update a connector.")
+@tag(["Connectors"])
+@document_request(ConnectorSetBody, source=DataSource.JSON)
 @login_required
 async def set_connector():
     req = await get_request_json()
@@ -66,12 +131,16 @@ async def set_connector():
 
 
 @manager.route("/list", methods=["GET"])  # noqa: F821
+@set_operation_doc("List connectors for the current user.")
+@tag(["Connectors"])
 @login_required
 def list_connector():
     return get_json_result(data=ConnectorService.list(current_user.id))
 
 
 @manager.route("/<connector_id>", methods=["GET"])  # noqa: F821
+@set_operation_doc("Get a connector by ID.")
+@tag(["Connectors"])
 @login_required
 def get_connector(connector_id):
     e, conn = ConnectorService.get_by_id(connector_id)
@@ -81,6 +150,8 @@ def get_connector(connector_id):
 
 
 @manager.route("/<connector_id>/logs", methods=["GET"])  # noqa: F821
+@set_operation_doc("List sync logs for a connector.")
+@tag(["Connectors"])
 @login_required
 def list_logs(connector_id):
     req = request.args.to_dict(flat=True)
@@ -89,6 +160,9 @@ def list_logs(connector_id):
 
 
 @manager.route("/<connector_id>/resume", methods=["PUT"])  # noqa: F821
+@set_operation_doc("Resume or pause a connector sync task.")
+@tag(["Connectors"])
+@document_request(ConnectorResumeBody, source=DataSource.JSON)
 @login_required
 async def resume(connector_id):
     req = await get_request_json()
@@ -100,6 +174,9 @@ async def resume(connector_id):
 
 
 @manager.route("/<connector_id>/rebuild", methods=["PUT"])  # noqa: F821
+@set_operation_doc("Rebuild connector index for a knowledge base.")
+@tag(["Connectors"])
+@document_request(ConnectorRebuildBody, source=DataSource.JSON)
 @login_required
 @validate_request("kb_id")
 async def rebuild(connector_id):
@@ -111,6 +188,9 @@ async def rebuild(connector_id):
 
 
 @manager.route("/<connector_id>/rm", methods=["POST"])  # noqa: F821
+@set_operation_doc("Remove a connector.")
+@tag(["Connectors"])
+@document_request(ConnectorRmBody, source=DataSource.JSON)
 @login_required
 def rm_connector(connector_id):
     ConnectorService.resume(connector_id, TaskStatus.CANCEL)
@@ -186,6 +266,9 @@ async def _render_web_oauth_popup(flow_id: str, success: bool, message: str, sou
 
 
 @manager.route("/google/oauth/web/start", methods=["POST"])  # noqa: F821
+@set_operation_doc("Start Google OAuth flow for Drive/Gmail (web).")
+@tag(["Connectors OAuth"])
+@document_request(GoogleWebOAuthStartBody, source=DataSource.JSON)
 @login_required
 @validate_request("credentials")
 async def start_google_web_oauth():
@@ -266,6 +349,8 @@ async def start_google_web_oauth():
 
 
 @manager.route("/gmail/oauth/web/callback", methods=["GET"])  # noqa: F821
+@set_operation_doc("Google Gmail OAuth callback (web).")
+@tag(["Connectors OAuth"])
 async def google_gmail_web_oauth_callback():
     state_id = request.args.get("state")
     error = request.args.get("error")
@@ -317,6 +402,8 @@ async def google_gmail_web_oauth_callback():
 
 
 @manager.route("/google-drive/oauth/web/callback", methods=["GET"])  # noqa: F821
+@set_operation_doc("Google Drive OAuth callback (web).")
+@tag(["Connectors OAuth"])
 async def google_drive_web_oauth_callback():
     state_id = request.args.get("state")
     error = request.args.get("error")
@@ -367,6 +454,9 @@ async def google_drive_web_oauth_callback():
     return await _render_web_oauth_popup(state_id, True, "Authorization completed successfully.", source)
 
 @manager.route("/google/oauth/web/result", methods=["POST"])  # noqa: F821
+@set_operation_doc("Poll Google OAuth flow result (web).")
+@tag(["Connectors OAuth"])
+@document_request(WebOAuthResultBody, source=DataSource.JSON)
 @login_required
 @validate_request("flow_id")
 async def poll_google_web_result():
@@ -387,6 +477,9 @@ async def poll_google_web_result():
     return get_json_result(data={"credentials": result.get("credentials")})
 
 @manager.route("/box/oauth/web/start", methods=["POST"])  # noqa: F821
+@set_operation_doc("Start Box OAuth flow (web).")
+@tag(["Connectors OAuth"])
+@document_request(BoxWebOAuthStartBody, source=DataSource.JSON)
 @login_required
 async def start_box_web_oauth():
     req = await get_request_json()
@@ -430,6 +523,8 @@ async def start_box_web_oauth():
     )
 
 @manager.route("/box/oauth/web/callback", methods=["GET"])  # noqa: F821
+@set_operation_doc("Box OAuth callback (web).")
+@tag(["Connectors OAuth"])
 async def box_web_oauth_callback():
     flow_id = request.args.get("state")
     if not flow_id:
@@ -472,6 +567,9 @@ async def box_web_oauth_callback():
     return await _render_web_oauth_popup(flow_id, True, "Authorization completed successfully.", "box")
 
 @manager.route("/box/oauth/web/result", methods=["POST"])  # noqa: F821
+@set_operation_doc("Poll Box OAuth flow result (web).")
+@tag(["Connectors OAuth"])
+@document_request(WebOAuthResultBody, source=DataSource.JSON)
 @login_required
 @validate_request("flow_id")
 async def poll_box_web_result():

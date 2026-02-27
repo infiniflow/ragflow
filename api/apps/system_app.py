@@ -18,6 +18,8 @@ from datetime import datetime
 import json
 
 from api.apps import login_required, current_user
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 
 from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService
@@ -39,7 +41,30 @@ from api.utils.health_utils import run_health_checks, get_oceanbase_status
 from common import settings
 
 
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class NewTokenBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"name": "My token"}
+    })
+
+    name: str | None = Field(
+        default=None,
+        description="Optional token name. Note: this API also supports `name` as a query parameter.",
+    )
+
+
 @manager.route("/version", methods=["GET"])  # noqa: F821
+@set_operation_doc("Get the current version of the application.")
+@tag(["System"])
 @login_required
 def version():
     """
@@ -63,6 +88,8 @@ def version():
 
 
 @manager.route("/status", methods=["GET"])  # noqa: F821
+@set_operation_doc("Get the system status.")
+@tag(["System"])
 @login_required
 def status():
     """
@@ -172,17 +199,23 @@ def status():
 
 
 @manager.route("/healthz", methods=["GET"])  # noqa: F821
+@set_operation_doc("Health check endpoint.")
+@tag(["System"])
 def healthz():
     result, all_ok = run_health_checks()
     return jsonify(result), (200 if all_ok else 500)
 
 
 @manager.route("/ping", methods=["GET"])  # noqa: F821
+@set_operation_doc("Ping endpoint.")
+@tag(["System"])
 async def ping():
     return "pong", 200
 
 
 @manager.route("/oceanbase/status", methods=["GET"])  # noqa: F821
+@set_operation_doc("Get OceanBase health status and performance metrics.")
+@tag(["System"])
 @login_required
 def oceanbase_status():
     """
@@ -219,6 +252,9 @@ def oceanbase_status():
 
 
 @manager.route("/new_token", methods=["POST"])  # noqa: F821
+@set_operation_doc("Generate a new API token.")
+@tag(["API Tokens"])
+@document_request(NewTokenBody, source=DataSource.JSON)
 @login_required
 def new_token():
     """
@@ -269,6 +305,8 @@ def new_token():
 
 
 @manager.route("/token_list", methods=["GET"])  # noqa: F821
+@set_operation_doc("List API tokens for the current user.")
+@tag(["API Tokens"])
 @login_required
 def token_list():
     """
@@ -317,6 +355,8 @@ def token_list():
 
 
 @manager.route("/token/<token>", methods=["DELETE"])  # noqa: F821
+@set_operation_doc("Remove an API token.")
+@tag(["API Tokens"])
 @login_required
 def rm(token):
     """
@@ -355,6 +395,8 @@ def rm(token):
 
 
 @manager.route("/config", methods=["GET"])  # noqa: F821
+@set_operation_doc("Get system configuration.")
+@tag(["System"])
 def get_config():
     """
     Get system configuration.

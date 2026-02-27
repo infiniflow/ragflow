@@ -19,6 +19,8 @@ import pathlib
 import re
 from quart import request, make_response
 from api.apps import login_required, current_user
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 
 from api.common.check_team_permission import check_file_team_permission
 from api.db.services.document_service import DocumentService
@@ -34,7 +36,65 @@ from api.utils.file_utils import filename_type
 from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers
 from common import settings
 
+
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class FileUploadForm(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"parent_id": "folder_123"}
+    })
+
+    parent_id: str | None = Field(default=None, description="Parent folder ID (defaults to root)")
+    file: bytes | None = Field(default=None, description="File to upload (multipart/form-data)")
+
+
+class FileCreateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"parent_id": "folder_123", "name": "New Folder", "type": "folder"}
+    })
+
+    parent_id: str | None = Field(default=None, description="Parent folder ID (defaults to root)")
+    name: str = Field(description="File/folder name")
+    type: str | None = Field(default=None, description="File type (folder/virtual)")
+
+
+class FileRmBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"file_ids": ["file_1", "file_2"]}
+    })
+
+    file_ids: list[str] = Field(description="File IDs to remove")
+
+
+class FileRenameBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"file_id": "file_123", "name": "Renamed.pdf"}
+    })
+
+    file_id: str = Field(description="File ID")
+    name: str = Field(description="New name")
+
+
+class FileMoveBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"src_file_ids": ["file_1"], "dest_file_id": "folder_123"}
+    })
+
+    src_file_ids: list[str] = Field(description="Source file IDs")
+    dest_file_id: str = Field(description="Destination folder ID")
+
 @manager.route('/upload', methods=['POST'])  # noqa: F821
+@set_operation_doc("Upload one or more files.")
+@tag(["Files"])
+@document_request(FileUploadForm, source=DataSource.FORM_MULTIPART)
 @login_required
 # @validate_request("parent_id")
 async def upload():
@@ -127,6 +187,9 @@ async def upload():
 
 
 @manager.route('/create', methods=['POST'])  # noqa: F821
+@set_operation_doc("Create a folder or virtual file entry.")
+@tag(["Files"])
+@document_request(FileCreateBody, source=DataSource.JSON)
 @login_required
 @validate_request("name")
 async def create():
@@ -167,6 +230,8 @@ async def create():
 
 
 @manager.route('/list', methods=['GET'])  # noqa: F821
+@set_operation_doc("List files under a parent folder.")
+@tag(["Files"])
 @login_required
 def list_files():
     pf_id = request.args.get("parent_id")
@@ -199,6 +264,8 @@ def list_files():
 
 
 @manager.route('/root_folder', methods=['GET'])  # noqa: F821
+@set_operation_doc("Get root folder for the current user.")
+@tag(["Files"])
 @login_required
 def get_root_folder():
     try:
@@ -209,6 +276,8 @@ def get_root_folder():
 
 
 @manager.route('/parent_folder', methods=['GET'])  # noqa: F821
+@set_operation_doc("Get parent folder for a file/folder.")
+@tag(["Files"])
 @login_required
 def get_parent_folder():
     file_id = request.args.get("file_id")
@@ -224,6 +293,8 @@ def get_parent_folder():
 
 
 @manager.route('/all_parent_folder', methods=['GET'])  # noqa: F821
+@set_operation_doc("Get all parent folders for a file/folder.")
+@tag(["Files"])
 @login_required
 def get_all_parent_folders():
     file_id = request.args.get("file_id")
@@ -242,6 +313,9 @@ def get_all_parent_folders():
 
 
 @manager.route("/rm", methods=["POST"])  # noqa: F821
+@set_operation_doc("Remove one or more files/folders.")
+@tag(["Files"])
+@document_request(FileRmBody, source=DataSource.JSON)
 @login_required
 @validate_request("file_ids")
 async def rm():
@@ -307,6 +381,9 @@ async def rm():
 
 
 @manager.route('/rename', methods=['POST'])  # noqa: F821
+@set_operation_doc("Rename a file or folder.")
+@tag(["Files"])
+@document_request(FileRenameBody, source=DataSource.JSON)
 @login_required
 @validate_request("file_id", "name")
 async def rename():
@@ -347,6 +424,8 @@ async def rename():
 
 
 @manager.route('/get/<file_id>', methods=['GET'])  # noqa: F821
+@set_operation_doc("Download a file by ID.")
+@tag(["Files"])
 @login_required
 async def get(file_id):
     try:
@@ -375,6 +454,9 @@ async def get(file_id):
 
 
 @manager.route("/mv", methods=["POST"])  # noqa: F821
+@set_operation_doc("Move files/folders to a different parent folder.")
+@tag(["Files"])
+@document_request(FileMoveBody, source=DataSource.JSON)
 @login_required
 @validate_request("src_file_ids", "dest_file_id")
 async def move():

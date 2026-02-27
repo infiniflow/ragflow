@@ -18,6 +18,8 @@ import logging
 import json
 import os
 from quart import request
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 
 from api.apps import login_required, current_user
 from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMService
@@ -29,7 +31,66 @@ from rag.utils.base64_image import test_image
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel, OcrModel, Seq2txtModel
 
 
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class LlmSetApiKeyBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"llm_factory": "OpenAI", "api_key": "sk-***", "base_url": "https://api.openai.com"}
+    })
+
+    llm_factory: str = Field(description="LLM factory/provider name")
+    api_key: str = Field(description="API key")
+    base_url: str | None = Field(default=None, description="Optional base URL override")
+
+
+class LlmAddBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"llm_factory": "OpenAI", "llm_name": "gpt-4o-mini", "api_key": "sk-***"}
+    })
+
+    llm_factory: str = Field(description="LLM factory/provider name")
+    llm_name: str | None = Field(default=None, description="Optional model name")
+    api_key: str | None = Field(default=None, description="Optional API key")
+
+
+class LlmDeleteBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"llm_factory": "OpenAI", "llm_name": "gpt-4o-mini"}
+    })
+
+    llm_factory: str = Field(description="LLM factory/provider name")
+    llm_name: str = Field(description="Model name")
+
+
+class LlmEnableBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"llm_factory": "OpenAI", "llm_name": "gpt-4o-mini", "status": "1"}
+    })
+
+    llm_factory: str = Field(description="LLM factory/provider name")
+    llm_name: str = Field(description="Model name")
+    status: str | None = Field(default=None, description="Status (e.g. '1' to enable, '0' to disable)")
+
+
+class LlmDeleteFactoryBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"llm_factory": "OpenAI"}
+    })
+
+    llm_factory: str = Field(description="LLM factory/provider name")
+
+
 @manager.route("/factories", methods=["GET"])  # noqa: F821
+@set_operation_doc("List available LLM factories.")
+@tag(["LLM"])
 @login_required
 def factories():
     try:
@@ -57,6 +118,9 @@ def factories():
 
 
 @manager.route("/set_api_key", methods=["POST"])  # noqa: F821
+@set_operation_doc("Set an API key for an LLM factory.")
+@tag(["LLM"])
+@document_request(LlmSetApiKeyBody, source=DataSource.JSON)
 @login_required
 @validate_request("llm_factory", "api_key")
 async def set_api_key():
@@ -144,6 +208,9 @@ async def set_api_key():
 
 
 @manager.route("/add_llm", methods=["POST"])  # noqa: F821
+@set_operation_doc("Add an LLM configuration for the current tenant.")
+@tag(["LLM"])
+@document_request(LlmAddBody, source=DataSource.JSON)
 @login_required
 @validate_request("llm_factory")
 async def add_llm():
@@ -341,6 +408,9 @@ async def add_llm():
 
 
 @manager.route("/delete_llm", methods=["POST"])  # noqa: F821
+@set_operation_doc("Delete an LLM configuration.")
+@tag(["LLM"])
+@document_request(LlmDeleteBody, source=DataSource.JSON)
 @login_required
 @validate_request("llm_factory", "llm_name")
 async def delete_llm():
@@ -350,6 +420,9 @@ async def delete_llm():
 
 
 @manager.route("/enable_llm", methods=["POST"])  # noqa: F821
+@set_operation_doc("Enable or disable an LLM configuration.")
+@tag(["LLM"])
+@document_request(LlmEnableBody, source=DataSource.JSON)
 @login_required
 @validate_request("llm_factory", "llm_name")
 async def enable_llm():
@@ -361,6 +434,9 @@ async def enable_llm():
 
 
 @manager.route("/delete_factory", methods=["POST"])  # noqa: F821
+@set_operation_doc("Delete all LLM configurations for a factory.")
+@tag(["LLM"])
+@document_request(LlmDeleteFactoryBody, source=DataSource.JSON)
 @login_required
 @validate_request("llm_factory")
 async def delete_factory():
@@ -370,6 +446,8 @@ async def delete_factory():
 
 
 @manager.route("/my_llms", methods=["GET"])  # noqa: F821
+@set_operation_doc("List LLMs configured for the current tenant.")
+@tag(["LLM"])
 @login_required
 def my_llms():
     try:
@@ -415,6 +493,8 @@ def my_llms():
 
 
 @manager.route("/list", methods=["GET"])  # noqa: F821
+@set_operation_doc("List available LLM models (filtered by tenant configuration).")
+@tag(["LLM"])
 @login_required
 async def list_app():
     self_deployed = ["FastEmbed", "Ollama", "Xinference", "LocalAI", "LM-Studio", "GPUStack"]

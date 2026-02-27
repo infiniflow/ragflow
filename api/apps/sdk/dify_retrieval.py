@@ -16,6 +16,8 @@
 import logging
 
 from quart import jsonify
+from pydantic import BaseModel, Field, ConfigDict
+from quart_schema import DataSource, document_request, tag
 
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
@@ -27,9 +29,33 @@ from rag.app.tag import label_question
 from common.constants import RetCode, LLMType
 from common import settings
 
+
+class DifyRetrievalBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "knowledge_id": "dataset_id_1",
+            "query": "What is the refund policy?",
+            "use_kg": False,
+            "retrieval_setting": {"score_threshold": 0.0, "top_k": 5},
+            "metadata_condition": {
+                "logic": "and",
+                "conditions": [{"name": "author", "comparison_operator": "is", "value": "bob"}],
+            },
+        }
+    })
+
+    knowledge_id: str = Field(description="Knowledge base / dataset ID")
+    query: str = Field(description="Query text")
+    use_kg: bool | None = Field(default=False, description="Whether to use knowledge graph")
+    retrieval_setting: dict | None = Field(default=None, description="Retrieval configuration")
+    metadata_condition: dict | None = Field(default=None, description="Metadata filter condition")
+
+
 @manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
 @apikey_required
 @validate_request("knowledge_id", "query")
+@tag(["SDK Retrieval"])
+@document_request(DifyRetrievalBody, source=DataSource.JSON)
 async def retrieval(tenant_id):
     """
     Dify-compatible retrieval API

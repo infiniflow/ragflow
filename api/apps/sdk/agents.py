@@ -26,6 +26,9 @@ from typing import Any, cast
 
 import jwt
 
+from pydantic import BaseModel, Field, ConfigDict
+from quart_schema import DataSource, document_request, tag, validate_request as qs_validate_request, validate_querystring
+
 from agent.canvas import Canvas
 from api.db import CanvasCategory
 from api.db.services.canvas_service import UserCanvasService
@@ -39,30 +42,76 @@ from quart import request, Response
 from rag.utils.redis_conn import REDIS_CONN
 
 
+class AgentListQuery(BaseModel):
+    """Query params for listing agents."""
+
+    id: str | None = Field(default=None, description="Filter by agent ID")
+    title: str | None = Field(default=None, description="Filter by agent title")
+    page: int = Field(default=1, description="Page number (1-based)")
+    page_size: int = Field(default=30, description="Items per page")
+    orderby: str = Field(default="update_time", description="Sort field")
+    desc: bool = Field(default=True, description="Sort descending flag")
+
+
+class AgentUpsertBody(BaseModel):
+    """Body schema for create/update agent."""
+
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "title": "My Agent",
+            "avatar": "",
+            "dsl": {},
+        }
+    })
+    title: str | None = Field(default=None, description="Agent title")
+    avatar: str | None = Field(default=None, description="Optional avatar URL")
+    dsl: Any | None = Field(default=None, description="Agent DSL (object or JSON string)")
+
+
+class WebhookTraceQuery(BaseModel):
+    since_ts: float | None = Field(default=None, description="Return events after this timestamp (seconds)")
+    webhook_id: str | None = Field(default=None, description="Webhook trace ID")
+
+
+class WebhookRequestBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "inputs": {},
+            "query": {},
+            "headers": {},
+            "body": {},
+        }
+    })
+
+
+
 @manager.route('/agents', methods=['GET'])  # noqa: F821
 @token_required
-def list_agents(tenant_id):
-    id = request.args.get("id")
-    title = request.args.get("title")
+@tag(["SDK Agents"])
+@validate_querystring(AgentListQuery)
+def list_agents(query: AgentListQuery, tenant_id):
+    """List agents with optional filters."""
+    id = query.id
+    title = query.title
     if id or title:
         canvas = UserCanvasService.query(id=id, title=title, user_id=tenant_id)
         if not canvas:
             return get_error_data_result("The agent doesn't exist.")
-    page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size", 30))
-    order_by = request.args.get("orderby", "update_time")
-    if str(request.args.get("desc","false")).lower() == "false":
-        desc = False
-    else:
-        desc = True
+    page_number = int(query.page or 1)
+    items_per_page = int(query.page_size or 30)
+    order_by = query.orderby or "update_time"
+    desc = bool(query.desc)
     canvas = UserCanvasService.get_list(tenant_id, page_number, items_per_page, order_by, desc, id, title)
     return get_result(data=canvas)
 
 
 @manager.route("/agents", methods=["POST"])  # noqa: F821
 @token_required
-async def create_agent(tenant_id: str):
-    req: dict[str, Any] = cast(dict[str, Any], await get_request_json())
+@tag(["SDK Agents"])
+@qs_validate_request(AgentUpsertBody)
+async def create_agent(data: AgentUpsertBody, tenant_id: str):
+    """Create a new agent."""
+    req: dict[str, Any] = data.model_dump(exclude_unset=True)
     req["user_id"] = tenant_id
 
     if req.get("dsl") is not None:
@@ -98,8 +147,12 @@ async def create_agent(tenant_id: str):
 
 @manager.route("/agents/<agent_id>", methods=["PUT"])  # noqa: F821
 @token_required
-async def update_agent(tenant_id: str, agent_id: str):
-    req: dict[str, Any] = {k: v for k, v in cast(dict[str, Any], (await get_request_json())).items() if v is not None}
+@tag(["SDK Agents"])
+@qs_validate_request(AgentUpsertBody)
+async def update_agent(data: AgentUpsertBody, tenant_id: str, agent_id: str):
+    """Update an existing agent."""
+    # Keep prior behavior: ignore explicit nulls in request JSON.
+    req: dict[str, Any] = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
     req["user_id"] = tenant_id
 
     if req.get("dsl") is not None:
@@ -132,7 +185,9 @@ async def update_agent(tenant_id: str, agent_id: str):
 
 @manager.route("/agents/<agent_id>", methods=["DELETE"])  # noqa: F821
 @token_required
+@tag(["SDK Agents"])
 def delete_agent(tenant_id: str, agent_id: str):
+    """Delete an agent."""
     if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
         return get_json_result(
             data=False, message="Only owner of canvas authorized for this operation.",
@@ -143,7 +198,10 @@ def delete_agent(tenant_id: str, agent_id: str):
 
 @manager.route("/webhook/<agent_id>", methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"])  # noqa: F821
 @manager.route("/webhook_test/<agent_id>",methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"],)  # noqa: F821
+@tag(["SDK Webhook"])
+@document_request(WebhookRequestBody, source=DataSource.JSON)
 async def webhook(agent_id: str):
+    """Trigger agent webhook (public endpoint)."""
     is_test = request.path.startswith("/api/v1/webhook_test")
     start_ts = time.time()
 
@@ -821,7 +879,10 @@ async def webhook(agent_id: str):
 
 
 @manager.route("/webhook_trace/<agent_id>", methods=["GET"])  # noqa: F821
-async def webhook_trace(agent_id: str):
+@tag(["SDK Webhook"])
+@validate_querystring(WebhookTraceQuery)
+async def webhook_trace(query: WebhookTraceQuery, agent_id: str):
+    """Get webhook execution trace."""
     def encode_webhook_id(start_ts: str) -> str:
         WEBHOOK_ID_SECRET = "webhook_id_secret"
         sig = hmac.new(
@@ -836,8 +897,8 @@ async def webhook_trace(agent_id: str):
             if encode_webhook_id(ts) == enc_id:
                 return ts
         return None
-    since_ts = request.args.get("since_ts", type=float)
-    webhook_id = request.args.get("webhook_id")
+    since_ts = query.since_ts
+    webhook_id = query.webhook_id
 
     key = f"webhook-trace-{agent_id}-logs"
     raw = REDIS_CONN.get(key)

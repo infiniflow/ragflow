@@ -22,6 +22,9 @@ import os
 import tempfile
 import logging
 
+from pydantic import BaseModel, Field, ConfigDict
+from quart_schema import validate_request as qs_validate_request, validate_querystring, tag
+
 from quart import Response, jsonify, request
 
 from common.token_utils import num_tokens_from_string
@@ -50,11 +53,189 @@ from rag.prompts.generator import cross_languages, keyword_extraction, chunks_fo
 from common.constants import RetCode, LLMType, StatusEnum
 from common import settings
 
+class CreateChatSessionBody(BaseModel):
+    name: str = Field(default="New session", description="Session display name")
+    user_id: str = Field(default="", description="Optional end-user identifier")
+
+
+class CreateAgentSessionQuery(BaseModel):
+    user_id: str | None = Field(default=None, description="Optional end-user identifier")
+
+
+class UpdateChatSessionBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"name": "Session A", "user_id": "user_123"}
+    })
+    name: str | None = Field(default=None, description="New session name")
+    user_id: str | None = Field(default=None, description="Optional user id")
+
+
+class OpenAIMessage(BaseModel):
+    role: str = Field(description="system|user|assistant|tool")
+    content: str = Field(description="Message content")
+
+
+class ChatCompletionBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "question": "Summarize attached doc in 1 sentence",
+            "session_id": "8701906508f011f1aca800155d453bd0",
+            "stream": True,
+            "quote": True,
+            "doc_ids": "doc_id_1,doc_id_2",
+            "metadata_condition": {
+                "logic": "and",
+                "conditions": [{"name": "author", "comparison_operator": "is", "value": "bob"}]
+            }
+        }
+    })
+    question: str = Field(default="", description="User question")
+    session_id: str = Field(default="", description="Session ID")
+    stream: bool = Field(default=True, description="Whether to stream as SSE")
+    quote: bool | None = Field(default=None, description="Whether to include citations")
+    doc_ids: str | None = Field(default=None, description="Comma-separated document IDs")
+    files: list[dict] | None = Field(default=None, description="Runtime files from /v1/document/upload_info")
+    metadata_condition: dict | None = Field(default=None, description="Metadata filter object")
+
+
+class OpenAIChatCompletionBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "stream": True,
+            "extra_body": {"reference": True}
+        }
+    })
+    model: str = Field(description="Model name")
+    messages: list[OpenAIMessage] = Field(description="OpenAI-compatible messages")
+    stream: bool = Field(default=True, description="Whether to stream")
+    extra_body: dict = Field(default_factory=dict, description="Extra options")
+
+
+class AgentCompletionBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"stream": True, "return_trace": False, "session_id": "session_x", "question": "hello"}
+    })
+    stream: bool = True
+    return_trace: bool = False
+    session_id: str = ""
+    question: str = ""
+
+
+class SessionListQuery(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    page: int = 1
+    page_size: int = 30
+    orderby: str = "create_time"
+    desc: bool = True
+    user_id: str | None = None
+
+
+class AgentSessionListQuery(BaseModel):
+    id: str | None = None
+    page: int = 1
+    page_size: int = 30
+    orderby: str = "update_time"
+    desc: bool = True
+    user_id: str | None = None
+    dsl: bool = True
+
+
+class SessionsAskBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"question": "What is RAG?", "dataset_ids": ["dataset_id_1"]}
+    })
+    question: str
+    dataset_ids: list[str]
+
+
+class SessionsRelatedBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"question": "ragflow", "industry": "software"}
+    })
+    question: str
+    industry: str = ""
+
+
+class DeleteSessionsBody(BaseModel):
+    ids: list[str] | None = Field(
+        default=None,
+        description="Optional session IDs to delete. If omitted, delete all sessions for this chat/agent."
+    )
+
+
+class ChatbotCompletionsBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"question": "hello", "stream": True, "quote": False}
+    })
+    question: str = ""
+    stream: bool = True
+    quote: bool = False
+
+
+class AgentbotCompletionsBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"question": "hello", "stream": True}
+    })
+    question: str = ""
+    stream: bool = True
+
+
+class SearchbotsAskBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"question": "what is deep work", "kb_ids": ["kb_1"], "search_id": ""}
+    })
+    question: str
+    kb_ids: list[str]
+    search_id: str = ""
+
+
+class SearchbotsRetrievalTestBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"kb_id": ["kb_1"], "question": "query", "page": 1, "size": 30}
+    })
+    kb_id: list[str] | str
+    question: str
+    page: int = 1
+    size: int = 30
+
+
+class SearchbotsRelatedBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"question": "ragflow", "search_id": ""}
+    })
+    question: str
+    search_id: str = ""
+
+
+class SearchbotsMindmapBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"question": "summarize", "kb_ids": ["kb_1"], "search_id": ""}
+    })
+    question: str
+    kb_ids: list[str]
+    search_id: str = ""
+
+
+class SearchbotsDetailQuery(BaseModel):
+    search_id: str
+
+
+class TTSBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"example": {"text": "Hello world"}})
+    text: str
+
+
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
-async def create(tenant_id, chat_id):
-    req = await get_request_json()
+@tag(["SDK Sessions"])
+@qs_validate_request(CreateChatSessionBody)
+async def create(data: CreateChatSessionBody, tenant_id, chat_id):
+    """Create a new chat session."""
+    req = data.model_dump(exclude_none=True)
     req["dialog_id"] = chat_id
     dia = DialogService.query(tenant_id=tenant_id, id=req["dialog_id"], status=StatusEnum.VALID.value)
     if not dia:
@@ -82,8 +263,12 @@ async def create(tenant_id, chat_id):
 
 @manager.route("/agents/<agent_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
-async def create_agent_session(tenant_id, agent_id):
-    user_id = request.args.get("user_id", tenant_id)
+@tag(["SDK Sessions"])
+@qs_validate_request(CreateAgentSessionQuery)
+async def create_agent_session(query: CreateAgentSessionQuery, tenant_id, agent_id):
+    """Create a new agent session."""
+    req = query.model_dump(exclude_unset=True)
+    user_id = query.user_id or tenant_id
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
         return get_error_data_result("Agent not found.")
@@ -106,8 +291,11 @@ async def create_agent_session(tenant_id, agent_id):
 
 @manager.route("/chats/<chat_id>/sessions/<session_id>", methods=["PUT"])  # noqa: F821
 @token_required
-async def update(tenant_id, chat_id, session_id):
-    req = await get_request_json()
+@tag(["SDK Sessions"])
+@qs_validate_request(UpdateChatSessionBody)
+async def update(data: UpdateChatSessionBody, tenant_id, chat_id, session_id):
+    """Update chat session metadata."""
+    req = data.model_dump(exclude_unset=True)
     req["dialog_id"] = chat_id
     conv_id = session_id
     conv = ConversationService.query(id=conv_id, dialog_id=chat_id)
@@ -128,8 +316,11 @@ async def update(tenant_id, chat_id, session_id):
 
 @manager.route("/chats/<chat_id>/completions", methods=["POST"])  # noqa: F821
 @token_required
-async def chat_completion(tenant_id, chat_id):
-    req = await get_request_json()
+@tag(["SDK Chat"])
+@qs_validate_request(ChatCompletionBody)
+async def chat_completion(data: ChatCompletionBody, tenant_id, chat_id):
+    """Run chat completion for a chat/session."""
+    req = data.model_dump(exclude_unset=True)
     if not req:
         req = {"question": ""}
     if not req.get("session_id"):
@@ -178,9 +369,10 @@ async def chat_completion(tenant_id, chat_id):
 
 
 @manager.route("/chats_openai/<chat_id>/chat/completions", methods=["POST"])  # noqa: F821
-@validate_request("model", "messages")  # noqa: F821
 @token_required
-async def chat_completion_openai_like(tenant_id, chat_id):
+@tag(["SDK Chat"])
+@qs_validate_request(OpenAIChatCompletionBody)  # noqa: F821
+async def chat_completion_openai_like(data: OpenAIChatCompletionBody, tenant_id, chat_id):
     """
     OpenAI-like chat completion API that simulates the behavior of OpenAI's completions endpoint.
 
@@ -264,7 +456,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
         print("reference:", data["choices"][0]["message"].get("reference"))
 
     """
-    req = await get_request_json()
+    req = data.model_dump(exclude_none=True)
 
     extra_body = req.get("extra_body") or {}
     if extra_body and not isinstance(extra_body, dict):
@@ -469,11 +661,11 @@ async def chat_completion_openai_like(tenant_id, chat_id):
         return jsonify(response)
 
 
-@manager.route("/agents_openai/<agent_id>/chat/completions", methods=["POST"])  # noqa: F821
-@validate_request("model", "messages")  # noqa: F821
-@token_required
-async def agents_completion_openai_compatibility(tenant_id, agent_id):
-    req = await get_request_json()
+@tag(["SDK Chat"])
+@qs_validate_request(OpenAIChatCompletionBody)
+async def agents_completion_openai_compatibility(data: OpenAIChatCompletionBody, tenant_id, agent_id):
+    """OpenAI-compatible chat completion for agents."""
+    req = data.model_dump(exclude_unset=True)
     messages = req.get("messages", [])
     if not messages:
         return get_error_data_result("You must provide at least one message.")
@@ -529,10 +721,11 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
         return None
 
 
-@manager.route("/agents/<agent_id>/completions", methods=["POST"])  # noqa: F821
-@token_required
-async def agent_completions(tenant_id, agent_id):
-    req = await get_request_json()
+@tag(["SDK Chat"])
+@qs_validate_request(AgentCompletionBody)
+async def agent_completions(data: AgentCompletionBody, tenant_id, agent_id):
+    """Run agent completion."""
+    req = data.model_dump(exclude_unset=True)
     return_trace = bool(req.get("return_trace", False))
 
     if req.get("stream", True):
@@ -607,17 +800,17 @@ async def agent_completions(tenant_id, agent_id):
     return get_result(data=final_ans)
 
 
-@manager.route("/chats/<chat_id>/sessions", methods=["GET"])  # noqa: F821
-@token_required
-async def list_session(tenant_id, chat_id):
-    if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
-        return get_error_data_result(message=f"You don't own the assistant {chat_id}.")
-    id = request.args.get("id")
-    name = request.args.get("name")
-    page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size", 30))
-    orderby = request.args.get("orderby", "create_time")
-    user_id = request.args.get("user_id")
+@tag(["SDK Sessions"])
+@validate_querystring(SessionListQuery)
+async def list_session(query: SessionListQuery, tenant_id, chat_id):
+    """List chat sessions."""
+    id = query.id
+    name = query.name
+    page_number = query.page
+    items_per_page = query.page_size
+    orderby = query.orderby
+    user_id = query.user_id
+    desc = query.desc
     if request.args.get("desc") == "False" or request.args.get("desc") == "false":
         desc = False
     else:
@@ -661,16 +854,17 @@ async def list_session(tenant_id, chat_id):
     return get_result(data=convs)
 
 
-@manager.route("/agents/<agent_id>/sessions", methods=["GET"])  # noqa: F821
-@token_required
-async def list_agent_session(tenant_id, agent_id):
-    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
-        return get_error_data_result(message=f"You don't own the agent {agent_id}.")
-    id = request.args.get("id")
-    user_id = request.args.get("user_id")
-    page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size", 30))
-    orderby = request.args.get("orderby", "update_time")
+@tag(["SDK Sessions"])
+@validate_querystring(AgentSessionListQuery)
+async def list_agent_session(query: AgentSessionListQuery, tenant_id, agent_id):
+    """List agent sessions."""
+    id = query.id
+    user_id = query.user_id
+    page_number = query.page
+    items_per_page = query.page_size
+    orderby = query.orderby
+    desc = query.desc
+    include_dsl = query.dsl
     if request.args.get("desc") == "False" or request.args.get("desc") == "false":
         desc = False
     else:
@@ -724,15 +918,18 @@ async def list_agent_session(tenant_id, agent_id):
     return get_result(data=convs)
 
 
-@manager.route("/chats/<chat_id>/sessions", methods=["DELETE"])  # noqa: F821
+@manager.route("/chats/<chat_id>/sessions", methods=["DELETE"])
 @token_required
-async def delete(tenant_id, chat_id):
+@tag(["SDK Sessions"])
+@qs_validate_request(DeleteSessionsBody)
+async def delete(data: DeleteSessionsBody, tenant_id, chat_id):
+    """Delete one or more chat sessions."""
+    req = data.model_dump(exclude_none=True)
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message="You don't own the chat")
 
     errors = []
     success_count = 0
-    req = await get_request_json()
     convs = ConversationService.query(dialog_id=chat_id)
     if not req:
         ids = None
@@ -775,12 +972,15 @@ async def delete(tenant_id, chat_id):
     return get_result()
 
 
-@manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])  # noqa: F821
+@manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])
 @token_required
-async def delete_agent_session(tenant_id, agent_id):
+@tag(["SDK Sessions"])
+@qs_validate_request(DeleteSessionsBody)
+async def delete_agent_session(data: DeleteSessionsBody, tenant_id, agent_id):
+    """Delete one or more agent sessions."""
+    req = data.model_dump(exclude_none=True)
     errors = []
     success_count = 0
-    req = await get_request_json()
     cvs = UserCanvasService.query(user_id=tenant_id, id=agent_id)
     if not cvs:
         return get_error_data_result(f"You don't own the agent {agent_id}")
@@ -830,10 +1030,11 @@ async def delete_agent_session(tenant_id, agent_id):
     return get_result()
 
 
-@manager.route("/sessions/ask", methods=["POST"])  # noqa: F821
-@token_required
-async def ask_about(tenant_id):
-    req = await get_request_json()
+@tag(["SDK Chat"])
+@qs_validate_request(SessionsAskBody)
+async def ask_about(data: SessionsAskBody, tenant_id):
+    """Ask question against datasets."""
+    req = data.model_dump(exclude_unset=True)
     if not req.get("question"):
         return get_error_data_result("`question` is required.")
     if not req.get("dataset_ids"):
@@ -869,10 +1070,11 @@ async def ask_about(tenant_id):
     return resp
 
 
-@manager.route("/sessions/related_questions", methods=["POST"])  # noqa: F821
-@token_required
-async def related_questions(tenant_id):
-    req = await get_request_json()
+@tag(["SDK Chat"])
+@qs_validate_request(SessionsRelatedBody)
+async def related_questions(data: SessionsRelatedBody, tenant_id):
+    """Generate related questions."""
+    req = data.model_dump(exclude_unset=True)
     if not req.get("question"):
         return get_error_data_result("`question` is required.")
     question = req["question"]
@@ -921,9 +1123,11 @@ Related search terms:
     return get_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
 
 
-@manager.route("/chatbots/<dialog_id>/completions", methods=["POST"])  # noqa: F821
-async def chatbot_completions(dialog_id):
-    req = await get_request_json()
+@tag(["SDK Chat"])
+@qs_validate_request(ChatbotCompletionsBody)
+async def chatbot_completions(data: ChatbotCompletionsBody, dialog_id):
+    """Run chatbot completion."""
+    req = data.model_dump(exclude_unset=True)
 
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
@@ -949,8 +1153,9 @@ async def chatbot_completions(dialog_id):
 
     return None
 
-@manager.route("/chatbots/<dialog_id>/info", methods=["GET"])  # noqa: F821
+@tag(["SDK Chat"])
 async def chatbots_inputs(dialog_id):
+    """Get chatbot public info."""
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -973,9 +1178,11 @@ async def chatbots_inputs(dialog_id):
     )
 
 
-@manager.route("/agentbots/<agent_id>/completions", methods=["POST"])  # noqa: F821
-async def agent_bot_completions(agent_id):
-    req = await get_request_json()
+@tag(["SDK Chat"])
+@qs_validate_request(AgentbotCompletionsBody)
+async def agent_bot_completions(data: AgentbotCompletionsBody, agent_id):
+    """Run agentbot completion."""
+    req = data.model_dump(exclude_unset=True)
 
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
@@ -998,8 +1205,9 @@ async def agent_bot_completions(agent_id):
 
     return None
 
-@manager.route("/agentbots/<agent_id>/inputs", methods=["GET"])  # noqa: F821
+@tag(["SDK Chat"])
 async def begin_inputs(agent_id):
+    """Get agentbot input schema."""
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -1018,9 +1226,11 @@ async def begin_inputs(agent_id):
               "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
 
 
-@manager.route("/searchbots/ask", methods=["POST"])  # noqa: F821
-@validate_request("question", "kb_ids")
-async def ask_about_embedded():
+@tag(["SDK Chat"])
+@qs_validate_request(SearchbotsAskBody)
+async def ask_about_embedded(data: SearchbotsAskBody):
+    """Ask searchbot question."""
+    req = data.model_dump(exclude_unset=True)
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -1029,7 +1239,6 @@ async def ask_about_embedded():
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
-    req = await get_request_json()
     uid = objs[0].tenant_id
 
     search_id = req.get("search_id", "")
@@ -1057,9 +1266,11 @@ async def ask_about_embedded():
     return resp
 
 
-@manager.route("/searchbots/retrieval_test", methods=["POST"])  # noqa: F821
-@validate_request("kb_id", "question")
-async def retrieval_test_embedded():
+@tag(["SDK Chat"])
+@qs_validate_request(SearchbotsRetrievalTestBody)
+async def retrieval_test_embedded(data: SearchbotsRetrievalTestBody):
+    """Run searchbot retrieval test."""
+    req = data.model_dump(exclude_unset=True)
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -1068,7 +1279,6 @@ async def retrieval_test_embedded():
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
-    req = await get_request_json()
     page = int(req.get("page", 1))
     size = int(req.get("size", 30))
     question = req["question"]
@@ -1173,9 +1383,11 @@ async def retrieval_test_embedded():
         return server_error_response(e)
 
 
-@manager.route("/searchbots/related_questions", methods=["POST"])  # noqa: F821
-@validate_request("question")
-async def related_questions_embedded():
+@tag(["SDK Chat"])
+@qs_validate_request(SearchbotsRelatedBody)
+async def related_questions_embedded(data: SearchbotsRelatedBody):
+    """Generate searchbot related questions."""
+    req = data.model_dump(exclude_unset=True)
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -1184,7 +1396,6 @@ async def related_questions_embedded():
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
-    req = await get_request_json()
     tenant_id = objs[0].tenant_id
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
@@ -1218,8 +1429,11 @@ Related search terms:
     return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
 
 
-@manager.route("/searchbots/detail", methods=["GET"])  # noqa: F821
-async def detail_share_embedded():
+@tag(["SDK Chat"])
+@validate_querystring(SearchbotsDetailQuery)
+async def detail_share_embedded(query: SearchbotsDetailQuery):
+    """Get searchbot detail."""
+    search_id = query.search_id
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -1228,7 +1442,6 @@ async def detail_share_embedded():
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
-    search_id = request.args["search_id"]
     tenant_id = objs[0].tenant_id
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
@@ -1249,9 +1462,11 @@ async def detail_share_embedded():
         return server_error_response(e)
 
 
-@manager.route("/searchbots/mindmap", methods=["POST"])  # noqa: F821
-@validate_request("question", "kb_ids")
-async def mindmap():
+@tag(["SDK Chat"])
+@qs_validate_request(SearchbotsMindmapBody)
+async def mindmap(data: SearchbotsMindmapBody):
+    """Generate mindmap from searchbot query."""
+    req = data.model_dump(exclude_unset=True)
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -1261,7 +1476,6 @@ async def mindmap():
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
     tenant_id = objs[0].tenant_id
-    req = await get_request_json()
 
     search_id = req.get("search_id", "")
     search_app = SearchService.get_detail(search_id) if search_id else {}
@@ -1271,9 +1485,9 @@ async def mindmap():
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)
 
-@manager.route("/sequence2txt", methods=["POST"])  # noqa: F821
-@token_required
+@tag(["SDK Media"])
 async def sequence2txt(tenant_id):
+    """Transcribe audio to text (multipart/form-data)."""
     req = await request.form
     stream_mode = req.get("stream", "false").lower() == "true"
     files = await request.files
@@ -1330,10 +1544,11 @@ async def sequence2txt(tenant_id):
 
     return Response(event_stream(), content_type="text/event-stream")
 
-@manager.route("/tts", methods=["POST"])  # noqa: F821
-@token_required
-async def tts(tenant_id):
-    req = await get_request_json()
+@tag(["SDK Media"])
+@qs_validate_request(TTSBody)
+async def tts(data: TTSBody, tenant_id):
+    """Synthesize text to speech."""
+    req = data.model_dump(exclude_unset=True)
     text = req["text"]
 
     tenants = TenantService.get_info_by(tenant_id)

@@ -18,6 +18,8 @@ import os
 import time
 
 from quart import request
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 from common.constants import RetCode
 from common.exceptions import ArgumentException, NotFoundException
 from api.apps import login_required
@@ -25,7 +27,89 @@ from api.utils.api_utils import validate_request, get_request_json, get_error_ar
 from api.apps.services import memory_api_service
 
 
+def set_operation_doc(summary: str, description: str = ""):
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class MemoryCreateBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {"name": "My memory", "memory_type": "chat", "embd_id": "embd_model_id", "llm_id": "llm_id"}
+        },
+    )
+
+    name: str = Field(description="Memory name")
+    memory_type: str = Field(description="Memory type")
+    embd_id: str = Field(description="Embedding model ID")
+    llm_id: str = Field(description="LLM ID")
+
+
+class MemoryUpdateBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "name": "New name",
+                "description": "Optional description",
+                "memory_size": 10,
+                "temperature": 0.2,
+                "system_prompt": "You are helpful.",
+            }
+        },
+    )
+
+    name: str | None = Field(default=None, description="Memory name")
+    permissions: str | None = Field(default=None, description="Permissions")
+    llm_id: str | None = Field(default=None, description="LLM ID")
+    embd_id: str | None = Field(default=None, description="Embedding model ID")
+    memory_type: str | None = Field(default=None, description="Memory type")
+    memory_size: int | None = Field(default=None, description="Memory size")
+    forgetting_policy: str | None = Field(default=None, description="Forgetting policy")
+    temperature: float | None = Field(default=None, description="Temperature")
+    avatar: str | None = Field(default=None, description="Avatar URL")
+    description: str | None = Field(default=None, description="Description")
+    system_prompt: str | None = Field(default=None, description="System prompt")
+    user_prompt: str | None = Field(default=None, description="User prompt")
+
+
+class MessageAddBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "memory_id": ["memory_id_1"],
+                "agent_id": "agent_id",
+                "session_id": "session_id",
+                "user_input": "Hello",
+                "agent_response": "Hi, how can I help?",
+                "user_id": "optional_user_id",
+            }
+        },
+    )
+
+    memory_id: list[str] | str = Field(description="Memory ID(s) to write to")
+    agent_id: str = Field(description="Agent ID")
+    session_id: str = Field(description="Session ID")
+    user_input: str = Field(description="User input")
+    agent_response: str = Field(description="Agent response")
+    user_id: str | None = Field(default=None, description="Optional end-user identifier")
+
+
+class MessageUpdateStatusBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"status": True}})
+
+    status: bool = Field(description="New status value")
+
+
 @manager.route("/memories", methods=["POST"])  # noqa: F821
+@set_operation_doc("Create a new memory.")
+@tag(["SDK Memories"])
+@document_request(MemoryCreateBody, source=DataSource.JSON)
 @login_required
 @validate_request("name", "memory_type", "embd_id", "llm_id")
 async def create_memory():
@@ -80,6 +164,9 @@ async def create_memory():
 
 
 @manager.route("/memories/<memory_id>", methods=["PUT"])  # noqa: F821
+@set_operation_doc("Update a memory.")
+@tag(["SDK Memories"])
+@document_request(MemoryUpdateBody, source=DataSource.JSON)
 @login_required
 async def update_memory(memory_id):
     req = await get_request_json()
@@ -105,6 +192,8 @@ async def update_memory(memory_id):
 
 
 @manager.route("/memories/<memory_id>", methods=["DELETE"])  # noqa: F821
+@set_operation_doc("Delete a memory.")
+@tag(["SDK Memories"])
 @login_required
 async def delete_memory(memory_id):
     try:
@@ -119,6 +208,8 @@ async def delete_memory(memory_id):
 
 
 @manager.route("/memories", methods=["GET"])  # noqa: F821
+@set_operation_doc("List memories.")
+@tag(["SDK Memories"])
 @login_required
 async def list_memory():
     filter_params = {
@@ -136,6 +227,8 @@ async def list_memory():
 
 
 @manager.route("/memories/<memory_id>/config", methods=["GET"])  # noqa: F821
+@set_operation_doc("Get memory configuration.")
+@tag(["SDK Memories"])
 @login_required
 async def get_memory_config(memory_id):
     try:
@@ -150,6 +243,8 @@ async def get_memory_config(memory_id):
 
 
 @manager.route("/memories/<memory_id>", methods=["GET"])  # noqa: F821
+@set_operation_doc("Get messages stored for a memory.")
+@tag(["SDK Memories"])
 @login_required
 async def get_memory_messages(memory_id):
     args = request.args
@@ -174,6 +269,9 @@ async def get_memory_messages(memory_id):
 
 
 @manager.route("/messages", methods=["POST"]) # noqa: F821
+@set_operation_doc("Add one message to one or more memories.")
+@tag(["SDK Messages"])
+@document_request(MessageAddBody, source=DataSource.JSON)
 @login_required
 @validate_request("memory_id", "agent_id", "session_id", "user_input", "agent_response")
 async def add_message():
@@ -196,6 +294,8 @@ async def add_message():
 
 
 @manager.route("/messages/<memory_id>:<message_id>", methods=["DELETE"]) # noqa: F821
+@set_operation_doc("Forget (delete) a message from a memory.")
+@tag(["SDK Messages"])
 @login_required
 async def forget_message(memory_id: str, message_id: int):
     try:
@@ -210,6 +310,9 @@ async def forget_message(memory_id: str, message_id: int):
 
 
 @manager.route("/messages/<memory_id>:<message_id>", methods=["PUT"]) # noqa: F821
+@set_operation_doc("Update message status for a memory message.")
+@tag(["SDK Messages"])
+@document_request(MessageUpdateStatusBody, source=DataSource.JSON)
 @login_required
 @validate_request("status")
 async def update_message(memory_id: str, message_id: int):
@@ -233,6 +336,8 @@ async def update_message(memory_id: str, message_id: int):
 
 
 @manager.route("/messages/search", methods=["GET"]) # noqa: F821
+@set_operation_doc("Search messages across one or more memories.")
+@tag(["SDK Messages"])
 @login_required
 async def search_message():
     args = request.args
@@ -261,6 +366,8 @@ async def search_message():
     return get_json_result(message=True, data=res)
 
 @manager.route("/messages", methods=["GET"]) # noqa: F821
+@set_operation_doc("List recent messages from one or more memories.")
+@tag(["SDK Messages"])
 @login_required
 async def get_messages():
     args = request.args
@@ -281,6 +388,8 @@ async def get_messages():
 
 
 @manager.route("/messages/<memory_id>:<message_id>/content", methods=["GET"]) # noqa: F821
+@set_operation_doc("Get message content for a memory message.")
+@tag(["SDK Messages"])
 @login_required
 async def get_message_content(memory_id: str, message_id: int):
     try:

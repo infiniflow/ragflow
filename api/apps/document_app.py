@@ -19,6 +19,8 @@ import pathlib
 import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from quart import request, make_response
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 from api.apps import current_user, login_required
 from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
@@ -62,10 +64,196 @@ def _is_safe_download_filename(name: str) -> bool:
     return True
 
 
+class DocumentUploadForm(BaseModel):
+    """Multipart upload form for documents."""
+
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"kb_id": "dataset_id_123"}
+    })
+
+    kb_id: str = Field(description="Dataset (KB) ID")
+    file: list[bytes] = Field(description="One or more files (multipart/form-data)")
+
+
+class DocumentWebCrawlForm(BaseModel):
+    """Multipart form for web crawl (HTML->PDF)."""
+
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"kb_id": "dataset_id_123", "name": "Example Page", "url": "https://example.com"}
+    })
+
+    kb_id: str = Field(description="Dataset (KB) ID")
+    name: str = Field(description="Document base name (PDF will be created)")
+    url: str = Field(description="URL to crawl")
+
+
+class DocumentCreateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"kb_id": "dataset_id_123", "name": "Notes.md"}
+    })
+
+    kb_id: str = Field(description="Dataset (KB) ID")
+    name: str = Field(description="Document name")
+
+
+class DocumentListBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "run_status": ["DONE"],
+            "types": ["VIRTUAL"],
+            "suffix": ["pdf", "md"],
+            "return_empty_metadata": False,
+            "metadata_condition": {
+                "logic": "and",
+                "conditions": [{"name": "author", "comparison_operator": "is", "value": "bob"}],
+            },
+        }
+    })
+
+    run_status: list[str] | None = Field(default=None, description="Run status filter")
+    types: list[str] | None = Field(default=None, description="File type filter")
+    suffix: list[str] | None = Field(default=None, description="Suffix filter")
+    return_empty_metadata: bool | None = Field(default=None, description="Whether to return documents with empty metadata")
+    metadata_condition: dict | None = Field(default=None, description="Metadata condition filter")
+    metadata: dict | None = Field(default=None, description="Metadata exact-match filter")
+
+
+class DocumentFilterBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"kb_id": "dataset_id_123", "keywords": ""}
+    })
+
+    kb_id: str = Field(description="Dataset (KB) ID")
+    keywords: str | None = Field(default=None, description="Search keyword filter")
+    suffix: list[str] | None = Field(default=None, description="Suffix filter")
+    run_status: list[str] | None = Field(default=None, description="Run status filter")
+    types: list[str] | None = Field(default=None, description="File type filter")
+
+
+class DocumentInfosBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"doc_ids": ["doc_id_1", "doc_id_2"]}
+    })
+
+    doc_ids: list[str] = Field(description="Document IDs")
+
+
+class DocumentMetadataSummaryBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"kb_id": "dataset_id_123", "doc_ids": ["doc_id_1"]}
+    })
+
+    kb_id: str = Field(description="Dataset (KB) ID")
+    doc_ids: list[str] | None = Field(default=None, description="Optional document IDs to scope the summary")
+
+
+class DocumentMetadataUpdateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "kb_id": "dataset_id_123",
+            "doc_ids": ["doc_id_1"],
+            "updates": [{"key": "author", "value": "bob"}],
+            "deletes": [{"key": "obsolete"}],
+        }
+    })
+
+    kb_id: str | None = Field(default=None, description="Dataset (KB) ID")
+    doc_ids: list[str] | None = Field(default=None, description="Target document IDs")
+    updates: list[dict] | None = Field(default=None, description="Updates: {key, value}")
+    deletes: list[dict] | None = Field(default=None, description="Deletes: {key}")
+
+
+class DocumentUpdateMetadataSettingBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"doc_id": "doc_id_1", "metadata": {}}
+    })
+
+    doc_id: str = Field(description="Document ID")
+    metadata: dict = Field(description="Metadata schema/settings object")
+
+
+class DocumentChangeStatusBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"doc_ids": ["doc_id_1"], "status": "1"}
+    })
+
+    doc_ids: list[str] = Field(description="Document IDs")
+    status: str = Field(description="0 or 1")
+
+
+class DocumentRemoveBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"doc_id": ["doc_id_1", "doc_id_2"]}
+    })
+
+    doc_id: str | list[str] = Field(description="Document ID or list of IDs")
+
+
+class DocumentRunBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"doc_ids": ["doc_id_1"], "run": "1", "delete": False, "apply_kb": False}
+    })
+
+    doc_ids: list[str] = Field(description="Document IDs")
+    run: str = Field(description="TaskStatus value (e.g. RUNNING/CANCEL)")
+
+
+class DocumentRenameBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"doc_id": "doc_id_1", "name": "new_name.pdf"}
+    })
+
+    doc_id: str = Field(description="Document ID")
+    name: str = Field(description="New document name")
+
+
+class DocumentChangeParserBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"doc_id": "doc_id_1", "parser_id": "naive", "pipeline_id": ""}
+    })
+
+    doc_id: str = Field(description="Document ID")
+
+
+class DocumentUploadAndParseForm(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"conversation_id": "conv_123"}
+    })
+
+    conversation_id: str = Field(description="Conversation ID")
+    file: list[bytes] = Field(description="One or more files (multipart/form-data)")
+
+
+class DocumentParseBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"url": "https://example.com"}
+    })
+
+    url: str | None = Field(default=None, description="Optional URL to parse")
+
+
+class DocumentSetMetaBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"doc_id": "doc_id_1", "meta": "{\"author\": \"bob\"}"}
+    })
+
+    doc_id: str = Field(description="Document ID")
+    meta: str = Field(description='JSON string map, e.g. {"key": "value"}')
+
+
+class DocumentUploadInfoForm(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {}})
+
+    file: bytes | None = Field(default=None, description="Optional single file (multipart/form-data)")
+
+
 @manager.route("/upload", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("kb_id")
+@tag(["Documents"])
+@document_request(DocumentUploadForm, source=DataSource.FORM)
 async def upload():
+    """Upload one or more documents to a dataset."""
     form = await request.form
     kb_id = form.get("kb_id")
     if not kb_id:
@@ -113,7 +301,10 @@ async def upload():
 @manager.route("/web_crawl", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("kb_id", "name", "url")
+@tag(["Documents"])
+@document_request(DocumentWebCrawlForm, source=DataSource.FORM)
 async def web_crawl():
+    """Create a document in a dataset by crawling a URL (HTML to PDF)."""
     form = await request.form
     kb_id = form.get("kb_id")
     if not kb_id:
@@ -179,7 +370,10 @@ async def web_crawl():
 @manager.route("/create", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("name", "kb_id")
+@tag(["Documents"])
+@document_request(DocumentCreateBody, source=DataSource.JSON)
 async def create():
+    """Create an empty (virtual) document in a dataset."""
     req = await get_request_json()
     kb_id = req["kb_id"]
     if not kb_id:
@@ -235,7 +429,10 @@ async def create():
 
 @manager.route("/list", methods=["POST"])  # noqa: F821
 @login_required
+@tag(["Documents"])
+@document_request(DocumentListBody, source=DataSource.JSON)
 async def list_docs():
+    """List documents in a dataset with optional filters."""
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -369,7 +566,10 @@ async def list_docs():
 
 @manager.route("/filter", methods=["POST"])  # noqa: F821
 @login_required
+@tag(["Documents"])
+@document_request(DocumentFilterBody, source=DataSource.JSON)
 async def get_filter():
+    """Get filter aggregation data for documents in a dataset."""
     req = await get_request_json()
 
     kb_id = req.get("kb_id")
@@ -407,7 +607,10 @@ async def get_filter():
 
 @manager.route("/infos", methods=["POST"])  # noqa: F821
 @login_required
+@tag(["Documents"])
+@document_request(DocumentInfosBody, source=DataSource.JSON)
 async def doc_infos():
+    """Get document details by document IDs."""
     req = await get_request_json()
     doc_ids = req["doc_ids"]
     for doc_id in doc_ids:
@@ -423,7 +626,10 @@ async def doc_infos():
 
 @manager.route("/metadata/summary", methods=["POST"])  # noqa: F821
 @login_required
+@tag(["Documents"])
+@document_request(DocumentMetadataSummaryBody, source=DataSource.JSON)
 async def metadata_summary():
+    """Get metadata summary for documents in a dataset."""
     req = await get_request_json()
     kb_id = req.get("kb_id")
     doc_ids = req.get("doc_ids")
@@ -447,7 +653,10 @@ async def metadata_summary():
 @manager.route("/metadata/update", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_ids")
+@tag(["Documents"])
+@document_request(DocumentMetadataUpdateBody, source=DataSource.JSON)
 async def metadata_update():
+    """Batch update metadata for documents in a dataset."""
     req = await get_request_json()
     kb_id = req.get("kb_id")
     document_ids = req.get("doc_ids")
@@ -474,7 +683,10 @@ async def metadata_update():
 @manager.route("/update_metadata_setting", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id", "metadata")
+@tag(["Documents"])
+@document_request(DocumentUpdateMetadataSettingBody, source=DataSource.JSON)
 async def update_metadata_setting():
+    """Update metadata setting stored in the document parser configuration."""
     req = await get_request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
@@ -493,7 +705,9 @@ async def update_metadata_setting():
 
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
 # @login_required
+@tag(["Documents"])
 def thumbnails():
+    """Get thumbnails for one or more documents."""
     doc_ids = request.args.getlist("doc_ids")
     if not doc_ids:
         return get_json_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
@@ -513,7 +727,10 @@ def thumbnails():
 @manager.route("/change_status", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_ids", "status")
+@tag(["Documents"])
+@document_request(DocumentChangeStatusBody, source=DataSource.JSON)
 async def change_status():
+    """Enable or disable documents."""
     req = await get_request_json()
     doc_ids = req.get("doc_ids", [])
     status = str(req.get("status", ""))
@@ -583,7 +800,10 @@ async def change_status():
 @manager.route("/rm", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id")
+@tag(["Documents"])
+@document_request(DocumentRemoveBody, source=DataSource.JSON)
 async def rm():
+    """Delete one or more documents."""
     req = await get_request_json()
     doc_ids = req["doc_id"]
     if isinstance(doc_ids, str):
@@ -604,7 +824,10 @@ async def rm():
 @manager.route("/run", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_ids", "run")
+@tag(["Documents"])
+@document_request(DocumentRunBody, source=DataSource.JSON)
 async def run():
+    """Start, cancel, or rerun document parsing/indexing tasks."""
     req = await get_request_json()
     uid = current_user.id
     try:
@@ -666,7 +889,10 @@ async def run():
 @manager.route("/rename", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id", "name")
+@tag(["Documents"])
+@document_request(DocumentRenameBody, source=DataSource.JSON)
 async def rename():
+    """Rename a document."""
     req = await get_request_json()
     uid = current_user.id
     try:
@@ -718,7 +944,9 @@ async def rename():
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
 @login_required
+@tag(["Documents"])
 async def get(doc_id):
+    """Download a document file by its document ID."""
     try:
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
@@ -741,8 +969,10 @@ async def get(doc_id):
 
 
 @manager.route("/download/<attachment_id>", methods=["GET"])  # noqa: F821
+@tag(["Documents"])
 @login_required
 async def download_attachment(attachment_id):
+    """Download an attachment by ID."""
     try:
         ext = request.args.get("ext", "markdown")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, current_user.id, attachment_id)
@@ -759,7 +989,10 @@ async def download_attachment(attachment_id):
 @manager.route("/change_parser", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id")
+@tag(["Documents"])
+@document_request(DocumentChangeParserBody, source=DataSource.JSON)
 async def change_parser():
+    """Change a document's parser/pipeline configuration."""
 
     req = await get_request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
@@ -813,7 +1046,9 @@ async def change_parser():
 
 @manager.route("/image/<image_id>", methods=["GET"])  # noqa: F821
 # @login_required
+@tag(["Documents"])
 async def get_image(image_id):
+    """Get a stored image by image ID."""
     try:
         arr = image_id.split("-")
         if len(arr) != 2:
@@ -830,7 +1065,10 @@ async def get_image(image_id):
 @manager.route("/upload_and_parse", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id")
+@tag(["Documents"])
+@document_request(DocumentUploadAndParseForm, source=DataSource.FORM)
 async def upload_and_parse():
+    """Upload and parse file(s) into a conversation."""
     files = await request.files
     if "file" not in files:
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
@@ -847,7 +1085,10 @@ async def upload_and_parse():
 
 @manager.route("/parse", methods=["POST"])  # noqa: F821
 @login_required
+@tag(["Documents"])
+@document_request(DocumentParseBody, source=DataSource.JSON)
 async def parse():
+    """Parse a file or URL into text."""
     req = await get_request_json()
     url = req.get("url", "")
     if url:
@@ -907,7 +1148,10 @@ async def parse():
 @manager.route("/set_meta", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id", "meta")
+@tag(["Documents"])
+@document_request(DocumentSetMetaBody, source=DataSource.JSON)
 async def set_meta():
+    """Set metadata for a document."""
     req = await get_request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
@@ -940,7 +1184,10 @@ async def set_meta():
 
 
 @manager.route("/upload_info", methods=["POST"])  # noqa: F821
+@tag(["Documents"])
+@document_request(DocumentUploadInfoForm, source=DataSource.FORM_MULTIPART)
 async def upload_info():
+    """Upload a runtime file and return an attachment descriptor."""
     files = await request.files
     file = files['file'] if files and files.get("file") else None
     try:

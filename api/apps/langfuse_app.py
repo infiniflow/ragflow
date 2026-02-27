@@ -21,9 +21,38 @@ from langfuse import Langfuse
 from api.db.db_models import DB
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.utils.api_utils import get_error_data_result, get_json_result, get_request_json, server_error_response, validate_request
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
+
+
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class LangfuseApiKeyBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "public_key": "pk_***",
+            "secret_key": "sk_***",
+            "host": "https://cloud.langfuse.com",
+        }
+    })
+
+    public_key: str = Field(description="Langfuse public key")
+    secret_key: str = Field(description="Langfuse secret key")
+    host: str = Field(description="Langfuse host/base URL")
 
 
 @manager.route("/api_key", methods=["POST", "PUT"])  # noqa: F821
+@set_operation_doc("Create or update Langfuse API keys for the current tenant.")
+@tag(["Langfuse"])
+@document_request(LangfuseApiKeyBody, source=DataSource.JSON)
 @login_required
 @validate_request("secret_key", "public_key", "host")
 async def set_api_key():
@@ -59,6 +88,8 @@ async def set_api_key():
 
 
 @manager.route("/api_key", methods=["GET"])  # noqa: F821
+@set_operation_doc("Get Langfuse API keys for the current tenant.")
+@tag(["Langfuse"])
 @login_required
 @validate_request()
 def get_api_key():
@@ -83,6 +114,8 @@ def get_api_key():
 
 
 @manager.route("/api_key", methods=["DELETE"])  # noqa: F821
+@set_operation_doc("Delete Langfuse API keys for the current tenant.")
+@tag(["Langfuse"])
 @login_required
 @validate_request()
 def delete_api_key():

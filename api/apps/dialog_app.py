@@ -15,6 +15,8 @@
 #
 
 from quart import request
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 from api.db.services import duplicate_name
 from api.db.services.dialog_service import DialogService
 from common.constants import StatusEnum
@@ -28,7 +30,53 @@ from api.apps import login_required, current_user
 import logging
 
 
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class DialogSetBody(BaseModel):
+    # Keep behavior stable: only document request body; do not validate beyond existing validate_request.
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "name": "New Dialog",
+            "description": "A helpful dialog",
+            "icon": "",
+            "kb_ids": [],
+            "llm_setting": {},
+            "meta_data_filter": {},
+            "prompt_config": {"system": "You are a helpful assistant.", "parameters": []},
+        }
+    })
+
+    prompt_config: dict = Field(description="Prompt configuration object (required)")
+
+
+class DialogRmBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"dialog_ids": ["dialog_123"]}
+    })
+
+    dialog_ids: list[str] = Field(description="Dialog IDs to remove")
+
+
+class DialogNextBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"owner_ids": ["tenant_123"]}
+    })
+
+    owner_ids: list[str] | None = Field(default=None, description="Optional owner tenant IDs filter")
+
+
 @manager.route('/set', methods=['POST'])  # noqa: F821
+@set_operation_doc("Create or update a dialog.")
+@tag(["Dialogs"])
+@document_request(DialogSetBody, source=DataSource.JSON)
 @validate_request("prompt_config")
 @login_required
 async def set_dialog():
@@ -145,6 +193,8 @@ async def set_dialog():
 
 
 @manager.route('/get', methods=['GET'])  # noqa: F821
+@set_operation_doc("Get a dialog by ID.")
+@tag(["Dialogs"])
 @login_required
 def get():
     dialog_id = request.args["dialog_id"]
@@ -171,6 +221,8 @@ def get_kb_names(kb_ids):
 
 
 @manager.route('/list', methods=['GET'])  # noqa: F821
+@set_operation_doc("List dialogs for the current tenant.")
+@tag(["Dialogs"])
 @login_required
 def list_dialogs():
     try:
@@ -188,6 +240,9 @@ def list_dialogs():
 
 
 @manager.route('/next', methods=['POST'])  # noqa: F821
+@set_operation_doc("List dialogs with pagination and filters.")
+@tag(["Dialogs"])
+@document_request(DialogNextBody, source=DataSource.JSON)
 @login_required
 async def list_dialogs_next():
     args = request.args
@@ -226,6 +281,9 @@ async def list_dialogs_next():
 
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
+@set_operation_doc("Remove one or more dialogs.")
+@tag(["Dialogs"])
+@document_request(DialogRmBody, source=DataSource.JSON)
 @login_required
 @validate_request("dialog_ids")
 async def rm():

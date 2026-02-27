@@ -23,7 +23,8 @@ from io import BytesIO
 import xxhash
 from quart import request, send_file
 from peewee import OperationalError
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, ConfigDict
+from quart_schema import DataSource, document_request, tag
 
 from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileType
@@ -70,8 +71,81 @@ class Chunk(BaseModel):
         return value
 
 
+class UploadDocumentsForm(BaseModel):
+    file: list[bytes] = Field(description="One or more files to upload (multipart/form-data).")
+    parent_path: str | None = Field(
+        default=None,
+        description="Optional nested path under the dataset folder. Uses '/' separators.",
+    )
+
+
+class UpdateDocumentBody(BaseModel):
+    name: str | None = Field(default=None, description="New document name")
+    chunk_method: str | None = Field(default=None, description="Chunking method/parser id")
+    parser_config: dict | None = Field(default=None, description="Parser configuration")
+    enabled: bool | None = Field(default=None, description="Whether the document is enabled")
+    meta_fields: dict | None = Field(default=None, description="Document metadata fields to update")
+
+
+class MetadataSummaryBody(BaseModel):
+    doc_ids: list[str] | None = Field(default=None, description="Optional document IDs to scope summary")
+
+
+class MetadataBatchUpdateBody(BaseModel):
+    selector: dict = Field(default_factory=dict, description="Selector (document_ids and/or metadata_condition)")
+    updates: list[dict] = Field(default_factory=list, description="List of updates: {key, value}")
+    deletes: list[dict] = Field(default_factory=list, description="List of deletes: {key}")
+
+
+class DocumentIdsBody(BaseModel):
+    document_ids: list[str] = Field(description="Document IDs")
+
+
+class ChunkCreateBody(BaseModel):
+    content: str = Field(description="Chunk content")
+    important_keywords: list[str] | None = Field(default=None, description="Important keywords")
+    questions: list[str] | None = Field(default=None, description="Questions")
+
+
+class ChunkUpdateBody(BaseModel):
+    content: str | None = Field(default=None, description="Updated chunk content")
+    important_keywords: list[str] | None = Field(default=None, description="Updated important keywords")
+    available: bool | None = Field(default=None, description="Whether chunk is available")
+
+
+class RetrievalTestBody(BaseModel):
+    """Body schema for /api/v1/retrieval (docs-only; endpoint accepts extra fields)."""
+
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "dataset_ids": ["dataset_id_1"],
+            "question": "What is the refund policy?",
+            "document_ids": [],
+            "similarity_threshold": 0.2,
+            "vector_similarity_weight": 0.3,
+            "top_k": 20,
+            "highlight": True,
+            "metadata_condition": {
+                "logic": "and",
+                "conditions": [{"name": "author", "comparison_operator": "is", "value": "bob"}],
+            },
+        }
+    })
+
+    dataset_ids: list[str] = Field(description="Dataset IDs to search in")
+    question: str = Field(description="Query string")
+    document_ids: list[str] | None = Field(default=None, description="Optional document IDs to filter")
+    similarity_threshold: float | None = Field(default=None, description="Similarity threshold")
+    vector_similarity_weight: float | None = Field(default=None, description="Vector similarity weight")
+    top_k: int | None = Field(default=None, description="Maximum number of chunks to return")
+    highlight: bool | None = Field(default=None, description="Whether to highlight matched content")
+    metadata_condition: dict | None = Field(default=None, description="Optional metadata filter condition")
+
+
 @manager.route("/datasets/<dataset_id>/documents", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Documents"])
+@document_request(UploadDocumentsForm, source=DataSource.FORM)
 async def upload(dataset_id, tenant_id):
     """
     Upload documents to a dataset.
@@ -184,6 +258,8 @@ async def upload(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PUT"])  # noqa: F821
 @token_required
+@tag(["SDK Documents"])
+@document_request(UpdateDocumentBody, source=DataSource.JSON)
 async def update_doc(tenant_id, dataset_id, document_id):
     """
     Update a document within a dataset.
@@ -361,6 +437,7 @@ async def update_doc(tenant_id, dataset_id, document_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Documents"])
 async def download(tenant_id, dataset_id, document_id):
     """
     Download a document from a dataset.
@@ -420,7 +497,9 @@ async def download(tenant_id, dataset_id, document_id):
 
 
 @manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
+@tag(["SDK Documents"])
 async def download_doc(document_id):
+    """Download a document by ID using an API key (non-cookie auth)."""
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -451,6 +530,7 @@ async def download_doc(document_id):
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Documents"])
 def list_docs(dataset_id, tenant_id):
     """
     List documents in a dataset.
@@ -638,7 +718,10 @@ def list_docs(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/metadata/summary", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Documents"])
+@document_request(MetadataSummaryBody, source=DataSource.JSON)
 async def metadata_summary(dataset_id, tenant_id):
+    """Get metadata summary for a dataset (optionally scoped to document IDs)."""
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
     req = await get_request_json()
@@ -651,7 +734,10 @@ async def metadata_summary(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/metadata/update", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Documents"])
+@document_request(MetadataBatchUpdateBody, source=DataSource.JSON)
 async def metadata_batch_update(dataset_id, tenant_id):
+    """Batch update metadata for documents in a dataset."""
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
 
@@ -701,6 +787,7 @@ async def metadata_batch_update(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
 @token_required
+@tag(["SDK Documents"])
 async def delete(tenant_id, dataset_id):
     """
     Delete documents from a dataset.
@@ -811,6 +898,8 @@ async def delete(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Chunks"])
+@document_request(DocumentIdsBody, source=DataSource.JSON)
 async def parse(tenant_id, dataset_id):
     """
     Start parsing documents into chunks.
@@ -894,6 +983,8 @@ async def parse(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["DELETE"])  # noqa: F821
 @token_required
+@tag(["SDK Chunks"])
+@document_request(DocumentIdsBody, source=DataSource.JSON)
 async def stop_parsing(tenant_id, dataset_id):
     """
     Stop parsing documents into chunks.
@@ -967,6 +1058,7 @@ async def stop_parsing(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Chunks"])
 async def list_chunks(tenant_id, dataset_id, document_id):
     """
     List chunks of a document.
@@ -1137,6 +1229,8 @@ async def list_chunks(tenant_id, dataset_id, document_id):
     "/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["POST"]
 )
 @token_required
+@tag(["SDK Chunks"])
+@document_request(ChunkCreateBody, source=DataSource.JSON)
 async def add_chunk(tenant_id, dataset_id, document_id):
     """
     Add a chunk to a document.
@@ -1266,6 +1360,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     "datasets/<dataset_id>/documents/<document_id>/chunks", methods=["DELETE"]
 )
 @token_required
+@tag(["SDK Chunks"])
 async def rm_chunk(tenant_id, dataset_id, document_id):
     """
     Remove chunks from a document.
@@ -1340,6 +1435,8 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     "/datasets/<dataset_id>/documents/<document_id>/chunks/<chunk_id>", methods=["PUT"]
 )
 @token_required
+@tag(["SDK Chunks"])
+@document_request(ChunkUpdateBody, source=DataSource.JSON)
 async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     """
     Update a chunk within a document.
@@ -1444,86 +1541,13 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
 
 @manager.route("/retrieval", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Retrieval"])
+@document_request(RetrievalTestBody, source=DataSource.JSON)
 async def retrieval_test(tenant_id):
     """
     Retrieve chunks based on a query.
-    ---
-    tags:
-      - Retrieval
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: body
-        name: body
-        description: Retrieval parameters.
-        required: true
-        schema:
-          type: object
-          properties:
-            dataset_ids:
-              type: array
-              items:
-                type: string
-              required: true
-              description: List of dataset IDs to search in.
-            question:
-              type: string
-              required: true
-              description: Query string.
-            document_ids:
-              type: array
-              items:
-                type: string
-              description: List of document IDs to filter.
-            similarity_threshold:
-              type: number
-              format: float
-              description: Similarity threshold.
-            vector_similarity_weight:
-              type: number
-              format: float
-              description: Vector similarity weight.
-            top_k:
-              type: integer
-              description: Maximum number of chunks to return.
-            highlight:
-              type: boolean
-              description: Whether to highlight matched content.
-            metadata_condition:
-              type: object
-              description: metadata filter condition.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Retrieval results.
-        schema:
-          type: object
-          properties:
-            chunks:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: string
-                    description: Chunk ID.
-                  content:
-                    type: string
-                    description: Chunk content.
-                  document_id:
-                    type: string
-                    description: ID of the document.
-                  dataset_id:
-                    type: string
-                    description: ID of the dataset.
-                  similarity:
-                    type: number
-                    format: float
-                    description: Similarity score.
+
+    Note: this endpoint supports additional optional fields beyond the documented schema (e.g. rerank, KG, paging).
     """
     req = await get_request_json()
     if not req.get("dataset_ids"):

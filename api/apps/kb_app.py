@@ -21,6 +21,8 @@ import re
 from common.metadata_utils import turn2jsonschema
 from quart import request
 import numpy as np
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 
 from api.db.services.connector_service import Connector2KbService
 from api.db.services.llm_service import LLMBundle
@@ -52,10 +54,140 @@ from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 from api.apps import login_required, current_user
 
+
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class KBCreateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "name": "Support Docs",
+            "parser_id": "naive",
+            "description": "Knowledge base for support documents",
+        }
+    })
+
+    name: str = Field(description="Dataset/knowledge base name")
+    parser_id: str | None = Field(default=None, description="Chunking method / parser id")
+
+
+class KBUpdateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "kb_id": "kb_id_123",
+            "name": "Support Docs v2",
+            "description": "Updated description",
+            "parser_id": "naive",
+        }
+    })
+
+    kb_id: str = Field(description="Knowledge base ID")
+    name: str = Field(description="Knowledge base name")
+    description: str = Field(description="Knowledge base description")
+    parser_id: str = Field(description="Chunking method / parser id")
+
+
+class KBUpdateMetadataSettingBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "kb_id": "kb_id_123",
+            "metadata": {},
+            "enable_metadata": True,
+        }
+    })
+
+    kb_id: str = Field(description="Knowledge base ID")
+    metadata: dict = Field(description="Metadata schema/settings object")
+    enable_metadata: bool | None = Field(default=None, description="Whether metadata extraction is enabled")
+
+
+class KBListBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"owner_ids": []}
+    })
+
+    owner_ids: list[str] | None = Field(default=None, description="Optional list of tenant IDs to list KBs for")
+
+
+class KBRmBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"kb_id": "kb_id_123"}
+    })
+
+    kb_id: str = Field(description="Knowledge base ID")
+
+
+class KBRmTagsBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"tags": ["tag_a", "tag_b"]}
+    })
+
+    tags: list[str] = Field(description="Tags to remove")
+
+
+class KBRenameTagBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"from_tag": "old", "to_tag": "new"}
+    })
+
+    from_tag: str = Field(description="Existing tag name")
+    to_tag: str = Field(description="New tag name")
+
+
+class KBPipelineLogsBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "operation_status": ["DONE"],
+            "types": [],
+            "suffix": [],
+        }
+    })
+
+    operation_status: list[str] | None = Field(default=None, description="Operation status filter")
+    types: list[str] | None = Field(default=None, description="File types filter")
+    suffix: list[str] | None = Field(default=None, description="Suffix filter")
+
+
+class KBDeletePipelineLogsBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"log_ids": ["log_id_1", "log_id_2"]}
+    })
+
+    log_ids: list[str] | None = Field(default=None, description="Pipeline log IDs to delete")
+
+
+class KBRunPipelineBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"kb_id": "kb_id_123"}
+    })
+
+    kb_id: str = Field(description="Knowledge base ID")
+
+
+class KBCheckEmbeddingBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"kb_id": "kb_id_123", "embd_id": "text-embedding-3-small", "check_num": 5}
+    })
+
+    kb_id: str = Field(description="Knowledge base ID")
+    embd_id: str = Field(description="Embedding model ID to verify")
+    check_num: int | None = Field(default=None, description="Number of random chunks to sample")
+
+
 @manager.route('/create', methods=['post'])  # noqa: F821
 @login_required
 @validate_request("name")
+@tag(["Knowledge Bases"])
+@document_request(KBCreateBody, source=DataSource.JSON)
 async def create():
+    """Create a new knowledge base."""
     req = await get_request_json()
     e, res = KnowledgebaseService.create_with_name(
         name = req.pop("name", None),
@@ -76,10 +208,14 @@ async def create():
 
 
 @manager.route('/update', methods=['post'])  # noqa: F821
+@set_operation_doc("Update a knowledge base.")
+@tag(["Knowledge Bases"])
+@document_request(KBUpdateBody, source=DataSource.JSON)
 @login_required
 @validate_request("kb_id", "name", "description", "parser_id")
 @not_allowed_parameters("id", "tenant_id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
 async def update():
+    """Update a knowledge base."""
     req = await get_request_json()
     if not isinstance(req["name"], str):
         return get_data_error_result(message="Dataset name must be string.")
@@ -187,7 +323,10 @@ async def update():
 @manager.route('/update_metadata_setting', methods=['post'])  # noqa: F821
 @login_required
 @validate_request("kb_id", "metadata")
+@tag(["Knowledge Bases"])
+@document_request(KBUpdateMetadataSettingBody, source=DataSource.JSON)
 async def update_metadata_setting():
+    """Update knowledge base metadata settings."""
     req = await get_request_json()
     e, kb = KnowledgebaseService.get_by_id(req["kb_id"])
     if not e:
@@ -202,7 +341,9 @@ async def update_metadata_setting():
 
 @manager.route('/detail', methods=['GET'])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
 def detail():
+    """Get knowledge base details."""
     kb_id = request.args["kb_id"]
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
@@ -233,7 +374,10 @@ def detail():
 
 @manager.route('/list', methods=['POST'])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
+@document_request(KBListBody, source=DataSource.JSON)
 async def list_kbs():
+    """List knowledge bases with optional filters."""
     args = request.args
     keywords = args.get("keywords", "")
     page_number = int(args.get("page", 0))
@@ -271,7 +415,10 @@ async def list_kbs():
 @manager.route('/rm', methods=['post'])  # noqa: F821
 @login_required
 @validate_request("kb_id")
+@tag(["Knowledge Bases"])
+@document_request(KBRmBody, source=DataSource.JSON)
 async def rm():
+    """Delete a knowledge base."""
     req = await get_request_json()
     uid = current_user.id
     if not KnowledgebaseService.accessible4deletion(req["kb_id"], uid):
@@ -329,7 +476,9 @@ async def rm():
 
 @manager.route('/<kb_id>/tags', methods=['GET'])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
 def list_tags(kb_id):
+    """List tags in a knowledge base."""
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
             data=False,
@@ -346,7 +495,9 @@ def list_tags(kb_id):
 
 @manager.route('/tags', methods=['GET'])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
 def list_tags_from_kbs():
+    """List tags across one or more knowledge bases."""
     kb_ids = request.args.get("kb_ids", "").split(",")
     for kb_id in kb_ids:
         if not KnowledgebaseService.accessible(kb_id, current_user.id):
@@ -365,7 +516,10 @@ def list_tags_from_kbs():
 
 @manager.route('/<kb_id>/rm_tags', methods=['POST'])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
+@document_request(KBRmTagsBody, source=DataSource.JSON)
 async def rm_tags(kb_id):
+    """Remove tag(s) from a knowledge base."""
     req = await get_request_json()
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
@@ -385,7 +539,10 @@ async def rm_tags(kb_id):
 
 @manager.route('/<kb_id>/rename_tag', methods=['POST'])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
+@document_request(KBRenameTagBody, source=DataSource.JSON)
 async def rename_tags(kb_id):
+    """Rename a tag in a knowledge base."""
     req = await get_request_json()
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
@@ -404,7 +561,9 @@ async def rename_tags(kb_id):
 
 @manager.route('/<kb_id>/knowledge_graph', methods=['GET'])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
 async def knowledge_graph(kb_id):
+    """Get knowledge graph for a knowledge base."""
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
             data=False,
@@ -444,7 +603,9 @@ async def knowledge_graph(kb_id):
 
 @manager.route('/<kb_id>/knowledge_graph', methods=['DELETE'])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
 def delete_knowledge_graph(kb_id):
+    """Delete knowledge graph data for a knowledge base."""
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
             data=False,
@@ -459,7 +620,9 @@ def delete_knowledge_graph(kb_id):
 
 @manager.route("/get_meta", methods=["GET"])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
 def get_meta():
+    """Get flattened metadata fields for one or more knowledge bases."""
     kb_ids = request.args.get("kb_ids", "").split(",")
     for kb_id in kb_ids:
         if not KnowledgebaseService.accessible(kb_id, current_user.id):
@@ -473,7 +636,9 @@ def get_meta():
 
 @manager.route("/basic_info", methods=["GET"])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
 def get_basic_info():
+    """Get basic info for a knowledge base."""
     kb_id = request.args.get("kb_id", "")
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
@@ -489,7 +654,10 @@ def get_basic_info():
 
 @manager.route("/list_pipeline_logs", methods=["POST"])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
+@document_request(KBPipelineLogsBody, source=DataSource.JSON)
 async def list_pipeline_logs():
+    """List pipeline operation logs for a knowledge base."""
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -533,7 +701,10 @@ async def list_pipeline_logs():
 
 @manager.route("/list_pipeline_dataset_logs", methods=["POST"])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
+@document_request(KBPipelineLogsBody, source=DataSource.JSON)
 async def list_pipeline_dataset_logs():
+    """List dataset pipeline logs for a knowledge base."""
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -567,7 +738,10 @@ async def list_pipeline_dataset_logs():
 
 @manager.route("/delete_pipeline_logs", methods=["POST"])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
+@document_request(KBDeletePipelineLogsBody, source=DataSource.JSON)
 async def delete_pipeline_logs():
+    """Delete pipeline logs by IDs."""
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -582,7 +756,9 @@ async def delete_pipeline_logs():
 
 @manager.route("/pipeline_log_detail", methods=["GET"])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
 def pipeline_log_detail():
+    """Get pipeline log details by log ID."""
     log_id = request.args.get("log_id")
     if not log_id:
         return get_json_result(data=False, message='Lack of "Pipeline log ID"', code=RetCode.ARGUMENT_ERROR)
@@ -596,7 +772,10 @@ def pipeline_log_detail():
 
 @manager.route("/run_graphrag", methods=["POST"])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
+@document_request(KBRunPipelineBody, source=DataSource.JSON)
 async def run_graphrag():
+    """Start a GraphRAG pipeline task for a knowledge base."""
     req = await get_request_json()
 
     kb_id = req.get("kb_id", "")
@@ -643,7 +822,9 @@ async def run_graphrag():
 
 @manager.route("/trace_graphrag", methods=["GET"])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
 def trace_graphrag():
+    """Get GraphRAG task status for a knowledge base."""
     kb_id = request.args.get("kb_id", "")
     if not kb_id:
         return get_error_data_result(message='Lack of "KB ID"')
@@ -665,7 +846,10 @@ def trace_graphrag():
 
 @manager.route("/run_raptor", methods=["POST"])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
+@document_request(KBRunPipelineBody, source=DataSource.JSON)
 async def run_raptor():
+    """Start a RAPTOR pipeline task for a knowledge base."""
     req = await get_request_json()
 
     kb_id = req.get("kb_id", "")
@@ -712,7 +896,9 @@ async def run_raptor():
 
 @manager.route("/trace_raptor", methods=["GET"])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
 def trace_raptor():
+    """Get RAPTOR task status for a knowledge base."""
     kb_id = request.args.get("kb_id", "")
     if not kb_id:
         return get_error_data_result(message='Lack of "KB ID"')
@@ -734,7 +920,10 @@ def trace_raptor():
 
 @manager.route("/run_mindmap", methods=["POST"])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
+@document_request(KBRunPipelineBody, source=DataSource.JSON)
 async def run_mindmap():
+    """Start a mindmap pipeline task for a knowledge base."""
     req = await get_request_json()
 
     kb_id = req.get("kb_id", "")
@@ -781,7 +970,9 @@ async def run_mindmap():
 
 @manager.route("/trace_mindmap", methods=["GET"])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
 def trace_mindmap():
+    """Get mindmap task status for a knowledge base."""
     kb_id = request.args.get("kb_id", "")
     if not kb_id:
         return get_error_data_result(message='Lack of "KB ID"')
@@ -803,7 +994,9 @@ def trace_mindmap():
 
 @manager.route("/unbind_task", methods=["DELETE"])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
 def delete_kb_task():
+    """Unbind (cancel) a pipeline task from a knowledge base."""
     kb_id = request.args.get("kb_id", "")
     if not kb_id:
         return get_error_data_result(message='Lack of "KB ID"')
@@ -850,7 +1043,10 @@ def delete_kb_task():
 
 @manager.route("/check_embedding", methods=["post"])  # noqa: F821
 @login_required
+@tag(["Knowledge Bases"])
+@document_request(KBCheckEmbeddingBody, source=DataSource.JSON)
 async def check_embedding():
+    """Check embedding compatibility for a knowledge base using random chunk samples."""
 
     def _guess_vec_field(src: dict) -> str | None:
         for k in src or {}:

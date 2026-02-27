@@ -25,8 +25,86 @@ from common.misc_utils import get_uuid, thread_pool_exec
 from api.utils.api_utils import get_data_error_result, get_json_result, get_mcp_tools, get_request_json, server_error_response, validate_request
 from api.utils.web_utils import get_float, safe_json_parse
 from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
+
+
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class McpListBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"mcp_ids": []}})
+    mcp_ids: list[str] | None = Field(default=None, description="Optional MCP server ids filter")
+
+
+class McpCreateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"name": "My MCP", "url": "http://localhost:1234", "server_type": "sse"}
+    })
+    name: str = Field(description="MCP server name")
+    url: str = Field(description="MCP server URL")
+    server_type: str = Field(description="MCP server type")
+
+
+class McpIdsBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"mcp_ids": ["mcp_123"]}})
+    mcp_ids: list[str] = Field(description="MCP server ids")
+
+
+class McpImportBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"mcpServers": {}}})
+    mcpServers: dict = Field(description="MCP servers export payload")
+
+
+class McpListToolsBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"mcp_ids": ["mcp_123"], "timeout": 10}})
+    mcp_ids: list[str] = Field(description="MCP server ids")
+    timeout: float | None = Field(default=None, description="Timeout seconds")
+
+
+class McpTestToolBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"mcp_id": "mcp_123", "tool_name": "search", "arguments": {}}
+    })
+    mcp_id: str = Field(description="MCP server id")
+    tool_name: str = Field(description="Tool name")
+    arguments: dict = Field(description="Tool call arguments")
+
+
+class McpCacheToolsBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"mcp_id": "mcp_123", "tools": []}
+    })
+    mcp_id: str = Field(description="MCP server id")
+    tools: list[dict] = Field(description="Tools payload")
+
+
+class McpTestMcpBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"url": "http://localhost:1234", "server_type": "sse", "timeout": 10}
+    })
+    url: str = Field(description="MCP server URL")
+    server_type: str = Field(description="MCP server type")
+
+
+class McpUpdateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"mcp_id": "mcp_123", "name": "My MCP", "url": "http://localhost:1234", "server_type": "sse"}
+    })
+    mcp_id: str = Field(description="MCP server id")
+
 
 @manager.route("/list", methods=["POST"])  # noqa: F821
+@set_operation_doc("List MCP servers.")
+@tag(["MCP Servers"])
+@document_request(McpListBody, source=DataSource.JSON)
 @login_required
 async def list_mcp() -> Response:
     keywords = request.args.get("keywords", "")
@@ -53,6 +131,8 @@ async def list_mcp() -> Response:
 
 
 @manager.route("/detail", methods=["GET"])  # noqa: F821
+@set_operation_doc("Get MCP server details by ID.")
+@tag(["MCP Servers"])
 @login_required
 def detail() -> Response:
     mcp_id = request.args["mcp_id"]
@@ -68,6 +148,9 @@ def detail() -> Response:
 
 
 @manager.route("/create", methods=["POST"])  # noqa: F821
+@set_operation_doc("Create an MCP server.")
+@tag(["MCP Servers"])
+@document_request(McpCreateBody, source=DataSource.JSON)
 @login_required
 @validate_request("name", "url", "server_type")
 async def create() -> Response:
@@ -123,6 +206,9 @@ async def create() -> Response:
 
 
 @manager.route("/update", methods=["POST"])  # noqa: F821
+@set_operation_doc("Update an MCP server.")
+@tag(["MCP Servers"])
+@document_request(McpUpdateBody, source=DataSource.JSON)
 @login_required
 @validate_request("mcp_id")
 async def update() -> Response:
@@ -179,6 +265,9 @@ async def update() -> Response:
 
 
 @manager.route("/rm", methods=["POST"])  # noqa: F821
+@set_operation_doc("Remove one or more MCP servers.")
+@tag(["MCP Servers"])
+@document_request(McpIdsBody, source=DataSource.JSON)
 @login_required
 @validate_request("mcp_ids")
 async def rm() -> Response:
@@ -197,6 +286,9 @@ async def rm() -> Response:
 
 
 @manager.route("/import", methods=["POST"])  # noqa: F821
+@set_operation_doc("Import MCP servers in bulk.")
+@tag(["MCP Servers"])
+@document_request(McpImportBody, source=DataSource.JSON)
 @login_required
 @validate_request("mcpServers")
 async def import_multiple() -> Response:
@@ -264,6 +356,9 @@ async def import_multiple() -> Response:
 
 
 @manager.route("/export", methods=["POST"])  # noqa: F821
+@set_operation_doc("Export MCP servers in bulk.")
+@tag(["MCP Servers"])
+@document_request(McpIdsBody, source=DataSource.JSON)
 @login_required
 @validate_request("mcp_ids")
 async def export_multiple() -> Response:
@@ -296,6 +391,9 @@ async def export_multiple() -> Response:
 
 
 @manager.route("/list_tools", methods=["POST"])  # noqa: F821
+@set_operation_doc("List tools from MCP servers.")
+@tag(["MCP Servers"])
+@document_request(McpListToolsBody, source=DataSource.JSON)
 @login_required
 @validate_request("mcp_ids")
 async def list_tools() -> Response:
@@ -342,6 +440,9 @@ async def list_tools() -> Response:
 
 
 @manager.route("/test_tool", methods=["POST"])  # noqa: F821
+@set_operation_doc("Test a tool call against an MCP server.")
+@tag(["MCP Servers"])
+@document_request(McpTestToolBody, source=DataSource.JSON)
 @login_required
 @validate_request("mcp_id", "tool_name", "arguments")
 async def test_tool() -> Response:
@@ -375,6 +476,9 @@ async def test_tool() -> Response:
 
 
 @manager.route("/cache_tools", methods=["POST"])  # noqa: F821
+@set_operation_doc("Cache MCP tools configuration.")
+@tag(["MCP Servers"])
+@document_request(McpCacheToolsBody, source=DataSource.JSON)
 @login_required
 @validate_request("mcp_id", "tools")
 async def cache_tool() -> Response:
@@ -399,6 +503,9 @@ async def cache_tool() -> Response:
 
 
 @manager.route("/test_mcp", methods=["POST"])  # noqa: F821
+@set_operation_doc("Test MCP server connectivity and list tools.")
+@tag(["MCP Servers"])
+@document_request(McpTestMcpBody, source=DataSource.JSON)
 @validate_request("url", "server_type")
 async def test_mcp() -> Response:
     req = await get_request_json()

@@ -19,6 +19,9 @@ import re
 from quart import request, make_response
 from pathlib import Path
 
+from pydantic import BaseModel, Field, ConfigDict
+from quart_schema import DataSource, document_request, tag
+
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -32,8 +35,74 @@ from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_heade
 from common import settings
 from common.constants import RetCode
 
+
+class FileUploadForm(BaseModel):
+    """Multipart file upload (one or more files)."""
+
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"parent_id": "folder_id_123"}
+    })
+
+    file: list[bytes] = Field(description="One or more files (multipart/form-data).")
+    parent_id: str | None = Field(default=None, description="Parent folder ID (optional).")
+
+
+class FileUploadInfoForm(BaseModel):
+    """Multipart runtime attachment upload for chat completions."""
+
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {}})
+
+    file: list[bytes] | None = Field(default=None, description="One or more files (multipart/form-data).")
+
+
+class FileCreateBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"name": "Invoices", "parent_id": "folder_id_123", "type": "FOLDER"}
+    })
+
+    name: str = Field(description="Name of the file/folder")
+    parent_id: str | None = Field(default=None, description="Parent folder ID (optional)")
+    type: str | None = Field(default=None, description="File type: FOLDER or VIRTUAL")
+
+
+class FileRmBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"file_ids": ["file_id_1", "file_id_2"]}
+    })
+
+    file_ids: list[str] = Field(description="List of file/folder IDs to delete")
+
+
+class FileRenameBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"file_id": "file_id_1", "name": "renamed.pdf"}
+    })
+
+    file_id: str = Field(description="Target file ID")
+    name: str = Field(description="New name")
+
+
+class FileMoveBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"src_file_ids": ["file_id_1"], "dest_file_id": "folder_id_123"}
+    })
+
+    src_file_ids: list[str] = Field(description="Source file IDs")
+    dest_file_id: str = Field(description="Destination folder ID")
+
+
+class FileConvertBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"kb_ids": ["dataset_id_1"], "file_ids": ["file_id_1"]}
+    })
+
+    kb_ids: list[str] = Field(description="Dataset IDs")
+    file_ids: list[str] = Field(description="File/folder IDs")
+
 @manager.route('/file/upload', methods=['POST'])  # noqa: F821
 @token_required
+@tag(["SDK Files"])
+@document_request(FileUploadForm, source=DataSource.FORM)
 async def upload(tenant_id):
     """
     Upload a file to the system.
@@ -148,8 +217,68 @@ async def upload(tenant_id):
         return server_error_response(e)
 
 
+@manager.route("/file/upload_info", methods=["POST"])  # noqa: F821
+@token_required
+@tag(["SDK Files"])
+@document_request(FileUploadInfoForm, source=DataSource.FORM)
+async def upload_info(tenant_id):
+    """
+    Upload runtime file metadata for SDK chat completions.
+    ---
+    tags:
+      - File
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: formData
+        name: file
+        type: file
+        required: false
+        description: File(s) to upload as runtime attachments.
+      - in: query
+        name: url
+        type: string
+        required: false
+        description: Optional URL to fetch and convert into a runtime attachment.
+    responses:
+      200:
+        description: Runtime attachment descriptor(s) for the `files` field in completions requests.
+    """
+    files = await request.files
+    file_objs = files.getlist("file") if files and files.get("file") else []
+    url = request.args.get("url")
+
+    if file_objs and url:
+        return get_json_result(
+            data=False,
+            message="Provide either multipart file(s) or ?url=..., not both.",
+            code=RetCode.BAD_REQUEST,
+        )
+
+    if not file_objs and not url:
+        return get_json_result(
+            data=False,
+            message="Missing input: provide multipart file(s) or url",
+            code=RetCode.BAD_REQUEST,
+        )
+
+    try:
+        if url and not file_objs:
+            return get_json_result(data=FileService.upload_info(tenant_id, None, url))
+
+        if len(file_objs) == 1:
+            return get_json_result(data=FileService.upload_info(tenant_id, file_objs[0], None))
+
+        results = [FileService.upload_info(tenant_id, f) for f in file_objs]
+        return get_json_result(data=results)
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route('/file/create', methods=['POST'])  # noqa: F821
 @token_required
+@tag(["SDK Files"])
+@document_request(FileCreateBody, source=DataSource.JSON)
 async def create(tenant_id):
     """
     Create a new file or folder.
@@ -229,6 +358,7 @@ async def create(tenant_id):
 
 @manager.route('/file/list', methods=['GET'])  # noqa: F821
 @token_required
+@tag(["SDK Files"])
 async def list_files(tenant_id):
     """
     List files under a specific folder.
@@ -321,6 +451,7 @@ async def list_files(tenant_id):
 
 @manager.route('/file/root_folder', methods=['GET'])  # noqa: F821
 @token_required
+@tag(["SDK Files"])
 async def get_root_folder(tenant_id):
     """
     Get user's root folder.
@@ -357,6 +488,7 @@ async def get_root_folder(tenant_id):
 
 @manager.route('/file/parent_folder', methods=['GET'])  # noqa: F821
 @token_required
+@tag(["SDK Files"])
 async def get_parent_folder():
     """
     Get parent folder info of a file.
@@ -402,6 +534,7 @@ async def get_parent_folder():
 
 @manager.route('/file/all_parent_folder', methods=['GET'])  # noqa: F821
 @token_required
+@tag(["SDK Files"])
 async def get_all_parent_folders(tenant_id):
     """
     Get all parent folders of a file.
@@ -450,6 +583,8 @@ async def get_all_parent_folders(tenant_id):
 
 @manager.route('/file/rm', methods=['POST'])  # noqa: F821
 @token_required
+@tag(["SDK Files"])
+@document_request(FileRmBody, source=DataSource.JSON)
 async def rm(tenant_id):
     """
     Delete one or multiple files/folders.
@@ -524,6 +659,8 @@ async def rm(tenant_id):
 
 @manager.route('/file/rename', methods=['POST'])  # noqa: F821
 @token_required
+@tag(["SDK Files"])
+@document_request(FileRenameBody, source=DataSource.JSON)
 async def rename(tenant_id):
     """
     Rename a file.
@@ -587,6 +724,7 @@ async def rename(tenant_id):
 
 @manager.route('/file/get/<file_id>', methods=['GET'])  # noqa: F821
 @token_required
+@tag(["SDK Files"])
 async def get(tenant_id, file_id):
     """
     Download a file.
@@ -636,7 +774,12 @@ async def get(tenant_id, file_id):
 
 @manager.route("/file/download/<attachment_id>", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Files"])
 async def download_attachment(tenant_id, attachment_id):
+    """Download an attachment by ID.
+
+    Use the optional query param `ext` to control the response content type.
+    """
     try:
         ext = request.args.get("ext", "markdown")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
@@ -652,6 +795,8 @@ async def download_attachment(tenant_id, attachment_id):
 
 @manager.route('/file/mv', methods=['POST'])  # noqa: F821
 @token_required
+@tag(["SDK Files"])
+@document_request(FileMoveBody, source=DataSource.JSON)
 async def move(tenant_id):
     """
     Move one or multiple files to another folder.
@@ -712,7 +857,10 @@ async def move(tenant_id):
 
 @manager.route('/file/convert', methods=['POST'])  # noqa: F821
 @token_required
+@tag(["SDK Files"])
+@document_request(FileConvertBody, source=DataSource.JSON)
 async def convert(tenant_id):
+    """Convert file(s) into dataset document(s)."""
     req = await get_request_json()
     kb_ids = req["kb_ids"]
     file_ids = req["file_ids"]
