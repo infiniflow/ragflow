@@ -1,5 +1,5 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import i18n from '@/locales/config';
+import i18n, { changeLanguageAsync } from '@/locales/config';
 import { useEffect, useState } from 'react';
 import {
   ISearchAppDetailProps,
@@ -24,7 +24,7 @@ export default function ShareSeachPage() {
 
   useEffect(() => {
     if (locale && i18n.language !== locale) {
-      i18n.changeLanguage(locale);
+      changeLanguageAsync(locale);
     }
   }, [locale]);
   return (

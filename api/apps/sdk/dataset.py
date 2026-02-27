@@ -40,6 +40,7 @@ from api.utils.api_utils import (
     verify_embedding_availability,
 )
 from api.utils.validation_utils import (
+    AutoMetadataConfig,
     CreateDatasetReq,
     DeleteDatasetReq,
     ListDatasetReq,
@@ -119,7 +120,30 @@ async def create(tenant_id):
     req, err = await validate_and_parse_json_request(request, CreateDatasetReq)
     if err is not None:
         return get_error_argument_result(err)
-    e, req = KnowledgebaseService.create_with_name(name=req.pop("name", None), tenant_id=tenant_id, parser_id=req.pop("parser_id", None), **req)
+    # Map auto_metadata_config (if provided) into parser_config structure
+    auto_meta = req.pop("auto_metadata_config", None)
+    if auto_meta:
+        parser_cfg = req.get("parser_config") or {}
+        fields = []
+        for f in auto_meta.get("fields", []):
+            fields.append(
+                {
+                    "name": f.get("name", ""),
+                    "type": f.get("type", ""),
+                    "description": f.get("description"),
+                    "examples": f.get("examples"),
+                    "restrict_values": f.get("restrict_values", False),
+                }
+            )
+        parser_cfg["metadata"] = fields
+        parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
+        req["parser_config"] = parser_cfg
+    e, req = KnowledgebaseService.create_with_name(
+        name = req.pop("name", None),
+        tenant_id = tenant_id,
+        parser_id = req.pop("parser_id", None),
+        **req
+    )
 
     if not e:
         return req
@@ -134,6 +158,7 @@ async def create(tenant_id):
         ok, err = verify_embedding_availability(req["embd_id"], tenant_id)
         if not ok:
             return err
+
 
     try:
         if not KnowledgebaseService.save(**req):
@@ -208,7 +233,8 @@ async def delete(tenant_id):
                     continue
                 kb_id_instance_pairs.append((kb_id, kb))
             if len(error_kb_ids) > 0:
-                return get_error_permission_result(message=f"""User '{tenant_id}' lacks permission for datasets: '{", ".join(error_kb_ids)}'""")
+                return get_error_permission_result(
+                    message=f"""User '{tenant_id}' lacks permission for datasets: '{", ".join(error_kb_ids)}'""")
 
         errors = []
         success_count = 0
@@ -225,7 +251,8 @@ async def delete(tenant_id):
                     ]
                 )
                 File2DocumentService.delete_by_document_id(doc.id)
-            FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kb.name])
+            FileService.filter_delete(
+                [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kb.name])
 
             # Drop index for this dataset
             try:
@@ -336,7 +363,27 @@ async def update(tenant_id, dataset_id):
     try:
         kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
         if kb is None:
-            return get_error_permission_result(message=f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'")
+            return get_error_permission_result(
+                message=f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'")
+
+        # Map auto_metadata_config into parser_config if present
+        auto_meta = req.pop("auto_metadata_config", None)
+        if auto_meta:
+            parser_cfg = req.get("parser_config") or {}
+            fields = []
+            for f in auto_meta.get("fields", []):
+                fields.append(
+                    {
+                        "name": f.get("name", ""),
+                        "type": f.get("type", ""),
+                        "description": f.get("description"),
+                        "examples": f.get("examples"),
+                        "restrict_values": f.get("restrict_values", False),
+                    }
+                )
+            parser_cfg["metadata"] = fields
+            parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
+            req["parser_config"] = parser_cfg
 
         if req.get("parser_config"):
             req["parser_config"] = deep_merge(kb.parser_config, req["parser_config"])
@@ -348,7 +395,8 @@ async def update(tenant_id, dataset_id):
             del req["parser_config"]
 
         if "name" in req and req["name"].lower() != kb.name.lower():
-            exists = KnowledgebaseService.get_or_none(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)
+            exists = KnowledgebaseService.get_or_none(name=req["name"], tenant_id=tenant_id,
+                                                      status=StatusEnum.VALID.value)
             if exists:
                 return get_error_data_result(message=f"Dataset name '{req['name']}' already exists")
 
@@ -356,7 +404,8 @@ async def update(tenant_id, dataset_id):
             if not req["embd_id"]:
                 req["embd_id"] = kb.embd_id
             if kb.chunk_num != 0 and req["embd_id"] != kb.embd_id:
-                return get_error_data_result(message=f"When chunk_num ({kb.chunk_num}) > 0, embedding_model must remain {kb.embd_id}")
+                return get_error_data_result(
+                    message=f"When chunk_num ({kb.chunk_num}) > 0, embedding_model must remain {kb.embd_id}")
             ok, err = verify_embedding_availability(req["embd_id"], tenant_id)
             if not ok:
                 return err
@@ -366,10 +415,12 @@ async def update(tenant_id, dataset_id):
                 return get_error_argument_result(message="'pagerank' can only be set when doc_engine is elasticsearch")
 
             if req["pagerank"] > 0:
-                settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]}, search.index_name(kb.tenant_id), kb.id)
+                settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
+                                             search.index_name(kb.tenant_id), kb.id)
             else:
                 # Elasticsearch requires PAGERANK_FLD be non-zero!
-                settings.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD}, search.index_name(kb.tenant_id), kb.id)
+                settings.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
+                                             search.index_name(kb.tenant_id), kb.id)
 
         if not KnowledgebaseService.update_by_id(kb.id, req):
             return get_error_data_result(message="Update dataset error.(Database error)")
@@ -481,13 +532,97 @@ def list_datasets(tenant_id):
         return get_error_data_result(message="Database operation failed")
 
 
-@manager.route("/datasets/<dataset_id>/knowledge_graph", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/auto_metadata", methods=["GET"])  # noqa: F821
+@token_required
+def get_auto_metadata(tenant_id, dataset_id):
+    """
+    Get auto-metadata configuration for a dataset.
+    """
+    try:
+        kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
+        if kb is None:
+            return get_error_permission_result(
+                message=f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
+            )
+
+        parser_cfg = kb.parser_config or {}
+        metadata = parser_cfg.get("metadata") or []
+        enabled = parser_cfg.get("enable_metadata", bool(metadata))
+        # Normalize to AutoMetadataConfig-like JSON
+        fields = []
+        for f in metadata:
+            if not isinstance(f, dict):
+                continue
+            fields.append(
+                {
+                    "name": f.get("name", ""),
+                    "type": f.get("type", ""),
+                    "description": f.get("description"),
+                    "examples": f.get("examples"),
+                    "restrict_values": f.get("restrict_values", False),
+                }
+            )
+        return get_result(data={"enabled": enabled, "fields": fields})
+    except OperationalError as e:
+        logging.exception(e)
+        return get_error_data_result(message="Database operation failed")
+
+
+@manager.route("/datasets/<dataset_id>/auto_metadata", methods=["PUT"])  # noqa: F821
+@token_required
+async def update_auto_metadata(tenant_id, dataset_id):
+    """
+    Update auto-metadata configuration for a dataset.
+    """
+    cfg, err = await validate_and_parse_json_request(request, AutoMetadataConfig)
+    if err is not None:
+        return get_error_argument_result(err)
+
+    try:
+        kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
+        if kb is None:
+            return get_error_permission_result(
+                message=f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
+            )
+
+        parser_cfg = kb.parser_config or {}
+        fields = []
+        for f in cfg.get("fields", []):
+            fields.append(
+                {
+                    "name": f.get("name", ""),
+                    "type": f.get("type", ""),
+                    "description": f.get("description"),
+                    "examples": f.get("examples"),
+                    "restrict_values": f.get("restrict_values", False),
+                }
+            )
+        parser_cfg["metadata"] = fields
+        parser_cfg["enable_metadata"] = cfg.get("enabled", True)
+
+        if not KnowledgebaseService.update_by_id(kb.id, {"parser_config": parser_cfg}):
+            return get_error_data_result(message="Update auto-metadata error.(Database error)")
+
+        return get_result(data={"enabled": parser_cfg["enable_metadata"], "fields": fields})
+    except OperationalError as e:
+        logging.exception(e)
+        return get_error_data_result(message="Database operation failed")
+
+
+@manager.route('/datasets/<dataset_id>/knowledge_graph', methods=['GET'])  # noqa: F821
 @token_required
 async def knowledge_graph(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(
+            data=False,
+            message='No authorization.',
+            code=RetCode.AUTHENTICATION_ERROR
+        )
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
-    req = {"kb_id": [dataset_id], "knowledge_graph_kwd": ["graph"]}
+    req = {
+        "kb_id": [dataset_id],
+        "knowledge_graph_kwd": ["graph"]
+    }
 
     obj = {"graph": {}, "mind_map": {}}
     if not settings.docStoreConn.index_exist(search.index_name(kb.tenant_id), dataset_id):
@@ -509,29 +644,39 @@ async def knowledge_graph(tenant_id, dataset_id):
         obj["graph"]["nodes"] = sorted(obj["graph"]["nodes"], key=lambda x: x.get("pagerank", 0), reverse=True)[:256]
         if "edges" in obj["graph"]:
             node_id_set = {o["id"] for o in obj["graph"]["nodes"]}
-            filtered_edges = [o for o in obj["graph"]["edges"] if o["source"] != o["target"] and o["source"] in node_id_set and o["target"] in node_id_set]
+            filtered_edges = [o for o in obj["graph"]["edges"] if
+                              o["source"] != o["target"] and o["source"] in node_id_set and o["target"] in node_id_set]
             obj["graph"]["edges"] = sorted(filtered_edges, key=lambda x: x.get("weight", 0), reverse=True)[:128]
     return get_result(data=obj)
 
 
-@manager.route("/datasets/<dataset_id>/knowledge_graph", methods=["DELETE"])  # noqa: F821
+@manager.route('/datasets/<dataset_id>/knowledge_graph', methods=['DELETE'])  # noqa: F821
 @token_required
 def delete_knowledge_graph(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(
+            data=False,
+            message='No authorization.',
+            code=RetCode.AUTHENTICATION_ERROR
+        )
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
-    settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), dataset_id)
+    settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]},
+                                 search.index_name(kb.tenant_id), dataset_id)
 
     return get_result(data=True)
 
 
 @manager.route("/datasets/<dataset_id>/run_graphrag", methods=["POST"])  # noqa: F821
 @token_required
-def run_graphrag(tenant_id, dataset_id):
+def run_graphrag(tenant_id,dataset_id):
     if not dataset_id:
         return get_error_data_result(message='Lack of "Dataset ID"')
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(
+            data=False,
+            message='No authorization.',
+            code=RetCode.AUTHENTICATION_ERROR
+        )
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
@@ -573,11 +718,15 @@ def run_graphrag(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/trace_graphrag", methods=["GET"])  # noqa: F821
 @token_required
-def trace_graphrag(tenant_id, dataset_id):
+def trace_graphrag(tenant_id,dataset_id):
     if not dataset_id:
         return get_error_data_result(message='Lack of "Dataset ID"')
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(
+            data=False,
+            message='No authorization.',
+            code=RetCode.AUTHENTICATION_ERROR
+        )
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
@@ -596,11 +745,15 @@ def trace_graphrag(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/run_raptor", methods=["POST"])  # noqa: F821
 @token_required
-def run_raptor(tenant_id, dataset_id):
+def run_raptor(tenant_id,dataset_id):
     if not dataset_id:
         return get_error_data_result(message='Lack of "Dataset ID"')
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(
+            data=False,
+            message='No authorization.',
+            code=RetCode.AUTHENTICATION_ERROR
+        )
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
@@ -642,12 +795,16 @@ def run_raptor(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/trace_raptor", methods=["GET"])  # noqa: F821
 @token_required
-def trace_raptor(tenant_id, dataset_id):
+def trace_raptor(tenant_id,dataset_id):
     if not dataset_id:
         return get_error_data_result(message='Lack of "Dataset ID"')
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(
+            data=False,
+            message='No authorization.',
+            code=RetCode.AUTHENTICATION_ERROR
+        )
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
         return get_error_data_result(message="Invalid Dataset ID")

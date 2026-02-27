@@ -1,14 +1,12 @@
 import SvgIcon from '@/components/svg-icon';
+import Divider from '@/components/ui/divider';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useSelectParserList } from '@/hooks/use-user-setting-request';
-import { Col, Divider, Empty, Row, Typography } from 'antd';
 import DOMPurify from 'dompurify';
 import camelCase from 'lodash/camelCase';
 import { useMemo } from 'react';
 import { TagTabs } from './tag-tabs';
 import { ImageMap } from './utils';
-
-const { Text } = Typography;
 
 const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
   const parserList = useSelectParserList();
@@ -45,24 +43,29 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
             }}
           ></p>
           <h5 className="font-semibold text-base mt-4 mb-1">{`"${item.title}" ${t('methodExamples')}`}</h5>
-          <Text>{t('methodExamplesDescription')}</Text>
-          <Row gutter={[10, 10]} className="mt-4">
+          <span className="text-text-secondary">
+            {t('methodExamplesDescription')}
+          </span>
+          <div className="grid grid-cols-2 gap-2.5 mt-4">
             {imageList.map((x) => (
-              <Col span={12} key={x}>
-                <SvgIcon name={x} width={'100%'} className="w-full"></SvgIcon>
-              </Col>
+              <SvgIcon
+                name={x}
+                width={'100%'}
+                className="w-full"
+                key={x}
+              ></SvgIcon>
             ))}
-          </Row>
+          </div>
           <h5 className="font-semibold text-base mt-4 mb-1">
             {item.title} {t('dialogueExamplesTitle')}
           </h5>
           <Divider></Divider>
         </>
       ) : (
-        <Empty description={''} image={null}>
-          <p>{t('methodEmpty')}</p>
+        <div className="flex flex-col items-center justify-center py-8">
+          <p className="text-text-secondary mb-4">{t('methodEmpty')}</p>
           <SvgIcon name={'chunk-method/chunk-empty'} width={'100%'}></SvgIcon>
-        </Empty>
+        </div>
       )}
       {chunkMethod === 'tag' && <TagTabs></TagTabs>}
     </section>

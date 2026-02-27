@@ -15,13 +15,27 @@
 #
 
 import logging
+import ssl
 import time
 from minio import Minio
 from minio.commonconfig import CopySource
 from minio.error import S3Error, ServerError, InvalidResponseError
 from io import BytesIO
+import urllib3
 from common.decorator import singleton
 from common import settings
+
+
+def _build_minio_http_client():
+    """
+    Build an optional urllib3 HTTP client for MinIO when using SSL/TLS.
+    Respects MINIO.verify (default True) to allow self-signed certificates
+    when set to False.
+    """
+    verify = settings.MINIO.get("verify", True)
+    if verify is True or verify == "true" or verify == "1":
+        return None
+    return urllib3.PoolManager(cert_reqs=ssl.CERT_NONE)
 
 
 @singleton
@@ -30,8 +44,8 @@ class RAGFlowMinio:
         self.conn = None
         # Use `or None` to convert empty strings to None, ensuring single-bucket
         # mode is truly disabled when not configured
-        self.bucket = settings.MINIO.get("bucket", None) or None
-        self.prefix_path = settings.MINIO.get("prefix_path", None) or None
+        self.bucket = settings.MINIO.get('bucket', None) or None
+        self.prefix_path = settings.MINIO.get('prefix_path', None) or None
         self.__open__()
 
     @staticmethod
@@ -44,7 +58,7 @@ class RAGFlowMinio:
             actual_bucket = self.bucket if self.bucket else bucket
             if self.bucket:
                 # pass original identifier forward for use by other decorators
-                kwargs["_orig_bucket"] = original_bucket
+                kwargs['_orig_bucket'] = original_bucket
             return method(self, actual_bucket, *args, **kwargs)
 
         return wrapper
@@ -57,7 +71,7 @@ class RAGFlowMinio:
             # bucket name and forwarded the original identifier as `_orig_bucket`.
             # Prefer that original identifier when constructing the key path so
             # objects are stored under <physical-bucket>/<identifier>/...
-            orig_bucket = kwargs.pop("_orig_bucket", None)
+            orig_bucket = kwargs.pop('_orig_bucket', None)
 
             if self.prefix_path:
                 # If a prefix_path is configured, include it and then the identifier
@@ -83,9 +97,20 @@ class RAGFlowMinio:
             pass
 
         try:
-            self.conn = Minio(settings.MINIO["host"], access_key=settings.MINIO["user"], secret_key=settings.MINIO["password"], secure=False)
+            secure = settings.MINIO.get("secure", False)
+            if isinstance(secure, str):
+                secure = secure.lower() in ("true", "1", "yes")
+            http_client = _build_minio_http_client()
+            self.conn = Minio(
+                settings.MINIO["host"],
+                access_key=settings.MINIO["user"],
+                secret_key=settings.MINIO["password"],
+                secure=secure,
+                http_client=http_client,
+            )
         except Exception:
-            logging.exception("Fail to connect %s " % settings.MINIO["host"])
+            logging.exception(
+                "Fail to connect %s " % settings.MINIO["host"])
 
     def __close__(self):
         del self.conn
@@ -124,7 +149,10 @@ class RAGFlowMinio:
                 if not self.bucket and not self.conn.bucket_exists(bucket):
                     self.conn.make_bucket(bucket)
 
-                r = self.conn.put_object(bucket, fnm, BytesIO(binary), len(binary))
+                r = self.conn.put_object(bucket, fnm,
+                                         BytesIO(binary),
+                                         len(binary)
+                                         )
                 return r
             except Exception:
                 logging.exception(f"Fail to put {bucket}/{fnm}:")
@@ -211,7 +239,7 @@ class RAGFlowMinio:
 
     @use_default_bucket
     def remove_bucket(self, bucket, **kwargs):
-        orig_bucket = kwargs.pop("_orig_bucket", None)
+        orig_bucket = kwargs.pop('_orig_bucket', None)
         try:
             if self.bucket:
                 # Single bucket mode: remove objects with prefix
