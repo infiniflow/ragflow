@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
+
+	"github.com/google/uuid"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/model"
@@ -172,11 +175,18 @@ type ParameterConfig struct {
 
 // PromptConfig prompt configuration
 type PromptConfig struct {
-	System        string            `json:"system"`
-	Prologue      string            `json:"prologue"`
-	Parameters    []ParameterConfig `json:"parameters"`
-	EmptyResponse string            `json:"empty_response"`
-	TavilyAPIKey  string            `json:"tavily_api_key,omitempty"`
+	System           string            `json:"system"`
+	Prologue         string            `json:"prologue"`
+	Parameters       []ParameterConfig `json:"parameters"`
+	EmptyResponse    string            `json:"empty_response"`
+	TavilyAPIKey     string            `json:"tavily_api_key,omitempty"`
+	Keyword          bool              `json:"keyword,omitempty"`
+	Quote            bool              `json:"quote,omitempty"`
+	Reasoning        bool              `json:"reasoning,omitempty"`
+	RefineMultiturn  bool              `json:"refine_multiturn,omitempty"`
+	TocEnhance       bool              `json:"toc_enhance,omitempty"`
+	TTS              bool              `json:"tts,omitempty"`
+	UseKG            bool              `json:"use_kg,omitempty"`
 }
 
 // SetDialogRequest set dialog request
@@ -366,11 +376,18 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 		llmID = tenant.LLMID
 	}
 
-	// Convert prompt config to JSONMap
+	// Convert prompt config to JSONMap with all fields
 	promptConfigMap := model.JSONMap{
-		"system":         promptConfig.System,
-		"prologue":       promptConfig.Prologue,
-		"empty_response": promptConfig.EmptyResponse,
+		"system":            promptConfig.System,
+		"prologue":          promptConfig.Prologue,
+		"empty_response":    promptConfig.EmptyResponse,
+		"keyword":           promptConfig.Keyword,
+		"quote":             promptConfig.Quote,
+		"reasoning":         promptConfig.Reasoning,
+		"refine_multiturn":  promptConfig.RefineMultiturn,
+		"toc_enhance":       promptConfig.TocEnhance,
+		"tts":               promptConfig.TTS,
+		"use_kg":            promptConfig.UseKG,
 	}
 	if promptConfig.TavilyAPIKey != "" {
 		promptConfigMap["tavily_api_key"] = promptConfig.TavilyAPIKey
@@ -393,12 +410,28 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 	}
 
 	if isCreate {
+		// Generate UUID for new dialog
+		newID := uuid.New().String()
+		newID = strings.ReplaceAll(newID, "-", "")
+		if len(newID) > 32 {
+			newID = newID[:32]
+		}
+
+		// Get current time
+		now := time.Now()
+		createTime := now.UnixMilli()
+
+		// Set default language
+		language := "English"
+
 		// Create new dialog
 		chat := &model.Chat{
+			ID:                     newID,
 			TenantID:               tenantID,
 			Name:                   &name,
 			Description:            &description,
 			Icon:                   &req.Icon,
+			Language:               &language,
 			LLMID:                  llmID,
 			LLMSetting:             llmSetting,
 			PromptConfig:           promptConfigMap,
@@ -411,6 +444,10 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 			KBIDs:                  kbIDsJSON,
 			Status:                 strPtr("1"),
 		}
+		chat.CreateTime = createTime
+		chat.CreateDate = &now
+		chat.UpdateTime = &createTime
+		chat.UpdateDate = &now
 
 		if err := s.chatDAO.Create(chat); err != nil {
 			return nil, errors.New("Fail to new a dialog")
@@ -425,7 +462,9 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 		}, nil
 	}
 
-	// Update existing dialog
+	// Update existing dialog - also update update_time
+	now := time.Now()
+	updateTime := now.UnixMilli()
 	updateData := map[string]interface{}{
 		"name":                     name,
 		"description":              description,
@@ -440,6 +479,8 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 		"similarity_threshold":     similarityThreshold,
 		"vector_similarity_weight": vectorSimilarityWeight,
 		"kb_ids":                   kbIDsJSON,
+		"update_time":              updateTime,
+		"update_date":              now,
 	}
 
 	if err := s.chatDAO.UpdateByID(req.DialogID, updateData); err != nil {
