@@ -62,3 +62,13 @@ func (dao *TenantDAO) GetInfoByUserID(userID string) ([]*TenantInfo, error) {
 
 	return results, err
 }
+
+// GetByID gets tenant by ID
+func (dao *TenantDAO) GetByID(id string) (*model.Tenant, error) {
+	var tenant model.Tenant
+	err := DB.Where("id = ? AND status = ?", id, "1").First(&tenant).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tenant, nil
+}

@@ -117,6 +117,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		{
 			chat.GET("/list", r.chatHandler.ListChats)
 			chat.POST("/next", r.chatHandler.ListChatsNext)
+			chat.POST("/set", r.chatHandler.SetDialog)
 		}
 	}
 

@@ -158,3 +158,70 @@ func (h *ChatHandler) ListChatsNext(c *gin.Context) {
 		"message": "success",
 	})
 }
+
+// SetDialog create or update a dialog
+// @Summary Set Dialog
+// @Description Create or update a dialog (chat). If dialog_id is provided, updates existing dialog; otherwise creates new one.
+// @Tags chat
+// @Accept json
+// @Produce json
+// @Param request body service.SetDialogRequest true "dialog configuration"
+// @Success 200 {object} service.SetDialogResponse
+// @Router /v1/dialog/set [post]
+func (h *ChatHandler) SetDialog(c *gin.Context) {
+	// Get access token from Authorization header
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Missing Authorization header",
+		})
+		return
+	}
+
+	// Get user by access token
+	user, err := h.userService.GetUserByToken(token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Invalid access token",
+		})
+		return
+	}
+	userID := user.ID
+
+	// Parse request body
+	var req service.SetDialogRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Validate required field: prompt_config
+	if req.PromptConfig == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "prompt_config is required",
+		})
+		return
+	}
+
+	// Call service to set dialog
+	result, err := h.chatService.SetDialog(userID, &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    result,
+		"message": "success",
+	})
+}

@@ -138,3 +138,22 @@ func (dao *ChatDAO) GetByIDAndStatus(id string, status string) (*model.Chat, err
 	}
 	return &chat, nil
 }
+
+// GetExistingNames gets existing dialog names for a tenant
+func (dao *ChatDAO) GetExistingNames(tenantID string, status string) ([]string, error) {
+	var names []string
+	err := DB.Model(&model.Chat{}).
+		Where("tenant_id = ? AND status = ?", tenantID, status).
+		Pluck("name", &names).Error
+	return names, err
+}
+
+// Create creates a new chat/dialog
+func (dao *ChatDAO) Create(chat *model.Chat) error {
+	return DB.Create(chat).Error
+}
+
+// UpdateByID updates a chat by ID
+func (dao *ChatDAO) UpdateByID(id string, updates map[string]interface{}) error {
+	return DB.Model(&model.Chat{}).Where("id = ?", id).Updates(updates).Error
+}

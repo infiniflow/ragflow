@@ -124,3 +124,10 @@ func (dao *KnowledgebaseDAO) GetByIDAndTenantID(id, tenantID string) (*model.Kno
 	}
 	return &kb, nil
 }
+
+// GetByIDs gets knowledge bases by IDs
+func (dao *KnowledgebaseDAO) GetByIDs(ids []string) ([]*model.Knowledgebase, error) {
+	var kbs []*model.Knowledgebase
+	err := DB.Where("id IN ? AND status = ?", ids, "1").Find(&kbs).Error
+	return kbs, err
+}
