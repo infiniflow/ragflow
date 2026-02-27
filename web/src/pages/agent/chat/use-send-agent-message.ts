@@ -252,6 +252,7 @@ export const useSendAgentMessage = ({
     removeAllMessagesExceptFirst,
     scrollToBottom,
     addPrologue,
+    setDerivedMessages,
   } = useSelectDerivedMessages();
   const { addEventList: addEventListFun } = useContext(AgentChatLogContext);
   const {
@@ -267,17 +268,21 @@ export const useSendAgentMessage = ({
   const stopConversation = useCallback(() => {
     const taskId = answerList.at(0)?.task_id;
     stopOutputMessage();
-    stopMessage(taskId);
-  }, [answerList, stopMessage, stopOutputMessage]);
+    if (!isShared) {
+      stopMessage(taskId);
+    }
+  }, [answerList, isShared, stopMessage, stopOutputMessage]);
 
   const sendMessage = useCallback(
     async ({
       message,
       beginInputs,
+      exploreSessionId,
     }: {
       message: Message;
       messages?: Message[];
       beginInputs?: BeginQuery[];
+      exploreSessionId?: string;
     }) => {
       const params: Record<string, unknown> = {
         id: agentId,
@@ -297,7 +302,7 @@ export const useSendAgentMessage = ({
 
         params.files = uploadResponseList;
 
-        params.session_id = sessionId;
+        params.session_id = sessionId || exploreSessionId;
       }
 
       try {
@@ -364,28 +369,32 @@ export const useSendAgentMessage = ({
     removeAllMessagesExceptFirst,
   ]);
 
-  const handlePressEnter = useCallback(() => {
-    if (trim(value) === '') return;
-    const msgBody = buildRequestBody(value);
-    if (done) {
-      setValue('');
-      sendMessage({
-        message: msgBody,
-      });
-    }
-    addNewestOneQuestion({ ...msgBody, files: fileList });
-    setTimeout(() => {
-      scrollToBottom();
-    }, 100);
-  }, [
-    value,
-    done,
-    addNewestOneQuestion,
-    fileList,
-    setValue,
-    sendMessage,
-    scrollToBottom,
-  ]);
+  const handlePressEnter = useCallback(
+    ({ exploreSessionId }: { exploreSessionId?: string } = {}) => {
+      if (trim(value) === '') return;
+      const msgBody = buildRequestBody(value);
+      if (done) {
+        setValue('');
+        sendMessage({
+          message: msgBody,
+          exploreSessionId,
+        });
+      }
+      addNewestOneQuestion({ ...msgBody, files: fileList });
+      setTimeout(() => {
+        scrollToBottom();
+      }, 100);
+    },
+    [
+      value,
+      done,
+      addNewestOneQuestion,
+      fileList,
+      setValue,
+      sendMessage,
+      scrollToBottom,
+    ],
+  );
 
   const sendedTaskMessage = useRef<boolean>(false);
 
@@ -471,5 +480,7 @@ export const useSendAgentMessage = ({
     addNewestOneAnswer,
     sendMessage,
     removeFile,
+    setDerivedMessages,
+    addPrologue,
   };
 };

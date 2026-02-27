@@ -61,7 +61,8 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
         "embd_id": settings.EMBEDDING_MDL,
         "asr_id": settings.ASR_MDL,
         "parser_ids": settings.PARSERS,
-        "img2txt_id": settings.IMAGE2TEXT_MDL
+        "img2txt_id": settings.IMAGE2TEXT_MDL,
+        "rerank_id": settings.RERANK_MDL,
     }
     usr_tenant = {
         "tenant_id": user_info["id"],

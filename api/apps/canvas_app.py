@@ -111,7 +111,7 @@ def get(canvas_id):
 def getsse(canvas_id):
     token = request.headers.get('Authorization').split()
     if len(token) != 2:
-        return get_data_error_result(message='Authorization is not valid!"')
+        return get_data_error_result(message='Authorization is not valid!')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -633,9 +633,20 @@ def get_session(canvas_id, session_id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
-    conv = API4ConversationService.get_by_id(session_id)
+    _, conv = API4ConversationService.get_by_id(session_id)
     return get_json_result(data=conv.to_dict())
-    
+
+
+@manager.route('/<canvas_id>/sessions/<session_id>', methods=['DELETE'])  # noqa: F821
+@login_required
+def del_session(canvas_id, session_id):
+    tenant_id = current_user.id
+    if not UserCanvasService.accessible(canvas_id, tenant_id):
+        return get_json_result(
+            data=False, message='Only owner of canvas authorized for this operation.',
+            code=RetCode.OPERATING_ERROR)
+    return get_json_result(data=API4ConversationService.delete_by_id(session_id))
+
 
 @manager.route('/prompts', methods=['GET'])  # noqa: F821
 @login_required

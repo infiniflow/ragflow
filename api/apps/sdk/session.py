@@ -371,7 +371,10 @@ async def chat_completion_openai_like(tenant_id, chat_id):
                     if ans.get("final"):
                         if ans.get("answer"):
                             full_content = ans["answer"]
-                        final_answer = ans.get("answer") or full_content
+                            response["choices"][0]["delta"]["content"] = full_content
+                            response["choices"][0]["delta"]["reasoning_content"] = None
+                            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
+                        final_answer = full_content
                         final_reference = ans.get("reference", {})
                         continue
                     if ans.get("start_to_think"):
@@ -927,7 +930,7 @@ async def chatbot_completions(dialog_id):
 
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!"')
+        return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -953,7 +956,7 @@ async def chatbot_completions(dialog_id):
 async def chatbots_inputs(dialog_id):
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!"')
+        return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -979,7 +982,7 @@ async def agent_bot_completions(agent_id):
 
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!"')
+        return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -1002,7 +1005,7 @@ async def agent_bot_completions(agent_id):
 async def begin_inputs(agent_id):
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!"')
+        return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -1023,7 +1026,7 @@ async def begin_inputs(agent_id):
 async def ask_about_embedded():
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!"')
+        return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -1062,7 +1065,7 @@ async def ask_about_embedded():
 async def retrieval_test_embedded():
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!"')
+        return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -1191,7 +1194,7 @@ async def retrieval_test_embedded():
 async def related_questions_embedded():
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!"')
+        return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -1239,7 +1242,7 @@ Related search terms:
 async def detail_share_embedded():
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!"')
+        return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -1271,7 +1274,7 @@ async def detail_share_embedded():
 async def mindmap():
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!"')
+        return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:

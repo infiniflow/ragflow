@@ -14,6 +14,83 @@
 #  limitations under the License.
 #
 
+import importlib
+import sys
+import types
+
+
+def _make_stub_getattr(module_name):
+    def __getattr__(attr_name):
+        message = f"{module_name}.{attr_name} is stubbed in tests"
+
+        class _Stub:
+            def __init__(self, *_args, **_kwargs):
+                raise RuntimeError(message)
+
+            def __call__(self, *_args, **_kwargs):
+                raise RuntimeError(message)
+
+            def __getattr__(self, _name):
+                raise RuntimeError(message)
+
+        setattr(sys.modules[module_name], attr_name, _Stub)
+        return _Stub
+
+    return __getattr__
+
+
+def _install_rag_llm_stubs():
+    rag_llm = sys.modules.get("rag.llm")
+    if rag_llm is not None and getattr(rag_llm, "_rag_llm_stubbed", False):
+        return
+
+    try:
+        rag_pkg = importlib.import_module("rag")
+    except Exception:
+        rag_pkg = types.ModuleType("rag")
+        rag_pkg.__path__ = []
+        rag_pkg.__package__ = "rag"
+        rag_pkg.__file__ = __file__
+        sys.modules["rag"] = rag_pkg
+
+    llm_pkg = types.ModuleType("rag.llm")
+    llm_pkg.__path__ = []
+    llm_pkg.__package__ = "rag.llm"
+    llm_pkg.__file__ = __file__
+    sys.modules["rag.llm"] = llm_pkg
+    rag_pkg.llm = llm_pkg
+
+    llm_pkg.__getattr__ = _make_stub_getattr("rag.llm")
+
+    for submodule in ("cv_model", "chat_model"):
+        full_name = f"rag.llm.{submodule}"
+        sub_mod = sys.modules.get(full_name)
+        if sub_mod is None or not isinstance(sub_mod, types.ModuleType):
+            sub_mod = types.ModuleType(full_name)
+            sys.modules[full_name] = sub_mod
+        sub_mod.__package__ = "rag.llm"
+        sub_mod.__file__ = __file__
+        sub_mod.__getattr__ = _make_stub_getattr(full_name)
+        setattr(llm_pkg, submodule, sub_mod)
+
+    llm_pkg._rag_llm_stubbed = True
+
+
+def _install_scholarly_stub():
+    if "scholarly" in sys.modules:
+        return
+    stub = types.ModuleType("scholarly")
+
+    def _stub(*_args, **_kwargs):
+        raise RuntimeError("scholarly is stubbed in tests")
+
+    stub.scholarly = _stub
+    sys.modules["scholarly"] = stub
+
+
+_install_rag_llm_stubs()
+_install_scholarly_stub()
+
 import pytest
 import requests
 from configs import EMAIL, HOST_ADDRESS, PASSWORD, VERSION, ZHIPU_AI_API_KEY

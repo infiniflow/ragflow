@@ -1,4 +1,5 @@
 import message from '@/components/ui/message';
+import { Modal } from '@/components/ui/modal/modal';
 import { LanguageTranslationMap } from '@/constants/common';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
@@ -11,6 +12,8 @@ import {
   IUserInfo,
 } from '@/interfaces/database/user-setting';
 import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
+import { changeLanguageAsync } from '@/locales/config';
+import { Routes } from '@/routes';
 import userService, {
   addTenantUser,
   agreeTenant,
@@ -18,13 +21,12 @@ import userService, {
   listTenant,
   listTenantUser,
 } from '@/services/user-service';
-import { history } from '@/utils/simple-history-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Modal } from 'antd';
 import DOMPurify from 'dompurify';
 import { isEmpty } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
 
 export const enum UserSettingApiAction {
   UserInfo = 'userInfo',
@@ -54,11 +56,11 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
     queryFn: async () => {
       const { data } = await userService.user_info();
       if (data.code === 0) {
-        i18n.changeLanguage(
+        const targetLng =
           LanguageTranslationMap[
             data.data.language as keyof typeof LanguageTranslationMap
-          ],
-        );
+          ];
+        await changeLanguageAsync(targetLng);
       }
       return data?.data ?? {};
     },
@@ -71,6 +73,7 @@ export const useFetchTenantInfo = (
   showEmptyModelWarn = false,
 ): ResponseGetType<ITenantInfo> => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { data, isFetching: loading } = useQuery({
     queryKey: [UserSettingApiAction.TenantInfo, showEmptyModelWarn],
     initialData: {},
@@ -94,8 +97,11 @@ export const useFetchTenantInfo = (
                 }}
               ></div>
             ),
+            closable: false,
+            showCancel: false,
             onOk() {
-              history.push('/user-setting/model');
+              // window.open('/user-setting/model', '_self');
+              navigate(`${Routes.UserSetting}${Routes.Model}`);
             },
           });
         }

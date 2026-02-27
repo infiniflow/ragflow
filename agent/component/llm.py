@@ -126,29 +126,131 @@ class LLM(ComponentBase):
             msg.append(p)
         return msg, self.string_format(self._param.sys_prompt, args)
 
+    @staticmethod
+    def _extract_data_images(value) -> list[str]:
+        imgs = []
+
+        def walk(v):
+            if v is None:
+                return
+            if isinstance(v, str):
+                v = v.strip()
+                if v.startswith("data:image/"):
+                    imgs.append(v)
+                return
+            if isinstance(v, (list, tuple, set)):
+                for item in v:
+                    walk(item)
+                return
+            if isinstance(v, dict):
+                if "content" in v:
+                    walk(v.get("content"))
+                else:
+                    for item in v.values():
+                        walk(item)
+
+        walk(value)
+        return imgs
+
+    @staticmethod
+    def _uniq_images(images: list[str]) -> list[str]:
+        seen = set()
+        uniq = []
+        for img in images:
+            if not isinstance(img, str):
+                continue
+            if not img.startswith("data:image/"):
+                continue
+            if img in seen:
+                continue
+            seen.add(img)
+            uniq.append(img)
+        return uniq
+
+    @classmethod
+    def _remove_data_images(cls, value):
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            return None if value.strip().startswith("data:image/") else value
+
+        if isinstance(value, list):
+            cleaned = []
+            for item in value:
+                v = cls._remove_data_images(item)
+                if v is None:
+                    continue
+                if isinstance(v, (list, tuple, set, dict)) and not v:
+                    continue
+                cleaned.append(v)
+            return cleaned
+
+        if isinstance(value, tuple):
+            cleaned = []
+            for item in value:
+                v = cls._remove_data_images(item)
+                if v is None:
+                    continue
+                if isinstance(v, (list, tuple, set, dict)) and not v:
+                    continue
+                cleaned.append(v)
+            return tuple(cleaned)
+
+        if isinstance(value, set):
+            cleaned = []
+            for item in value:
+                v = cls._remove_data_images(item)
+                if v is None:
+                    continue
+                if isinstance(v, (list, tuple, set, dict)) and not v:
+                    continue
+                cleaned.append(v)
+            return cleaned
+
+        if isinstance(value, dict):
+            if value.get("type") in {"image_url", "input_image", "image"} and cls._extract_data_images(value):
+                return None
+
+            cleaned = {}
+            for k, item in value.items():
+                v = cls._remove_data_images(item)
+                if v is None:
+                    continue
+                if isinstance(v, (list, tuple, set, dict)) and not v:
+                    continue
+                cleaned[k] = v
+            return cleaned
+
+        return value
+
     def _prepare_prompt_variables(self):
+        self.imgs = []
         if self._param.visual_files_var:
-            self.imgs = self._canvas.get_variable_value(self._param.visual_files_var)
-            if not self.imgs:
-                self.imgs = []
-            self.imgs = [img for img in self.imgs if img[:len("data:image/")] == "data:image/"]
-            if self.imgs and TenantLLMService.llm_id2llm_type(self._param.llm_id) == LLMType.CHAT.value:
-                chat_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT.value, self._param.llm_id)
-                self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config,
-                                          max_retries=self._param.max_retries,
-                                          retry_interval=self._param.delay_after_error
-                                          )
+            self.imgs.extend(self._extract_data_images(self._canvas.get_variable_value(self._param.visual_files_var)))
 
         args = {}
         vars = self.get_input_elements() if not self._param.debug_inputs else self._param.debug_inputs
+        extracted_imgs = []
         for k, o in vars.items():
-            args[k] = o["value"]
+            raw_value = o["value"]
+            extracted_imgs.extend(self._extract_data_images(raw_value))
+            args[k] = self._remove_data_images(raw_value)
+            if args[k] is None:
+                args[k] = ""
             if not isinstance(args[k], str):
                 try:
                     args[k] = json.dumps(args[k], ensure_ascii=False)
                 except Exception:
                     args[k] = str(args[k])
             self.set_input_value(k, args[k])
+
+        self.imgs = self._uniq_images(self.imgs + extracted_imgs)
+        if self.imgs and TenantLLMService.llm_id2llm_type(self._param.llm_id) == LLMType.CHAT.value:
+            self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT.value,
+                                      self._param.llm_id, max_retries=self._param.max_retries,
+                                      retry_interval=self._param.delay_after_error
+                                      )
 
         msg, sys_prompt = self._sys_prompt_and_msg(self._canvas.get_history(self._param.message_history_window_size)[:-1], args)
         user_defined_prompt, sys_prompt = self._extract_prompts(sys_prompt)

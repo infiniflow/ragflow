@@ -238,7 +238,8 @@ class RDBMSConnector(LoadConnector, PollConnector):
                     doc_updated_at = ts_value
         
         first_content_col = self.content_columns[0] if self.content_columns else "record"
-        semantic_id = str(row_dict.get(first_content_col, "database_record"))[:100]
+        semantic_id = str(row_dict.get(first_content_col, "database_record")).replace("\n", " ").replace("\r", " ").strip()[:100]
+
         
         return Document(
             id=doc_id,
