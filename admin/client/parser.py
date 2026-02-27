@@ -88,6 +88,9 @@ sql_command: login_user
            | parse_dataset_async
            | import_docs_into_dataset
            | search_on_datasets
+           | create_chat_session
+           | drop_chat_session
+           | list_chat_sessions
            | benchmark
 
 // meta command definition
@@ -170,6 +173,8 @@ ASYNC: "ASYNC"i
 SYNC: "SYNC"i
 BENCHMARK: "BENCHMARK"i
 PING: "PING"i
+SESSION: "SESSION"i
+SESSIONS: "SESSIONS"i
 
 login_user: LOGIN USER quoted_string ";"
 list_services: LIST SERVICES ";"
@@ -246,6 +251,9 @@ user_statement: ping_server
                 | list_user_default_models
                 | import_docs_into_dataset
                 | search_on_datasets
+                | create_chat_session
+                | drop_chat_session
+                | list_chat_sessions
 
 ping_server: PING ";"
 show_current_user: SHOW CURRENT USER ";"
@@ -274,6 +282,9 @@ list_user_agents: LIST AGENTS ";"
 list_user_chats: LIST CHATS ";"
 create_user_chat: CREATE CHAT quoted_string ";"
 drop_user_chat: DROP CHAT quoted_string ";"
+create_chat_session: CREATE CHAT quoted_string SESSION quoted_string ";"
+drop_chat_session: DROP CHAT quoted_string SESSION quoted_string ";"
+list_chat_sessions: LIST CHAT quoted_string SESSIONS ";"
 list_user_model_providers: LIST MODEL PROVIDERS ";"
 list_user_default_models: LIST DEFAULT MODELS ";"
 import_docs_into_dataset: IMPORT quoted_string INTO DATASET quoted_string ";"
@@ -574,6 +585,20 @@ class RAGFlowCLITransformer(Transformer):
     def parse_dataset_async(self, items):
         dataset_name = items[2].children[0].strip("'\"")
         return {"type": "parse_dataset", "dataset_name": dataset_name, "method": "async"}
+
+    def create_chat_session(self, items):
+        chat_name = items[2].children[0].strip("'\"")
+        session_name = items[4].children[0].strip("'\"")
+        return {"type": "create_chat_session", "chat_name": chat_name, "session_name": session_name}
+
+    def drop_chat_session(self, items):
+        chat_name = items[2].children[0].strip("'\"")
+        session_name = items[4].children[0].strip("'\"")
+        return {"type": "drop_chat_session", "chat_name": chat_name, "session_name": session_name}
+
+    def list_chat_sessions(self, items):
+        chat_name = items[2].children[0].strip("'\"")
+        return {"type": "list_chat_sessions", "chat_name": chat_name}
 
     def import_docs_into_dataset(self, items):
         document_list_str = items[1].children[0].strip("'\"")

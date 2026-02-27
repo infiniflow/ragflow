@@ -881,6 +881,95 @@ class RAGFlowClient:
         else:
             print(f"Fail to drop chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
 
+    def _get_chat_id_by_name(self, chat_name):
+        """Get chat (dialog) ID by name."""
+        res_json = self._list_chats({})
+        if res_json is None:
+            return None
+        for elem in res_json:
+            if elem["name"] == chat_name:
+                return elem["id"]
+        print(f"Chat '{chat_name}' not found")
+        return None
+
+    def _list_chat_sessions(self, dialog_id):
+        """List all sessions (conversations) for a given dialog."""
+        response = self.http_client.request("GET", f"/conversation/list?dialog_id={dialog_id}", use_api_base=False,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200 and res_json["code"] == 0:
+            return res_json["data"]
+        else:
+            print(f"Fail to list chat sessions, code: {res_json['code']}, message: {res_json['message']}")
+            return None
+
+    def create_chat_session(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        chat_name = command["chat_name"]
+        session_name = command["session_name"]
+        dialog_id = self._get_chat_id_by_name(chat_name)
+        if dialog_id is None:
+            return
+        payload = {
+            "conversation_id": "",
+            "is_new": True,
+            "name": session_name,
+            "dialog_id": dialog_id
+        }
+        response = self.http_client.request("POST", "/conversation/set", json_body=payload, use_api_base=False,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200 and res_json["code"] == 0:
+            print(f"Success to create chat session '{session_name}' for chat: {chat_name}")
+        else:
+            print(f"Fail to create chat session '{session_name}' for chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def drop_chat_session(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        chat_name = command["chat_name"]
+        session_name = command["session_name"]
+        dialog_id = self._get_chat_id_by_name(chat_name)
+        if dialog_id is None:
+            return
+        sessions = self._list_chat_sessions(dialog_id)
+        if sessions is None:
+            return
+        to_drop_session_ids = []
+        for session in sessions:
+            if session["name"] == session_name:
+                to_drop_session_ids.append(session["id"])
+        if not to_drop_session_ids:
+            print(f"Chat session '{session_name}' not found in chat '{chat_name}'")
+            return
+        payload = {"conversation_ids": to_drop_session_ids}
+        response = self.http_client.request("POST", "/conversation/rm", json_body=payload, use_api_base=False,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200 and res_json["code"] == 0:
+            print(f"Success to drop chat session '{session_name}' from chat: {chat_name}")
+        else:
+            print(f"Fail to drop chat session '{session_name}' from chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def list_chat_sessions(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        chat_name = command["chat_name"]
+        dialog_id = self._get_chat_id_by_name(chat_name)
+        if dialog_id is None:
+            return
+        sessions = self._list_chat_sessions(dialog_id)
+        if sessions is None:
+            return
+        # Add chat_name to each session for display
+        for session in sessions:
+            session["chat_name"] = chat_name
+        if "iterations" in command:
+            # for benchmark
+            return sessions
+        self._print_table_simple(sessions)
+
     def list_user_model_providers(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
@@ -1368,6 +1457,12 @@ def run_command(client: RAGFlowClient, command_dict: dict):
             client.create_user_chat(command_dict)
         case "drop_user_chat":
             client.drop_user_chat(command_dict)
+        case "create_chat_session":
+            client.create_chat_session(command_dict)
+        case "drop_chat_session":
+            client.drop_chat_session(command_dict)
+        case "list_chat_sessions":
+            return client.list_chat_sessions(command_dict)
         case "list_user_model_providers":
             client.list_user_model_providers(command_dict)
         case "list_user_default_models":
