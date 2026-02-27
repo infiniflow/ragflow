@@ -1,6 +1,9 @@
 import { LargeModelFormFieldWithoutFilter } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
-import { NextMessageInput } from '@/components/message-input/next';
+import {
+  NextMessageInput,
+  NextMessageInputOnPressEnterParameter,
+} from '@/components/message-input/next';
 import MessageItem from '@/components/message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
@@ -13,20 +16,30 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { MessageType } from '@/constants/chat';
-import { useScrollToBottom } from '@/hooks/logic-hooks';
+import {
+  useHandleMessageInputChange,
+  useScrollToBottom,
+} from '@/hooks/logic-hooks';
 import {
   useFetchDialog,
   useGetChatSearchParams,
   useSetDialog,
 } from '@/hooks/use-chat-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
-import { IClientConversation, IMessage } from '@/interfaces/database/chat';
+import { IClientConversation } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
-import { isEmpty, omit } from 'lodash';
+import { isEmpty, omit, trim } from 'lodash';
 import { ListCheck, Plus, Trash2 } from 'lucide-react';
-import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useParams } from 'react-router';
 import { z } from 'zod';
@@ -34,9 +47,15 @@ import {
   useGetSendButtonDisabled,
   useSendButtonDisabled,
 } from '../../hooks/use-button-disabled';
+import { useCreateConversationBeforeSendMessage } from '../../hooks/use-chat-url';
 import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
 import { useSendMessage } from '../../hooks/use-send-chat-message';
-import { useSendMultipleChatMessage } from '../../hooks/use-send-multiple-message';
+import {
+  HandlePressEnterType,
+  useSendSingleMessage,
+  UseSendSingleMessageParameter,
+} from '../../hooks/use-send-single-message';
+import { useUploadFile } from '../../hooks/use-upload-file';
 import { buildMessageItemReference } from '../../utils';
 import { useAddChatBox } from '../use-add-box';
 import { useShowInternet } from '../use-show-internet';
@@ -55,14 +74,14 @@ type MultipleChatBoxProps = {
 type ChatCardProps = {
   id: string;
   idx: number;
-  derivedMessages: IMessage[];
-  sendLoading: boolean;
   conversation: IClientConversation;
+  setLoading(id: string, loading: boolean): void;
 } & Pick<
   MultipleChatBoxProps,
   'controller' | 'removeChatBox' | 'addChatBox' | 'chatBoxIds'
 > &
-  Pick<ReturnType<typeof useClickDrawer>, 'clickDocumentButton'>;
+  Pick<ReturnType<typeof useClickDrawer>, 'clickDocumentButton'> &
+  UseSendSingleMessageParameter;
 
 const ChatCard = forwardRef(function ChatCard(
   {
@@ -72,17 +91,29 @@ const ChatCard = forwardRef(function ChatCard(
     idx,
     addChatBox,
     chatBoxIds,
-    derivedMessages,
-    sendLoading,
     clickDocumentButton,
     conversation,
+    value,
+    setValue,
+    files,
+    clearFiles,
+    setLoading,
   }: ChatCardProps,
   ref,
 ) {
   const { id: dialogId } = useParams();
   const { setDialog } = useSetDialog();
 
-  const { regenerateMessage, removeMessageById } = useSendMessage(controller);
+  const { removeMessageById, derivedMessages, handlePressEnter, sendLoading } =
+    useSendSingleMessage({
+      controller,
+      value,
+      setValue,
+      files,
+      clearFiles,
+    });
+
+  const { regenerateMessage } = useSendMessage(controller);
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
@@ -120,9 +151,15 @@ const ChatCard = forwardRef(function ChatCard(
     });
   }, [currentDialog, dialogId, form, setDialog]);
 
-  useImperativeHandle(ref, () => ({
-    getFormData: () => form.getValues(),
-  }));
+  useImperativeHandle(
+    ref,
+    (): HandlePressEnterType => (params) =>
+      handlePressEnter({ ...params, ...form.getValues() }),
+  );
+
+  useEffect(() => {
+    setLoading(id, sendLoading);
+  }, [id, sendLoading, setLoading]);
 
   return (
     <Card className="bg-transparent border flex-1 flex flex-col">
@@ -209,25 +246,66 @@ export function MultipleChatBox({
   stopOutputMessage,
   conversation,
 }: MultipleChatBoxProps) {
-  const {
-    value,
-    sendLoading,
-    messageRecord,
-    handleInputChange,
-    handlePressEnter,
-    setFormRef,
-    handleUploadFile,
-  } = useSendMultipleChatMessage(controller, chatBoxIds);
+  const { createConversationBeforeSendMessage } =
+    useCreateConversationBeforeSendMessage();
 
   const { createConversationBeforeUploadDocument } =
     useCreateConversationBeforeUploadDocument();
   const { conversationId } = useGetChatSearchParams();
   const disabled = useGetSendButtonDisabled();
-  const sendDisabled = useSendButtonDisabled(value);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
+  const [chatBoxLoading, setChatBoxLoading] = useState<Map<string, boolean>>(
+    new Map(),
+  );
+
+  const setLoading = useCallback((id: string, loading: boolean) => {
+    setChatBoxLoading((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(id, loading);
+      return newMap;
+    });
+  }, []);
+
+  const allChatBoxLoading = [...chatBoxLoading.values()];
+
   const showInternet = useShowInternet();
+
+  const { handleInputChange, value, setValue } = useHandleMessageInputChange();
+  const { handleUploadFile, isUploading, files, clearFiles, removeFile } =
+    useUploadFile();
+  const sendDisabled = useSendButtonDisabled(value);
+
+  const boxesRef = useRef<Record<string, HandlePressEnterType>>({});
+
+  const setFormRef = (id: string) => (ref: HandlePressEnterType) => {
+    boxesRef.current[id] = ref;
+  };
+
+  const handlePressEnter = useCallback(
+    async ({
+      enableInternet,
+      enableThinking,
+    }: NextMessageInputOnPressEnterParameter) => {
+      if (trim(value) === '') return;
+
+      const data = await createConversationBeforeSendMessage(value);
+
+      if (data === undefined) {
+        return;
+      }
+
+      Object.values(boxesRef.current).forEach((box) => {
+        box?.({
+          enableInternet,
+          enableThinking,
+          ...data,
+        });
+      });
+    },
+    [createConversationBeforeSendMessage, value],
+  );
 
   return (
     <section className="h-full flex flex-col px-5">
@@ -241,11 +319,14 @@ export function MultipleChatBox({
             chatBoxIds={chatBoxIds}
             removeChatBox={removeChatBox}
             addChatBox={addChatBox}
-            derivedMessages={messageRecord[id]}
             ref={setFormRef(id)}
-            sendLoading={sendLoading}
             clickDocumentButton={clickDocumentButton}
             conversation={conversation}
+            value={value}
+            files={files}
+            setValue={setValue}
+            clearFiles={clearFiles}
+            setLoading={setLoading}
           ></ChatCard>
         ))}
       </div>
@@ -253,7 +334,7 @@ export function MultipleChatBox({
         <NextMessageInput
           disabled={disabled}
           sendDisabled={sendDisabled}
-          sendLoading={sendLoading}
+          sendLoading={allChatBoxLoading.some((loading) => loading)}
           value={value}
           resize="vertical"
           onInputChange={handleInputChange}
@@ -266,6 +347,8 @@ export function MultipleChatBox({
           onUpload={handleUploadFile}
           showReasoning
           showInternet={showInternet}
+          removeFile={removeFile}
+          isUploading={isUploading}
         />
       </div>
       {visible && (
