@@ -38,7 +38,7 @@ import concurrent.futures
 from io import BytesIO
 from typing import Optional
 
-import logging import logger
+import logging as logger
 from rag.nlp import rag_tokenizer
 from deepdoc.parser.utils import get_text
 
