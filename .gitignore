@@ -211,3 +211,9 @@ backup
 # Added by cargo
 
 /target
+
+# Local secrets and environment overrides
+.env
+docker/.env.dev
+docker/service_conf.yaml
+docker/nginx/ssl/

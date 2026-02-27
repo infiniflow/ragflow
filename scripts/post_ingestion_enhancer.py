@@ -44,10 +44,7 @@ MYSQL_USER = os.getenv("MYSQL_USER", "root")
 MYSQL_PASS = os.getenv("MYSQL_PASS", "infini_rag_flow")
 MYSQL_DB = os.getenv("MYSQL_DB", "rag_flow")
 
-SILICONFLOW_API_KEY = os.getenv(
-    "SILICONFLOW_API_KEY",
-    "sk-xohmuypatfclkharmftloafjbtebxkvfotsigwavehwrqpkz",
-)
+SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "")
 SILICONFLOW_BASE = os.getenv("SILICONFLOW_BASE", "https://api.siliconflow.cn/v1")
 LLM_MODEL = os.getenv("LLM_MODEL", "Pro/MiniMaxAI/MiniMax-M2.5")
 
