@@ -37,10 +37,10 @@ import concurrent.futures
 from io import BytesIO
 from typing import Optional
 
+from logging as logger
 from rag.nlp import rag_tokenizer
 from common.string_utils import remove_redundant_spaces
 from deepdoc.parser.utils import get_text
-import logging as logger
 
 # json_repair 用于修复 LLM 返回的不规范 JSON（参考 SmartResume 的容错策略）
 try:
@@ -946,7 +946,7 @@ def _parse_json_with_repair(text: str) -> dict:
     raise json.JSONDecodeError("所有 JSON 修复策略均失败", text, 0)
 
 
-def _call_llm(prompt: str,tenant_id, lang: str) -> Optional[dict]:
+def _call_llm(prompt: str, tenant_id , lang: str) -> Optional[dict]:
     """
     调用 LLM 并解析 JSON 响应（参考 SmartResume 的重试 + 容错策略）
 
@@ -1016,6 +1016,97 @@ def _normalize_for_comparison(text: str) -> str:
     text = re.sub(r'\s+', '', text)
     return text.lower()
 
+def _calc_single_exp_years(start_str: str, end_str: str) -> float:
+    """
+    计算单段经历的年限
+
+    参数:
+        start_str: 起始日期字符串
+        end_str: 结束日期字符串（"至今" 等表示当前）
+    返回:
+        年限（浮点数，保留1位小数），无法计算返回 0
+    """
+    from datetime import datetime
+
+    start_str = str(start_str).strip()
+    end_str = str(end_str).strip()
+    if not start_str:
+        return 0
+
+    start_date = _parse_date_str(start_str)
+    if not start_date:
+        return 0
+
+    if end_str in ("至今", "现在", "present", "Present", "now", "Now", ""):
+        end_date = datetime.now()
+    else:
+        end_date = _parse_date_str(end_str)
+        if not end_date:
+            end_date = datetime.now()
+
+    months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
+    if months <= 0:
+        return 0
+    return round(months / 12.0, 1)
+
+
+def _calculate_work_years(experiences: list[dict]) -> float:
+    """
+    根据每段工作经历的起止日期计算总工作年限
+
+    参数:
+        experiences: 工作经历列表，每项包含 start_date、end_date 字段
+    返回:
+        总工作年限（浮点数），无法计算时返回 0
+    """
+    total = 0.0
+    for exp in experiences:
+        total += _calc_single_exp_years(
+            exp.get("start_date", ""), exp.get("end_date", "")
+        )
+    return round(total, 1)
+
+
+def _parse_date_str(date_str: str) -> Optional["datetime"]:
+    """
+    解析日期字符串，支持多种常见格式
+
+    支持格式:
+    - 2024.1 / 2024.01
+    - 2024-1 / 2024-01
+    - 2024/1 / 2024/01
+    - 2024年1月
+    - 2024（仅年份，默认1月）
+
+    参数:
+        date_str: 日期字符串
+    返回:
+        datetime 对象，解析失败返回 None
+    """
+    from datetime import datetime
+
+    date_str = date_str.strip()
+    # 尝试匹配 年.月 / 年-月 / 年/月 / 年年月月
+    patterns = [
+        (r"((?:19|20)\d{2})[.\-/年](\d{1,2})", "%Y-%m"),
+        (r"^((?:19|20)\d{2})$", "%Y"),
+    ]
+    for pattern, _ in patterns:
+        m = re.search(pattern, date_str)
+        if m:
+            try:
+                year = int(m.group(1))
+                month = int(m.group(2)) if len(m.groups()) > 1 else 1
+                # 月份范围校验
+                if month < 1 or month > 12:
+                    month = 1
+                return datetime(year, month, 1)
+            except (ValueError, IndexError):
+                continue
+    return None
+
+
+
 
 def _extract_description_from_range(
         index_range: list, lines: list[str],
@@ -1069,7 +1160,7 @@ def _extract_description_from_range(
     return "\n".join(line.strip() for line in extracted_lines if line.strip())
 
 
-def _extract_basic_info(indexed_text: str, tenant_id, lang: str) -> Optional[dict]:
+def _extract_basic_info(indexed_text: str,tenant_id, lang: str) -> Optional[dict]:
     """提取基本信息（子任务1）
 
     基本信息通常在简历开头，截取前 8000 字符即可覆盖
@@ -1087,7 +1178,7 @@ def _extract_work_experience(indexed_text: str,tenant_id, lang: str) -> Optional
     return _call_llm(prompt,tenant_id, lang)
 
 
-def _extract_education(indexed_text: str, tenant_id, lang: str) -> Optional[dict]:
+def _extract_education(indexed_text: str,tenant_id, lang: str) -> Optional[dict]:
     """提取教育背景（子任务3）
 
     教育背景通常在简历末尾，必须使用完整文本避免截断
@@ -1097,13 +1188,13 @@ def _extract_education(indexed_text: str, tenant_id, lang: str) -> Optional[dict
     return _call_llm(prompt,tenant_id, lang)
 
 
-def _extract_project_experience(indexed_text: str ,tenant_id, lang: str) -> Optional[dict]:
+def _extract_project_experience(indexed_text: str,tenant_id, lang: str) -> Optional[dict]:
     """提取项目经验（子任务4，使用索引指针）
 
     项目经验可能分布在简历中后部，使用完整文本避免截断
     """
     prompt = PROJECT_EXP_PROMPT.format(indexed_text=indexed_text)
-    return _call_llm(prompt, tenant_id, lang)
+    return _call_llm(prompt, lang)
 
 
 def parse_with_llm(indexed_text: str, lines: list[str], tenant_id, lang: str) -> Optional[dict]:
@@ -1126,7 +1217,7 @@ def parse_with_llm(indexed_text: str, lines: list[str], tenant_id, lang: str) ->
     try:
         # 并行执行四个子任务
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            future_basic = executor.submit(_extract_basic_info, indexed_text, tenant_id, lang)
+            future_basic = executor.submit(_extract_basic_info, indexed_text,tenant_id, lang)
             future_work = executor.submit(_extract_work_experience, indexed_text,tenant_id, lang)
             future_edu = executor.submit(_extract_education, indexed_text,tenant_id, lang)
             future_project = executor.submit(_extract_project_experience, indexed_text,tenant_id, lang)
@@ -1150,13 +1241,27 @@ def parse_with_llm(indexed_text: str, lines: list[str], tenant_id, lang: str) ->
             companies = []
             positions = []
             work_descs = []
+            # 保存每段经历的详细信息（时间、年限），供 chunk 生成时使用
+            work_exp_details = []
             for exp in experiences:
                 company = exp.get("company", "")
                 position = exp.get("position", "")
+                start_date = exp.get("start_date", "")
+                end_date = exp.get("end_date", "")
+                # 计算该段经历的年限
+                years = _calc_single_exp_years(start_date, end_date)
                 if company:
                     companies.append(company)
                 if position:
                     positions.append(position)
+                # 保存每段经历的详细信息
+                work_exp_details.append({
+                    "company": company,
+                    "position": position,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "years": years,
+                })
                 # 索引指针机制: 用行号范围从原文回提取描述
                 # 使用 _extract_description_from_range 过滤标题行（参考 SmartResume）
                 desc_lines = exp.get("desc_lines", [])
@@ -1174,7 +1279,14 @@ def parse_with_llm(indexed_text: str, lines: list[str], tenant_id, lang: str) ->
                 resume["position_name_tks"] = positions
             if work_descs:
                 resume["work_desc_tks"] = work_descs
-            logger.info(f"工作经历提取成功: {len(experiences)} 段")
+            # 保存每段经历详情，供 _build_chunk_document 使用
+            if work_exp_details:
+                resume["_work_exp_details"] = work_exp_details
+            # 根据每段经历的起止日期计算总工作年限（覆盖 LLM 基本信息中的猜测值）
+            calculated_years = _calculate_work_years(experiences)
+            if calculated_years > 0:
+                resume["work_exp_flt"] = calculated_years
+            logger.info(f"工作经历提取成功: {len(experiences)} 段, 计算总年限: {calculated_years}")
 
         # 处理教育背景
         if education and "education" in education:
@@ -1571,7 +1683,7 @@ def _postprocess_resume(resume: dict, lines: list[str]) -> dict:
 # ==================== Pipeline 编排与 Chunk 构建 ====================
 
 
-def parse_resume(filename: str, binary: bytes, tenant_id, lang: str = "Chinese") -> tuple[dict, list[str], list[dict]]:
+def parse_resume(filename: str, binary: bytes,tenant_id, lang: str = "Chinese") -> tuple[dict, list[str], list[dict]]:
     """
     简历解析 Pipeline 编排函数
 
@@ -1598,7 +1710,7 @@ def parse_resume(filename: str, binary: bytes, tenant_id, lang: str = "Chinese")
         return {"name_kwd": "未知"}, [], []
 
     # 第二阶段: 并行 LLM 结构化提取
-    resume = parse_with_llm(indexed_text, lines, tenant_id, lang)
+    resume = parse_with_llm(indexed_text, lines, tenant_id , lang)
 
     # 第三阶段: LLM 失败时降级到正则解析
     if not resume:
@@ -1793,6 +1905,8 @@ def _build_chunk_document(filename: str, resume: dict,
             # 获取公司名列表，用于给每段工作描述添加上下文
             corp_list = resume.get("corp_nm_tks", []) if field_key == "work_desc_tks" else []
             project_list = resume.get("project_tks", []) if field_key == "project_desc_tks" else []
+            # 获取每段工作经历的详细信息（时间、年限）
+            work_details = resume.get("_work_exp_details", []) if field_key == "work_desc_tks" else []
 
             for idx, item in enumerate(value):
                 item_text = str(item).strip()
@@ -1800,7 +1914,28 @@ def _build_chunk_document(filename: str, resume: dict,
                     continue
 
                 # 为每段描述添加公司/项目名称前缀，提供上下文
-                if field_key == "work_desc_tks" and idx < len(corp_list):
+                if field_key == "work_desc_tks" and idx < len(work_details):
+                    # 使用详细信息构建前缀，包含公司、时间范围、年限
+                    detail = work_details[idx]
+                    company = detail.get("company", "")
+                    start_d = detail.get("start_date", "")
+                    end_d = detail.get("end_date", "")
+                    years = detail.get("years", 0)
+                    # 构建时间范围文本
+                    time_parts = []
+                    if start_d:
+                        time_range = f"{start_d}-{end_d}" if end_d else str(start_d)
+                        time_parts.append(time_range)
+                    if years > 0:
+                        time_parts.append(f"{years}年")
+                    time_text = " ".join(time_parts)
+                    if company and time_text:
+                        content_prefix = f"{field_desc}（{company} {time_text}）"
+                    elif company:
+                        content_prefix = f"{field_desc}（{company}）"
+                    else:
+                        content_prefix = f"{field_desc}（第{idx + 1}段）"
+                elif field_key == "work_desc_tks" and idx < len(corp_list):
                     content_prefix = f"{field_desc}（{corp_list[idx]}）"
                 elif field_key == "project_desc_tks" and idx < len(project_list):
                     content_prefix = f"{field_desc}（{project_list[idx]}）"
@@ -1918,7 +2053,7 @@ def _build_chunk_document(filename: str, resume: dict,
     return chunks
 
 
-def chunk(filename, binary, tenant_id,
+def chunk(filename, binary,tenant_id , from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):
     """
     简历解析入口函数（与 task_executor.py 兼容）
