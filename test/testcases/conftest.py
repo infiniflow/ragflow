@@ -13,13 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import sys
-from pathlib import Path
-from urllib.parse import urlsplit
-
 import importlib
+from pathlib import Path
 import sys
 import types
+from urllib.parse import urlsplit
 
 
 def _make_stub_getattr(module_name):
