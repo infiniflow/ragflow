@@ -175,21 +175,21 @@ type ParameterConfig struct {
 
 // PromptConfig prompt configuration
 type PromptConfig struct {
-	System           string            `json:"system"`
-	Prologue         string            `json:"prologue"`
-	Parameters       []ParameterConfig `json:"parameters"`
-	EmptyResponse    string            `json:"empty_response"`
-	TavilyAPIKey     string            `json:"tavily_api_key,omitempty"`
-	Keyword          bool              `json:"keyword,omitempty"`
-	Quote            bool              `json:"quote,omitempty"`
-	Reasoning        bool              `json:"reasoning,omitempty"`
-	RefineMultiturn  bool              `json:"refine_multiturn,omitempty"`
-	TocEnhance       bool              `json:"toc_enhance,omitempty"`
-	TTS              bool              `json:"tts,omitempty"`
-	UseKG            bool              `json:"use_kg,omitempty"`
+	System          string            `json:"system"`
+	Prologue        string            `json:"prologue"`
+	Parameters      []ParameterConfig `json:"parameters"`
+	EmptyResponse   string            `json:"empty_response"`
+	TavilyAPIKey    string            `json:"tavily_api_key,omitempty"`
+	Keyword         bool              `json:"keyword,omitempty"`
+	Quote           bool              `json:"quote,omitempty"`
+	Reasoning       bool              `json:"reasoning,omitempty"`
+	RefineMultiturn bool              `json:"refine_multiturn,omitempty"`
+	TocEnhance      bool              `json:"toc_enhance,omitempty"`
+	TTS             bool              `json:"tts,omitempty"`
+	UseKG           bool              `json:"use_kg,omitempty"`
 }
 
-// SetDialogRequest set dialog request
+// SetDialogRequest set chat request
 type SetDialogRequest struct {
 	DialogID               string                 `json:"dialog_id,omitempty"`
 	Name                   string                 `json:"name,omitempty"`
@@ -207,13 +207,13 @@ type SetDialogRequest struct {
 	LLMID                  string                 `json:"llm_id,omitempty"`
 }
 
-// SetDialogResponse set dialog response
+// SetDialogResponse set chat response
 type SetDialogResponse struct {
 	*model.Chat
 	KBNames []string `json:"kb_names"`
 }
 
-// SetDialog create or update a dialog
+// SetDialog create or update a chat
 func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialogResponse, error) {
 	// Determine if this is a create or update operation
 	isCreate := req.DialogID == ""
@@ -270,7 +270,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 	// Set default values
 	description := req.Description
 	if description == "" {
-		description = "A helpful dialog"
+		description = "A helpful chat"
 	}
 
 	topN := req.TopN
@@ -378,16 +378,16 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 
 	// Convert prompt config to JSONMap with all fields
 	promptConfigMap := model.JSONMap{
-		"system":            promptConfig.System,
-		"prologue":          promptConfig.Prologue,
-		"empty_response":    promptConfig.EmptyResponse,
-		"keyword":           promptConfig.Keyword,
-		"quote":             promptConfig.Quote,
-		"reasoning":         promptConfig.Reasoning,
-		"refine_multiturn":  promptConfig.RefineMultiturn,
-		"toc_enhance":       promptConfig.TocEnhance,
-		"tts":               promptConfig.TTS,
-		"use_kg":            promptConfig.UseKG,
+		"system":           promptConfig.System,
+		"prologue":         promptConfig.Prologue,
+		"empty_response":   promptConfig.EmptyResponse,
+		"keyword":          promptConfig.Keyword,
+		"quote":            promptConfig.Quote,
+		"reasoning":        promptConfig.Reasoning,
+		"refine_multiturn": promptConfig.RefineMultiturn,
+		"toc_enhance":      promptConfig.TocEnhance,
+		"tts":              promptConfig.TTS,
+		"use_kg":           promptConfig.UseKG,
 	}
 	if promptConfig.TavilyAPIKey != "" {
 		promptConfigMap["tavily_api_key"] = promptConfig.TavilyAPIKey
@@ -410,7 +410,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 	}
 
 	if isCreate {
-		// Generate UUID for new dialog
+		// Generate UUID for new chat
 		newID := uuid.New().String()
 		newID = strings.ReplaceAll(newID, "-", "")
 		if len(newID) > 32 {
@@ -424,7 +424,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 		// Set default language
 		language := "English"
 
-		// Create new dialog
+		// Create new chat
 		chat := &model.Chat{
 			ID:                     newID,
 			TenantID:               tenantID,
@@ -450,7 +450,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 		chat.UpdateDate = &now
 
 		if err := s.chatDAO.Create(chat); err != nil {
-			return nil, errors.New("Fail to new a dialog")
+			return nil, errors.New("Fail to new a chat")
 		}
 
 		// Get KB names
@@ -462,7 +462,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 		}, nil
 	}
 
-	// Update existing dialog - also update update_time
+	// Update existing chat - also update update_time
 	now := time.Now()
 	updateTime := now.UnixMilli()
 	updateData := map[string]interface{}{
@@ -487,10 +487,10 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 		return nil, errors.New("Dialog not found")
 	}
 
-	// Get updated dialog
+	// Get updated chat
 	chat, err := s.chatDAO.GetByID(req.DialogID)
 	if err != nil {
-		return nil, errors.New("Fail to update a dialog")
+		return nil, errors.New("Fail to update a chat")
 	}
 
 	// Get KB names
@@ -548,6 +548,52 @@ func getEmbdIDs(kbs []*model.Knowledgebase) []string {
 		ids[i] = kb.EmbdID
 	}
 	return ids
+}
+
+// RemoveChats removes dialogs by setting their status to invalid (soft delete)
+// Only the owner of the chat can perform this operation
+func (s *ChatService) RemoveChats(userID string, chatIDs []string) error {
+	// Get user's tenants
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return err
+	}
+
+	// Build a set of user's tenant IDs for quick lookup
+	tenantIDSet := make(map[string]bool)
+	for _, tid := range tenantIDs {
+		tenantIDSet[tid] = true
+	}
+	// Also add userID itself as a tenant (for cases where tenant_id = user_id)
+	tenantIDSet[userID] = true
+
+	// Check each chat and build update list
+	var updates []map[string]interface{}
+	for _, chatID := range chatIDs {
+		// Get the chat to check ownership
+		chat, err := s.chatDAO.GetByID(chatID)
+		if err != nil {
+			return fmt.Errorf("chat not found: %s", chatID)
+		}
+
+		// Check if user is the owner (chat's tenant_id must be in user's tenants)
+		if !tenantIDSet[chat.TenantID] {
+			return errors.New("only owner of chat authorized for this operation")
+		}
+
+		// Add to update list (soft delete by setting status to "0")
+		updates = append(updates, map[string]interface{}{
+			"id":     chatID,
+			"status": "0",
+		})
+	}
+
+	// Batch update all dialogs
+	if err := s.chatDAO.UpdateManyByID(updates); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // strPtr returns a pointer to a string

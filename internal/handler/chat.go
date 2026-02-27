@@ -225,3 +225,74 @@ func (h *ChatHandler) SetDialog(c *gin.Context) {
 		"message": "success",
 	})
 }
+
+// RemoveDialogsRequest remove dialogs request
+type RemoveDialogsRequest struct {
+	DialogIDs []string `json:"dialog_ids" binding:"required"`
+}
+
+// RemoveChats remove/delete dialogs (soft delete by setting status to invalid)
+// @Summary Remove Dialogs
+// @Description Remove dialogs by setting their status to invalid. Only the owner of the dialog can perform this operation.
+// @Tags chat
+// @Accept json
+// @Produce json
+// @Param request body RemoveDialogsRequest true "dialog IDs to remove"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/dialog/rm [post]
+func (h *ChatHandler) RemoveChats(c *gin.Context) {
+	// Get access token from Authorization header
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Missing Authorization header",
+		})
+		return
+	}
+
+	// Get user by access token
+	user, err := h.userService.GetUserByToken(token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Invalid access token",
+		})
+		return
+	}
+	userID := user.ID
+
+	// Parse request body
+	var req RemoveDialogsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Call service to remove dialogs
+	if err := h.chatService.RemoveChats(userID, req.DialogIDs); err != nil {
+		// Check if it's an authorization error
+		if err.Error() == "only owner of chat authorized for this operation" {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"data":    false,
+				"message": err.Error(),
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    true,
+		"message": "success",
+	})
+}

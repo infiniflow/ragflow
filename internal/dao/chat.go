@@ -1,6 +1,7 @@
 package dao
 
 import (
+	"fmt"
 	"strings"
 
 	"ragflow/internal/model"
@@ -156,4 +157,40 @@ func (dao *ChatDAO) Create(chat *model.Chat) error {
 // UpdateByID updates a chat by ID
 func (dao *ChatDAO) UpdateByID(id string, updates map[string]interface{}) error {
 	return DB.Model(&model.Chat{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// UpdateManyByID updates multiple chats by ID (batch update)
+func (dao *ChatDAO) UpdateManyByID(updates []map[string]interface{}) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	// Use transaction for batch update
+	tx := DB.Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+
+	for _, update := range updates {
+		id, ok := update["id"].(string)
+		if !ok {
+			tx.Rollback()
+			return fmt.Errorf("invalid id in update")
+		}
+
+		// Remove id from updates map
+		updatesWithoutID := make(map[string]interface{})
+		for k, v := range update {
+			if k != "id" {
+				updatesWithoutID[k] = v
+			}
+		}
+
+		if err := tx.Model(&model.Chat{}).Where("id = ?", id).Updates(updatesWithoutID).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	return tx.Commit().Error
 }
