@@ -35,7 +35,9 @@ async def create_memory(memory_info: dict):
         "name": str,
         "memory_type": list[str],
         "embd_id": str,
-        "llm_id": str
+        "llm_id": str,
+        "tenant_embd_id": str,
+        "tenant_llm_id": str
     }
     """
     # check name length
@@ -58,7 +60,9 @@ async def create_memory(memory_info: dict):
         name=memory_name,
         memory_type=memory_type,
         embd_id=memory_info["embd_id"],
-        llm_id=memory_info["llm_id"]
+        llm_id=memory_info["llm_id"],
+        tenant_llm_id=memory_info["tenant_llm_id"],
+        tenant_embd_id=memory_info["tenant_embd_id"]
     )
     if success:
         return True, format_ret_data_from_memory(res)
@@ -103,6 +107,10 @@ async def update_memory(memory_id: str, new_memory_setting: dict):
         update_dict["llm_id"] = new_memory_setting["llm_id"]
     if new_memory_setting.get("embd_id"):
         update_dict["embd_id"] = new_memory_setting["embd_id"]
+    if new_memory_setting.get("tenant_llm_id"):
+        update_dict["tenant_llm_id"] = new_memory_setting["tenant_llm_id"]
+    if new_memory_setting.get("tenant_embd_id"):
+        update_dict["tenant_embd_id"] = new_memory_setting["tenant_embd_id"]
     if new_memory_setting.get("memory_type"):
         memory_type = set(new_memory_setting["memory_type"])
         invalid_type = memory_type - {e.name.lower() for e in MemoryType}
@@ -146,7 +154,7 @@ async def update_memory(memory_id: str, new_memory_setting: dict):
         return True, memory_dict
     # check memory empty when update embd_id, memory_type
     memory_size = get_memory_size_cache(memory_id, current_memory.tenant_id)
-    not_allowed_update = [f for f in ["embd_id", "memory_type"] if f in to_update and memory_size > 0]
+    not_allowed_update = [f for f in ["tenant_embd_id", "embd_id", "memory_type"] if f in to_update and memory_size > 0]
     if not_allowed_update:
         raise ArgumentException(f"Can't update {not_allowed_update} when memory isn't empty.")
     if "memory_type" in to_update:
