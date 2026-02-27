@@ -1,0 +1,47 @@
+{
+  "VP Classic": [
+    {
+      "match_title": "Portfolio characteristics",
+      "colspan_rows": [
+        "Price/earnings ratio",
+        "Price/book ratio",
+        "Portfolio yield"
+      ],
+      "note": "fund-level metrics, always full colspan"
+    }
+  ],
+  "VP High-Dividend": [
+    {
+      "match_title": "Fee structure & Subscription information",
+      "date_to": "2025-01",
+      "colspan_rows": [
+        "Subscription fee",
+        "Management fee",
+        "Performance fee8",
+        "Redemption fee"
+      ],
+      "note": "3-col (A1/A2/AAcc), all fees uniform → full colspan"
+    },
+    {
+      "match_title": "Fee structure & Subscription information",
+      "date_from": "2025-02",
+      "colspan_rows": [
+        "Subscription fee",
+        "Management fee",
+        "Performance fee8",
+        "Redemption fee"
+      ],
+      "colspan_split": [3, 1],
+      "note": "4-col (A1/A2/AAcc/B), fees split 3+1"
+    },
+    {
+      "match_title": "Portfolio characteristics",
+      "colspan_rows": [
+        "Price/earnings ratio",
+        "Price/book ratio",
+        "Portfolio yield"
+      ],
+      "note": "fund-level metrics, always full colspan"
+    }
+  ]
+}
