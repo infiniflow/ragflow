@@ -1634,7 +1634,7 @@ class LiteLLMBase(ABC):
         elif self.provider == SupportedLiteLLMProvider.GPUStack:
             completion_args.update(
                 {
-                    "api_base": self.base_url,
+                    "api_base": urljoin(self.base_url, "v1"),
                 }
             )
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
