@@ -1,7 +1,7 @@
 package model
 
-// Dialog dialog model
-type Dialog struct {
+// Chat chat model (mapped to dialog table)
+type Chat struct {
 	ID                    string          `gorm:"column:id;primaryKey;size:32" json:"id"`
 	TenantID              string          `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	Name                  *string         `gorm:"column:name;size:255;index" json:"name,omitempty"`
@@ -25,7 +25,7 @@ type Dialog struct {
 }
 
 // TableName specify table name
-func (Dialog) TableName() string {
+func (Chat) TableName() string {
 	return "dialog"
 }
 

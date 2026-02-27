@@ -8,13 +8,14 @@ import (
 
 // Router router
 type Router struct {
-	userHandler         *handler.UserHandler
-	tenantHandler       *handler.TenantHandler
-	documentHandler     *handler.DocumentHandler
-	systemHandler       *handler.SystemHandler
+	userHandler          *handler.UserHandler
+	tenantHandler        *handler.TenantHandler
+	documentHandler      *handler.DocumentHandler
+	systemHandler        *handler.SystemHandler
 	knowledgebaseHandler *handler.KnowledgebaseHandler
-	chunkHandler        *handler.ChunkHandler
-	llmHandler          *handler.LLMHandler
+	chunkHandler         *handler.ChunkHandler
+	llmHandler           *handler.LLMHandler
+	chatHandler          *handler.ChatHandler
 }
 
 // NewRouter create router
@@ -25,15 +26,17 @@ func NewRouter(
 	knowledgebaseHandler *handler.KnowledgebaseHandler,
 	chunkHandler *handler.ChunkHandler,
 	llmHandler *handler.LLMHandler,
+	chatHandler *handler.ChatHandler,
 ) *Router {
 	return &Router{
-		userHandler:         userHandler,
-		tenantHandler:       tenantHandler,
-		documentHandler:     documentHandler,
-		systemHandler:       handler.NewSystemHandler(),
+		userHandler:          userHandler,
+		tenantHandler:        tenantHandler,
+		documentHandler:      documentHandler,
+		systemHandler:        handler.NewSystemHandler(),
 		knowledgebaseHandler: knowledgebaseHandler,
-		chunkHandler:        chunkHandler,
-		llmHandler:          llmHandler,
+		chunkHandler:         chunkHandler,
+		llmHandler:           llmHandler,
+		chatHandler:          chatHandler,
 	}
 }
 
@@ -90,23 +93,29 @@ func (r *Router) Setup(engine *gin.Engine) {
 			authors.GET("/:author_id/documents", r.documentHandler.GetDocumentsByAuthorID)
 		}
 
-	// Knowledge base routes
-	kb := engine.Group("/v1/kb")
-	{
-		kb.POST("/list", r.knowledgebaseHandler.ListKbs)
-	}
+		// Knowledge base routes
+		kb := engine.Group("/v1/kb")
+		{
+			kb.POST("/list", r.knowledgebaseHandler.ListKbs)
+		}
 
-	// Chunk routes
-	chunk := engine.Group("/v1/chunk")
-	{
-		chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
-	}
+		// Chunk routes
+		chunk := engine.Group("/v1/chunk")
+		{
+			chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
+		}
 
-	// LLM routes
-	llm := engine.Group("/v1/llm")
-	{
-		llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
-		llm.GET("/factories", r.llmHandler.Factories)
-	}
+		// LLM routes
+		llm := engine.Group("/v1/llm")
+		{
+			llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
+			llm.GET("/factories", r.llmHandler.Factories)
+		}
+
+		// Chat routes
+		chat := engine.Group("/v1/dialog")
+		{
+			chat.GET("/list", r.chatHandler.ListChats)
+		}
 	}
 }
