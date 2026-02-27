@@ -33,7 +33,7 @@ def _create_and_upload_in_batches(auth, dataset_id, num_docs, tmp_path, batch_si
     return document_ids
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 class TestMetadataBatchUpdate:
     def test_batch_update_metadata(self, HttpApiAuth, add_dataset, ragflow_tmp_dir):
         """
