@@ -40,7 +40,6 @@ from api.utils.api_utils import (
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken, Task
-import time
 
 from rag.flow.pipeline import Pipeline
 from rag.nlp import search
