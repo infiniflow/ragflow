@@ -211,7 +211,6 @@ backup
 # Added by cargo
 
 /target
-attili-sys/cleaning_data/configs_solution_1.md
 
 # Do not include in PR (local dev / build artifacts)
 ragflow.egg-info/
