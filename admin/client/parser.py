@@ -285,6 +285,7 @@ drop_user_chat: DROP CHAT quoted_string ";"
 create_chat_session: CREATE CHAT quoted_string SESSION quoted_string ";"
 drop_chat_session: DROP CHAT quoted_string SESSION quoted_string ";"
 list_chat_sessions: LIST CHAT quoted_string SESSIONS ";"
+chat_on_session: CHAT quoted_string ON quoted_string SESSION quoted_string ";"
 list_user_model_providers: LIST MODEL PROVIDERS ";"
 list_user_default_models: LIST DEFAULT MODELS ";"
 import_docs_into_dataset: IMPORT quoted_string INTO DATASET quoted_string ";"
@@ -599,6 +600,12 @@ class RAGFlowCLITransformer(Transformer):
     def list_chat_sessions(self, items):
         chat_name = items[2].children[0].strip("'\"")
         return {"type": "list_chat_sessions", "chat_name": chat_name}
+
+    def chat_on_session(self, items):
+        message = items[1].children[0].strip("'\"")
+        chat_name = items[3].children[0].strip("'\"")
+        session_name = items[5].children[0].strip("'\"")
+        return {"type": "chat_on_session", "message": message, "chat_name": chat_name, "session_name": session_name}
 
     def import_docs_into_dataset(self, items):
         document_list_str = items[1].children[0].strip("'\"")

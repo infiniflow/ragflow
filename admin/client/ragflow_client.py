@@ -970,6 +970,48 @@ class RAGFlowClient:
             return sessions
         self._print_table_simple(sessions)
 
+    def _get_session_id_by_name(self, chat_name, session_name):
+        """Get session (conversation) ID by chat name and session name."""
+        dialog_id = self._get_chat_id_by_name(chat_name)
+        if dialog_id is None:
+            return None
+        sessions = self._list_chat_sessions(dialog_id)
+        if sessions is None:
+            return None
+        for session in sessions:
+            if session["name"] == session_name:
+                return session["id"]
+        print(f"Session '{session_name}' not found in chat '{chat_name}'")
+        return None
+
+    def chat_on_session(self, command):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+        message = command["message"]
+        chat_name = command["chat_name"]
+        session_name = command["session_name"]
+        
+        # Get session ID
+        session_id = self._get_session_id_by_name(chat_name, session_name)
+        if session_id is None:
+            return
+        
+        # Prepare payload for completion API
+        payload = {
+            "conversation_id": session_id,
+            "messages": [{"role": "user", "content": message}],
+            "stream": False
+        }
+        
+        response = self.http_client.request("POST", "/conversation/completion", json_body=payload, 
+                                            use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200 and res_json["code"] == 0:
+            answer = res_json["data"].get("answer", "")
+            print(f"Assistant: {answer}")
+        else:
+            print(f"Fail to chat on session, code: {res_json['code']}, message: {res_json['message']}")
+
     def list_user_model_providers(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
@@ -1463,6 +1505,8 @@ def run_command(client: RAGFlowClient, command_dict: dict):
             client.drop_chat_session(command_dict)
         case "list_chat_sessions":
             return client.list_chat_sessions(command_dict)
+        case "chat_on_session":
+            client.chat_on_session(command_dict)
         case "list_user_model_providers":
             client.list_user_model_providers(command_dict)
         case "list_user_default_models":
