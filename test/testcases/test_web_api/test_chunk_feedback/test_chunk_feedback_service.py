@@ -15,109 +15,172 @@
 #
 """
 Tests for ChunkFeedbackService - adjusting chunk weights based on user feedback.
-"""
-from unittest.mock import patch, MagicMock
 
-from api.db.services.chunk_feedback_service import (
-    ChunkFeedbackService,
-    UPVOTE_WEIGHT_INCREMENT,
-    DOWNVOTE_WEIGHT_DECREMENT,
-    MIN_PAGERANK_WEIGHT,
-    MAX_PAGERANK_WEIGHT,
-)
+Uses importlib to load chunk_feedback_service.py in isolation so that
+test/testcases/test_web_api/common.py (a test-helper module) does not shadow
+the project-level common/ package during collection.
+"""
+import importlib.util
+import sys
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from unittest.mock import MagicMock
+
+import pytest
+
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _load_feedback_module(monkeypatch):
+    """Load chunk_feedback_service.py with lightweight stubs for its deps."""
+    common_pkg = ModuleType("common")
+    common_pkg.__path__ = [str(_REPO_ROOT / "common")]
+    monkeypatch.setitem(sys.modules, "common", common_pkg)
+
+    constants_mod = ModuleType("common.constants")
+    constants_mod.PAGERANK_FLD = "pagerank_fea"
+    monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
+
+    settings_mod = ModuleType("common.settings")
+    settings_mod.docStoreConn = MagicMock()
+    monkeypatch.setitem(sys.modules, "common.settings", settings_mod)
+    common_pkg.settings = settings_mod
+
+    rag_pkg = ModuleType("rag")
+    rag_pkg.__path__ = []
+    monkeypatch.setitem(sys.modules, "rag", rag_pkg)
+
+    rag_nlp_pkg = ModuleType("rag.nlp")
+    rag_nlp_pkg.__path__ = []
+    rag_nlp_pkg.search = SimpleNamespace(index_name=lambda tid: f"idx-{tid}")
+    monkeypatch.setitem(sys.modules, "rag.nlp", rag_nlp_pkg)
+
+    rag_nlp_search_mod = ModuleType("rag.nlp.search")
+    rag_nlp_search_mod.index_name = lambda tid: f"idx-{tid}"
+    monkeypatch.setitem(sys.modules, "rag.nlp.search", rag_nlp_search_mod)
+
+    services_pkg = ModuleType("api.db.services")
+    services_pkg.__path__ = []
+    monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
+
+    spec = importlib.util.spec_from_file_location(
+        "api.db.services.chunk_feedback_service",
+        _REPO_ROOT / "api" / "db" / "services" / "chunk_feedback_service.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(
+        sys.modules, "api.db.services.chunk_feedback_service", mod
+    )
+    spec.loader.exec_module(mod)
+
+    return mod, settings_mod
+
+
+@pytest.fixture
+def feedback_env(monkeypatch):
+    """Provide (module, settings_stub) for chunk feedback tests."""
+    return _load_feedback_module(monkeypatch)
 
 
 class TestExtractChunkIds:
     """Tests for extract_chunk_ids_from_reference method."""
 
-    def test_empty_reference(self):
+    def test_empty_reference(self, feedback_env):
         """Should return empty list for empty reference."""
-        assert ChunkFeedbackService.extract_chunk_ids_from_reference({}) == []
-        assert ChunkFeedbackService.extract_chunk_ids_from_reference(None) == []
+        mod, _ = feedback_env
+        assert mod.ChunkFeedbackService.extract_chunk_ids_from_reference({}) == []
+        assert mod.ChunkFeedbackService.extract_chunk_ids_from_reference(None) == []
 
-    def test_reference_with_id_field(self):
+    def test_reference_with_id_field(self, feedback_env):
         """Should extract 'id' from formatted chunks (chunks_format output)."""
+        mod, _ = feedback_env
         reference = {
             "chunks": [
                 {"id": "chunk1", "content": "test"},
                 {"id": "chunk2", "content": "test2"},
             ]
         }
-        result = ChunkFeedbackService.extract_chunk_ids_from_reference(reference)
+        result = mod.ChunkFeedbackService.extract_chunk_ids_from_reference(reference)
         assert result == ["chunk1", "chunk2"]
 
-    def test_reference_with_chunk_id_field(self):
+    def test_reference_with_chunk_id_field(self, feedback_env):
         """Should fall back to 'chunk_id' field for raw chunks."""
+        mod, _ = feedback_env
         reference = {
             "chunks": [
                 {"chunk_id": "chunk1", "content": "test"},
                 {"chunk_id": "chunk2", "content": "test2"},
             ]
         }
-        result = ChunkFeedbackService.extract_chunk_ids_from_reference(reference)
+        result = mod.ChunkFeedbackService.extract_chunk_ids_from_reference(reference)
         assert result == ["chunk1", "chunk2"]
 
-    def test_reference_with_no_chunks(self):
+    def test_reference_with_no_chunks(self, feedback_env):
         """Should return empty list if no chunks key."""
+        mod, _ = feedback_env
         reference = {"doc_aggs": [{"doc_id": "doc1"}]}
-        result = ChunkFeedbackService.extract_chunk_ids_from_reference(reference)
+        result = mod.ChunkFeedbackService.extract_chunk_ids_from_reference(reference)
         assert result == []
 
 
 class TestGetChunkKbMapping:
     """Tests for get_chunk_kb_mapping method."""
 
-    def test_empty_reference(self):
+    def test_empty_reference(self, feedback_env):
         """Should return empty dict for empty reference."""
-        assert ChunkFeedbackService.get_chunk_kb_mapping({}) == {}
-        assert ChunkFeedbackService.get_chunk_kb_mapping(None) == {}
+        mod, _ = feedback_env
+        assert mod.ChunkFeedbackService.get_chunk_kb_mapping({}) == {}
+        assert mod.ChunkFeedbackService.get_chunk_kb_mapping(None) == {}
 
-    def test_reference_with_dataset_id(self):
+    def test_reference_with_dataset_id(self, feedback_env):
         """Should map id to dataset_id (chunks_format output)."""
+        mod, _ = feedback_env
         reference = {
             "chunks": [
                 {"id": "chunk1", "dataset_id": "kb1"},
                 {"id": "chunk2", "dataset_id": "kb2"},
             ]
         }
-        result = ChunkFeedbackService.get_chunk_kb_mapping(reference)
+        result = mod.ChunkFeedbackService.get_chunk_kb_mapping(reference)
         assert result == {"chunk1": "kb1", "chunk2": "kb2"}
 
-    def test_reference_with_kb_id(self):
+    def test_reference_with_kb_id(self, feedback_env):
         """Should fall back to kb_id for raw chunks."""
+        mod, _ = feedback_env
         reference = {
             "chunks": [
                 {"chunk_id": "chunk1", "kb_id": "kb1"},
                 {"chunk_id": "chunk2", "kb_id": "kb2"},
             ]
         }
-        result = ChunkFeedbackService.get_chunk_kb_mapping(reference)
+        result = mod.ChunkFeedbackService.get_chunk_kb_mapping(reference)
         assert result == {"chunk1": "kb1", "chunk2": "kb2"}
 
-    def test_reference_missing_kb_id(self):
+    def test_reference_missing_kb_id(self, feedback_env):
         """Should skip chunks without kb_id/dataset_id."""
+        mod, _ = feedback_env
         reference = {
             "chunks": [
                 {"id": "chunk1", "dataset_id": "kb1"},
                 {"id": "chunk2"},  # No dataset_id
             ]
         }
-        result = ChunkFeedbackService.get_chunk_kb_mapping(reference)
+        result = mod.ChunkFeedbackService.get_chunk_kb_mapping(reference)
         assert result == {"chunk1": "kb1"}
 
 
 class TestUpdateChunkWeight:
     """Tests for update_chunk_weight method."""
 
-    @patch("api.db.services.chunk_feedback_service.settings")
-    def test_update_weight_success(self, mock_settings):
+    def test_update_weight_success(self, feedback_env):
         """Should update chunk weight successfully."""
+        mod, settings_mod = feedback_env
         mock_doc_store = MagicMock()
         mock_doc_store.get.return_value = {"pagerank_fea": 10}
         mock_doc_store.update.return_value = True
-        mock_settings.docStoreConn = mock_doc_store
+        settings_mod.docStoreConn = mock_doc_store
 
-        result = ChunkFeedbackService.update_chunk_weight(
+        result = mod.ChunkFeedbackService.update_chunk_weight(
             tenant_id="tenant1",
             chunk_id="chunk1",
             kb_id="kb1",
@@ -127,14 +190,14 @@ class TestUpdateChunkWeight:
         assert result is True
         mock_doc_store.update.assert_called_once()
 
-    @patch("api.db.services.chunk_feedback_service.settings")
-    def test_update_weight_chunk_not_found(self, mock_settings):
+    def test_update_weight_chunk_not_found(self, feedback_env):
         """Should return False if chunk not found."""
+        mod, settings_mod = feedback_env
         mock_doc_store = MagicMock()
         mock_doc_store.get.return_value = None
-        mock_settings.docStoreConn = mock_doc_store
+        settings_mod.docStoreConn = mock_doc_store
 
-        result = ChunkFeedbackService.update_chunk_weight(
+        result = mod.ChunkFeedbackService.update_chunk_weight(
             tenant_id="tenant1",
             chunk_id="chunk1",
             kb_id="kb1",
@@ -143,15 +206,15 @@ class TestUpdateChunkWeight:
 
         assert result is False
 
-    @patch("api.db.services.chunk_feedback_service.settings")
-    def test_update_weight_clamp_max(self, mock_settings):
+    def test_update_weight_clamp_max(self, feedback_env):
         """Should clamp weight to MAX_PAGERANK_WEIGHT."""
+        mod, settings_mod = feedback_env
         mock_doc_store = MagicMock()
-        mock_doc_store.get.return_value = {"pagerank_fea": MAX_PAGERANK_WEIGHT}
+        mock_doc_store.get.return_value = {"pagerank_fea": mod.MAX_PAGERANK_WEIGHT}
         mock_doc_store.update.return_value = True
-        mock_settings.docStoreConn = mock_doc_store
+        settings_mod.docStoreConn = mock_doc_store
 
-        ChunkFeedbackService.update_chunk_weight(
+        mod.ChunkFeedbackService.update_chunk_weight(
             tenant_id="tenant1",
             chunk_id="chunk1",
             kb_id="kb1",
@@ -161,17 +224,17 @@ class TestUpdateChunkWeight:
         # Verify the new_value passed to update has clamped weight
         call_args = mock_doc_store.update.call_args
         new_value = call_args[0][1]
-        assert new_value["pagerank_fea"] == MAX_PAGERANK_WEIGHT
+        assert new_value["pagerank_fea"] == mod.MAX_PAGERANK_WEIGHT
 
-    @patch("api.db.services.chunk_feedback_service.settings")
-    def test_update_weight_clamp_min(self, mock_settings):
+    def test_update_weight_clamp_min(self, feedback_env):
         """Should clamp weight to MIN_PAGERANK_WEIGHT."""
+        mod, settings_mod = feedback_env
         mock_doc_store = MagicMock()
         mock_doc_store.get.return_value = {"pagerank_fea": 0}
         mock_doc_store.update.return_value = True
-        mock_settings.docStoreConn = mock_doc_store
+        settings_mod.docStoreConn = mock_doc_store
 
-        ChunkFeedbackService.update_chunk_weight(
+        mod.ChunkFeedbackService.update_chunk_weight(
             tenant_id="tenant1",
             chunk_id="chunk1",
             kb_id="kb1",
@@ -180,16 +243,18 @@ class TestUpdateChunkWeight:
 
         call_args = mock_doc_store.update.call_args
         new_value = call_args[0][1]
-        assert new_value["pagerank_fea"] == MIN_PAGERANK_WEIGHT
+        assert new_value["pagerank_fea"] == mod.MIN_PAGERANK_WEIGHT
 
 
 class TestApplyFeedback:
     """Tests for apply_feedback method."""
 
-    @patch("api.db.services.chunk_feedback_service.CHUNK_FEEDBACK_ENABLED", False)
-    def test_apply_feedback_disabled(self):
+    def test_apply_feedback_disabled(self, feedback_env, monkeypatch):
         """Should return early when feature is disabled."""
-        result = ChunkFeedbackService.apply_feedback(
+        mod, _ = feedback_env
+        monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", False)
+
+        result = mod.ChunkFeedbackService.apply_feedback(
             tenant_id="tenant1",
             reference={"chunks": [{"id": "chunk1", "dataset_id": "kb1"}]},
             is_positive=True
@@ -199,17 +264,24 @@ class TestApplyFeedback:
         assert result["fail_count"] == 0
         assert result.get("disabled") is True
 
-    @patch("api.db.services.chunk_feedback_service.CHUNK_FEEDBACK_ENABLED", True)
-    @patch.object(ChunkFeedbackService, "update_chunk_weight")
-    @patch.object(ChunkFeedbackService, "get_chunk_kb_mapping")
-    @patch.object(ChunkFeedbackService, "extract_chunk_ids_from_reference")
-    def test_apply_positive_feedback(self, mock_extract, mock_mapping, mock_update):
+    def test_apply_positive_feedback(self, feedback_env, monkeypatch):
         """Should apply positive feedback to all chunks."""
-        mock_extract.return_value = ["chunk1", "chunk2"]
-        mock_mapping.return_value = {"chunk1": "kb1", "chunk2": "kb1"}
-        mock_update.return_value = True
+        mod, _ = feedback_env
+        monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
+        mock_update = MagicMock(return_value=True)
+        monkeypatch.setattr(
+            mod.ChunkFeedbackService, "extract_chunk_ids_from_reference",
+            staticmethod(lambda ref: ["chunk1", "chunk2"]),
+        )
+        monkeypatch.setattr(
+            mod.ChunkFeedbackService, "get_chunk_kb_mapping",
+            staticmethod(lambda ref: {"chunk1": "kb1", "chunk2": "kb1"}),
+        )
+        monkeypatch.setattr(
+            mod.ChunkFeedbackService, "update_chunk_weight", mock_update
+        )
 
-        result = ChunkFeedbackService.apply_feedback(
+        result = mod.ChunkFeedbackService.apply_feedback(
             tenant_id="tenant1",
             reference={"chunks": []},
             is_positive=True
@@ -219,19 +291,26 @@ class TestApplyFeedback:
         assert result["fail_count"] == 0
         assert mock_update.call_count == 2
         # Verify positive delta
-        mock_update.assert_any_call("tenant1", "chunk1", "kb1", UPVOTE_WEIGHT_INCREMENT)
+        mock_update.assert_any_call("tenant1", "chunk1", "kb1", mod.UPVOTE_WEIGHT_INCREMENT)
 
-    @patch("api.db.services.chunk_feedback_service.CHUNK_FEEDBACK_ENABLED", True)
-    @patch.object(ChunkFeedbackService, "update_chunk_weight")
-    @patch.object(ChunkFeedbackService, "get_chunk_kb_mapping")
-    @patch.object(ChunkFeedbackService, "extract_chunk_ids_from_reference")
-    def test_apply_negative_feedback(self, mock_extract, mock_mapping, mock_update):
+    def test_apply_negative_feedback(self, feedback_env, monkeypatch):
         """Should apply negative feedback to all chunks."""
-        mock_extract.return_value = ["chunk1"]
-        mock_mapping.return_value = {"chunk1": "kb1"}
-        mock_update.return_value = True
+        mod, _ = feedback_env
+        monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
+        mock_update = MagicMock(return_value=True)
+        monkeypatch.setattr(
+            mod.ChunkFeedbackService, "extract_chunk_ids_from_reference",
+            staticmethod(lambda ref: ["chunk1"]),
+        )
+        monkeypatch.setattr(
+            mod.ChunkFeedbackService, "get_chunk_kb_mapping",
+            staticmethod(lambda ref: {"chunk1": "kb1"}),
+        )
+        monkeypatch.setattr(
+            mod.ChunkFeedbackService, "update_chunk_weight", mock_update
+        )
 
-        result = ChunkFeedbackService.apply_feedback(
+        result = mod.ChunkFeedbackService.apply_feedback(
             tenant_id="tenant1",
             reference={"chunks": []},
             is_positive=False
@@ -239,15 +318,18 @@ class TestApplyFeedback:
 
         assert result["success_count"] == 1
         # Verify negative delta
-        mock_update.assert_called_with("tenant1", "chunk1", "kb1", -DOWNVOTE_WEIGHT_DECREMENT)
+        mock_update.assert_called_with("tenant1", "chunk1", "kb1", -mod.DOWNVOTE_WEIGHT_DECREMENT)
 
-    @patch("api.db.services.chunk_feedback_service.CHUNK_FEEDBACK_ENABLED", True)
-    @patch.object(ChunkFeedbackService, "extract_chunk_ids_from_reference")
-    def test_apply_feedback_no_chunks(self, mock_extract):
+    def test_apply_feedback_no_chunks(self, feedback_env, monkeypatch):
         """Should handle empty chunk list gracefully."""
-        mock_extract.return_value = []
+        mod, _ = feedback_env
+        monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
+        monkeypatch.setattr(
+            mod.ChunkFeedbackService, "extract_chunk_ids_from_reference",
+            staticmethod(lambda ref: []),
+        )
 
-        result = ChunkFeedbackService.apply_feedback(
+        result = mod.ChunkFeedbackService.apply_feedback(
             tenant_id="tenant1",
             reference={},
             is_positive=True
@@ -257,17 +339,24 @@ class TestApplyFeedback:
         assert result["fail_count"] == 0
         assert result["chunk_ids"] == []
 
-    @patch("api.db.services.chunk_feedback_service.CHUNK_FEEDBACK_ENABLED", True)
-    @patch.object(ChunkFeedbackService, "update_chunk_weight")
-    @patch.object(ChunkFeedbackService, "get_chunk_kb_mapping")
-    @patch.object(ChunkFeedbackService, "extract_chunk_ids_from_reference")
-    def test_apply_feedback_partial_failure(self, mock_extract, mock_mapping, mock_update):
+    def test_apply_feedback_partial_failure(self, feedback_env, monkeypatch):
         """Should count failures correctly."""
-        mock_extract.return_value = ["chunk1", "chunk2"]
-        mock_mapping.return_value = {"chunk1": "kb1", "chunk2": "kb1"}
-        mock_update.side_effect = [True, False]  # First succeeds, second fails
+        mod, _ = feedback_env
+        monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
+        mock_update = MagicMock(side_effect=[True, False])
+        monkeypatch.setattr(
+            mod.ChunkFeedbackService, "extract_chunk_ids_from_reference",
+            staticmethod(lambda ref: ["chunk1", "chunk2"]),
+        )
+        monkeypatch.setattr(
+            mod.ChunkFeedbackService, "get_chunk_kb_mapping",
+            staticmethod(lambda ref: {"chunk1": "kb1", "chunk2": "kb1"}),
+        )
+        monkeypatch.setattr(
+            mod.ChunkFeedbackService, "update_chunk_weight", mock_update
+        )
 
-        result = ChunkFeedbackService.apply_feedback(
+        result = mod.ChunkFeedbackService.apply_feedback(
             tenant_id="tenant1",
             reference={"chunks": []},
             is_positive=True
