@@ -282,14 +282,11 @@ def _extract_metadata_text(binary: bytes) -> list[dict]:
     从 PDF 元数据提取文本块（含坐标信息）
 
     策略:
-    1. 先过滤 PDF Optional Content (OC) 图层，从根源排除装饰层噪声字符
-    2. 使用 extract_words 逐词提取（带真实坐标）
-    3. 将相邻词按 Y 坐标聚合为行级文本块
-    4. 补充提取表格内容（很多简历使用表格布局）
-
-    很多简历 PDF 包含装饰性图层（模板背景、水印等），这些图层在 PDF 内部
-    标记为 Optional Content (tag='OC')。直接在 PDF 解析层面过滤掉 OC 图层，
-    比后续的词级/行级过滤更精确，不会误杀正文中的标点、数字等内容。
+    1. 使用白名单策略过滤装饰层噪声字符（嵌入字体或结构标记 = 正文）
+    2. 安全回退: 如果过滤后字符数不到原始的 30%，跳过过滤避免误杀
+    3. 使用 extract_words 逐词提取（带真实坐标）
+    4. 将相邻词按 Y 坐标聚合为行级文本块
+    5. 补充提取表格内容（很多简历使用表格布局）
 
     参数:
         binary: PDF 文件二进制内容
@@ -303,13 +300,18 @@ def _extract_metadata_text(binary: bytes) -> list[dict]:
             for page_idx, page in enumerate(pdf.pages):
                 page_width = page.width or 600
 
-                # 过滤 PDF Optional Content (OC) 图层的字符
-                # OC 图层通常包含装饰性元素（模板背景、水印等），不是正文内容
-                # 通过 tag='OC' 在 PDF 解析层面直接排除，避免后续词级过滤的误杀问题
+                # 过滤装饰层噪声字符（基于嵌入字体+结构标记的白名单策略）
+                # 安全回退: 如果过滤后字符数不到原始的 30%，说明该 PDF 的正文
+                # 可能使用了非嵌入字体且无结构标记，此时跳过过滤避免误杀
                 try:
+                    original_char_count = len(page.chars)
                     filtered_page = page.filter(
-                        lambda obj: obj.get("tag") != "OC"
+                        lambda obj: not _is_noise_char(obj)
                     )
+                    filtered_char_count = len(filtered_page.chars)
+                    if original_char_count > 0 and filtered_char_count < original_char_count * 0.3:
+                        # 过滤掉了 70% 以上的字符，大概率是误杀，回退到原始页面
+                        filtered_page = page
                 except Exception:
                     filtered_page = page
 
@@ -426,7 +428,6 @@ def _extract_metadata_text(binary: bytes) -> list[dict]:
     except Exception as e:
         logger.warning(f"PDF 元数据提取失败: {e}")
         return []
-
 
 
 def _extract_ocr_text(binary: bytes) -> list[dict]:
@@ -2210,3 +2211,40 @@ def chunk(filename, binary, tenant_id , from_page=0, to_page=100000,
         logger.exception(f"简历解析异常: {filename}")
         callback(-1, f"简历解析失败: {str(e)}")
         return []
+
+
+def _is_noise_char(obj: dict) -> bool:
+    """
+    判断 PDF 字符对象是否为装饰层噪声字符
+
+    采用"正文白名单"策略，而非枚举噪声特征，以应对不同简历模板的噪声模式:
+
+    正文字符的两个可靠特征（满足任一即为正文）:
+    1. 嵌入字体: 字体名格式为 XXXXXX+FontName（含 '+' 号），
+       表示字体已嵌入 PDF，是文档作者主动选择的正文字体
+    2. 结构标记: 带有 PDF Tagged Structure 标签（如 Span、P、NonStruct 等），
+       表示字符属于文档的语义结构树
+
+    噪声字符的共同特征:
+    - 使用系统字体（如 Helvetica、Arial），字体名不含 '+'
+    - 无结构标记（tag 为 None 或 'OC' 等非语义标签）
+    - 常见于简历模板的背景装饰、水印、追踪标记
+
+    参数:
+        obj: pdfplumber 的字符/文本对象字典
+    返回:
+        True 表示是噪声字符，应被过滤
+    """
+    # 白名单条件1: 嵌入字体（字体名含 '+' 前缀）
+    fontname = obj.get("fontname", "")
+    if "+" in fontname:
+        return False  # 嵌入字体 = 正文内容
+
+    # 白名单条件2: 带有 PDF 结构标记
+    tag = obj.get("tag")
+    if tag in ("Span", "NonStruct", "P", "H1", "H2", "H3", "H4", "H5", "H6",
+               "TD", "TH", "LI", "L", "Table", "TR", "Figure", "Caption"):
+        return False  # 有语义结构标记 = 正文内容
+
+    # 不满足任何白名单条件，视为噪声
+    return True
