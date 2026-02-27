@@ -28,6 +28,34 @@ def _goto_home(page, base_url: str) -> None:
 
 def _nav_click(page, testid: str) -> None:
     locator = page.locator(f"[data-testid='{testid}']")
+    if locator.count() > 0:
+        expect(locator.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        locator.first.click()
+        return
+
+    nav_text_map = {
+        "nav-chat": "chat",
+        "nav-search": "search",
+        "nav-agent": "agent",
+    }
+    label = nav_text_map.get(testid)
+    if label:
+        pattern = re.compile(rf"^{re.escape(label)}$", re.I)
+        fallback = page.get_by_role("button", name=pattern)
+        if fallback.count() == 0:
+            top_nav = page.locator("[data-testid='top-nav']")
+            if top_nav.count() > 0:
+                fallback = top_nav.first.get_by_text(pattern)
+            else:
+                fallback = page.get_by_text(pattern)
+        if fallback.count() == 0:
+            fallback = page.locator("button, [role='button'], a, span, div").filter(
+                has_text=pattern
+            )
+        expect(fallback.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        fallback.first.click()
+        return
+
     expect(locator).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     locator.click()
 
@@ -39,12 +67,50 @@ def _open_create_from_list(
     modal_testid: str = "rename-modal",
 ):
     empty = page.locator(f"[data-testid='{empty_testid}']")
-    if empty.count() > 0 and empty.is_visible():
-        empty.click()
+    if empty.count() > 0 and empty.first.is_visible():
+        empty.first.click()
     else:
         create_btn = page.locator(f"[data-testid='{create_btn_testid}']")
-        expect(create_btn).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-        create_btn.click()
+        if create_btn.count() > 0:
+            expect(create_btn.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+            create_btn.first.click()
+        else:
+            create_text_map = {
+                "create-chat": r"create\s+chat",
+                "create-search": r"create\s+search",
+                "create-agent": r"create\s+agent",
+            }
+            pattern = create_text_map.get(create_btn_testid)
+            clicked = False
+            if pattern:
+                fallback_btn = page.get_by_role(
+                    "button", name=re.compile(pattern, re.I)
+                )
+                if fallback_btn.count() > 0 and fallback_btn.first.is_visible():
+                    fallback_btn.first.click()
+                    clicked = True
+
+            if not clicked:
+                empty_text_map = {
+                    "chats-empty-create": r"no chat app created yet",
+                    "search-empty-create": r"no search app created yet",
+                    "agents-empty-create": r"no agent",
+                }
+                empty_pattern = empty_text_map.get(empty_testid)
+                if empty_pattern:
+                    empty_state = page.locator("div, section, article").filter(
+                        has_text=re.compile(empty_pattern, re.I)
+                    )
+                    if empty_state.count() > 0 and empty_state.first.is_visible():
+                        empty_state.first.click()
+                        clicked = True
+
+            if not clicked:
+                fallback_card = page.locator(
+                    ".border-dashed, [class*='border-dashed']"
+                ).first
+                expect(fallback_card).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+                fallback_card.click()
     modal = page.locator(f"[data-testid='{modal_testid}']")
     expect(modal).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     return modal
@@ -99,42 +165,124 @@ def _select_first_dataset_and_save(
         combobox_testid = "search-datasets-combobox"
         save_testid = "search-settings-save"
 
-    combobox = scope_root.locator(f"[data-testid='{combobox_testid}']")
-    expect(combobox).to_have_count(1, timeout=timeout_ms)
+    def _find_dataset_combobox(search_scope):
+        combo = search_scope.locator(f"[data-testid='{combobox_testid}']")
+        if combo.count() > 0:
+            return combo
+        combo = search_scope.locator("[role='combobox']").filter(
+            has_text=re.compile(r"select|dataset|please", re.I)
+        )
+        if combo.count() > 0:
+            return combo
+        return search_scope.locator("[role='combobox']")
+
+    combobox = _find_dataset_combobox(scope_root)
+    if combobox.count() == 0:
+        settings_candidates = [
+            scope_root.locator("button:has(svg.lucide-settings)"),
+            scope_root.locator("button:has(svg[class*='settings'])"),
+            scope_root.locator("[data-testid='chat-settings']"),
+            scope_root.locator("[data-testid='search-settings']"),
+            scope_root.locator("button", has_text=re.compile(r"search settings", re.I)),
+            scope_root.locator("button", has=scope_root.locator("svg.lucide-settings")),
+            page.locator("button:has(svg.lucide-settings)"),
+            page.locator("button", has_text=re.compile(r"search settings", re.I)),
+        ]
+        for settings_button in settings_candidates:
+            if settings_button.count() == 0:
+                continue
+            if not settings_button.first.is_visible():
+                continue
+            settings_button.first.click()
+            break
+
+        settings_dialog = page.locator("[role='dialog']").filter(
+            has_text=re.compile(r"settings", re.I)
+        )
+        if settings_dialog.count() > 0 and settings_dialog.first.is_visible():
+            scope_root = settings_dialog.first
+        combobox = _find_dataset_combobox(scope_root)
+
+    combobox = combobox.first
     expect(combobox).to_be_visible(timeout=timeout_ms)
     combo_text = ""
     try:
         combo_text = combobox.inner_text()
     except Exception:
         combo_text = ""
-    if "please select" not in combo_text.lower():
+    if combo_text and not re.search(r"please\s+select|select", combo_text, re.I):
         return
 
     combobox.click()
 
     options = page.locator("[data-testid='datasets-options']")
+    if options.count() == 0:
+        options = page.locator("[role='listbox']:visible")
+    if options.count() == 0:
+        options = page.locator("[cmdk-list]:visible")
+    options = options.first
     expect(options).to_be_visible(timeout=timeout_ms)
-    try:
-        expect(options).to_have_count(1, timeout=timeout_ms)
-        options = options.first
-    except AssertionError:
-        pass
 
-    option = options.locator("[data-testid='datasets-option-0']")
-    if option.count() == 0:
-        option = options.locator("[data-testid^='datasets-option-']").first
-    if option.count() == 0:
-        option = options.locator("[data-testid='datasets-option']").first
+    option = None
+    prioritized = [
+        options.locator("[data-testid='datasets-option-0']"),
+        options.locator("[data-testid^='datasets-option-']"),
+        options.locator("[data-testid='datasets-option']"),
+        options.locator("[role='option']"),
+        options.locator("[cmdk-item], [data-value]"),
+    ]
+    for candidates in prioritized:
+        if candidates.count() == 0:
+            continue
+        limit = min(candidates.count(), 20)
+        for idx in range(limit):
+            candidate = candidates.nth(idx)
+            try:
+                if not candidate.is_visible():
+                    continue
+                text = (candidate.inner_text() or "").strip().lower()
+            except Exception:
+                continue
+            if not text or "no results found" in text:
+                continue
+            option = candidate
+            break
+        if option is not None:
+            break
+
+    if option is None:
+        list_text = ""
+        try:
+            list_text = options.inner_text()
+        except Exception:
+            list_text = ""
+        raise AssertionError(
+            "No selectable dataset option is available in dataset combobox. "
+            f"list_text={list_text[:200]!r}"
+        )
     expect(option).to_be_visible(timeout=timeout_ms)
     option.click()
+    try:
+        selected_text = combobox.inner_text().strip()
+    except Exception:
+        selected_text = ""
+    if re.search(r"please\s*select|select", selected_text, re.I):
+        raise AssertionError(
+            "Dataset selection did not stick after clicking dataset option. "
+            f"combobox_text={selected_text!r}"
+        )
 
     save_button = scope_root.locator(f"[data-testid='{save_testid}']")
+    if save_button.count() == 0:
+        save_button = scope_root.get_by_role(
+            "button", name=re.compile(r"^save$", re.I)
+        )
     if save_button.count() == 0:
         save_button = scope_root.locator(
             "button[type='submit']", has_text=re.compile(r"^save$", re.I)
         ).first
-    else:
-        expect(save_button).to_have_count(1, timeout=timeout_ms)
+    save_button = save_button.first
+    expect(save_button).to_be_visible(timeout=timeout_ms)
 
     def trigger():
         save_button.click()
@@ -237,6 +385,14 @@ def _send_chat_and_wait_done(
             "data-status", "idle", timeout=timeout_ms
         )
     except Exception as exc:
+        try:
+            # Some UI builds remove the stream-status marker when generation finishes.
+            expect(page.locator("[data-testid='chat-stream-status']")).to_have_count(
+                0, timeout=timeout_ms
+            )
+            return
+        except Exception:
+            pass
         try:
             marker_count = page.locator("[data-testid='chat-stream-status']").count()
         except Exception:

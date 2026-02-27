@@ -23,6 +23,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect, sync_playwright
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
+PLAYWRIGHT_TEST_DIR = Path(__file__).resolve().parent
 ARTIFACTS_DIR = Path(__file__).resolve().parent / "artifacts"
 BASE_URL_DEFAULT = "http://127.0.0.1"
 LOGIN_PATH_DEFAULT = "/login"
@@ -164,6 +165,54 @@ def _build_url(base_url: str, path: str) -> str:
 
 def _sanitize_filename(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("_")
+
+
+def _request_test_file(request) -> Path | None:
+    node = getattr(request, "node", None)
+    if node is None:
+        return None
+
+    node_path = getattr(node, "path", None)
+    if node_path is not None:
+        return Path(str(node_path))
+
+    fspath = getattr(node, "fspath", None)
+    if fspath is not None:
+        return Path(str(fspath))
+
+    nodeid = getattr(node, "nodeid", "")
+    if nodeid:
+        return Path(nodeid.split("::", 1)[0])
+
+    return None
+
+
+def _request_artifacts_dir(request) -> Path:
+    test_file = _request_test_file(request)
+    if test_file is None:
+        base_dir = ARTIFACTS_DIR / "unknown"
+        base_dir.mkdir(parents=True, exist_ok=True)
+        return base_dir
+
+    try:
+        rel_path = test_file.resolve().relative_to(PLAYWRIGHT_TEST_DIR.resolve())
+        base_dir = ARTIFACTS_DIR / rel_path.with_suffix("")
+    except Exception:
+        file_stem = _sanitize_filename(test_file.stem or str(test_file))
+        base_dir = ARTIFACTS_DIR / (file_stem or "unknown")
+    base_dir.mkdir(parents=True, exist_ok=True)
+    return base_dir
+
+
+def _request_artifact_prefix(request) -> str:
+    node = getattr(request, "node", None)
+    node_name = getattr(node, "name", "") if node is not None else ""
+    safe_name = _sanitize_filename(node_name)
+    if safe_name:
+        return safe_name
+    nodeid = getattr(node, "nodeid", "") if node is not None else ""
+    fallback = _sanitize_filename(nodeid)
+    return fallback or "node"
 
 
 def _split_email_base(value: str) -> tuple[str, str]:
@@ -791,14 +840,14 @@ def reg_nickname() -> str:
 def snap(page, request):
     if "flow_page" in request.fixturenames:
         page = request.getfixturevalue("flow_page")
-    base_dir = ARTIFACTS_DIR / _sanitize_filename(request.node.nodeid)
-    base_dir.mkdir(parents=True, exist_ok=True)
+    base_dir = _request_artifacts_dir(request)
+    node_prefix = _request_artifact_prefix(request)
     counter = {"value": 0}
 
     def _snap(label: str):
         counter["value"] += 1
         safe_label = _sanitize_filename(label) or "step"
-        filename = f"{counter['value']:02d}_{safe_label}.png"
+        filename = f"{node_prefix}__{counter['value']:02d}_{safe_label}.png"
         path = base_dir / filename
         page.screenshot(path=str(path), full_page=True)
         if _env_bool("PW_FIXTURE_DEBUG", False):
@@ -925,11 +974,12 @@ def _write_artifacts_if_failed(page, context, request) -> None:
         return
 
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    safe_name = _sanitize_filename(request.node.nodeid)
-    screenshot_path = ARTIFACTS_DIR / f"{safe_name}_{timestamp}.png"
-    html_path = ARTIFACTS_DIR / f"{safe_name}_{timestamp}.html"
-    events_path = ARTIFACTS_DIR / f"{safe_name}_{timestamp}.log"
-    trace_path = ARTIFACTS_DIR / f"{safe_name}_{timestamp}.zip"
+    base_dir = _request_artifacts_dir(request)
+    safe_name = _request_artifact_prefix(request)
+    screenshot_path = base_dir / f"{safe_name}_{timestamp}.png"
+    html_path = base_dir / f"{safe_name}_{timestamp}.html"
+    events_path = base_dir / f"{safe_name}_{timestamp}.log"
+    trace_path = base_dir / f"{safe_name}_{timestamp}.zip"
 
     try:
         page.screenshot(path=str(screenshot_path), full_page=True)
@@ -1017,10 +1067,11 @@ def _format_auth_ready_summary(summary: dict) -> str:
 
 def _write_auth_ready_diagnostics(page, request, reason: str) -> None:
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    safe_name = _sanitize_filename(getattr(request.node, "nodeid", "auth_ready"))
-    screenshot_path = ARTIFACTS_DIR / f"{safe_name}_auth_ready_{timestamp}.png"
-    html_path = ARTIFACTS_DIR / f"{safe_name}_auth_ready_{timestamp}.html"
-    summary_path = ARTIFACTS_DIR / f"{safe_name}_auth_ready_{timestamp}.log"
+    base_dir = _request_artifacts_dir(request)
+    safe_name = _request_artifact_prefix(request)
+    screenshot_path = base_dir / f"{safe_name}_auth_ready_{timestamp}.png"
+    html_path = base_dir / f"{safe_name}_auth_ready_{timestamp}.html"
+    summary_path = base_dir / f"{safe_name}_auth_ready_{timestamp}.log"
 
     try:
         page.screenshot(path=str(screenshot_path), full_page=True)

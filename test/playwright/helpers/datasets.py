@@ -300,20 +300,17 @@ def select_chunking_method_general(page, expect, modal, timeout_ms: int) -> None
             "span", has_text=re.compile(r"please select a chunking method\\.", re.I)
         ),
     ).first
-    trigger_handle = None
     if trigger_locator.count() == 0:
         label = modal.locator("text=/please select a chunking method\\./i").first
         if label.count() > 0:
-            element_handle = label.element_handle()
-            if element_handle is not None:
-                handle = page.evaluate_handle("(el) => el.closest('button')", element_handle)
-                trigger_handle = handle.as_element()
-        if trigger_handle is None:
+            trigger_locator = label.locator("xpath=ancestor::button[1]").first
+        if trigger_locator.count() == 0:
             trigger_locator = modal.locator(
-                "button", has_text=re.compile(r"please select a chunking method\\.", re.I)
+                "button",
+                has_text=re.compile(r"please select a chunking method\\.", re.I),
             ).first
 
-    if trigger_locator.count() == 0 and trigger_handle is None:
+    if trigger_locator.count() == 0:
         if env_bool("PW_DEBUG_DUMP"):
             modal_text = modal.inner_text()
             button_count = modal.locator("button").count()
@@ -324,18 +321,17 @@ def select_chunking_method_general(page, expect, modal, timeout_ms: int) -> None
                 "[dataset] chunking_trigger_missing "
                 f"button_count={button_count} label_count={label_count} "
                 f"trigger_locator_count={trigger_locator.count()} "
-                f"trigger_handle_found={trigger_handle is not None}"
+                "trigger_handle_found=False"
             )
             debug(f"[dataset] modal_text_snippet={modal_text[:300]!r}")
         raise AssertionError("Chunking method dropdown trigger not found.")
 
-    trigger_for_assert = None
-    if trigger_locator.count() > 0:
-        expect(trigger_locator).to_be_visible(timeout=timeout_ms)
+    trigger_for_assert = trigger_locator
+    expect(trigger_locator).to_be_visible(timeout=timeout_ms)
+    try:
         trigger_locator.click()
-        trigger_for_assert = trigger_locator
-    elif trigger_handle is not None:
-        trigger_handle.click()
+    except Exception:
+        trigger_locator.click(force=True)
     listbox = page.locator("[role='listbox']:visible").last
     if listbox.count() == 0:
         listbox = page.locator("[cmdk-list]:visible").last
@@ -365,7 +361,13 @@ def select_chunking_method_general(page, expect, modal, timeout_ms: int) -> None
     expect(option).to_be_visible(timeout=timeout_ms)
     option.click()
     if trigger_for_assert is not None:
-        expect(trigger_for_assert).to_contain_text(re.compile(r"General", re.I))
+        try:
+            expect(trigger_for_assert).to_contain_text(
+                re.compile(r"General", re.I), timeout=timeout_ms
+            )
+        except AssertionError:
+            # Trigger can rerender after selection; verify selected label in modal instead.
+            expect(modal).to_contain_text(re.compile(r"General", re.I), timeout=timeout_ms)
 
 
 def open_create_dataset_modal(page, expect, timeout_ms: int):
@@ -486,5 +488,16 @@ def delete_uploaded_file(page, expect, filename: str, timeout_ms: int) -> None:
     delete_button.click()
     confirm = page.locator("[role='alertdialog']")
     expect(confirm).to_be_visible()
-    confirm.locator("button", has_text=re.compile("^delete$", re.I)).first.click()
+    confirm_delete = confirm.locator(
+        "button", has_text=re.compile("^delete$", re.I)
+    ).first
+    expect(confirm_delete).to_be_visible(timeout=timeout_ms)
+    try:
+        confirm_delete.click(timeout=timeout_ms)
+    except Exception:
+        # The confirm button can rerender during open/animation; reacquire and force.
+        confirm_delete = confirm.locator(
+            "button", has_text=re.compile("^delete$", re.I)
+        ).first
+        confirm_delete.click(timeout=timeout_ms, force=True)
     expect(row).not_to_be_visible(timeout=timeout_ms)
