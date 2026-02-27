@@ -77,7 +77,7 @@ type ListChatsNextRequest struct {
 
 // ListChatsNextResponse list chats next response
 type ListChatsNextResponse struct {
-	Chats []*ChatWithKBNames `json:"chats"`
+	Chats []*ChatWithKBNames `json:"dialogs"`
 	Total int64              `json:"total"`
 }
 
