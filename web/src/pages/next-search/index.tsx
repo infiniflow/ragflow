@@ -56,7 +56,7 @@ export default function SearchPage() {
   }, [isSearching]);
 
   return (
-    <section>
+    <section data-testid="search-detail">
       <PageHeader>
         <Breadcrumb>
           <BreadcrumbList>

@@ -206,6 +206,7 @@ export function NextMessageInput({
           ))}
         </FileUploadList>
         <Textarea
+          data-testid="chat-textarea"
           value={value}
           onChange={onInputChange}
           placeholder={t('chat.messagePlaceholder')}
@@ -264,7 +265,7 @@ export function NextMessageInput({
             )}
           </div>
           {sendLoading ? (
-            <Button onClick={stopOutputMessage} className="size-5 rounded-sm">
+            <Button data-testid="chat-stream-status" onClick={stopOutputMessage} className="size-5 rounded-sm">
               <CircleStop />
             </Button>
           ) : (

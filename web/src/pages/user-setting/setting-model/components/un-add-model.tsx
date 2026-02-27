@@ -79,7 +79,7 @@ export const AvailableModels: FC<{
   };
 
   return (
-    <div className=" text-text-primary h-full p-4">
+    <div className=" text-text-primary h-full p-4" data-testid="available-models-section">
       <div className="text-text-primary text-base mb-4">
         {t('availableModels')}
       </div>
@@ -87,6 +87,7 @@ export const AvailableModels: FC<{
       <div className="mb-6">
         {/* <div className="relative"> */}
         <SearchInput
+          data-testid="model-providers-search"
           type="text"
           placeholder={t('search')}
           value={searchTerm}
@@ -131,6 +132,8 @@ export const AvailableModels: FC<{
         {filteredModels.map((model) => (
           <div
             key={model.name}
+            data-testid="available-model-card"
+            data-provider={model.name}
             className=" border border-border-button rounded-lg p-3 hover:bg-bg-input transition-colors group"
             onClick={() => handleAddModel(model.name)}
           >
