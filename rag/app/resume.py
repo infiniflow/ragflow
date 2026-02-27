@@ -36,6 +36,7 @@ import unicodedata
 import concurrent.futures
 from io import BytesIO
 from typing import Optional
+import datetime
 
 import logging as logger
 from rag.nlp import rag_tokenizer
