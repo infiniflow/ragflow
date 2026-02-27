@@ -168,14 +168,19 @@ async def run():
         try:
             async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
                 yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
-
-            cvs.dsl = json.loads(str(canvas))
-            UserCanvasService.update_by_id(req["id"], cvs.to_dict())
-
+        except GeneratorExit:
+            logging.info(f"Canvas stream stopped by client for canvas {req['id']}")
+            canvas.cancel_task()
         except Exception as e:
             logging.exception(e)
             canvas.cancel_task()
             yield "data:" + json.dumps({"code": 500, "message": str(e), "data": False}, ensure_ascii=False) + "\n\n"
+        finally:
+            try:
+                cvs.dsl = json.loads(str(canvas))
+                UserCanvasService.update_by_id(req["id"], cvs.to_dict())
+            except Exception as e:
+                logging.warning(f"Failed to save canvas state on stream stop: {e}")
 
     resp = Response(sse(), mimetype="text/event-stream")
     resp.headers.add_header("Cache-control", "no-cache")

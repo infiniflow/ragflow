@@ -224,11 +224,14 @@ async def completion():
                 async for ans in async_chat(dia, msg, True, **req):
                     ans = structure_answer(conv, ans, message_id, conv.id)
                     yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
-                if not is_embedded:
-                    ConversationService.update_by_id(conv.id, conv.to_dict())
+            except GeneratorExit:
+                logging.info(f"Stream stopped by client for conversation {conv.id}")
             except Exception as e:
                 logging.exception(e)
                 yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
+            finally:
+                if not is_embedded:
+                    ConversationService.update_by_id(conv.id, conv.to_dict())
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
         if req.get("stream", True):
