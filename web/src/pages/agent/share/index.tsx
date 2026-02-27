@@ -8,7 +8,7 @@ import { useSyncThemeFromParams } from '@/components/theme-provider';
 import { MessageType } from '@/constants/chat';
 import { useUploadCanvasFileWithProgress } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
-import i18n from '@/locales/config';
+import i18n, { changeLanguageAsync } from '@/locales/config';
 import DebugContent from '@/pages/agent/debug-content';
 import { useCacheChatLog } from '@/pages/agent/hooks/use-cache-chat-log';
 import { useAwaitCompentData } from '@/pages/agent/hooks/use-chat-logic';
@@ -88,7 +88,7 @@ const ChatContainer = () => {
 
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
-      i18n.changeLanguage(locale);
+      changeLanguageAsync(locale);
     }
   }, [locale, visibleAvatar]);
 

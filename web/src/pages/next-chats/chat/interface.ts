@@ -1,4 +1,4 @@
-import { FormInstance } from 'antd';
+import { FormInstance } from '@/interfaces/antd-compat';
 
 export interface ISegmentedContentProps {
   show: boolean;

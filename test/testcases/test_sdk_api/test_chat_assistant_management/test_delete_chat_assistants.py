@@ -49,6 +49,17 @@ class TestChatAssistantsDelete:
         assistants = client.list_chats()
         assert len(assistants) == remaining
 
+    @pytest.mark.p2
+    def test_delete_chats_nonzero_response_raises(self, client, monkeypatch):
+        class _DummyResponse:
+            def json(self):
+                return {"code": 1, "message": "boom"}
+
+        monkeypatch.setattr(client, "delete", lambda *_args, **_kwargs: _DummyResponse())
+        with pytest.raises(Exception) as exception_info:
+            client.delete_chats(ids=["chat-1"])
+        assert "boom" in str(exception_info.value), str(exception_info.value)
+
     @pytest.mark.parametrize(
         "payload",
         [
