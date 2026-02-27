@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -29,7 +30,7 @@ func NewChatHandler(chatService *service.ChatService, userService *service.UserS
 // @Accept json
 // @Produce json
 // @Success 200 {object} service.ListChatsResponse
-// @Router /v1/chat/list [get]
+// @Router /v1/dialog/list [get]
 func (h *ChatHandler) ListChats(c *gin.Context) {
 	// Get access token from Authorization header
 	token := c.GetHeader("Authorization")
@@ -54,6 +55,95 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 
 	// List chats - default to valid status "1" (same as Python StatusEnum.VALID.value)
 	result, err := h.chatService.ListChats(userID, "1")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    result,
+		"message": "success",
+	})
+}
+
+// ListChatsNext list chats with advanced filtering and pagination
+// @Summary List Chats Next
+// @Description Get list of chats with filtering, pagination and sorting (equivalent to list_dialogs_next)
+// @Tags chat
+// @Accept json
+// @Produce json
+// @Param keywords query string false "search keywords"
+// @Param page query int false "page number"
+// @Param page_size query int false "items per page"
+// @Param orderby query string false "order by field (default: create_time)"
+// @Param desc query bool false "descending order (default: true)"
+// @Param request body service.ListChatsNextRequest true "filter options including owner_ids"
+// @Success 200 {object} service.ListChatsNextResponse
+// @Router /v1/dialog/next [post]
+func (h *ChatHandler) ListChatsNext(c *gin.Context) {
+	// Get access token from Authorization header
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Missing Authorization header",
+		})
+		return
+	}
+
+	// Get user by access token
+	user, err := h.userService.GetUserByToken(token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Invalid access token",
+		})
+		return
+	}
+	userID := user.ID
+
+	// Parse query parameters
+	keywords := c.Query("keywords")
+
+	page := 0
+	if pageStr := c.Query("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	pageSize := 0
+	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 {
+			pageSize = ps
+		}
+	}
+
+	orderby := c.DefaultQuery("orderby", "create_time")
+
+	desc := true
+	if descStr := c.Query("desc"); descStr != "" {
+		desc = descStr != "false"
+	}
+
+	// Parse request body for owner_ids
+	var req service.ListChatsNextRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": err.Error(),
+			})
+			return
+		}
+	}
+
+	// List chats with advanced filtering
+	result, err := h.chatService.ListChatsNext(userID, keywords, page, pageSize, orderby, desc, req.OwnerIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

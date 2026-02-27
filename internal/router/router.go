@@ -116,6 +116,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 		chat := engine.Group("/v1/dialog")
 		{
 			chat.GET("/list", r.chatHandler.ListChats)
+			chat.POST("/next", r.chatHandler.ListChatsNext)
 		}
 	}
+
+	// Handle undefined routes
+	engine.NoRoute(handler.HandleNoRoute)
 }
