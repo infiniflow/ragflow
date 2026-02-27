@@ -39,7 +39,6 @@ from typing import Optional
 
 import logging as logger
 from rag.nlp import rag_tokenizer
-from common.string_utils import remove_redundant_spaces
 from deepdoc.parser.utils import get_text
 
 # json_repair 用于修复 LLM 返回的不规范 JSON（参考 SmartResume 的容错策略）
@@ -563,8 +562,6 @@ def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
 
     try:
         import pdfplumber
-        from PIL import Image
-        import numpy as np
 
         # 按页分组文本块
         pages_blocks = {}
@@ -616,7 +613,6 @@ def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
         # 1. 有 layoutno 的块按区域位置排序（区域 Y → 区域 X → 块内 Y → 块内 X）
         # 2. 无 layoutno 的块按原始坐标排序
         def _sort_key(b):
-            layoutno = b.get("layoutno", "")
             layout_type = b.get("layout_type", "")
             # header 排最前，footer 排最后
             if layout_type == "header":
@@ -866,7 +862,7 @@ def extract_text(filename: str, binary: bytes) -> tuple[str, list[str], list[dic
             indexed = "\n".join(f"[{i}]: {line}" for i, line in enumerate(lines))
             return indexed, lines, []
 
-    except Exception as e:
+    except Exception:
         logger.exception(f"文本提取失败: {filename}")
         return "", [], []
 
@@ -1067,7 +1063,7 @@ def _calculate_work_years(experiences: list[dict]) -> float:
     return round(total, 1)
 
 
-def _parse_date_str(date_str: str) -> Optional["datetime"]:
+def _parse_date_str(date_str: str) -> Optional[datetime.datetime]:
     """
     解析日期字符串，支持多种常见格式
 
@@ -2072,9 +2068,6 @@ def chunk(filename, binary,tenant_id , from_page=0, to_page=100000,
     返回:
         文档块列表
     """
-    if callback is None:
-        callback = lambda prog, msg: None
-
     try:
         callback(0.1, "开始解析简历...")
 
