@@ -37,7 +37,7 @@ import concurrent.futures
 from io import BytesIO
 from typing import Optional
 
-from logging as logger
+import logging as logger
 from rag.nlp import rag_tokenizer
 from common.string_utils import remove_redundant_spaces
 from deepdoc.parser.utils import get_text
