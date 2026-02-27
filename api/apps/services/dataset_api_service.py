@@ -477,3 +477,69 @@ async def trace_raptor(dataset_id: str, tenant_id: str):
         return False, "RAPTOR Task Not Found or Error Occurred"
 
     return True, task.to_dict()
+
+
+def get_auto_metadata(dataset_id: str, tenant_id: str):
+    """
+    Get auto-metadata configuration for a dataset.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :return: (success, result) or (success, error_message)
+    """
+    kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
+    if kb is None:
+        return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
+
+    parser_cfg = kb.parser_config or {}
+    metadata = parser_cfg.get("metadata") or []
+    enabled = parser_cfg.get("enable_metadata", bool(metadata))
+    # Normalize to AutoMetadataConfig-like JSON
+    fields = []
+    for f in metadata:
+        if not isinstance(f, dict):
+            continue
+        fields.append(
+            {
+                "name": f.get("name", ""),
+                "type": f.get("type", ""),
+                "description": f.get("description"),
+                "examples": f.get("examples"),
+                "restrict_values": f.get("restrict_values", False),
+            }
+        )
+    return True, {"enabled": enabled, "fields": fields}
+
+
+async def update_auto_metadata(dataset_id: str, tenant_id: str, cfg: dict):
+    """
+    Update auto-metadata configuration for a dataset.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :param cfg: auto-metadata configuration
+    :return: (success, result) or (success, error_message)
+    """
+    kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
+    if kb is None:
+        return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
+
+    parser_cfg = kb.parser_config or {}
+    fields = []
+    for f in cfg.get("fields", []):
+        fields.append(
+            {
+                "name": f.get("name", ""),
+                "type": f.get("type", ""),
+                "description": f.get("description"),
+                "examples": f.get("examples"),
+                "restrict_values": f.get("restrict_values", False),
+            }
+        )
+    parser_cfg["metadata"] = fields
+    parser_cfg["enable_metadata"] = cfg.get("enabled", True)
+
+    if not KnowledgebaseService.update_by_id(kb.id, {"parser_config": parser_cfg}):
+        return False, "Update auto-metadata error.(Database error)"
+
+    return True, {"enabled": parser_cfg["enable_metadata"], "fields": fields}

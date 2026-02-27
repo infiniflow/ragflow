@@ -426,3 +426,92 @@ def trace_raptor(tenant_id, dataset_id):
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/auto_metadata", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def get_auto_metadata(tenant_id, dataset_id):
+    """
+    Get auto-metadata configuration for a dataset.
+    ---
+    tags:
+      - Datasets
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Successful operation.
+        schema:
+          type: object
+    """
+    try:
+        success, result = dataset_api_service.get_auto_metadata(dataset_id, tenant_id)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/auto_metadata", methods=["PUT"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def update_auto_metadata(tenant_id, dataset_id):
+    """
+    Update auto-metadata configuration for a dataset.
+    ---
+    tags:
+      - Datasets
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Auto-metadata configuration.
+        required: true
+        schema:
+          type: object
+    responses:
+      200:
+        description: Successful operation.
+        schema:
+          type: object
+    """
+    from api.utils.validation_utils import AutoMetadataConfig
+    cfg, err = await validate_and_parse_json_request(request, AutoMetadataConfig)
+    if err is not None:
+        return get_error_argument_result(err)
+
+    try:
+        success, result = await dataset_api_service.update_auto_metadata(dataset_id, tenant_id, cfg)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
