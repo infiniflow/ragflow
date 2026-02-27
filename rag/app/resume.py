@@ -32,13 +32,13 @@
 import json
 import re
 import random
+import datetime
 import unicodedata
 import concurrent.futures
 from io import BytesIO
 from typing import Optional
-import datetime
 
-import logging as logger
+import logging import logger
 from rag.nlp import rag_tokenizer
 from deepdoc.parser.utils import get_text
 
@@ -281,8 +281,15 @@ def _extract_metadata_text(binary: bytes) -> list[dict]:
     """
     从 PDF 元数据提取文本块（含坐标信息）
 
-    优先使用 extract_text() 获取完整行文本（行重建质量更高），
-    仅在 extract_text 失败时降级到 extract_words 逐词提取。
+    策略:
+    1. 先过滤 PDF Optional Content (OC) 图层，从根源排除装饰层噪声字符
+    2. 使用 extract_words 逐词提取（带真实坐标）
+    3. 将相邻词按 Y 坐标聚合为行级文本块
+    4. 补充提取表格内容（很多简历使用表格布局）
+
+    很多简历 PDF 包含装饰性图层（模板背景、水印等），这些图层在 PDF 内部
+    标记为 Optional Content (tag='OC')。直接在 PDF 解析层面过滤掉 OC 图层，
+    比后续的词级/行级过滤更精确，不会误杀正文中的标点、数字等内容。
 
     参数:
         binary: PDF 文件二进制内容
@@ -295,60 +302,95 @@ def _extract_metadata_text(binary: bytes) -> list[dict]:
         with pdfplumber.open(BytesIO(binary)) as pdf:
             for page_idx, page in enumerate(pdf.pages):
                 page_width = page.width or 600
-                # 优先使用 extract_text(layout=True) 保留空间布局
-                page_text = None
+
+                # 过滤 PDF Optional Content (OC) 图层的字符
+                # OC 图层通常包含装饰性元素（模板背景、水印等），不是正文内容
+                # 通过 tag='OC' 在 PDF 解析层面直接排除，避免后续词级过滤的误杀问题
                 try:
-                    page_text = page.extract_text(layout=True)
+                    filtered_page = page.filter(
+                        lambda obj: obj.get("tag") != "OC"
+                    )
+                except Exception:
+                    filtered_page = page
+
+                # 使用 extract_words 提取（带真实坐标）
+                words = []
+                try:
+                    words = filtered_page.extract_words(
+                        keep_blank_chars=False, use_text_flow=True
+                    )
                 except Exception:
                     pass
-                if not page_text or not page_text.strip():
-                    # 降级到普通 extract_text
+
+                if words:
+                    # 将相邻词按 Y 坐标聚合为行级文本块
+                    # 同一行的词: top 坐标差异在阈值内
+                    line_threshold = 5  # Y 坐标差异阈值（单位: PDF 点）
+                    current_line_words = [words[0]]
+
+                    def _flush_line(line_words):
+                        """将一行中的词合并为一个文本块"""
+                        # 按 x0 排序，确保从左到右
+                        line_words.sort(key=lambda w: float(w.get("x0", 0)))
+                        texts = []
+                        for w in line_words:
+                            texts.append(w.get("text", ""))
+                        merged_text = " ".join(texts)
+                        if not merged_text.strip():
+                            return None
+                        return {
+                            "text": merged_text.strip(),
+                            "x0": float(min(w.get("x0", 0) for w in line_words)),
+                            "top": float(min(w.get("top", 0) for w in line_words)),
+                            "x1": float(max(w.get("x1", 0) for w in line_words)),
+                            "bottom": float(max(w.get("bottom", 0) for w in line_words)),
+                            "page": page_idx,
+                        }
+
+                    for w in words[1:]:
+                        w_top = float(w.get("top", 0))
+                        cur_top = float(current_line_words[0].get("top", 0))
+                        if abs(w_top - cur_top) <= line_threshold:
+                            current_line_words.append(w)
+                        else:
+                            block = _flush_line(current_line_words)
+                            if block:
+                                blocks.append(block)
+                            current_line_words = [w]
+
+                    # 处理最后一行
+                    if current_line_words:
+                        block = _flush_line(current_line_words)
+                        if block:
+                            blocks.append(block)
+                else:
+                    # extract_words 失败时降级到 extract_text
+                    page_text = None
                     try:
                         page_text = page.extract_text()
                     except Exception:
                         pass
-
-                if page_text and page_text.strip():
-                    # 按行拆分，为每行分配虚拟坐标（用于后续排序）
-                    raw_lines = page_text.split("\n")
-                    line_height = 16  # 虚拟行高
-                    for i, line in enumerate(raw_lines):
-                        cleaned = line.strip()
-                        if not cleaned:
-                            continue
-                        # 根据行首缩进估算 x0 坐标
-                        leading_spaces = len(line) - len(line.lstrip())
-                        x0 = min(leading_spaces * 6, page_width * 0.4)
-                        blocks.append({
-                            "text": cleaned,
-                            "x0": x0,
-                            "top": i * line_height,
-                            "x1": page_width,
-                            "bottom": i * line_height + line_height - 2,
-                            "page": page_idx,
-                        })
-                else:
-                    # 最终降级: 使用 extract_words 逐词提取
-                    words = page.extract_words(
-                        keep_blank_chars=False, use_text_flow=True
-                    )
-                    for w in words:
-                        blocks.append({
-                            "text": w.get("text", ""),
-                            "x0": float(w.get("x0", 0)),
-                            "top": float(w.get("top", 0)),
-                            "x1": float(w.get("x1", 0)),
-                            "bottom": float(w.get("bottom", 0)),
-                            "page": page_idx,
-                        })
+                    if page_text and page_text.strip():
+                        raw_lines = page_text.split("\n")
+                        line_height = 16
+                        for i, line in enumerate(raw_lines):
+                            cleaned = line.strip()
+                            if not cleaned:
+                                continue
+                            blocks.append({
+                                "text": cleaned,
+                                "x0": 0,
+                                "top": i * line_height,
+                                "x1": page_width,
+                                "bottom": i * line_height + line_height - 2,
+                                "page": page_idx,
+                            })
 
                 # 提取页面中的表格内容
-                # 很多简历使用表格布局（如个人信息栏），extract_text 会丢失这些内容
-                # 参考 naive.py 中 Docx 类的表格处理方式，将表格单元格转为文本行
+                # 很多简历使用表格布局（如个人信息栏），extract_words 可能丢失表格结构
                 try:
                     tables = page.extract_tables()
                     if tables:
-                        # 计算当前页已有 blocks 的最大 top 值，表格行追加在后面
                         page_blocks = [b for b in blocks if b["page"] == page_idx]
                         max_top = max((b["top"] for b in page_blocks), default=0) + 20
                         row_height = 16
@@ -357,16 +399,13 @@ def _extract_metadata_text(binary: bytes) -> list[dict]:
                             for row in table:
                                 if not row:
                                     continue
-                                # 过滤空单元格，合并为一行文本
                                 cells = [str(c).strip() for c in row if c and str(c).strip()]
                                 if not cells:
                                     continue
                                 row_text = " | ".join(cells)
-                                # 去重: 如果该行文本已被 extract_text 提取过则跳过
-                                # 使用简单的子串匹配避免重复
+                                # 去重: 检查表格内容是否已被 extract_words 提取
                                 is_dup = False
                                 for pb in page_blocks:
-                                    # 任一单元格内容已出现在已有文本中，视为重复
                                     if all(c in pb["text"] for c in cells[:2]):
                                         is_dup = True
                                         break
@@ -442,8 +481,10 @@ def _fuse_text_blocks(meta_blocks: list[dict], ocr_blocks: list[dict]) -> list[d
     """
     融合 PDF 元数据文本和 OCR 文本（参考 SmartResume 的 Content Fusion 策略）
 
-    对于元数据已覆盖的区域，优先使用元数据文本（更准确）。
-    对于元数据未覆盖的区域（图片区域），使用 OCR 文本补充。
+    优化策略:
+    1. 先过滤掉元数据中的乱码块
+    2. 对于元数据已覆盖且有效的区域，优先使用元数据文本
+    3. 对于元数据乱码或未覆盖的区域，使用 OCR 文本替换/补充
 
     参数:
         meta_blocks: 元数据提取的文本块
@@ -456,12 +497,24 @@ def _fuse_text_blocks(meta_blocks: list[dict], ocr_blocks: list[dict]) -> list[d
     if not meta_blocks:
         return ocr_blocks
 
-    fused = list(meta_blocks)
+    # 将元数据块分为有效块和乱码块
+    valid_meta = []
+    garbled_meta = []
+    for b in meta_blocks:
+        if _is_valid_line(b.get("text", "")):
+            valid_meta.append(b)
+        else:
+            garbled_meta.append(b)
 
-    # 对每个 OCR 块，检查是否与元数据块重叠
+    if garbled_meta:
+        logger.info(f"元数据中检测到 {len(garbled_meta)} 个乱码块，将尝试用 OCR 替换")
+
+    fused = list(valid_meta)
+
+    # 对每个 OCR 块，检查是否与有效元数据块重叠
     for ocr_b in ocr_blocks:
         is_covered = False
-        for meta_b in meta_blocks:
+        for meta_b in valid_meta:
             if meta_b["page"] != ocr_b["page"]:
                 continue
             # 计算 IoU 判断是否重叠
@@ -563,7 +616,6 @@ def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
 
     try:
         import pdfplumber
-
         # 按页分组文本块
         pages_blocks = {}
         for b in blocks:
@@ -720,8 +772,10 @@ def _is_valid_line(line: str) -> bool:
     """
     检测一行文本是否为有效内容（非乱码）
 
-    通过计算有效字符占比来判断：中文、ASCII字母、数字、常见标点。
-    占比低于 40% 且行长度大于 3 的视为乱码行。
+    通过多维度检测判断:
+    1. 有效字符占比（中文、ASCII字母数字、常见标点）
+    2. 单字符间距异常检测（PDF 自定义字体映射导致的 "O U W Z_W V 2" 模式）
+    3. 连续无意义字母数字序列检测
 
     参数:
         line: 待检测的文本行
@@ -731,14 +785,53 @@ def _is_valid_line(line: str) -> bool:
     if len(line) <= 3:
         # 短行可能是姓名等有效内容，保留
         return True
-    # 有效字符: 中文、ASCII字母数字、常见标点和空格
-    # 有效字符: 中文、ASCII字母数字、常见标点和空格
+
+    # 有效字符: 中文(含扩展区)、ASCII字母数字、常见标点和空格、全角字符、CJK标点
     valid_chars = re.findall(
-        r'[\u4e00-\u9fa5a-zA-Z0-9\s@.,:;!?()（）【】\-_/\\|·•、，。：；！？\u201c\u201d\u2018\u2019《》]',
+        r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff'
+        r'a-zA-Z0-9\s@.,:;!?()（）【】\-_/\\|·•'
+        r'、，。：；！？\u201c\u201d\u2018\u2019《》'
+        r'\uff01-\uff5e'
+        r'\u3000-\u303f'
+        r'#%&+=~`\u00b7\u2022\u2013\u2014'
+        r']',
         line
     )
     ratio = len(valid_chars) / len(line) if len(line) > 0 else 0
-    return ratio >= 0.4
+    if ratio < 0.5:
+        return False
+
+    # 检测 PDF 自定义字体映射导致的单字符间距异常模式
+    # 特征: 大量 "单字母 空格 单字母 空格" 的序列，如 "O U W Z_W V 2 X 3"
+    # 统计: 去掉空格后的字符中，被空格隔开的单字符占比
+    spaced_singles = re.findall(r'(?:^|\s)([a-zA-Z0-9])(?:\s|$)', line)
+    non_space_len = len(line.replace(" ", ""))
+    if non_space_len > 5 and len(spaced_singles) > 0:
+        # 如果被空格隔开的单字符数量占非空格字符的比例过高，判定为乱码
+        single_ratio = len(spaced_singles) / non_space_len
+        if single_ratio > 0.3:
+            return False
+
+    # 检测连续无意义的大小写混合字母数字序列（如 "UJqZX9V2"）
+    # 正常英文单词不会出现这种大小写频繁交替的模式
+    garbled_seqs = re.findall(r'[a-zA-Z0-9]{4,}', line.replace(" ", ""))
+    if garbled_seqs:
+        garbled_count = 0
+        for seq in garbled_seqs:
+            # 计算大小写交替次数
+            case_changes = sum(
+                1 for i in range(1, len(seq))
+                if (seq[i].isupper() != seq[i-1].isupper() and seq[i].isalpha() and seq[i-1].isalpha())
+                or (seq[i].isdigit() != seq[i-1].isdigit())
+            )
+            # 交替频率过高视为乱码序列（正常单词如 "Spring" 只有1次交替）
+            if len(seq) >= 4 and case_changes / len(seq) > 0.5:
+                garbled_count += 1
+        # 如果乱码序列占比过高
+        if len(garbled_seqs) > 0 and garbled_count / len(garbled_seqs) > 0.4:
+            return False
+
+    return True
 
 
 def _fix_split_labels(lines: list[str]) -> list[str]:
@@ -816,10 +909,37 @@ def extract_text(filename: str, binary: bytes) -> tuple[str, list[str], list[dic
             # 双路径提取
             meta_blocks = _extract_metadata_text(binary)
             ocr_blocks = []
-            # 如果元数据提取文本过少，启用 OCR 补充
+
+            # 判断是否需要启用 OCR 补充:
+            # 1. 元数据文本过少（< 100 字符）
+            # 2. 元数据文本乱码比例过高（自定义字体映射导致）
             meta_text_len = sum(len(b["text"]) for b in meta_blocks)
+            need_ocr = False
+
             if meta_text_len < 100:
                 logger.info("PDF 元数据文本过少，启用 OCR 补充提取")
+                need_ocr = True
+            else:
+                # 检测元数据文本质量: 计算有效行占比
+                # 如果大量行被 _is_valid_line 判定为乱码，说明 PDF 字体映射有问题
+                valid_line_count = 0
+                total_line_count = 0
+                for b in meta_blocks:
+                    text = b.get("text", "").strip()
+                    if not text:
+                        continue
+                    total_line_count += 1
+                    if _is_valid_line(text):
+                        valid_line_count += 1
+                if total_line_count > 0:
+                    valid_ratio = valid_line_count / total_line_count
+                    if valid_ratio < 0.6:
+                        logger.info(
+                            f"PDF 元数据文本质量低 (有效行占比 {valid_ratio:.1%})，启用 OCR 补充提取"
+                        )
+                        need_ocr = True
+
+            if need_ocr:
                 ocr_blocks = _extract_ocr_text(binary)
 
             # 文本融合
@@ -962,7 +1082,7 @@ def _call_llm(prompt: str, tenant_id , lang: str) -> Optional[dict]:
         from api.db.services.llm_service import LLMBundle
         from common.constants import LLMType
 
-        llm = LLMBundle(tenant_id, llm_type=LLMType.CHAT, lang=lang)
+        llm = LLMBundle(tenant_id, LLMType.CHAT, lang=lang)
 
         for attempt in range(_LLM_MAX_RETRIES + 1):
             try:
@@ -1157,44 +1277,44 @@ def _extract_description_from_range(
     return "\n".join(line.strip() for line in extracted_lines if line.strip())
 
 
-def _extract_basic_info(indexed_text: str,tenant_id, lang: str) -> Optional[dict]:
+def _extract_basic_info(indexed_text: str, tenant_id , lang: str) -> Optional[dict]:
     """提取基本信息（子任务1）
 
     基本信息通常在简历开头，截取前 8000 字符即可覆盖
     """
     prompt = BASIC_INFO_PROMPT.format(indexed_text=indexed_text[:8000])
-    return _call_llm(prompt,tenant_id, lang)
+    return _call_llm(prompt, lang)
 
 
-def _extract_work_experience(indexed_text: str,tenant_id, lang: str) -> Optional[dict]:
+def _extract_work_experience(indexed_text: str, tenant_id , lang: str) -> Optional[dict]:
     """提取工作经历（子任务2，使用索引指针）
 
     工作经历可能分布在简历中后部，使用完整文本避免截断
     """
     prompt = WORK_EXP_PROMPT.format(indexed_text=indexed_text)
-    return _call_llm(prompt,tenant_id, lang)
+    return _call_llm(prompt, lang)
 
 
-def _extract_education(indexed_text: str,tenant_id, lang: str) -> Optional[dict]:
+def _extract_education(indexed_text: str, tenant_id , lang: str) -> Optional[dict]:
     """提取教育背景（子任务3）
 
     教育背景通常在简历末尾，必须使用完整文本避免截断
     简历文本一般不超过 30K 字符，对 LLM 上下文窗口来说完全可以承受
     """
     prompt = EDUCATION_PROMPT.format(indexed_text=indexed_text)
-    return _call_llm(prompt,tenant_id, lang)
+    return _call_llm(prompt, tenant_id , lang)
 
 
-def _extract_project_experience(indexed_text: str,tenant_id, lang: str) -> Optional[dict]:
+def _extract_project_experience(indexed_text: str, tenant_id , lang: str) -> Optional[dict]:
     """提取项目经验（子任务4，使用索引指针）
 
     项目经验可能分布在简历中后部，使用完整文本避免截断
     """
     prompt = PROJECT_EXP_PROMPT.format(indexed_text=indexed_text)
-    return _call_llm(prompt, lang)
+    return _call_llm(prompt, tenant_id , lang)
 
 
-def parse_with_llm(indexed_text: str, lines: list[str], tenant_id, lang: str) -> Optional[dict]:
+def parse_with_llm(indexed_text: str, lines: list[str], tenant_id , lang: str) -> Optional[dict]:
     """
     使用并行任务分解策略提取简历信息（参考 SmartResume Section 3.2）
 
@@ -1214,10 +1334,10 @@ def parse_with_llm(indexed_text: str, lines: list[str], tenant_id, lang: str) ->
     try:
         # 并行执行四个子任务
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            future_basic = executor.submit(_extract_basic_info, indexed_text,tenant_id, lang)
-            future_work = executor.submit(_extract_work_experience, indexed_text,tenant_id, lang)
-            future_edu = executor.submit(_extract_education, indexed_text,tenant_id, lang)
-            future_project = executor.submit(_extract_project_experience, indexed_text,tenant_id, lang)
+            future_basic = executor.submit(_extract_basic_info, indexed_text, tenant_id , lang)
+            future_work = executor.submit(_extract_work_experience, indexed_text, tenant_id , lang)
+            future_edu = executor.submit(_extract_education, indexed_text, tenant_id , lang)
+            future_project = executor.submit(_extract_project_experience, indexed_text, tenant_id , lang)
 
             basic_info = future_basic.result(timeout=60)
             work_exp = future_work.result(timeout=60)
@@ -1680,7 +1800,7 @@ def _postprocess_resume(resume: dict, lines: list[str]) -> dict:
 # ==================== Pipeline 编排与 Chunk 构建 ====================
 
 
-def parse_resume(filename: str, binary: bytes,tenant_id, lang: str = "Chinese") -> tuple[dict, list[str], list[dict]]:
+def parse_resume(filename: str, binary: bytes, tenant_id, lang: str = "Chinese") -> tuple[dict, list[str], list[dict]]:
     """
     简历解析 Pipeline 编排函数
 
@@ -2050,7 +2170,7 @@ def _build_chunk_document(filename: str, resume: dict,
     return chunks
 
 
-def chunk(filename, binary,tenant_id , from_page=0, to_page=100000,
+def chunk(filename, binary, tenant_id , from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):
     """
     简历解析入口函数（与 task_executor.py 兼容）
@@ -2069,11 +2189,14 @@ def chunk(filename, binary,tenant_id , from_page=0, to_page=100000,
     返回:
         文档块列表
     """
+    if callback is None:
+        def callback(prog, msg): return None
+
     try:
         callback(0.1, "开始解析简历...")
 
         # 解析简历
-        resume, lines, line_positions = parse_resume(filename, binary,tenant_id, lang)
+        resume, lines, line_positions = parse_resume(filename, binary, tenant_id, lang)
         callback(0.6, "简历结构化提取完成")
 
         # 构建文档块（含坐标信息）
