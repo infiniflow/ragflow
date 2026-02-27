@@ -163,7 +163,7 @@ const ChatCard = forwardRef(function ChatCard(
 
   return (
     <Card className="bg-transparent border flex-1 flex flex-col">
-      <CardHeader className="border-b px-5 py-3">
+      <CardHeader className="border-b-0.5 px-5 py-3">
         <CardTitle className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             <span className="text-base">{idx + 1}</span>
@@ -175,7 +175,8 @@ const ChatCard = forwardRef(function ChatCard(
             <Tooltip>
               <TooltipTrigger>
                 <Button
-                  variant={'ghost'}
+                  variant="ghost"
+                  size="icon-sm"
                   disabled={isEmpty(llmId)}
                   onClick={handleApplyConfig}
                 >
@@ -187,12 +188,16 @@ const ChatCard = forwardRef(function ChatCard(
               </TooltipContent>
             </Tooltip>
             {!isLatestChat || chatBoxIds.length === 3 ? (
-              <Button variant={'ghost'} onClick={handleRemoveChatBox}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={handleRemoveChatBox}
+              >
                 <Trash2 />
               </Button>
             ) : (
-              <Button variant={'ghost'} onClick={addChatBox}>
-                <Plus></Plus>
+              <Button variant="ghost" size="icon-sm" onClick={addChatBox}>
+                <Plus />
               </Button>
             )}
           </div>
