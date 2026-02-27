@@ -30,6 +30,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { AudioButton } from '../ui/audio-button';
 
+export type NextMessageInputOnPressEnterParameter = {
+  enableThinking: boolean;
+  enableInternet: boolean;
+};
+
 interface NextMessageInputProps {
   disabled: boolean;
   value: string;
@@ -43,10 +48,7 @@ interface NextMessageInputProps {
   onPressEnter({
     enableThinking,
     enableInternet,
-  }: {
-    enableThinking: boolean;
-    enableInternet: boolean;
-  }): void;
+  }: NextMessageInputOnPressEnterParameter): void;
   onInputChange: React.ChangeEventHandler<HTMLTextAreaElement>;
   createConversationBeforeUploadDocument?(message: string): Promise<any>;
   stopOutputMessage?(): void;
@@ -54,11 +56,8 @@ interface NextMessageInputProps {
   removeFile?(file: File): void;
   showReasoning?: boolean;
   showInternet?: boolean;
+  resize?: 'none' | 'vertical' | 'horizontal' | 'both';
 }
-
-export type NextMessageInputOnPressEnterParameter = Parameters<
-  NextMessageInputProps['onPressEnter']
->;
 
 export function NextMessageInput({
   isUploading = false,
@@ -67,6 +66,7 @@ export function NextMessageInput({
   sendLoading,
   disabled,
   showUploadIcon = true,
+  resize = 'none',
   onUpload,
   onInputChange,
   stopOutputMessage,
@@ -213,6 +213,7 @@ export function NextMessageInput({
           disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}
           autoSize={{ minRows: 1, maxRows: 8 }}
+          resize={resize}
         />
         <div className={cn('flex items-center justify-between gap-1.5')}>
           <div className="flex items-center gap-3">

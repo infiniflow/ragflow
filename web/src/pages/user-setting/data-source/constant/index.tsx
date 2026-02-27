@@ -36,6 +36,8 @@ export enum DataSourceKey {
   BITBUCKET = 'bitbucket',
   ZENDESK = 'zendesk',
   SEAFILE = 'seafile',
+  MYSQL = 'mysql',
+  POSTGRESQL = 'postgresql',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -161,6 +163,16 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.SEAFILE}Description`),
       icon: <SvgIcon name={'data-source/seafile'} width={38} />,
     },
+    [DataSourceKey.MYSQL]: {
+      name: 'MySQL',
+      description: t(`setting.${DataSourceKey.MYSQL}Description`),
+      icon: <SvgIcon name={'data-source/mysql'} width={38} />,
+    },
+    [DataSourceKey.POSTGRESQL]: {
+      name: 'PostgreSQL',
+      description: t(`setting.${DataSourceKey.POSTGRESQL}Description`),
+      icon: <SvgIcon name={'data-source/postgresql'} width={38} />,
+    },
   };
 };
 
@@ -188,6 +200,7 @@ export const DataSourceFormBaseFields = [
     name: 'name',
     type: FormFieldType.Text,
     required: true,
+    tooltip: t('setting.connectorNameTip'),
   },
   {
     label: 'Source',
@@ -854,6 +867,106 @@ export const DataSourceFormFields = {
       tooltip: t('setting.seafileBatchSizeTip'),
     },
   ],
+  [DataSourceKey.MYSQL]: [
+    {
+      label: 'Host',
+      name: 'config.host',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'localhost',
+    },
+    {
+      label: 'Port',
+      name: 'config.port',
+      type: FormFieldType.Number,
+      required: true,
+      placeholder: '3306',
+    },
+    {
+      label: 'Database',
+      name: 'config.database',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Username',
+      name: 'config.credentials.username',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Password',
+      name: 'config.credentials.password',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'SQL Query',
+      name: 'config.query',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: 'Leave empty to load all tables',
+      tooltip: t('setting.mysqlQueryTip'),
+    },
+    {
+      label: 'Content Columns',
+      name: 'config.content_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'title,description,content',
+      tooltip: t('setting.mysqlContentColumnsTip'),
+    },
+  ],
+  [DataSourceKey.POSTGRESQL]: [
+    {
+      label: 'Host',
+      name: 'config.host',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'localhost',
+    },
+    {
+      label: 'Port',
+      name: 'config.port',
+      type: FormFieldType.Number,
+      required: true,
+      placeholder: '5432',
+    },
+    {
+      label: 'Database',
+      name: 'config.database',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Username',
+      name: 'config.credentials.username',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Password',
+      name: 'config.credentials.password',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'SQL Query',
+      name: 'config.query',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: 'Leave empty to load all tables',
+      tooltip: t('setting.postgresqlQueryTip'),
+    },
+    {
+      label: 'Content Columns',
+      name: 'config.content_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'title,description,content',
+      tooltip: t('setting.postgresqlContentColumnsTip'),
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -1135,7 +1248,6 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
-
   [DataSourceKey.SEAFILE]: {
     name: '',
     source: DataSourceKey.SEAFILE,
@@ -1145,6 +1257,42 @@ export const DataSourceFormDefaultValues = {
       batch_size: 100,
       credentials: {
         seafile_token: '',
+      },
+    },
+  },
+  [DataSourceKey.MYSQL]: {
+    name: '',
+    source: DataSourceKey.MYSQL,
+    config: {
+      host: 'localhost',
+      port: 3306,
+      database: '',
+      query: '',
+      content_columns: '',
+      metadata_columns: '',
+      id_column: '',
+      timestamp_column: '',
+      credentials: {
+        username: '',
+        password: '',
+      },
+    },
+  },
+  [DataSourceKey.POSTGRESQL]: {
+    name: '',
+    source: DataSourceKey.POSTGRESQL,
+    config: {
+      host: 'localhost',
+      port: 5432,
+      database: '',
+      query: '',
+      content_columns: '',
+      metadata_columns: '',
+      id_column: '',
+      timestamp_column: '',
+      credentials: {
+        username: '',
+        password: '',
       },
     },
   },

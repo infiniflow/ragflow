@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.23.1"
+version = "0.24.0"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -18,10 +18,11 @@ dependencies = [
     "bio==1.7.1",
     "boxsdk>=10.1.0",
     "captcha>=0.7.1",
+    "chardet>=5.2.0,<6.0.0",
     "cn2an==0.5.22",
     "cohere==5.6.2",
     "Crawl4AI>=0.4.0,<1.0.0",
-    "dashscope==1.20.11",
+    "dashscope==1.25.11",
     "deepl==1.18.0",
     "demjson3==3.0.6",
     "discord-py==2.3.2",
@@ -37,9 +38,10 @@ dependencies = [
     "flask-login==0.6.3",
     "flask-mail>=0.10.0",
     "flask-session==0.8.0",
+    "google-api-python-client>=2.190.0,<3.0.0",
     "google-auth-oauthlib>=1.2.0,<2.0.0",
+    "google-cloud-storage>=2.19.0,<3.0.0",
     "google-genai>=1.41.0,<2.0.0",
-    "google-generativeai>=0.8.1,<0.9.0", # Needed for cv_model and embedding_model
     "google-search-results==2.4.2",
     "graspologic @ git+https://github.com/yuzhichang/graspologic.git@38e680cab72bc9fb68a7992c3bcc2d53b24e42fd",
     "groq==0.9.0",
@@ -58,6 +60,7 @@ dependencies = [
     "mini-racer>=0.12.4,<0.13.0",
     "minio==7.2.4",
     "mistralai==0.4.2",
+    "mysql-connector-python>=9.0.0,<10.0.0",
     "moodlepy>=0.23.0",
     "mypy-boto3-s3==1.40.26",
     "Office365-REST-Python-Client==2.6.2",
@@ -106,7 +109,6 @@ dependencies = [
     "tencentcloud-sdk-python==3.0.1478",
     "tika==2.6.0",
     "valkey==6.0.2",
-    "vertexai==1.70.0",
     "volcengine==1.0.194",
     "voyageai==0.2.3",
     "webdav4>=0.10.0,<0.11.0",
@@ -117,13 +119,13 @@ dependencies = [
     "xpinyin==0.7.6",
     "yfinance==0.2.65",
     "zhipuai==2.0.1",
+    "peewee>=3.17.1,<4.0.0",
     #    following modules aren't necessary
     #    "nltk==3.9.1",
     #    "numpy>=1.26.0,<2.0.0",
     #    "openai>=1.45.0",
     #    "openpyxl>=3.1.0,<4.0.0",
     #    "pandas>=2.2.0,<3.0.0",
-    #    "peewee==3.17.1",
     #    "pillow>=10.4.0,<13.0.0",
     #    "protobuf==5.27.2",
     #    "pymysql>=1.1.1,<2.0.0",
