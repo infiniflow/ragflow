@@ -137,7 +137,7 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		logger.Info("Server starting", zap.String("addr", addr))
+		logger.Info(fmt.Sprintf("Server starting on port: %d", cfg.Server.Port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatal("Failed to start server", zap.Error(err))
 		}

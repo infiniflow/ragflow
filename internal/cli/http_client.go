@@ -46,7 +46,7 @@ func NewHTTPClient() *HTTPClient {
 	}
 	return &HTTPClient{
 		Host:           "127.0.0.1",
-		Port:           9380,
+		Port:           9382,
 		APIVersion:     "v1",
 		ConnectTimeout: 5 * time.Second,
 		ReadTimeout:    60 * time.Second,

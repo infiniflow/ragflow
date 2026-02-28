@@ -172,7 +172,8 @@ func Init(configPath string) error {
 		if v.IsSet("ragflow") {
 			ragflowConfig := v.Sub("ragflow")
 			if ragflowConfig != nil {
-				globalConfig.Server.Port = ragflowConfig.GetInt("http_port")
+				globalConfig.Server.Port = ragflowConfig.GetInt("http_port") + 2 // 9382, by default
+				// globalConfig.Server.Port = ragflowConfig.GetInt("http_port") // Correct
 				// If mode is not set, default to debug
 				if globalConfig.Server.Mode == "" {
 					globalConfig.Server.Mode = "release"
