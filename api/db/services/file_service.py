@@ -23,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Union
 
+import xxhash
 from peewee import fn
 
 from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileType
@@ -442,20 +443,20 @@ class FileService(CommonService):
             doc_id = file.id if hasattr(file, "id") else get_uuid()
             e, doc = DocumentService.get_by_id(doc_id)
             if e:
-                # Document exists - update content and trigger re-parsing to refresh chunks
                 try:
                     blob = file.read()
-                    old_size = doc.size
+                    new_hash = xxhash.xxh128(blob).hexdigest()
+                    old_hash = doc.content_hash or ""
                     settings.STORAGE_IMPL.put(kb.id, doc.location, blob, kb.tenant_id)
                     doc.size = len(blob)
+                    doc.content_hash = new_hash
                     doc = doc.to_dict()
                     DocumentService.update_by_id(doc["id"], doc)
-                    # Add to files list to trigger re-parsing and update vector database
-                    files.append((doc, blob))
-                    logging.info(f"Document '{doc['name']}' (id={doc['id']}) content updated: {old_size} -> {doc['size']} bytes, queued for re-chunking")
-                except Exception as e:
-                    logging.exception(f"Failed to update document {doc_id}: {e}")
-                    err.append(file.filename + ": " + str(e))
+                    if new_hash != old_hash:
+                        files.append((doc, blob))
+                except Exception as exc:
+                    logging.exception(f"Failed to update document {doc_id}: {exc}")
+                    err.append(file.filename + ": " + str(exc))
                 continue
             try:
                 DocumentService.check_doc_health(kb.tenant_id, file.filename)
@@ -494,6 +495,7 @@ class FileService(CommonService):
                     "location": location,
                     "size": len(blob),
                     "thumbnail": thumbnail_location,
+                    "content_hash": xxhash.xxh128(blob).hexdigest(),
                 }
                 DocumentService.insert(doc)
 

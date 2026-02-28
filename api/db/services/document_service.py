@@ -664,28 +664,14 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_chunking_config(cls, doc_id):
-        """Get document chunking configuration for task digest calculation.
-
-        The returned config is used to calculate task digests for chunk reuse optimization.
-        Including update_time and size ensures that when document content changes,
-        the digest changes too, preventing stale chunks from being reused.
-
-        Args:
-            doc_id: The document ID to get configuration for.
-
-        Returns:
-            dict: Configuration containing parser settings, tenant info, and content
-                  change indicators (update_time, size), or None if document not found.
-        """
         configs = (
             cls.model.select(
                 cls.model.id,
                 cls.model.kb_id,
                 cls.model.parser_id,
                 cls.model.parser_config,
-                # Include content change indicators to invalidate chunk cache when document is updated
-                cls.model.update_time,
                 cls.model.size,
+                cls.model.content_hash,
                 Knowledgebase.language,
                 Knowledgebase.embd_id,
                 Tenant.id.alias("tenant_id"),
@@ -699,7 +685,6 @@ class DocumentService(CommonService):
         )
         configs = configs.dicts()
         if not configs:
-            logging.debug(f"Chunking config not found for document: {doc_id}")
             return None
         return configs[0]
 
