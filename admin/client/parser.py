@@ -284,7 +284,7 @@ list_user_agents: LIST AGENTS ";"
 list_user_chats: LIST CHATS ";"
 create_user_chat: CREATE CHAT quoted_string ";"
 drop_user_chat: DROP CHAT quoted_string ";"
-create_chat_session: CREATE CHAT quoted_string SESSION quoted_string ";"
+create_chat_session: CREATE CHAT quoted_string SESSION ";"
 drop_chat_session: DROP CHAT quoted_string SESSION quoted_string ";"
 list_chat_sessions: LIST CHAT quoted_string SESSIONS ";"
 chat_on_session: CHAT quoted_string ON quoted_string SESSION quoted_string ";"
@@ -591,13 +591,12 @@ class RAGFlowCLITransformer(Transformer):
 
     def create_chat_session(self, items):
         chat_name = items[2].children[0].strip("'\"")
-        session_name = items[4].children[0].strip("'\"")
-        return {"type": "create_chat_session", "chat_name": chat_name, "session_name": session_name}
+        return {"type": "create_chat_session", "chat_name": chat_name}
 
     def drop_chat_session(self, items):
         chat_name = items[2].children[0].strip("'\"")
-        session_name = items[4].children[0].strip("'\"")
-        return {"type": "drop_chat_session", "chat_name": chat_name, "session_name": session_name}
+        session_id = items[4].children[0].strip("'\"")
+        return {"type": "drop_chat_session", "chat_name": chat_name, "session_id": session_id}
 
     def list_chat_sessions(self, items):
         chat_name = items[2].children[0].strip("'\"")
