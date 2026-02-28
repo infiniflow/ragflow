@@ -108,6 +108,7 @@ export interface IGenerateForm {
   cite?: boolean;
   prompt: number;
   llm_id: string;
+  tenant_llm_id?: string;
   parameters: { key: string; component_id: string };
 }
 
@@ -143,6 +144,7 @@ export interface IRetrievalForm {
   top_n?: number;
   top_k?: number;
   rerank_id?: string;
+  tenant_rerank_id?: string;
   empty_response?: string;
   kb_ids: string[];
 }
