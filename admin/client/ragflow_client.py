@@ -605,20 +605,19 @@ class RAGFlowClient:
                     if isinstance(v, (dict, list)) and v:
                         items.extend(flatten(v, new_key))
                     else:
-                        items.append((new_key, v))
+                        items.append({"name": new_key, "value": v})
             elif isinstance(obj, list):
                 for i, v in enumerate(obj):
                     new_key = f"{parent_key}[{i}]"
                     if isinstance(v, (dict, list)) and v:
                         items.extend(flatten(v, new_key))
                     else:
-                        items.append((new_key, v))
+                        items.append({"name": new_key, "value": v})
             return items
 
-        # Print each key-value pair on a separate line
+        # Reconstruct flattened data and print using _print_table_simple
         flattened = flatten(data)
-        for key, value in flattened:
-            print(f"{key}: {value}")
+        self._print_table_simple(flattened)
 
     def handle_list_datasets(self, command):
         if self.server_type != "admin":
