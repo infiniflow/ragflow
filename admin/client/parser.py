@@ -91,6 +91,7 @@ sql_command: login_user
            | create_chat_session
            | drop_chat_session
            | list_chat_sessions
+           | chat_on_session
            | benchmark
 
 // meta command definition
@@ -254,6 +255,7 @@ user_statement: ping_server
                 | create_chat_session
                 | drop_chat_session
                 | list_chat_sessions
+                | chat_on_session
 
 ping_server: PING ";"
 show_current_user: SHOW CURRENT USER ";"
@@ -604,8 +606,8 @@ class RAGFlowCLITransformer(Transformer):
     def chat_on_session(self, items):
         message = items[1].children[0].strip("'\"")
         chat_name = items[3].children[0].strip("'\"")
-        session_name = items[5].children[0].strip("'\"")
-        return {"type": "chat_on_session", "message": message, "chat_name": chat_name, "session_name": session_name}
+        session_id = items[5].children[0].strip("'\"")
+        return {"type": "chat_on_session", "message": message, "chat_name": chat_name, "session_id": session_id}
 
     def import_docs_into_dataset(self, items):
         document_list_str = items[1].children[0].strip("'\"")
