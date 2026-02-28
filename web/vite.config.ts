@@ -75,6 +75,21 @@ export default defineConfig(({ mode, command }) => {
           changeOrigin: true,
           ws: true,
         },
+        '/v1/system/config': {
+          target: 'http://127.0.0.1:9382/',
+          changeOrigin: true,
+          ws: true,
+        },
+        '/v1/user/login': {
+          target: 'http://127.0.0.1:9382/',
+          changeOrigin: true,
+          ws: true,
+        },
+        '/v1/user/logout': {
+          target: 'http://127.0.0.1:9382/',
+          changeOrigin: true,
+          ws: true,
+        },
         '/v1': {
           target: 'http://127.0.0.1:9380/',
           changeOrigin: true,
