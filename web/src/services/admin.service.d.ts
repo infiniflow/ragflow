@@ -1,4 +1,4 @@
-declare module AdminService {
+declare namespace AdminService {
   export type LoginData = {
     access_token: string;
     avatar: unknown;
@@ -175,17 +175,41 @@ declare module AdminService {
     tags: string[];
   };
 
-  export type SandboxConfigField = {
-    type: 'string' | 'integer' | 'boolean' | 'json';
+  export type SandboxConfigFieldBase = {
     required?: boolean;
     label?: string;
     placeholder?: string;
-    default?: string | number | boolean;
-    min?: number;
-    max?: number;
     description?: string;
+  };
+
+  export type SandboxConfigStringField = SandboxConfigFieldBase & {
+    type: 'string';
+    default?: string;
     secret?: boolean;
   };
+
+  export type SandboxConfigIntegerField = SandboxConfigFieldBase & {
+    type: 'integer';
+    default?: number;
+    min?: number;
+    max?: number;
+  };
+
+  export type SandboxConfigBooleanField = SandboxConfigFieldBase & {
+    type: 'boolean';
+    default?: boolean;
+  };
+
+  export type SandboxConfigJsonField = SandboxConfigFieldBase & {
+    type: 'json';
+    default?: unknown;
+  };
+
+  export type SandboxConfigField =
+    | SandboxConfigStringField
+    | SandboxConfigIntegerField
+    | SandboxConfigBooleanField
+    | SandboxConfigJsonField;
 
   export type SandboxConfig = {
     provider_type: string;
