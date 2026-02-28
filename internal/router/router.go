@@ -16,6 +16,7 @@ type Router struct {
 	chunkHandler         *handler.ChunkHandler
 	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
+	chatSessionHandler   *handler.ChatSessionHandler
 }
 
 // NewRouter create router
@@ -27,6 +28,7 @@ func NewRouter(
 	chunkHandler *handler.ChunkHandler,
 	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
+	chatSessionHandler *handler.ChatSessionHandler,
 ) *Router {
 	return &Router{
 		userHandler:          userHandler,
@@ -37,6 +39,7 @@ func NewRouter(
 		chunkHandler:         chunkHandler,
 		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
+		chatSessionHandler:   chatSessionHandler,
 	}
 }
 
@@ -119,6 +122,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chat.POST("/next", r.chatHandler.ListChatsNext)
 			chat.POST("/set", r.chatHandler.SetDialog)
 			chat.POST("/rm", r.chatHandler.RemoveChats)
+		}
+
+		// Chat session (conversation) routes
+		conversation := engine.Group("/v1/conversation")
+		{
+			conversation.POST("/set", r.chatSessionHandler.SetConversation)
+			conversation.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
+			conversation.GET("/list", r.chatSessionHandler.ListChatSessions)
 		}
 	}
 
