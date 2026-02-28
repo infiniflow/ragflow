@@ -1,6 +1,5 @@
 import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
-import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { MemoriesFormField } from '@/components/memories-form-field';
 import {
@@ -163,7 +162,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
         </RAGFlowFormItem>
         <MemoryDatasetForm></MemoryDatasetForm>
         <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
-          <FormContainer>
+          <section className="space-y-5">
             <SimilaritySliderFormField
               vectorSimilarityWeightName="keywords_similarity_weight"
               isTooltipShown
@@ -183,7 +182,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
                 <TOCEnhanceFormField name="toc_enhance"></TOCEnhanceFormField>
               </>
             )}
-          </FormContainer>
+          </section>
         </Collapse>
         <Output list={outputList}></Output>
       </FormWrapper>
