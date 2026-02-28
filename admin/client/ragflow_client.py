@@ -15,6 +15,7 @@
 #
 import json
 import time
+import uuid
 from typing import Any, List, Optional
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -907,29 +908,28 @@ class RAGFlowClient:
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
         chat_name = command["chat_name"]
-        session_name = command["session_name"]
         dialog_id = self._get_chat_id_by_name(chat_name)
         if dialog_id is None:
             return
+        conversation_id = str(uuid.uuid4()).replace("-", "")
         payload = {
-            "conversation_id": "",
+            "conversation_id": conversation_id,
             "is_new": True,
-            "name": session_name,
             "dialog_id": dialog_id
         }
         response = self.http_client.request("POST", "/conversation/set", json_body=payload, use_api_base=False,
                                             auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
-            print(f"Success to create chat session '{session_name}' for chat: {chat_name}")
+            print(f"Success to create chat session for chat: {chat_name}")
         else:
-            print(f"Fail to create chat session '{session_name}' for chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to create chat session for chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def drop_chat_session(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
         chat_name = command["chat_name"]
-        session_name = command["session_name"]
+        session_id = command["session_id"]
         dialog_id = self._get_chat_id_by_name(chat_name)
         if dialog_id is None:
             return
@@ -938,19 +938,19 @@ class RAGFlowClient:
             return
         to_drop_session_ids = []
         for session in sessions:
-            if session["name"] == session_name:
+            if session["id"] == session_id:
                 to_drop_session_ids.append(session["id"])
         if not to_drop_session_ids:
-            print(f"Chat session '{session_name}' not found in chat '{chat_name}'")
+            print(f"Chat session '{session_id}' not found in chat '{chat_name}'")
             return
         payload = {"conversation_ids": to_drop_session_ids}
         response = self.http_client.request("POST", "/conversation/rm", json_body=payload, use_api_base=False,
                                             auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
-            print(f"Success to drop chat session '{session_name}' from chat: {chat_name}")
+            print(f"Success to drop chat session '{session_id}' from chat: {chat_name}")
         else:
-            print(f"Fail to drop chat session '{session_name}' from chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to drop chat session '{session_id}' from chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def list_chat_sessions(self, command):
         if self.server_type != "user":
