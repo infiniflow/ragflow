@@ -10,10 +10,11 @@ import (
 
 // Config application configuration
 type Config struct {
-	Server    ServerConfig    `mapstructure:"server"`
-	Database  DatabaseConfig  `mapstructure:"database"`
-	Log       LogConfig       `mapstructure:"log"`
-	DocEngine DocEngineConfig `mapstructure:"doc_engine"`
+	Server          ServerConfig    `mapstructure:"server"`
+	Database        DatabaseConfig  `mapstructure:"database"`
+	Log             LogConfig       `mapstructure:"log"`
+	DocEngine       DocEngineConfig `mapstructure:"doc_engine"`
+	RegisterEnabled int             `mapstructure:"register_enabled"`
 }
 
 // ServerConfig server configuration

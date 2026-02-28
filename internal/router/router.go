@@ -24,6 +24,7 @@ func NewRouter(
 	userHandler *handler.UserHandler,
 	tenantHandler *handler.TenantHandler,
 	documentHandler *handler.DocumentHandler,
+	systemHandler *handler.SystemHandler,
 	knowledgebaseHandler *handler.KnowledgebaseHandler,
 	chunkHandler *handler.ChunkHandler,
 	llmHandler *handler.LLMHandler,
@@ -34,7 +35,7 @@ func NewRouter(
 		userHandler:          userHandler,
 		tenantHandler:        tenantHandler,
 		documentHandler:      documentHandler,
-		systemHandler:        handler.NewSystemHandler(),
+		systemHandler:        systemHandler,
 		knowledgebaseHandler: knowledgebaseHandler,
 		chunkHandler:         chunkHandler,
 		llmHandler:           llmHandler,
@@ -52,8 +53,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 		})
 	})
 
-	// System ping endpoint
+	// System endpoints
 	engine.GET("/v1/system/ping", r.systemHandler.Ping)
+	engine.GET("/v1/system/config", r.systemHandler.GetConfig)
 
 	// User login by email endpoint
 	engine.POST("/v1/user/login", r.userHandler.LoginByEmail)
