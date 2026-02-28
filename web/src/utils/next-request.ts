@@ -8,6 +8,8 @@ import authorizationUtil, {
 import notification from '@/utils/notification';
 import axios from 'axios';
 import { convertTheKeysOfTheObjectToSnake } from './common-util';
+import { setCachedLlmList } from './llm-cache';
+import { addTenantParams } from './llm-util';
 
 const FAILED_TO_FETCH = 'Failed to fetch';
 
@@ -82,9 +84,13 @@ request.interceptors.request.use(
     const data = convertTheKeysOfTheObjectToSnake(config.data);
     const params = convertTheKeysOfTheObjectToSnake(config.params);
 
-    const newConfig = { ...config, data, params };
+    // Add tenant parameters to data
+    const dataWithTenantParams = addTenantParams(data, config.url);
 
-    if (!newConfig.skipToken) {
+    const newConfig = { ...config, data: dataWithTenantParams, params };
+
+    // Skip token if explicitly requested
+    if (!(newConfig as any).skipToken) {
       newConfig.headers.set(Authorization, getAuthorization());
     }
 
@@ -105,6 +111,15 @@ request.interceptors.response.use(
       return response;
     }
     const data = response?.data;
+
+    // Update LLM list cache when fetching my_llm or llm_list
+    if (data?.code === 0 && data?.data) {
+      const url = response?.config?.url || '';
+      if (url.includes('/v1/llm/my_llms') || url.includes('/v1/llm/list')) {
+        setCachedLlmList(data.data);
+      }
+    }
+
     if (data?.code === 100) {
       message.error(data?.message);
     } else if (data?.code === 401) {
