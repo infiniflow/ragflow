@@ -1146,7 +1146,10 @@ async def retrieval_test_embedded():
 
         if langs:
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
-        embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+        if kb.tenant_embd_id:
+            embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+        else:
+            embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
         rerank_mdl = None

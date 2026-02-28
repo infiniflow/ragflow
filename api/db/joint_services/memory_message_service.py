@@ -26,7 +26,7 @@ from api.db.db_models import Task
 from api.db.services.task_service import TaskService
 from api.db.services.memory_service import MemoryService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_model_config_by_id
+from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name
 from api.utils.memory_utils import get_memory_type_human
 from memory.services.messages import MessageService
 from memory.services.query import MsgTextQuery, get_vector
@@ -53,11 +53,12 @@ async def save_to_memory(memory_id: str, message_dict: dict):
     tenant_id = memory.tenant_id
     extracted_content = await extract_by_llm(
         tenant_id,
-        memory.llm_id,
+        memory.tenant_llm_id,
         {"temperature": memory.temperature},
         get_memory_type_human(memory.memory_type),
         message_dict.get("user_input", ""),
-        message_dict.get("agent_response", "")
+        message_dict.get("agent_response", ""),
+        llm_id=memory.llm_id
     ) if memory.memory_type != MemoryType.RAW.value else []  # if only RAW, no need to extract
     raw_message_id = REDIS_CONN.generate_auto_increment_id(namespace="memory")
     message_list = [{
@@ -107,12 +108,13 @@ async def save_extracted_to_memory_only(memory_id: str, message_dict, source_mes
     tenant_id = memory.tenant_id
     extracted_content = await extract_by_llm(
         tenant_id,
-        memory.llm_id,
+        memory.tenant_llm_id,
         {"temperature": memory.temperature},
         get_memory_type_human(memory.memory_type),
         message_dict.get("user_input", ""),
         message_dict.get("agent_response", ""),
-        task_id=task_id
+        task_id=task_id,
+        llm_id=memory.llm_id
     )
     message_list = [{
         "message_id": REDIS_CONN.generate_auto_increment_id(namespace="memory"),
@@ -140,7 +142,7 @@ async def save_extracted_to_memory_only(memory_id: str, message_dict, source_mes
 
 
 async def extract_by_llm(tenant_id: str, tenant_llm_id: int, extract_conf: dict, memory_type: List[str], user_input: str,
-                         agent_response: str, system_prompt: str = "", user_prompt: str="", task_id: str=None) -> List[dict]:
+                         agent_response: str, system_prompt: str = "", user_prompt: str="", task_id: str=None, llm_id: str = "") -> List[dict]:
     if not system_prompt:
         system_prompt = PromptAssembler.assemble_system_prompt({"memory_type": memory_type})
     conversation_content = f"User Input: {user_input}\nAgent Response: {agent_response}"
@@ -151,7 +153,10 @@ async def extract_by_llm(tenant_id: str, tenant_llm_id: int, extract_conf: dict,
         user_prompts.append({"role": "user", "content": f"Conversation: {conversation_content}\nConversation Time: {conversation_time}\nCurrent Time: {conversation_time}"})
     else:
         user_prompts.append({"role": "user", "content": PromptAssembler.assemble_user_prompt(conversation_content, conversation_time, conversation_time)})
-    llm_config = get_model_config_by_id(tenant_llm_id)
+    if tenant_llm_id:
+        llm_config = get_model_config_by_id(tenant_llm_id)
+    else:
+        llm_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, llm_id)
     llm = LLMBundle(tenant_id, llm_config)
     if task_id:
         TaskService.update_progress(task_id, {"progress": 0.15, "progress_msg": timestamp_to_date(current_timestamp())+ " " + "Prepared prompts and LLM."})
@@ -168,7 +173,10 @@ async def extract_by_llm(tenant_id: str, tenant_llm_id: int, extract_conf: dict,
 
 
 async def embed_and_save(memory, message_list: list[dict], task_id: str=None):
-    embd_model_config = get_model_config_by_id(memory.tenant_embd_id)
+    if memory.tenant_embd_id:
+        embd_model_config = get_model_config_by_id(memory.tenant_embd_id)
+    else:
+        embd_model_config = get_model_config_by_type_and_name(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
     embedding_model = LLMBundle(memory.tenant_id, embd_model_config)
     if task_id:
         TaskService.update_progress(task_id, {"progress": 0.65, "progress_msg": timestamp_to_date(current_timestamp())+ " " + "Prepared embedding model."})
@@ -238,7 +246,10 @@ def query_message(filter_dict: dict, params: dict):
     question = params["query"]
     question = question.strip()
     memory = memory_list[0]
-    embd_model_config = get_model_config_by_id(memory.tenant_embd_id)
+    if memory.tenant_embd_id:
+        embd_model_config = get_model_config_by_id(memory.tenant_embd_id)
+    else:
+        embd_model_config = get_model_config_by_type_and_name(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
     embd_model = LLMBundle(memory.tenant_id, embd_model_config)
     match_dense = get_vector(question, embd_model, similarity=params["similarity_threshold"])
     match_text, _ = MsgTextQuery().question(question, min_match=params["similarity_threshold"])

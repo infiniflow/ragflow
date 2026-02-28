@@ -1597,7 +1597,10 @@ async def retrieval_test(tenant_id):
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
             return get_error_data_result(message="Dataset not found!")
-        embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+        if kb.tenant_embd_id:
+            embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+        else:
+            embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
         rerank_mdl = None

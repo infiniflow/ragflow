@@ -996,7 +996,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     from api.db.services.file_service import FileService
     from api.db.services.llm_service import LLMBundle
     from api.db.services.user_service import TenantService
-    from api.db.joint_services.tenant_model_service import get_model_config_by_id,get_tenant_default_model_by_type
+    from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
     from rag.app import audio, email, naive, picture, presentation
 
     e, conv = ConversationService.get_by_id(conversation_id)
@@ -1012,7 +1012,10 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
         raise LookupError("Can't find this dataset!")
-    embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+    if kb.tenant_embd_id:
+        embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+    else:
+        embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
     embd_mdl = LLMBundle(kb.tenant_id, embd_model_config, lang=kb.language)
 
     err, files = FileService.upload_document(kb, file_objs, user_id)

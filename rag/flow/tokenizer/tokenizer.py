@@ -22,7 +22,7 @@ from common.constants import LLMType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.user_service import TenantService
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_by_id
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_by_id, get_model_config_by_type_and_name
 from common.connection_utils import timeout
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.tokenizer.schema import TokenizerFromUpstream
@@ -56,7 +56,10 @@ class Tokenizer(ProcessBase):
         token_count = 0
         if self._canvas._kb_id:
             e, kb = KnowledgebaseService.get_by_id(self._canvas._kb_id)
-            embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+            if kb.tenant_embd_id:
+                embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+            else:
+                embd_model_config = get_model_config_by_type_and_name(self._canvas._tenant_id, LLMType.EMBEDDING, kb.embd_id)
         else:
             embd_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.EMBEDDING)
         embedding_model = LLMBundle(self._canvas._tenant_id, embd_model_config)

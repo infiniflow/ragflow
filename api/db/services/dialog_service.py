@@ -208,9 +208,14 @@ async def async_chat_solo(dialog, messages, stream=True):
     image_attachments = []
     image_files = []
     if "files" in messages[-1]:
-        attachments = "\n\n".join(FileService.get_files(messages[-1]["files"]))
+        if llm_type == "chat":
+            text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
+        else:
+            text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
+        attachments = "\n\n".join(text_attachments)
     model_config = get_model_config_by_id(dialog.tenant_llm_id)
     chat_mdl = LLMBundle(dialog.tenant_id, model_config)
+    factory = model_config.get("llm_factory", "") if model_config else ""
 
     prompt_config = dialog.prompt_config
     tts_mdl = None
@@ -1255,11 +1260,11 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     meta_data_filter = search_config.get("meta_data_filter")
 
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
-    tenant_embedding_list = list(set([kb.tenant_embd_id for kb in kbs]))
+    embedding_list = list(set([kb.embd_id for kb in kbs]))
 
     is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
     retriever = settings.retriever if not is_knowledge_graph else settings.kg_retriever
-    embd_model_config = get_model_config_by_id(tenant_embedding_list[0])
+    embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embedding_list[0])
     embd_mdl = LLMBundle(tenant_id, embd_model_config)
     chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_llm_name)
     chat_mdl = LLMBundle(tenant_id, chat_model_config)
@@ -1339,7 +1344,10 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         return {"error": "No KB selected"}
     tenant_embedding_list = list(set([kb.tenant_embd_id for kb in kbs]))
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
-    embd_model_config = get_model_config_by_id(tenant_embedding_list[0])
+    if tenant_embedding_list[0]:
+        embd_model_config = get_model_config_by_id(tenant_embedding_list[0])
+    else:
+        embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
     embd_mdl = LLMBundle(tenant_id, embd_model_config)
     chat_id = search_config.get("chat_id", "")
     if chat_id:

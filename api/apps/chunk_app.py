@@ -167,7 +167,11 @@ async def set():
                 return get_data_error_result(message="Tenant not found!")
 
             tenant_embd_id = DocumentService.get_tenant_embd_id(req["doc_id"])
-            embd_model_config = get_model_config_by_id(tenant_embd_id)
+            if tenant_embd_id:
+                embd_model_config = get_model_config_by_id(tenant_embd_id)
+            else:
+                embd_id = DocumentService.get_embd_id(req["doc_id"])
+                embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_id)
             embd_mdl = LLMBundle(tenant_id, embd_model_config)
 
             e, doc = DocumentService.get_by_id(req["doc_id"])
@@ -327,7 +331,10 @@ async def create():
                 d[PAGERANK_FLD] = kb.pagerank
 
             tenant_embd_id = DocumentService.get_tenant_embd_id(req["doc_id"])
-            embd_model_config = get_model_config_by_id(tenant_embd_id)
+            if tenant_embd_id:
+                embd_model_config = get_model_config_by_id(tenant_embd_id)
+            else:
+                embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, doc.embd_id)
             embd_mdl = LLMBundle(tenant_id, embd_model_config)
 
             v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
@@ -413,7 +420,10 @@ async def retrieval_test():
         _question = question
         if langs:
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
-        embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+        if kb.tenant_embd_id:
+            embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+        else:
+            embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
         rerank_mdl = None
