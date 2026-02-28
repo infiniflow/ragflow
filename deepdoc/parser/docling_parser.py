@@ -194,8 +194,8 @@ class DoclingParser(RAGFlowPdfParser):
                         bbox = _BBox(int(pn), bb[0], bb[1], bb[2], bb[3])
                 yield (DoclingContentType.EQUATION.value, text, bbox)
 
-    def _transfer_to_sections(self, doc, parse_method: str) -> list[tuple[str, str]]:
-        sections: list[tuple[str, str]] = []
+    def _transfer_to_sections(self, doc, parse_method: str) -> list[tuple[str, ...]]:
+        sections: list[tuple[str, ...]] = []
         for typ, payload, bbox in self._iter_doc_items(doc):
             if typ == DoclingContentType.TEXT.value:
                 section = payload.strip()

@@ -5641,6 +5641,42 @@
                     "is_tools": true
                 }
             ]
+        },
+        {
+            "name": "Avian",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "deepseek/deepseek-v3.2",
+                    "tags": "LLM,CHAT,164K",
+                    "max_tokens": 164000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "moonshotai/kimi-k2.5",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "z-ai/glm-5",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "minimax/minimax-m2.5",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                }
+            ]
         }
     ]
 }

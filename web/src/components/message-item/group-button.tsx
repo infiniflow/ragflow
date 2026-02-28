@@ -1,6 +1,5 @@
 import { PromptIcon } from '@/assets/icon/next-icon';
 import CopyToClipboard from '@/components/copy-to-clipboard';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Tooltip,
   TooltipContent,
@@ -8,18 +7,20 @@ import {
 } from '@/components/ui/tooltip';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
+import { cn } from '@/lib/utils';
 import {
-  DeleteOutlined,
-  DislikeOutlined,
-  LikeOutlined,
-  PauseCircleOutlined,
-  SoundOutlined,
-  SyncOutlined,
-} from '@ant-design/icons';
+  LucidePauseCircle,
+  LucideRefreshCw,
+  LucideThumbsDown,
+  LucideThumbsUp,
+  LucideTrash2,
+  LucideVolume2,
+} from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import FeedbackDialog from '../feedback-dialog';
 import { PromptDialog } from '../prompt-dialog';
+import { Button } from '../ui/button';
 import { useRemoveMessage, useSendFeedback, useSpeech } from './hooks';
 
 interface IProps {
@@ -55,44 +56,57 @@ export const AssistantGroupButton = ({
 
   return (
     <>
-      <ToggleGroup
-        type="single"
-        size="sm"
-        variant="outline"
-        className="space-x-1"
-      >
-        <ToggleGroupItem value="a">
-          <CopyToClipboard text={content}></CopyToClipboard>
-        </ToggleGroupItem>
+      <div className="flex gap-1" role="toolbar">
+        <CopyToClipboard text={content} className="border-0" size="icon-xs" />
+
         {showLoudspeaker && (
-          <ToggleGroupItem value="b" onClick={handleRead}>
+          <>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span>
-                  {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
-                </span>
+                <Button
+                  variant="transparent"
+                  size="icon-xs"
+                  className="border-0"
+                  onClick={handleRead}
+                >
+                  <span>
+                    {isPlaying ? <LucidePauseCircle /> : <LucideVolume2 />}
+                  </span>
+                </Button>
               </TooltipTrigger>
               <TooltipContent>{t('chat.read')}</TooltipContent>
             </Tooltip>
+
             <audio src="" ref={ref}></audio>
-          </ToggleGroupItem>
+          </>
         )}
         {showLikeButton && (
           <>
-            <ToggleGroupItem value="c" onClick={handleLike}>
-              <LikeOutlined />
-            </ToggleGroupItem>
-            <ToggleGroupItem value="d" onClick={showModal}>
-              <DislikeOutlined />
-            </ToggleGroupItem>
+            <Button
+              variant="transparent"
+              size="icon-xs"
+              className="border-0"
+              onClick={handleLike}
+            >
+              <LucideThumbsUp />
+            </Button>
+
+            <Button
+              variant="transparent"
+              size="icon-xs"
+              className="border-0"
+              onClick={showModal}
+            >
+              <LucideThumbsDown />
+            </Button>
           </>
         )}
         {prompt && (
-          <ToggleGroupItem value="e" onClick={showPromptModal}>
+          <Button onClick={showPromptModal}>
             <PromptIcon style={{ fontSize: '16px' }} />
-          </ToggleGroupItem>
+          </Button>
         )}
-      </ToggleGroup>
+      </div>
       {visible && (
         <FeedbackDialog
           visible={visible}
@@ -133,39 +147,41 @@ export const UserGroupButton = ({
   const { t } = useTranslation();
 
   return (
-    <ToggleGroup
-      type="single"
-      size="sm"
-      variant="outline"
-      className="space-x-1"
-    >
-      <ToggleGroupItem value="a">
-        <CopyToClipboard text={content}></CopyToClipboard>
-      </ToggleGroupItem>
+    <div className="flex gap-1">
+      <CopyToClipboard text={content} className="border-0" size="icon-xs" />
+
       {regenerateMessage && (
-        <ToggleGroupItem
-          value="b"
-          onClick={regenerateMessage}
-          disabled={sendLoading}
-        >
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <SyncOutlined spin={sendLoading} />
-            </TooltipTrigger>
-            <TooltipContent>{t('chat.regenerate')}</TooltipContent>
-          </Tooltip>
-        </ToggleGroupItem>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="transparent"
+              size="icon-xs"
+              className="border-0"
+              onClick={regenerateMessage}
+              disabled={sendLoading}
+            >
+              <LucideRefreshCw className={cn(sendLoading && 'animate-spin')} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('chat.regenerate')}</TooltipContent>
+        </Tooltip>
       )}
       {removeMessageById && (
-        <ToggleGroupItem value="c" onClick={onRemoveMessage} disabled={loading}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DeleteOutlined spin={loading} />
-            </TooltipTrigger>
-            <TooltipContent>{t('common.delete')}</TooltipContent>
-          </Tooltip>
-        </ToggleGroupItem>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="transparent"
+              size="icon-xs"
+              className="border-0"
+              onClick={onRemoveMessage}
+              disabled={loading}
+            >
+              <LucideTrash2 />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('common.delete')}</TooltipContent>
+        </Tooltip>
       )}
-    </ToggleGroup>
+    </div>
   );
 };

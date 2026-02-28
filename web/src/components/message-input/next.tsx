@@ -14,7 +14,6 @@ import {
 } from '@/components/file-upload';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import {
   Atom,
@@ -159,7 +158,7 @@ export function NextMessageInput({
       onValueChange={setFiles}
       onUpload={onUpload}
       onFileReject={onFileReject}
-      className="relative w-full items-center "
+      className="relative w-full items-center"
       disabled={isUploading || disabled}
     >
       <FileUploadDropzone
@@ -178,9 +177,14 @@ export function NextMessageInput({
           </p>
         </div>
       </FileUploadDropzone>
+
       <form
         onSubmit={onSubmit}
-        className="relative flex w-full flex-col gap-2.5 rounded-md border border-input px-3 py-2 outline-none focus-within:ring-1 focus-within:ring-ring/50"
+        className="
+          relative flex w-full flex-col gap-2.5 rounded-md
+          border-0.5 border-border-default bg-bg-card p-2 outline-none
+          has-[textarea:focus]:outline-accent-primary has-[textarea:focus]:outline-1 has-[textarea:focus]:outline-offset-2
+        "
       >
         <FileUploadList
           orientation="horizontal"
@@ -205,25 +209,29 @@ export function NextMessageInput({
             </FileUploadItem>
           ))}
         </FileUploadList>
+
         <Textarea
           value={value}
           onChange={onInputChange}
           placeholder={t('chat.messagePlaceholder')}
-          className="min-h-10 max-h-40 w-full border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
+          className="
+            min-h-10 max-h-40 w-full p-0 overflow-auto
+            !outline-none !border-transparent !bg-transparent !shadow-none !ring-transparent !ring-offset-transparent
+          "
           disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}
-          autoSize={{ minRows: 1, maxRows: 8 }}
-          resize={resize}
+          autoSize={{ minRows: 2, maxRows: 8 }}
         />
-        <div className={cn('flex items-center justify-between gap-1.5')}>
-          <div className="flex items-center gap-3">
+
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
             {showUploadIcon && (
               <FileUploadTrigger asChild>
                 <Button
                   type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="size-7 rounded-sm"
+                  size="icon-xs"
+                  variant="transparent"
+                  className="rounded-sm border-0"
                   disabled={isUploading || sendLoading}
                 >
                   <Paperclip className="size-3.5" />
@@ -231,40 +239,35 @@ export function NextMessageInput({
                 </Button>
               </FileUploadTrigger>
             )}
+
             {showReasoning && (
               <Button
                 type="button"
-                variant="ghost"
-                className={cn(
-                  'rounded-sm h-7 focus-visible:bg-none! hover:bg-none!',
-                  {
-                    'bg-accent-primary text-white': enableThinking,
-                  },
-                )}
+                size="sm"
+                variant={enableThinking ? 'accent' : 'transparent'}
+                className="border-0 h-7 text-sm"
                 onClick={handleThinkingToggle}
               >
                 <Atom />
                 <span>Thinking</span>
               </Button>
             )}
+
             {showInternet && (
               <Button
                 type="button"
-                variant="ghost"
-                className={cn(
-                  'rounded-sm h-7 focus-visible:bg-none! hover:bg-none!',
-                  {
-                    'bg-accent-primary text-white': enableInternet,
-                  },
-                )}
+                variant={enableInternet ? 'accent' : 'transparent'}
+                size="icon-xs"
+                className="border-0"
                 onClick={handleInternetToggle}
               >
                 <Globe />
               </Button>
             )}
           </div>
+
           {sendLoading ? (
-            <Button onClick={stopOutputMessage} className="size-5 rounded-sm">
+            <Button onClick={stopOutputMessage} size="icon-xs">
               <CircleStop />
             </Button>
           ) : (
@@ -274,8 +277,9 @@ export function NextMessageInput({
                   setAudioInputValue(value);
                 }}
               />
+
               <Button
-                className="size-5 rounded-sm"
+                size="icon-xs"
                 disabled={
                   sendDisabled || isUploading || sendLoading || !value.trim()
                 }

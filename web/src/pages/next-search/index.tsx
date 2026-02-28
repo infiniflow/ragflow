@@ -15,6 +15,7 @@ import {
   useFetchTenantInfo,
   useFetchUserInfo,
 } from '@/hooks/use-user-setting-request';
+import { Routes } from '@/routes';
 import { Send, Settings } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -109,7 +110,7 @@ export default function SearchPage() {
           <EmbedAppModal
             open={openEmbed}
             setOpen={setOpenEmbed}
-            url="/next-search/share"
+            url={Routes.SearchShare}
             token={SearchData?.id as string}
             from={SharedFrom.Search}
             tenantId={tenantId}
