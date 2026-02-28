@@ -12,6 +12,7 @@ export function ChatSheet({ hideModal }: IModalProps<any>) {
   return (
     <Sheet open modal={false} onOpenChange={hideModal}>
       <SheetContent
+        data-testid="agent-run-chat"
         className={cn('top-20 bottom-0 p-0 flex flex-col h-auto')}
         onInteractOutside={(e) => e.preventDefault()}
       >
