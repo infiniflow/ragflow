@@ -59,6 +59,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 	// User login by email endpoint
 	engine.POST("/v1/user/login", r.userHandler.LoginByEmail)
+	// User login channels endpoint
+	engine.GET("/v1/user/login/channels", r.userHandler.GetLoginChannels)
 	// User logout endpoint
 	engine.POST("/v1/user/logout", r.userHandler.Logout)
 	// User info endpoint

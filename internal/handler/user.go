@@ -400,3 +400,28 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 		"message": "password changed successfully",
 	})
 }
+
+// GetLoginChannels get all supported authentication channels
+// @Summary Get Login Channels
+// @Description Get all supported OAuth authentication channels
+// @Tags users
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/user/login/channels [get]
+func (h *UserHandler) GetLoginChannels(c *gin.Context) {
+	channels, err := h.userService.GetLoginChannels()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Load channels failure, error: " + err.Error(),
+			"data":    []interface{}{},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": channels,
+	})
+}

@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/scrypt"
 
+	"ragflow/internal/config"
 	"ragflow/internal/dao"
 	"ragflow/internal/model"
 )
@@ -459,4 +460,37 @@ func (s *UserService) ChangePassword(user *model.User, req *ChangePasswordReques
 
 	// Save updated user
 	return s.userDAO.Update(user)
+}
+
+// LoginChannel represents a login channel response
+type LoginChannel struct {
+	Channel     string `json:"channel"`
+	DisplayName string `json:"display_name"`
+	Icon        string `json:"icon"`
+}
+
+// GetLoginChannels gets all supported authentication channels
+func (s *UserService) GetLoginChannels() ([]*LoginChannel, error) {
+	cfg := config.Get()
+	channels := make([]*LoginChannel, 0)
+
+	for channel, oauthCfg := range cfg.OAuth {
+		displayName := oauthCfg.DisplayName
+		if displayName == "" {
+			displayName = strings.Title(channel)
+		}
+
+		icon := oauthCfg.Icon
+		if icon == "" {
+			icon = "sso"
+		}
+
+		channels = append(channels, &LoginChannel{
+			Channel:     channel,
+			DisplayName: displayName,
+			Icon:        icon,
+		})
+	}
+
+	return channels, nil
 }

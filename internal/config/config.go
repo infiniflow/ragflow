@@ -10,11 +10,18 @@ import (
 
 // Config application configuration
 type Config struct {
-	Server          ServerConfig    `mapstructure:"server"`
-	Database        DatabaseConfig  `mapstructure:"database"`
-	Log             LogConfig       `mapstructure:"log"`
-	DocEngine       DocEngineConfig `mapstructure:"doc_engine"`
-	RegisterEnabled int             `mapstructure:"register_enabled"`
+	Server          ServerConfig       `mapstructure:"server"`
+	Database        DatabaseConfig     `mapstructure:"database"`
+	Log             LogConfig          `mapstructure:"log"`
+	DocEngine       DocEngineConfig    `mapstructure:"doc_engine"`
+	RegisterEnabled int                `mapstructure:"register_enabled"`
+	OAuth           map[string]OAuthConfig `mapstructure:"oauth"`
+}
+
+// OAuthConfig OAuth configuration for a channel
+type OAuthConfig struct {
+	DisplayName string `mapstructure:"display_name"`
+	Icon        string `mapstructure:"icon"`
 }
 
 // ServerConfig server configuration
