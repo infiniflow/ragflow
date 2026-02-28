@@ -26,7 +26,7 @@ from api.db.db_models import LLM
 from api.db.services.common_service import CommonService
 from api.db.services.tenant_llm_service import LLM4Tenant, TenantLLMService
 from common.constants import LLMType
-from common.token_utils import num_tokens_from_string
+from common.token_utils import num_tokens_from_string, truncate
 
 
 class LLMService(CommonService):
@@ -100,8 +100,7 @@ class LLMBundle(LLM4Tenant):
         for text in texts:
             token_size = num_tokens_from_string(text)
             if token_size > self.max_length:
-                target_len = int(self.max_length * 0.95)
-                safe_texts.append(text[:target_len])
+                safe_texts.append(truncate(text, int(self.max_length * 0.95)))
             else:
                 safe_texts.append(text)
 
@@ -120,6 +119,10 @@ class LLMBundle(LLM4Tenant):
     def encode_queries(self, query: str):
         if self.langfuse:
             generation = self.langfuse.start_generation(trace_context=self.trace_context, name="encode_queries", model=self.llm_name, input={"query": query})
+
+        token_size = num_tokens_from_string(query)
+        if token_size > self.max_length:
+            query = truncate(query, int(self.max_length * 0.95))
 
         emd, used_tokens = self.mdl.encode_queries(query)
         llm_name = getattr(self, "llm_name", None)

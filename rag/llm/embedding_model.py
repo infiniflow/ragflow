@@ -133,6 +133,7 @@ class LocalAIEmbed(Base):
 
     def encode(self, texts: list):
         batch_size = 16
+        texts = [truncate(t, 8191) for t in texts]
         ress = []
         for i in range(0, len(texts), batch_size):
             res = self.client.embeddings.create(input=texts[i : i + batch_size], model=self.model_name)
@@ -211,7 +212,8 @@ class QWenEmbed(Base):
         return np.array(res), token_count
 
     def encode_queries(self, text):
-        resp = dashscope.TextEmbedding.call(model=self.model_name, input=text[:2048], api_key=self.key, text_type="query")
+        text = truncate(text, 2048)
+        resp = dashscope.TextEmbedding.call(model=self.model_name, input=text, api_key=self.key, text_type="query")
         try:
             return np.array(resp["output"]["embeddings"][0]["embedding"]), total_token_count_from_response(resp)
         except Exception as _e:
@@ -248,6 +250,8 @@ class ZhipuEmbed(Base):
         return np.array(arr), tks_num
 
     def encode_queries(self, text):
+        MAX_LEN = {"embedding-2": 512, "embedding-3": 3072}.get(self.model_name.lower(), 8191)
+        text = truncate(text, MAX_LEN)
         res = self.client.embeddings.create(input=text, model=self.model_name)
         try:
             return np.array(res.data[0].embedding), total_token_count_from_response(res)
@@ -270,6 +274,7 @@ class OllamaEmbed(Base):
         arr = []
         tks_num = 0
         for txt in texts:
+            txt = truncate(txt, 8191)
             # remove special tokens if they exist base on regex in one request
             for token in OllamaEmbed._special_tokens:
                 txt = txt.replace(token, "")
@@ -283,6 +288,7 @@ class OllamaEmbed(Base):
         return np.array(arr), tks_num
 
     def encode_queries(self, text):
+        text = truncate(text, 8191)
         # remove special tokens if they exist
         for token in OllamaEmbed._special_tokens:
             text = text.replace(token, "")
@@ -304,6 +310,7 @@ class XinferenceEmbed(Base):
 
     def encode(self, texts: list):
         batch_size = 16
+        texts = [truncate(t, 8191) for t in texts]
         ress = []
         total_tokens = 0
         for i in range(0, len(texts), batch_size):
@@ -318,6 +325,7 @@ class XinferenceEmbed(Base):
         return np.array(ress), total_tokens
 
     def encode_queries(self, text):
+        text = truncate(text, 8191)
         res = None
         try:
             res = self.client.embeddings.create(input=[text], model=self.model_name)
@@ -708,6 +716,7 @@ class CoHereEmbed(Base):
 
     def encode(self, texts: list):
         batch_size = 16
+        texts = [truncate(t, 8191) for t in texts]
         ress = []
         token_count = 0
         for i in range(0, len(texts), batch_size):
@@ -726,6 +735,7 @@ class CoHereEmbed(Base):
         return np.array(ress), token_count
 
     def encode_queries(self, text):
+        text = truncate(text, 8191)
         res = self.client.embed(
             texts=[text],
             model=self.model_name,
@@ -790,7 +800,7 @@ class SILICONFLOWEmbed(Base):
                 # limit 512, 340 is almost safe
                 texts_batch = [" " if not text.strip() else truncate(text, 256) for text in texts_batch]
             else:
-                texts_batch = [" " if not text.strip() else text for text in texts_batch]
+                texts_batch = [" " if not text.strip() else truncate(text, 8191) for text in texts_batch]
 
             payload = {
                 "model": self.model_name,
@@ -809,6 +819,7 @@ class SILICONFLOWEmbed(Base):
         return np.array(ress), token_count
 
     def encode_queries(self, text):
+        text = truncate(text, 8191)
         payload = {
             "model": self.model_name,
             "input": text,
@@ -834,6 +845,7 @@ class ReplicateEmbed(Base):
 
     def encode(self, texts: list):
         batch_size = 16
+        texts = [truncate(t, 8191) for t in texts]
         token_count = sum([num_tokens_from_string(text) for text in texts])
         ress = []
         for i in range(0, len(texts), batch_size):
@@ -842,6 +854,7 @@ class ReplicateEmbed(Base):
         return np.array(ress), token_count
 
     def encode_queries(self, text):
+        text = truncate(text, 8191)
         res = self.client.embed(self.model_name, input={"texts": [text]})
         return np.array(res), num_tokens_from_string(text)
 
@@ -859,6 +872,7 @@ class BaiduYiyanEmbed(Base):
         self.model_name = model_name
 
     def encode(self, texts: list, batch_size=16):
+        texts = [truncate(t, 8191) for t in texts]
         res = self.client.do(model=self.model_name, texts=texts).body
         try:
             return (
@@ -870,6 +884,7 @@ class BaiduYiyanEmbed(Base):
             raise Exception(f"Error: {res}")
 
     def encode_queries(self, text):
+        text = truncate(text, 8191)
         res = self.client.do(model=self.model_name, texts=[text]).body
         try:
             return (
@@ -892,6 +907,7 @@ class VoyageEmbed(Base):
 
     def encode(self, texts: list):
         batch_size = 16
+        texts = [truncate(t, 8191) for t in texts]
         ress = []
         token_count = 0
         for i in range(0, len(texts), batch_size):
@@ -905,6 +921,7 @@ class VoyageEmbed(Base):
         return np.array(ress), token_count
 
     def encode_queries(self, text):
+        text = truncate(text, 8191)
         res = self.client.embed(texts=text, model=self.model_name, input_type="query")
         try:
             return np.array(res.embeddings)[0], res.total_tokens
@@ -924,6 +941,7 @@ class HuggingFaceEmbed(Base):
         self.base_url = base_url or "http://127.0.0.1:8080"
 
     def encode(self, texts: list):
+        texts = [truncate(t, 8191) for t in texts]
         response = requests.post(f"{self.base_url}/embed", json={"inputs": texts}, headers={"Content-Type": "application/json"})
         if response.status_code == 200:
             embeddings = response.json()
@@ -932,6 +950,7 @@ class HuggingFaceEmbed(Base):
         return np.array(embeddings), sum([num_tokens_from_string(text) for text in texts])
 
     def encode_queries(self, text: str):
+        text = truncate(text, 8191)
         response = requests.post(f"{self.base_url}/embed", json={"inputs": text}, headers={"Content-Type": "application/json"})
         if response.status_code == 200:
             embedding = response.json()[0]
@@ -982,6 +1001,7 @@ class VolcEngineEmbed(Base):
         url = f"{self.base_url}/embeddings/multimodal"
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.ark_api_key}"}
 
+        texts = [truncate(t, 8191) for t in texts]
         ress: list[list[float]] = []
         total_tokens = 0
         for text in texts:
