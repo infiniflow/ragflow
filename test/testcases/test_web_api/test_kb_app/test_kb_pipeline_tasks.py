@@ -206,3 +206,25 @@ class TestKbPipelineLogs:
         res = kb_delete_pipeline_logs(WebApiAuth, params={"kb_id": kb_id}, payload={"log_ids": []})
         assert res["code"] == 0, res
         assert res["data"] is True, res
+
+    @pytest.mark.p3
+    def test_list_pipeline_logs_missing_kb_id(self, WebApiAuth):
+        res = kb_list_pipeline_logs(WebApiAuth, params={}, payload={})
+        assert res["code"] == 101, res
+        assert "KB ID" in res["message"], res
+
+    @pytest.mark.p3
+    def test_list_pipeline_logs_abnormal_date_filter(self, WebApiAuth, add_document):
+        kb_id, _ = add_document
+        res = kb_list_pipeline_logs(
+            WebApiAuth,
+            params={
+                "kb_id": kb_id,
+                "desc": "false",
+                "create_date_from": "2025-01-01",
+                "create_date_to": "2025-02-01",
+            },
+            payload={},
+        )
+        assert res["code"] == 102, res
+        assert "Create data filter is abnormal." in res["message"], res

@@ -16,7 +16,8 @@ import {
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import kbService, { listDocument } from '@/services/knowledge-service';
-import api, { api_host } from '@/utils/api';
+import api, { api_host, ExternalApi } from '@/utils/api';
+import { getSearchValue } from '@/utils/common-util';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
@@ -464,11 +465,14 @@ export const useCreateDocument = () => {
 };
 
 export const useGetDocumentUrl = (documentId?: string) => {
+  const auth = getSearchValue('auth');
   const getDocumentUrl = useCallback(
     (id?: string) => {
-      return `${api_host}/document/get/${documentId || id}`;
+      return auth
+        ? `${ExternalApi}/v1/documents/${id || documentId}`
+        : `${api_host}/document/get/${id || documentId}`;
     },
-    [documentId],
+    [documentId, auth],
   );
 
   return getDocumentUrl;

@@ -26,7 +26,17 @@ export const MetadataFilterSchema = {
           }),
         )
         .optional(),
-      semi_auto: z.array(z.string()).optional(),
+      semi_auto: z
+        .array(
+          z.union([
+            z.string(),
+            z.object({
+              key: z.string(),
+              op: z.string().optional(),
+            }),
+          ]),
+        )
+        .optional(),
     })
     .optional(),
 };

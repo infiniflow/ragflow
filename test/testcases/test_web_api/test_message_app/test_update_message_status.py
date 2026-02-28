@@ -16,9 +16,11 @@
 import random
 
 import pytest
+import requests
 from test_web_api.common import update_message_status, list_memory_message, get_message_content
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
+from configs import HOST_ADDRESS, VERSION
 
 
 class TestAuthorization:
@@ -73,3 +75,34 @@ class TestUpdateMessageStatus:
         res = get_message_content(WebApiAuth, memory_id, message["message_id"])
         assert res["code"] == 0, res
         assert res["data"]["status"], res
+
+    @pytest.mark.p2
+    def test_update_invalid_status_type(self, WebApiAuth):
+        memory_id = self.memory_id
+        list_res = list_memory_message(WebApiAuth, memory_id)
+        assert list_res["code"] == 0, list_res
+        message_id = list_res["data"]["messages"]["message_list"][0]["message_id"]
+
+        url = f"{HOST_ADDRESS}/api/{VERSION}/messages/{memory_id}:{message_id}"
+        res = requests.put(url=url, headers={"Content-Type": "application/json"}, auth=WebApiAuth, json={"status": "false"}).json()
+        assert res["code"] == 101, res
+        assert "Status must be a boolean." in res["message"], res
+
+    @pytest.mark.p2
+    def test_update_invalid_memory_id(self, WebApiAuth):
+        res = update_message_status(WebApiAuth, "missing_memory_id", 1, False)
+        assert res["code"] == 404, res
+        assert "not found" in res["message"].lower(), res
+
+    @pytest.mark.p2
+    def test_update_invalid_message_id(self, WebApiAuth):
+        memory_id = self.memory_id
+        url = f"{HOST_ADDRESS}/api/{VERSION}/messages/{memory_id}:invalid_message_id"
+        res = requests.put(
+            url=url,
+            headers={"Content-Type": "application/json"},
+            auth=WebApiAuth,
+            json={"status": True},
+        ).json()
+        assert res["code"] == 500, res
+        assert "Internal server error" in res["message"], res

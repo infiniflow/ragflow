@@ -36,7 +36,7 @@ const buttonVariants = cva(
 
         link: 'text-primary underline-offset-4 hover:underline',
         icon: 'bg-colors-background-inverse-standard text-foreground hover:bg-colors-background-inverse-standard/80',
-        dashed: 'border border-dashed border-input hover:bg-accent',
+        dashed: 'border border-dashed border-border-button hover:bg-accent',
 
         transparent: `
           text-text-secondary bg-transparent border-0.5 border-border-button
@@ -49,10 +49,16 @@ const buttonVariants = cva(
           hover:bg-state-error/10 focus-visible:bg-state-error/10
         `,
 
+        accent: `
+          bg-accent-primary text-white
+          hover:bg-accent-primary/90 focus-visible:bg-accent-primary/90
+        `,
+
         highlighted: `
           bg-text-primary text-bg-base border-b-4 border-b-accent-primary
           hover:bg-text-primary/90 focus-visible:bg-text-primary/90
         `,
+
         delete: `
           text-text-secondary
           hover:bg-state-error-5 hover:text-state-error
@@ -65,6 +71,8 @@ const buttonVariants = cva(
         lg: 'h-11 rounded-md px-8',
         icon: 'h-10 w-10',
         auto: 'h-full px-1',
+        'icon-sm': 'size-8',
+        'icon-xs': 'size-7',
       },
     },
     defaultVariants: {
@@ -75,7 +83,8 @@ const buttonVariants = cva(
 );
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
   loading?: boolean;
@@ -126,7 +135,7 @@ ButtonLoading.displayName = 'ButtonLoading';
 export { Button, buttonVariants };
 
 export const BlockButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ children, className, ...props }, ref) => {
+  function BlockButton({ children, className, ...props }, ref) {
     return (
       <Button
         variant={'outline'}

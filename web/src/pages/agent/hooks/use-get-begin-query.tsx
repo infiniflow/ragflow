@@ -1,5 +1,6 @@
 import { AgentGlobals, AgentStructuredOutputField } from '@/constants/agent';
 import { useFetchAgent } from '@/hooks/use-agent-request';
+import { DefaultOptionType } from '@/interfaces/antd-compat';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import {
   buildNodeOutputOptions,
@@ -7,7 +8,6 @@ import {
   buildUpstreamNodeOutputOptions,
   isAgentStructured,
 } from '@/utils/canvas-util';
-import { DefaultOptionType } from 'antd/es/select';
 import { t } from 'i18next';
 import { flatten, isEmpty, toLower } from 'lodash';
 import get from 'lodash/get';
@@ -152,7 +152,15 @@ export function useBuildBeginDynamicVariableOptions() {
         options: inputs.map((x) => ({
           label: x.name,
           parentLabel: <span>{t('flow.beginInput')}</span>,
-          icon: <OperatorIcon name={Operator.Begin} className="block" />,
+          icon: (
+            <OperatorIcon
+              name={Operator.Begin}
+              className="
+                p-0 mr-1 relative
+                before:-z-10 before:content-[''] before:absolute before:inset-0
+                before:-m-[.25em] before:bg-accent-primary before:rounded-sm"
+            />
+          ),
           value: `begin@${x.key}`,
           type: transferToVariableType(x.type),
         })),
@@ -174,7 +182,15 @@ export function useBuildGlobalWithBeginVariableOptions() {
     .map(([key, value]) => ({
       label: key,
       value: key,
-      icon: <OperatorIcon name={Operator.Begin} className="block" />,
+      icon: (
+        <OperatorIcon
+          name={Operator.Begin}
+          className="
+            p-0 mr-1 relative
+            before:-z-10 before:content-[''] before:absolute before:inset-0
+            before:-m-[.25em] before:bg-accent-primary before:rounded-sm"
+        />
+      ),
       parentLabel: <span>{t('flow.beginInput')}</span>,
       type: Array.isArray(value)
         ? `${VariableType.Array}${key === AgentGlobals.SysFiles ? '<file>' : ''}`

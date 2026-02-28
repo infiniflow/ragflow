@@ -672,7 +672,7 @@ class FileService(CommonService):
         return structured(file.filename, filename_type(file.filename), file.read(), file.content_type)
 
     @staticmethod
-    def get_files(files: Union[None, list[dict]]) -> list[str]:
+    def get_files(files: Union[None, list[dict]], raw: bool = False) -> Union[list[str], tuple[list[str], list[dict]]]:
         if not files:
             return  []
         def image_to_base64(file):
@@ -680,10 +680,17 @@ class FileService(CommonService):
                                         base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
         exe = ThreadPoolExecutor(max_workers=5)
         threads = []
+        imgs = []
         for file in files:
             if file["mime_type"].find("image") >=0:
-                threads.append(exe.submit(image_to_base64, file))
+                if raw:
+                    imgs.append(FileService.get_blob(file["created_by"], file["id"]))
+                else:
+                    threads.append(exe.submit(image_to_base64, file))
                 continue
             threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"]))
-        return [th.result() for th in threads]
-
+    
+        if raw:
+            return [th.result() for th in threads], imgs
+        else:
+            return [th.result() for th in threads]

@@ -28,6 +28,7 @@ export default {
       chinese: 'Vereinfachtes Chinesisch',
       traditionalChinese: 'Traditionelles Chinesisch',
       russian: 'Russisch',
+      bulgarian: 'Bulgarisch',
       german: 'Deutsch',
       language: 'Sprache',
       languageMessage: 'Bitte geben Sie Ihre Sprache ein!',
@@ -47,6 +48,7 @@ export default {
       submit: 'Absenden',
       clear: 'Leeren',
       embedIntoSite: 'In Webseite einbetten',
+      openInNewTab: 'Chat in neuem Tab',
       previousPage: 'Zurück',
       nextPage: 'Weiter',
       add: 'Hinzufügen',
@@ -261,7 +263,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       generate: 'Generieren',
       raptor: 'RAPTOR',
       processingType: 'Verarbeitungstyp',
-      dataPipeline: 'Dateneingabe-Pipeline',
+      dataPipeline: 'Wechseln oder konfigurieren Sie die Ingestion-Pipeline.',
       operations: 'Operationen',
       taskId: 'Aufgaben-ID',
       duration: 'Dauer',
@@ -491,7 +493,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       linkPipelineSetTip:
         'Verknüpfung der Dateneingabe-Pipeline mit diesem Datensatz verwalten',
       default: 'Standard',
-      dataPipeline: 'Dateneingabe-Pipeline',
+      dataPipeline: 'Wechseln oder konfigurieren Sie die Ingestion-Pipeline.',
       linkDataPipeline: 'Dateneingabe-Pipeline verknüpfen',
       enableAutoGenerate: 'Automatische Generierung aktivieren',
       teamPlaceholder: 'Bitte wählen Sie ein Team.',
@@ -508,7 +510,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
         'Aktualisieren Sie hier Ihre Wissensdatenbank-Konfiguration, insbesondere die Chunk-Methode.',
       name: 'Name der Wissensdatenbank',
       photo: 'Bild der Wissensdatenbank',
-      photoTip: 'Sie können eine Datei mit 4 MB hochladen',
+      photoTip: 'Sie können ein Bild bis zu 4 MB hochladen.',
       description: 'Beschreibung',
       language: 'Dokumentensprache',
       languageMessage: 'Bitte geben Sie Ihre Sprache ein!',
@@ -1026,6 +1028,60 @@ Beispiel: Virtual Hosted Style`,
         'Die Basis-URL Ihrer Moodle-Instanz (z.B. https://moodle.university.edu). Fügen Sie nicht /webservice oder /login hinzu.',
       moodleTokenTip:
         'Generieren Sie ein Web-Service-Token in Moodle: Gehen Sie zu Website-Administration → Server → Web-Services → Token verwalten. Der Benutzer muss in den Kursen eingeschrieben sein, die Sie synchronisieren möchten.',
+      seafileDescription:
+        'Verbinden Sie sich mit Ihrem SeaFile-Server, um Dateien und Dokumente aus Ihren Bibliotheken zu synchronisieren.',
+      seafileUrlTip:
+        'Die vollstaendige URL Ihres SeaFile-Servers inklusive Protokoll. Beispiel: https://seafile.example.com - Kein abschliessender Schraegstrich und kein Pfad nach der Domain.',
+      seafileAccountScopeTip:
+        'Synchronisiert alle Bibliotheken, die für den unten angegebenen Konto-API-Token sichtbar sind.',
+      seafileTokenPanelHeading: 
+        'Wählen Sie eine der folgenden Authentifizierungsmethoden:',
+      seafileTokenPanelAccountBullet: 
+        '- gewährt Zugriff auf alle Ihre Bibliotheken.',
+      seafileTokenPanelLibraryBullet: 
+        '- auf eine einzelne Bibliothek beschränkt (sicherer).',
+      seafileValidationAccountTokenRequired:
+        'Konto-API-Token ist erforderlich für den Umfang „Gesamtes Konto"',
+      seafileValidationTokenRequired:
+        'Geben Sie entweder einen Konto-API-Token oder einen Bibliotheks-Token an',
+      seafileValidationLibraryIdRequired: 
+        'Bibliotheks-ID ist erforderlich',
+      seafileValidationDirectoryPathRequired: 
+        'Verzeichnispfad ist erforderlich',
+      seafileSyncScopeTip:
+        'Legt fest, was synchronisiert wird: ' +
+        '(1) Gesamtes Konto - Synchronisiert alle Bibliotheken, auf die Ihr Token Zugriff hat. Erfordert einen Konto-API-Token. ' +
+        '(2) Einzelne Bibliothek - Synchronisiert alle Dateien innerhalb einer bestimmten Bibliothek. Erfordert die Bibliotheks-ID und entweder einen Konto-API-Token oder einen Bibliotheks-API-Token. ' +
+        '(3) Bestimmtes Verzeichnis - Synchronisiert nur Dateien in einem bestimmten Ordner innerhalb einer Bibliothek. Erfordert die Bibliotheks-ID, den Ordnerpfad innerhalb dieser Bibliothek und entweder einen Konto-API-Token oder einen Bibliotheks-API-Token.',
+      seafileTokenTip:
+        'Ihr kontoweiter SeaFile-API-Token. ' +
+        'Gewährt Zugriff auf alle fuer Ihr Konto sichtbaren Bibliotheken. ' +
+        'Erforderlich bei Synchronisierungsumfang "Gesamtes Konto". ' +
+        'Für "Einzelne Bibliothek" oder "Bestimmtes Verzeichnis" können Sie alternativ einen Bibliotheks-API-Token verwenden.',
+      seafileRepoTokenTip:
+        'Ein bibliotheksbezogener API-Token, der nur Zugriff auf eine bestimmte Bibliothek gewährt. ' +
+        'Kann anstelle des Konto-API-Tokens für "Einzelne Bibliothek" und "Bestimmtes Verzeichnis" verwendet werden.',
+      seafileRepoIdTip:
+        'Die eindeutige Kennung (UUID) der SeaFile-Bibliothek. ' +
+        'Sie finden diese in der Adressleiste Ihres Browsers, wenn Sie die Bibliothek in der SeaFile-Weboberflaeche öffnen. ' +
+        'Beispiel: 7a9e1b3c-4d5f-6a7b-8c9d-0e1f2a3b4c5d. ' +
+        'Erforderlich bei Synchronisierungsumfang "Einzelne Bibliothek" oder "Bestimmtes Verzeichnis".',
+      seafileSyncPathTip:
+        'Der absolute Pfad des zu synchronisierenden Ordners innerhalb der oben angegebenen Bibliothek. ' +
+        'Muss mit einem Schraegstrich beginnen. ' +
+        'Alle Dateien und Unterordner unter diesem Pfad werden rekursiv einbezogen. ' +
+        'Beispiel: /Dokumente/Berichte. ' +
+        'Wichtig: Der Ordner muss innerhalb der angegebenen Bibliothek existieren. ' +
+        'Pfade ausserhalb der Bibliothek werden nicht unterstuetzt. ' +
+        'Wird nur verwendet bei Synchronisierungsumfang "Bestimmtes Verzeichnis".',
+      seafileIncludeSharedTip:
+        'Wenn aktiviert, werden auch Bibliotheken synchronisiert, die andere Benutzer mit Ihnen geteilt haben. ' +
+        'Wenn deaktiviert, werden nur Bibliotheken synchronisiert, die Ihrem Konto gehoeren. ' +
+        'Gilt nur bei Synchronisierungsumfang "Gesamtes Konto".',
+      seafileBatchSizeTip:
+        'Anzahl der Dokumente, die pro Durchlauf verarbeitet und zurueckgegeben werden. ' +
+        'Ein kleinerer Wert verbraucht weniger Arbeitsspeicher, kann aber insgesamt langsamer sein. ' +
+        'Standardwert: 100.',
       jiraDescription:
         'Verbinden Sie Ihren Jira-Arbeitsbereich, um Vorgänge, Kommentare und Anhänge zu synchronisieren.',
       jiraBaseUrlTip:
@@ -1914,11 +1970,12 @@ Beispiel: Virtual Hosted Style`,
         'Eine Komponente, die die Ausgabe anderer Komponenten formatiert. 1. Unterstützt Jinja2-Vorlagen, konvertiert zuerst die Eingabe in ein Objekt und rendert dann die Vorlage, 2. Behält gleichzeitig die ursprüngliche Methode der Verwendung von {parameter} Zeichenkettenersetzung bei',
       emailComponent: 'E-Mail',
       emailDescription: 'Sendet eine E-Mail an eine angegebene Adresse.',
-      smtpServer: 'SMTP-Server',
+      smtpServer: 'SMTP-Host',
       smtpPort: 'SMTP-Port',
-      senderEmail: 'Absender-E-Mail',
-      authCode: 'Autorisierungscode',
-      senderName: 'Absendername',
+      senderEmail: 'Absenderadresse (From)',
+      smtpUsername: 'SMTP-Anmeldebenutzername',
+      authCode: 'SMTP-Passwort/App-Passwort',
+      senderName: 'Anzeigename des Absenders',
       toEmail: 'Empfänger-E-Mail',
       ccEmail: 'CC-E-Mail',
       emailSubject: 'Betreff',
@@ -2036,7 +2093,7 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       conversational: 'Konversationell',
       task: 'Aufgabe',
       beginInputTip:
-        'Durch Definieren von Eingabeparametern kann auf diesen Inhalt von anderen Komponenten in nachfolgenden Prozessen zugegriffen werden.',
+        'Hier definierte Eingabeparameter können von Komponenten im nachgelagerten Workflow abgerufen werden.',
       query: 'Abfragevariablen',
       switchPromptMessage:
         'Die Prompt-Wörter werden geändert. Bitte bestätigen Sie, ob Sie die vorhandenen Prompt-Wörter verwerfen möchten?',
@@ -2378,6 +2435,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       korean: 'Koreanisch',
       vietnamese: 'Vietnamesisch',
       russian: 'Russisch',
+      bulgarian: 'Bulgarisch',
     },
     pagination: {
       total: 'Gesamt {{total}}',
