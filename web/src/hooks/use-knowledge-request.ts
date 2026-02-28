@@ -18,6 +18,7 @@ import kbService, {
   listTag,
   removeTag,
   renameTag,
+  updateKb,
 } from '@/services/knowledge-service';
 import {
   useIsMutating,
@@ -152,7 +153,7 @@ export const useFetchNextKnowledgeListByPage = () => {
         },
       );
 
-      return data?.data;
+      return { kbs: data?.data, total: data?.total };
     },
   });
 
@@ -232,8 +233,8 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
   } = useMutation({
     mutationKey: [KnowledgeApiAction.SaveKnowledge],
     mutationFn: async (params: Record<string, any>) => {
-      const { data = {} } = await kbService.updateKb({
-        kb_id: params?.kb_id ? params?.kb_id : knowledgeBaseId,
+      const kbId = params?.kb_id ? params?.kb_id : knowledgeBaseId;
+      const { data = {} } = await updateKb(kbId, {
         ...params,
       });
       if (data.code === 0) {
@@ -359,7 +360,7 @@ export const useFetchKnowledgeList = (
     gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
     queryFn: async () => {
       const { data } = await listDataset();
-      const list = data?.data?.kbs ?? [];
+      const list = data?.data ?? [];
       return shouldFilterListWithoutDocument
         ? list.filter((x: IKnowledge) => x.chunk_num > 0)
         : list;

@@ -433,7 +433,7 @@ class KnowledgebaseService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_list(cls, joined_tenant_ids, user_id,
-                 page_number, items_per_page, orderby, desc, id, name):
+                 page_number, items_per_page, orderby, desc, id, name, keywords, parser_id=None):
         # Get list of knowledge bases with filtering and pagination
         # Args:
         #     joined_tenant_ids: List of tenant IDs
@@ -444,6 +444,8 @@ class KnowledgebaseService(CommonService):
         #     desc: Boolean indicating descending order
         #     id: Optional ID filter
         #     name: Optional name filter
+        #     keywords: Optional keywords filter
+        #     parser_id: Optional parser ID filter
         # Returns:
         #     List of knowledge bases
         #     Total count of knowledge bases
@@ -452,6 +454,11 @@ class KnowledgebaseService(CommonService):
             kbs = kbs.where(cls.model.id == id)
         if name:
             kbs = kbs.where(cls.model.name == name)
+        if keywords:
+            kbs = kbs.where(fn.LOWER(cls.model.name).contains(keywords.lower()))
+        if parser_id:
+            kbs = kbs.where(cls.model.parser_id == parser_id)
+
         kbs = kbs.where(
             ((cls.model.tenant_id.in_(joined_tenant_ids) & (cls.model.permission ==
                                                             TenantPermission.TEAM.value)) | (
