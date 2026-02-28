@@ -105,6 +105,7 @@ export function DatasetActionCell({
       )}
       <ConfirmDeleteDialog onOk={handleRemove}>
         <Button
+          data-testid="document-delete"
           variant="transparent"
           className="border-none hover:bg-bg-card text-text-primary"
           size={'sm'}
