@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+import json
 import time
 from typing import Any, List, Optional
 import multiprocessing as mp
@@ -978,20 +978,45 @@ class RAGFlowClient:
         session_id = command["session_id"]
 
         # Prepare payload for completion API
+        # Note: stream parameter is not sent, server defaults to stream=True
         payload = {
             "conversation_id": session_id,
-            "messages": [{"role": "user", "content": message}],
-            "stream": False
+            "messages": [{"role": "user", "content": message}]
         }
 
         response = self.http_client.request("POST", "/conversation/completion", json_body=payload,
-                                            use_api_base=False, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json["code"] == 0:
-            answer = res_json["data"].get("answer", "")
-            print(f"Assistant: {answer}")
-        else:
-            print(f"Fail to chat on session, code: {res_json['code']}, message: {res_json['message']}")
+                                            use_api_base=False, auth_kind="web", stream=True)
+
+        if response.status_code != 200:
+            print(f"Fail to chat on session, status code: {response.status_code}")
+            return
+
+        print("Assistant: ", end="", flush=True)
+        full_answer = ""
+        for line in response.iter_lines():
+            if not line:
+                continue
+            line_str = line.decode('utf-8')
+            if not line_str.startswith('data:'):
+                continue
+            data_str = line_str[5:].strip()
+            if data_str == '[DONE]':
+                break
+            try:
+                data_json = json.loads(data_str)
+                if data_json.get("code") != 0:
+                    print(f"\nFail to chat on session, code: {data_json.get('code')}, message: {data_json.get('message', '')}")
+                    return
+                # Check if it's the final message
+                if data_json.get("data") is True:
+                    break
+                answer = data_json.get("data", {}).get("answer", "")
+                if answer:
+                    print(answer, end="", flush=True)
+                    full_answer += answer
+            except json.JSONDecodeError:
+                continue
+        print()  # Final newline
 
     def list_user_model_providers(self, command):
         if self.server_type != "user":
