@@ -161,7 +161,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		}
 
 		// Connector routes
-		connector := engine.Group("/connector")
+		connector := engine.Group("/v1/connector")
 		{
 			connector.GET("/list", r.connectorHandler.ListConnectors)
 		}

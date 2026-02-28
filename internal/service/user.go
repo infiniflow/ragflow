@@ -415,17 +415,106 @@ func (s *UserService) Logout(user *model.User) error {
 
 // GetUserProfile returns user profile information
 func (s *UserService) GetUserProfile(user *model.User) map[string]interface{} {
-	updatedAt := ""
-	if user.UpdateTime != nil {
-		updatedAt = time.Unix(*user.UpdateTime, 0).Format("2006-01-02 15:04:05")
+	// Format create time and date (from database fields)
+	createTime := user.CreateTime
+	createDate := ""
+	if user.CreateDate != nil {
+		createDate = user.CreateDate.Format("2006-01-02T15:04:05")
 	}
+
+	// Format update time and date (from database fields)
+	var updateTime int64
+	updateDate := ""
+	if user.UpdateTime != nil {
+		updateTime = *user.UpdateTime
+	}
+	if user.UpdateDate != nil {
+		updateDate = user.UpdateDate.Format("2006-01-02T15:04:05")
+	}
+
+	// Format last login time
+	var lastLoginTime string
+	if user.LastLoginTime != nil {
+		lastLoginTime = user.LastLoginTime.Format("2006-01-02T15:04:05")
+	}
+
+	// Get access token
+	var accessToken string
+	if user.AccessToken != nil {
+		accessToken = *user.AccessToken
+	}
+
+	// Get avatar
+	var avatar interface{}
+	if user.Avatar != nil {
+		avatar = *user.Avatar
+	} else {
+		avatar = nil
+	}
+
+	// Get color schema
+	colorSchema := "Bright"
+	if user.ColorSchema != nil && *user.ColorSchema != "" {
+		colorSchema = *user.ColorSchema
+	}
+
+	// Get language
+	language := "English"
+	if user.Language != nil && *user.Language != "" {
+		language = *user.Language
+	}
+
+	// Get timezone
+	timezone := "UTC+8\tAsia/Shanghai"
+	if user.Timezone != nil && *user.Timezone != "" {
+		timezone = *user.Timezone
+	}
+
+	// Get login channel
+	loginChannel := "password"
+	if user.LoginChannel != nil && *user.LoginChannel != "" {
+		loginChannel = *user.LoginChannel
+	}
+
+	// Get password
+	var password string
+	if user.Password != nil {
+		password = *user.Password
+	}
+
+	// Get status
+	status := "1"
+	if user.Status != nil {
+		status = *user.Status
+	}
+
+	// Get is_superuser
+	isSuperuser := false
+	if user.IsSuperuser != nil {
+		isSuperuser = *user.IsSuperuser
+	}
+
 	return map[string]interface{}{
-		"id":         user.ID,
-		"nickname":   user.Nickname,
-		"email":      user.Email,
-		"status":     user.Status,
-		"created_at": time.Unix(user.CreateTime, 0).Format("2006-01-02 15:04:05"),
-		"updated_at": updatedAt,
+		"access_token":     accessToken,
+		"avatar":           avatar,
+		"color_schema":     colorSchema,
+		"create_date":      createDate,
+		"create_time":      createTime,
+		"email":            user.Email,
+		"id":               user.ID,
+		"is_active":        user.IsActive,
+		"is_anonymous":     user.IsAnonymous,
+		"is_authenticated": user.IsAuthenticated,
+		"is_superuser":     isSuperuser,
+		"language":         language,
+		"last_login_time":  lastLoginTime,
+		"login_channel":    loginChannel,
+		"nickname":         user.Nickname,
+		"password":         password,
+		"status":           status,
+		"timezone":         timezone,
+		"update_date":      updateDate,
+		"update_time":      updateTime,
 	}
 }
 
