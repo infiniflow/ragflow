@@ -80,7 +80,7 @@ func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
-		"data":    result,
+		"data":    result.Connectors,
 		"message": "success",
 	})
 }

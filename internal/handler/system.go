@@ -120,6 +120,6 @@ func (h *SystemHandler) GetVersion(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
-		"data":    version,
+		"data":    version.Version,
 	})
 }
