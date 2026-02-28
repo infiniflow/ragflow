@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { DatasetMetadata } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
@@ -10,7 +11,7 @@ import {
 } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEmpty, omit } from 'lodash';
-import { PanelRightClose, Settings } from 'lucide-react';
+import { LucidePanelRightClose, LucideSettings } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -103,39 +104,51 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     return (
       <div className="p-5">
         <Button
-          className="w-full"
           onClick={switchSettingVisible}
           disabled={!hasSingleChatBox}
           variant={'ghost'}
+          size="icon-sm"
         >
-          <Settings />
+          <LucideSettings />
         </Button>
       </div>
     );
   }
 
   return (
-    <section className="p-5  w-[440px] flex flex-col">
-      <div className="flex justify-between items-center text-base pb-2">
+    <section className="w-[440px] flex flex-col">
+      <div className="p-5 pb-2 flex justify-between items-center text-base">
         {t('chat.chatSetting')}
-        <PanelRightClose
-          className="size-4 cursor-pointer"
+
+        <Button
+          variant="transparent"
+          size="icon-sm"
+          className="border-0"
           onClick={switchSettingVisible}
-        />
+        >
+          <LucidePanelRightClose
+            className="size-4 cursor-pointer"
+            onClick={switchSettingVisible}
+          />
+        </Button>
       </div>
+
       <Form {...form}>
         <form
           onSubmit={form.handleSubmit(onSubmit, onInvalid)}
           className="flex-1 flex flex-col min-h-0"
         >
-          <section className="space-y-6 overflow-auto flex-1 pr-4 min-h-0">
-            <ChatBasicSetting></ChatBasicSetting>
-            <Separator />
-            <ChatPromptEngine></ChatPromptEngine>
-            <Separator />
-            <ChatModelSettings></ChatModelSettings>
-          </section>
-          <div className="space-x-5 text-right pt-4">
+          <ScrollArea>
+            <section className="p-5 space-y-6 overflow-auto flex-1 min-h-0">
+              <ChatBasicSetting></ChatBasicSetting>
+              <Separator />
+              <ChatPromptEngine></ChatPromptEngine>
+              <Separator />
+              <ChatModelSettings></ChatModelSettings>
+            </section>
+          </ScrollArea>
+
+          <div className="p-5 pt-4 space-x-5 text-right">
             <Button variant={'outline'} onClick={switchSettingVisible}>
               {t('chat.cancel')}
             </Button>
