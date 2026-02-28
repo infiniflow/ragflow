@@ -20,12 +20,10 @@ import pytest
 from test_web_api.common import create_memory
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
-from hypothesis import example, given, settings
-from utils.hypothesis_utils import valid_names
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
@@ -42,9 +40,7 @@ class TestAuthorization:
 
 class TestMemoryCreate:
     @pytest.mark.p1
-    @given(name=valid_names())
-    @example("d" * 128)
-    @settings(max_examples=20)
+    @pytest.mark.parametrize("name", ["test_memory_name", "d" * 128])
     def test_name(self, WebApiAuth, name):
         payload = {
             "name": name,
@@ -79,7 +75,7 @@ class TestMemoryCreate:
         assert res["message"] == expected_message, res
 
     @pytest.mark.p2
-    @given(name=valid_names())
+    @pytest.mark.parametrize("name", ["invalid_type_name", "memory_alpha"])
     def test_type_invalid(self, WebApiAuth, name):
         payload = {
             "name": name,

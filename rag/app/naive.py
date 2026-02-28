@@ -33,11 +33,13 @@ from common.token_utils import num_tokens_from_string
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
+from rag.utils.lazy_image import LazyDocxImage
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
+from common.float_utils import normalize_overlapped_percent
 from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import (
     concat_img,
@@ -236,7 +238,7 @@ class Docx(DocxParser):
         imgs = paragraph._element.xpath(".//pic:pic")
         if not imgs:
             return None
-        res_img = None
+        image_blobs = []
         for img in imgs:
             embed = img.xpath(".//a:blip/@r:embed")
             if not embed:
@@ -260,17 +262,11 @@ class Docx(DocxParser):
             except Exception as e:
                 logging.warning(f"The recognized image stream appears to be corrupted. Skipping image, exception: {e}")
                 continue
-            try:
-                image = Image.open(BytesIO(image_blob)).convert("RGB")
-                if res_img is None:
-                    res_img = image
-                else:
-                    res_img = concat_img(res_img, image)
-            except Exception as e:
-                logging.warning(f"Fail to open or concat images, exception: {e}")
-                continue
+            image_blobs.append(image_blob)
 
-        return res_img
+        if not image_blobs:
+            return None
+        return LazyDocxImage(image_blobs)
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
@@ -727,7 +723,7 @@ def load_from_xml_v2(baseURI, rels_item_xml):
     if rels_item_xml is not None:
         rels_elm = parse_xml(rels_item_xml)
         for rel_elm in rels_elm.Relationship_lst:
-            if rel_elm.target_ref in ("../NULL", "NULL"):
+            if rel_elm.target_ref in ("../NULL", "NULL") or rel_elm.target_ref.startswith("#"):
                 continue
             srels._srels.append(_SerializedRelationship(baseURI, rel_elm))
     return srels
@@ -983,12 +979,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         raise NotImplementedError("file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
 
     st = timer()
+    overlapped_percent = normalize_overlapped_percent(parser_config.get("overlapped_percent", 0))
     if is_markdown:
         merged_chunks = []
         merged_images = []
         chunk_limit = max(0, int(parser_config.get("chunk_token_num", 128)))
-        overlapped_percent = int(parser_config.get("overlapped_percent", 0))
-        overlapped_percent = max(0, min(overlapped_percent, 90))
 
         current_text = ""
         current_tokens = 0
@@ -1037,10 +1032,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 section_images = None
 
         if section_images:
-            chunks, images = naive_merge_with_images(sections, section_images, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"))
+            chunks, images = naive_merge_with_images(sections, section_images, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
             res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
         else:
-            chunks = naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"))
+            chunks = naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
 
             res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
 

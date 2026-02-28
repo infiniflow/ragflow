@@ -1,3 +1,4 @@
+import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { ResponseType } from '@/interfaces/database/base';
 import i18n from '@/locales/config';
@@ -5,7 +6,7 @@ import authorizationUtil, {
   getAuthorization,
   redirectToLogin,
 } from '@/utils/authorization-util';
-import { message, notification } from 'antd';
+import notification from '@/utils/notification';
 import { RequestMethod, extend } from 'umi-request';
 import { convertTheKeysOfTheObjectToSnake } from './common-util';
 

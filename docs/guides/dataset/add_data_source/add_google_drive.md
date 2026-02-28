@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: SiGoogledrive
 }
 ---
-
 # Add Google Drive
 
 ## 1. Create a Google Cloud Project
@@ -13,9 +12,9 @@ sidebar_custom_props: {
 You can either create a dedicated project for RAGFlow or use an existing
 Google Cloud external project.
 
-**Steps:**
+**Steps:** 
 1. Open the project creation page\
-`https://console.cloud.google.com/projectcreate`
+`https://console.cloud.google.com/projectcreate` 
 ![placeholder-image](https://github.com/infiniflow/ragflow-docs/blob/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image1.jpeg?raw=true)
 2. Select **External** as the Audience
 ![placeholder-image](https://github.com/infiniflow/ragflow-docs/blob/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image2.png?raw=true)
@@ -99,11 +98,11 @@ Navigate to the Google API Library:\
 
 Enable the following APIs:
 
-- Google Drive API
-- Admin SDK API
-- Google Sheets API
+- Google Drive API 
+- Admin SDK API 
+- Google Sheets API 
 - Google Docs API
-
+  
 
 ![placeholder-image](https://github.com/infiniflow/ragflow-docs/blob/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image15.png?raw=true)
 
@@ -129,7 +128,7 @@ Enable the following APIs:
 ![placeholder-image](https://github.com/infiniflow/ragflow-docs/blob/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image23.png?raw=true)
 
 5.  Click **Authorize with Google**
-A browser window will appear.
+A browser window will appear. 
 ![placeholder-image](https://github.com/infiniflow/ragflow-docs/blob/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image25.jpeg?raw=true)
 Click: - **Continue** - **Select All → Continue** - Authorization should
 succeed - Select **OK** to add the data source

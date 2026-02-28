@@ -183,12 +183,20 @@ export function useSetUploadResponseData() {
     setFileList([]);
   }, []);
 
+  const removeFile = useCallback((file: File) => {
+    setFileList((prev) => prev.filter((f) => f !== file));
+    setUploadResponseList((prev) =>
+      prev.filter((item) => item.name !== file.name),
+    );
+  }, []);
+
   return {
     uploadResponseList,
     fileList,
     setUploadResponseList,
     appendUploadResponseList: append,
     clearUploadResponseList: clear,
+    removeFile,
   };
 }
 
@@ -243,6 +251,8 @@ export const useSendAgentMessage = ({
     removeAllMessages,
     removeAllMessagesExceptFirst,
     scrollToBottom,
+    addPrologue,
+    setDerivedMessages,
   } = useSelectDerivedMessages();
   const { addEventList: addEventListFun } = useContext(AgentChatLogContext);
   const {
@@ -250,6 +260,7 @@ export const useSendAgentMessage = ({
     clearUploadResponseList,
     uploadResponseList,
     fileList,
+    removeFile,
   } = useSetUploadResponseData();
 
   const { stopMessage } = useStopMessage();
@@ -257,17 +268,21 @@ export const useSendAgentMessage = ({
   const stopConversation = useCallback(() => {
     const taskId = answerList.at(0)?.task_id;
     stopOutputMessage();
-    stopMessage(taskId);
-  }, [answerList, stopMessage, stopOutputMessage]);
+    if (!isShared) {
+      stopMessage(taskId);
+    }
+  }, [answerList, isShared, stopMessage, stopOutputMessage]);
 
   const sendMessage = useCallback(
     async ({
       message,
       beginInputs,
+      exploreSessionId,
     }: {
       message: Message;
       messages?: Message[];
       beginInputs?: BeginQuery[];
+      exploreSessionId?: string;
     }) => {
       const params: Record<string, unknown> = {
         id: agentId,
@@ -287,7 +302,7 @@ export const useSendAgentMessage = ({
 
         params.files = uploadResponseList;
 
-        params.session_id = sessionId;
+        params.session_id = sessionId || exploreSessionId;
       }
 
       try {
@@ -354,28 +369,32 @@ export const useSendAgentMessage = ({
     removeAllMessagesExceptFirst,
   ]);
 
-  const handlePressEnter = useCallback(() => {
-    if (trim(value) === '') return;
-    const msgBody = buildRequestBody(value);
-    if (done) {
-      setValue('');
-      sendMessage({
-        message: msgBody,
-      });
-    }
-    addNewestOneQuestion({ ...msgBody, files: fileList });
-    setTimeout(() => {
-      scrollToBottom();
-    }, 100);
-  }, [
-    value,
-    done,
-    addNewestOneQuestion,
-    fileList,
-    setValue,
-    sendMessage,
-    scrollToBottom,
-  ]);
+  const handlePressEnter = useCallback(
+    ({ exploreSessionId }: { exploreSessionId?: string } = {}) => {
+      if (trim(value) === '') return;
+      const msgBody = buildRequestBody(value);
+      if (done) {
+        setValue('');
+        sendMessage({
+          message: msgBody,
+          exploreSessionId,
+        });
+      }
+      addNewestOneQuestion({ ...msgBody, files: fileList });
+      setTimeout(() => {
+        scrollToBottom();
+      }, 100);
+    },
+    [
+      value,
+      done,
+      addNewestOneQuestion,
+      fileList,
+      setValue,
+      sendMessage,
+      scrollToBottom,
+    ],
+  );
 
   const sendedTaskMessage = useRef<boolean>(false);
 
@@ -417,12 +436,11 @@ export const useSendAgentMessage = ({
       return;
     }
     if (prologue) {
-      addNewestOneAnswer({
-        answer: prologue,
-      });
+      addPrologue(prologue);
     }
   }, [
     addNewestOneAnswer,
+    addPrologue,
     agentId,
     isTaskMode,
     prologue,
@@ -461,5 +479,8 @@ export const useSendAgentMessage = ({
     appendUploadResponseList,
     addNewestOneAnswer,
     sendMessage,
+    removeFile,
+    setDerivedMessages,
+    addPrologue,
   };
 };

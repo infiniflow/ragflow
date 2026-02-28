@@ -49,10 +49,12 @@ function MultiCommandItem({
   option,
   isSelected,
   toggleOption,
+  optionTestId,
 }: {
   option: MultiSelectOptionType;
   isSelected: boolean;
   toggleOption(value: string): void;
+  optionTestId?: string;
 }) {
   return (
     <CommandItem
@@ -61,6 +63,7 @@ function MultiCommandItem({
         if (option.disabled) return false;
         toggleOption(option.value);
       }}
+      data-testid={optionTestId}
       className={cn('cursor-pointer', {
         'cursor-not-allowed text-text-disabled': option.disabled,
       })}
@@ -124,7 +127,8 @@ const multiSelectVariants = cva(
  * Props for MultiSelect component
  */
 interface MultiSelectProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof multiSelectVariants> {
   /**
    * An array of option objects to be displayed in the multi-select component.
@@ -182,6 +186,8 @@ interface MultiSelectProps
    * If true, renders the multi-select component with a select all option.
    */
   showSelectAll?: boolean;
+  popoverTestId?: string;
+  optionTestIdPrefix?: string;
 }
 
 export const MultiSelect = React.forwardRef<
@@ -201,6 +207,8 @@ export const MultiSelect = React.forwardRef<
       // asChild = false,
       className,
       showSelectAll = true,
+      popoverTestId,
+      optionTestIdPrefix,
       ...props
     },
     ref,
@@ -289,7 +297,7 @@ export const MultiSelect = React.forwardRef<
             {...props}
             onClick={handleTogglePopover}
             className={cn(
-              'flex w-full p-1 rounded-md border border-border-button min-h-10 h-auto placeholder:text-text-disabled items-center justify-between bg-bg-input hover:bg-bg-input [&_svg]:pointer-events-auto',
+              'flex w-full p-1 rounded-md border border-border-button min-h-10 h-auto placeholder:text-text-disabled items-center justify-between bg-bg-input focus-visible:bg-bg-input hover:bg-bg-input [&_svg]:pointer-events-auto',
               className,
             )}
           >
@@ -377,6 +385,7 @@ export const MultiSelect = React.forwardRef<
           className="w-auto p-0"
           align="start"
           onEscapeKeyDown={() => setIsPopoverOpen(false)}
+          data-testid={popoverTestId}
         >
           <Command className="p-5 pb-8">
             {options && options.length > 0 && (
@@ -409,7 +418,7 @@ export const MultiSelect = React.forwardRef<
                 )}
                 {!options.some((x) => 'options' in x) &&
                   (options as unknown as MultiSelectOptionType[]).map(
-                    (option) => {
+                    (option, idx) => {
                       const isSelected = selectedValues.includes(option.value);
                       return (
                         <MultiCommandItem
@@ -417,6 +426,7 @@ export const MultiSelect = React.forwardRef<
                           key={option.value}
                           isSelected={isSelected}
                           toggleOption={toggleOption}
+                          optionTestId={optionTestIdPrefix ? `${optionTestIdPrefix}-option-${idx}` : undefined}
                         ></MultiCommandItem>
                       );
                     },
@@ -425,7 +435,7 @@ export const MultiSelect = React.forwardRef<
               {options.every((x) => 'options' in x) &&
                 options.map((x, idx) => (
                   <CommandGroup heading={x.label} key={idx}>
-                    {x.options.map((option) => {
+                    {x.options.map((option, optIdx) => {
                       const isSelected = selectedValues.includes(option.value);
 
                       return (
@@ -434,6 +444,7 @@ export const MultiSelect = React.forwardRef<
                           key={option.value}
                           isSelected={isSelected}
                           toggleOption={toggleOption}
+                          optionTestId={optionTestIdPrefix ? `${optionTestIdPrefix}-option-${optIdx}` : undefined}
                         ></MultiCommandItem>
                       );
                     })}

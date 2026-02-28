@@ -15,13 +15,14 @@
 #
 import random
 import pytest
+import requests
 from test_web_api.common import forget_message, list_memory_message, get_message_content
-from configs import INVALID_API_TOKEN
+from configs import HOST_ADDRESS, INVALID_API_TOKEN, VERSION
 from libs.auth import RAGFlowWebApiAuth
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
@@ -52,3 +53,17 @@ class TestForgetMessage:
         forgot_message_res = get_message_content(WebApiAuth, memory_id, message["message_id"])
         assert forgot_message_res["code"] == 0, forgot_message_res
         assert forgot_message_res["data"]["forget_at"] not in ["-", ""], forgot_message_res
+
+    @pytest.mark.p2
+    def test_forget_message_invalid_memory_id(self, WebApiAuth):
+        res = forget_message(WebApiAuth, "missing_memory_id", 1)
+        assert res["code"] == 404, res
+        assert "not found" in res["message"].lower(), res
+
+    @pytest.mark.p2
+    def test_forget_message_invalid_message_id(self, WebApiAuth):
+        memory_id = self.memory_id
+        url = f"{HOST_ADDRESS}/api/{VERSION}/messages/{memory_id}:invalid_message_id"
+        res = requests.delete(url=url, headers={"Content-Type": "application/json"}, auth=WebApiAuth).json()
+        assert res["code"] == 500, res
+        assert "Internal server error" in res["message"], res

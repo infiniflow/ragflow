@@ -12,6 +12,7 @@ import { IDataSourceInfoMap } from '../interface';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
 import { S3Constant } from './s3-constant';
+import { seafileConstant } from './seafile-constant'; 
 
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
@@ -35,6 +36,9 @@ export enum DataSourceKey {
   GITHUB = 'github',
   BITBUCKET = 'bitbucket',
   ZENDESK = 'zendesk',
+  SEAFILE = 'seafile',
+  MYSQL = 'mysql',
+  POSTGRESQL = 'postgresql',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -155,6 +159,21 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.ZENDESK}Description`),
       icon: <SvgIcon name={'data-source/zendesk'} width={38} />,
     },
+    [DataSourceKey.SEAFILE]: {
+      name: 'SeaFile',
+      description: t(`setting.${DataSourceKey.SEAFILE}Description`),
+      icon: <SvgIcon name={'data-source/seafile'} width={38} />,
+    },
+    [DataSourceKey.MYSQL]: {
+      name: 'MySQL',
+      description: t(`setting.${DataSourceKey.MYSQL}Description`),
+      icon: <SvgIcon name={'data-source/mysql'} width={38} />,
+    },
+    [DataSourceKey.POSTGRESQL]: {
+      name: 'PostgreSQL',
+      description: t(`setting.${DataSourceKey.POSTGRESQL}Description`),
+      icon: <SvgIcon name={'data-source/postgresql'} width={38} />,
+    },
   };
 };
 
@@ -182,6 +201,7 @@ export const DataSourceFormBaseFields = [
     name: 'name',
     type: FormFieldType.Text,
     required: true,
+    tooltip: t('setting.connectorNameTip'),
   },
   {
     label: 'Source',
@@ -815,6 +835,107 @@ export const DataSourceFormFields = {
       ],
     },
   ],
+  [DataSourceKey.SEAFILE]: seafileConstant(t),
+  [DataSourceKey.MYSQL]: [
+    {
+      label: 'Host',
+      name: 'config.host',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'localhost',
+    },
+    {
+      label: 'Port',
+      name: 'config.port',
+      type: FormFieldType.Number,
+      required: true,
+      placeholder: '3306',
+    },
+    {
+      label: 'Database',
+      name: 'config.database',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Username',
+      name: 'config.credentials.username',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Password',
+      name: 'config.credentials.password',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'SQL Query',
+      name: 'config.query',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: 'Leave empty to load all tables',
+      tooltip: t('setting.mysqlQueryTip'),
+    },
+    {
+      label: 'Content Columns',
+      name: 'config.content_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'title,description,content',
+      tooltip: t('setting.mysqlContentColumnsTip'),
+    },
+  ],
+  [DataSourceKey.POSTGRESQL]: [
+    {
+      label: 'Host',
+      name: 'config.host',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'localhost',
+    },
+    {
+      label: 'Port',
+      name: 'config.port',
+      type: FormFieldType.Number,
+      required: true,
+      placeholder: '5432',
+    },
+    {
+      label: 'Database',
+      name: 'config.database',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Username',
+      name: 'config.credentials.username',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Password',
+      name: 'config.credentials.password',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'SQL Query',
+      name: 'config.query',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: 'Leave empty to load all tables',
+      tooltip: t('setting.postgresqlQueryTip'),
+    },
+    {
+      label: 'Content Columns',
+      name: 'config.content_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'title,description,content',
+      tooltip: t('setting.postgresqlContentColumnsTip'),
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -1093,6 +1214,58 @@ export const DataSourceFormDefaultValues = {
         zendesk_subdomain: '',
         zendesk_email: '',
         zendesk_token: '',
+      },
+    },
+  },
+  [DataSourceKey.SEAFILE]: {
+    name: '',
+    source: DataSourceKey.SEAFILE,
+    config: {
+      seafile_url: '',
+      sync_scope: 'account', 
+      repo_id: '',             
+      sync_path: '',            
+      include_shared: true,     
+      batch_size: 100,
+      credentials: {
+        seafile_token: '',   
+        repo_token: '',          
+      },
+    },
+  },
+  [DataSourceKey.MYSQL]: {
+    name: '',
+    source: DataSourceKey.MYSQL,
+    config: {
+      host: 'localhost',
+      port: 3306,
+      database: '',
+      query: '',
+      content_columns: '',
+      metadata_columns: '',
+      id_column: '',
+      timestamp_column: '',
+      credentials: {
+        username: '',
+        password: '',
+      },
+    },
+  },
+  [DataSourceKey.POSTGRESQL]: {
+    name: '',
+    source: DataSourceKey.POSTGRESQL,
+    config: {
+      host: 'localhost',
+      port: 5432,
+      database: '',
+      query: '',
+      content_columns: '',
+      metadata_columns: '',
+      id_column: '',
+      timestamp_column: '',
+      credentials: {
+        username: '',
+        password: '',
       },
     },
   },

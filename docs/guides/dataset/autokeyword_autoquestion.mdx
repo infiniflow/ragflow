@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideSlidersHorizontal
 }
 ---
-
 # Auto-keyword Auto-question
 import APITable from '@site/src/components/APITable';
 
@@ -23,14 +22,14 @@ Enabling this feature increases document indexing time and uses extra tokens, as
 
 Auto-keyword refers to the auto-keyword generation feature of RAGFlow. It uses a chat model to generate a set of keywords or synonyms from each chunk to correct errors and enhance retrieval accuracy. This feature is implemented as a slider under **Page rank** on the **Configuration** page of your dataset.
 
-**Values**:
+**Values**:  
 
-- 0: (Default) Disabled.
-- Between 3 and 5 (inclusive): Recommended if you have chunks of approximately 1,000 characters.
-- 30 (maximum)
+- 0: (Default) Disabled.  
+- Between 3 and 5 (inclusive): Recommended if you have chunks of approximately 1,000 characters. 
+- 30 (maximum) 
 
 :::tip NOTE
-- If your chunk size increases, you can increase the value accordingly. Please note, as the value increases, the marginal benefit decreases.
+- If your chunk size increases, you can increase the value accordingly. Please note, as the value increases, the marginal benefit decreases. 
 - An Auto-keyword value must be an integer. If you set it to a non-integer, say 1.7, it will be rounded down to the nearest integer, which in this case is 1.
 :::
 
@@ -40,12 +39,12 @@ Auto-question is a feature of RAGFlow that automatically generates questions fro
 
 **Values**:
 
-- 0: (Default) Disabled.
-- 1 or 2: Recommended if you have chunks of approximately 1,000 characters.
+- 0: (Default) Disabled.  
+- 1 or 2: Recommended if you have chunks of approximately 1,000 characters.  
 - 10 (maximum)
 
 :::tip NOTE
-- If your chunk size increases, you can increase the value accordingly. Please note, as the value increases, the marginal benefit decreases.
+- If your chunk size increases, you can increase the value accordingly. Please note, as the value increases, the marginal benefit decreases. 
 - An Auto-question value must be an integer. If you set it to a non-integer, say 1.7, it will be rounded down to the nearest integer, which in this case is 1.
 :::
 

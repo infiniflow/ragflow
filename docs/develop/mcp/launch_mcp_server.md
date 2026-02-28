@@ -5,20 +5,19 @@ sidebar_custom_props: {
   categoryIcon: LucideTvMinimalPlay
 }
 ---
-
 # Launch RAGFlow MCP server
 
 Launch an MCP server from source or via Docker.
 
 ---
 
-A RAGFlow Model Context Protocol (MCP) server is designed as an independent component to complement the RAGFlow server. Note that an MCP server must operate alongside a properly functioning RAGFlow server.
+A RAGFlow Model Context Protocol (MCP) server is designed as an independent component to complement the RAGFlow server. Note that an MCP server must operate alongside a properly functioning RAGFlow server. 
 
-An MCP server can start up in either self-host mode (default) or host mode:
+An MCP server can start up in either self-host mode (default) or host mode: 
 
-- **Self-host mode**:
+- **Self-host mode**:  
   When launching an MCP server in self-host mode, you must provide an API key to authenticate the MCP server with the RAGFlow server. In this mode, the MCP server can access *only* the datasets of a specified tenant on the RAGFlow server.
-- **Host mode**:
+- **Host mode**:  
   In host mode, each MCP client can access their own datasets on the RAGFlow server. However, each client request must include a valid API key to authenticate the client with the RAGFlow server.
 
 Once a connection is established, an MCP server communicates with its client in MCP HTTP+SSE (Server-Sent Events) mode, unidirectionally pushing responses from the RAGFlow server to its client in real time.
@@ -32,9 +31,9 @@ Once a connection is established, an MCP server communicates with its client in 
 If you wish to try out our MCP server without upgrading RAGFlow, community contributor [yiminghub2024](https://github.com/yiminghub2024) 👏 shares their recommended steps [here](#launch-an-mcp-server-without-upgrading-ragflow).
 :::
 
-## Launch an MCP server
+## Launch an MCP server 
 
-You can start an MCP server either from source code or via Docker.
+You can start an MCP server either from source code or via Docker. 
 
 ### Launch from source code
 
@@ -51,7 +50,7 @@ uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base-url=http://127.0
 # uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base-url=http://127.0.0.1:9380 --mode=host
 ```
 
-Where:
+Where: 
 
 - `host`: The MCP server's host address.
 - `port`: The MCP server's listening port.
@@ -97,7 +96,7 @@ The MCP server is designed as an optional component that complements the RAGFlow
         #   - --no-json-response # Disables JSON responses for the streamable-HTTP transport
 ```
 
-Where:
+Where: 
 
 - `mcp-host`: The MCP server's host address.
 - `mcp-port`: The MCP server's listening port.
@@ -122,13 +121,13 @@ Run `docker compose -f docker-compose.yml up` to launch the RAGFlow server toget
   docker-ragflow-cpu-1  | Starting MCP Server on 0.0.0.0:9382 with base URL http://127.0.0.1:9380...
   docker-ragflow-cpu-1  | Starting 1 task executor(s) on host 'dd0b5e07e76f'...
   docker-ragflow-cpu-1  | 2025-04-18 15:41:18,816 INFO     27 ragflow_server log path: /ragflow/logs/ragflow_server.log, log levels: {'peewee': 'WARNING', 'pdfminer': 'WARNING', 'root': 'INFO'}
-  docker-ragflow-cpu-1  |
+  docker-ragflow-cpu-1  | 
   docker-ragflow-cpu-1  | __  __  ____ ____       ____  _____ ______     _______ ____
   docker-ragflow-cpu-1  | |  \/  |/ ___|  _ \     / ___|| ____|  _ \ \   / / ____|  _ \
   docker-ragflow-cpu-1  | | |\/| | |   | |_) |    \___ \|  _| | |_) \ \ / /|  _| | |_) |
   docker-ragflow-cpu-1  | | |  | | |___|  __/      ___) | |___|  _ < \ V / | |___|  _ <
   docker-ragflow-cpu-1  | |_|  |_|\____|_|        |____/|_____|_| \_\ \_/  |_____|_| \_\
-  docker-ragflow-cpu-1  |
+  docker-ragflow-cpu-1  |     
   docker-ragflow-cpu-1  | MCP launch mode: self-host
   docker-ragflow-cpu-1  | MCP host: 0.0.0.0
   docker-ragflow-cpu-1  | MCP port: 9382
@@ -141,13 +140,13 @@ Run `docker compose -f docker-compose.yml up` to launch the RAGFlow server toget
   docker-ragflow-cpu-1  | 2025-04-18 15:41:23,263 INFO     27 init database on cluster mode successfully
   docker-ragflow-cpu-1  | 2025-04-18 15:41:25,318 INFO     27 load_model /ragflow/rag/res/deepdoc/det.onnx uses CPU
   docker-ragflow-cpu-1  | 2025-04-18 15:41:25,367 INFO     27 load_model /ragflow/rag/res/deepdoc/rec.onnx uses CPU
-  docker-ragflow-cpu-1  |         ____   ___    ______ ______ __
+  docker-ragflow-cpu-1  |         ____   ___    ______ ______ __               
   docker-ragflow-cpu-1  |        / __ \ /   |  / ____// ____// /____  _      __
   docker-ragflow-cpu-1  |       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-  docker-ragflow-cpu-1  |      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-  docker-ragflow-cpu-1  |     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-  docker-ragflow-cpu-1  |
-  docker-ragflow-cpu-1  |
+  docker-ragflow-cpu-1  |      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
+  docker-ragflow-cpu-1  |     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
+  docker-ragflow-cpu-1  | 
+  docker-ragflow-cpu-1  |     
   docker-ragflow-cpu-1  | 2025-04-18 15:41:29,088 INFO     27 RAGFlow version: v0.18.0-285-gb2c299fa full
   docker-ragflow-cpu-1  | 2025-04-18 15:41:29,088 INFO     27 project base: /ragflow
   docker-ragflow-cpu-1  | 2025-04-18 15:41:29,088 INFO     27 Current configs, from /ragflow/conf/service_conf.yaml:
@@ -156,12 +155,12 @@ Run `docker compose -f docker-compose.yml up` to launch the RAGFlow server toget
   docker-ragflow-cpu-1  |  * Running on all addresses (0.0.0.0)
   docker-ragflow-cpu-1  |  * Running on http://127.0.0.1:9380
   docker-ragflow-cpu-1  |  * Running on http://172.19.0.6:9380
-  docker-ragflow-cpu-1  |   ______           __      ______                     __
+  docker-ragflow-cpu-1  |   ______           __      ______                     __            
   docker-ragflow-cpu-1  |  /_  __/___ ______/ /__   / ____/  _____  _______  __/ /_____  _____
   docker-ragflow-cpu-1  |   / / / __ `/ ___/ //_/  / __/ | |/_/ _ \/ ___/ / / / __/ __ \/ ___/
-  docker-ragflow-cpu-1  |  / / / /_/ (__  ) ,<    / /____>  </  __/ /__/ /_/ / /_/ /_/ / /
-  docker-ragflow-cpu-1  | /_/  \__,_/____/_/|_|  /_____/_/|_|\___/\___/\__,_/\__/\____/_/
-  docker-ragflow-cpu-1  |
+  docker-ragflow-cpu-1  |  / / / /_/ (__  ) ,<    / /____>  </  __/ /__/ /_/ / /_/ /_/ / /    
+  docker-ragflow-cpu-1  | /_/  \__,_/____/_/|_|  /_____/_/|_|\___/\___/\__,_/\__/\____/_/                               
+  docker-ragflow-cpu-1  |     
   docker-ragflow-cpu-1  | 2025-04-18 15:41:34,501 INFO     32 TaskExecutor: RAGFlow version: v0.18.0-285-gb2c299fa full
   docker-ragflow-cpu-1  | 2025-04-18 15:41:34,501 INFO     32 Use Elasticsearch http://es01:9200 as the doc engine.
   ...
@@ -173,11 +172,11 @@ Run `docker compose -f docker-compose.yml up` to launch the RAGFlow server toget
 This section is contributed by our community contributor [yiminghub2024](https://github.com/yiminghub2024). 👏
 :::
 
-1. Prepare all MCP-specific files and directories.
-   i. Copy the [mcp/](https://github.com/infiniflow/ragflow/tree/main/mcp) directory to your local working directory.
-   ii. Copy [docker/docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml) locally.
-   iii. Copy [docker/entrypoint.sh](https://github.com/infiniflow/ragflow/blob/main/docker/entrypoint.sh) locally.
-   iv. Install the required dependencies using `uv`:
+1. Prepare all MCP-specific files and directories.  
+   i. Copy the [mcp/](https://github.com/infiniflow/ragflow/tree/main/mcp) directory to your local working directory.  
+   ii. Copy [docker/docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml) locally.  
+   iii. Copy [docker/entrypoint.sh](https://github.com/infiniflow/ragflow/blob/main/docker/entrypoint.sh) locally.  
+   iv. Install the required dependencies using `uv`:  
        - Run `uv add mcp` or
        - Copy [pyproject.toml](https://github.com/infiniflow/ragflow/blob/main/pyproject.toml) locally and run `uv sync --python 3.12`.
 2. Edit **docker-compose.yml** to enable MCP (disabled by default).
@@ -197,7 +196,7 @@ docker logs docker-ragflow-cpu-1
 
 ## Security considerations
 
-As MCP technology is still at early stage and no official best practices for authentication or authorization have been established, RAGFlow currently uses [API key](./acquire_ragflow_api_key.md) to validate identity for the operations described earlier. However, in public environments, this makeshift solution could expose your MCP server to potential network attacks. Therefore, when running a local SSE server, it is recommended to bind only to localhost (`127.0.0.1`) rather than to all interfaces (`0.0.0.0`).
+As MCP technology is still at early stage and no official best practices for authentication or authorization have been established, RAGFlow currently uses [API key](./acquire_ragflow_api_key.md) to validate identity for the operations described earlier. However, in public environments, this makeshift solution could expose your MCP server to potential network attacks. Therefore, when running a local SSE server, it is recommended to bind only to localhost (`127.0.0.1`) rather than to all interfaces (`0.0.0.0`). 
 
 For further guidance, see the [official MCP documentation](https://modelcontextprotocol.io/docs/concepts/transports#security-considerations).
 
@@ -205,11 +204,11 @@ For further guidance, see the [official MCP documentation](https://modelcontextp
 
 ### When to use an API key for authentication?
 
-The use of an API key depends on the operating mode of your MCP server.
+The use of an API key depends on the operating mode of your MCP server. 
 
-- **Self-host mode** (default):
-  When starting the MCP server in self-host mode, you should provide an API key when launching it to authenticate it with the RAGFlow server:
-  - If launching from source, include the API key in the command.
+- **Self-host mode** (default):  
+  When starting the MCP server in self-host mode, you should provide an API key when launching it to authenticate it with the RAGFlow server:  
+  - If launching from source, include the API key in the command. 
   - If launching from Docker, update the API key in **docker/docker-compose.yml**.
-- **Host mode**:
+- **Host mode**:  
   If your RAGFlow MCP server is working in host mode, include the API key in the `headers` of your client requests to authenticate your client with the RAGFlow server. An example is available [here](https://github.com/infiniflow/ragflow/blob/main/mcp/client/client.py).

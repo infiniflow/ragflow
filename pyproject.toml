@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.23.1"
+version = "0.24.0"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -11,7 +11,6 @@ dependencies = [
     "akshare>=1.15.78,<2.0.0",
     "anthropic==0.34.1",
     "arxiv==2.1.3",
-    "aspose-slides==24.7.0; platform_machine == 'x86_64' or (sys_platform == 'darwin' and platform_machine == 'arm64')",
     "atlassian-python-api==4.0.7",
     "azure-identity==1.17.1",
     "azure-storage-file-datalake==12.16.0",
@@ -19,10 +18,11 @@ dependencies = [
     "bio==1.7.1",
     "boxsdk>=10.1.0",
     "captcha>=0.7.1",
+    "chardet>=5.2.0,<6.0.0",
     "cn2an==0.5.22",
     "cohere==5.6.2",
     "Crawl4AI>=0.4.0,<1.0.0",
-    "dashscope==1.20.11",
+    "dashscope==1.25.11",
     "deepl==1.18.0",
     "demjson3==3.0.6",
     "discord-py==2.3.2",
@@ -38,15 +38,16 @@ dependencies = [
     "flask-login==0.6.3",
     "flask-mail>=0.10.0",
     "flask-session==0.8.0",
+    "google-api-python-client>=2.190.0,<3.0.0",
     "google-auth-oauthlib>=1.2.0,<2.0.0",
+    "google-cloud-storage>=2.19.0,<3.0.0",
     "google-genai>=1.41.0,<2.0.0",
-    "google-generativeai>=0.8.1,<0.9.0", # Needed for cv_model and embedding_model
     "google-search-results==2.4.2",
     "graspologic @ git+https://github.com/yuzhichang/graspologic.git@38e680cab72bc9fb68a7992c3bcc2d53b24e42fd",
     "groq==0.9.0",
     "grpcio-status==1.67.1",
     "html-text==0.6.2",
-    "infinity-sdk==0.6.15",
+    "infinity-sdk==0.7.0-dev2",
     "infinity-emb>=0.0.66,<0.0.67",
     "jira==3.10.5",
     "json-repair==0.35.0",
@@ -59,6 +60,7 @@ dependencies = [
     "mini-racer>=0.12.4,<0.13.0",
     "minio==7.2.4",
     "mistralai==0.4.2",
+    "mysql-connector-python>=9.0.0,<10.0.0",
     "moodlepy>=0.23.0",
     "mypy-boto3-s3==1.40.26",
     "Office365-REST-Python-Client==2.6.2",
@@ -74,16 +76,17 @@ dependencies = [
     "pluginlib==0.9.4",
     "psycopg2-binary>=2.9.11,<3.0.0",
     "pyclipper>=1.4.0,<2.0.0",
+    # "pywencai>=0.13.1,<1.0.0",  # Temporarily disabled: conflicts with agentrun-sdk (pydash>=8), needed for agent/tools/wencai.py
     "pycryptodomex==3.20.0",
-    "pyobvector==0.2.18",
+    "pyobvector==0.2.22",
     "pyodbc>=5.2.0,<6.0.0",
     "pypandoc>=1.16",
-    "pypdf==6.4.0",
+    "pypdf>=6.6.2",
     "pypdf2>=3.0.1,<4.0.0",
     "python-calamine>=0.4.0",
     "python-docx>=1.1.2,<2.0.0",
     "python-pptx>=1.0.2,<2.0.0",
-    "pywencai>=0.13.1,<1.0.0",
+    # "pywencai>=0.13.1,<1.0.0",  # Temporarily disabled: conflicts with agentrun-sdk (pydash>=8), needed for agent/tools/wencai.py
     "qianfan==0.4.6",
     "quart-auth==0.11.0",
     "quart-cors==0.8.0",
@@ -98,13 +101,14 @@ dependencies = [
     "selenium-wire==5.1.0",
     "slack-sdk==3.37.0",
     "socksio==1.0.0",
+    "agentrun-sdk>=0.0.16,<1.0.0",
+    "nest-asyncio>=1.6.0,<2.0.0",  # Needed for agent/component/message.py
     "sqlglotrs==0.9.0",
     "strenum==0.4.15",
     "tavily-python==0.5.1",
     "tencentcloud-sdk-python==3.0.1478",
     "tika==2.6.0",
     "valkey==6.0.2",
-    "vertexai==1.70.0",
     "volcengine==1.0.194",
     "voyageai==0.2.3",
     "webdav4>=0.10.0,<0.11.0",
@@ -115,13 +119,13 @@ dependencies = [
     "xpinyin==0.7.6",
     "yfinance==0.2.65",
     "zhipuai==2.0.1",
+    "peewee>=3.17.1,<4.0.0",
     #    following modules aren't necessary
     #    "nltk==3.9.1",
     #    "numpy>=1.26.0,<2.0.0",
     #    "openai>=1.45.0",
     #    "openpyxl>=3.1.0,<4.0.0",
     #    "pandas>=2.2.0,<3.0.0",
-    #    "peewee==3.17.1",
     #    "pillow>=10.4.0,<13.0.0",
     #    "protobuf==5.27.2",
     #    "pymysql>=1.1.1,<2.0.0",
@@ -169,6 +173,8 @@ test = [
     "reportlab>=4.4.1",
     "requests>=2.32.2",
     "requests-toolbelt>=1.0.0",
+    "pycryptodomex==3.20.0",
+    "codecov>=2.1.13",
 ]
 
 [[tool.uv.index]]
@@ -177,7 +183,6 @@ url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 [tool.setuptools]
 packages = [
     'agent',
-    'agentic_reasoning',
     'api',
     'deepdoc',
     'graphrag',

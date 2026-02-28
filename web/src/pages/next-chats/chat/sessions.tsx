@@ -1,16 +1,24 @@
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { MoreButton } from '@/components/more-button';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { SearchInput } from '@/components/ui/input';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useFetchDialog,
   useGetChatSearchParams,
+  useRemoveConversation,
 } from '@/hooks/use-chat-request';
-import { cn } from '@/lib/utils';
-import { PanelLeftClose, PanelRightClose, Plus } from 'lucide-react';
-import { useCallback } from 'react';
+import {
+  LucideCopyX,
+  LucideListChecks,
+  LucidePanelLeftClose,
+  LucidePlus,
+  LucideTrash2,
+  LucideUndo2,
+} from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { useSelectDerivedConversationList } from '../hooks/use-select-conversation-list';
@@ -19,12 +27,8 @@ import { ConversationDropdown } from './conversation-dropdown';
 type SessionProps = Pick<
   ReturnType<typeof useHandleClickConversationCard>,
   'handleConversationCardClick'
-> & { switchSettingVisible(): void; hasSingleChatBox: boolean };
-export function Sessions({
-  hasSingleChatBox,
-  handleConversationCardClick,
-  switchSettingVisible,
-}: SessionProps) {
+>;
+export function Sessions({ handleConversationCardClick }: SessionProps) {
   const { t } = useTranslation();
   const {
     list: conversationList,
@@ -35,89 +39,215 @@ export function Sessions({
   } = useSelectDerivedConversationList();
   const { data } = useFetchDialog();
   const { visible, switchVisible } = useSetModalState(true);
+  const { removeConversation } = useRemoveConversation();
 
-  const handleCardClick = useCallback(
-    (conversationId: string, isNew: boolean) => () => {
-      handleConversationCardClick(conversationId, isNew);
-    },
-    [handleConversationCardClick],
-  );
+  // Selection mode state
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  // Toggle selection mode (click batch delete icon)
+  const toggleSelectionMode = useCallback(() => {
+    setSelectionMode(true);
+    setSelectedIds(new Set());
+  }, []);
+
+  // Exit selection mode (click return icon)
+  const exitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  // Toggle single item selection
+  const toggleSelection = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  }, []);
+
+  // Toggle select all
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === conversationList.length) {
+        return new Set();
+      }
+      return new Set(conversationList.map((x) => x.id));
+    });
+  }, [conversationList]);
+
+  // Batch delete
+  const handleBatchDelete = useCallback(async () => {
+    if (selectedIds.size > 0) {
+      await removeConversation(Array.from(selectedIds));
+      exitSelectionMode();
+    }
+  }, [selectedIds, removeConversation, exitSelectionMode]);
+
+  const selectedCount = useMemo(() => selectedIds.size, [selectedIds]);
   const { conversationId } = useGetChatSearchParams();
 
   if (!visible) {
     return (
-      <PanelRightClose
-        className="cursor-pointer size-4 mt-8"
-        onClick={switchVisible}
-      />
+      <div className="p-5">
+        <Button
+          variant="transparent"
+          size="icon-sm"
+          className="border-0"
+          onClick={switchVisible}
+        >
+          <RAGFlowAvatar
+            avatar={data.icon}
+            name={data.name}
+            className="size-8 cursor-pointer"
+          />
+        </Button>
+      </div>
     );
   }
 
   return (
-    <section className="p-6 w-[296px]  flex flex-col">
-      <section className="flex items-center text-base justify-between gap-2">
+    <aside className="p-5 w-[296px] flex flex-col" role="complementary">
+      <header className="flex items-center text-base justify-between gap-2">
         <div className="flex gap-3 items-center min-w-0">
           <RAGFlowAvatar
             avatar={data.icon}
             name={data.name}
             className="size-8"
-          ></RAGFlowAvatar>
+          />
+
           <span className="flex-1 truncate">{data.name}</span>
         </div>
-        <PanelLeftClose
-          className="cursor-pointer size-4"
+
+        <Button
+          variant="transparent"
+          size="icon-sm"
+          className="border-0"
           onClick={switchVisible}
-        />
-      </section>
+        >
+          <LucidePanelLeftClose />
+        </Button>
+      </header>
+
       <div className="flex justify-between items-center mb-4 pt-10">
         <div className="flex items-center gap-3">
           <span className="text-base font-bold">{t('chat.conversations')}</span>
-          <span className="text-text-secondary text-xs">
+          <data
+            className="text-text-secondary text-xs"
+            value={conversationList.length}
+          >
             {conversationList.length}
-          </span>
+          </data>
         </div>
-        <Button variant={'ghost'} onClick={addTemporaryConversation}>
-          <Plus></Plus>
-        </Button>
+
+        <div className="flex items-center gap-2">
+          {selectionMode ? (
+            // Exit selection mode
+            <Button variant="ghost" size="icon-xs" onClick={exitSelectionMode}>
+              <LucideUndo2 size={16} />
+            </Button>
+          ) : (
+            // New conversation
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={addTemporaryConversation}
+            >
+              <LucidePlus className="h-4 w-4" />
+            </Button>
+          )}
+
+          {selectionMode && selectedCount > 0 ? (
+            // Delete selected items
+            <ConfirmDeleteDialog
+              onOk={handleBatchDelete}
+              title={t('chat.batchDeleteSessions')}
+              content={{
+                title: t('chat.deleteSelectedConfirm', {
+                  count: selectedCount,
+                }),
+              }}
+            >
+              <Button variant="delete" size="icon-xs">
+                <LucideTrash2 />
+              </Button>
+            </ConfirmDeleteDialog>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={selectionMode ? toggleSelectAll : toggleSelectionMode}
+            >
+              {selectionMode ? <LucideListChecks /> : <LucideCopyX />}
+            </Button>
+          )}
+        </div>
       </div>
-      <div className="pb-4">
+
+      <div className="pb-4" role="search">
         <SearchInput
           onChange={handleInputChange}
           value={searchString}
         ></SearchInput>
       </div>
-      <div className="space-y-4 flex-1 overflow-auto">
-        {conversationList.map((x) => (
-          <Card
-            key={x.id}
-            onClick={handleCardClick(x.id, x.is_new)}
-            className={cn('cursor-pointer bg-transparent', {
-              'bg-bg-card': conversationId === x.id,
-            })}
-          >
-            <CardContent className="px-3 py-2 flex justify-between items-center group gap-1">
-              <div className="truncate">{x.name}</div>
-              <ConversationDropdown
-                conversation={x}
-                removeTemporaryConversation={removeTemporaryConversation}
+
+      <div className="flex-1 overflow-auto">
+        {selectionMode ? (
+          <ul className="space-y-2" role="listbox" aria-multiselectable>
+            {conversationList.map((x) => (
+              <li
+                key={x.id}
+                className="py-2"
+                role="option"
+                aria-selected={selectedIds.has(x.id)}
               >
-                <MoreButton></MoreButton>
-              </ConversationDropdown>
-            </CardContent>
-          </Card>
-        ))}
+                <label className="flex items-center gap-2">
+                  <Checkbox
+                    checked={selectedIds.has(x.id)}
+                    onCheckedChange={() => toggleSelection(x.id)}
+                  />
+
+                  <span className="truncate">{x.name}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <nav aria-label={t('chat.conversations')}>
+            <ul className="space-y-2">
+              {conversationList.map((x) => (
+                <li
+                  key={x.id}
+                  className="
+                      group pr-3 flex items-center gap-1 rounded-lg
+                      aria-selected:bg-bg-card has-[>button:focus-visible]:bg-bg-card
+                    "
+                  aria-selected={conversationId === x.id}
+                >
+                  <button
+                    type="button"
+                    className="focus-visible:outline-none px-3 py-2 text-left flex-1 truncate"
+                    onClick={() => handleConversationCardClick(x.id, x.is_new)}
+                  >
+                    {x.name}
+                  </button>
+
+                  <ConversationDropdown
+                    conversation={x}
+                    removeTemporaryConversation={removeTemporaryConversation}
+                  >
+                    <MoreButton></MoreButton>
+                  </ConversationDropdown>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
       </div>
-      <div className="py-2">
-        <Button
-          className="w-full"
-          onClick={switchSettingVisible}
-          disabled={!hasSingleChatBox}
-          variant={'outline'}
-        >
-          {t('chat.chatSetting')}
-        </Button>
-      </div>
-    </section>
+    </aside>
   );
 }

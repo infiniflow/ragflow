@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideBookA
 }
 ---
-
 # Contribution guidelines
 
 General guidelines for RAGFlow's community contributors.
@@ -35,7 +34,7 @@ The list below mentions some contributions you can make, but it is not a complet
 1. Fork our GitHub repository.
 2. Clone your fork to your local machine:
 `git clone git@github.com:<yourname>/ragflow.git`
-3. Create a local branch:
+3. Create a local branch: 
 `git checkout -b my-branch`
 4. Provide sufficient information in your commit message
 `git commit -m 'Provide sufficient info in your commit message'`

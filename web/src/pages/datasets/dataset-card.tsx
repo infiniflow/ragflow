@@ -48,7 +48,7 @@ export function SeeAllCard() {
       onClick={navigateToDatasetList}
     >
       <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5 text-text-secondary">
-        See All <ChevronRight className="size-4" />
+        {t('common.seeAll')} <ChevronRight className="size-4" />
       </CardContent>
     </Card>
   );

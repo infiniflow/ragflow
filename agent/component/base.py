@@ -27,6 +27,10 @@ import pandas as pd
 from agent import settings
 from common.connection_utils import timeout
 
+
+
+from common.misc_utils import thread_pool_exec
+
 _FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"
 _DEPRECATED_PARAMS = "_deprecated_params"
 _USER_FEEDED_PARAMS = "_user_feeded_params"
@@ -379,6 +383,7 @@ class ComponentBase(ABC):
 
     def __init__(self, canvas, id, param: ComponentParamBase):
         from agent.canvas import Graph  # Local import to avoid cyclic dependency
+
         assert isinstance(canvas, Graph), "canvas must be an instance of Canvas"
         self._canvas = canvas
         self._id = id
@@ -430,7 +435,7 @@ class ComponentBase(ABC):
             elif asyncio.iscoroutinefunction(self._invoke):
                 await self._invoke(**kwargs)
             else:
-                await asyncio.to_thread(self._invoke, **kwargs)
+                await thread_pool_exec(self._invoke, **kwargs)
         except Exception as e:
             if self.get_exception_default_value():
                 self.set_exception_default_value()

@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideStickyNote
 }
 ---
-
 # Set page rank
 
 Create a step-retrieval strategy using page rank.

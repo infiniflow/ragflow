@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import bulk_upload_documents, download_document, upload_documents
-from configs import INVALID_API_TOKEN
+from configs import INVALID_API_TOKEN, INVALID_ID_32
 from libs.auth import RAGFlowHttpApiAuth
 from requests import codes
 from utils import compare_by_hash
@@ -89,9 +89,9 @@ class TestDocumentDownload:
         "document_id, expected_code, expected_message",
         [
             (
-                "invalid_document_id",
+                INVALID_ID_32,
                 102,
-                "The dataset not own the document invalid_document_id.",
+                f"The dataset not own the document {INVALID_ID_32}.",
             ),
         ],
     )
@@ -113,11 +113,10 @@ class TestDocumentDownload:
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
-            ("", 100, "<NotFound '404: Not Found'>"),
             (
-                "invalid_dataset_id",
+                INVALID_ID_32,
                 102,
-                "You do not own the dataset invalid_dataset_id.",
+                f"You do not own the dataset {INVALID_ID_32}.",
             ),
         ],
     )
