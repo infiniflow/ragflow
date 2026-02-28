@@ -284,6 +284,7 @@ func (h *UserHandler) Info(c *gin.Context) {
 	user, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":  401,
 			"error": "Invalid access token",
 		})
 		return
@@ -293,6 +294,7 @@ func (h *UserHandler) Info(c *gin.Context) {
 	profile := h.userService.GetUserProfile(user)
 
 	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
 		"data": profile,
 	})
 }
