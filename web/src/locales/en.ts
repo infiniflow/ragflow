@@ -891,7 +891,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhance: 'PageIndex',
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach mimics human information-searching behavior in books.`,
       batchDeleteSessions: 'Batch delete',
-      deleteSelectedConfirm: 'Delete the selected {count} session(s)?',
+      deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
     },
     setting: {
       Verify: 'Verify',
@@ -1007,15 +1007,59 @@ Example: Virtual Hosted Style`,
       moodleTokenTip:
         'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
       seafileDescription:
-        'Connect to your SeaFile server to sync files and documents from your libraries.',
+        'Connect to your SeaFile server to synchronise files and documents from your libraries.',
       seafileUrlTip:
-        'The base URL of your SeaFile server (e.g., https://seafile.example.com). Do not include /api2 or other paths.',
+        'The full URL of your SeaFile server including the protocol. Example: https://seafile.example.com - Do not include a trailing slash or any path after the domain.',
+      seafileAccountScopeTip: 
+        'Syncs all libraries visible to the Account API Token below.',
+      seafileTokenPanelHeading:
+        'Provide one of these authentication methods:',
+      seafileTokenPanelAccountBullet: 
+        '- grants access to all your libraries.',
+      seafileTokenPanelLibraryBullet: 
+        '— scoped to a single library only (more secure).',   
+      seafileValidationAccountTokenRequired: 
+        'Account API Token is required for Entire Account scope',
+      seafileValidationTokenRequired: 
+        'Provide either an Account API Token or a Library Token',
+      seafileValidationLibraryIdRequired: 
+        'Library ID is required',
+      seafileValidationDirectoryPathRequired: 
+        'Directory Path is required',
+      seafileSyncScopeTip:
+        'Controls what gets synchronised: ' +
+        '(1) Entire Account - Syncs all libraries your token has access to. Requires an Account API Token. ' +
+        '(2) Single Library - Syncs all files within one specific library. Requires the Library ID and either an Account API Token or a Library API Token. ' +
+        '(3) Specific Directory - Syncs only files within a specific folder inside a library. Requires the Library ID, the folder path within that library, and either an Account API Token or a Library API Token.',
       seafileTokenTip:
-        'Generate an API token in SeaFile: Go to Settings → API Token → Generate Token. The token provides access to all libraries visible to your account.',
+        'Your account-level SeaFile API token. ' +
+        'Grants access to all libraries visible to your account. ' +
+        'Required when sync scope is "Entire Account". ' +
+        'For "Single Library" or "Specific Directory" you can use this token or a Library API Token instead.',
+      seafileRepoTokenTip:
+        'A library-scoped API token that only grants access to one specific library. ' +
+        'Can be used instead of the Account API Token for "Single Library" and "Specific Directory" sync scopes.',
+      seafileRepoIdTip:
+        'The unique identifier (UUID) of the SeaFile library you want to synchronise. ' +
+        'You can find it in your browser address bar when you open the library in the SeaFile web interface. ' +
+        'Example: 7a9e1b3c-4d5f-6a7b-8c9d-0e1f2a3b4c5d. ' +
+        'Required when sync scope is "Single Library" or "Specific Directory".',
+      seafileSyncPathTip:
+        'The absolute path of the folder to synchronise within the library specified by the Library ID above. ' +
+        'Must start with a forward slash. ' +
+        'All files and subfolders under this path will be included recursively. ' +
+        'Example: /Documents/Reports. ' +
+        'Important: The folder must exist inside the specified library. ' +
+        'Paths outside the library are not supported. ' +
+        'Only used when sync scope is "Specific Directory".',
       seafileIncludeSharedTip:
-        'When enabled, libraries shared with you by other users will also be synced.',
+        'When enabled, libraries that other users have shared with you are included in the synchronisation. ' +
+        'When disabled, only libraries owned by your account are synchronised. ' +
+        'Only applies when sync scope is "Entire Account".',
       seafileBatchSizeTip:
-        'Number of documents to process per batch. Higher values may improve performance but use more memory. Default: 100.',
+        'The number of documents processed and returned per batch during synchronisation. ' +
+        'A smaller value uses less memory but may be slower overall. ' +
+        'Default: 100.',
       jiraDescription:
         'Connect your Jira workspace to sync issues, comments, and attachments.',
       jiraBaseUrlTip:

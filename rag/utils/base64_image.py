@@ -24,6 +24,7 @@ from PIL import Image
 
 
 from common.misc_utils import thread_pool_exec
+from rag.utils.lazy_image import open_image_for_processing
 
 test_image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAIAAAD/gAIDAAAA6ElEQVR4nO3QwQ3AIBDAsIP9d25XIC+EZE8QZc18w5l9O+AlZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBT+IYAHHLHkdEgAAAABJRU5ErkJggg=="
 test_image = base64.b64decode(test_image_base64)
@@ -42,24 +43,38 @@ async def image2id(d: dict, storage_put_func: partial, objname: str, bucket: str
 
     def encode_image():
         with BytesIO() as buf:
-            img = d["image"]
+            img, close_after = open_image_for_processing(d["image"], allow_bytes=False)
 
             if isinstance(img, bytes):
                 buf.write(img)
                 buf.seek(0)
                 return buf.getvalue()
 
+            if not isinstance(img, Image.Image):
+                return None
+
             if img.mode in ("RGBA", "P"):
+                orig_img = img
                 img = img.convert("RGB")
+                if close_after:
+                    try:
+                        orig_img.close()
+                    except Exception:
+                        pass
 
             try:
                 img.save(buf, format="JPEG")
+                buf.seek(0)
+                return buf.getvalue()
             except OSError as e:
                 logging.warning(f"Saving image exception: {e}")
                 return None
-
-            buf.seek(0)
-            return buf.getvalue()
+            finally:
+                if close_after:
+                    try:
+                        img.close()
+                    except Exception:
+                        pass
 
     jpeg_binary = await thread_pool_exec(encode_image)
     if jpeg_binary is None:
