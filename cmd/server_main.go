@@ -99,6 +99,7 @@ func main() {
 	chatService := service.NewChatService()
 	chatSessionService := service.NewChatSessionService()
 	systemService := service.NewSystemService()
+	connectorService := service.NewConnectorService()
 
 	// Initialize handler layer
 	userHandler := handler.NewUserHandler(userService)
@@ -110,9 +111,10 @@ func main() {
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
 	chatSessionHandler := handler.NewChatSessionHandler(chatSessionService, userService)
+	connectorHandler := handler.NewConnectorHandler(connectorService, userService)
 
 	// Initialize router
-	r := router.NewRouter(userHandler, tenantHandler, documentHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler)
+	r := router.NewRouter(userHandler, tenantHandler, documentHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

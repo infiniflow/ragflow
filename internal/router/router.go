@@ -33,6 +33,7 @@ type Router struct {
 	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
 	chatSessionHandler   *handler.ChatSessionHandler
+	connectorHandler     *handler.ConnectorHandler
 }
 
 // NewRouter create router
@@ -46,6 +47,7 @@ func NewRouter(
 	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
 	chatSessionHandler *handler.ChatSessionHandler,
+	connectorHandler *handler.ConnectorHandler,
 ) *Router {
 	return &Router{
 		userHandler:          userHandler,
@@ -57,6 +59,7 @@ func NewRouter(
 		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
 		chatSessionHandler:   chatSessionHandler,
+		connectorHandler:     connectorHandler,
 	}
 }
 
@@ -155,6 +158,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 			session.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
 			session.GET("/list", r.chatSessionHandler.ListChatSessions)
 			session.POST("/completion", r.chatSessionHandler.Completion)
+		}
+
+		// Connector routes
+		connector := engine.Group("/connector")
+		{
+			connector.GET("/list", r.connectorHandler.ListConnectors)
 		}
 	}
 
