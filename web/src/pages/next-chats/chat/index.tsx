@@ -12,7 +12,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SharedFrom } from '@/constants/chat';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useFetchConversationList,
   useFetchConversationManually,
@@ -21,15 +20,20 @@ import {
 } from '@/hooks/use-chat-request';
 import { IClientConversation } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
+import { Routes } from '@/routes';
 import { useMount } from 'ahooks';
 import { isEmpty } from 'lodash';
-import { ArrowUpRight, LogOut, Send } from 'lucide-react';
+import {
+  LucideArrowBigLeft,
+  LucideArrowUpRight,
+  LucideSend,
+} from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { ChatSettings } from './app-settings/chat-settings';
-import { MultipleChatBox } from './chat-box/multiple-chat-box';
+import { MultipleChatBox } from './chat-box/next-multiple-chat-box';
 import { SingleChatBox } from './chat-box/single-chat-box';
 import { Sessions } from './sessions';
 import { useAddChatBox } from './use-add-box';
@@ -37,7 +41,6 @@ import { useSwitchDebugMode } from './use-switch-debug-mode';
 
 export default function Chat() {
   const { id } = useParams();
-  const { navigateToChatList } = useNavigatePage();
   const { data } = useFetchDialog();
   const { t } = useTranslation();
   const [currentConversation, setCurrentConversation] =
@@ -89,15 +92,20 @@ export default function Chat() {
 
   if (isDebugMode) {
     return (
-      <section className="pt-14 h-[100vh] pb-24">
-        <div className="flex items-center justify-between px-10 pb-5">
+      <section className="pt-5 pb-16 h-[100vh] flex flex-col">
+        <header className="px-10 pb-5">
+          <div className="mb-5">
+            <Button variant="outline" onClick={switchDebugMode}>
+              <LucideArrowBigLeft />
+              <span>{t('common.back')}</span>
+            </Button>
+          </div>
+
           <span className="text-2xl">
             {t('chat.multipleModels')} ({chatBoxIds.length}/3)
           </span>
-          <Button variant={'ghost'} onClick={switchDebugMode}>
-            {t('chat.exit')} <LogOut />
-          </Button>
-        </div>
+        </header>
+
         <MultipleChatBox
           chatBoxIds={chatBoxIds}
           controller={controller}
@@ -111,12 +119,16 @@ export default function Chat() {
   }
 
   return (
-    <section className="h-full flex flex-col">
+    <section className="h-full flex flex-col" data-testid="chat-detail">
       <PageHeader>
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink onClick={navigateToChatList}>
+              <BreadcrumbLink
+                // Not friendly for keyboard navigation
+                // onClick={navigateToChatList}
+                href={Routes.Chats}
+              >
                 {t('chat.chat')}
               </BreadcrumbLink>
             </BreadcrumbItem>
@@ -127,23 +139,26 @@ export default function Chat() {
           </BreadcrumbList>
         </Breadcrumb>
         <Button onClick={showEmbedModal}>
-          <Send />
+          <LucideSend />
           {t('common.embedIntoSite')}
         </Button>
       </PageHeader>
-      <div className="flex flex-1 min-h-0 pb-9">
+
+      <article className="flex flex-1 min-h-0 pb-9">
         <Sessions handleConversationCardClick={handleSessionClick}></Sessions>
 
         <Card className="flex-1 min-w-0 bg-transparent border-none shadow-none h-full">
           <CardContent className="flex p-0 h-full">
             <Card className="flex flex-col flex-1 bg-transparent min-w-0">
               <CardHeader
-                className={cn('p-5', { 'border-b': hasSingleChatBox })}
+                className={cn('p-5', {
+                  'border-b-0.5 border-border-button': hasSingleChatBox,
+                })}
               >
-                <CardTitle className="flex justify-between items-center text-base">
+                <CardTitle className="flex justify-between items-center text-base gap-2">
                   <div className="truncate">{currentConversationName}</div>
                   <Button variant={'ghost'} onClick={switchDebugMode}>
-                    <ArrowUpRight /> {t('chat.multipleModels')}
+                    <LucideArrowUpRight /> {t('chat.multipleModels')}
                   </Button>
                 </CardTitle>
               </CardHeader>
@@ -152,13 +167,15 @@ export default function Chat() {
                   controller={controller}
                   stopOutputMessage={stopOutputMessage}
                   conversation={currentConversation}
-                ></SingleChatBox>
+                />
               </CardContent>
             </Card>
+
             <ChatSettings hasSingleChatBox={hasSingleChatBox}></ChatSettings>
           </CardContent>
         </Card>
-      </div>
+      </article>
+
       {embedVisible && (
         <EmbedDialog
           visible={embedVisible}
