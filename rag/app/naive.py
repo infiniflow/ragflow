@@ -94,6 +94,8 @@ class Docx(DocxParser):
         try:
             # Iterate through all paragraphs and tables in document order
             for i, block in enumerate(self.doc._element.body):
+                if callable(block.tag):  # Skip comments/processing instructions
+                    continue
                 if block.tag.endswith('p'):  # Paragraph
                     p = Paragraph(block, self.doc)
                     blocks.append(('p', i, p))
