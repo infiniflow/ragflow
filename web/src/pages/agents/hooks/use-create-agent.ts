@@ -1,7 +1,6 @@
-import { AgentCategory, Operator } from '@/constants/agent';
+import { AgentCategory, EmptyDsl, Operator } from '@/constants/agent';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { EmptyDsl, useSetAgent } from '@/hooks/use-agent-request';
-import { DSL } from '@/interfaces/database/agent';
+import { useSetAgent } from '@/hooks/use-agent-request';
 
 import { FileId, initialParserValues } from '@/pages/agent/constant';
 import { useCallback } from 'react';
@@ -87,7 +86,7 @@ export function useCreateAgentOrPipeline() {
       const isAgent = data.type === FlowType.Agent;
       const ret = await setAgent({
         title: data.name,
-        dsl: isAgent ? (EmptyDsl as DSL) : (DataflowEmptyDsl as DSL),
+        dsl: isAgent ? EmptyDsl : DataflowEmptyDsl,
         canvas_category: isAgent
           ? AgentCategory.AgentCanvas
           : AgentCategory.DataflowCanvas,
