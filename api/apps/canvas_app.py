@@ -40,13 +40,13 @@ from api.utils.api_utils import (
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken, Task
-import time
 
 from rag.flow.pipeline import Pipeline
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
 from common import settings
 from api.apps import login_required, current_user
+from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db.services.canvas_service import completion as agent_completion
 
 
@@ -75,9 +75,10 @@ async def rm():
 @login_required
 async def save():
     req = await get_request_json()
-    if not isinstance(req["dsl"], str):
-        req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
-    req["dsl"] = json.loads(req["dsl"])
+    try:
+        req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
+    except ValueError as e:
+        return get_data_error_result(message=str(e))
     cate = req.get("canvas_category", CanvasCategory.Agent)
     if "id" not in req:
         req["user_id"] = current_user.id
@@ -93,8 +94,21 @@ async def save():
                 code=RetCode.OPERATING_ERROR)
         UserCanvasService.update_by_id(req["id"], req)
     # save version
-    UserCanvasVersionService.insert(user_canvas_id=req["id"], dsl=req["dsl"], title="{0}_{1}".format(req["title"], time.strftime("%Y_%m_%d_%H_%M_%S")))
-    UserCanvasVersionService.delete_all_versions(req["id"])
+    UserCanvasVersionService.save_or_replace_latest(
+        user_canvas_id=req["id"],
+        dsl=req["dsl"],
+        title=UserCanvasVersionService.build_version_title(getattr(current_user, "nickname", current_user.id), req.get("title")),
+    )
+    replica_ok = CanvasReplicaService.replace_for_set(
+        canvas_id=req["id"],
+        tenant_id=str(current_user.id),
+        runtime_user_id=str(current_user.id),
+        dsl=req["dsl"],
+        canvas_category=req.get("canvas_category", cate),
+        title=req.get("title", ""),
+    )
+    if not replica_ok:
+        return get_data_error_result(message="canvas saved, but replica sync failed.")
     return get_json_result(data=req)
 
 
@@ -104,6 +118,20 @@ def get(canvas_id):
     if not UserCanvasService.accessible(canvas_id, current_user.id):
         return get_data_error_result(message="canvas not found.")
     e, c = UserCanvasService.get_by_canvas_id(canvas_id)
+    if not e:
+        return get_data_error_result(message="canvas not found.")
+    try:
+        # DELETE
+        CanvasReplicaService.bootstrap(
+            canvas_id=canvas_id,
+            tenant_id=str(current_user.id),
+            runtime_user_id=str(current_user.id),
+            dsl=c.get("dsl"),
+            canvas_category=c.get("canvas_category", CanvasCategory.Agent),
+            title=c.get("title", ""),
+        )
+    except ValueError as e:
+        return get_data_error_result(message=str(e))
     return get_json_result(data=c)
 
 
@@ -137,29 +165,38 @@ async def run():
     query = req.get("query", "")
     files = req.get("files", [])
     inputs = req.get("inputs", {})
-    user_id = req.get("user_id", current_user.id)
-    if not await thread_pool_exec(UserCanvasService.accessible, req["id"], current_user.id):
+    tenant_id = str(current_user.id)
+    runtime_user_id = req.get("user_id") or tenant_id
+    user_id = str(runtime_user_id)
+    if not await thread_pool_exec(UserCanvasService.accessible, req["id"], tenant_id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
 
-    e, cvs = await thread_pool_exec(UserCanvasService.get_by_id, req["id"])
-    if not e:
-        return get_data_error_result(message="canvas not found.")
+    replica_payload = CanvasReplicaService.load_for_run(
+        canvas_id=req["id"],
+        tenant_id=tenant_id,
+        runtime_user_id=user_id,
+    )
 
-    if not isinstance(cvs.dsl, str):
-        cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
+    if not replica_payload:
+        return get_data_error_result(message="canvas replica not found, please call /get/<canvas_id> first.")
 
-    if cvs.canvas_category == CanvasCategory.DataFlow:
+    replica_dsl = replica_payload.get("dsl", {})
+    canvas_title = replica_payload.get("title", "")
+    canvas_category = replica_payload.get("canvas_category", CanvasCategory.Agent)
+    dsl_str = json.dumps(replica_dsl, ensure_ascii=False)
+
+    if canvas_category == CanvasCategory.DataFlow:
         task_id = get_uuid()
-        Pipeline(cvs.dsl, tenant_id=current_user.id, doc_id=CANVAS_DEBUG_DOC_ID, task_id=task_id, flow_id=req["id"])
+        Pipeline(dsl_str, tenant_id=tenant_id, doc_id=CANVAS_DEBUG_DOC_ID, task_id=task_id, flow_id=req["id"])
         ok, error_message = await thread_pool_exec(queue_dataflow, user_id, req["id"], task_id, CANVAS_DEBUG_DOC_ID, files[0], 0)
         if not ok:
             return get_data_error_result(message=error_message)
         return get_json_result(data={"message_id": task_id})
 
     try:
-        canvas = Canvas(cvs.dsl, current_user.id, canvas_id=cvs.id)
+        canvas = Canvas(dsl_str, tenant_id, canvas_id=req["id"])
     except Exception as e:
         return server_error_response(e)
 
@@ -169,8 +206,21 @@ async def run():
             async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
                 yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
-            cvs.dsl = json.loads(str(canvas))
-            UserCanvasService.update_by_id(req["id"], cvs.to_dict())
+            commit_ok = CanvasReplicaService.commit_after_run(
+                canvas_id=req["id"],
+                tenant_id=tenant_id,
+                runtime_user_id=user_id,
+                dsl=json.loads(str(canvas)),
+                canvas_category=canvas_category,
+                title=canvas_title,
+            )
+            if not commit_ok:
+                logging.error(
+                    "Canvas runtime replica commit failed: canvas_id=%s tenant_id=%s runtime_user_id=%s",
+                    req["id"],
+                    tenant_id,
+                    user_id,
+                )
 
         except Exception as e:
             logging.exception(e)
