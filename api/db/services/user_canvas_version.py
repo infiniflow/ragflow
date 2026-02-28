@@ -1,3 +1,7 @@
+import json
+import logging
+import time
+
 from api.db.db_models import UserCanvasVersion, DB
 from api.db.services.common_service import CommonService
 from peewee import DoesNotExist
@@ -5,6 +9,30 @@ from peewee import DoesNotExist
 
 class UserCanvasVersionService(CommonService):
     model = UserCanvasVersion
+
+    @staticmethod
+    def build_version_title(user_nickname, agent_title, ts=None):
+        tenant = str(user_nickname or "").strip() or "tenant"
+        title = str(agent_title or "").strip() or "agent"
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts is not None else time.strftime("%Y-%m-%d %H:%M:%S")
+        return "{0}_{1}_{2}".format(tenant, title, stamp)
+
+    @staticmethod
+    def _normalize_dsl(dsl):
+        normalized = dsl
+        if isinstance(normalized, str):
+            try:
+                normalized = json.loads(normalized)
+            except Exception as e:
+                raise ValueError("Invalid DSL JSON string.") from e
+
+        if not isinstance(normalized, dict):
+            raise ValueError("DSL must be a JSON object.")
+
+        try:
+            return json.loads(json.dumps(normalized, ensure_ascii=False))
+        except Exception as e:
+            raise ValueError("DSL is not JSON-serializable.") from e
 
     @classmethod
     @DB.connection_context()
@@ -59,3 +87,43 @@ class UserCanvasVersionService(CommonService):
             return None
         except Exception:
             return None
+
+    @classmethod
+    @DB.connection_context()
+    def save_or_replace_latest(cls, user_canvas_id, dsl, title=None, description=None):
+        """
+        Persist a canvas snapshot into version history.
+
+        If the latest version has the same DSL content, update that version in place
+        instead of creating a new row.
+        """
+        try:
+            normalized_dsl = cls._normalize_dsl(dsl)
+            latest = (
+                cls.model.select()
+                .where(cls.model.user_canvas_id == user_canvas_id)
+                .order_by(cls.model.create_time.desc())
+                .first()
+            )
+
+            if latest and cls._normalize_dsl(latest.dsl) == normalized_dsl:
+                update_data = {"dsl": normalized_dsl}
+                if title is not None:
+                    update_data["title"] = title
+                if description is not None:
+                    update_data["description"] = description
+                cls.update_by_id(latest.id, update_data)
+                cls.delete_all_versions(user_canvas_id)
+                return latest.id, False
+
+            insert_data = {"user_canvas_id": user_canvas_id, "dsl": normalized_dsl}
+            if title is not None:
+                insert_data["title"] = title
+            if description is not None:
+                insert_data["description"] = description
+            cls.insert(**insert_data)
+            cls.delete_all_versions(user_canvas_id)
+            return None, True
+        except Exception as e:
+            logging.exception(e)
+            return None, None
