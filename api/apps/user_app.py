@@ -24,6 +24,8 @@ from datetime import datetime
 import base64
 
 from quart import make_response, redirect, request, session
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from api.apps.auth import get_auth_client
@@ -62,7 +64,95 @@ from common import settings
 from common.http_client import async_request
 
 
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class UserLoginBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"email": "user@example.com", "password": "base64/encrypted"}
+    })
+
+    email: str = Field(description="User email")
+    password: str = Field(description="User password (encrypted)")
+
+
+class UserRegisterBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"nickname": "Pedro", "email": "user@example.com", "password": "base64/encrypted"}
+    })
+
+    nickname: str = Field(description="User nickname")
+    email: str = Field(description="User email")
+    password: str = Field(description="User password (encrypted)")
+
+
+class UserSettingBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"nickname": "New nickname"}
+    })
+
+
+class UserSetTenantInfoBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "tenant_id": "tenant_123",
+            "llm_id": "gpt-4o-mini",
+            "embd_id": "text-embedding-3-small",
+            "asr_id": "asr_default",
+            "img2txt_id": "img2txt_default",
+        }
+    })
+
+    tenant_id: str = Field(description="Tenant ID")
+    asr_id: str = Field(description="ASR model ID")
+    embd_id: str = Field(description="Embedding model ID")
+    img2txt_id: str = Field(description="Image-to-text model ID")
+    llm_id: str = Field(description="Chat model ID")
+
+
+class ForgetOtpBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"email": "user@example.com", "captcha": "ABCD"}
+    })
+
+    email: str = Field(description="User email")
+    captcha: str = Field(description="Captcha text")
+
+
+class ForgetVerifyOtpBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"email": "user@example.com", "otp": "ABCDEF"}
+    })
+
+    email: str = Field(description="User email")
+    otp: str = Field(description="One-time password")
+
+
+class ForgetResetPasswordBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "email": "user@example.com",
+            "new_password": "base64/encrypted",
+            "confirm_new_password": "base64/encrypted",
+        }
+    })
+
+    email: str = Field(description="User email")
+    new_password: str = Field(description="New password (encrypted)")
+    confirm_new_password: str = Field(description="New password confirmation (encrypted)")
+
+
 @manager.route("/login", methods=["POST", "GET"])  # noqa: F821
+@set_operation_doc("User login.")
+@tag(["User"])
+@document_request(UserLoginBody, source=DataSource.JSON)
 async def login():
     """
     User login endpoint.
@@ -140,6 +230,8 @@ async def login():
 
 
 @manager.route("/login/channels", methods=["GET"])  # noqa: F821
+@set_operation_doc("Get all supported authentication channels.")
+@tag(["User"])
 async def get_login_channels():
     """
     Get all supported authentication channels.
@@ -161,6 +253,8 @@ async def get_login_channels():
 
 
 @manager.route("/login/<channel>", methods=["GET"])  # noqa: F821
+@set_operation_doc("Start OAuth/OIDC login for a channel.")
+@tag(["User"])
 async def oauth_login(channel):
     channel_config = settings.OAUTH_CONFIG.get(channel)
     if not channel_config:
@@ -174,6 +268,8 @@ async def oauth_login(channel):
 
 
 @manager.route("/oauth/callback/<channel>", methods=["GET"])  # noqa: F821
+@set_operation_doc("Handle OAuth/OIDC callback for a channel.")
+@tag(["User"])
 async def oauth_callback(channel):
     """
     Handle the OAuth/OIDC callback for various channels dynamically.
@@ -269,6 +365,8 @@ async def oauth_callback(channel):
 
 
 @manager.route("/github_callback", methods=["GET"])  # noqa: F821
+@set_operation_doc("GitHub OAuth callback endpoint (deprecated).")
+@tag(["User"])
 async def github_callback():
     """
     **Deprecated**, Use `/oauth/callback/<channel>` instead.
@@ -357,6 +455,8 @@ async def github_callback():
 
 
 @manager.route("/feishu_callback", methods=["GET"])  # noqa: F821
+@set_operation_doc("Feishu OAuth callback endpoint.")
+@tag(["User"])
 async def feishu_callback():
     """
     Feishu OAuth callback endpoint.
@@ -486,6 +586,8 @@ async def user_info_from_github(access_token):
 
 
 @manager.route("/logout", methods=["GET"])  # noqa: F821
+@set_operation_doc("User logout endpoint.")
+@tag(["User"])
 @login_required
 async def log_out():
     """
@@ -508,6 +610,9 @@ async def log_out():
 
 
 @manager.route("/setting", methods=["POST"])  # noqa: F821
+@set_operation_doc("Update user settings.")
+@tag(["User"])
+@document_request(UserSettingBody, source=DataSource.JSON)
 @login_required
 async def setting_user():
     """
@@ -576,6 +681,8 @@ async def setting_user():
 
 
 @manager.route("/info", methods=["GET"])  # noqa: F821
+@set_operation_doc("Get user profile information.")
+@tag(["User"])
 @login_required
 async def user_profile():
     """
@@ -667,6 +774,9 @@ def user_register(user_id, user):
 
 
 @manager.route("/register", methods=["POST"])  # noqa: F821
+@set_operation_doc("Register a new user.")
+@tag(["User"])
+@document_request(UserRegisterBody, source=DataSource.JSON)
 @validate_request("nickname", "email", "password")
 async def user_add():
     """
@@ -761,6 +871,8 @@ async def user_add():
 
 
 @manager.route("/tenant_info", methods=["GET"])  # noqa: F821
+@set_operation_doc("Get tenant information.")
+@tag(["Tenant"])
 @login_required
 async def tenant_info():
     """
@@ -799,6 +911,9 @@ async def tenant_info():
 
 
 @manager.route("/set_tenant_info", methods=["POST"])  # noqa: F821
+@set_operation_doc("Update tenant information.")
+@tag(["Tenant"])
+@document_request(UserSetTenantInfoBody, source=DataSource.JSON)
 @login_required
 @validate_request("tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id")
 async def set_tenant_info():
@@ -848,6 +963,8 @@ async def set_tenant_info():
 
 
 @manager.route("/forget/captcha", methods=["GET"])  # noqa: F821
+@set_operation_doc("Generate an image captcha for password reset.")
+@tag(["User"])
 async def forget_get_captcha():
     """
     GET /forget/captcha?email=<email>
@@ -876,6 +993,9 @@ async def forget_get_captcha():
 
 
 @manager.route("/forget/otp", methods=["POST"])  # noqa: F821
+@set_operation_doc("Send a password reset OTP (after captcha verification).")
+@tag(["User"])
+@document_request(ForgetOtpBody, source=DataSource.JSON)
 async def forget_send_otp():
     """
     POST /forget/otp
@@ -946,6 +1066,9 @@ def _verified_key(email: str) -> str:
 
 
 @manager.route("/forget/verify-otp", methods=["POST"])  # noqa: F821
+@set_operation_doc("Verify password reset OTP.")
+@tag(["User"])
+@document_request(ForgetVerifyOtpBody, source=DataSource.JSON)
 async def forget_verify_otp():
     """
     Verify email + OTP only. On success:
@@ -1007,6 +1130,9 @@ async def forget_verify_otp():
 
 
 @manager.route("/forget/reset-password", methods=["POST"])  # noqa: F821
+@set_operation_doc("Reset password after OTP verification.")
+@tag(["User"])
+@document_request(ForgetResetPasswordBody, source=DataSource.JSON)
 async def forget_reset_password():
     """
     Reset password after successful OTP verification.

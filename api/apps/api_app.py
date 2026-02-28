@@ -15,6 +15,8 @@
 #
 from datetime import datetime, timedelta
 from quart import request
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService, API4ConversationService
 from api.db.services.user_service import UserTenantService
@@ -23,7 +25,38 @@ from common.time_utils import current_timestamp, datetime_format
 from api.apps import login_required, current_user
 
 
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class ApiNewTokenBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"dialog_id": "dialog_123"}
+    })
+
+    dialog_id: str | None = Field(default=None, description="Dialog/assistant ID")
+    canvas_id: str | None = Field(default=None, description="Canvas/agent ID")
+
+
+class ApiRmTokenBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"tenant_id": "tenant_123", "tokens": ["ragflow-..."]}
+    })
+
+    tenant_id: str = Field(description="Tenant ID")
+    tokens: list[str] = Field(description="Tokens to remove")
+
+
 @manager.route('/new_token', methods=['POST'])  # noqa: F821
+@set_operation_doc("Create a new API token for a dialog/canvas.")
+@tag(["API Tokens"])
+@document_request(ApiNewTokenBody, source=DataSource.JSON)
 @login_required
 async def new_token():
     req = await get_request_json()
@@ -54,6 +87,8 @@ async def new_token():
 
 
 @manager.route('/token_list', methods=['GET'])  # noqa: F821
+@set_operation_doc("List API tokens for a dialog/canvas.")
+@tag(["API Tokens"])
 @login_required
 def token_list():
     try:
@@ -69,6 +104,9 @@ def token_list():
 
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
+@set_operation_doc("Remove one or more API tokens.")
+@tag(["API Tokens"])
+@document_request(ApiRmTokenBody, source=DataSource.JSON)
 @validate_request("tokens", "tenant_id")
 @login_required
 async def rm():
@@ -83,6 +121,8 @@ async def rm():
 
 
 @manager.route('/stats', methods=['GET'])  # noqa: F821
+@set_operation_doc("Get API usage stats (pv/uv/tokens/speed).")
+@tag(["API Stats"])
 @login_required
 def stats():
     try:

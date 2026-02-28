@@ -20,6 +20,8 @@ import logging
 import re
 import xxhash
 from quart import request
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
@@ -45,7 +47,90 @@ from common.constants import RetCode, LLMType, ParserType, PAGERANK_FLD
 from common import settings
 from api.apps import login_required, current_user
 
+
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class ChunkListBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"doc_id": "doc_123", "page": 1, "size": 30, "keywords": ""}
+    })
+
+    doc_id: str = Field(description="Document ID")
+
+
+class ChunkSetBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "doc_id": "doc_123",
+            "chunk_id": "chunk_123",
+            "content_with_weight": "Updated chunk content",
+            "important_kwd": ["kw1", "kw2"],
+            "question_kwd": ["q1"],
+            "available_int": 1,
+        }
+    })
+
+    doc_id: str = Field(description="Document ID")
+    chunk_id: str = Field(description="Chunk ID")
+    content_with_weight: str = Field(description="Chunk content")
+
+
+class ChunkSwitchBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"doc_id": "doc_123", "chunk_ids": ["chunk_1", "chunk_2"], "available_int": 1}
+    })
+
+    doc_id: str = Field(description="Document ID")
+    chunk_ids: list[str] = Field(description="Chunk IDs")
+    available_int: int = Field(description="Availability flag (int)")
+
+
+class ChunkRmBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"doc_id": "doc_123", "chunk_ids": ["chunk_1", "chunk_2"]}
+    })
+
+    doc_id: str = Field(description="Document ID")
+    chunk_ids: list[str] = Field(description="Chunk IDs to remove")
+
+
+class ChunkCreateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"doc_id": "doc_123", "content_with_weight": "New chunk content"}
+    })
+
+    doc_id: str = Field(description="Document ID")
+    content_with_weight: str = Field(description="Chunk content")
+
+
+class ChunkRetrievalTestBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "kb_id": ["kb_123"],
+            "question": "What is this about?",
+            "page": 1,
+            "size": 30,
+            "top_k": 1024,
+            "use_kg": False,
+        }
+    })
+
+    kb_id: str | list[str] = Field(description="Knowledge base (dataset) id(s)")
+    question: str = Field(description="User question")
+
+
 @manager.route('/list', methods=['POST'])  # noqa: F821
+@set_operation_doc("List chunks for a document.")
+@tag(["Chunks"])
+@document_request(ChunkListBody, source=DataSource.JSON)
 @login_required
 @validate_request("doc_id")
 async def list_chunk():
@@ -96,6 +181,8 @@ async def list_chunk():
 
 
 @manager.route('/get', methods=['GET'])  # noqa: F821
+@set_operation_doc("Get a chunk by ID.")
+@tag(["Chunks"])
 @login_required
 def get():
     chunk_id = request.args["chunk_id"]
@@ -128,6 +215,9 @@ def get():
 
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
+@set_operation_doc("Update a chunk.")
+@tag(["Chunks"])
+@document_request(ChunkSetBody, source=DataSource.JSON)
 @login_required
 @validate_request("doc_id", "chunk_id", "content_with_weight")
 async def set():
@@ -202,6 +292,9 @@ async def set():
 
 
 @manager.route('/switch', methods=['POST'])  # noqa: F821
+@set_operation_doc("Enable/disable one or more chunks.")
+@tag(["Chunks"])
+@document_request(ChunkSwitchBody, source=DataSource.JSON)
 @login_required
 @validate_request("chunk_ids", "available_int", "doc_id")
 async def switch():
@@ -225,6 +318,9 @@ async def switch():
 
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
+@set_operation_doc("Remove one or more chunks from a document.")
+@tag(["Chunks"])
+@document_request(ChunkRmBody, source=DataSource.JSON)
 @login_required
 @validate_request("chunk_ids", "doc_id")
 async def rm():
@@ -267,6 +363,9 @@ async def rm():
 
 
 @manager.route('/create', methods=['POST'])  # noqa: F821
+@set_operation_doc("Create a new chunk for a document.")
+@tag(["Chunks"])
+@document_request(ChunkCreateBody, source=DataSource.JSON)
 @login_required
 @validate_request("doc_id", "content_with_weight")
 async def create():
@@ -345,6 +444,9 @@ async def create():
 
 
 @manager.route('/retrieval_test', methods=['POST'])  # noqa: F821
+@set_operation_doc("Run a retrieval test against a knowledge base.")
+@tag(["Chunks"])
+@document_request(ChunkRetrievalTestBody, source=DataSource.JSON)
 @login_required
 @validate_request("kb_id", "question")
 async def retrieval_test():
@@ -457,6 +559,8 @@ async def retrieval_test():
 
 
 @manager.route('/knowledge_graph', methods=['GET'])  # noqa: F821
+@set_operation_doc("Get knowledge graph data for a document.")
+@tag(["Chunks"])
 @login_required
 async def knowledge_graph():
     doc_id = request.args["doc_id"]

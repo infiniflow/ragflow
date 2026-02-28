@@ -20,6 +20,8 @@ import logging
 from copy import deepcopy
 import tempfile
 from quart import Response, request
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 from api.apps import current_user, login_required
 from api.db.db_models import APIToken
 from api.db.services.conversation_service import ConversationService, structure_answer
@@ -34,7 +36,124 @@ from rag.prompts.generator import chunks_format
 from common.constants import RetCode, LLMType
 
 
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class ConversationSetBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "conversation_id": "conv_123",
+            "is_new": True,
+            "dialog_id": "dialog_123",
+            "name": "New conversation",
+        }
+    })
+
+    conversation_id: str | None = Field(default=None, description="Conversation ID")
+    is_new: bool = Field(description="Whether to create a new conversation")
+    dialog_id: str | None = Field(default=None, description="Dialog ID (required when creating)")
+    name: str | None = Field(default=None, description="Conversation display name")
+
+
+class ConversationRmBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"conversation_ids": ["conv_123"]}
+    })
+
+    conversation_ids: list[str] = Field(description="Conversation IDs to delete")
+
+
+class ChatMessage(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    role: str = Field(description="system|user|assistant|tool")
+    content: str | None = Field(default=None, description="Message content")
+    id: str | None = Field(default=None, description="Optional message id")
+
+
+class ConversationCompletionBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {
+            "conversation_id": "conv_123",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "stream": True,
+            "llm_id": "",
+        }
+    })
+
+    conversation_id: str = Field(description="Conversation ID")
+    messages: list[ChatMessage] = Field(description="Message list (OpenAI-like)")
+    stream: bool | None = Field(default=None, description="Whether to stream as SSE")
+    llm_id: str | None = Field(default=None, description="Optional model override")
+
+
+class ConversationDeleteMsgBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"conversation_id": "conv_123", "message_id": "msg_123"}
+    })
+
+    conversation_id: str = Field(description="Conversation ID")
+    message_id: str = Field(description="Message ID")
+
+
+class ConversationThumbupBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"conversation_id": "conv_123", "message_id": "msg_123", "thumbup": True, "feedback": ""}
+    })
+
+    conversation_id: str = Field(description="Conversation ID")
+    message_id: str = Field(description="Message ID")
+    thumbup: bool | None = Field(default=None, description="Thumb up/down flag")
+    feedback: str | None = Field(default=None, description="Optional feedback text")
+
+
+class ConversationAskBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"question": "What is RAGFlow?", "kb_ids": ["kb_123"], "search_id": ""}
+    })
+
+    question: str = Field(description="User question")
+    kb_ids: list[str] = Field(description="Dataset/KB IDs")
+    search_id: str | None = Field(default=None, description="Optional search app id")
+
+
+class ConversationRelatedQuestionsBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"question": "neovim install", "search_id": ""}
+    })
+
+    question: str = Field(description="Seed question/keywords")
+    search_id: str | None = Field(default=None, description="Optional search app id")
+
+
+class ConversationTtsBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"text": "Hello world"}
+    })
+
+    text: str = Field(description="Text to synthesize")
+
+
+class ConversationSequence2TxtForm(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"stream": "false"}
+    })
+
+    file: bytes = Field(description="Audio file (multipart/form-data)")
+    stream: str | None = Field(default=None, description="Whether to stream transcription events (true/false)")
+
+
 @manager.route("/set", methods=["POST"])  # noqa: F821
+@set_operation_doc("Create or update a conversation.")
+@tag(["Conversations"])
+@document_request(ConversationSetBody, source=DataSource.JSON)
 @login_required
 async def set_conversation():
     req = await get_request_json()
@@ -79,6 +198,8 @@ async def set_conversation():
 
 
 @manager.route("/get", methods=["GET"])  # noqa: F821
+@set_operation_doc("Get a conversation by ID.")
+@tag(["Conversations"])
 @login_required
 async def get():
     conv_id = request.args["conversation_id"]
@@ -108,6 +229,8 @@ async def get():
 
 
 @manager.route("/getsse/<dialog_id>", methods=["GET"])  # type: ignore # noqa: F821
+@set_operation_doc("Get dialog info as SSE-compatible payload.")
+@tag(["Conversations"])
 def getsse(dialog_id):
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
@@ -129,6 +252,9 @@ def getsse(dialog_id):
 
 
 @manager.route("/rm", methods=["POST"])  # noqa: F821
+@set_operation_doc("Delete one or more conversations.")
+@tag(["Conversations"])
+@document_request(ConversationRmBody, source=DataSource.JSON)
 @login_required
 async def rm():
     req = await get_request_json()
@@ -151,6 +277,8 @@ async def rm():
 
 
 @manager.route("/list", methods=["GET"])  # noqa: F821
+@set_operation_doc("List conversations for a dialog.")
+@tag(["Conversations"])
 @login_required
 async def list_conversation():
     dialog_id = request.args["dialog_id"]
@@ -166,6 +294,9 @@ async def list_conversation():
 
 
 @manager.route("/completion", methods=["POST"])  # noqa: F821
+@set_operation_doc("Run a chat completion for a conversation.")
+@tag(["Conversations"])
+@document_request(ConversationCompletionBody, source=DataSource.JSON)
 @login_required
 @validate_request("conversation_id", "messages")
 async def completion():
@@ -251,6 +382,9 @@ async def completion():
         return server_error_response(e)
 
 @manager.route("/sequence2txt", methods=["POST"])  # noqa: F821
+@set_operation_doc("Transcribe an audio file to text.")
+@tag(["Conversations"])
+@document_request(ConversationSequence2TxtForm, source=DataSource.FORM_MULTIPART)
 @login_required
 async def sequence2txt():
     req = await request.form
@@ -310,6 +444,9 @@ async def sequence2txt():
     return Response(event_stream(), content_type="text/event-stream")
 
 @manager.route("/tts", methods=["POST"])  # noqa: F821
+@set_operation_doc("Text-to-speech (TTS).")
+@tag(["Conversations"])
+@document_request(ConversationTtsBody, source=DataSource.JSON)
 @login_required
 async def tts():
     req = await get_request_json()
@@ -342,6 +479,9 @@ async def tts():
 
 
 @manager.route("/delete_msg", methods=["POST"])  # noqa: F821
+@set_operation_doc("Delete a message from a conversation.")
+@tag(["Conversations"])
+@document_request(ConversationDeleteMsgBody, source=DataSource.JSON)
 @login_required
 @validate_request("conversation_id", "message_id")
 async def delete_msg():
@@ -365,6 +505,9 @@ async def delete_msg():
 
 
 @manager.route("/thumbup", methods=["POST"])  # noqa: F821
+@set_operation_doc("Thumb up/down a conversation message.")
+@tag(["Conversations"])
+@document_request(ConversationThumbupBody, source=DataSource.JSON)
 @login_required
 @validate_request("conversation_id", "message_id")
 async def thumbup():
@@ -392,6 +535,9 @@ async def thumbup():
 
 
 @manager.route("/ask", methods=["POST"])  # noqa: F821
+@set_operation_doc("Ask a question against one or more knowledge bases (streaming).")
+@tag(["Conversations"])
+@document_request(ConversationAskBody, source=DataSource.JSON)
 @login_required
 @validate_request("question", "kb_ids")
 async def ask_about():
@@ -424,6 +570,9 @@ async def ask_about():
 
 
 @manager.route("/mindmap", methods=["POST"])  # noqa: F821
+@set_operation_doc("Generate a mindmap for a question across knowledge bases.")
+@tag(["Conversations"])
+@document_request(ConversationAskBody, source=DataSource.JSON)
 @login_required
 @validate_request("question", "kb_ids")
 async def mindmap():
@@ -442,6 +591,9 @@ async def mindmap():
 
 
 @manager.route("/related_questions", methods=["POST"])  # noqa: F821
+@set_operation_doc("Generate related questions for a query.")
+@tag(["Conversations"])
+@document_request(ConversationRelatedQuestionsBody, source=DataSource.JSON)
 @login_required
 @validate_request("question")
 async def related_questions():

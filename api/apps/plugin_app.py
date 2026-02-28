@@ -16,12 +16,23 @@
 
 
 from quart import Response
+from quart_schema import tag
 from api.apps import login_required
 from api.utils.api_utils import get_json_result
 from agent.plugin import GlobalPluginManager
 
 
+def set_operation_doc(summary: str, description: str = ""):
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
 @manager.route('/llm_tools', methods=['GET'])  # noqa: F821
+@set_operation_doc("List available LLM tools provided by installed plugins.")
+@tag(["Plugins"])
 @login_required
 def llm_tools() -> Response:
     tools = GlobalPluginManager.get_llm_tools()

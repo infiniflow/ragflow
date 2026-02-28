@@ -15,6 +15,8 @@
 #
 import logging
 import asyncio
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 from api.db import UserTenantRole
 from api.db.db_models import UserTenant
 from api.db.services.user_service import UserTenantService, UserService
@@ -28,7 +30,32 @@ from common import settings
 from api.apps import login_required, current_user
 
 
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class TenantInviteUserBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"email": "user@example.com"}
+    })
+
+    email: str = Field(description="User email to invite")
+
+
+class TenantAgreeBody(BaseModel):
+    # Intentionally empty; endpoint uses only path param. This exists to document requestBody for OpenAPI.
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {}})
+
+
 @manager.route("/<tenant_id>/user/list", methods=["GET"])  # noqa: F821
+@set_operation_doc("List users in a tenant.")
+@tag(["Tenants"])
 @login_required
 def user_list(tenant_id):
     if current_user.id != tenant_id:
@@ -47,6 +74,9 @@ def user_list(tenant_id):
 
 
 @manager.route('/<tenant_id>/user', methods=['POST'])  # noqa: F821
+@set_operation_doc("Invite a user to a tenant.")
+@tag(["Tenants"])
+@document_request(TenantInviteUserBody, source=DataSource.JSON)
 @login_required
 @validate_request("email")
 async def create(tenant_id):
@@ -106,6 +136,8 @@ async def create(tenant_id):
 
 
 @manager.route('/<tenant_id>/user/<user_id>', methods=['DELETE'])  # noqa: F821
+@set_operation_doc("Remove a user from a tenant.")
+@tag(["Tenants"])
 @login_required
 def rm(tenant_id, user_id):
     if current_user.id != tenant_id and current_user.id != user_id:
@@ -122,6 +154,8 @@ def rm(tenant_id, user_id):
 
 
 @manager.route("/list", methods=["GET"])  # noqa: F821
+@set_operation_doc("List tenants for the current user.")
+@tag(["Tenants"])
 @login_required
 def tenant_list():
     try:
@@ -134,6 +168,9 @@ def tenant_list():
 
 
 @manager.route("/agree/<tenant_id>", methods=["PUT"])  # noqa: F821
+@set_operation_doc("Accept a tenant invitation.")
+@tag(["Tenants"])
+@document_request(TenantAgreeBody, source=DataSource.JSON)
 @login_required
 def agree(tenant_id):
     try:

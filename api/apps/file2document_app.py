@@ -26,9 +26,41 @@ from common.misc_utils import get_uuid
 from common.constants import RetCode
 from api.db import FileType
 from api.db.services.document_service import DocumentService
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
+
+
+def set_operation_doc(summary: str, description: str = ""):
+    """Ensure QuartSchema has a summary even if upstream decorators drop __doc__."""
+
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class File2DocumentConvertBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"file_ids": ["file_1"], "kb_ids": ["kb_1", "kb_2"]}
+    })
+
+    file_ids: list[str] = Field(description="File IDs (folders allowed)")
+    kb_ids: list[str] = Field(description="Knowledge base IDs")
+
+
+class File2DocumentRmBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={
+        "example": {"file_ids": ["file_1"]}
+    })
+
+    file_ids: list[str] = Field(description="File IDs")
 
 
 @manager.route('/convert', methods=['POST'])  # noqa: F821
+@set_operation_doc("Convert files to documents in one or more knowledge bases.")
+@tag(["Files"])
+@document_request(File2DocumentConvertBody, source=DataSource.JSON)
 @login_required
 @validate_request("file_ids", "kb_ids")
 async def convert():
@@ -100,6 +132,9 @@ async def convert():
 
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
+@set_operation_doc("Remove documents created from files.")
+@tag(["Files"])
+@document_request(File2DocumentRmBody, source=DataSource.JSON)
 @login_required
 @validate_request("file_ids")
 async def rm():

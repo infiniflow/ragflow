@@ -17,8 +17,11 @@ import copy
 import inspect
 import json
 import logging
+from typing import Any
 from functools import partial
 from quart import request, Response, make_response
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import DataSource, document_request, tag
 from agent.component import LLM
 from api.db import CanvasCategory
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
@@ -50,13 +53,180 @@ from api.apps import login_required, current_user
 from api.db.services.canvas_service import completion as agent_completion
 
 
+def set_operation_doc(summary: str, description: str = ""):
+    def decorator(func):
+        func.__doc__ = summary if not description else f"{summary}\n\n{description}"
+        return func
+
+    return decorator
+
+
+class CanvasRmBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"canvas_ids": ["canvas_id_1"]}})
+    canvas_ids: list[str] = Field(description="Canvas IDs to delete")
+
+
+class CanvasSetBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "title": "My Agent Canvas",
+                "dsl": {"nodes": [], "edges": []},
+                "canvas_category": "Agent",
+            }
+        },
+    )
+
+    title: str = Field(description="Canvas title")
+    dsl: Any = Field(description="Canvas DSL (object or string)")
+    id: str | None = Field(default=None, description="Canvas ID (when updating)")
+    canvas_category: str | None = Field(default=None, description="Canvas category")
+
+
+class CanvasCompletionBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "id": "canvas_id",
+                "query": "Summarize the document",
+                "files": [],
+                "inputs": {},
+                "user_id": "optional_user_id",
+            }
+        },
+    )
+
+    id: str = Field(description="Canvas ID")
+    query: str | None = Field(default="", description="User query")
+    files: list[dict] = Field(default_factory=list, description="Runtime files")
+    inputs: dict = Field(default_factory=dict, description="Component inputs override")
+    user_id: str | None = Field(default=None, description="Optional end-user identifier")
+
+
+class CanvasAgentCompletionBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "question": "Hello!",
+                "session_id": "optional_session_id",
+                "files": [],
+                "inputs": {},
+                "return_trace": False,
+            }
+        },
+    )
+
+    question: str | None = Field(default=None, description="User question")
+    session_id: str | None = Field(default=None, description="Optional session ID")
+    files: list[dict] = Field(default_factory=list, description="Runtime files")
+    inputs: dict = Field(default_factory=dict, description="Optional inputs object")
+    return_trace: bool = Field(default=False, description="Whether to include execution trace in stream")
+
+
+class CanvasSessionCreateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"name": "New session"}})
+    name: str | None = Field(default=None, description="Optional session name")
+
+
+class CanvasRerunBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={"example": {"id": "flow_id", "dsl": {"nodes": [], "edges": []}, "component_id": "cpn_id"}},
+    )
+
+    id: str = Field(description="Flow/Canvas ID")
+    dsl: dict = Field(description="DSL object")
+    component_id: str = Field(description="Component ID to rerun from")
+
+
+class CanvasCancelBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {}})
+
+
+class CanvasResetBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"id": "canvas_id"}})
+    id: str = Field(description="Canvas ID")
+
+
+class CanvasUploadBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"file": None}})
+
+    # Note: the handler supports multiple files with the same field name `file`.
+    file: bytes | None = Field(default=None, description="File to upload", json_schema_extra={"format": "binary"})
+
+
+class CanvasDebugBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {"id": "canvas_id", "component_id": "cpn_id", "params": {"input": {"value": "hello"}}}
+        },
+    )
+
+    id: str = Field(description="Canvas ID")
+    component_id: str = Field(description="Component ID to debug")
+    params: dict = Field(description="Component parameters (values must include `value`)")
+
+
+class CanvasTestDBConnectBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "db_type": "postgres",
+                "database": "mydb",
+                "username": "user",
+                "host": "127.0.0.1",
+                "port": 5432,
+                "password": "secret",
+            }
+        },
+    )
+
+    db_type: str = Field(description="Database type: mysql|mariadb|postgres|mssql|oceanbase|IBM DB2|trino")
+    database: str = Field(description="Database name")
+    username: str = Field(description="Username")
+    host: str = Field(description="Host")
+    port: int | str = Field(description="Port")
+    password: str = Field(description="Password")
+
+
+class CanvasSettingBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "id": "canvas_id",
+                "title": "New title",
+                "permission": "private",
+                "description": "Optional description",
+                "avatar": "Optional avatar url",
+            }
+        },
+    )
+
+    id: str = Field(description="Canvas ID")
+    title: str = Field(description="Canvas title")
+    permission: str = Field(description="Permission setting")
+    description: str | None = Field(default=None, description="Optional description")
+    avatar: str | None = Field(default=None, description="Optional avatar")
+
+
 @manager.route('/templates', methods=['GET'])  # noqa: F821
+@set_operation_doc("List canvas templates.")
+@tag(["Canvas"])
 @login_required
 def templates():
     return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.get_all()])
 
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
+@set_operation_doc("Delete one or more canvases.")
+@tag(["Canvas"])
+@document_request(CanvasRmBody, source=DataSource.JSON)
 @validate_request("canvas_ids")
 @login_required
 async def rm():
@@ -71,6 +241,9 @@ async def rm():
 
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
+@set_operation_doc("Create or update a canvas.")
+@tag(["Canvas"])
+@document_request(CanvasSetBody, source=DataSource.JSON)
 @validate_request("dsl", "title")
 @login_required
 async def save():
@@ -99,6 +272,8 @@ async def save():
 
 
 @manager.route('/get/<canvas_id>', methods=['GET'])  # noqa: F821
+@set_operation_doc("Get a canvas by ID.")
+@tag(["Canvas"])
 @login_required
 def get(canvas_id):
     if not UserCanvasService.accessible(canvas_id, current_user.id):
@@ -108,6 +283,8 @@ def get(canvas_id):
 
 
 @manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
+@set_operation_doc("Get a canvas by ID using an API key (non-cookie auth).")
+@tag(["Canvas"])
 def getsse(canvas_id):
     token = request.headers.get('Authorization').split()
     if len(token) != 2:
@@ -130,6 +307,9 @@ def getsse(canvas_id):
 
 
 @manager.route('/completion', methods=['POST'])  # noqa: F821
+@set_operation_doc("Run a canvas completion (SSE streaming).")
+@tag(["Canvas"])
+@document_request(CanvasCompletionBody, source=DataSource.JSON)
 @validate_request("id")
 @login_required
 async def run():
@@ -187,6 +367,9 @@ async def run():
 
 
 @manager.route("/<canvas_id>/completion", methods=["POST"])  # noqa: F821
+@set_operation_doc("Run an agent completion for a canvas (SSE streaming).")
+@tag(["Canvas"])
+@document_request(CanvasAgentCompletionBody, source=DataSource.JSON)
 @login_required
 async def exp_agent_completion(canvas_id):
     tenant_id = current_user.id
@@ -231,6 +414,9 @@ async def exp_agent_completion(canvas_id):
     
 
 @manager.route('/rerun', methods=['POST'])  # noqa: F821
+@set_operation_doc("Rerun a dataflow from a specific component.")
+@tag(["Canvas"])
+@document_request(CanvasRerunBody, source=DataSource.JSON)
 @validate_request("id", "dsl", "component_id")
 @login_required
 async def rerun():
@@ -259,6 +445,9 @@ async def rerun():
 
 
 @manager.route('/cancel/<task_id>', methods=['PUT'])  # noqa: F821
+@set_operation_doc("Cancel a running task by task ID.")
+@tag(["Canvas"])
+@document_request(CanvasCancelBody, source=DataSource.JSON)
 @login_required
 def cancel(task_id):
     try:
@@ -269,6 +458,9 @@ def cancel(task_id):
 
 
 @manager.route('/reset', methods=['POST'])  # noqa: F821
+@set_operation_doc("Reset a canvas to its initial state.")
+@tag(["Canvas"])
+@document_request(CanvasResetBody, source=DataSource.JSON)
 @validate_request("id")
 @login_required
 async def reset():
@@ -292,6 +484,9 @@ async def reset():
 
 
 @manager.route("/upload/<canvas_id>", methods=["POST"])  # noqa: F821
+@set_operation_doc("Upload one or more files for a canvas.")
+@tag(["Canvas"])
+@document_request(CanvasUploadBody, source=DataSource.FORM_MULTIPART)
 async def upload(canvas_id):
     e, cvs = UserCanvasService.get_by_canvas_id(canvas_id)
     if not e:
@@ -310,6 +505,8 @@ async def upload(canvas_id):
 
 
 @manager.route('/input_form', methods=['GET'])  # noqa: F821
+@set_operation_doc("Get a component input form definition for a canvas.")
+@tag(["Canvas"])
 @login_required
 def input_form():
     cvs_id = request.args.get("id")
@@ -330,6 +527,9 @@ def input_form():
 
 
 @manager.route('/debug', methods=['POST'])  # noqa: F821
+@set_operation_doc("Debug a component in a canvas and return its outputs.")
+@tag(["Canvas"])
+@document_request(CanvasDebugBody, source=DataSource.JSON)
 @validate_request("id", "component_id", "params")
 @login_required
 async def debug():
@@ -367,6 +567,9 @@ async def debug():
 
 
 @manager.route('/test_db_connect', methods=['POST'])  # noqa: F821
+@set_operation_doc("Test database connectivity with given connection parameters.")
+@tag(["Canvas"])
+@document_request(CanvasTestDBConnectBody, source=DataSource.JSON)
 @validate_request("db_type", "database", "username", "host", "port", "password")
 @login_required
 async def test_db_connect():
@@ -473,6 +676,8 @@ async def test_db_connect():
 
 #api get list version dsl of canvas
 @manager.route('/getlistversion/<canvas_id>', methods=['GET'])  # noqa: F821
+@set_operation_doc("List saved versions of a canvas DSL.")
+@tag(["Canvas"])
 @login_required
 def getlistversion(canvas_id):
     try:
@@ -484,6 +689,8 @@ def getlistversion(canvas_id):
 
 #api get version dsl of canvas
 @manager.route('/getversion/<version_id>', methods=['GET'])  # noqa: F821
+@set_operation_doc("Get a specific saved canvas version by version ID.")
+@tag(["Canvas"])
 @login_required
 def getversion( version_id):
     try:
@@ -495,6 +702,8 @@ def getversion( version_id):
 
 
 @manager.route('/list', methods=['GET'])  # noqa: F821
+@set_operation_doc("List canvases accessible to the current user.")
+@tag(["Canvas"])
 @login_required
 def list_canvas():
     keywords = request.args.get("keywords", "")
@@ -523,6 +732,9 @@ def list_canvas():
 
 
 @manager.route('/setting', methods=['POST'])  # noqa: F821
+@set_operation_doc("Update canvas metadata and permission settings.")
+@tag(["Canvas"])
+@document_request(CanvasSettingBody, source=DataSource.JSON)
 @validate_request("id", "title", "permission")
 @login_required
 async def setting():
@@ -549,6 +761,8 @@ async def setting():
 
 
 @manager.route('/trace', methods=['GET'])  # noqa: F821
+@set_operation_doc("Get execution trace logs for a canvas message.")
+@tag(["Canvas"])
 def trace():
     cvs_id = request.args.get("canvas_id")
     msg_id = request.args.get("message_id")
@@ -563,6 +777,8 @@ def trace():
 
 
 @manager.route('/<canvas_id>/sessions', methods=['GET'])  # noqa: F821
+@set_operation_doc("List chat sessions for a canvas.")
+@tag(["Canvas"])
 @login_required
 def sessions(canvas_id):
     tenant_id = current_user.id
@@ -599,6 +815,9 @@ def sessions(canvas_id):
 
 
 @manager.route('/<canvas_id>/sessions', methods=['PUT'])  # noqa: F821
+@set_operation_doc("Create a new session for a canvas.")
+@tag(["Canvas"])
+@document_request(CanvasSessionCreateBody, source=DataSource.JSON)
 @login_required
 async def set_session(canvas_id):
     req = await get_request_json()
@@ -626,6 +845,8 @@ async def set_session(canvas_id):
 
 
 @manager.route('/<canvas_id>/sessions/<session_id>', methods=['GET'])  # noqa: F821
+@set_operation_doc("Get a canvas session by session ID.")
+@tag(["Canvas"])
 @login_required
 def get_session(canvas_id, session_id):
     tenant_id = current_user.id
@@ -638,6 +859,8 @@ def get_session(canvas_id, session_id):
 
 
 @manager.route('/<canvas_id>/sessions/<session_id>', methods=['DELETE'])  # noqa: F821
+@set_operation_doc("Delete a canvas session by session ID.")
+@tag(["Canvas"])
 @login_required
 def del_session(canvas_id, session_id):
     tenant_id = current_user.id
@@ -649,6 +872,8 @@ def del_session(canvas_id, session_id):
 
 
 @manager.route('/prompts', methods=['GET'])  # noqa: F821
+@set_operation_doc("Get system prompt templates used by the agent pipeline.")
+@tag(["Canvas"])
 @login_required
 def prompts():
     from rag.prompts.generator import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
@@ -664,6 +889,8 @@ def prompts():
 
 
 @manager.route('/download', methods=['GET'])  # noqa: F821
+@set_operation_doc("Download a file blob by attachment ID.")
+@tag(["Canvas"])
 async def download():
     id = request.args.get("id")
     created_by = request.args.get("created_by")

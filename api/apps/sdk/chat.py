@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from pydantic import BaseModel, Field, ConfigDict
+from quart_schema import tag, validate_request as qs_validate_request
 import logging
 from quart import request
 from api.db.services.dialog_service import DialogService
@@ -24,10 +26,56 @@ from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_result, token_required, get_request_json
 
 
+class ChatCreateBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "name": "Support Assistant",
+            "description": "Assistant for support docs",
+            "avatar": "",
+            "dataset_ids": ["dataset_id_1"],
+            "llm": {"model_name": "gpt-4o-mini", "temperature": 0.2},
+            "prompt": {
+                "prompt": "You are a helpful assistant.\n{knowledge}",
+                "opener": "Hi! How can I help?",
+                "show_quote": True
+            }
+        }
+    })
+    name: str = Field(default="", description="Chat name")
+    description: str = Field(default="A helpful Assistant", description="Chat description")
+    avatar: str = Field(default="", description="Chat avatar/icon")
+    dataset_ids: list[str] = Field(default_factory=list, description="Associated dataset IDs")
+    llm: dict = Field(default_factory=dict, description="LLM settings (including model_name)")
+    prompt: dict = Field(default_factory=dict, description="Prompt configuration payload")
+
+
+class ChatUpdateBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "name": "Support Assistant v2",
+            "dataset_ids": ["dataset_id_1", "dataset_id_2"],
+            "llm": {"model_name": "gpt-4o-mini", "temperature": 0.1},
+            "prompt": {
+                "prompt": "You are a precise assistant.\n{knowledge}",
+                "show_quote": True
+            }
+        }
+    })
+    name: str = Field(default="", description="New chat name")
+    dataset_ids: list[str] = Field(default_factory=list, description="Associated dataset IDs")
+    llm: dict = Field(default_factory=dict, description="LLM settings (including model_name)")
+    prompt: dict = Field(default_factory=dict, description="Prompt configuration payload")
+    avatar: str = Field(default="", description="Chat avatar/icon")
+
+
+
 @manager.route("/chats", methods=["POST"])  # noqa: F821
 @token_required
-async def create(tenant_id):
-    req = await get_request_json()
+@tag(["SDK Chats"])
+@qs_validate_request(ChatCreateBody)
+async def create(data: ChatCreateBody, tenant_id):
+    """Create a new chat assistant."""
+    req = data.model_dump(exclude_unset=True)
     ids = [i for i in req.get("dataset_ids", []) if i]
     for kb_id in ids:
         kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
@@ -145,10 +193,13 @@ async def create(tenant_id):
 
 @manager.route("/chats/<chat_id>", methods=["PUT"])  # noqa: F821
 @token_required
-async def update(tenant_id, chat_id):
+@tag(["SDK Chats"])
+@qs_validate_request(ChatUpdateBody)
+async def update(data: ChatUpdateBody, tenant_id, chat_id):
+    """Update an existing chat assistant."""
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message="You do not own the chat")
-    req = await get_request_json()
+    req = data.model_dump(exclude_unset=True)
     ids = req.get("dataset_ids", [])
     if "show_quotation" in req:
         req["do_refer"] = req.pop("show_quotation")
@@ -230,7 +281,9 @@ async def update(tenant_id, chat_id):
 
 @manager.route("/chats", methods=["DELETE"])  # noqa: F821
 @token_required
+@tag(["SDK Chats"])
 async def delete_chats(tenant_id):
+    """Delete one or more chat assistants."""
     errors = []
     success_count = 0
     req = await get_request_json()
@@ -272,7 +325,9 @@ async def delete_chats(tenant_id):
 
 @manager.route("/chats", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Chats"])
 def list_chat(tenant_id):
+    """List chat assistants with optional filters."""
     id = request.args.get("id")
     name = request.args.get("name")
     if id or name:
