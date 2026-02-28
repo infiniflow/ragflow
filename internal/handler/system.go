@@ -81,3 +81,29 @@ func (h *SystemHandler) GetConfigs(c *gin.Context) {
 		"data":    cfg,
 	})
 }
+
+// GetVersion get RAGFlow version
+// @Summary Get RAGFlow Version
+// @Description Get the current version of the application
+// @Tags system
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/system/version [get]
+func (h *SystemHandler) GetVersion(c *gin.Context) {
+	version, err := h.systemService.GetVersion()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Failed to get version",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    version,
+	})
+}

@@ -57,6 +57,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	engine.GET("/v1/system/ping", r.systemHandler.Ping)
 	engine.GET("/v1/system/config", r.systemHandler.GetConfig)
 	engine.GET("/v1/system/configs", r.systemHandler.GetConfigs)
+	engine.GET("/v1/system/version", r.systemHandler.GetVersion)
 
 	// User login by email endpoint
 	engine.POST("/v1/user/login", r.userHandler.LoginByEmail)
