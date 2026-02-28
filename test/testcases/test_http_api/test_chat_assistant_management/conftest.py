@@ -37,7 +37,7 @@ def add_chat_assistants_func(request, HttpApiAuth, add_document):
     dataset_id, document_id = add_document
     parse_documents(HttpApiAuth, dataset_id, {"document_ids": [document_id]})
     condition(HttpApiAuth, dataset_id)
-    return dataset_id, document_id, batch_create_chat_assistants(HttpApiAuth, 5)
+    return dataset_id, document_id, batch_create_chat_assistants(HttpApiAuth, 5, [dataset_id])
 
 
 @pytest.fixture(scope="function")
