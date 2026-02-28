@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/config"
 	"ragflow/internal/service"
 )
 
@@ -50,7 +51,33 @@ func (h *SystemHandler) GetConfig(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"data": config,
+		"code":    0,
+		"message": "success",
+		"data":    config,
+	})
+}
+
+// GetConfigs get all system configurations
+// @Summary Get All System Configurations
+// @Description Get all system configurations from globalConfig
+// @Tags system
+// @Accept json
+// @Produce json
+// @Success 200 {object} config.Config
+// @Router /v1/system/configs [get]
+func (h *SystemHandler) GetConfigs(c *gin.Context) {
+	cfg := config.Get()
+	if cfg == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "Configuration not initialized",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    cfg,
 	})
 }

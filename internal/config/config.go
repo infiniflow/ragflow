@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -10,11 +12,11 @@ import (
 
 // Config application configuration
 type Config struct {
-	Server          ServerConfig       `mapstructure:"server"`
-	Database        DatabaseConfig     `mapstructure:"database"`
-	Log             LogConfig          `mapstructure:"log"`
-	DocEngine       DocEngineConfig    `mapstructure:"doc_engine"`
-	RegisterEnabled int                `mapstructure:"register_enabled"`
+	Server          ServerConfig           `mapstructure:"server"`
+	Database        DatabaseConfig         `mapstructure:"database"`
+	Log             LogConfig              `mapstructure:"log"`
+	DocEngine       DocEngineConfig        `mapstructure:"doc_engine"`
+	RegisterEnabled int                    `mapstructure:"register_enabled"`
 	OAuth           map[string]OAuthConfig `mapstructure:"oauth"`
 }
 
@@ -121,6 +123,15 @@ func Init(configPath string) error {
 	if err := v.Unmarshal(&globalConfig); err != nil {
 		return fmt.Errorf("unmarshal config error: %w", err)
 	}
+
+	// Load REGISTER_ENABLED from environment variable (default: 1)
+	registerEnabled := 1
+	if envVal := os.Getenv("REGISTER_ENABLED"); envVal != "" {
+		if parsed, err := strconv.Atoi(envVal); err == nil {
+			registerEnabled = parsed
+		}
+	}
+	globalConfig.RegisterEnabled = registerEnabled
 
 	// If we loaded service_conf.yaml, map mysql fields to DatabaseConfig
 	if globalConfig != nil && globalConfig.Database.Host == "" {

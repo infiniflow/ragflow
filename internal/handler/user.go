@@ -421,7 +421,8 @@ func (h *UserHandler) GetLoginChannels(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"data": channels,
+		"code":    0,
+		"message": "success",
+		"data":    channels,
 	})
 }
