@@ -25,19 +25,24 @@ from common.connection_utils import timeout
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
 from rag.prompts.generator import vision_llm_figure_describe_prompt, vision_llm_figure_describe_prompt_with_context
 from rag.nlp import append_context2table_image4pdf
+from rag.utils.lazy_image import ensure_pil_image, open_image_for_processing, is_image_like
 
 # need to delete before pr
 def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
     if not figures_data_without_positions:
         return []
-    return [
-        (
-            (figure_data[1], [figure_data[0]]),
-            [(0, 0, 0, 0, 0)],
+    res = []
+    for figure_data in figures_data_without_positions:
+        img = ensure_pil_image(figure_data[1])
+        if not isinstance(img, Image.Image):
+            continue
+        res.append(
+            (
+                (img, [figure_data[0]]),
+                [(0, 0, 0, 0, 0)],
+            )
         )
-        for figure_data in figures_data_without_positions
-        if isinstance(figure_data[1], Image.Image)
-    ]
+    return res
 
 def vision_figure_parser_docx_wrapper(sections, tbls, callback=None,**kwargs):
     if not sections:
@@ -100,7 +105,7 @@ def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
     if vision_model:
 
         def is_figure_item(item):
-            return isinstance(item[0][0], Image.Image) and isinstance(item[0][1], list)
+            return is_image_like(item[0][0]) and isinstance(item[0][1], list)
 
         figures_data = [item for item in tbls if is_figure_item(item)]
         figure_contexts = []
@@ -139,6 +144,9 @@ def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, **kw
     if vision_model:
         @timeout(30, 3)
         def worker(idx, ck):
+            img, close_after = open_image_for_processing(ck.get("image"), allow_bytes=True)
+            if not isinstance(img, Image.Image):
+                return idx, ""
             context_above = ck.get("context_above", "")
             context_below = ck.get("context_below", "")
             if context_above or context_below:
@@ -154,13 +162,20 @@ def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, **kw
                 prompt = vision_llm_figure_describe_prompt()
                 logging.info(f"[VisionFigureParser] figure={idx} context_len=0 prompt=default")
 
-            description_text = picture_vision_llm_chunk(
-                binary=ck.get("image"),
-                vision_model=vision_model,
-                prompt=prompt,
-                callback=callback,
-            )
-            return idx, description_text
+            try:
+                description_text = picture_vision_llm_chunk(
+                    binary=img,
+                    vision_model=vision_model,
+                    prompt=prompt,
+                    callback=callback,
+                )
+                return idx, description_text
+            finally:
+                if close_after and isinstance(img, Image.Image):
+                    try:
+                        img.close()
+                    except Exception:
+                        pass
 
         with ThreadPoolExecutor(max_workers=10) as executor:
             futures = [
@@ -192,13 +207,15 @@ class VisionFigureParser:
             # position
             if len(item) == 2 and isinstance(item[0], tuple) and len(item[0]) == 2 and isinstance(item[1], list) and isinstance(item[1][0], tuple) and len(item[1][0]) == 5:
                 img_desc = item[0]
-                assert len(img_desc) == 2 and isinstance(img_desc[0], Image.Image) and isinstance(img_desc[1], list), "Should be (figure, [description])"
-                self.figures.append(img_desc[0])
+                img = ensure_pil_image(img_desc[0])
+                assert len(img_desc) == 2 and isinstance(img, Image.Image) and isinstance(img_desc[1], list), "Should be (figure, [description])"
+                self.figures.append(img)
                 self.descriptions.append(img_desc[1])
                 self.positions.append(item[1])
             else:
-                assert len(item) == 2 and isinstance(item[0], Image.Image) and isinstance(item[1], list), f"Unexpected form of figure data: get {len(item)=}, {item=}"
-                self.figures.append(item[0])
+                img = ensure_pil_image(item[0])
+                assert len(item) == 2 and isinstance(img, Image.Image) and isinstance(item[1], list), f"Unexpected form of figure data: get {len(item)=}, {item=}"
+                self.figures.append(img)
                 self.descriptions.append(item[1])
 
     def _assemble(self):

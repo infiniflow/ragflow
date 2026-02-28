@@ -34,6 +34,7 @@ from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
+from rag.utils.lazy_image import LazyDocxImage
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
@@ -240,7 +241,7 @@ class Docx(DocxParser):
         imgs = paragraph._element.xpath(".//pic:pic")
         if not imgs:
             return None
-        res_img = None
+        image_blobs = []
         for img in imgs:
             embed = img.xpath(".//a:blip/@r:embed")
             if not embed:
@@ -264,17 +265,11 @@ class Docx(DocxParser):
             except Exception as e:
                 logging.warning(f"The recognized image stream appears to be corrupted. Skipping image, exception: {e}")
                 continue
-            try:
-                image = Image.open(BytesIO(image_blob)).convert("RGB")
-                if res_img is None:
-                    res_img = image
-                else:
-                    res_img = concat_img(res_img, image)
-            except Exception as e:
-                logging.warning(f"Fail to open or concat images, exception: {e}")
-                continue
+            image_blobs.append(image_blob)
 
-        return res_img
+        if not image_blobs:
+            return None
+        return LazyDocxImage(image_blobs)
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
