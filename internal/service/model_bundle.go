@@ -150,3 +150,8 @@ func (b *ModelBundle) Similarity(query string, texts []string) ([]float64, int64
 
 	return similarities, tokenCount, nil
 }
+
+// GetModel returns the underlying model instance
+func (b *ModelBundle) GetModel() interface{} {
+	return b.model
+}

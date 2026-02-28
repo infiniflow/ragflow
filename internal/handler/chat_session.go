@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -216,4 +218,144 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 		"data":    result.Sessions,
 		"message": "success",
 	})
+}
+
+// CompletionRequest completion request
+type CompletionRequest struct {
+	ConversationID string                   `json:"conversation_id" binding:"required"`
+	Messages       []map[string]interface{} `json:"messages" binding:"required"`
+	LLMID          string                   `json:"llm_id,omitempty"`
+	Stream         bool                     `json:"stream,omitempty"`
+	Temperature    float64                  `json:"temperature,omitempty"`
+	TopP           float64                  `json:"top_p,omitempty"`
+	FrequencyPenalty float64                `json:"frequency_penalty,omitempty"`
+	PresencePenalty  float64                `json:"presence_penalty,omitempty"`
+	MaxTokens      int                      `json:"max_tokens,omitempty"`
+}
+
+// Completion chat completion
+// @Summary Chat Completion
+// @Description Send messages to the chat model and get a response. Supports streaming and non-streaming modes.
+// @Tags chat_session
+// @Accept json
+// @Produce json
+// @Param request body CompletionRequest true "completion request"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/conversation/completion [post]
+func (h *ChatSessionHandler) Completion(c *gin.Context) {
+	// Get access token from Authorization header
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Missing Authorization header",
+		})
+		return
+	}
+
+	// Get user by access token
+	user, err := h.userService.GetUserByToken(token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Invalid access token",
+		})
+		return
+	}
+	userID := user.ID
+
+	// Parse request body
+	var req CompletionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Build chat model config
+	chatModelConfig := make(map[string]interface{})
+	if req.Temperature != 0 {
+		chatModelConfig["temperature"] = req.Temperature
+	}
+	if req.TopP != 0 {
+		chatModelConfig["top_p"] = req.TopP
+	}
+	if req.FrequencyPenalty != 0 {
+		chatModelConfig["frequency_penalty"] = req.FrequencyPenalty
+	}
+	if req.PresencePenalty != 0 {
+		chatModelConfig["presence_penalty"] = req.PresencePenalty
+	}
+	if req.MaxTokens != 0 {
+		chatModelConfig["max_tokens"] = req.MaxTokens
+	}
+
+	// Process messages - filter out system messages and initial assistant messages
+	var processedMessages []map[string]interface{}
+	for i, m := range req.Messages {
+		role, _ := m["role"].(string)
+		if role == "system" {
+			continue
+		}
+		if role == "assistant" && len(processedMessages) == 0 {
+			continue
+		}
+		processedMessages = append(processedMessages, m)
+		_ = i
+	}
+
+	// Get last message ID if present
+	var messageID string
+	if len(processedMessages) > 0 {
+		if id, ok := processedMessages[len(processedMessages)-1]["id"].(string); ok {
+			messageID = id
+		}
+	}
+
+	// Call service
+	if req.Stream {
+		// Streaming response
+		c.Header("Content-Type", "text/event-stream")
+		c.Header("Cache-Control", "no-cache")
+		c.Header("Connection", "keep-alive")
+		c.Header("X-Accel-Buffering", "no")
+
+		// Create a channel for streaming data
+		streamChan := make(chan string)
+		go func() {
+			defer close(streamChan)
+			err := h.chatSessionService.CompletionStream(userID, req.ConversationID, processedMessages, req.LLMID, chatModelConfig, messageID, streamChan)
+			if err != nil {
+				streamChan <- fmt.Sprintf("data: %s\n\n", err.Error())
+			}
+		}()
+
+		// Stream data to client
+		c.Stream(func(w io.Writer) bool {
+			data, ok := <-streamChan
+			if !ok {
+				return false
+			}
+			c.Writer.Write([]byte(data))
+			return true
+		})
+	} else {
+		// Non-streaming response
+		result, err := h.chatSessionService.Completion(userID, req.ConversationID, processedMessages, req.LLMID, chatModelConfig, messageID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"data":    result,
+			"message": "",
+		})
+	}
 }

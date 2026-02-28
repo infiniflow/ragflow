@@ -130,6 +130,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			session.POST("/set", r.chatSessionHandler.SetChatSession)
 			session.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
 			session.GET("/list", r.chatSessionHandler.ListChatSessions)
+			session.POST("/completion", r.chatSessionHandler.Completion)
 		}
 	}
 
