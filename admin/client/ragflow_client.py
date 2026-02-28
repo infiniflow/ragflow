@@ -974,7 +974,6 @@ class RAGFlowClient:
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
         message = command["message"]
-        chat_name = command["chat_name"]
         session_id = command["session_id"]
 
         # Prepare payload for completion API
