@@ -25,7 +25,6 @@ ATTEMPT_TIME = 2
 
 @singleton
 class ElasticSearchConnectionPool:
-
     def __init__(self):
         if hasattr(settings, "ES"):
             self.ES_CONFIG = settings.ES
@@ -52,12 +51,23 @@ class ElasticSearchConnectionPool:
             raise Exception(msg)
 
     def _connect(self):
-        self.es_conn = Elasticsearch(
-            self.ES_CONFIG["hosts"].split(","),
-            basic_auth=(self.ES_CONFIG["username"], self.ES_CONFIG[
-                "password"]) if "username" in self.ES_CONFIG and "password" in self.ES_CONFIG else None,
-            verify_certs= self.ES_CONFIG.get("verify_certs", False),
-            timeout=600 )
+        if "api_key" in self.ES_CONFIG and self.ES_CONFIG["api_key"]:
+            logging.info('Elasticsearch connection using API_KEY')
+            self.es_conn = Elasticsearch(
+                self.ES_CONFIG["hosts"].split(","), 
+                api_key=self.ES_CONFIG["api_key"], 
+                verify_certs=self.ES_CONFIG.get("verify_certs", False), 
+                timeout=600
+            )
+        else:
+            logging.info('Elasticsearch connection using username/password')
+            self.es_conn = Elasticsearch(
+                self.ES_CONFIG["hosts"].split(","),
+                basic_auth=(self.ES_CONFIG["username"], self.ES_CONFIG["password"]) if "username" in self.ES_CONFIG and "password" in self.ES_CONFIG else None,
+                verify_certs=self.ES_CONFIG.get("verify_certs", False),
+                timeout=600,
+            )
+
         if self.es_conn:
             self.info = self.es_conn.info()
             return True
