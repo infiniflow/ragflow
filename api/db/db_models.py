@@ -1404,7 +1404,7 @@ def update_tenant_llm_to_id_primary_key():
     try:
         with DB.atomic():
             # 0. Check if exist ID
-            cursor = DB.execute_sql(f"""
+            cursor = DB.execute_sql("""
                             SELECT COLUMN_NAME 
                             FROM INFORMATION_SCHEMA.COLUMNS 
                             WHERE TABLE_SCHEMA = DATABASE() 
@@ -1443,7 +1443,7 @@ def update_tenant_llm_to_id_primary_key():
 
     except Exception as e:
         logging.error(str(e))
-        cursor = DB.execute_sql(f"""
+        cursor = DB.execute_sql("""
                                     SELECT COLUMN_NAME 
                                     FROM INFORMATION_SCHEMA.COLUMNS 
                                     WHERE TABLE_SCHEMA = DATABASE() 
