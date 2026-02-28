@@ -23,6 +23,7 @@ from quart import Response, request
 from api.apps import current_user, login_required
 from api.db.db_models import APIToken
 from api.db.services.conversation_service import ConversationService, structure_answer
+from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.dialog_service import DialogService, async_ask, async_chat, gen_mindmap
 from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
@@ -376,8 +377,9 @@ async def thumbup():
         return get_data_error_result(message="Conversation not found!")
     up_down = req.get("thumbup")
     feedback = req.get("feedback", "")
-    conv = conv.to_dict()
-    for i, msg in enumerate(conv["message"]):
+    conv_dict = conv.to_dict()
+    message_index = None
+    for i, msg in enumerate(conv_dict["message"]):
         if req["message_id"] == msg.get("id", "") and msg.get("role", "") == "assistant":
             if up_down:
                 msg["thumbup"] = True
@@ -387,10 +389,35 @@ async def thumbup():
                 msg["thumbup"] = False
                 if feedback:
                     msg["feedback"] = feedback
+            message_index = i
             break
 
-    ConversationService.update_by_id(conv["id"], conv)
-    return get_json_result(data=conv)
+    # Apply feedback to chunk weights if reference exists
+    if message_index is not None and up_down is not None:
+        try:
+            # Get the dialog to find tenant_id
+            e_dia, dia = DialogService.get_by_id(conv.dialog_id)
+            if e_dia and dia:
+                # Reference list corresponds to assistant messages (every 2nd message starting from index 1)
+                # Assistant messages are at indices 1, 3, 5, ... so reference index = (message_index - 1) // 2
+                ref_index = (message_index - 1) // 2
+                if 0 <= ref_index < len(conv_dict.get("reference", [])):
+                    reference = conv_dict["reference"][ref_index]
+                    if reference:
+                        feedback_result = ChunkFeedbackService.apply_feedback(
+                            tenant_id=dia.tenant_id,
+                            reference=reference,
+                            is_positive=bool(up_down)
+                        )
+                        logging.debug(
+                            f"Chunk feedback applied: {feedback_result['success_count']} succeeded, "
+                            f"{feedback_result['fail_count']} failed"
+                        )
+        except Exception as e:
+            logging.warning(f"Failed to apply chunk feedback: {e}")
+
+    ConversationService.update_by_id(conv_dict["id"], conv_dict)
+    return get_json_result(data=conv_dict)
 
 
 @manager.route("/ask", methods=["POST"])  # noqa: F821
