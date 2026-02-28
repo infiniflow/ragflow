@@ -318,6 +318,28 @@ async def unauthorized_werkzeug(error):
     logging.warning("Unauthorized request (werkzeug)")
     return get_json_result(code=RetCode.UNAUTHORIZED, message=_unauthorized_message(error)), RetCode.UNAUTHORIZED
 
+
+@app.errorhandler(Unauthorized)
+async def handle_unauthorized(e):
+    """
+    Handle Unauthorized exceptions across the backend.
+
+    Notes:
+        - Any route that raises `Unauthorized` will trigger this handler.
+        - Clients can detect authentication errors either by `code` field
+          or by HTTP status 401.
+        - SDK endpoints using `@token_required` will trigger this
+          when the API key is invalid.
+        - Internal interfaces using `@login_required` are generally unaffected
+          unless they explicitly raise Unauthorized.
+    """
+    return jsonify({
+        "code": RetCode.UNAUTHORIZED,
+        "data": None,
+        "message": e.description,
+    }), 401
+
+
 @app.teardown_request
 def _db_close(exception):
     if exception:

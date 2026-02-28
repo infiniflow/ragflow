@@ -33,8 +33,7 @@ from quart import (
     request,
     has_app_context,
 )
-from werkzeug.exceptions import BadRequest as WerkzeugBadRequest
-
+from quart_auth import Unauthorized
 try:
     from quart.exceptions import BadRequest as QuartBadRequest
 except ImportError:  # pragma: no cover - optional dependency
@@ -270,39 +269,30 @@ def construct_json_result(code: RetCode = RetCode.SUCCESS, message="success", da
 
 
 def token_required(func):
-    def get_tenant_id(**kwargs):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        # Validate the token (API Key)
         if os.environ.get("DISABLE_SDK"):
-            return False, get_json_result(data=False, message="`Authorization` can't be empty")
+            raise Unauthorized("`Authorization` can't be empty")
         authorization_str = request.headers.get("Authorization")
         if not authorization_str:
-            return False, get_json_result(data=False, message="`Authorization` can't be empty")
+            raise Unauthorized("`Authorization` can't be empty")
         authorization_list = authorization_str.split()
         if len(authorization_list) < 2:
-            return False, get_json_result(data=False, message="Please check your authorization format.")
+            raise Unauthorized("Please check your authorization format.")
         token = authorization_list[1]
         objs = APIToken.query(token=token)
         if not objs:
-            return False, get_json_result(data=False, message="Authentication error: API key is invalid!", code=RetCode.AUTHENTICATION_ERROR)
+            raise Unauthorized("Authentication error: API key is invalid!")
+
+        # On success, inject tenant_id into the route function's kwargs
         kwargs["tenant_id"] = objs[0].tenant_id
-        return True, kwargs
+        result = func(*args, **kwargs)
+        if inspect.iscoroutine(result):
+            return await result
+        return result
 
-    @wraps(func)
-    def decorated_function(*args, **kwargs):
-        e, kwargs = get_tenant_id(**kwargs)
-        if not e:
-            return kwargs
-        return func(*args, **kwargs)
-
-    @wraps(func)
-    async def adecorated_function(*args, **kwargs):
-        e, kwargs = get_tenant_id(**kwargs)
-        if not e:
-            return kwargs
-        return await func(*args, **kwargs)
-
-    if inspect.iscoroutinefunction(func):
-        return adecorated_function
-    return decorated_function
+    return wrapper
 
 
 def get_result(code=RetCode.SUCCESS, message="", data=None, total=None):
