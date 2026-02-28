@@ -53,6 +53,7 @@ export function UploadAgentForm({ hideModal, onOk }: IModalProps<any>) {
               <FormLabel required>DSL</FormLabel>
               <FormControl>
                 <FileUploader
+                  data-testid="agent-import-file"
                   className="text-ellipsis overflow-hidden"
                   value={field.value}
                   onValueChange={field.onChange}
