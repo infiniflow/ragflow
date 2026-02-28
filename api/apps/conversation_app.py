@@ -464,7 +464,7 @@ async def related_questions():
     if "parameter" in gen_conf:
         del gen_conf["parameter"]
     prompt = load_prompt("related_question")
-    ans = await chat_mdl.async_chat(
+    ans, _ = await chat_mdl.async_chat(
         prompt,
         [
             {

@@ -270,8 +270,10 @@ class LLM(ComponentBase):
 
     async def _generate_async(self, msg: list[dict], **kwargs) -> str:
         if not self.imgs:
-            return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)
-        return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
+            ans, _ = await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)
+            return ans
+        ans, _ = await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
+        return ans
 
     async def _generate_streamly(self, msg: list[dict], **kwargs) -> AsyncGenerator[str, None]:
         async def delta_wrapper(txt_iter):

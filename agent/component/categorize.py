@@ -132,7 +132,7 @@ class Categorize(LLM, ABC):
         if self.check_if_canceled("Categorize processing"):
             return
 
-        ans = await chat_mdl.async_chat(self._param.sys_prompt, [{"role": "user", "content": user_prompt}], self._param.gen_conf())
+        ans, _ = await chat_mdl.async_chat(self._param.sys_prompt, [{"role": "user", "content": user_prompt}], self._param.gen_conf())
         logging.info(f"input: {user_prompt}, answer: {str(ans)}")
         if ERROR_PREFIX in ans:
             raise Exception(ans)

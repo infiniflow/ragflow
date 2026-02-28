@@ -399,7 +399,7 @@ class LLMBundle(LLM4Tenant):
             generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
             generation.end()
 
-        return txt
+        return txt, used_tokens
 
     async def async_chat_streamly(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
         total_tokens = 0
@@ -461,10 +461,15 @@ class LLMBundle(LLM4Tenant):
         if stream_fn:
             chat_partial = partial(stream_fn, system, history, gen_conf)
             use_kwargs = self._clean_param(chat_partial, **kwargs)
+            usage_data = None  # Will be dict (from API) or int (fallback)
             try:
                 async for txt in chat_partial(**use_kwargs):
+                    # Handle token usage (can be int for fallback, or dict for API-provided)
+                    if isinstance(txt, dict) and "total_tokens" in txt:
+                        usage_data = txt  # Full usage from API: {prompt_tokens, completion_tokens, total_tokens}
+                        break
                     if isinstance(txt, int):
-                        total_tokens = txt
+                        usage_data = txt  # Fallback: just total count
                         break
 
                     if txt.endswith("</think>"):
@@ -480,9 +485,18 @@ class LLMBundle(LLM4Tenant):
                     generation.update(output={"error": str(e)})
                     generation.end()
                 raise
+
+            # Extract total_tokens for billing/logging (handle both dict and int)
+            if isinstance(usage_data, dict):
+                total_tokens = usage_data.get("total_tokens", 0)
+            else:
+                total_tokens = usage_data or 0
+
             if total_tokens and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, total_tokens, self.llm_name):
                 logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, total_tokens))
             if generation:
                 generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
                 generation.end()
+            # Yield token usage at the end as a tuple marker (preserves dict or int)
+            yield ("token_usage", usage_data)
             return
