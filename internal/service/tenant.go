@@ -1,18 +1,22 @@
 package service
 
 import (
+	"time"
+
 	"ragflow/internal/dao"
 )
 
 // TenantService tenant service
 type TenantService struct {
-	tenantDAO *dao.TenantDAO
+	tenantDAO     *dao.TenantDAO
+	userTenantDAO *dao.UserTenantDAO
 }
 
 // NewTenantService create tenant service
 func NewTenantService() *TenantService {
 	return &TenantService{
-		tenantDAO: dao.NewTenantDAO(),
+		tenantDAO:     dao.NewTenantDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
 	}
 }
 
@@ -53,4 +57,48 @@ func (s *TenantService) GetTenantInfo(userID string) (*TenantInfoResponse, error
 		ParserIDs: ti.ParserIDs,
 		Role:      ti.Role,
 	}, nil
+}
+
+// TenantListItem tenant list item response
+type TenantListItem struct {
+	TenantID     string  `json:"tenant_id"`
+	Role         string  `json:"role"`
+	Nickname     string  `json:"nickname"`
+	Email        string  `json:"email"`
+	Avatar       string  `json:"avatar"`
+	UpdateDate   string  `json:"update_date"`
+	DeltaSeconds float64 `json:"delta_seconds"`
+}
+
+// GetTenantList get tenant list for a user
+func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) {
+	tenants, err := s.userTenantDAO.GetTenantsByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]*TenantListItem, len(tenants))
+	now := time.Now()
+
+	for i, t := range tenants {
+		// Parse update_date and calculate delta_seconds
+		var deltaSeconds float64
+		if t.UpdateDate != "" {
+			if updateTime, err := time.Parse("2006-01-02 15:04:05", t.UpdateDate); err == nil {
+				deltaSeconds = now.Sub(updateTime).Seconds()
+			}
+		}
+
+		result[i] = &TenantListItem{
+			TenantID:     t.TenantID,
+			Role:         t.Role,
+			Nickname:     t.Nickname,
+			Email:        t.Email,
+			Avatar:       t.Avatar,
+			UpdateDate:   t.UpdateDate,
+			DeltaSeconds: deltaSeconds,
+		}
+	}
+
+	return result, nil
 }

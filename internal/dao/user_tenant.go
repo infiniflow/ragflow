@@ -87,3 +87,24 @@ func (dao *UserTenantDAO) GetNumMembers(tenantID string) (int64, error) {
 		Count(&count).Error
 	return count, err
 }
+
+// TenantInfoByUserID tenant info with user details
+type TenantInfoByUserID struct {
+	TenantID   string `json:"tenant_id"`
+	Role       string `json:"role"`
+	Nickname   string `json:"nickname"`
+	Email      string `json:"email"`
+	Avatar     string `json:"avatar"`
+	UpdateDate string `json:"update_date"`
+}
+
+// GetTenantsByUserID get tenants by user ID with user details
+func (dao *UserTenantDAO) GetTenantsByUserID(userID string) ([]*TenantInfoByUserID, error) {
+	var results []*TenantInfoByUserID
+	err := DB.Table("user_tenant").
+		Select("user_tenant.tenant_id, user_tenant.role, user.nickname, user.email, user.avatar, user.update_date").
+		Joins("JOIN user ON user_tenant.tenant_id = user.id AND user_tenant.user_id = ? AND user_tenant.status = ?", userID, "1").
+		Where("user_tenant.status = ?", "1").
+		Scan(&results).Error
+	return results, err
+}
