@@ -1233,8 +1233,13 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     d["kb_id"] = dataset_id
     d["docnm_kwd"] = doc.name
     d["doc_id"] = document_id
-    embd_id = DocumentService.get_embd_id(document_id)
-    embd_mdl = TenantLLMService.model_instance(tenant_id, LLMType.EMBEDDING.value, embd_id)
+    tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
+    if tenant_embd_id:
+        model_config = get_model_config_by_id(tenant_embd_id)
+    else:
+        embd_id = DocumentService.get_embd_id(document_id)
+        model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING.value, embd_id)
+    embd_mdl = TenantLLMService.model_instance(model_config)
     v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
@@ -1427,8 +1432,13 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         if not isinstance(req["positions"], list):
             return get_error_data_result("`positions` should be a list")
         d["position_int"] = req["positions"]
-    embd_id = DocumentService.get_embd_id(document_id)
-    embd_mdl = TenantLLMService.model_instance(tenant_id, LLMType.EMBEDDING.value, embd_id)
+    tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
+    if tenant_embd_id:
+        model_config = get_model_config_by_id(tenant_embd_id)
+    else:
+        embd_id = DocumentService.get_embd_id(document_id)
+        model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING.value, embd_id)
+    embd_mdl = TenantLLMService.model_instance(model_config)
     if doc.parser_id == ParserType.QA:
         arr = [t for t in re.split(r"[\n\t]", d["content_with_weight"]) if len(t) > 1]
         if len(arr) != 2:

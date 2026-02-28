@@ -106,8 +106,9 @@ class LLMBundle(LLM4Tenant):
                 safe_texts.append(text)
 
         embeddings, used_tokens = self.mdl.encode(safe_texts)
-
-        if not TenantLLMService.increase_usage_by_id(self.model_config["id"], used_tokens):
+        if self.model_config["llm_factory"] == "Builtin":
+            logging.info("LLMBundle.encode_queries query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(texts, len(embeddings), used_tokens))
+        elif not TenantLLMService.increase_usage_by_id(self.model_config["id"], used_tokens):
             logging.error("LLMBundle.encode can't update token usage for <tenant redacted>/EMBEDDING used_tokens: {}".format(used_tokens))
 
         if self.langfuse:
@@ -121,7 +122,9 @@ class LLMBundle(LLM4Tenant):
             generation = self.langfuse.start_generation(trace_context=self.trace_context, name="encode_queries", model=self.model_config["llm_name"], input={"query": query})
 
         emd, used_tokens = self.mdl.encode_queries(query)
-        if not TenantLLMService.increase_usage_by_id(self.model_config["id"], used_tokens):
+        if self.model_config["llm_factory"] == "Builtin":
+            logging.info("LLMBundle.encode_queries query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(query, len(emd), used_tokens))
+        elif not TenantLLMService.increase_usage_by_id(self.model_config["id"], used_tokens):
             logging.error("LLMBundle.encode_queries can't update token usage for <tenant redacted>/EMBEDDING used_tokens: {}".format(used_tokens))
 
         if self.langfuse:

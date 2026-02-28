@@ -38,7 +38,7 @@ def get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_nam
     if not model_config:
         # model_name in format 'name@factory', split model_name and try again
         pure_model_name, fid = TenantLLMService.split_model_name_and_factory(model_name)
-        if model_type == LLMType.EMBEDDING and fid == "Builtin" and "tei-" in os.getenv("COMPOSE_PROFILES", "") and model_name == os.getenv("TEI_MODEL", ""):
+        if model_type == LLMType.EMBEDDING and fid == "Builtin" and "tei-" in os.getenv("COMPOSE_PROFILES", "") and pure_model_name == os.getenv("TEI_MODEL", ""):
             # configured local embedding model
             embedding_cfg = settings.EMBEDDING_CFG
             config_dict = {
