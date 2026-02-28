@@ -1,5 +1,7 @@
 package model
 
+import "encoding/json"
+
 // Chat chat model (mapped to dialog table)
 type Chat struct {
 	ID                     string    `gorm:"column:id;primaryKey;size:32" json:"id"`
@@ -31,12 +33,12 @@ func (Chat) TableName() string {
 
 // Conversation conversation model
 type ChatSession struct {
-	ID        string  `gorm:"column:id;primaryKey;size:32" json:"id"`
-	DialogID  string  `gorm:"column:dialog_id;size:32;not null;index" json:"dialog_id"`
-	Name      *string `gorm:"column:name;size:255;index" json:"name,omitempty"`
-	Message   JSONMap `gorm:"column:message;type:json" json:"message,omitempty"`
-	Reference JSONMap `gorm:"column:reference;type:json;default:'[]'" json:"reference"`
-	UserID    *string `gorm:"column:user_id;size:255;index" json:"user_id,omitempty"`
+	ID        string          `gorm:"column:id;primaryKey;size:32" json:"id"`
+	DialogID  string          `gorm:"column:dialog_id;size:32;not null;index" json:"dialog_id"`
+	Name      *string         `gorm:"column:name;size:255;index" json:"name,omitempty"`
+	Message   json.RawMessage `gorm:"column:message;type:json" json:"message,omitempty"`
+	Reference json.RawMessage `gorm:"column:reference;type:json;default:'[]'" json:"reference"`
+	UserID    *string         `gorm:"column:user_id;size:255;index" json:"user_id,omitempty"`
 	BaseModel
 }
 
