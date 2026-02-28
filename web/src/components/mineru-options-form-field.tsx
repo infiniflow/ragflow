@@ -31,6 +31,15 @@ const languageOptions = buildOptions([
   'Hindi',
 ]);
 
+// MinerU backend options
+const backendOptions = buildOptions([
+  'hybrid-auto-engine',
+  'pipeline',
+  'vlm-auto-engine',
+  'vlm-http-client',
+  'hybrid-http-client',
+]);
+
 export function MinerUOptionsFormField({
   namePrefix = 'parser_config',
 }: {
@@ -60,6 +69,25 @@ export function MinerUOptionsFormField({
       <div className="text-sm font-medium text-text-secondary">
         {t('knowledgeConfiguration.mineruOptions', 'MinerU Options')}
       </div>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_backend')}
+        label={t('knowledgeConfiguration.mineruBackend', 'Backend')}
+        tooltip={t(
+          'knowledgeConfiguration.mineruBackendTip',
+          'MinerU processing backend. hybrid-auto-engine is recommended.',
+        )}
+        horizontal={true}
+      >
+        {(field) => (
+          <RAGFlowSelect
+            value={field.value || 'hybrid-auto-engine'}
+            onChange={field.onChange}
+            options={backendOptions}
+            placeholder={t('common.selectPlaceholder', 'Select value')}
+          />
+        )}
+      </RAGFlowFormItem>
 
       <RAGFlowFormItem
         name={buildName('mineru_parse_method')}
@@ -205,6 +233,27 @@ export function MinerUOptionsFormField({
             value={field.value ?? ''}
             onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
             placeholder="Optional"
+          />
+        )}
+      </RAGFlowFormItem>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_strict_mode')}
+        label={t(
+          'knowledgeConfiguration.mineruStrictMode',
+          'Strict Mode',
+        )}
+        tooltip={t(
+          'knowledgeConfiguration.mineruStrictModeTip',
+          'If enabled, all batches must succeed. If disabled, partial success is allowed with warnings.',
+        )}
+        horizontal={true}
+        labelClassName="!mb-0"
+      >
+        {(field) => (
+          <Switch
+            checked={field.value ?? true}
+            onCheckedChange={field.onChange}
           />
         )}
       </RAGFlowFormItem>

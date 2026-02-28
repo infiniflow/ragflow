@@ -35,6 +35,7 @@ export const formSchema = z
         image_table_context_window: z.number().optional(),
         overlapped_percent: z.number().optional(),
         // MinerU-specific options
+        mineru_backend: z.string().optional(),
         mineru_parse_method: z.enum(['auto', 'txt', 'ocr']).optional(),
         mineru_formula_enable: z.boolean().optional(),
         mineru_table_enable: z.boolean().optional(),
