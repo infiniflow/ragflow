@@ -670,6 +670,8 @@ class DocumentService(CommonService):
                 cls.model.kb_id,
                 cls.model.parser_id,
                 cls.model.parser_config,
+                cls.model.size,
+                cls.model.content_hash,
                 Knowledgebase.language,
                 Knowledgebase.embd_id,
                 Tenant.id.alias("tenant_id"),
