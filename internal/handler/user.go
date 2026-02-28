@@ -258,7 +258,8 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	user, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Invalid access token",
+			"code":    401,
+			"message": "Invalid access token",
 		})
 		return
 	}
@@ -266,13 +267,16 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	// Logout user
 	if err := h.userService.Logout(user); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to logout",
+			"code":    500,
+			"message": err.Error(),
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "logout successful",
+		"code":    0,
+		"data":    true,
+		"message": "success",
 	})
 }
 

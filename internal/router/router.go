@@ -83,7 +83,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// User login channels endpoint
 	engine.GET("/v1/user/login/channels", r.userHandler.GetLoginChannels)
 	// User logout endpoint
-	engine.POST("/v1/user/logout", r.userHandler.Logout)
+	engine.GET("/v1/user/logout", r.userHandler.Logout)
 	// User info endpoint
 	engine.GET("/v1/user/info", r.userHandler.Info)
 	// User tenant info endpoint
