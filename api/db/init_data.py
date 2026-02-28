@@ -21,6 +21,8 @@ import time
 import uuid
 from copy import deepcopy
 
+from peewee import IntegrityError
+
 from api.db import UserTenantRole
 from api.db.db_models import init_database_tables as init_web_db, LLMFactories, LLM, TenantLLM, Knowledgebase, Dialog, Memory, Tenant
 from api.db.services import UserService
@@ -45,6 +47,10 @@ DEFAULT_SUPERUSER_EMAIL = os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io
 DEFAULT_SUPERUSER_PASSWORD = os.getenv("DEFAULT_SUPERUSER_PASSWORD", "admin")
 
 def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_EMAIL, password=DEFAULT_SUPERUSER_PASSWORD, role=UserTenantRole.OWNER):
+    if UserService.query(email=email):
+        logging.info("User with email %s already exists, skipping initialization.", email)
+        return
+
     user_info = {
         "id": uuid.uuid1().hex,
         "password": encode_to_base64(password),
@@ -73,29 +79,32 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
 
     tenant_llm = get_init_tenant_llm(user_info["id"])
 
-    if not UserService.save(**user_info):
-        logging.error("can't init admin.")
+    try:
+        if not UserService.save(**user_info):
+            logging.error("can't init admin.")
+            return
+    except IntegrityError:
+        logging.info("User with email %s already exists, skipping.", email)
         return
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
     logging.info(
         f"Super user initialized. email: {email},A default password has been set; changing the password after login is strongly recommended.")
-    chat_model_config = get_tenant_default_model_by_type(tenant["id"], LLMType.CHAT)
-    chat_mdl = LLMBundle(tenant["id"], chat_model_config)
-    msg = asyncio.run(chat_mdl.async_chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={}))
-    if msg.find("ERROR: ") == 0:
-        logging.error(
-            "'{}' doesn't work. {}".format(
-                tenant["llm_id"],
-                msg))
-    embd_model_config = get_tenant_default_model_by_type(tenant["id"], LLMType.EMBEDDING)
-    embd_mdl = LLMBundle(tenant["id"], embd_model_config)
-    v, c = embd_mdl.encode(["Hello!"])
-    if c == 0:
-        logging.error(
-            "'{}' doesn't work!".format(
-                tenant["embd_id"]))
+
+    if tenant["llm_id"]:
+        chat_model_config = get_tenant_default_model_by_type(tenant["id"], LLMType.CHAT)
+        chat_mdl = LLMBundle(tenant["id"], chat_model_config)
+        msg = asyncio.run(chat_mdl.async_chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={}))
+        if msg.find("ERROR: ") == 0:
+            logging.error("'{}' doesn't work. {}".format( tenant["llm_id"], msg))
+
+    if tenant["embd_id"]:
+        embd_model_config = get_tenant_default_model_by_type(tenant["id"], LLMType.EMBEDDING)
+        embd_mdl = LLMBundle(tenant["id"], embd_model_config)
+        v, c = embd_mdl.encode(["Hello!"])
+        if c == 0:
+            logging.error("'{}' doesn't work!".format(tenant["embd_id"]))
 
 
 def init_llm_factory():
