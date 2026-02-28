@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package cli
 
 import (
@@ -47,7 +63,7 @@ func (p *Parser) parseMetaCommand() (*Command, error) {
 	cmd := NewCommand("meta")
 	cmdName := strings.TrimPrefix(p.curToken.Value, "\\")
 	cmd.Params["command"] = strings.ToLower(cmdName)
-	
+
 	// Parse arguments
 	var args []string
 	p.nextToken()
@@ -56,7 +72,7 @@ func (p *Parser) parseMetaCommand() (*Command, error) {
 		p.nextToken()
 	}
 	cmd.Params["args"] = args
-	
+
 	return cmd, nil
 }
 
@@ -159,24 +175,24 @@ func (p *Parser) parseNumber() (int, error) {
 // Command parsers
 func (p *Parser) parseLoginUser() (*Command, error) {
 	cmd := NewCommand("login_user")
-	
+
 	p.nextToken() // consume LOGIN
 	if p.curToken.Type != TokenUser {
 		return nil, fmt.Errorf("expected USER after LOGIN")
 	}
-	
+
 	p.nextToken()
 	email, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["email"] = email
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
 	}
-	
+
 	return cmd, nil
 }
 
@@ -191,54 +207,54 @@ func (p *Parser) parsePingServer() (*Command, error) {
 
 func (p *Parser) parseRegisterCommand() (*Command, error) {
 	cmd := NewCommand("register_user")
-	
+
 	p.nextToken() // consume REGISTER
 	if err := p.expectPeek(TokenUser); err != nil {
 		return nil, err
 	}
 	p.nextToken()
-	
+
 	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["user_name"] = userName
-	
+
 	p.nextToken()
 	if p.curToken.Type != TokenAs {
 		return nil, fmt.Errorf("expected AS")
 	}
-	
+
 	p.nextToken()
 	nickname, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["nickname"] = nickname
-	
+
 	p.nextToken()
 	if p.curToken.Type != TokenPassword {
 		return nil, fmt.Errorf("expected PASSWORD")
 	}
-	
+
 	p.nextToken()
 	password, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["password"] = password
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
 	}
-	
+
 	return cmd, nil
 }
 
 func (p *Parser) parseListCommand() (*Command, error) {
 	p.nextToken() // consume LIST
-	
+
 	switch p.curToken.Type {
 	case TokenServices:
 		p.nextToken()
@@ -302,11 +318,11 @@ func (p *Parser) parseListCommand() (*Command, error) {
 func (p *Parser) parseListDatasets() (*Command, error) {
 	cmd := NewCommand("list_user_datasets")
 	p.nextToken() // consume DATASETS
-	
+
 	if p.curToken.Type == TokenSemicolon {
 		return cmd, nil
 	}
-	
+
 	if p.curToken.Type == TokenOf {
 		p.nextToken()
 		userName, err := p.parseQuotedString()
@@ -317,7 +333,7 @@ func (p *Parser) parseListDatasets() (*Command, error) {
 		cmd.Params["user_name"] = userName
 		p.nextToken()
 	}
-	
+
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
 	}
@@ -326,24 +342,24 @@ func (p *Parser) parseListDatasets() (*Command, error) {
 
 func (p *Parser) parseListAgents() (*Command, error) {
 	p.nextToken() // consume AGENTS
-	
+
 	if p.curToken.Type == TokenSemicolon {
 		return NewCommand("list_user_agents"), nil
 	}
-	
+
 	if p.curToken.Type != TokenOf {
 		return nil, fmt.Errorf("expected OF")
 	}
 	p.nextToken()
-	
+
 	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("list_agents")
 	cmd.Params["user_name"] = userName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -357,15 +373,15 @@ func (p *Parser) parseListKeys() (*Command, error) {
 		return nil, fmt.Errorf("expected OF")
 	}
 	p.nextToken()
-	
+
 	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("list_keys")
 	cmd.Params["user_name"] = userName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -407,15 +423,15 @@ func (p *Parser) parseListFiles() (*Command, error) {
 		return nil, fmt.Errorf("expected DATASET")
 	}
 	p.nextToken()
-	
+
 	datasetName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("list_user_dataset_files")
 	cmd.Params["dataset_name"] = datasetName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -425,7 +441,7 @@ func (p *Parser) parseListFiles() (*Command, error) {
 
 func (p *Parser) parseShowCommand() (*Command, error) {
 	p.nextToken() // consume SHOW
-	
+
 	switch p.curToken.Type {
 	case TokenVersion:
 		p.nextToken()
@@ -458,7 +474,7 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 
 func (p *Parser) parseShowUser() (*Command, error) {
 	p.nextToken() // consume USER
-	
+
 	// Check for PERMISSION
 	if p.curToken.Type == TokenPermission {
 		p.nextToken()
@@ -474,15 +490,15 @@ func (p *Parser) parseShowUser() (*Command, error) {
 		}
 		return cmd, nil
 	}
-	
+
 	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("show_user")
 	cmd.Params["user_name"] = userName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -496,10 +512,10 @@ func (p *Parser) parseShowRole() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("show_role")
 	cmd.Params["role_name"] = roleName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -513,10 +529,10 @@ func (p *Parser) parseShowVariable() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("show_variable")
 	cmd.Params["var_name"] = varName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -530,10 +546,10 @@ func (p *Parser) parseShowService() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("show_service")
 	cmd.Params["number"] = serviceNum
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -543,7 +559,7 @@ func (p *Parser) parseShowService() (*Command, error) {
 
 func (p *Parser) parseCreateCommand() (*Command, error) {
 	p.nextToken() // consume CREATE
-	
+
 	switch p.curToken.Type {
 	case TokenUser:
 		return p.parseCreateUser()
@@ -566,18 +582,18 @@ func (p *Parser) parseCreateUser() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	password, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("create_user")
 	cmd.Params["user_name"] = userName
 	cmd.Params["password"] = password
 	cmd.Params["role"] = "user"
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -591,10 +607,10 @@ func (p *Parser) parseCreateRole() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("create_role")
 	cmd.Params["role_name"] = roleName
-	
+
 	p.nextToken()
 	if p.curToken.Type == TokenDescription {
 		p.nextToken()
@@ -605,7 +621,7 @@ func (p *Parser) parseCreateRole() (*Command, error) {
 		cmd.Params["description"] = description
 		p.nextToken()
 	}
-	
+
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
 	}
@@ -618,22 +634,22 @@ func (p *Parser) parseCreateModelProvider() (*Command, error) {
 		return nil, fmt.Errorf("expected PROVIDER")
 	}
 	p.nextToken()
-	
+
 	providerName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	providerKey, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("create_model_provider")
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["provider_key"] = providerKey
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -647,7 +663,7 @@ func (p *Parser) parseCreateDataset() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	if p.curToken.Type != TokenWith {
 		return nil, fmt.Errorf("expected WITH")
@@ -657,17 +673,17 @@ func (p *Parser) parseCreateDataset() (*Command, error) {
 		return nil, fmt.Errorf("expected EMBEDDING")
 	}
 	p.nextToken()
-	
+
 	embedding, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	cmd := NewCommand("create_user_dataset")
 	cmd.Params["dataset_name"] = datasetName
 	cmd.Params["embedding"] = embedding
-	
+
 	if p.curToken.Type == TokenParser {
 		p.nextToken()
 		parserType, err := p.parseQuotedString()
@@ -687,7 +703,7 @@ func (p *Parser) parseCreateDataset() (*Command, error) {
 	} else {
 		return nil, fmt.Errorf("expected PARSER or PIPELINE")
 	}
-	
+
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
 	}
@@ -700,10 +716,10 @@ func (p *Parser) parseCreateChat() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("create_user_chat")
 	cmd.Params["chat_name"] = chatName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -713,7 +729,7 @@ func (p *Parser) parseCreateChat() (*Command, error) {
 
 func (p *Parser) parseDropCommand() (*Command, error) {
 	p.nextToken() // consume DROP
-	
+
 	switch p.curToken.Type {
 	case TokenUser:
 		return p.parseDropUser()
@@ -738,10 +754,10 @@ func (p *Parser) parseDropUser() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("drop_user")
 	cmd.Params["user_name"] = userName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -755,10 +771,10 @@ func (p *Parser) parseDropRole() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("drop_role")
 	cmd.Params["role_name"] = roleName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -772,15 +788,15 @@ func (p *Parser) parseDropModelProvider() (*Command, error) {
 		return nil, fmt.Errorf("expected PROVIDER")
 	}
 	p.nextToken()
-	
+
 	providerName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("drop_model_provider")
 	cmd.Params["provider_name"] = providerName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -794,10 +810,10 @@ func (p *Parser) parseDropDataset() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("drop_user_dataset")
 	cmd.Params["dataset_name"] = datasetName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -811,10 +827,10 @@ func (p *Parser) parseDropChat() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("drop_user_chat")
 	cmd.Params["chat_name"] = chatName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -828,22 +844,22 @@ func (p *Parser) parseDropKey() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	if p.curToken.Type != TokenOf {
 		return nil, fmt.Errorf("expected OF")
 	}
 	p.nextToken()
-	
+
 	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("drop_key")
 	cmd.Params["key"] = key
 	cmd.Params["user_name"] = userName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -853,7 +869,7 @@ func (p *Parser) parseDropKey() (*Command, error) {
 
 func (p *Parser) parseAlterCommand() (*Command, error) {
 	p.nextToken() // consume ALTER
-	
+
 	switch p.curToken.Type {
 	case TokenUser:
 		return p.parseAlterUser()
@@ -866,40 +882,40 @@ func (p *Parser) parseAlterCommand() (*Command, error) {
 
 func (p *Parser) parseAlterUser() (*Command, error) {
 	p.nextToken() // consume USER
-	
+
 	if p.curToken.Type == TokenActive {
 		return p.parseActivateUser()
 	}
-	
+
 	if p.curToken.Type == TokenPassword {
 		p.nextToken()
 		userName, err := p.parseQuotedString()
 		if err != nil {
 			return nil, err
 		}
-		
+
 		p.nextToken()
 		password, err := p.parseQuotedString()
 		if err != nil {
 			return nil, err
 		}
-		
+
 		cmd := NewCommand("alter_user")
 		cmd.Params["user_name"] = userName
 		cmd.Params["password"] = password
-		
+
 		p.nextToken()
 		if err := p.expectSemicolon(); err != nil {
 			return nil, err
 		}
 		return cmd, nil
 	}
-	
+
 	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	if p.curToken.Type != TokenSet {
 		return nil, fmt.Errorf("expected SET")
@@ -909,16 +925,16 @@ func (p *Parser) parseAlterUser() (*Command, error) {
 		return nil, fmt.Errorf("expected ROLE")
 	}
 	p.nextToken()
-	
+
 	roleName, err := p.parseIdentifier()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("alter_user_role")
 	cmd.Params["user_name"] = userName
 	cmd.Params["role_name"] = roleName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -932,17 +948,17 @@ func (p *Parser) parseActivateUser() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	status, err := p.parseIdentifier()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("activate_user")
 	cmd.Params["user_name"] = userName
 	cmd.Params["activate_status"] = status
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -956,7 +972,7 @@ func (p *Parser) parseAlterRole() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	if p.curToken.Type != TokenSet {
 		return nil, fmt.Errorf("expected SET")
@@ -966,16 +982,16 @@ func (p *Parser) parseAlterRole() (*Command, error) {
 		return nil, fmt.Errorf("expected DESCRIPTION")
 	}
 	p.nextToken()
-	
+
 	description, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("alter_role")
 	cmd.Params["role_name"] = roleName
 	cmd.Params["description"] = description
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -985,11 +1001,11 @@ func (p *Parser) parseAlterRole() (*Command, error) {
 
 func (p *Parser) parseGrantCommand() (*Command, error) {
 	p.nextToken() // consume GRANT
-	
+
 	if p.curToken.Type == TokenAdmin {
 		return p.parseGrantAdmin()
 	}
-	
+
 	return p.parseGrantPermission()
 }
 
@@ -999,10 +1015,10 @@ func (p *Parser) parseGrantAdmin() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("grant_admin")
 	cmd.Params["user_name"] = userName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -1015,17 +1031,17 @@ func (p *Parser) parseGrantPermission() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if p.curToken.Type != TokenOn {
 		return nil, fmt.Errorf("expected ON")
 	}
 	p.nextToken()
-	
+
 	resource, err := p.parseIdentifier()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	if p.curToken.Type != TokenTo {
 		return nil, fmt.Errorf("expected TO")
@@ -1035,17 +1051,17 @@ func (p *Parser) parseGrantPermission() (*Command, error) {
 		return nil, fmt.Errorf("expected ROLE")
 	}
 	p.nextToken()
-	
+
 	roleName, err := p.parseIdentifier()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("grant_permission")
 	cmd.Params["actions"] = actions
 	cmd.Params["resource"] = resource
 	cmd.Params["role_name"] = roleName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -1055,11 +1071,11 @@ func (p *Parser) parseGrantPermission() (*Command, error) {
 
 func (p *Parser) parseRevokeCommand() (*Command, error) {
 	p.nextToken() // consume REVOKE
-	
+
 	if p.curToken.Type == TokenAdmin {
 		return p.parseRevokeAdmin()
 	}
-	
+
 	return p.parseRevokePermission()
 }
 
@@ -1069,10 +1085,10 @@ func (p *Parser) parseRevokeAdmin() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("revoke_admin")
 	cmd.Params["user_name"] = userName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -1085,17 +1101,17 @@ func (p *Parser) parseRevokePermission() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if p.curToken.Type != TokenOn {
 		return nil, fmt.Errorf("expected ON")
 	}
 	p.nextToken()
-	
+
 	resource, err := p.parseIdentifier()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	if p.curToken.Type != TokenFrom {
 		return nil, fmt.Errorf("expected FROM")
@@ -1105,17 +1121,17 @@ func (p *Parser) parseRevokePermission() (*Command, error) {
 		return nil, fmt.Errorf("expected ROLE")
 	}
 	p.nextToken()
-	
+
 	roleName, err := p.parseIdentifier()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("revoke_permission")
 	cmd.Params["actions"] = actions
 	cmd.Params["resource"] = resource
 	cmd.Params["role_name"] = roleName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -1125,14 +1141,14 @@ func (p *Parser) parseRevokePermission() (*Command, error) {
 
 func (p *Parser) parseIdentifierList() ([]string, error) {
 	var list []string
-	
+
 	ident, err := p.parseIdentifier()
 	if err != nil {
 		return nil, err
 	}
 	list = append(list, ident)
 	p.nextToken()
-	
+
 	for p.curToken.Type == TokenComma {
 		p.nextToken()
 		ident, err := p.parseIdentifier()
@@ -1142,20 +1158,20 @@ func (p *Parser) parseIdentifierList() ([]string, error) {
 		list = append(list, ident)
 		p.nextToken()
 	}
-	
+
 	return list, nil
 }
 
 func (p *Parser) parseSetCommand() (*Command, error) {
 	p.nextToken() // consume SET
-	
+
 	if p.curToken.Type == TokenVar {
 		return p.parseSetVariable()
 	}
 	if p.curToken.Type == TokenDefault {
 		return p.parseSetDefault()
 	}
-	
+
 	return nil, fmt.Errorf("unknown SET target: %s", p.curToken.Value)
 }
 
@@ -1165,17 +1181,17 @@ func (p *Parser) parseSetVariable() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	varValue, err := p.parseIdentifier()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("set_variable")
 	cmd.Params["var_name"] = varName
 	cmd.Params["var_value"] = varValue
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -1185,9 +1201,9 @@ func (p *Parser) parseSetVariable() (*Command, error) {
 
 func (p *Parser) parseSetDefault() (*Command, error) {
 	p.nextToken() // consume DEFAULT
-	
+
 	var modelType, modelID string
-	
+
 	switch p.curToken.Type {
 	case TokenLLM:
 		modelType = "llm_id"
@@ -1204,18 +1220,18 @@ func (p *Parser) parseSetDefault() (*Command, error) {
 	default:
 		return nil, fmt.Errorf("unknown model type: %s", p.curToken.Value)
 	}
-	
+
 	p.nextToken()
 	id, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	modelID = id
-	
+
 	cmd := NewCommand("set_default_model")
 	cmd.Params["model_type"] = modelType
 	cmd.Params["model_id"] = modelID
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -1225,12 +1241,12 @@ func (p *Parser) parseSetDefault() (*Command, error) {
 
 func (p *Parser) parseResetCommand() (*Command, error) {
 	p.nextToken() // consume RESET
-	
+
 	if p.curToken.Type != TokenDefault {
 		return nil, fmt.Errorf("expected DEFAULT")
 	}
 	p.nextToken()
-	
+
 	var modelType string
 	switch p.curToken.Type {
 	case TokenLLM:
@@ -1248,10 +1264,10 @@ func (p *Parser) parseResetCommand() (*Command, error) {
 	default:
 		return nil, fmt.Errorf("unknown model type: %s", p.curToken.Value)
 	}
-	
+
 	cmd := NewCommand("reset_default_model")
 	cmd.Params["model_type"] = modelType
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -1273,15 +1289,15 @@ func (p *Parser) parseGenerateCommand() (*Command, error) {
 		return nil, fmt.Errorf("expected USER")
 	}
 	p.nextToken()
-	
+
 	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("generate_key")
 	cmd.Params["user_name"] = userName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -1295,7 +1311,7 @@ func (p *Parser) parseImportCommand() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	if p.curToken.Type != TokenInto {
 		return nil, fmt.Errorf("expected INTO")
@@ -1305,16 +1321,16 @@ func (p *Parser) parseImportCommand() (*Command, error) {
 		return nil, fmt.Errorf("expected DATASET")
 	}
 	p.nextToken()
-	
+
 	datasetName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("import_docs_into_dataset")
 	cmd.Params["document_paths"] = documentPaths
 	cmd.Params["dataset_name"] = datasetName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -1328,7 +1344,7 @@ func (p *Parser) parseSearchCommand() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	if p.curToken.Type != TokenOn {
 		return nil, fmt.Errorf("expected ON")
@@ -1338,16 +1354,16 @@ func (p *Parser) parseSearchCommand() (*Command, error) {
 		return nil, fmt.Errorf("expected DATASETS")
 	}
 	p.nextToken()
-	
+
 	datasets, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("search_on_datasets")
 	cmd.Params["question"] = question
 	cmd.Params["datasets"] = datasets
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -1357,11 +1373,11 @@ func (p *Parser) parseSearchCommand() (*Command, error) {
 
 func (p *Parser) parseParseCommand() (*Command, error) {
 	p.nextToken() // consume PARSE
-	
+
 	if p.curToken.Type == TokenDataset {
 		return p.parseParseDataset()
 	}
-	
+
 	return p.parseParseDocs()
 }
 
@@ -1371,7 +1387,7 @@ func (p *Parser) parseParseDataset() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	var method string
 	if p.curToken.Type == TokenSync {
@@ -1381,11 +1397,11 @@ func (p *Parser) parseParseDataset() (*Command, error) {
 	} else {
 		return nil, fmt.Errorf("expected SYNC or ASYNC")
 	}
-	
+
 	cmd := NewCommand("parse_dataset")
 	cmd.Params["dataset_name"] = datasetName
 	cmd.Params["method"] = method
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -1398,7 +1414,7 @@ func (p *Parser) parseParseDocs() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.nextToken()
 	if p.curToken.Type != TokenOf {
 		return nil, fmt.Errorf("expected OF")
@@ -1408,16 +1424,16 @@ func (p *Parser) parseParseDocs() (*Command, error) {
 		return nil, fmt.Errorf("expected DATASET")
 	}
 	p.nextToken()
-	
+
 	datasetName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("parse_dataset_docs")
 	cmd.Params["document_names"] = documentNames
 	cmd.Params["dataset_name"] = datasetName
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -1427,21 +1443,21 @@ func (p *Parser) parseParseDocs() (*Command, error) {
 
 func (p *Parser) parseBenchmarkCommand() (*Command, error) {
 	cmd := NewCommand("benchmark")
-	
+
 	p.nextToken() // consume BENCHMARK
 	concurrency, err := p.parseNumber()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["concurrency"] = concurrency
-	
+
 	p.nextToken()
 	iterations, err := p.parseNumber()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["iterations"] = iterations
-	
+
 	p.nextToken()
 	// Parse user_statement
 	nestedCmd, err := p.parseUserStatement()
@@ -1449,7 +1465,7 @@ func (p *Parser) parseBenchmarkCommand() (*Command, error) {
 		return nil, err
 	}
 	cmd.Params["command"] = nestedCmd
-	
+
 	return cmd, nil
 }
 
@@ -1486,15 +1502,15 @@ func (p *Parser) parseStartupCommand() (*Command, error) {
 		return nil, fmt.Errorf("expected SERVICE")
 	}
 	p.nextToken()
-	
+
 	serviceNum, err := p.parseNumber()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("startup_service")
 	cmd.Params["number"] = serviceNum
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -1508,15 +1524,15 @@ func (p *Parser) parseShutdownCommand() (*Command, error) {
 		return nil, fmt.Errorf("expected SERVICE")
 	}
 	p.nextToken()
-	
+
 	serviceNum, err := p.parseNumber()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("shutdown_service")
 	cmd.Params["number"] = serviceNum
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
@@ -1530,15 +1546,15 @@ func (p *Parser) parseRestartCommand() (*Command, error) {
 		return nil, fmt.Errorf("expected SERVICE")
 	}
 	p.nextToken()
-	
+
 	serviceNum, err := p.parseNumber()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cmd := NewCommand("restart_service")
 	cmd.Params["number"] = serviceNum
-	
+
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err

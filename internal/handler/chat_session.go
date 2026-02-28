@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package handler
 
 import (
@@ -222,15 +238,15 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 
 // CompletionRequest completion request
 type CompletionRequest struct {
-	ConversationID string                   `json:"conversation_id" binding:"required"`
-	Messages       []map[string]interface{} `json:"messages" binding:"required"`
-	LLMID          string                   `json:"llm_id,omitempty"`
-	Stream         bool                     `json:"stream,omitempty"`
-	Temperature    float64                  `json:"temperature,omitempty"`
-	TopP           float64                  `json:"top_p,omitempty"`
-	FrequencyPenalty float64                `json:"frequency_penalty,omitempty"`
-	PresencePenalty  float64                `json:"presence_penalty,omitempty"`
-	MaxTokens      int                      `json:"max_tokens,omitempty"`
+	ConversationID   string                   `json:"conversation_id" binding:"required"`
+	Messages         []map[string]interface{} `json:"messages" binding:"required"`
+	LLMID            string                   `json:"llm_id,omitempty"`
+	Stream           bool                     `json:"stream,omitempty"`
+	Temperature      float64                  `json:"temperature,omitempty"`
+	TopP             float64                  `json:"top_p,omitempty"`
+	FrequencyPenalty float64                  `json:"frequency_penalty,omitempty"`
+	PresencePenalty  float64                  `json:"presence_penalty,omitempty"`
+	MaxTokens        int                      `json:"max_tokens,omitempty"`
 }
 
 // Completion chat completion

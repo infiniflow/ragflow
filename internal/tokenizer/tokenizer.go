@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package tokenizer
 
 import (
@@ -31,19 +47,19 @@ type poolInstance struct {
 
 // analyzerPool is the elastic pool for analyzer instances
 type analyzerPool struct {
-	config      PoolConfig
-	baseAnalyzer  *rag.Analyzer    // Original analyzer used as template for copying
-	instances   chan *poolInstance // Channel-based pool for available instances
-	currentSize int32              // Current number of instances (atomic)
-	initialized bool
-	mu          sync.RWMutex
-	stopCh      chan struct{}
-	wg          sync.WaitGroup
+	config       PoolConfig
+	baseAnalyzer *rag.Analyzer      // Original analyzer used as template for copying
+	instances    chan *poolInstance // Channel-based pool for available instances
+	currentSize  int32              // Current number of instances (atomic)
+	initialized  bool
+	mu           sync.RWMutex
+	stopCh       chan struct{}
+	wg           sync.WaitGroup
 }
 
 var (
-	globalPool *analyzerPool
-	poolOnce   sync.Once
+	globalPool    *analyzerPool
+	poolOnce      sync.Once
 	poolInitError error
 )
 
@@ -344,11 +360,11 @@ func GetPoolStats() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"initialized":    globalPool.initialized,
-		"current_size":   atomic.LoadInt32(&globalPool.currentSize),
-		"min_size":       globalPool.config.MinSize,
-		"max_size":       globalPool.config.MaxSize,
-		"idle_timeout":   globalPool.config.IdleTimeout.String(),
+		"initialized":         globalPool.initialized,
+		"current_size":        atomic.LoadInt32(&globalPool.currentSize),
+		"min_size":            globalPool.config.MinSize,
+		"max_size":            globalPool.config.MaxSize,
+		"idle_timeout":        globalPool.config.IdleTimeout.String(),
 		"instances_available": len(globalPool.instances),
 	}
 }
