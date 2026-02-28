@@ -125,11 +125,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 		}
 
 		// Chat session (conversation) routes
-		conversation := engine.Group("/v1/conversation")
+		session := engine.Group("/v1/conversation")
 		{
-			conversation.POST("/set", r.chatSessionHandler.SetConversation)
-			conversation.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
-			conversation.GET("/list", r.chatSessionHandler.ListChatSessions)
+			session.POST("/set", r.chatSessionHandler.SetChatSession)
+			session.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
+			session.GET("/list", r.chatSessionHandler.ListChatSessions)
 		}
 	}
 
