@@ -79,8 +79,9 @@ export const EmptyAppCard = (props: {
   isSearch?: boolean;
   size?: 'small' | 'large';
   children?: React.ReactNode;
+  testId?: string;
 }) => {
-  const { type, showIcon, className, isSearch, children } = props;
+  const { type, showIcon, className, isSearch, children, testId } = props;
   let defaultClass = '';
   let style = {};
   switch (props.size) {
@@ -97,7 +98,7 @@ export const EmptyAppCard = (props: {
       break;
   }
   return (
-    <div onClick={isSearch ? undefined : props.onClick}>
+    <div onClick={isSearch ? undefined : props.onClick} data-testid={testId}>
       <EmptyCard
         icon={showIcon ? EmptyCardData[type].icon : undefined}
         title={
