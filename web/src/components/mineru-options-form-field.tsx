@@ -1,6 +1,7 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { LLMFactory } from '@/constants/llm';
 import { buildOptions } from '@/utils/form';
 import { useFormContext, useWatch } from 'react-hook-form';
@@ -28,6 +29,15 @@ const languageOptions = buildOptions([
   'Thai',
   'Greek',
   'Hindi',
+]);
+
+// MinerU backend options
+const backendOptions = buildOptions([
+  'hybrid-auto-engine',
+  'pipeline',
+  'vlm-auto-engine',
+  'vlm-http-client',
+  'hybrid-http-client',
 ]);
 
 export function MinerUOptionsFormField({
@@ -59,6 +69,25 @@ export function MinerUOptionsFormField({
       <div className="text-sm font-medium text-text-secondary">
         {t('knowledgeConfiguration.mineruOptions', 'MinerU Options')}
       </div>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_backend')}
+        label={t('knowledgeConfiguration.mineruBackend', 'Backend')}
+        tooltip={t(
+          'knowledgeConfiguration.mineruBackendTip',
+          'MinerU processing backend. hybrid-auto-engine is recommended.',
+        )}
+        horizontal={true}
+      >
+        {(field) => (
+          <RAGFlowSelect
+            value={field.value || 'hybrid-auto-engine'}
+            onChange={field.onChange}
+            options={backendOptions}
+            placeholder={t('common.selectPlaceholder', 'Select value')}
+          />
+        )}
+      </RAGFlowFormItem>
 
       <RAGFlowFormItem
         name={buildName('mineru_parse_method')}
@@ -128,6 +157,95 @@ export function MinerUOptionsFormField({
         tooltip={t(
           'knowledgeConfiguration.mineruTableEnableTip',
           'Enable table recognition and extraction.',
+        )}
+        horizontal={true}
+        labelClassName="!mb-0"
+      >
+        {(field) => (
+          <Switch
+            checked={field.value ?? true}
+            onCheckedChange={field.onChange}
+          />
+        )}
+      </RAGFlowFormItem>
+
+      <div className="text-sm font-medium text-text-secondary mt-4">
+        {t('knowledgeConfiguration.mineruBatchOptions', 'Batch Processing Options')}
+      </div>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_batch_size')}
+        label={t('knowledgeConfiguration.mineruBatchSize', 'Batch Size')}
+        tooltip={t(
+          'knowledgeConfiguration.mineruBatchSizeTip',
+          'Number of pages to process per batch for large PDFs. Default is 30.',
+        )}
+        horizontal={true}
+      >
+        {(field) => (
+          <Input
+            type="number"
+            min={1}
+            max={500}
+            value={field.value ?? 30}
+            onChange={(e) => {
+              const parsed = parseInt(e.target.value, 10);
+              field.onChange(Number.isNaN(parsed) ? 30 : parsed);
+            }}
+            placeholder="30"
+          />
+        )}
+      </RAGFlowFormItem>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_start_page')}
+        label={t('knowledgeConfiguration.mineruStartPage', 'Start Page')}
+        tooltip={t(
+          'knowledgeConfiguration.mineruStartPageTip',
+          'Starting page number for processing (0-based). Leave empty to start from beginning.',
+        )}
+        horizontal={true}
+      >
+        {(field) => (
+          <Input
+            type="number"
+            min={0}
+            value={field.value ?? ''}
+            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
+            placeholder="Optional"
+          />
+        )}
+      </RAGFlowFormItem>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_end_page')}
+        label={t('knowledgeConfiguration.mineruEndPage', 'End Page')}
+        tooltip={t(
+          'knowledgeConfiguration.mineruEndPageTip',
+          'Ending page number for processing (0-based, inclusive). Leave empty to process until end.',
+        )}
+        horizontal={true}
+      >
+        {(field) => (
+          <Input
+            type="number"
+            min={0}
+            value={field.value ?? ''}
+            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
+            placeholder="Optional"
+          />
+        )}
+      </RAGFlowFormItem>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_strict_mode')}
+        label={t(
+          'knowledgeConfiguration.mineruStrictMode',
+          'Strict Mode',
+        )}
+        tooltip={t(
+          'knowledgeConfiguration.mineruStrictModeTip',
+          'If enabled, all batches must succeed. If disabled, partial success is allowed with warnings.',
         )}
         horizontal={true}
         labelClassName="!mb-0"

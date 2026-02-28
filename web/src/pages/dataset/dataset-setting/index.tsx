@@ -77,10 +77,15 @@ export default function DatasetSettings() {
         image_table_context_window: 0,
         overlapped_percent: 0,
         // MinerU-specific defaults
+        mineru_backend: 'hybrid-auto-engine',
         mineru_parse_method: 'auto',
         mineru_formula_enable: true,
         mineru_table_enable: true,
         mineru_lang: 'English',
+        mineru_batch_size: 30,
+        mineru_start_page: null,
+        mineru_end_page: null,
+        mineru_strict_mode: true,
         raptor: {
           use_raptor: true,
           max_token: 256,

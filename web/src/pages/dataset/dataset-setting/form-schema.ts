@@ -35,10 +35,15 @@ export const formSchema = z
         image_table_context_window: z.number().optional(),
         overlapped_percent: z.number().optional(),
         // MinerU-specific options
+        mineru_backend: z.string().optional(),
         mineru_parse_method: z.enum(['auto', 'txt', 'ocr']).optional(),
         mineru_formula_enable: z.boolean().optional(),
         mineru_table_enable: z.boolean().optional(),
         mineru_lang: z.string().optional(),
+        mineru_batch_size: z.number().optional(),
+        mineru_start_page: z.number().optional(),
+        mineru_end_page: z.number().optional(),
+        mineru_strict_mode: z.boolean().optional(),
         raptor: z
           .object({
             use_raptor: z.boolean().optional(),
