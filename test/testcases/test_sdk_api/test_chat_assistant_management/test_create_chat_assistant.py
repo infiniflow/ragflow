@@ -196,10 +196,7 @@ class TestChatAssistantCreate:
             chat_assistant = client.create_chat(name="prompt_test", dataset_ids=[dataset.id], prompt=prompt_o)
             if prompt:
                 for k, v in prompt.items():
-                    if k == "keywords_similarity_weight":
-                        assert attrgetter(k)(chat_assistant.prompt) == 1 - v
-                    else:
-                        assert attrgetter(k)(chat_assistant.prompt) == v
+                    assert attrgetter(k)(chat_assistant.prompt) == v
             else:
                 assert attrgetter("similarity_threshold")(chat_assistant.prompt) == 0.2
                 assert attrgetter("keywords_similarity_weight")(chat_assistant.prompt) == 0.7

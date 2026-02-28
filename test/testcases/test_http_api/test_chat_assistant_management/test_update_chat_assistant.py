@@ -210,10 +210,7 @@ class TestChatAssistantUpdate:
             res = list_chat_assistants(HttpApiAuth, {"id": chat_assistant_ids[0]})
             if prompt:
                 for k, v in prompt.items():
-                    if k == "keywords_similarity_weight":
-                        assert res["data"][0]["prompt"][k] == 1 - v
-                    else:
-                        assert res["data"][0]["prompt"][k] == v
+                    assert res["data"][0]["prompt"][k] == v
             else:
                 assert res["data"]["prompt"][0]["similarity_threshold"] == 0.2
                 assert res["data"]["prompt"][0]["keywords_similarity_weight"] == 0.7
