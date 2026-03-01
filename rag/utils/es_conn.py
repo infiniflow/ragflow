@@ -28,6 +28,7 @@ from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
 
 ATTEMPT_TIME = 2
+ES_MAX_RESULT_WINDOW = 10000
 
 
 @singleton
@@ -140,6 +141,10 @@ class ESConnection(ESConnectionBase):
                 s.aggs.bucket(f'aggs_{fld}', 'terms', field=fld, size=1000000)
 
         if limit > 0:
+            if offset + limit > ES_MAX_RESULT_WINDOW:
+                limit = max(0, ES_MAX_RESULT_WINDOW - offset)
+                if limit <= 0:
+                    return {"hits": {"total": {"value": 0}, "hits": []}}
             s = s[offset:offset + limit]
         q = s.to_dict()
         self.logger.debug(f"ESConnection.search {str(index_names)} query: " + json.dumps(q))
