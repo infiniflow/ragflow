@@ -1156,6 +1156,7 @@ def _call_llm(prompt: str, tenant_id , lang: str) -> Optional[dict]:
         lang: Language
     Returns:
         Parsed dictionary, or None on failure
+
     """
     try:
         from api.db.services.llm_service import LLMBundle
