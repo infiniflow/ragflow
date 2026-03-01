@@ -22,12 +22,13 @@ from collections import defaultdict
 from common.query_base import QueryBase
 from common.doc_store.doc_store_base import MatchTextExpr
 from rag.nlp import rag_tokenizer, term_weight, synonym
+from rag.utils.redis_conn import REDIS_CONN
 
 
 class FulltextQueryer(QueryBase):
     def __init__(self):
         self.tw = term_weight.Dealer()
-        self.syn = synonym.Dealer()
+        self.syn = synonym.Dealer(REDIS_CONN if REDIS_CONN.is_alive() else None)
         self.query_fields = [
             "title_tks^10",
             "title_sm_tks^5",
