@@ -102,7 +102,7 @@ def show_configs():
             if "authentication" in k:
                 v = copy.deepcopy(v)
                 for key, val in v.items():
-                    if isinstance(val, dict) and "http_secret_key" in val:
+                    if "http_secret_key" in val:
                         val["http_secret_key"] = "*" * 8
         msg += f"\n\t{k}: {v}"
     logging.info(msg)

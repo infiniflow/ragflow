@@ -371,7 +371,4 @@ def get_config():
                         type: integer 0 means disabled, 1 means enabled
                         description: Whether user registration is enabled
     """
-    return get_json_result(data={
-        "registerEnabled": settings.REGISTER_ENABLED,
-        "disablePasswordLogin": settings.DISABLE_PASSWORD_LOGIN,
-    })
+    return get_json_result(data={"registerEnabled": settings.REGISTER_ENABLED})
