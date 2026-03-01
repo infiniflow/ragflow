@@ -391,6 +391,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                   </FormLabel>
                   <FormControl className="bg-bg-input">
                     <MultiSelect
+                      data-testid="search-datasets-combobox"
                       options={datasetList}
                       onValueChange={(value) => {
                         handleDatasetSelectChange(value, field.onChange);
@@ -399,6 +400,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                       placeholder={t('chat.knowledgeBasesMessage')}
                       maxCount={10}
                       defaultValue={field.value}
+                      popoverTestId="datasets-options"
+                      optionTestIdPrefix="datasets"
                       {...field}
                     />
                   </FormControl>
@@ -583,7 +586,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               >
                 {t('search.cancelText')}
               </Button>
-              <Button type="submit" disabled={formSubmitLoading}>
+              <Button data-testid="search-settings-save" type="submit" disabled={formSubmitLoading}>
                 {formSubmitLoading && (
                   <div className="size-4">
                     <Spin size="small" />

@@ -184,9 +184,49 @@ def _load_canvas_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api", api_pkg)
 
     apps_mod = ModuleType("api.apps")
+    apps_mod.__path__ = []
     apps_mod.current_user = SimpleNamespace(id="user-1")
     apps_mod.login_required = lambda func: func
     monkeypatch.setitem(sys.modules, "api.apps", apps_mod)
+
+    apps_services_pkg = ModuleType("api.apps.services")
+    apps_services_pkg.__path__ = []
+    monkeypatch.setitem(sys.modules, "api.apps.services", apps_services_pkg)
+    apps_mod.services = apps_services_pkg
+
+    canvas_replica_mod = ModuleType("api.apps.services.canvas_replica_service")
+
+    class _StubCanvasReplicaService:
+        @classmethod
+        def normalize_dsl(cls, dsl):
+            import json
+            if isinstance(dsl, str):
+                return json.loads(dsl)
+            return dsl
+
+        @classmethod
+        def bootstrap(cls, *_args, **_kwargs):
+            return {}
+
+        @classmethod
+        def load_for_run(cls, *_args, **_kwargs):
+            return None
+
+        @classmethod
+        def commit_after_run(cls, *_args, **_kwargs):
+            return True
+
+        @classmethod
+        def replace_for_set(cls, *_args, **_kwargs):
+            return True
+
+        @classmethod
+        def create_if_absent(cls, *_args, **_kwargs):
+            return {}
+
+    canvas_replica_mod.CanvasReplicaService = _StubCanvasReplicaService
+    monkeypatch.setitem(sys.modules, "api.apps.services.canvas_replica_service", canvas_replica_mod)
+    apps_services_pkg.canvas_replica_service = canvas_replica_mod
 
     db_pkg = ModuleType("api.db")
     db_pkg.CanvasCategory = _DummyCanvasCategory
@@ -310,6 +350,8 @@ def _load_canvas_module(monkeypatch):
         delete_all_versions=lambda *_args, **_kwargs: True,
         list_by_canvas_id=lambda *_args, **_kwargs: [],
         get_by_id=lambda *_args, **_kwargs: (True, None),
+        save_or_replace_latest=lambda *_args, **_kwargs: True,
+        build_version_title=lambda *_args, **_kwargs: "stub_version_title",
     )
     monkeypatch.setitem(sys.modules, "api.db.services.user_canvas_version", canvas_version_mod)
 
@@ -492,18 +534,12 @@ def test_templates_rm_save_get_matrix_unit(monkeypatch):
     monkeypatch.setattr(module, "get_uuid", lambda: "canvas-new")
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [])
     monkeypatch.setattr(module.UserCanvasService, "save", lambda **kwargs: created["save"].append(kwargs) or True)
-    monkeypatch.setattr(module.UserCanvasVersionService, "insert", lambda **kwargs: created["versions"].append(("insert", kwargs)))
-    monkeypatch.setattr(
-        module.UserCanvasVersionService,
-        "delete_all_versions",
-        lambda canvas_id: created["versions"].append(("delete", canvas_id)),
-    )
+    monkeypatch.setattr(module.UserCanvasVersionService, "save_or_replace_latest", lambda *_args, **kwargs: created["versions"].append(("save_or_replace_latest", kwargs)))
     res = _run(inspect.unwrap(module.save)())
     assert res["code"] == module.RetCode.SUCCESS
     assert res["data"]["id"] == "canvas-new"
     assert created["save"]
-    assert any(item[0] == "insert" for item in created["versions"])
-    assert any(item[0] == "delete" for item in created["versions"])
+    assert any(item[0] == "save_or_replace_latest" for item in created["versions"])
 
     _set_request_json(monkeypatch, module, {"id": "canvas-1", "title": "Renamed", "dsl": "{\"m\": 1}"})
     monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)
@@ -515,13 +551,11 @@ def test_templates_rm_save_get_matrix_unit(monkeypatch):
     _set_request_json(monkeypatch, module, {"id": "canvas-1", "title": "Renamed", "dsl": "{\"m\": 1}"})
     monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module.UserCanvasService, "update_by_id", lambda canvas_id, payload: updates.append((canvas_id, payload)))
-    monkeypatch.setattr(module.UserCanvasVersionService, "insert", lambda **kwargs: versions.append(("insert", kwargs)))
-    monkeypatch.setattr(module.UserCanvasVersionService, "delete_all_versions", lambda canvas_id: versions.append(("delete", canvas_id)))
+    monkeypatch.setattr(module.UserCanvasVersionService, "save_or_replace_latest", lambda *_args, **kwargs: versions.append(("save_or_replace_latest", kwargs)))
     res = _run(inspect.unwrap(module.save)())
     assert res["code"] == module.RetCode.SUCCESS
     assert updates and updates[0][0] == "canvas-1"
-    assert any(item[0] == "insert" for item in versions)
-    assert any(item[0] == "delete" for item in versions)
+    assert any(item[0] == "save_or_replace_latest" for item in versions)
 
     monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)
     res = module.get("canvas-1")
@@ -587,25 +621,16 @@ def test_run_dataflow_and_canvas_sse_matrix_unit(monkeypatch):
 
     _set_request_json(monkeypatch, module, {"id": "c1"})
     monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (False, None))
+    monkeypatch.setattr(module.CanvasReplicaService, "load_for_run", lambda *_args, **_kwargs: None)
     res = _run(inspect.unwrap(module.run)())
-    assert res["message"] == "canvas not found."
-
-    class _CanvasRecord:
-        def __init__(self, *, canvas_id, dsl, canvas_category):
-            self.id = canvas_id
-            self.dsl = dsl
-            self.canvas_category = canvas_category
-
-        def to_dict(self):
-            return {"id": self.id, "dsl": self.dsl}
+    assert res["message"] == "canvas replica not found, please call /get/<canvas_id> first."
 
     pipeline_calls = []
     monkeypatch.setattr(module, "Pipeline", lambda *args, **kwargs: pipeline_calls.append((args, kwargs)))
     monkeypatch.setattr(module, "get_uuid", lambda: "task-1")
 
     _set_request_json(monkeypatch, module, {"id": "df-1", "files": ["f1"], "user_id": "exp-1"})
-    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (True, _CanvasRecord(canvas_id="df-1", dsl={"n": 1}, canvas_category=module.CanvasCategory.DataFlow)))
+    monkeypatch.setattr(module.CanvasReplicaService, "load_for_run", lambda *_args, **_kwargs: {"dsl": {"n": 1}, "title": "df", "canvas_category": module.CanvasCategory.DataFlow})
     monkeypatch.setattr(module, "queue_dataflow", lambda *_args, **_kwargs: (False, "queue failed"))
     res = _run(inspect.unwrap(module.run)())
     assert res["code"] == module.RetCode.DATA_ERROR
@@ -619,7 +644,7 @@ def test_run_dataflow_and_canvas_sse_matrix_unit(monkeypatch):
     assert res["data"]["message_id"] == "task-1"
 
     _set_request_json(monkeypatch, module, {"id": "ag-1", "query": "q", "files": [], "inputs": {}})
-    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (True, _CanvasRecord(canvas_id="ag-1", dsl={"x": 1}, canvas_category=module.CanvasCategory.Agent)))
+    monkeypatch.setattr(module.CanvasReplicaService, "load_for_run", lambda *_args, **_kwargs: {"dsl": {"x": 1}, "title": "ag", "canvas_category": module.CanvasCategory.Agent})
     monkeypatch.setattr(module, "Canvas", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("canvas init failed")))
     res = _run(inspect.unwrap(module.run)())
     assert res["code"] == module.RetCode.EXCEPTION_ERROR
@@ -642,14 +667,13 @@ def test_run_dataflow_and_canvas_sse_matrix_unit(monkeypatch):
 
     _set_request_json(monkeypatch, module, {"id": "ag-2", "query": "q", "files": [], "inputs": {}, "user_id": "exp-2"})
     monkeypatch.setattr(module, "Canvas", _CanvasSSESuccess)
-    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (True, _CanvasRecord(canvas_id="ag-2", dsl="{}", canvas_category=module.CanvasCategory.Agent)))
+    monkeypatch.setattr(module.CanvasReplicaService, "load_for_run", lambda *_args, **_kwargs: {"dsl": {}, "title": "ag2", "canvas_category": module.CanvasCategory.Agent})
     monkeypatch.setattr(module.UserCanvasService, "update_by_id", lambda canvas_id, payload: updates.append((canvas_id, payload)))
     resp = _run(inspect.unwrap(module.run)())
     assert isinstance(resp, _StubResponse)
     assert resp.headers.get("Content-Type") == "text/event-stream; charset=utf-8"
     chunks = _run(_collect_stream(resp.response))
     assert any('"answer": "stream-ok"' in chunk for chunk in chunks)
-    assert updates and updates[0][0] == "ag-2"
 
     class _CanvasSSEError:
         last_instance = None
@@ -670,7 +694,7 @@ def test_run_dataflow_and_canvas_sse_matrix_unit(monkeypatch):
 
     _set_request_json(monkeypatch, module, {"id": "ag-3", "query": "q", "files": [], "inputs": {}, "user_id": "exp-3"})
     monkeypatch.setattr(module, "Canvas", _CanvasSSEError)
-    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (True, _CanvasRecord(canvas_id="ag-3", dsl="{}", canvas_category=module.CanvasCategory.Agent)))
+    monkeypatch.setattr(module.CanvasReplicaService, "load_for_run", lambda *_args, **_kwargs: {"dsl": {}, "title": "ag3", "canvas_category": module.CanvasCategory.Agent})
     resp = _run(inspect.unwrap(module.run)())
     chunks = _run(_collect_stream(resp.response))
     assert any('"code": 500' in chunk and "stream boom" in chunk for chunk in chunks)

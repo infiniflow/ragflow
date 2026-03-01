@@ -14,6 +14,7 @@ interface IProps {
   moreDropdown: React.ReactNode;
   sharedBadge?: ReactNode;
   icon?: React.ReactNode;
+  testId?: string;
 }
 export function HomeCard({
   data,
@@ -21,9 +22,12 @@ export function HomeCard({
   moreDropdown,
   sharedBadge,
   icon,
+  testId,
 }: IProps) {
   return (
     <Card
+      data-testid={testId}
+      data-agent-name={data.name}
       onClick={() => {
         // navigateToSearch(data?.id);
         onClick?.();
@@ -40,7 +44,7 @@ export function HomeCard({
         <div className="flex flex-col justify-between gap-1 flex-1 h-full w-[calc(100%-50px)]">
           <section className="flex justify-between">
             <section className="flex flex-1 min-w-0 gap-1 items-center">
-              <div className="text-base font-bold leading-snug truncate">
+              <div className="text-base font-bold leading-snug truncate" data-testid="agent-name">
                 {data.name}
               </div>
               {icon}

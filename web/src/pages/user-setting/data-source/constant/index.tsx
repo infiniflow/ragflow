@@ -12,6 +12,7 @@ import { IDataSourceInfoMap } from '../interface';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
 import { S3Constant } from './s3-constant';
+import { seafileConstant } from './seafile-constant'; 
 
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
@@ -834,39 +835,7 @@ export const DataSourceFormFields = {
       ],
     },
   ],
-  [DataSourceKey.SEAFILE]: [
-    {
-      label: 'SeaFile Server URL',
-      name: 'config.seafile_url',
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: 'https://seafile.example.com',
-      tooltip: t('setting.seafileUrlTip'),
-    },
-    {
-      label: 'API Token',
-      name: 'config.credentials.seafile_token',
-      type: FormFieldType.Password,
-      required: true,
-      tooltip: t('setting.seafileTokenTip'),
-    },
-    {
-      label: 'Include Shared Libraries',
-      name: 'config.include_shared',
-      type: FormFieldType.Checkbox,
-      required: false,
-      defaultValue: true,
-      tooltip: t('setting.seafileIncludeSharedTip'),
-    },
-    {
-      label: 'Batch Size',
-      name: 'config.batch_size',
-      type: FormFieldType.Number,
-      required: false,
-      placeholder: '100',
-      tooltip: t('setting.seafileBatchSizeTip'),
-    },
-  ],
+  [DataSourceKey.SEAFILE]: seafileConstant(t),
   [DataSourceKey.MYSQL]: [
     {
       label: 'Host',
@@ -1253,10 +1222,14 @@ export const DataSourceFormDefaultValues = {
     source: DataSourceKey.SEAFILE,
     config: {
       seafile_url: '',
-      include_shared: true,
+      sync_scope: 'account', 
+      repo_id: '',             
+      sync_path: '',            
+      include_shared: true,     
       batch_size: 100,
       credentials: {
-        seafile_token: '',
+        seafile_token: '',   
+        repo_token: '',          
       },
     },
   },

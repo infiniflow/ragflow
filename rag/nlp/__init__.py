@@ -1212,6 +1212,10 @@ def docx_question_level(p, bull=-1):
 
 
 def concat_img(img1, img2):
+    from rag.utils.lazy_image import ensure_pil_image
+
+    img1 = ensure_pil_image(img1) or img1
+    img2 = ensure_pil_image(img2) or img2
     if img1 and not img2:
         return img1
     if not img1 and img2:

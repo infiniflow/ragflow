@@ -218,6 +218,8 @@ async def completion():
             dia.llm_setting = chat_model_config
 
         is_embedded = bool(chat_model_id)
+        # Remove stream from req to avoid duplicate argument error
+        stream_mode = req.pop("stream", True)
         async def stream():
             nonlocal dia, msg, req, conv
             try:
@@ -231,7 +233,7 @@ async def completion():
                 yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
-        if req.get("stream", True):
+        if stream_mode:
             resp = Response(stream(), mimetype="text/event-stream")
             resp.headers.add_header("Cache-control", "no-cache")
             resp.headers.add_header("Connection", "keep-alive")

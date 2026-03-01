@@ -73,6 +73,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
         value: formData.llm_id,
         options: modelOptions as SelectWithSearchFlagOptionType[],
         tooltip: t('chatModelTip'),
+        testId: 'default-llm-combobox',
       },
       {
         id: 'embd_id',
@@ -82,6 +83,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
           LlmModelType.Embedding
         ] as SelectWithSearchFlagOptionType[],
         tooltip: t('embeddingModelTip'),
+        testId: 'default-embedding-combobox',
       },
       {
         id: 'img2txt_id',
@@ -129,6 +131,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
     tooltip,
     id,
     isRequired,
+    testId,
   }: {
     id: string;
     label: string;
@@ -136,6 +139,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
     options: SelectWithSearchFlagOptionType[];
     tooltip?: string;
     isRequired?: boolean;
+    testId?: string;
   }) => {
     return (
       <div className="flex gap-3">
@@ -162,6 +166,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
           onChange={(value) => handleFieldChange(id, value)}
           placeholder={t('selectModelPlaceholder')}
           emptyData={t('modelEmptyTip')}
+          testId={testId}
         />
       </div>
     );

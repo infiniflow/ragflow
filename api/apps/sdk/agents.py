@@ -27,9 +27,11 @@ from typing import Any, cast
 import jwt
 
 from agent.canvas import Canvas
+from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db import CanvasCategory
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.file_service import FileService
+from api.db.services.user_service import UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.constants import RetCode
 from common.misc_utils import get_uuid
@@ -37,6 +39,13 @@ from api.utils.api_utils import get_data_error_result, get_error_data_result, ge
 from api.utils.api_utils import get_result
 from quart import request, Response
 from rag.utils.redis_conn import REDIS_CONN
+
+
+def _get_user_nickname(user_id: str) -> str:
+    exists, user = UserService.get_by_id(user_id)
+    if not exists:
+        return user_id
+    return str(getattr(user, "nickname", "") or user_id)
 
 
 @manager.route('/agents', methods=['GET'])  # noqa: F821
@@ -66,10 +75,10 @@ async def create_agent(tenant_id: str):
     req["user_id"] = tenant_id
 
     if req.get("dsl") is not None:
-        if not isinstance(req["dsl"], str):
-            req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
-
-        req["dsl"] = json.loads(req["dsl"])
+        try:
+            req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
+        except ValueError as e:
+            return get_json_result(data=False, message=str(e), code=RetCode.ARGUMENT_ERROR)
     else:
         return get_json_result(data=False, message="No DSL data in request.", code=RetCode.ARGUMENT_ERROR)
 
@@ -87,9 +96,10 @@ async def create_agent(tenant_id: str):
     if not UserCanvasService.save(**req):
         return get_data_error_result(message="Fail to create agent.")
 
-    UserCanvasVersionService.insert(
+    owner_nickname = _get_user_nickname(tenant_id)
+    UserCanvasVersionService.save_or_replace_latest(
         user_canvas_id=agent_id,
-        title="{0}_{1}".format(req["title"], time.strftime("%Y_%m_%d_%H_%M_%S")),
+        title=UserCanvasVersionService.build_version_title(owner_nickname, req.get("title")),
         dsl=req["dsl"]
     )
 
@@ -103,10 +113,10 @@ async def update_agent(tenant_id: str, agent_id: str):
     req["user_id"] = tenant_id
 
     if req.get("dsl") is not None:
-        if not isinstance(req["dsl"], str):
-            req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
-
-        req["dsl"] = json.loads(req["dsl"])
+        try:
+            req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
+        except ValueError as e:
+            return get_json_result(data=False, message=str(e), code=RetCode.ARGUMENT_ERROR)
 
     if req.get("title") is not None:
         req["title"] = req["title"].strip()
@@ -116,16 +126,18 @@ async def update_agent(tenant_id: str, agent_id: str):
             data=False, message="Only owner of canvas authorized for this operation.",
             code=RetCode.OPERATING_ERROR)
 
+    _, current_agent = UserCanvasService.get_by_id(agent_id)
+    agent_title_for_version = req.get("title") or (current_agent.title if current_agent else "")
+    owner_nickname = _get_user_nickname(tenant_id)
+
     UserCanvasService.update_by_id(agent_id, req)
 
     if req.get("dsl") is not None:
-        UserCanvasVersionService.insert(
+        UserCanvasVersionService.save_or_replace_latest(
             user_canvas_id=agent_id,
-            title="{0}_{1}".format(req["title"], time.strftime("%Y_%m_%d_%H_%M_%S")),
+            title=UserCanvasVersionService.build_version_title(owner_nickname, agent_title_for_version),
             dsl=req["dsl"]
         )
-
-        UserCanvasVersionService.delete_all_versions(agent_id)
 
     return get_json_result(data=True)
 
