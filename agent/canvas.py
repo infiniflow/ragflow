@@ -137,6 +137,20 @@ class Graph:
         except Exception as e:
             logging.exception(e)
 
+    def close(self):
+        from common.mcp_tool_call_conn import MCPToolCallSession
+        seen = set()
+        for cpn in self.components.values():
+            obj = cpn.get("obj")
+            if obj and hasattr(obj, "tools"):
+                for tool in obj.tools.values():
+                    if isinstance(tool, MCPToolCallSession) and id(tool) not in seen:
+                        seen.add(id(tool))
+                        try:
+                            tool.close_sync(timeout=3)
+                        except Exception:
+                            pass
+
     def get_component_name(self, cid):
         for n in self.dsl.get("graph", {}).get("nodes", []):
             if cid == n["id"]:
