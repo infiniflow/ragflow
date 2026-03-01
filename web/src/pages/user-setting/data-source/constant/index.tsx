@@ -39,6 +39,7 @@ export enum DataSourceKey {
   SEAFILE = 'seafile',
   MYSQL = 'mysql',
   POSTGRESQL = 'postgresql',
+  FIRECRAWL = 'firecrawl',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -173,6 +174,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'PostgreSQL',
       description: t(`setting.${DataSourceKey.POSTGRESQL}Description`),
       icon: <SvgIcon name={'data-source/postgresql'} width={38} />,
+    },
+    [DataSourceKey.FIRECRAWL]: {
+      name: 'Firecrawl',
+      description: t(`setting.${DataSourceKey.FIRECRAWL}Description`),
+      icon: <SvgIcon name={'data-source/firecrawl'} width={38} />,
     },
   };
 };
@@ -886,6 +892,57 @@ export const DataSourceFormFields = {
       tooltip: t('setting.mysqlContentColumnsTip'),
     },
   ],
+  [DataSourceKey.FIRECRAWL]: [
+    {
+      label: 'Firecrawl API Key',
+      name: 'config.credentials.firecrawl_api_key',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.firecrawlApiKeyTip'),
+    },
+    {
+      label: 'URLs (comma-separated)',
+      name: 'config.urls',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: 'https://example.com, https://example.com/about',
+      tooltip: t('setting.firecrawlUrlsTip'),
+    },
+    {
+      label: 'Mode',
+      name: 'config.crawl_mode',
+      type: FormFieldType.Segmented,
+      required: true,
+      options: [
+        { label: 'Scrape URLs', value: 'scrape' },
+        { label: 'Crawl Site', value: 'crawl' },
+      ],
+    },
+    {
+      label: 'Crawl Start URL',
+      name: 'config.crawl_url',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'https://docs.example.com',
+      tooltip: t('setting.firecrawlCrawlUrlTip'),
+    },
+    {
+      label: 'Crawl Page Limit',
+      name: 'config.crawl_limit',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '100',
+      tooltip: t('setting.firecrawlCrawlLimitTip'),
+    },
+    {
+      label: 'API URL',
+      name: 'config.api_url',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'https://api.firecrawl.dev',
+      tooltip: t('setting.firecrawlApiUrlTip'),
+    },
+  ],
   [DataSourceKey.POSTGRESQL]: [
     {
       label: 'Host',
@@ -1248,6 +1305,20 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         username: '',
         password: '',
+      },
+    },
+  },
+  [DataSourceKey.FIRECRAWL]: {
+    name: '',
+    source: DataSourceKey.FIRECRAWL,
+    config: {
+      urls: '',
+      crawl_url: '',
+      crawl_mode: 'scrape',
+      crawl_limit: 100,
+      api_url: 'https://api.firecrawl.dev',
+      credentials: {
+        firecrawl_api_key: '',
       },
     },
   },

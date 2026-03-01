@@ -55,6 +55,7 @@ from common.data_source import (
     ZendeskConnector,
     SeaFileConnector,
     RDBMSConnector,
+    FirecrawlConnector,
 )
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
@@ -1293,6 +1294,47 @@ class PostgreSQL(SyncBase):
         return document_generator
 
 
+class Firecrawl(SyncBase):
+    SOURCE_NAME: str = FileSource.FIRECRAWL
+
+    async def _generate(self, task: dict):
+        urls = self.conf.get("urls", "")
+        if isinstance(urls, list):
+            urls = ",".join(urls)
+        crawl_url = self.conf.get("crawl_url", "")
+        crawl_mode = self.conf.get("crawl_mode", "scrape")
+        crawl_limit = int(self.conf.get("crawl_limit", 100))
+        api_url = self.conf.get("api_url", "https://api.firecrawl.dev")
+
+        self.connector = FirecrawlConnector(
+            urls=urls,
+            crawl_url=crawl_url,
+            crawl_mode=crawl_mode,
+            crawl_limit=crawl_limit,
+            api_url=api_url,
+        )
+
+        credentials = self.conf.get("credentials", {})
+        if not credentials:
+            raise ValueError("Firecrawl connector is missing credentials.")
+        self.connector.load_credentials(credentials)
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task["poll_range_start"]
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+            begin_info = f"from {poll_start}"
+
+        logging.info("[Firecrawl] Connect mode=%s urls=%s crawl_url=%s %s",
+                     crawl_mode, urls, crawl_url, begin_info)
+        return document_generator
+
+
 func_factory = {
     FileSource.S3: S3,
     FileSource.R2: R2,
@@ -1321,6 +1363,7 @@ func_factory = {
     FileSource.SEAFILE: SeaFile,
     FileSource.MYSQL: MySQL,
     FileSource.POSTGRESQL: PostgreSQL,
+    FileSource.FIRECRAWL: Firecrawl,
 }
 
 

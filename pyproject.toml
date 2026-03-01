@@ -175,6 +175,7 @@ test = [
     "requests-toolbelt>=1.0.0",
     "pycryptodomex==3.20.0",
     "codecov>=2.1.13",
+    "firecrawl-py>=1.0.0",
 ]
 
 [[tool.uv.index]]

@@ -1107,6 +1107,18 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       postgresqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      firecrawlDescription:
+        'Scrape and crawl web pages using the Firecrawl API to import content into your knowledge base.',
+      firecrawlApiKeyTip:
+        'Your Firecrawl API key (starts with fc-). Get one at https://firecrawl.dev',
+      firecrawlUrlsTip:
+        'Comma-separated list of URLs to scrape individually.',
+      firecrawlCrawlUrlTip:
+        'A single start URL. Firecrawl will follow links and crawl the site up to the page limit.',
+      firecrawlCrawlLimitTip:
+        'Maximum number of pages to crawl (default: 100).',
+      firecrawlApiUrlTip:
+        'Firecrawl API base URL. Change only if you are self-hosting Firecrawl.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',
