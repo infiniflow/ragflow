@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideGroup
 }
 ---
-
 # Configure child chunking strategy
 
 Set parent-child chunking strategy to improve retrieval.

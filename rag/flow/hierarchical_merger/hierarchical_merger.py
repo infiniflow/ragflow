@@ -69,11 +69,23 @@ class HierarchicalMerger(ProcessBase):
             lines = [ln for ln in payload.split("\n") if ln]
         else:
             arr = from_upstream.chunks if from_upstream.output_format == "chunks" else from_upstream.json_result
-            lines = [o.get("text", "") for o in arr]
+            arr = arr or []
             sections, section_images = [], []
-            for o in arr or []:
-                sections.append((o.get("text", ""), o.get("position_tag", "")))
-                section_images.append(o.get("img_id"))
+            lines = []
+            for o in arr:
+                if isinstance(o, dict):
+                    raw_text = o.get("text")
+                    position_tag = o.get("position_tag", "")
+                    img_id = o.get("img_id")
+                else:
+                    raw_text = o
+                    position_tag = ""
+                    img_id = None
+
+                txt = raw_text if isinstance(raw_text, str) else ("" if raw_text is None else str(raw_text))
+                lines.append(txt)
+                sections.append((txt, position_tag))
+                section_images.append(img_id)
 
         matches = []
         for txt in lines:
@@ -143,8 +155,6 @@ class HierarchicalMerger(ProcessBase):
                 if depth == self._param.hierarchy:
                     all_pathes.append(_path)
 
-        for i in range(len(lines)):
-            print(i, lines[i])
         dfs(root, [], 0)
 
         if root["texts"]:

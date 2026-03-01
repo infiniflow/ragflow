@@ -33,7 +33,7 @@ from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTena
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from common.metadata_utils import dedupe_list
+from api.db.services.doc_metadata_service import DocMetadataService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
 from common.constants import LLMType, ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME
@@ -67,7 +67,6 @@ class DocumentService(CommonService):
             cls.model.progress_msg,
             cls.model.process_begin_at,
             cls.model.process_duration,
-            cls.model.meta_fields,
             cls.model.suffix,
             cls.model.run,
             cls.model.status,
@@ -110,7 +109,12 @@ class DocumentService(CommonService):
 
         count = docs.count()
         docs = docs.paginate(page_number, items_per_page)
-        return list(docs.dicts()), count
+
+        docs_list = list(docs.dicts())
+        metadata_map = DocMetadataService.get_metadata_for_documents(None, kb_id)
+        for doc in docs_list:
+            doc["meta_fields"] = metadata_map.get(doc["id"], {})
+        return docs_list, count
 
     @classmethod
     @DB.connection_context()
@@ -154,8 +158,11 @@ class DocumentService(CommonService):
             docs = docs.where(cls.model.type.in_(types))
         if suffix:
             docs = docs.where(cls.model.suffix.in_(suffix))
-        if return_empty_metadata:
-            docs = docs.where(fn.COALESCE(fn.JSON_LENGTH(cls.model.meta_fields), 0) == 0)
+
+        metadata_map = DocMetadataService.get_metadata_for_documents(None, kb_id)
+        doc_ids_with_metadata = set(metadata_map.keys())
+        if return_empty_metadata and doc_ids_with_metadata:
+            docs = docs.where(cls.model.id.not_in(doc_ids_with_metadata))
 
         count = docs.count()
         if desc:
@@ -166,7 +173,14 @@ class DocumentService(CommonService):
         if page_number and items_per_page:
             docs = docs.paginate(page_number, items_per_page)
 
-        return list(docs.dicts()), count
+        docs_list = list(docs.dicts())
+        if return_empty_metadata:
+            for doc in docs_list:
+                doc["meta_fields"] = {}
+        else:
+            for doc in docs_list:
+                doc["meta_fields"] = metadata_map.get(doc["id"], {})
+        return docs_list, count
 
     @classmethod
     @DB.connection_context()
@@ -212,7 +226,7 @@ class DocumentService(CommonService):
         if suffix:
             query = query.where(cls.model.suffix.in_(suffix))
 
-        rows = query.select(cls.model.run, cls.model.suffix, cls.model.meta_fields)
+        rows = query.select(cls.model.run, cls.model.suffix, cls.model.id)
         total = rows.count()
 
         suffix_counter = {}
@@ -220,10 +234,18 @@ class DocumentService(CommonService):
         metadata_counter = {}
         empty_metadata_count = 0
 
+        doc_ids = [row.id for row in rows]
+        metadata = {}
+        if doc_ids:
+            try:
+                metadata = DocMetadataService.get_metadata_for_documents(doc_ids, kb_id)
+            except Exception as e:
+                logging.warning(f"Failed to fetch metadata from ES/Infinity: {e}")
+
         for row in rows:
             suffix_counter[row.suffix] = suffix_counter.get(row.suffix, 0) + 1
             run_status_counter[str(row.run)] = run_status_counter.get(str(row.run), 0) + 1
-            meta_fields = row.meta_fields or {}
+            meta_fields = metadata.get(row.id, {})
             if not meta_fields:
                 empty_metadata_count += 1
                 continue
@@ -338,16 +360,51 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
-        from api.db.services.task_service import TaskService
-        cls.clear_chunk_num(doc.id)
+        from api.db.services.task_service import TaskService, cancel_all_task_of
+        if not cls.delete_document_and_update_kb_counts(doc.id):
+            return True
+
+        # Cancel all running tasks first Using preset function in task_service.py ---  set cancel flag in Redis
+        try:
+            cancel_all_task_of(doc.id)
+            logging.info(f"Cancelled all tasks for document {doc.id}")
+        except Exception as e:
+            logging.warning(f"Failed to cancel tasks for document {doc.id}: {e}")
+
+        # Delete tasks from database
         try:
             TaskService.filter_delete([Task.doc_id == doc.id])
+        except Exception as e:
+            logging.warning(f"Failed to delete tasks for document {doc.id}: {e}")
+
+        # Delete chunk images (non-critical, log and continue)
+        try:
             cls.delete_chunk_images(doc, tenant_id)
+        except Exception as e:
+            logging.warning(f"Failed to delete chunk images for document {doc.id}: {e}")
+
+        # Delete thumbnail (non-critical, log and continue)
+        try:
             if doc.thumbnail and not doc.thumbnail.startswith(IMG_BASE64_PREFIX):
                 if settings.STORAGE_IMPL.obj_exist(doc.kb_id, doc.thumbnail):
                     settings.STORAGE_IMPL.rm(doc.kb_id, doc.thumbnail)
-            settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+        except Exception as e:
+            logging.warning(f"Failed to delete thumbnail for document {doc.id}: {e}")
 
+        # Delete chunks from doc store - this is critical, log errors
+        try:
+            settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+        except Exception as e:
+            logging.error(f"Failed to delete chunks from doc store for document {doc.id}: {e}")
+
+        # Delete document metadata (non-critical, log and continue)
+        try:
+            DocMetadataService.delete_document_metadata(doc.id)
+        except Exception as e:
+            logging.warning(f"Failed to delete metadata for document {doc.id}: {e}")
+
+        # Cleanup knowledge graph references (non-critical, log and continue)
+        try:
             graph_source = settings.docStoreConn.get_fields(
                 settings.docStoreConn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [doc.kb_id]), ["source_id"]
             )
@@ -360,9 +417,10 @@ class DocumentService(CommonService):
                                              search.index_name(tenant_id), doc.kb_id)
                 settings.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
                                              search.index_name(tenant_id), doc.kb_id)
-        except Exception:
-            pass
-        return cls.delete_by_id(doc.id)
+        except Exception as e:
+            logging.warning(f"Failed to cleanup knowledge graph for document {doc.id}: {e}")
+
+        return True
 
     @classmethod
     @DB.connection_context()
@@ -423,6 +481,7 @@ class DocumentService(CommonService):
             .where(
             cls.model.status == StatusEnum.VALID.value,
             ~(cls.model.type == FileType.VIRTUAL.value),
+            ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value)),
             (((cls.model.progress < 1) & (cls.model.progress > 0)) |
              (cls.model.id.in_(unfinished_task_query)))) # including unfinished tasks like GraphRAG, RAPTOR and Mindmap
         return list(docs.dicts())
@@ -465,7 +524,30 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def delete_document_and_update_kb_counts(cls, doc_id) -> bool:
+        """Atomically delete the document row and update KB counters.
+
+        Returns True if the document was deleted by this call, False if it was
+        already deleted by a concurrent request (idempotent).
+        """
+        with DB.atomic():
+            doc = cls.model.get_or_none(cls.model.id == doc_id)
+            if doc is None:
+                return False
+            deleted = cls.model.delete().where(cls.model.id == doc_id).execute()
+            if not deleted:
+                return False
+            Knowledgebase.update(
+                token_num=Knowledgebase.token_num - doc.token_num,
+                chunk_num=Knowledgebase.chunk_num - doc.chunk_num,
+                doc_num=Knowledgebase.doc_num - 1,
+            ).where(Knowledgebase.id == doc.kb_id).execute()
+        return True
+
+    @classmethod
+    @DB.connection_context()
     def clear_chunk_num(cls, doc_id):
+        """Deprecated: use delete_document_and_update_kb_counts instead."""
         doc = cls.model.get_by_id(doc_id)
         assert doc, "Can't fine document in database."
 
@@ -645,8 +727,7 @@ class DocumentService(CommonService):
                 if k not in old:
                     old[k] = v
                     continue
-                if isinstance(v, dict):
-                    assert isinstance(old[k], dict)
+                if isinstance(v, dict) and isinstance(old[k], dict):
                     dfs_update(old[k], v)
                 else:
                     old[k] = v
@@ -677,209 +758,6 @@ class DocumentService(CommonService):
             # keep the doc in DONE state when keep_progress=True for GraphRAG, RAPTOR and Mindmap tasks
 
         cls.update_by_id(doc_id, info)
-
-    @classmethod
-    @DB.connection_context()
-    def update_meta_fields(cls, doc_id, meta_fields):
-        return cls.update_by_id(doc_id, {"meta_fields": meta_fields})
-
-    @classmethod
-    @DB.connection_context()
-    def get_meta_by_kbs(cls, kb_ids):
-        """
-        Legacy metadata aggregator (backward-compatible).
-        - Does NOT expand list values and a list is kept as one string key.
-          Example: {"tags": ["foo","bar"]} -> meta["tags"]["['foo', 'bar']"] = [doc_id]
-        - Expects meta_fields is a dict.
-        Use when existing callers rely on the old list-as-string semantics.
-        """
-        fields = [
-            cls.model.id,
-            cls.model.meta_fields,
-        ]
-        meta = {}
-        for r in cls.model.select(*fields).where(cls.model.kb_id.in_(kb_ids)):
-            doc_id = r.id
-            for k,v in r.meta_fields.items():
-                if k not in meta:
-                    meta[k] = {}
-                if not isinstance(v, list):
-                    v = [v]
-                for vv in v:
-                    if vv not in meta[k]:
-                        if isinstance(vv, list) or isinstance(vv, dict):
-                            continue
-                        meta[k][vv] = []
-                    meta[k][vv].append(doc_id)
-        return meta
-
-    @classmethod
-    @DB.connection_context()
-    def get_flatted_meta_by_kbs(cls, kb_ids):
-        """
-        - Parses stringified JSON meta_fields when possible and skips non-dict or unparsable values.
-        - Expands list values into individual entries.
-          Example: {"tags": ["foo","bar"], "author": "alice"} ->
-            meta["tags"]["foo"] = [doc_id], meta["tags"]["bar"] = [doc_id], meta["author"]["alice"] = [doc_id]
-        Prefer for metadata_condition filtering and scenarios that must respect list semantics.
-        """
-        fields = [
-            cls.model.id,
-            cls.model.meta_fields,
-        ]
-        meta = {}
-        for r in cls.model.select(*fields).where(cls.model.kb_id.in_(kb_ids)):
-            doc_id = r.id
-            meta_fields = r.meta_fields or {}
-            if isinstance(meta_fields, str):
-                try:
-                    meta_fields = json.loads(meta_fields)
-                except Exception:
-                    continue
-            if not isinstance(meta_fields, dict):
-                continue
-            for k, v in meta_fields.items():
-                if k not in meta:
-                    meta[k] = {}
-                values = v if isinstance(v, list) else [v]
-                for vv in values:
-                    if vv is None:
-                        continue
-                    sv = str(vv)
-                    if sv not in meta[k]:
-                        meta[k][sv] = []
-                    meta[k][sv].append(doc_id)
-        return meta
-
-    @classmethod
-    @DB.connection_context()
-    def get_metadata_summary(cls, kb_id):
-        fields = [cls.model.id, cls.model.meta_fields]
-        summary = {}
-        for r in cls.model.select(*fields).where(cls.model.kb_id == kb_id):
-            meta_fields = r.meta_fields or {}
-            if isinstance(meta_fields, str):
-                try:
-                    meta_fields = json.loads(meta_fields)
-                except Exception:
-                    continue
-            if not isinstance(meta_fields, dict):
-                continue
-            for k, v in meta_fields.items():
-                values = v if isinstance(v, list) else [v]
-                for vv in values:
-                    if not vv:
-                        continue
-                    sv = str(vv)
-                    if k not in summary:
-                        summary[k] = {}
-                    summary[k][sv] = summary[k].get(sv, 0) + 1
-        return {k: sorted([(val, cnt) for val, cnt in v.items()], key=lambda x: x[1], reverse=True) for k, v in summary.items()}
-
-    @classmethod
-    @DB.connection_context()
-    def batch_update_metadata(cls, kb_id, doc_ids, updates=None, deletes=None):
-        updates = updates or []
-        deletes = deletes or []
-        if not doc_ids:
-            return 0
-
-        def _normalize_meta(meta):
-            if isinstance(meta, str):
-                try:
-                    meta = json.loads(meta)
-                except Exception:
-                    return {}
-            if not isinstance(meta, dict):
-                return {}
-            return deepcopy(meta)
-
-        def _str_equal(a, b):
-            return str(a) == str(b)
-
-        def _apply_updates(meta):
-            changed = False
-            for upd in updates:
-                key = upd.get("key")
-                if not key or key not in meta:
-                    continue
-
-                new_value = upd.get("value")
-                match_provided = "match" in upd
-                if isinstance(meta[key], list):
-                    if not match_provided:
-                        if isinstance(new_value, list):
-                            meta[key] = dedupe_list(new_value)
-                        else:
-                            meta[key] = new_value
-                        changed = True
-                    else:
-                        match_value = upd.get("match")
-                        replaced = False
-                        new_list = []
-                        for item in meta[key]:
-                            if _str_equal(item, match_value):
-                                new_list.append(new_value)
-                                replaced = True
-                            else:
-                                new_list.append(item)
-                        if replaced:
-                            meta[key] = dedupe_list(new_list)
-                            changed = True
-                else:
-                    if not match_provided:
-                        meta[key] = new_value
-                        changed = True
-                    else:
-                        match_value = upd.get("match")
-                        if _str_equal(meta[key], match_value):
-                            meta[key] = new_value
-                            changed = True
-            return changed
-
-        def _apply_deletes(meta):
-            changed = False
-            for d in deletes:
-                key = d.get("key")
-                if not key or key not in meta:
-                    continue
-                value = d.get("value", None)
-                if isinstance(meta[key], list):
-                    if value is None:
-                        del meta[key]
-                        changed = True
-                        continue
-                    new_list = [item for item in meta[key] if not _str_equal(item, value)]
-                    if len(new_list) != len(meta[key]):
-                        if new_list:
-                            meta[key] = new_list
-                        else:
-                            del meta[key]
-                        changed = True
-                else:
-                    if value is None or _str_equal(meta[key], value):
-                        del meta[key]
-                        changed = True
-            return changed
-
-        updated_docs = 0
-        with DB.atomic():
-            rows = cls.model.select(cls.model.id, cls.model.meta_fields).where(
-                (cls.model.id.in_(doc_ids)) & (cls.model.kb_id == kb_id)
-            )
-            for r in rows:
-                meta = _normalize_meta(r.meta_fields or {})
-                original_meta = deepcopy(meta)
-                changed = _apply_updates(meta)
-                changed = _apply_deletes(meta) or changed
-                if changed and meta != original_meta:
-                    cls.model.update(
-                        meta_fields=meta,
-                        update_time=current_timestamp(),
-                        update_date=get_format_time()
-                    ).where(cls.model.id == r.id).execute()
-                    updated_docs += 1
-        return updated_docs
 
     @classmethod
     @DB.connection_context()
@@ -914,6 +792,8 @@ class DocumentService(CommonService):
                 bad = 0
                 e, doc = DocumentService.get_by_id(d["id"])
                 status = doc.run  # TaskStatus.RUNNING.value
+                if status == TaskStatus.CANCEL.value:
+                    continue
                 doc_progress = doc.progress if doc and doc.progress else 0.0
                 special_task_running = False
                 priority = 0
@@ -957,7 +837,16 @@ class DocumentService(CommonService):
                         info["progress_msg"] += "\n%d tasks are ahead in the queue..."%get_queue_length(priority)
                 else:
                     info["progress_msg"] = "%d tasks are ahead in the queue..."%get_queue_length(priority)
-                cls.update_by_id(d["id"], info)
+                info["update_time"] = current_timestamp()
+                info["update_date"] = get_format_time()
+                (
+                    cls.model.update(info)
+                    .where(
+                        (cls.model.id == d["id"])
+                        & ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value))
+                    )
+                    .execute()
+                )
             except Exception as e:
                 if str(e).find("'0'") < 0:
                     logging.exception("fetch task exception")
@@ -990,7 +879,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def knowledgebase_basic_info(cls, kb_id: str) -> dict[str, int]:
-        # cancelled: run == "2" but progress can vary
+        # cancelled: run == "2"
         cancelled = (
             cls.model.select(fn.COUNT(1))
             .where((cls.model.kb_id == kb_id) & (cls.model.run == TaskStatus.CANCEL))
@@ -1217,7 +1106,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         cks = [c for c in docs if c["doc_id"] == doc_id]
 
         if parser_ids[doc_id] != ParserType.PICTURE.value:
-            from graphrag.general.mind_map_extractor import MindMapExtractor
+            from rag.graphrag.general.mind_map_extractor import MindMapExtractor
             mindmap = MindMapExtractor(llm_bdl)
             try:
                 mind_map = asyncio.run(mindmap([c["content_with_weight"] for c in docs if c["doc_id"] == doc_id]))
@@ -1245,7 +1134,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         for b in range(0, len(cks), es_bulk_size):
             if try_create_idx:
                 if not settings.docStoreConn.index_exist(idxnm, kb_id):
-                    settings.docStoreConn.create_idx(idxnm, kb_id, len(vectors[0]))
+                    settings.docStoreConn.create_idx(idxnm, kb_id, len(vectors[0]), kb.parser_id)
                 try_create_idx = False
             settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
 

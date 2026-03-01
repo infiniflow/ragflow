@@ -14,15 +14,27 @@ import {
 } from '@/components/file-upload';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
 import { t } from 'i18next';
-import { CircleStop, Paperclip, Send, Upload, X } from 'lucide-react';
+import {
+  Atom,
+  CircleStop,
+  Globe,
+  Paperclip,
+  Send,
+  Upload,
+  X,
+} from 'lucide-react';
 import * as React from 'react';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { AudioButton } from '../ui/audio-button';
 
-interface IProps {
+export type NextMessageInputOnPressEnterParameter = {
+  enableThinking: boolean;
+  enableInternet: boolean;
+};
+
+interface NextMessageInputProps {
   disabled: boolean;
   value: string;
   sendDisabled: boolean;
@@ -32,12 +44,18 @@ interface IProps {
   isShared?: boolean;
   showUploadIcon?: boolean;
   isUploading?: boolean;
-  onPressEnter(...prams: any[]): void;
+  onPressEnter({
+    enableThinking,
+    enableInternet,
+  }: NextMessageInputOnPressEnterParameter): void;
   onInputChange: React.ChangeEventHandler<HTMLTextAreaElement>;
   createConversationBeforeUploadDocument?(message: string): Promise<any>;
   stopOutputMessage?(): void;
   onUpload?: NonNullable<FileUploadProps['onUpload']>;
   removeFile?(file: File): void;
+  showReasoning?: boolean;
+  showInternet?: boolean;
+  resize?: 'none' | 'vertical' | 'horizontal' | 'both';
 }
 
 export function NextMessageInput({
@@ -47,16 +65,37 @@ export function NextMessageInput({
   sendLoading,
   disabled,
   showUploadIcon = true,
+  resize = 'none',
   onUpload,
   onInputChange,
   stopOutputMessage,
   onPressEnter,
   removeFile,
-}: IProps) {
+  showReasoning = false,
+  showInternet = false,
+}: NextMessageInputProps) {
   const [files, setFiles] = React.useState<File[]>([]);
   const [audioInputValue, setAudioInputValue] = React.useState<string | null>(
     null,
   );
+
+  const [enableThinking, setEnableThinking] = useState(false);
+  const [enableInternet, setEnableInternet] = useState(false);
+
+  const handleThinkingToggle = useCallback(() => {
+    setEnableThinking((prev) => !prev);
+  }, []);
+
+  const handleInternetToggle = useCallback(() => {
+    setEnableInternet((prev) => !prev);
+  }, []);
+
+  const pressEnter = useCallback(() => {
+    onPressEnter({
+      enableThinking,
+      enableInternet: showInternet ? enableInternet : false,
+    });
+  }, [onPressEnter, enableThinking, enableInternet, showInternet]);
 
   useEffect(() => {
     if (audioInputValue !== null) {
@@ -65,11 +104,19 @@ export function NextMessageInput({
       } as React.ChangeEvent<HTMLTextAreaElement>);
 
       setTimeout(() => {
-        onPressEnter();
+        pressEnter();
         setAudioInputValue(null);
       }, 0);
     }
-  }, [audioInputValue, onInputChange, onPressEnter]);
+  }, [
+    audioInputValue,
+    onInputChange,
+    onPressEnter,
+    enableThinking,
+    enableInternet,
+    showInternet,
+    pressEnter,
+  ]);
 
   const onFileReject = React.useCallback((file: File, message: string) => {
     toast(message, {
@@ -79,9 +126,9 @@ export function NextMessageInput({
 
   const submit = React.useCallback(() => {
     if (isUploading) return;
-    onPressEnter();
+    pressEnter();
     setFiles([]);
-  }, [isUploading, onPressEnter]);
+  }, [isUploading, pressEnter]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -111,7 +158,7 @@ export function NextMessageInput({
       onValueChange={setFiles}
       onUpload={onUpload}
       onFileReject={onFileReject}
-      className="relative w-full items-center "
+      className="relative w-full items-center"
       disabled={isUploading || disabled}
     >
       <FileUploadDropzone
@@ -130,9 +177,14 @@ export function NextMessageInput({
           </p>
         </div>
       </FileUploadDropzone>
+
       <form
         onSubmit={onSubmit}
-        className="relative flex w-full flex-col gap-2.5 rounded-md border border-input px-3 py-2 outline-none focus-within:ring-1 focus-within:ring-ring/50"
+        className="
+          relative flex w-full flex-col gap-2.5 rounded-md
+          border-0.5 border-border-default bg-bg-card p-2 outline-none
+          has-[textarea:focus]:outline-accent-primary has-[textarea:focus]:outline-1 has-[textarea:focus]:outline-offset-2
+        "
       >
         <FileUploadList
           orientation="horizontal"
@@ -157,48 +209,78 @@ export function NextMessageInput({
             </FileUploadItem>
           ))}
         </FileUploadList>
+
         <Textarea
+          data-testid="chat-textarea"
           value={value}
           onChange={onInputChange}
           placeholder={t('chat.messagePlaceholder')}
-          className="field-sizing-content min-h-10 w-full resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
+          className="
+            min-h-10 max-h-40 w-full p-0 overflow-auto
+            !outline-none !border-transparent !bg-transparent !shadow-none !ring-transparent !ring-offset-transparent
+          "
           disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}
+          autoSize={{ minRows: 2, maxRows: 8 }}
         />
-        <div
-          className={cn('flex items-center justify-between gap-1.5', {
-            'justify-end': !showUploadIcon,
-          })}
-        >
-          {showUploadIcon && (
-            <FileUploadTrigger asChild>
+
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {showUploadIcon && (
+              <FileUploadTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="transparent"
+                  className="rounded-sm border-0"
+                  disabled={isUploading || sendLoading}
+                >
+                  <Paperclip className="size-3.5" />
+                  <span className="sr-only">Attach file</span>
+                </Button>
+              </FileUploadTrigger>
+            )}
+
+            {showReasoning && (
               <Button
                 type="button"
-                size="icon"
-                variant="ghost"
-                className="size-7 rounded-sm"
-                disabled={isUploading || sendLoading}
+                size="sm"
+                variant={enableThinking ? 'accent' : 'transparent'}
+                className="border-0 h-7 text-sm"
+                onClick={handleThinkingToggle}
               >
-                <Paperclip className="size-3.5" />
-                <span className="sr-only">Attach file</span>
+                <Atom />
+                <span>Thinking</span>
               </Button>
-            </FileUploadTrigger>
-          )}
+            )}
+
+            {showInternet && (
+              <Button
+                type="button"
+                variant={enableInternet ? 'accent' : 'transparent'}
+                size="icon-xs"
+                className="border-0"
+                onClick={handleInternetToggle}
+              >
+                <Globe />
+              </Button>
+            )}
+          </div>
+
           {sendLoading ? (
-            <Button onClick={stopOutputMessage} className="size-5 rounded-sm">
+            <Button data-testid="chat-stream-status" onClick={stopOutputMessage} size="icon-xs">
               <CircleStop />
             </Button>
           ) : (
             <div className="flex items-center gap-3">
-              {/* <div className="bg-bg-input rounded-md hover:bg-bg-card p-1"> */}
               <AudioButton
                 onOk={(value) => {
                   setAudioInputValue(value);
                 }}
               />
-              {/* </div> */}
+
               <Button
-                className="size-5 rounded-sm"
+                size="icon-xs"
                 disabled={
                   sendDisabled || isUploading || sendLoading || !value.trim()
                 }

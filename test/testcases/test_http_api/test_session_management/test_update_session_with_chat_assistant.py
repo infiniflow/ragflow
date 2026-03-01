@@ -18,7 +18,7 @@ from random import randint
 
 import pytest
 from common import delete_chat_assistants, list_session_with_chat_assistants, update_session_with_chat_assistant
-from configs import INVALID_API_TOKEN, SESSION_WITH_CHAT_NAME_LIMIT
+from configs import INVALID_API_TOKEN, INVALID_ID_32, SESSION_WITH_CHAT_NAME_LIMIT
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -72,8 +72,7 @@ class TestSessionWithChatAssistantUpdate:
     @pytest.mark.parametrize(
         "chat_assistant_id, expected_code, expected_message",
         [
-            ("", 100, "<NotFound '404: Not Found'>"),
-            pytest.param("invalid_chat_assistant_id", 102, "Session does not exist", marks=pytest.mark.skip(reason="issues/")),
+            (INVALID_ID_32, 102, "Session does not exist"),
         ],
     )
     def test_invalid_chat_assistant_id(self, HttpApiAuth, add_sessions_with_chat_assistant_func, chat_assistant_id, expected_code, expected_message):

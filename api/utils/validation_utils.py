@@ -82,6 +82,8 @@ async def validate_and_parse_json_request(request: Request, validator: type[Base
         2. Extra fields added via `extras` parameter are automatically removed
            from the final output after validation
     """
+    if request.mimetype != "application/json":
+        return None, f"Unsupported content type: Expected application/json, got {request.content_type}"
     try:
         payload = await request.get_json() or {}
     except UnsupportedMediaType:
@@ -342,6 +344,23 @@ class GraphragConfig(Base):
     resolution: Annotated[bool, Field(default=False)]
 
 
+class AutoMetadataField(Base):
+    """Schema for a single auto-metadata field configuration."""
+
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(...)]
+    type: Annotated[Literal["string", "list", "time"], Field(...)]
+    description: Annotated[str | None, Field(default=None, max_length=65535)]
+    examples: Annotated[list[str] | None, Field(default=None)]
+    restrict_values: Annotated[bool, Field(default=False)]
+
+
+class AutoMetadataConfig(Base):
+    """Top-level auto-metadata configuration attached to a dataset."""
+
+    enabled: Annotated[bool, Field(default=True)]
+    fields: Annotated[list[AutoMetadataField], Field(default_factory=list)]
+
+
 class ParserConfig(Base):
     auto_keywords: Annotated[int, Field(default=0, ge=0, le=32)]
     auto_questions: Annotated[int, Field(default=0, ge=0, le=10)]
@@ -368,6 +387,7 @@ class CreateDatasetReq(Base):
     parse_type: Annotated[int | None, Field(default=None, ge=0, le=64)]
     pipeline_id: Annotated[str | None, Field(default=None, min_length=32, max_length=32, serialization_alias="pipeline_id")]
     parser_config: Annotated[ParserConfig | None, Field(default=None)]
+    auto_metadata_config: Annotated[AutoMetadataConfig | None, Field(default=None)]
 
     @field_validator("avatar", mode="after")
     @classmethod

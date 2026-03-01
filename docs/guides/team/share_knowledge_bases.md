@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideShare2
 }
 ---
-
 # Share dataset
 
 Share a dataset with team members.

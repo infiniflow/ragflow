@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideMonitorPlay
 }
 ---
-
 # Launch service from source
 
 A guide explaining how to set up a RAGFlow service from its source code. By following this guide, you'll be able to debug using the source code.
@@ -39,7 +38,7 @@ cd ragflow/
 ### Install Python dependencies
 
 1. Install uv:
-
+   
    ```bash
    pipx install uv
    ```
@@ -91,13 +90,13 @@ docker compose -f docker/docker-compose-base.yml up -d
    ```
 
 3. **Optional:** If you cannot access HuggingFace, set the HF_ENDPOINT environment variable to use a mirror site:
-
+ 
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
 4. Check the configuration in **conf/service_conf.yaml**, ensuring all hosts and ports are correctly set.
-
+   
 5. Run the **entrypoint.sh** script to launch the backend service:
 
    ```shell
@@ -117,19 +116,19 @@ docker compose -f docker/docker-compose-base.yml up -d
    npm install
    ```
 
-2. Update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:
+2. Update `server.proxy.target` in **vite.config.ts** to `http://127.0.0.1:9380`:
 
    ```bash
-   vim .umirc.ts
+   vim vite.config.ts
    ```
 
 3. Start up the RAGFlow frontend service:
 
    ```bash
-   npm run dev
+   npm run dev 
    ```
 
-   *The following message appears, showing the IP address and port number of your frontend service:*
+   *The following message appears, showing the IP address and port number of your frontend service:*  
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 

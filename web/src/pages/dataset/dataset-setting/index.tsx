@@ -95,7 +95,12 @@ export default function DatasetSettings() {
           entity_types: initialEntityTypes,
           method: MethodValue.Light,
         },
-        metadata: [],
+        metadata: {
+          type: 'object',
+          properties: {},
+          additionalProperties: false,
+        },
+        built_in_metadata: [],
         enable_metadata: false,
         llm_id: '',
       },

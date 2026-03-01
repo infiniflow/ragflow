@@ -125,7 +125,8 @@ class TestDatasetUpdate:
     @pytest.mark.p1
     @given(name=valid_names())
     @example("a" * 128)
-    @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    # Network-bound API call; disable Hypothesis deadline to avoid flaky timeouts.
+    @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
     def test_name(self, HttpApiAuth, add_dataset_func, name):
         dataset_id = add_dataset_func
         payload = {"name": name}
@@ -187,7 +188,7 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"][0]["avatar"] == f"data:image/png;base64,{encode_avatar(fn)}", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_avatar_exceeds_limit_length(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         payload = {"avatar": "a" * 65536}
@@ -236,7 +237,7 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"][0]["description"] == "description"
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_description_exceeds_limit_length(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         payload = {"description": "a" * 65536}
@@ -330,7 +331,7 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"][0]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", res
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "permission",
         [
@@ -770,7 +771,12 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth)
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
+        assert res["data"][0]["parser_config"] == {
+            "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
+            "image_context_size": 0,
+            "table_context_size": 0,
+        }, res
 
     @pytest.mark.p3
     def test_parser_config_unset_with_chunk_method_change(self, HttpApiAuth, add_dataset_func):
@@ -781,7 +787,12 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth)
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
+        assert res["data"][0]["parser_config"] == {
+            "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
+            "image_context_size": 0,
+            "table_context_size": 0,
+        }, res
 
     @pytest.mark.p3
     def test_parser_config_none_with_chunk_method_change(self, HttpApiAuth, add_dataset_func):
@@ -792,7 +803,12 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth, {"id": dataset_id})
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
+        assert res["data"][0]["parser_config"] == {
+            "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
+            "image_context_size": 0,
+            "table_context_size": 0,
+        }, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

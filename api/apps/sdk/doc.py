@@ -27,8 +27,9 @@ from pydantic import BaseModel, Field, validator
 
 from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileType
-from api.db.db_models import File, Task
+from api.db.db_models import APIToken, File, Task
 from api.db.services.document_service import DocumentService
+from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -255,7 +256,8 @@ async def update_doc(tenant_id, dataset_id, document_id):
     if "meta_fields" in req:
         if not isinstance(req["meta_fields"], dict):
             return get_error_data_result(message="meta_fields must be a dictionary")
-        DocumentService.update_meta_fields(document_id, req["meta_fields"])
+        if not DocMetadataService.update_document_metadata(document_id, req["meta_fields"]):
+            return get_error_data_result(message="Failed to update metadata")
 
     if "name" in req and req["name"] != doc.name:
         if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
@@ -400,6 +402,36 @@ async def download(tenant_id, dataset_id, document_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(message=f"You do not own the dataset {dataset_id}.")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
+    if not doc:
+        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+    # The process of downloading
+    doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
+    file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
+    if not file_stream:
+        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
+    file = BytesIO(file_stream)
+    # Use send_file with a proper filename and MIME type
+    return await send_file(
+        file,
+        as_attachment=True,
+        attachment_filename=doc[0].name,
+        mimetype="application/octet-stream",  # Set a default MIME type
+    )
+
+
+@manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
+async def download_doc(document_id):
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+    
+    if not document_id:
+        return get_error_data_result(message="Specify document_id please.")
+    doc = DocumentService.query(id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
     # The process of downloading
@@ -568,7 +600,7 @@ def list_docs(dataset_id, tenant_id):
 
     doc_ids_filter = None
     if metadata_condition:
-        metas = DocumentService.get_flatted_meta_by_kbs([dataset_id])
+        metas = DocMetadataService.get_flatted_meta_by_kbs([dataset_id])
         doc_ids_filter = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
         if metadata_condition.get("conditions") and not doc_ids_filter:
             return get_result(data={"total": 0, "docs": []})
@@ -606,12 +638,12 @@ def list_docs(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/metadata/summary", methods=["GET"])  # noqa: F821
 @token_required
-def metadata_summary(dataset_id, tenant_id):
+async def metadata_summary(dataset_id, tenant_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
-
+    req = await get_request_json()
     try:
-        summary = DocumentService.get_metadata_summary(dataset_id)
+        summary = DocMetadataService.get_metadata_summary(dataset_id, req.get("doc_ids"))
         return get_result(data={"summary": summary})
     except Exception as e:
         return server_error_response(e)
@@ -657,14 +689,14 @@ async def metadata_batch_update(dataset_id, tenant_id):
         target_doc_ids = set(document_ids)
 
     if metadata_condition:
-        metas = DocumentService.get_flatted_meta_by_kbs([dataset_id])
+        metas = DocMetadataService.get_flatted_meta_by_kbs([dataset_id])
         filtered_ids = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         target_doc_ids = target_doc_ids & filtered_ids
         if metadata_condition.get("conditions") and not target_doc_ids:
             return get_result(data={"updated": 0, "matched_docs": 0})
 
     target_doc_ids = list(target_doc_ids)
-    updated = DocumentService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
+    updated = DocMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
     return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
@@ -834,7 +866,7 @@ async def parse(tenant_id, dataset_id):
             continue
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if 0.0 < doc[0].progress < 1.0:
+        if doc[0].run == TaskStatus.RUNNING.value:
             return get_error_data_result("Can't parse document that is currently being processed")
         info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
         DocumentService.update_by_id(id, info)
@@ -914,8 +946,8 @@ async def stop_parsing(tenant_id, dataset_id):
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if int(doc[0].progress) == 1 or doc[0].progress == 0:
-            return get_error_data_result("Can't stop parsing document with progress at 0 or 1")
+        if doc[0].run != TaskStatus.RUNNING.value :
+            return get_error_data_result("Can't stop parsing document that has not started or already completed")
         # Send cancellation signal via Redis to stop background task
         cancel_all_task_of(id)
         info = {"run": "2", "progress": 0, "chunk_num": 0}
@@ -935,7 +967,7 @@ async def stop_parsing(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["GET"])  # noqa: F821
 @token_required
-def list_chunks(tenant_id, dataset_id, document_id):
+async def list_chunks(tenant_id, dataset_id, document_id):
     """
     List chunks of a document.
     ---
@@ -1081,7 +1113,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
         _ = Chunk(**final_chunk)
 
     elif settings.docStoreConn.index_exist(search.index_name(tenant_id), dataset_id):
-        sres = settings.retriever.search(query, search.index_name(tenant_id), [dataset_id], emb_mdl=None, highlight=True)
+        sres = await settings.retriever.search(query, search.index_name(tenant_id), [dataset_id], emb_mdl=None, highlight=True)
         res["total"] = sres.total
         for id in sres.ids:
             d = {
@@ -1514,6 +1546,12 @@ async def retrieval_test(tenant_id):
     page = int(req.get("page", 1))
     size = int(req.get("page_size", 30))
     question = req["question"]
+    # Trim whitespace and validate question
+    if isinstance(question, str):
+        question = question.strip()
+    # Return empty result if question is empty or whitespace-only
+    if not question:
+        return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
     doc_ids = req.get("document_ids", [])
     use_kg = req.get("use_kg", False)
     toc_enhance = req.get("toc_enhance", False)
@@ -1526,21 +1564,33 @@ async def retrieval_test(tenant_id):
             if doc_id not in doc_ids_list:
                 return get_error_data_result(f"The datasets don't own the document {doc_id}")
     if not doc_ids:
-        metadata_condition = req.get("metadata_condition", {}) or {}
-        metas = DocumentService.get_meta_by_kbs(kb_ids)
-        doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
-        # If metadata_condition has conditions but no docs match, return empty result
-        if not doc_ids and metadata_condition.get("conditions"):
-            return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
-        if metadata_condition and not doc_ids:
-            doc_ids = ["-999"]
+        metadata_condition = req.get("metadata_condition")
+        if metadata_condition:
+            metas = DocMetadataService.get_meta_by_kbs(kb_ids)
+            doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+            # If metadata_condition has conditions but no docs match, return empty result
+            if not doc_ids and metadata_condition.get("conditions"):
+                return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
+            if metadata_condition and not doc_ids:
+                doc_ids = ["-999"]
+        else:
+            # If doc_ids is None all documents of the datasets are used
+            doc_ids = None
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
-    if req.get("highlight") == "False" or req.get("highlight") == "false":
+    highlight_val = req.get("highlight", None)
+    if highlight_val is None:
         highlight = False
+    elif isinstance(highlight_val, bool):
+        highlight = highlight_val
+    elif isinstance(highlight_val, str):
+        if highlight_val.lower() in ["true", "false"]:
+            highlight = highlight_val.lower() == "true"
+        else:
+            return get_error_data_result("`highlight` should be a boolean")
     else:
-        highlight = True
+        return get_error_data_result("`highlight` should be a boolean")
     try:
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
@@ -1559,7 +1609,7 @@ async def retrieval_test(tenant_id):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             question += await keyword_extraction(chat_mdl, question)
 
-        ranks = settings.retriever.retrieval(
+        ranks = await settings.retriever.retrieval(
             question,
             embd_mdl,
             tenant_ids,
@@ -1579,6 +1629,7 @@ async def retrieval_test(tenant_id):
             cks = await settings.retriever.retrieval_by_toc(question, ranks["chunks"], tenant_ids, chat_mdl, size)
             if cks:
                 ranks["chunks"] = cks
+        ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
         if use_kg:
             ck = await settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:

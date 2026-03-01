@@ -34,25 +34,36 @@ export const useHandleImportJsonFile = () => {
           return;
         }
 
-        const graphStr = await file.text();
+        const graphOrDslStr = await file.text();
         const errorMessage = t('flow.jsonUploadContentErrorMessage');
         try {
-          const graph = JSON.parse(graphStr);
-          if (graphStr && !isEmpty(graph) && Array.isArray(graph?.nodes)) {
-            const nodes: Node[] = graph.nodes;
-
+          const graphOrDsl = JSON.parse(graphOrDslStr);
+          if (graphOrDslStr && !isEmpty(graphOrDsl)) {
             let isAgent = true;
+            // Compatible with older versions
+            const graph = graphOrDsl?.graph ? graphOrDsl.graph : graphOrDsl;
+            if (Array.isArray(graph?.nodes)) {
+              const nodes: Node[] = graph.nodes;
 
-            if (
-              hasNode(nodes, DataflowOperator.Begin) &&
-              hasNode(nodes, DataflowOperator.Parser)
-            ) {
-              isAgent = false;
+              if (
+                hasNode(nodes, DataflowOperator.Begin) &&
+                hasNode(nodes, DataflowOperator.Parser)
+              ) {
+                isAgent = false;
+              }
             }
 
             const dsl = isAgent
-              ? { ...EmptyDsl, graph }
-              : { ...DataflowEmptyDsl, graph };
+              ? { ...EmptyDsl, graph: graph }
+              : { ...DataflowEmptyDsl, graph: graph };
+
+            if (graphOrDsl.globals) {
+              dsl.globals = graphOrDsl.globals;
+            }
+
+            if (graphOrDsl.variables) {
+              dsl.variables = graphOrDsl.variables;
+            }
 
             setAgent({
               title: name,
@@ -66,6 +77,7 @@ export const useHandleImportJsonFile = () => {
             message.error(errorMessage);
           }
         } catch (error) {
+          console.log('🚀 ~ useHandleImportJsonFile ~ error:', error);
           message.error(errorMessage);
         }
       }

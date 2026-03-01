@@ -19,7 +19,7 @@ from random import randint
 
 import pytest
 from common import delete_documents, update_chunk
-from configs import INVALID_API_TOKEN
+from configs import INVALID_API_TOKEN, INVALID_ID_32
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -145,9 +145,8 @@ class TestUpdatedChunk:
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
-            ("", 100, "<NotFound '404: Not Found'>"),
-            pytest.param("invalid_dataset_id", 102, "You don't own the dataset invalid_dataset_id.", marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="infinity")),
-            pytest.param("invalid_dataset_id", 102, "Can't find this chunk", marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "opensearch", "elasticsearch"], reason="elasticsearch")),
+            pytest.param(INVALID_ID_32, 102, f"You don't own the dataset {INVALID_ID_32}.", marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="infinity")),
+            pytest.param(INVALID_ID_32, 102, "Can't find this chunk", marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "opensearch", "elasticsearch"], reason="elasticsearch")),
         ],
     )
     def test_invalid_dataset_id(self, HttpApiAuth, add_chunks, dataset_id, expected_code, expected_message):
@@ -160,11 +159,10 @@ class TestUpdatedChunk:
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
-            ("", 100, "<NotFound '404: Not Found'>"),
             (
-                "invalid_document_id",
+                INVALID_ID_32,
                 102,
-                "You don't own the document invalid_document_id.",
+                f"You don't own the document {INVALID_ID_32}.",
             ),
         ],
     )
@@ -178,11 +176,10 @@ class TestUpdatedChunk:
     @pytest.mark.parametrize(
         "chunk_id, expected_code, expected_message",
         [
-            ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
             (
-                "invalid_document_id",
+                INVALID_ID_32,
                 102,
-                "Can't find this chunk invalid_document_id",
+                f"Can't find this chunk {INVALID_ID_32}",
             ),
         ],
     )

@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
+import copy
 import inspect
 import json
 import logging
@@ -29,19 +29,25 @@ from api.db.services.task_service import queue_dataflow, CANVAS_DEBUG_DOC_ID, Ta
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.constants import RetCode
-from common.misc_utils import get_uuid
-from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result, \
-    get_request_json
+from common.misc_utils import get_uuid, thread_pool_exec
+from api.utils.api_utils import (
+    get_json_result,
+    server_error_response,
+    validate_request,
+    get_data_error_result,
+    get_request_json,
+)
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken, Task
-import time
 
 from rag.flow.pipeline import Pipeline
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
 from common import settings
 from api.apps import login_required, current_user
+from api.apps.services.canvas_replica_service import CanvasReplicaService
+from api.db.services.canvas_service import completion as agent_completion
 
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
@@ -69,9 +75,10 @@ async def rm():
 @login_required
 async def save():
     req = await get_request_json()
-    if not isinstance(req["dsl"], str):
-        req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
-    req["dsl"] = json.loads(req["dsl"])
+    try:
+        req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
+    except ValueError as e:
+        return get_data_error_result(message=str(e))
     cate = req.get("canvas_category", CanvasCategory.Agent)
     if "id" not in req:
         req["user_id"] = current_user.id
@@ -87,8 +94,21 @@ async def save():
                 code=RetCode.OPERATING_ERROR)
         UserCanvasService.update_by_id(req["id"], req)
     # save version
-    UserCanvasVersionService.insert(user_canvas_id=req["id"], dsl=req["dsl"], title="{0}_{1}".format(req["title"], time.strftime("%Y_%m_%d_%H_%M_%S")))
-    UserCanvasVersionService.delete_all_versions(req["id"])
+    UserCanvasVersionService.save_or_replace_latest(
+        user_canvas_id=req["id"],
+        dsl=req["dsl"],
+        title=UserCanvasVersionService.build_version_title(getattr(current_user, "nickname", current_user.id), req.get("title")),
+    )
+    replica_ok = CanvasReplicaService.replace_for_set(
+        canvas_id=req["id"],
+        tenant_id=str(current_user.id),
+        runtime_user_id=str(current_user.id),
+        dsl=req["dsl"],
+        canvas_category=req.get("canvas_category", cate),
+        title=req.get("title", ""),
+    )
+    if not replica_ok:
+        return get_data_error_result(message="canvas saved, but replica sync failed.")
     return get_json_result(data=req)
 
 
@@ -98,6 +118,20 @@ def get(canvas_id):
     if not UserCanvasService.accessible(canvas_id, current_user.id):
         return get_data_error_result(message="canvas not found.")
     e, c = UserCanvasService.get_by_canvas_id(canvas_id)
+    if not e:
+        return get_data_error_result(message="canvas not found.")
+    try:
+        # DELETE
+        CanvasReplicaService.bootstrap(
+            canvas_id=canvas_id,
+            tenant_id=str(current_user.id),
+            runtime_user_id=str(current_user.id),
+            dsl=c.get("dsl"),
+            canvas_category=c.get("canvas_category", CanvasCategory.Agent),
+            title=c.get("title", ""),
+        )
+    except ValueError as e:
+        return get_data_error_result(message=str(e))
     return get_json_result(data=c)
 
 
@@ -105,7 +139,7 @@ def get(canvas_id):
 def getsse(canvas_id):
     token = request.headers.get('Authorization').split()
     if len(token) != 2:
-        return get_data_error_result(message='Authorization is not valid!"')
+        return get_data_error_result(message='Authorization is not valid!')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -131,29 +165,38 @@ async def run():
     query = req.get("query", "")
     files = req.get("files", [])
     inputs = req.get("inputs", {})
-    user_id = req.get("user_id", current_user.id)
-    if not await asyncio.to_thread(UserCanvasService.accessible, req["id"], current_user.id):
+    tenant_id = str(current_user.id)
+    runtime_user_id = req.get("user_id") or tenant_id
+    user_id = str(runtime_user_id)
+    if not await thread_pool_exec(UserCanvasService.accessible, req["id"], tenant_id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
 
-    e, cvs = await asyncio.to_thread(UserCanvasService.get_by_id, req["id"])
-    if not e:
-        return get_data_error_result(message="canvas not found.")
+    replica_payload = CanvasReplicaService.load_for_run(
+        canvas_id=req["id"],
+        tenant_id=tenant_id,
+        runtime_user_id=user_id,
+    )
 
-    if not isinstance(cvs.dsl, str):
-        cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
+    if not replica_payload:
+        return get_data_error_result(message="canvas replica not found, please call /get/<canvas_id> first.")
 
-    if cvs.canvas_category == CanvasCategory.DataFlow:
+    replica_dsl = replica_payload.get("dsl", {})
+    canvas_title = replica_payload.get("title", "")
+    canvas_category = replica_payload.get("canvas_category", CanvasCategory.Agent)
+    dsl_str = json.dumps(replica_dsl, ensure_ascii=False)
+
+    if canvas_category == CanvasCategory.DataFlow:
         task_id = get_uuid()
-        Pipeline(cvs.dsl, tenant_id=current_user.id, doc_id=CANVAS_DEBUG_DOC_ID, task_id=task_id, flow_id=req["id"])
-        ok, error_message = await asyncio.to_thread(queue_dataflow, user_id, req["id"], task_id, CANVAS_DEBUG_DOC_ID, files[0], 0)
+        Pipeline(dsl_str, tenant_id=tenant_id, doc_id=CANVAS_DEBUG_DOC_ID, task_id=task_id, flow_id=req["id"])
+        ok, error_message = await thread_pool_exec(queue_dataflow, user_id, req["id"], task_id, CANVAS_DEBUG_DOC_ID, files[0], 0)
         if not ok:
             return get_data_error_result(message=error_message)
         return get_json_result(data={"message_id": task_id})
 
     try:
-        canvas = Canvas(cvs.dsl, current_user.id, canvas_id=cvs.id)
+        canvas = Canvas(dsl_str, tenant_id, canvas_id=req["id"])
     except Exception as e:
         return server_error_response(e)
 
@@ -163,8 +206,21 @@ async def run():
             async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
                 yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
-            cvs.dsl = json.loads(str(canvas))
-            UserCanvasService.update_by_id(req["id"], cvs.to_dict())
+            commit_ok = CanvasReplicaService.commit_after_run(
+                canvas_id=req["id"],
+                tenant_id=tenant_id,
+                runtime_user_id=user_id,
+                dsl=json.loads(str(canvas)),
+                canvas_category=canvas_category,
+                title=canvas_title,
+            )
+            if not commit_ok:
+                logging.error(
+                    "Canvas runtime replica commit failed: canvas_id=%s tenant_id=%s runtime_user_id=%s",
+                    req["id"],
+                    tenant_id,
+                    user_id,
+                )
 
         except Exception as e:
             logging.exception(e)
@@ -179,6 +235,50 @@ async def run():
     #resp.call_on_close(lambda: canvas.cancel_task())
     return resp
 
+
+@manager.route("/<canvas_id>/completion", methods=["POST"])  # noqa: F821
+@login_required
+async def exp_agent_completion(canvas_id):
+    tenant_id = current_user.id
+    req = await get_request_json()
+    return_trace = bool(req.get("return_trace", False))
+    async def generate():
+        trace_items = []
+        async for answer in agent_completion(tenant_id=tenant_id, agent_id=canvas_id, **req):
+            if isinstance(answer, str):
+                try:
+                    ans = json.loads(answer[5:])  # remove "data:"
+                except Exception:
+                    continue
+
+            event = ans.get("event")
+            if event == "node_finished":
+                if return_trace:
+                    data = ans.get("data", {})
+                    trace_items.append(
+                        {
+                            "component_id": data.get("component_id"),
+                            "trace": [copy.deepcopy(data)],
+                        }
+                    )
+                    ans.setdefault("data", {})["trace"] = trace_items
+                    answer = "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+                yield answer
+
+            if event not in ["message", "message_end"]:
+                continue
+
+            yield answer
+
+        yield "data:[DONE]\n\n"
+
+    resp = Response(generate(), mimetype="text/event-stream")
+    resp.headers.add_header("Cache-control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+    return resp
+    
 
 @manager.route('/rerun', methods=['POST'])  # noqa: F821
 @validate_request("id", "dsl", "component_id")
@@ -249,11 +349,14 @@ async def upload(canvas_id):
 
     user_id = cvs["user_id"]
     files = await request.files
-    file = files['file'] if files and files.get("file") else None
+    file_objs = files.getlist("file") if files and files.get("file") else []
     try:
-        return get_json_result(data=FileService.upload_info(user_id, file, request.args.get("url")))
+        if len(file_objs) == 1:
+            return get_json_result(data=FileService.upload_info(user_id, file_objs[0], request.args.get("url")))
+        results = [FileService.upload_info(user_id, f) for f in file_objs]
+        return get_json_result(data=results)
     except Exception as e:
-        return  server_error_response(e)
+        return server_error_response(e)
 
 
 @manager.route('/input_form', methods=['GET'])  # noqa: F821
@@ -322,6 +425,9 @@ async def test_db_connect():
         if req["db_type"] in ["mysql", "mariadb"]:
             db = MySQLDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                password=req["password"])
+        elif req["db_type"] == "oceanbase":
+            db = MySQLDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
+                               password=req["password"], charset="utf8mb4")
         elif req["db_type"] == 'postgres':
             db = PostgresqlDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                     password=req["password"])
@@ -522,24 +628,81 @@ def sessions(canvas_id):
     from_date = request.args.get("from_date")
     to_date = request.args.get("to_date")
     orderby = request.args.get("orderby", "update_time")
+    exp_user_id = request.args.get("exp_user_id")
     if request.args.get("desc") == "False" or request.args.get("desc") == "false":
         desc = False
     else:
         desc = True
+
+    if exp_user_id:
+        sess = API4ConversationService.get_names(canvas_id, exp_user_id)
+        return get_json_result(data={"total": len(sess), "sessions": sess})
+    
     # dsl defaults to True in all cases except for False and false
     include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
     total, sess = API4ConversationService.get_list(canvas_id, tenant_id, page_number, items_per_page, orderby, desc,
-                                             None, user_id, include_dsl, keywords, from_date, to_date)
+                                             None, user_id, include_dsl, keywords, from_date, to_date, exp_user_id=exp_user_id)
     try:
         return get_json_result(data={"total": total, "sessions": sess})
     except Exception as e:
         return server_error_response(e)
 
 
+@manager.route('/<canvas_id>/sessions', methods=['PUT'])  # noqa: F821
+@login_required
+async def set_session(canvas_id):
+    req = await get_request_json()
+    tenant_id = current_user.id
+    e, cvs = UserCanvasService.get_by_id(canvas_id)
+    assert e, "Agent not found."
+    if not isinstance(cvs.dsl, str):
+        cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
+    session_id=get_uuid()
+    canvas = Canvas(cvs.dsl, tenant_id, canvas_id, canvas_id=cvs.id)
+    canvas.reset()
+    conv = {
+        "id": session_id,
+        "name": req.get("name", ""),
+        "dialog_id": cvs.id,
+        "user_id": tenant_id,
+        "exp_user_id": tenant_id,
+        "message": [],
+        "source": "agent",
+        "dsl": cvs.dsl,
+        "reference": []
+    }
+    API4ConversationService.save(**conv)
+    return get_json_result(data=conv)
+
+
+@manager.route('/<canvas_id>/sessions/<session_id>', methods=['GET'])  # noqa: F821
+@login_required
+def get_session(canvas_id, session_id):
+    tenant_id = current_user.id
+    if not UserCanvasService.accessible(canvas_id, tenant_id):
+        return get_json_result(
+            data=False, message='Only owner of canvas authorized for this operation.',
+            code=RetCode.OPERATING_ERROR)
+    _, conv = API4ConversationService.get_by_id(session_id)
+    return get_json_result(data=conv.to_dict())
+
+
+@manager.route('/<canvas_id>/sessions/<session_id>', methods=['DELETE'])  # noqa: F821
+@login_required
+def del_session(canvas_id, session_id):
+    tenant_id = current_user.id
+    if not UserCanvasService.accessible(canvas_id, tenant_id):
+        return get_json_result(
+            data=False, message='Only owner of canvas authorized for this operation.',
+            code=RetCode.OPERATING_ERROR)
+    return get_json_result(data=API4ConversationService.delete_by_id(session_id))
+
+
 @manager.route('/prompts', methods=['GET'])  # noqa: F821
 @login_required
 def prompts():
     from rag.prompts.generator import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
+
     return get_json_result(data={
         "task_analysis": ANALYZE_TASK_SYSTEM +"\n\n"+ ANALYZE_TASK_USER,
         "plan_generation": NEXT_STEP,

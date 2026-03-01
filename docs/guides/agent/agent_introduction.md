@@ -5,8 +5,7 @@ sidebar_custom_props: {
   categoryIcon: LucideBookOpenText
 }
 ---
-
-# Introduction to agents
+# Introduction
 
 Key concepts, basic operations, a quick view of the agent editor.
 
@@ -27,7 +26,7 @@ Agents and RAG are complementary techniques, each enhancing the other’s capabi
 
 :::tip NOTE
 
-Before proceeding, ensure that:
+Before proceeding, ensure that:  
 
 1. You have properly set the LLM to use. See the guides on [Configure your API key](../models/llm_api_key_setup.md) or [Deploy a local LLM](../models/deploy_local_llm.mdx) for more information.
 2. You have a dataset configured and the corresponding files properly parsed. See the guide on [Configure a dataset](../dataset/configure_knowledge_base.md) for more information.
@@ -44,7 +43,7 @@ We also provide templates catered to different business scenarios. You can eithe
 
    ![agent_template](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_template_list.jpg)
 
-2. To create an agent from scratch, click **Create Agent**. Alternatively, to create an agent from one of our templates, click the desired card, such as **Deep Research**, name your agent in the pop-up dialogue, and click **OK** to confirm.
+2. To create an agent from scratch, click **Create Agent**. Alternatively, to create an agent from one of our templates, click the desired card, such as **Deep Research**, name your agent in the pop-up dialogue, and click **OK** to confirm.  
 
    *You are now taken to the **no-code workflow editor** page.*
 

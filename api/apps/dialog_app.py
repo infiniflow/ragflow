@@ -25,6 +25,7 @@ from api.utils.api_utils import get_data_error_result, get_json_result, get_requ
 from common.misc_utils import get_uuid
 from common.constants import RetCode
 from api.apps import login_required, current_user
+import logging
 
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
@@ -42,13 +43,19 @@ async def set_dialog():
     if len(name.encode("utf-8")) > 255:
         return get_data_error_result(message=f"Dialog name length is {len(name)} which is larger than 255")
 
-    if is_create and DialogService.query(tenant_id=current_user.id, name=name.strip()):
-        name = name.strip()
-        name = duplicate_name(
-            DialogService.query,
-            name=name,
-            tenant_id=current_user.id,
-            status=StatusEnum.VALID.value)
+    name = name.strip()
+    if is_create:
+        # only for chat creating
+        existing_names = {
+            d.name.casefold()
+            for d in DialogService.query(tenant_id=current_user.id, status=StatusEnum.VALID.value)
+            if d.name
+        }
+        if name.casefold() in existing_names:
+            def _name_exists(name: str, **_kwargs) -> bool:
+                return name.casefold() in existing_names
+
+            name = duplicate_name(_name_exists, name=name)
 
     description = req.get("description", "A helpful dialog")
     icon = req.get("icon", "")
@@ -63,16 +70,30 @@ async def set_dialog():
     meta_data_filter = req.get("meta_data_filter", {})
     prompt_config = req["prompt_config"]
 
+    # Set default parameters for datasets with knowledge retrieval
+    # All datasets with {knowledge} in system prompt need "knowledge" parameter to enable retrieval
+    kb_ids = req.get("kb_ids", [])
+    parameters = prompt_config.get("parameters")
+    logging.debug(f"set_dialog: kb_ids={kb_ids}, parameters={parameters}, is_create={not is_create}")
+    # Check if parameters is missing, None, or empty list
+    if kb_ids and not parameters:
+        # Check if system prompt uses {knowledge} placeholder
+        if "{knowledge}" in prompt_config.get("system", ""):
+            # Set default parameters for any dataset with knowledge placeholder
+            prompt_config["parameters"] = [{"key": "knowledge", "optional": False}]
+            logging.debug(f"Set default parameters for datasets with knowledge placeholder: {kb_ids}")
+
     if not is_create:
-        if not req.get("kb_ids", []) and not prompt_config.get("tavily_api_key") and "{knowledge}" in prompt_config['system']:
+        # only for chat updating
+        if not req.get("kb_ids", []) and not prompt_config.get("tavily_api_key") and "{knowledge}" in prompt_config.get("system", ""):
             return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
 
-        for p in prompt_config["parameters"]:
-            if p["optional"]:
-                continue
-            if prompt_config["system"].find("{%s}" % p["key"]) < 0:
-                return get_data_error_result(
-                    message="Parameter '{}' is not used".format(p["key"]))
+    for p in prompt_config.get("parameters", []):
+        if p["optional"]:
+            continue
+        if prompt_config.get("system", "").find("{%s}" % p["key"]) < 0:
+            return get_data_error_result(
+                message="Parameter '{}' is not used".format(p["key"]))
 
     try:
         e, tenant = TenantService.get_by_id(current_user.id)

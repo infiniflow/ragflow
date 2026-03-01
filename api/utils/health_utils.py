@@ -23,6 +23,7 @@ from api.db.db_models import DB
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.es_conn import ESConnection
 from rag.utils.infinity_conn import InfinityConnection
+from rag.utils.ob_conn import OBConnection
 from common import settings
 
 
@@ -100,6 +101,121 @@ def get_infinity_status():
         }
 
 
+def get_oceanbase_status():
+    """
+    Get OceanBase health status and performance metrics.
+    
+    Returns:
+        dict: OceanBase status with health information and performance metrics
+    """
+    doc_engine = os.getenv('DOC_ENGINE', 'elasticsearch')
+    if doc_engine != 'oceanbase':
+        raise Exception("OceanBase is not in use.")
+    try:
+        ob_conn = OBConnection()
+        health_info = ob_conn.health()
+        performance_metrics = ob_conn.get_performance_metrics()
+        
+        # Combine health and performance metrics
+        status = "alive" if health_info.get("status") == "healthy" else "timeout"
+        
+        return {
+            "status": status,
+            "message": {
+                "health": health_info,
+                "performance": performance_metrics
+            }
+        }
+    except Exception as e:
+        return {
+            "status": "timeout",
+            "message": f"error: {str(e)}",
+        }
+
+
+def check_oceanbase_health() -> dict:
+    """
+    Check OceanBase health status with comprehensive metrics.
+    
+    This function provides detailed health information including:
+    - Connection status
+    - Query latency
+    - Storage usage
+    - Query throughput (QPS)
+    - Slow query statistics
+    - Connection pool statistics
+    
+    Returns:
+        dict: Health status with detailed metrics
+    """
+    doc_engine = os.getenv('DOC_ENGINE', 'elasticsearch')
+    if doc_engine != 'oceanbase':
+        return {
+            "status": "not_configured",
+            "details": {
+                "connection": "not_configured",
+                "message": "OceanBase is not configured as the document engine"
+            }
+        }
+    
+    try:
+        ob_conn = OBConnection()
+        health_info = ob_conn.health()
+        performance_metrics = ob_conn.get_performance_metrics()
+        
+        # Determine overall health status
+        connection_status = performance_metrics.get("connection", "unknown")
+        
+        # If connection is disconnected, return unhealthy
+        if connection_status == "disconnected" or health_info.get("status") != "healthy":
+            return {
+                "status": "unhealthy",
+                "details": {
+                    "connection": connection_status,
+                    "latency_ms": performance_metrics.get("latency_ms", 0),
+                    "storage_used": performance_metrics.get("storage_used", "N/A"),
+                    "storage_total": performance_metrics.get("storage_total", "N/A"),
+                    "query_per_second": performance_metrics.get("query_per_second", 0),
+                    "slow_queries": performance_metrics.get("slow_queries", 0),
+                    "active_connections": performance_metrics.get("active_connections", 0),
+                    "max_connections": performance_metrics.get("max_connections", 0),
+                    "uri": health_info.get("uri", "unknown"),
+                    "version": health_info.get("version_comment", "unknown"),
+                    "error": health_info.get("error", performance_metrics.get("error"))
+                }
+            }
+        
+        # Check if healthy (connected and low latency)
+        is_healthy = (
+            connection_status == "connected" and
+            performance_metrics.get("latency_ms", float('inf')) < 1000  # Latency under 1 second
+        )
+        
+        return {
+            "status": "healthy" if is_healthy else "degraded",
+            "details": {
+                "connection": performance_metrics.get("connection", "unknown"),
+                "latency_ms": performance_metrics.get("latency_ms", 0),
+                "storage_used": performance_metrics.get("storage_used", "N/A"),
+                "storage_total": performance_metrics.get("storage_total", "N/A"),
+                "query_per_second": performance_metrics.get("query_per_second", 0),
+                "slow_queries": performance_metrics.get("slow_queries", 0),
+                "active_connections": performance_metrics.get("active_connections", 0),
+                "max_connections": performance_metrics.get("max_connections", 0),
+                "uri": health_info.get("uri", "unknown"),
+                "version": health_info.get("version_comment", "unknown")
+            }
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "details": {
+                "connection": "disconnected",
+                "error": str(e)
+            }
+        }
+
+
 def get_mysql_status():
     try:
         cursor = DB.execute_sql("SHOW PROCESSLIST;")
@@ -117,14 +233,40 @@ def get_mysql_status():
         }
 
 
+def _minio_scheme_and_verify():
+    """
+    Determine URL scheme (http/https) and SSL verify flag for MinIO health check.
+    Uses MINIO.secure for scheme and MINIO.verify for certificate verification
+    (e.g. self-signed certs when verify is False).
+    """
+    secure = settings.MINIO.get("secure", False)
+    if isinstance(secure, str):
+        secure = secure.lower() in ("true", "1", "yes")
+    scheme = "https" if secure else "http"
+    verify = settings.MINIO.get("verify", True)
+    if isinstance(verify, str):
+        verify = verify.lower() not in ("false", "0", "no")
+    elif isinstance(verify, bool):
+        pass
+    else:
+        verify = bool(verify)
+    return scheme, verify
+
+
 def check_minio_alive():
+    """
+    Check MinIO service liveness via /minio/health/live.
+    Uses http or https and optional certificate verification based on
+    MINIO.secure and MINIO.verify configuration.
+    """
     start_time = timer()
     try:
-        response = requests.get(f'http://{settings.MINIO["host"]}/minio/health/live')
+        scheme, verify = _minio_scheme_and_verify()
+        url = f"{scheme}://{settings.MINIO['host']}/minio/health/live"
+        response = requests.get(url, timeout=10, verify=verify)
         if response.status_code == 200:
             return {"status": "alive", "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
-        else:
-            return {"status": "timeout", "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
+        return {"status": "timeout", "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
     except Exception as e:
         return {
             "status": "timeout",

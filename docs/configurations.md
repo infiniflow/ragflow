@@ -5,7 +5,6 @@ sidebar_custom_props: {
   sidebarIcon: LucideCog
 }
 ---
-
 # Configuration
 
 Configurations for deploying RAGFlow via Docker.
@@ -73,6 +72,8 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `MYSQL_PASSWORD`
   The password for MySQL.
 - `MYSQL_PORT`
+  The port to connect to MySQL from RAGFlow container. Defaults to `3306`. Change this if you use an external MySQL.
+- `EXPOSE_MYSQL_PORT`
   The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `5455`.
 
 ### MinIO
@@ -102,14 +103,14 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 - `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW-IMAGE`
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.23.1` (the RAGFlow Docker image without embedding models).
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.24.0` (the RAGFlow Docker image without embedding models).
 
 :::tip NOTE
 If you cannot download the RAGFlow Docker image, try the following mirrors.
 
 - For the `nightly` edition:
   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
-  - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
+  - `RAGFLOW_IMAGE=infiniflow-registry.cn-shanghai.cr.aliyuncs.com/infiniflow/ragflow:nightly`.
 :::
 
 ### Embedding service

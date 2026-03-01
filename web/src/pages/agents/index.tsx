@@ -86,14 +86,39 @@ export default function Agents() {
           <EmptyAppCard
             showIcon
             size="large"
-            className="w-[480px] p-14"
+            className="w-[480px] p-14 !cursor-default"
             isSearch={!!searchString}
             type={EmptyCardType.Agent}
-            onClick={() => showCreatingModal()}
-          />
+            // onClick={() => showCreatingModal()}
+          >
+            <div className="flex flex-col gap-y-5 text-text-secondary text-sm pt-5">
+              <div
+                data-testid="agents-empty-create"
+                className="flex items-center gap-x-2 hover:text-text-primary cursor-pointer"
+                onClick={showCreatingModal}
+              >
+                <Clipboard size={14} />
+                {t('flow.createFromBlank')}
+              </div>
+              <div
+                className="flex items-center gap-x-2 hover:text-text-primary cursor-pointer"
+                onClick={navigateToAgentTemplates}
+              >
+                <ClipboardPlus size={14} />
+                {t('flow.createFromTemplate')}
+              </div>
+              <div
+                className="flex items-center gap-x-2 hover:text-text-primary cursor-pointer"
+                onClick={handleImportJson}
+              >
+                <FileInput size={14} />
+                {t('flow.importJsonFile')}
+              </div>
+            </div>
+          </EmptyAppCard>
         </div>
       )}
-      <section className="flex flex-col w-full flex-1">
+      <section className="flex flex-col w-full flex-1" data-testid="agents-list">
         {(!!data?.length || searchString) && (
           <>
             <div className="px-8 pt-8 ">
@@ -107,13 +132,13 @@ export default function Agents() {
                 value={filterValue}
               >
                 <DropdownMenu>
-                  <DropdownMenuTrigger>
+                  <DropdownMenuTrigger data-testid="create-agent">
                     <Button>
                       <Plus className="h-4 w-4" />
                       {t('flow.createGraph')}
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent>
+                  <DropdownMenuContent data-testid="agent-create-menu">
                     <DropdownMenuItem
                       justifyBetween={false}
                       onClick={showCreatingModal}
@@ -129,6 +154,7 @@ export default function Agents() {
                       {t('flow.createFromTemplate')}
                     </DropdownMenuItem>
                     <DropdownMenuItem
+                      data-testid="agent-import-json"
                       justifyBetween={false}
                       onClick={handleImportJson}
                     >

@@ -19,6 +19,7 @@ export default {
       portugueseBr: 'Portugis (Brasil)',
       chinese: 'Cina',
       traditionalChinese: 'Cina Tradisional',
+      bulgarian: 'Bulgaria',
       language: 'Bahasa',
       languageMessage: 'Silakan masukkan bahasa Anda!',
       languagePlaceholder: 'Pilih bahasa Anda',
@@ -319,12 +320,14 @@ export default {
       paddleocrOptions: 'Opsi PaddleOCR',
       paddleocrApiUrl: 'URL API PaddleOCR',
       paddleocrApiUrlTip: 'URL endpoint API layanan PaddleOCR',
-      paddleocrApiUrlPlaceholder: 'Contoh: https://paddleocr-server.com/layout-parsing',
+      paddleocrApiUrlPlaceholder:
+        'Contoh: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Token Akses AI Studio',
       paddleocrAccessTokenTip: 'Token akses untuk API PaddleOCR (opsional)',
       paddleocrAccessTokenPlaceholder: 'Token AI Studio Anda (opsional)',
       paddleocrAlgorithm: 'Algoritma PaddleOCR',
-      paddleocrAlgorithmTip: 'Algoritma yang digunakan untuk pemrosesan PaddleOCR',
+      paddleocrAlgorithmTip:
+        'Algoritma yang digunakan untuk pemrosesan PaddleOCR',
       paddleocrSelectAlgorithm: 'Pilih algoritma',
       paddleocrModelNamePlaceholder: 'Contoh: paddleocr-lingkungan-1',
     },
@@ -416,8 +419,7 @@ export default {
         'Mirip dengan penalti kehadiran, ini mengurangi kecenderungan model untuk mengulangi kata yang sama secara sering.',
       maxTokens: 'Token Maksimum',
       maxTokensMessage: 'Token Maksimum diperlukan',
-      maxTokensTip:
-        'Ini menetapkan panjang maksimum keluaran model, diukur dalam jumlah token (kata atau potongan kata).',
+      maxTokensTip: `Ukuran konteks maksimum model; nilai yang tidak valid atau salah akan menyebabkan kesalahan. Default 512.`,
       maxTokensInvalidMessage:
         'Silakan masukkan angka yang valid untuk Max Tokens.',
       maxTokensMinMessage: 'Max Tokens tidak boleh kurang dari 0.',
@@ -474,8 +476,7 @@ export default {
       profileDescription: 'Perbarui foto dan detail pribadi Anda di sini.',
       maxTokens: 'Token Maksimum',
       maxTokensMessage: 'Token Maksimum diperlukan',
-      maxTokensTip:
-        'Ini menetapkan panjang maksimum keluaran model, diukur dalam jumlah token (kata atau potongan kata).',
+      maxTokensTip: `Ukuran konteks maksimum model; nilai yang tidak valid atau salah akan menyebabkan kesalahan. Default 512.`,
       maxTokensInvalidMessage:
         'Silakan masukkan angka yang valid untuk Max Tokens.',
       maxTokensMinMessage: 'Max Tokens tidak boleh kurang dari 0.',
@@ -566,14 +567,15 @@ export default {
       baseUrlNameMessage: 'Silakan masukkan base url Anda!',
       paddleocr: {
         apiUrl: 'URL API PaddleOCR',
-        apiUrlPlaceholder: 'Contoh: https://paddleocr-server.com/layout-parsing',
+        apiUrlPlaceholder:
+          'Contoh: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token Akses AI Studio',
         accessTokenPlaceholder: 'Token AI Studio Anda (opsional)',
         algorithm: 'Algoritma PaddleOCR',
         selectAlgorithm: 'Pilih algoritma',
         modelNamePlaceholder: 'Contoh: paddleocr-from-env-1',
         modelNameRequired: 'Nama model wajib diisi',
-        apiUrlRequired: 'URL API PaddleOCR wajib diisi'
+        apiUrlRequired: 'URL API PaddleOCR wajib diisi',
       },
       vision: 'Apakah mendukung Vision?',
       ollamaLink: 'Cara mengintegrasikan {{name}}',
@@ -626,10 +628,6 @@ export default {
       'sa-east-1': 'South America (São Paulo)',
       'us-gov-east-1': 'AWS GovCloud (US-East)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
-      addHunyuanSID: 'Hunyuan Secret ID',
-      HunyuanSIDMessage: 'Silakan masukkan Secret ID Anda',
-      addHunyuanSK: 'Hunyuan Secret Key',
-      HunyuanSKMessage: 'Silakan masukkan Secret Key Anda',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Silakan masukkan Secret ID Anda',
       addTencentCloudSK: 'TencentCloud Secret Key',

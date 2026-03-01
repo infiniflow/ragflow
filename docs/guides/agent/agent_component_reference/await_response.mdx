@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideMessageSquareDot
 }
 ---
-
 # Await response component
 
 A component that halts the workflow and awaits user input.
@@ -26,7 +25,7 @@ Whether to show the message defined in the **Message** field.
 
 ### Message
 
-The static message to send out.
+The static message to send out. 
 
 Click **+ Add message** to add message options. When multiple messages are supplied, the **Message** component randomly selects one to send.
 
@@ -34,9 +33,9 @@ Click **+ Add message** to add message options. When multiple messages are suppl
 
 You can define global variables within the **Await response** component, which can be either mandatory or optional. Once set, users will need to provide values for these variables when engaging with the agent. Click **+** to add a global variable, each with the following attributes:
 
-- **Name**: _Required_
-  A descriptive name providing additional details about the variable.
-- **Type**: _Required_
+- **Name**: _Required_  
+  A descriptive name providing additional details about the variable.  
+- **Type**: _Required_  
   The type of the variable:
   - **Single-line text**: Accepts a single line of text without line breaks.
   - **Paragraph text**: Accepts multiple lines of text, including line breaks.
@@ -44,7 +43,7 @@ You can define global variables within the **Await response** component, which c
   - **file upload**: Requires the user to upload one or multiple files.
   - **Number**: Accepts a number as input.
   - **Boolean**: Requires the user to toggle between on and off.
-- **Key**: _Required_
+- **Key**: _Required_  
   The unique variable name.
 - **Optional**: A toggle indicating whether the variable is optional.
 

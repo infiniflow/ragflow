@@ -76,6 +76,7 @@ class AgentParam(LLMParam, ToolParamBase):
         self.mcp = []
         self.max_rounds = 5
         self.description = ""
+        self.custom_header = {}
 
 
 class Agent(LLM, ToolBase):
@@ -105,7 +106,8 @@ class Agent(LLM, ToolBase):
 
         for mcp in self._param.mcp:
             _, mcp_server = MCPServerService.get_by_id(mcp["mcp_id"])
-            tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables)
+            custom_header = self._param.custom_header
+            tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables, custom_header)
             for tnm, meta in mcp["tools"].items():
                 self.tool_meta.append(mcp_tool_metadata_to_openai_tool(meta))
                 self.tools[tnm] = tool_call_session
@@ -381,7 +383,10 @@ class Agent(LLM, ToolBase):
             token_count += tk or 0
             hist.append({"role": "assistant", "content": response})
             try:
-                functions = json_repair.loads(re.sub(r"```.*", "", response))
+                # Remove markdown code fences properly
+                cleaned_response = re.sub(r"^.*```json\s*", "", response, flags=re.DOTALL)
+                cleaned_response = re.sub(r"```\s*$", "", cleaned_response, flags=re.DOTALL)
+                functions = json_repair.loads(cleaned_response)
                 if not isinstance(functions, list):
                     raise TypeError(f"List should be returned, but `{functions}`")
                 for f in functions:

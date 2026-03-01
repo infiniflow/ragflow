@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideWandSparkles
 }
 ---
-
 # Construct knowledge graph
 
 Generate a knowledge graph for your dataset.
@@ -66,7 +65,7 @@ In a knowledge graph, a community is a cluster of entities linked by relationshi
 ## Quickstart
 
 1. Navigate to the **Configuration** page of your dataset and update:
-
+   
    - Entity types: *Required* - Specifies the entity types in the knowledge graph to generate. You don't have to stick with the default, but you need to customize them for your documents.
    - Method: *Optional*
    - Entity resolution: *Optional*
@@ -77,12 +76,12 @@ In a knowledge graph, a community is a cluster of entities linked by relationshi
 
    *You can click the pause button in the dropdown to halt the build process when necessary.*
 
-3. Go back to the **Configuration** page:
-
+3. Go back to the **Configuration** page:  
+   
    *Once a knowledge graph is generated, the **Knowledge graph** field changes from `Not generated` to `Generated at a specific timestamp`. You can delete it by clicking the recycle bin button to the right of the field.*
 
 4. To use the created knowledge graph, do either of the following:
-
+   
    - In the **Chat setting** panel of your chat app, switch on the **Use knowledge graph** toggle.
    - If you are using an agent, click the **Retrieval** agent component to specify the dataset(s) and switch on the **Use knowledge graph** toggle.
 

@@ -18,6 +18,7 @@ export default {
       portugueseBr: '葡萄牙語 (巴西)',
       chinese: '簡體中文',
       traditionalChinese: '繁體中文',
+      bulgarian: '保加利亞語',
       language: '語言',
       languageMessage: '請輸入語言',
       languagePlaceholder: '請選擇語言',
@@ -35,6 +36,7 @@ export default {
       pleaseInput: '請輸入',
       submit: '提交',
       embedIntoSite: '嵌入網站',
+      openInNewTab: '在新標籤頁中聊天',
       previousPage: '上一頁',
       nextPage: '下一頁',
       add: '添加',
@@ -202,6 +204,9 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文檔不能被刪除',
     },
     knowledgeConfiguration: {
+      settings: '設置',
+      autoMetadataTip:
+        '自動生成元數據。適用於解析新文件。現有文件需要重新解析才能更新（ chunk 將保留）。請注意，配置中指定的索引模型將消耗額外的 Token。',
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
       imageTableContextWindow: '影像與表格上下文視窗',
       imageTableContextWindowTip:
@@ -370,7 +375,8 @@ export default {
       paddleocrOptions: 'PaddleOCR 選項',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'PaddleOCR 服務的 API 端點 URL',
-      paddleocrApiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
+      paddleocrApiUrlPlaceholder:
+        '例如：https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio 訪問令牌',
       paddleocrAccessTokenTip: 'PaddleOCR API 的訪問令牌（可選）',
       paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可選）',
@@ -488,8 +494,7 @@ export default {
         '與存在懲罰類似，這減少了模型頻繁重複相同單詞的傾向。',
       maxTokens: '最大token數',
       maxTokensMessage: '最大token數是必填項',
-      maxTokensTip:
-        '這設置了模型輸出的最大長度，以標記（單詞或單詞片段）的數量來衡量。',
+      maxTokensTip: `模型的最大上下文大小；無效或不正確的值會導致錯誤。預設為 512。`,
       maxTokensInvalidMessage: '請輸入有效的最大標記數。',
       maxTokensMinMessage: '最大標記數不能小於 0。',
       quote: '顯示引文',
@@ -573,8 +578,7 @@ export default {
         '選擇此模式後，EC2 執行個體將使用其既有的 IAM Role 存取 AWS 服務，無需額外憑證。',
       maxTokens: '最大token數',
       maxTokensMessage: '最大token數是必填項',
-      maxTokensTip:
-        '這設置了模型輸出的最大長度，以標記（單詞或單詞片段）的數量來衡量。',
+      maxTokensTip: `模型的最大上下文大小；無效或不正確的值會導致錯誤。預設為 512。`,
       maxTokensInvalidMessage: '請輸入有效的最大標記數。',
       maxTokensMinMessage: '最大標記數不能小於 0。',
       password: '密碼',
@@ -664,7 +668,7 @@ export default {
         selectAlgorithm: '選擇演算法',
         modelNamePlaceholder: '例如：paddleocr-from-env-1',
         modelNameRequired: '模型名稱為必填項目',
-        apiUrlRequired: 'PaddleOCR API URL 為必填項目'
+        apiUrlRequired: 'PaddleOCR API URL 為必填項目',
       },
       ollamaLink: '如何集成 {{name}}',
       FishAudioLink: '如何使用Fish Audio',
@@ -688,10 +692,6 @@ export default {
       'eu-central-1': '歐洲 (法蘭克福)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       'ap-southeast-2': '亞太地區 (雪梨)',
-      addHunyuanSID: '混元 Secret ID',
-      HunyuanSIDMessage: '請輸入 Secret ID',
-      addHunyuanSK: '混元 Secret Key',
-      HunyuanSKMessage: '請輸入 Secret Key',
       addTencentCloudSID: '騰訊雲 Secret ID',
       TencentCloudSIDMessage: '請輸入 Secret ID',
       addTencentCloudSK: '騰訊雲 Secret Key',

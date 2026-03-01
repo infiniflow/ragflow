@@ -86,7 +86,50 @@ CONTENT_TYPE_MAP = {
     "ico": "image/x-icon",
     "avif": "image/avif",
     "heic": "image/heic",
+    # PPTX
+    "ppt": "application/vnd.ms-powerpoint",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
+
+
+FORCE_ATTACHMENT_EXTENSIONS = {
+    "htm",
+    "html",
+    "shtml",
+    "xht",
+    "xhtml",
+    "xml",
+    "mhtml",
+    "svg",
+}
+
+
+FORCE_ATTACHMENT_CONTENT_TYPES = {
+    "text/html",
+    "image/svg+xml",
+    "application/xhtml+xml",
+    "text/xml",
+    "application/xml",
+    "multipart/related",
+}
+
+
+def should_force_attachment(ext: str | None, content_type: str | None = None) -> bool:
+    normalized_ext = (ext or "").lower().strip(".")
+    if normalized_ext in FORCE_ATTACHMENT_EXTENSIONS:
+        return True
+    normalized_type = (content_type or "").lower()
+    return normalized_type in FORCE_ATTACHMENT_CONTENT_TYPES
+
+
+def apply_safe_file_response_headers(response, content_type: str | None, ext: str | None = None):
+    if content_type:
+        response.headers.set("Content-Type", content_type)
+    force_attachment = should_force_attachment(ext, content_type)
+    if force_attachment:
+        response.headers.set("X-Content-Type-Options", "nosniff")
+        response.headers.set("Content-Disposition", "attachment")
+    return response
 
 
 def html2pdf(
@@ -185,10 +228,9 @@ def get_float(req: dict, key: str, default: float | int = 10.0) -> float:
         return parsed if parsed > 0 else default
     except (TypeError, ValueError):
         return default
-    
+
 
 async def send_email_html(to_email: str, subject: str, template_key: str, **context):
-
     body = await render_template_string(EMAIL_TEMPLATES.get(template_key), **context)
     msg = MIMEText(body, "plain", "utf-8")
     msg["Subject"] = Header(subject, "utf-8")
@@ -233,10 +275,10 @@ def otp_keys(email: str):
 
 def hash_code(code: str, salt: bytes) -> str:
     import hashlib
-    import hmac 
+    import hmac
+
     return hmac.new(salt, (code or "").encode("utf-8"), hashlib.sha256).hexdigest()
-    
+
 
 def captcha_key(email: str) -> str:
     return f"captcha:{email}"
-    
