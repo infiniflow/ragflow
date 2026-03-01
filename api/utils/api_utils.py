@@ -685,11 +685,12 @@ def get_mcp_tools(mcp_servers: list, timeout: float | int = 10) -> tuple[dict, s
                 tool_dict["enabled"] = cached_tool.get("enabled", True)
                 results[server_key].append(tool_dict)
 
-        # PERF: blocking call to close sessions — consider moving to background thread or task queue
-        close_multiple_mcp_toolcall_sessions(tool_call_sessions)
         return results, ""
     except Exception as e:
         return {}, str(e)
+    finally:
+        # PERF: blocking call to close sessions — consider moving to background thread or task queue
+        close_multiple_mcp_toolcall_sessions(tool_call_sessions)
 
 
 async def is_strong_enough(chat_model, embedding_model):

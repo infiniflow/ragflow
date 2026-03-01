@@ -226,6 +226,8 @@ async def run():
             logging.exception(e)
             canvas.cancel_task()
             yield "data:" + json.dumps({"code": 500, "message": str(e), "data": False}, ensure_ascii=False) + "\n\n"
+        finally:
+            canvas.close()
 
     resp = Response(sse(), mimetype="text/event-stream")
     resp.headers.add_header("Cache-control", "no-cache")
