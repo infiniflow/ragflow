@@ -33,6 +33,7 @@ from common.constants import PAGERANK_FLD, TAG_FLD
 from common import settings
 
 ATTEMPT_TIME = 2
+OS_MAX_RESULT_WINDOW = 10000
 
 logger = logging.getLogger('ragflow.opensearch_conn')
 
@@ -238,6 +239,10 @@ class OSConnection(DocStoreConnection):
             s.aggs.bucket(f'aggs_{fld}', 'terms', field=fld, size=1000000)
 
         if limit > 0:
+            if offset + limit > OS_MAX_RESULT_WINDOW:
+                limit = max(0, OS_MAX_RESULT_WINDOW - offset)
+                if limit <= 0:
+                    return {"hits": {"total": {"value": 0}, "hits": []}}
             s = s[offset:offset + limit]
         q = s.to_dict()
         logger.debug(f"OSConnection.search {str(indexNames)} query: " + json.dumps(q))
