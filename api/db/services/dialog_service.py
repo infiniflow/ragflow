@@ -688,7 +688,14 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         if langfuse_tracer and "langfuse_generation" in locals():
             langfuse_output = "\n" + re.sub(r"^.*?(### Query:.*)", r"\1", prompt, flags=re.DOTALL)
             langfuse_output = {"time_elapsed:": re.sub(r"\n", "  \n", langfuse_output), "created_at": time.time()}
-            langfuse_generation.update(output=langfuse_output)
+            langfuse_generation.update(
+                output=langfuse_output,
+                usage={
+                    "input": used_token_count,
+                    "output": tk_num,
+                    "total": used_token_count + tk_num,
+                },
+            )
             langfuse_generation.end()
 
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
