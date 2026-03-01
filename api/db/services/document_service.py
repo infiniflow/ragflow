@@ -816,6 +816,8 @@ class DocumentService(CommonService):
                 elif finished:
                     prg = 1
                     status = TaskStatus.DONE.value
+                elif not finished:
+                    status = TaskStatus.RUNNING.value
 
                 # only for special task and parsed docs and unfinished
                 freeze_progress = special_task_running and doc_progress >= 1 and not finished
