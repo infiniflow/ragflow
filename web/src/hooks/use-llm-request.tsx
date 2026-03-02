@@ -271,6 +271,7 @@ export interface IApiKeySavingParams {
   llm_name?: string;
   model_type?: string;
   base_url?: string;
+  source_fid?: string;
   verify?: boolean;
 }
 

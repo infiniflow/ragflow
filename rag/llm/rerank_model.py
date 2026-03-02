@@ -274,10 +274,13 @@ class SILICONFLOWRerank(Base):
     _FACTORY_NAME = "SILICONFLOW"
 
     def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1/rerank"):
-        if not base_url:
-            base_url = "https://api.siliconflow.cn/v1/rerank"
+        normalized_base_url = (base_url or "").strip()
+        if not normalized_base_url:
+            normalized_base_url = "https://api.siliconflow.cn/v1/rerank"
+        if "/rerank" not in normalized_base_url:
+            normalized_base_url = urljoin(f"{normalized_base_url.rstrip('/')}/", "rerank").rstrip("/")
         self.model_name = model_name
-        self.base_url = base_url
+        self.base_url = normalized_base_url
         self.headers = {
             "accept": "application/json",
             "content-type": "application/json",

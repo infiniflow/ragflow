@@ -245,7 +245,11 @@ export default function Agent() {
           >
             <MessageSquareCode /> {t('flow.conversationVariable')}
           </ButtonLoading>
-          <Button data-testid="agent-run" variant={'secondary'} onClick={handleButtonRunClick}>
+          <Button
+            data-testid="agent-run"
+            variant={'secondary'}
+            onClick={handleButtonRunClick}
+          >
             <CirclePlay />
             {t('flow.run')}
           </Button>
