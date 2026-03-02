@@ -35,7 +35,7 @@ import (
 	"ragflow/internal/config"
 	"ragflow/internal/dao"
 	"ragflow/internal/model"
-	"ragflow/internal/pkg/auth"
+	"ragflow/internal/utility"
 )
 
 // UserService user service
@@ -411,7 +411,7 @@ func (s *UserService) GetUserByToken(authorization string) (*model.User, error) 
 
 	// Extract access token from authorization header
 	// Equivalent to: access_token = str(jwt.loads(authorization)) in Python
-	accessToken, err := auth.ExtractAccessToken(authorization, secretKey)
+	accessToken, err := utility.ExtractAccessToken(authorization, secretKey)
 	if err != nil {
 		return nil, fmt.Errorf("invalid authorization token: %w", err)
 	}
