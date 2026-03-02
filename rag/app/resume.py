@@ -667,193 +667,6 @@ def _layout_aware_reorder(blocks: list[dict]) -> list[dict]:
     return sorted_blocks
 
 
-def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
-    """
-    Use YOLOv10 layout detection for layout-aware sorting (ref: SmartResume Layout-Aware Reordering)
-
-    Flow:
-    1. Render each PDF page as an image
-    2. Use YOLOv10 to detect layout regions (title, body, table, etc.)
-    3. Assign text blocks to detected layout regions
-    4. Sort hierarchically by region position (region center Y -> region center X -> block Y -> block X)
-
-    Automatically falls back to heuristic sorting on detection failure.
-
-    Args:
-        blocks: Text block list (with coordinate info)
-        binary: PDF file binary content (for rendering page images)
-    Returns:
-        Sorted text block list
-    """
-    if not blocks:
-        return blocks
-
-    recognizer = _get_layout_recognizer()
-    if recognizer is None:
-        logger.info("Layout detector unavailable, falling back to heuristic sorting")
-        return _layout_aware_reorder(blocks)
-
-    try:
-        import pdfplumber
-        # Group text blocks by page
-        pages_blocks = {}
-        for b in blocks:
-            pg = b.get("page", 0)
-            pages_blocks.setdefault(pg, []).append(b)
-
-        # Render each page as image and prepare OCR-format input
-        page_indices = sorted(pages_blocks.keys())
-        image_list = []
-        ocr_res_per_page = []
-
-        with pdfplumber.open(BytesIO(binary)) as pdf:
-            for pg in page_indices:
-                if pg >= len(pdf.pages):
-                    continue
-                page = pdf.pages[pg]
-                # Render as PIL Image (scale_factor=3 matches LayoutRecognizer default)
-                pil_img = page.to_image(resolution=72 * 3).annotated
-                image_list.append(pil_img)
-
-                # Convert page text blocks to LayoutRecognizer required format
-                page_bxs = []
-                for b in pages_blocks[pg]:
-                    page_bxs.append({
-                        "x0": float(b["x0"]),
-                        "top": float(b["top"]),
-                        "x1": float(b["x1"]),
-                        "bottom": float(b["bottom"]),
-                        "text": b["text"],
-                        "page": pg,
-                    })
-                ocr_res_per_page.append(page_bxs)
-
-        if not image_list:
-            return _layout_aware_reorder(blocks)
-
-        # Call YOLOv10 layout detection + text block annotation
-        # LayoutRecognizer.__call__ tags each text block with layout_type and layoutno
-        tagged_blocks, page_layouts = recognizer(
-            image_list, ocr_res_per_page, scale_factor=3, thr=0.2, drop=False
-        )
-
-        if not tagged_blocks:
-            logger.warning("Layout detection returned no results, falling back to heuristic sorting")
-            return _layout_aware_reorder(blocks)
-        layout_center_map: dict[str, tuple[float, float]] = {}  # layoutno -> (center_y, center_x)
-        for pn, lts in enumerate(page_layouts):
-            type_groups: dict[str, list] = {}
-            for lt in lts:
-                tp = lt.get("type", "")
-                type_groups.setdefault(tp, []).append(lt)
-            for tp, group in type_groups.items():
-                for idx, lt in enumerate(group):
-                    key = f"{tp}-{idx}"
-                    cy = (lt.get("top", 0) + lt.get("bottom", 0)) / 2
-                    cx = (lt.get("x0", 0) + lt.get("x1", 0)) / 2
-                    layout_center_map[f"{pn}_{key}"] = (cy, cx)
-
-        for b in tagged_blocks:
-            pg = b.get("page", 0)
-            b_cy = (b.get("top", 0) + b.get("bottom", 0)) / 2
-            b_cx = (b.get("x0", 0) + b.get("x1", 0)) / 2
-            b["_block_cy"] = b_cy
-            b["_block_cx"] = b_cx
-
-            layoutno = b.get("layoutno", "")
-            if layoutno:
-                map_key = f"{pg}_{layoutno}"
-                if map_key in layout_center_map:
-                    b["_ly_center"], b["_lx_center"] = layout_center_map[map_key]
-                else:
-                    b["_ly_center"] = b_cy
-                    b["_lx_center"] = b_cx
-            else:
-                b["_ly_center"] = b_cy
-                b["_lx_center"] = b_cx
-
-        active_layouts_per_page: dict[int, list[tuple[str, dict]]] = {}
-        for b in tagged_blocks:
-            pg = b.get("page", 0)
-            layoutno = b.get("layoutno", "")
-            if layoutno and pg < len(page_layouts):
-                active_layouts_per_page.setdefault(pg, set()).add(layoutno)
-        active_layout_coords: dict[int, list[tuple[str, float, float, float, float, float, float]]] = {}
-        for pg, layoutno_set in active_layouts_per_page.items():
-            coords = []
-            if pg < len(page_layouts):
-                type_groups: dict[str, list] = {}
-                for lt in page_layouts[pg]:
-                    tp = lt.get("type", "")
-                    type_groups.setdefault(tp, []).append(lt)
-                for tp, group in type_groups.items():
-                    for idx, lt in enumerate(group):
-                        key = f"{tp}-{idx}"
-                        if key in layoutno_set:
-                            x0 = lt.get("x0", 0)
-                            x1 = lt.get("x1", 0)
-                            top = lt.get("top", 0)
-                            bottom = lt.get("bottom", 0)
-                            cy = (top + bottom) / 2
-                            cx = (x0 + x1) / 2
-                            coords.append((key, x0, top, x1, bottom, cy, cx))
-            active_layout_coords[pg] = coords
-
-        for b in tagged_blocks:
-            layoutno = b.get("layoutno", "")
-            if layoutno:
-                continue
-            pg = b.get("page", 0)
-            b_cx = b["_block_cx"]
-            b_cy = b["_block_cy"]
-            coords = active_layout_coords.get(pg, [])
-            if not coords:
-                continue
-            min_dist = float("inf")
-            best_cy, best_cx = b_cy, b_cx
-            for _, lx0, ltop, lx1, lbottom, lcy, lcx in coords:
-                # 计算点到矩形的最短距离（参考 SmartResume）
-                dx = max(lx0 - b_cx, 0, b_cx - lx1)
-                dy = max(ltop - b_cy, 0, b_cy - lbottom)
-                dist = min(dx, dy) if dx > 0 and dy > 0 else (dx + dy)
-                if dist < min_dist:
-                    min_dist = dist
-                    best_cy, best_cx = lcy, lcx
-            b["_ly_center"] = best_cy
-            b["_lx_center"] = best_cx
-
-        def _sort_key(b):
-            layout_type = b.get("layout_type", "")
-            pg = b.get("page", 0)
-            if layout_type == "header":
-                return (pg, -9999, 0, b.get("_block_cy", 0), b.get("_block_cx", 0))
-            if layout_type == "footer":
-                return (pg, 9999, 0, b.get("_block_cy", 0), b.get("_block_cx", 0))
-            return (pg, b.get("_ly_center", 0), b.get("_lx_center", 0),
-                    b.get("_block_cy", 0), b.get("_block_cx", 0))
-
-        tagged_blocks.sort(key=_sort_key)
-
-        for b in tagged_blocks:
-            b.pop("_ly_center", None)
-            b.pop("_lx_center", None)
-            b.pop("_block_cy", None)
-            b.pop("_block_cx", None)
-
-        for b in tagged_blocks:
-            if "page" not in b:
-                b["page"] = 0
-
-        logger.info(f"YOLOv10 layout detection complete，{len(tagged_blocks)} text blocks total,"
-                    f"detected {sum(len(pl) for pl in page_layouts)} layout regions")
-        return tagged_blocks
-
-    except Exception as e:
-        logger.warning(f"YOLOv10 layout detection sorting failed, falling back to heuristic sorting: {e}")
-        return _layout_aware_reorder(blocks)
-
-
-
 def _build_indexed_text(blocks: list[dict]) -> tuple[str, list[str], list[dict]]:
     """
 
@@ -2551,3 +2364,199 @@ def chunk(filename, binary, tenant_id, from_page=0, to_page=100000,
         logger.exception(f"Resume parsing exception: {filename}")
         callback(-1, f"Resume parsing failed: {str(e)}")
         return []
+
+
+def _resort_page_with_layout(page_blocks: list[dict], layout_regions: list[dict]) -> list[dict]:
+    if not page_blocks:
+        return []
+
+    # 如果没有布局区域，按中心坐标排序
+    if not layout_regions:
+        return sorted(page_blocks, key=lambda b: (
+            (b.get("top", 0) + b.get("bottom", 0)) / 2,
+            (b.get("x0", 0) + b.get("x1", 0)) / 2,
+        ))
+
+    type_groups: dict[str, list] = {}
+    for lt in layout_regions:
+        tp = lt.get("type", "")
+        type_groups.setdefault(tp, []).append(lt)
+    entries = []
+    for tp, group in type_groups.items():
+        for idx, lt in enumerate(group):
+            key = f"{tp}-{idx}"
+            x0, x1 = lt.get("x0", 0), lt.get("x1", 0)
+            top, bottom = lt.get("top", 0), lt.get("bottom", 0)
+            entries.append({
+                "key": key, "type": tp,
+                "x0": x0, "top": top, "x1": x1, "bottom": bottom,
+                "cy": (top + bottom) / 2, "cx": (x0 + x1) / 2,
+            })
+
+    for b in page_blocks:
+        if b.get("layoutno"):
+            continue
+        b_cx = (b.get("x0", 0) + b.get("x1", 0)) / 2
+        b_cy = (b.get("top", 0) + b.get("bottom", 0)) / 2
+        for entry in entries:
+            if (entry["x0"] <= b_cx <= entry["x1"]
+                    and entry["top"] <= b_cy <= entry["bottom"]):
+                b["layoutno"] = entry["key"]
+                b["layout_type"] = entry["type"]
+                break
+
+    for entry in entries:
+        layout_key = entry["key"]
+        layout_area = (entry["x1"] - entry["x0"]) * (entry["bottom"] - entry["top"])
+        if layout_area <= 0:
+            continue
+        layout_blocks = [b for b in page_blocks if b.get("layoutno") == layout_key]
+        if not layout_blocks:
+            continue
+        text_total_area = sum(
+            (b.get("x1", 0) - b.get("x0", 0)) * (b.get("bottom", 0) - b.get("top", 0))
+            for b in layout_blocks
+        )
+        if text_total_area / layout_area < 0.075:
+            for b in layout_blocks:
+                b["layoutno"] = ""
+                b["layout_type"] = ""
+
+    entry_map = {e["key"]: e for e in entries}
+    for b in page_blocks:
+        b_cx = (b.get("x0", 0) + b.get("x1", 0)) / 2
+        b_cy = (b.get("top", 0) + b.get("bottom", 0)) / 2
+        b["_x_center"] = b_cx
+        b["_y_center"] = b_cy
+        layoutno = b.get("layoutno", "")
+        if layoutno and layoutno in entry_map:
+            b["_lx_center"] = entry_map[layoutno]["cx"]
+            b["_ly_center"] = entry_map[layoutno]["cy"]
+        else:
+            b["_lx_center"] = b_cx
+            b["_ly_center"] = b_cy
+
+    active_keys = {b.get("layoutno") for b in page_blocks if b.get("layoutno")}
+    active_entries = [e for e in entries if e["key"] in active_keys]
+
+    for b in page_blocks:
+        if b.get("layoutno"):
+            continue
+        if not active_entries:
+            continue
+        b_cx, b_cy = b["_x_center"], b["_y_center"]
+        min_dist = float("inf")
+        best_cx, best_cy = b_cx, b_cy
+        for ae in active_entries:
+            lx1, ly1, lx2, ly2 = ae["x0"], ae["top"], ae["x1"], ae["bottom"]
+            if b_cy < ly1:
+                dy = ly1 - b_cy
+            elif b_cy > ly2:
+                dy = b_cy - ly2
+            else:
+                dy = 0
+            if b_cx < lx1:
+                dx = lx1 - b_cx
+            elif b_cx > lx2:
+                dx = b_cx - lx2
+            else:
+                dx = 0
+            dist = (dx ** 2 + dy ** 2) ** 0.5
+            if dist < min_dist:
+                min_dist = dist
+                best_cx, best_cy = ae["cx"], ae["cy"]
+        b["_lx_center"] = best_cx
+        b["_ly_center"] = best_cy
+
+    sorted_blocks = sorted(page_blocks, key=lambda b: (
+        b.get("_ly_center", 0),
+        b.get("_lx_center", 0),
+        b.get("_y_center", 0),
+        b.get("_x_center", 0),
+    ))
+
+    for b in sorted_blocks:
+        b.pop("_ly_center", None)
+        b.pop("_lx_center", None)
+        b.pop("_y_center", None)
+        b.pop("_x_center", None)
+
+    return sorted_blocks
+
+
+def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
+    if not blocks:
+        return blocks
+
+    recognizer = _get_layout_recognizer()
+    if recognizer is None:
+        logger.info("Layout detector unavailable, falling back to heuristic sorting")
+        return _layout_aware_reorder(blocks)
+
+    try:
+        import pdfplumber
+        pages_blocks: dict[int, list[dict]] = {}
+        for b in blocks:
+            pg = b.get("page", 0)
+            pages_blocks.setdefault(pg, []).append(b)
+
+        page_indices = sorted(pages_blocks.keys())
+        image_list = []
+        ocr_res_per_page = []
+
+        with pdfplumber.open(BytesIO(binary)) as pdf:
+            for pg in page_indices:
+                if pg >= len(pdf.pages):
+                    continue
+                page = pdf.pages[pg]
+                pil_img = page.to_image(resolution=72 * 3).annotated
+                image_list.append(pil_img)
+
+                page_bxs = []
+                for b in pages_blocks[pg]:
+                    page_bxs.append({
+                        "x0": float(b["x0"]),
+                        "top": float(b["top"]),
+                        "x1": float(b["x1"]),
+                        "bottom": float(b["bottom"]),
+                        "text": b["text"],
+                        "page": pg,
+                    })
+                ocr_res_per_page.append(page_bxs)
+
+        if not image_list:
+            return _layout_aware_reorder(blocks)
+
+        tagged_blocks, page_layouts = recognizer(
+            image_list, ocr_res_per_page, scale_factor=3, thr=0.2, drop=False
+        )
+
+        if not tagged_blocks:
+            logger.warning("Layout detector unavailable, falling back to heuristic sorting")
+            return _layout_aware_reorder(blocks)
+
+        tagged_per_page: dict[int, list[dict]] = {}
+        for b in tagged_blocks:
+            pg = b.get("page", 0)
+            tagged_per_page.setdefault(pg, []).append(b)
+
+        sorted_all = []
+        total_layout_count = 0
+        for pn, pg in enumerate(page_indices):
+            page_bxs = tagged_per_page.get(pg, [])
+            lts = page_layouts[pn] if pn < len(page_layouts) else []
+            total_layout_count += len(lts)
+            sorted_page = _resort_page_with_layout(page_bxs, lts)
+            sorted_all.extend(sorted_page)
+
+        for b in sorted_all:
+            if "page" not in b:
+                b["page"] = 0
+
+        logger.info(f"YOLOv10 detector completed， {len(sorted_all)} total chunks，"
+                    f"checked {total_layout_count} layout")
+        return sorted_all
+
+    except Exception as e:
+        logger.warning(f"Layout detector unavailable, falling back to heuristic sorting: {e}")
+        return _layout_aware_reorder(blocks)
