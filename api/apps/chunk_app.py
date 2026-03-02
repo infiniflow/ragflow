@@ -166,6 +166,10 @@ async def set():
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
 
+            e, doc = DocumentService.get_by_id(req["doc_id"])
+            if not e:
+                return get_data_error_result(message="Document not found!")
+
             tenant_embd_id = DocumentService.get_tenant_embd_id(req["doc_id"])
             if tenant_embd_id:
                 embd_model_config = get_model_config_by_id(tenant_embd_id)
@@ -173,10 +177,6 @@ async def set():
                 embd_id = DocumentService.get_embd_id(req["doc_id"])
                 embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_id)
             embd_mdl = LLMBundle(tenant_id, embd_model_config)
-
-            e, doc = DocumentService.get_by_id(req["doc_id"])
-            if not e:
-                return get_data_error_result(message="Document not found!")
 
             _d = d
             if doc.parser_id == ParserType.QA:
