@@ -81,6 +81,12 @@ func main() {
 	}
 	defer cache.Close()
 
+	// Initialize server variables (runtime variables that can change during operation)
+	// This must be done after Cache is initialized
+	if err := server.InitVariables(cache.Get()); err != nil {
+		logger.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
+	}
+
 	// Initialize tokenizer (rag_analyzer)
 	tokenizerCfg := &tokenizer.PoolConfig{
 		DictPath: "/usr/share/infinity/resource",

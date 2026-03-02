@@ -17,8 +17,10 @@
 package utility
 
 import (
+	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -78,4 +80,13 @@ func urlSafeB64Decode(s string) ([]byte, error) {
 		s += strings.Repeat("=", padding)
 	}
 	return base64.URLEncoding.DecodeString(s)
+}
+
+// generateSecretKey generates a 32-byte hex string (equivalent to Python's secrets.token_hex(32))
+func GenerateSecretKey() (string, error) {
+	bytes := make([]byte, 32) // 32 bytes = 256 bits
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("failed to generate random key: %v", err)
+	}
+	return hex.EncodeToString(bytes), nil
 }

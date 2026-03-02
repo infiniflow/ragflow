@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"ragflow/internal/server"
 	"strconv"
 	"sync"
 	"time"
@@ -32,6 +31,7 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/logger"
+	"ragflow/internal/server"
 )
 
 var (
