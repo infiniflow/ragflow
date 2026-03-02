@@ -40,7 +40,7 @@ class Session(Base):
         metadata_condition accepts:
         {
             "logic": "and" | "or",
-            "conditions": [{"key": "...", "value": "...", "op": "..."}]
+            "conditions": [{"name": "...", "comparison_operator": "...", "value": "..."}]
         }
         """
         if metadata_condition is not None:

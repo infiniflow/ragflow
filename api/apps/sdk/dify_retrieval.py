@@ -85,13 +85,15 @@ async def retrieval(tenant_id):
                   items:
                     type: object
                     properties:
-                      key:
+                      name:
                         type: string
                         description: Metadata attribute name
-                      op:
+                      comparison_operator:
                         type: string
                         description: Operator from the allowed list
                         enum:
+                          - is
+                          - not is
                           - contains
                           - not contains
                           - in
@@ -104,15 +106,17 @@ async def retrieval(tenant_id):
                           - "≠"
                           - ">"
                           - "<"
+                          - ">="
+                          - "<="
                           - "≥"
                           - "≤"
                       value:
                         type: string
                         description: Value to compare
                     required:
-                      - key
+                      - name
                       - value
-                      - op
+                      - comparison_operator
               required:
                 - conditions
               additionalProperties: false

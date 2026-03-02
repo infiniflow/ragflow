@@ -167,13 +167,15 @@ async def chat_completion(tenant_id, chat_id):
                   items:
                     type: object
                     properties:
-                      key:
+                      name:
                         type: string
                       value:
                         type: string
-                      op:
+                      comparison_operator:
                         type: string
                         enum:
+                          - is
+                          - not is
                           - contains
                           - not contains
                           - in
@@ -186,6 +188,8 @@ async def chat_completion(tenant_id, chat_id):
                           - "≠"
                           - ">"
                           - "<"
+                          - ">="
+                          - "<="
                           - "≥"
                           - "≤"
       - in: header
@@ -303,8 +307,8 @@ async def chat_completion_openai_like(tenant_id, chat_id):
                 "logic": "and",
                 "conditions": [
                     {
-                        "key": "author",
-                        "op": "=",
+                        "name": "author",
+                        "comparison_operator": "is",
                         "value": "bob"
                     }
                 ]

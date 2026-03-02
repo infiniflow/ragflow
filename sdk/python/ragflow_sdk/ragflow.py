@@ -234,7 +234,7 @@ class RAGFlow:
         metadata_condition supports:
         {
             "logic": "and" | "or",
-            "conditions": [{"key": "...", "value": "...", "op": "..."}]
+            "conditions": [{"name": "...", "comparison_operator": "...", "value": "..."}]
         }
         """
         if document_ids is None:

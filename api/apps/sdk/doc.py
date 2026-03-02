@@ -536,8 +536,7 @@ def list_docs(dataset_id, tenant_id):
         required: false
         description: >
           JSON-encoded metadata filter object. Schema:
-          {"logic":"and|or","conditions":[{"key":"<metadata_key>","value":"<compare_value>","op":"contains|not contains|in|not in|start with|end with|empty|not empty|=|≠|>|<|≥|≤"}]}.
-          Legacy aliases {"name","comparison_operator"} are also accepted per condition.
+          {"logic":"and|or","conditions":[{"name":"<metadata_name>","comparison_operator":"is|not is|contains|not contains|in|not in|start with|end with|empty|not empty|=|!=|>|<|>=|<=|≥|≤","value":"<compare_value>"}]}.
       - in: header
         name: Authorization
         type: string
@@ -1530,16 +1529,18 @@ async def retrieval_test(tenant_id):
                   items:
                     type: object
                     properties:
-                      key:
+                      name:
                         type: string
                         description: Metadata attribute name.
                       value:
                         type: string
                         description: Value to compare.
-                      op:
+                      comparison_operator:
                         type: string
                         description: Operator from the allowed list.
                         enum:
+                          - is
+                          - not is
                           - contains
                           - not contains
                           - in
@@ -1552,12 +1553,14 @@ async def retrieval_test(tenant_id):
                           - "≠"
                           - ">"
                           - "<"
+                          - ">="
+                          - "<="
                           - "≥"
                           - "≤"
                   required:
-                    - key
+                    - name
                     - value
-                    - op
+                    - comparison_operator
               required:
                 - conditions
               additionalProperties: false
