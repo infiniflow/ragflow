@@ -239,6 +239,31 @@ export const MultiSelect = React.forwardRef<
         'options' in option ? option.options : [option],
       );
     }, [options]);
+
+    const disabledValueSet = React.useMemo(() => {
+      return new Set(
+        flatOptions.filter((option) => option.disabled).map((option) => option.value),
+      );
+    }, [flatOptions]);
+
+    const preserveDisabledValues = React.useCallback(
+      (values: string[]) => {
+        const disabledSelectedValues = selectedValues.filter((value) =>
+          disabledValueSet.has(value),
+        );
+
+        return Array.from(
+          new Set<string>([...disabledSelectedValues, ...values]),
+        );
+      },
+      [disabledValueSet, selectedValues],
+    );
+
+    const canRemoveValue = React.useCallback(
+      (value: string) => !disabledValueSet.has(value),
+      [disabledValueSet],
+    );
+
     const handleInputKeyDown = (
       event: React.KeyboardEvent<HTMLInputElement>,
     ) => {
@@ -246,13 +271,26 @@ export const MultiSelect = React.forwardRef<
         setIsPopoverOpen(true);
       } else if (event.key === 'Backspace' && !event.currentTarget.value) {
         const newSelectedValues = [...selectedValues];
-        newSelectedValues.pop();
+        const removableIndex = [...newSelectedValues]
+          .reverse()
+          .findIndex((value) => canRemoveValue(value));
+        if (removableIndex < 0) {
+          return;
+        }
+        newSelectedValues.splice(
+          newSelectedValues.length - 1 - removableIndex,
+          1,
+        );
         setSelectedValues(newSelectedValues);
         onValueChange(newSelectedValues);
       }
     };
 
     const toggleOption = (option: string) => {
+      if (disabledValueSet.has(option)) {
+        return;
+      }
+
       const newSelectedValues = selectedValues.includes(option)
         ? selectedValues.filter((value) => value !== option)
         : [...selectedValues, option];
@@ -261,8 +299,9 @@ export const MultiSelect = React.forwardRef<
     };
 
     const handleClear = () => {
-      setSelectedValues([]);
-      onValueChange([]);
+      const nextValues = preserveDisabledValues([]);
+      setSelectedValues(nextValues);
+      onValueChange(nextValues);
     };
 
     const handleTogglePopover = () => {
@@ -270,7 +309,9 @@ export const MultiSelect = React.forwardRef<
     };
 
     const clearExtraOptions = () => {
-      const newSelectedValues = selectedValues.slice(0, maxCount);
+      const newSelectedValues = preserveDisabledValues(
+        selectedValues.slice(0, maxCount),
+      );
       setSelectedValues(newSelectedValues);
       onValueChange(newSelectedValues);
     };
@@ -279,7 +320,9 @@ export const MultiSelect = React.forwardRef<
       if (selectedValues.length === flatOptions.length) {
         handleClear();
       } else {
-        const allValues = flatOptions.map((option) => option.value);
+        const allValues = preserveDisabledValues(
+          flatOptions.map((option) => option.value),
+        );
         setSelectedValues(allValues);
         onValueChange(allValues);
       }
@@ -325,13 +368,15 @@ export const MultiSelect = React.forwardRef<
                           <div className="max-w-28 text-ellipsis overflow-hidden">
                             {option?.label}
                           </div>
-                          <XCircle
-                            className="h-4 w-4 cursor-pointer"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              toggleOption(value);
-                            }}
-                          />
+                          {canRemoveValue(value) && (
+                            <XCircle
+                              className="h-4 w-4 cursor-pointer"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleOption(value);
+                              }}
+                            />
+                          )}
                         </div>
                       </Badge>
                     );

@@ -214,6 +214,7 @@ function transformParserParams(params: ParserFormSchemaType) {
         ParserFormSchemaType['setups'][0] & { suffix: string[] }
       > = {
         output_format: cur.output_format,
+        preprocess: cur.preprocess,
         suffix: FileTypeSuffixMap[cur.fileFormat as FileType],
       };
 
