@@ -187,7 +187,7 @@ async def run():
     canvas_category = replica_payload.get("canvas_category", CanvasCategory.Agent)
     dsl_str = json.dumps(replica_dsl, ensure_ascii=False)
 
-    e, cvs = await thread_pool_exec(UserCanvasService.get_by_id, req["id"])
+    _, cvs = await thread_pool_exec(UserCanvasService.get_by_id, req["id"])
     if cvs.canvas_category == CanvasCategory.DataFlow:
         task_id = get_uuid()
         Pipeline(dsl_str, tenant_id=tenant_id, doc_id=CANVAS_DEBUG_DOC_ID, task_id=task_id, flow_id=req["id"])
