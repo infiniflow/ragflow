@@ -79,7 +79,10 @@ export const AvailableModels: FC<{
   };
 
   return (
-    <div className=" text-text-primary h-full p-4" data-testid="available-models-section">
+    <div
+      className=" text-text-primary h-full p-4"
+      data-testid="available-models-section"
+    >
       <div className="text-text-primary text-base mb-4">
         {t('availableModels')}
       </div>

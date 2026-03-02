@@ -118,7 +118,10 @@ export default function Agents() {
           </EmptyAppCard>
         </div>
       )}
-      <section className="flex flex-col w-full flex-1" data-testid="agents-list">
+      <section
+        className="flex flex-col w-full flex-1"
+        data-testid="agents-list"
+      >
         {(!!data?.length || searchString) && (
           <>
             <div className="px-8 pt-8 ">

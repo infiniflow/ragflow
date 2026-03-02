@@ -268,7 +268,11 @@ export function NextMessageInput({
           </div>
 
           {sendLoading ? (
-            <Button data-testid="chat-stream-status" onClick={stopOutputMessage} size="icon-xs">
+            <Button
+              data-testid="chat-stream-status"
+              onClick={stopOutputMessage}
+              size="icon-xs"
+            >
               <CircleStop />
             </Button>
           ) : (
