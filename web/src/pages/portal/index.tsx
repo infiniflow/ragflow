@@ -1,25 +1,28 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { MessageType } from '@/constants/chat';
 import { useFetchAppConf } from '@/hooks/logic-hooks';
+import { Message } from '@/interfaces/database/chat';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import {
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Loader2,
-  MessageCircle,
   MessageSquare,
-  Search,
+  Mic,
+  Send,
   Trash2,
 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   PublicDialog,
-  generateShareUrl,
   useFetchConversationHistory,
   useFetchPublicDialogs,
-  useSearchKeywords,
 } from './hooks';
 
 // 会话历史类型定义
@@ -40,234 +43,301 @@ dayjs.locale('zh-cn');
 
 export default function PortalPage() {
   const appConf = useFetchAppConf();
-  const [currentPage, setCurrentPage] = useState(1);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [selectedDialog, setSelectedDialog] = useState<PublicDialog | null>(
     null,
   );
-  const [isIframeLoading, setIsIframeLoading] = useState(false);
   const [selectedConversationId, setSelectedConversationId] = useState<
     string | undefined
   >();
-  const [iframeKey, setIframeKey] = useState(0);
-  const pageSize = 30;
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isChatMode, setIsChatMode] = useState(false); // 是否进入聊天模式
+  const [welcomeMessage, setWelcomeMessage] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const { keywords, debouncedKeywords, handleSearch } = useSearchKeywords();
-  const { data, isLoading, isError } = useFetchPublicDialogs(
-    currentPage,
-    pageSize,
-    debouncedKeywords,
-  );
+  // 获取所有公开助手
+  const { data: dialogsData, isLoading: dialogsLoading } =
+    useFetchPublicDialogs(1, 100, '');
+  const allDialogs = dialogsData?.dialogs || [];
 
-  // 从后端查询所有公开助手的会话历史
+  // 显示前9个助手（3行 x 3列）
+  const displayedDialogs = allDialogs.slice(0, 9);
+
+  // 获取会话历史
   const { data: conversationData, refetch: refetchConversations } =
     useFetchConversationHistory();
   const allConversations = conversationData?.conversations || [];
 
-  const handleDialogClick = (dialog: PublicDialog) => {
-    setIsIframeLoading(true);
+  // 自动滚动到底部
+  useEffect(() => {
+    if (isChatMode) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isChatMode]);
+
+  // 默认选中第一个助手并获取欢迎语
+  useEffect(() => {
+    if (!selectedDialog && displayedDialogs.length > 0) {
+      fetchWelcomeMessage(displayedDialogs[0]);
+    }
+  }, [displayedDialogs.length]);
+
+  const fetchWelcomeMessage = async (dialog: PublicDialog) => {
     setSelectedDialog(dialog);
-    setSelectedConversationId(undefined);
-    setIframeKey((prev) => prev + 1);
+    try {
+      // 使用 dialog.id (真实的 dialog_id) 而不是 shared_id
+      const response = await fetch(`/api/v1/chatbots/${dialog.id}/info`, {
+        headers: {
+          Authorization: `Bearer ${dialog.auth_token}`,
+        },
+      });
+      const result = await response.json();
+
+      if (result.code === 0 && result.data.prologue) {
+        setWelcomeMessage(result.data.prologue);
+      }
+    } catch (error) {
+      console.error('Failed to fetch welcome message:', error);
+    }
   };
 
-  const handleSelectConversation = (conversation: ConversationHistory) => {
-    // 找到对应的助手
-    const dialog = data?.dialogs.find((d) => d.id === conversation.dialog_id);
-    if (dialog) {
-      setIsIframeLoading(true);
-      setSelectedDialog(dialog);
-      setSelectedConversationId(conversation.id);
-      setIframeKey((prev) => prev + 1);
+  const handleSelectDialog = async (dialog: PublicDialog) => {
+    setSelectedDialog(dialog);
+    setSelectedConversationId(undefined);
+    setIsChatMode(false);
+    setMessages([]);
+    await fetchWelcomeMessage(dialog);
+  };
+
+  const handleSelectConversation = async (
+    conversation: ConversationHistory,
+  ) => {
+    const dialog = allDialogs.find((d) => d.id === conversation.dialog_id);
+    if (!dialog) return;
+
+    // 先清空当前消息，避免显示其他会话的消息
+    setMessages([]);
+    setSelectedDialog(dialog);
+    setSelectedConversationId(conversation.id);
+    setIsLoading(true);
+    setIsChatMode(true);
+
+    try {
+      const response = await fetch(
+        `/v1/dialog/public/conversation/${conversation.id}/messages`,
+      );
+      const result = await response.json();
+
+      if (result.code === 0 && result.data.messages) {
+        setMessages(result.data.messages);
+      }
+    } catch (error) {
+      console.error('Failed to load conversation:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleDeleteConversation = useCallback(
     (conversationId: string) => {
       // TODO: 调用后端API删除会话
-      // 目前只是刷新列表
       refetchConversations();
       if (selectedConversationId === conversationId) {
-        setSelectedConversationId(undefined);
-        setIframeKey((prev) => prev + 1);
+        handleBackToHome();
       }
     },
     [selectedConversationId, refetchConversations],
   );
 
-  const handleNewConversation = () => {
+  const handleBackToHome = () => {
+    // 如果正在加载，先停止
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsChatMode(false);
+    setMessages([]);
+    setSelectedConversationId(undefined);
+    setInputValue('');
+    setIsLoading(false);
     if (selectedDialog) {
-      setSelectedConversationId(undefined);
-      setIframeKey((prev) => prev + 1);
-      setIsIframeLoading(true);
-      // 延迟刷新会话列表，等待新会话创建
-      setTimeout(() => {
-        refetchConversations();
-      }, 2000);
+      fetchWelcomeMessage(selectedDialog);
     }
   };
 
-  const handleIframeLoad = () => {
-    setIsIframeLoading(false);
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsLoading(false);
+    }
   };
 
-  const totalPages = data ? Math.ceil(data.total / pageSize) : 0;
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || !selectedDialog || isLoading) return;
+
+    // 进入聊天模式
+    if (!isChatMode) {
+      setIsChatMode(true);
+    }
+
+    const userMessage: Message = {
+      role: MessageType.User,
+      content: inputValue.trim(),
+      id: `user-${Date.now()}`,
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    const questionText = inputValue.trim();
+    setInputValue('');
+    setIsLoading(true);
+
+    // 创建 AbortController
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    // 添加一个空的助手消息用于流式更新
+    const assistantMessageId = `assistant-${Date.now()}`;
+    const assistantMessageIndex = messages.length + 1; // 预先计算索引位置
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: MessageType.Assistant,
+        content: '',
+        id: assistantMessageId,
+      },
+    ]);
+
+    try {
+      const response = await fetch(
+        `/api/v1/chatbots/${selectedDialog.id}/completions`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${selectedDialog.auth_token}`,
+          },
+          body: JSON.stringify({
+            question: questionText,
+            session_id: selectedConversationId,
+            quote: true,
+            stream: true,
+          }),
+          signal: abortController.signal, // 添加 abort signal
+        },
+      );
+
+      if (!response.ok || !response.body) {
+        throw new Error('Failed to send message');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            try {
+              const jsonStr = line.slice(5).trim();
+              if (!jsonStr) continue;
+
+              const data = JSON.parse(jsonStr);
+
+              if (data.code === 0 && data.data) {
+                if (data.data === true) {
+                  break;
+                }
+
+                if (data.data.answer) {
+                  // 直接更新最后一条消息，避免遍历整个数组
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastMsg = newMessages[newMessages.length - 1];
+                    if (lastMsg && lastMsg.id === assistantMessageId) {
+                      lastMsg.content = data.data.answer;
+                    }
+                    return newMessages;
+                  });
+                }
+
+                if (data.data.session_id && !selectedConversationId) {
+                  setSelectedConversationId(data.data.session_id);
+                }
+              }
+            } catch (e) {
+              console.error('Failed to parse SSE data:', e);
+            }
+          }
+        }
+      }
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.log('Generation stopped by user');
+      } else {
+        console.error('Failed to send message:', error);
+        setMessages((prev) =>
+          prev.filter((msg) => msg.id !== assistantMessageId),
+        );
+      }
+    } finally {
+      abortControllerRef.current = null;
+      setIsLoading(false);
+      setTimeout(() => {
+        refetchConversations();
+      }, 1000);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
 
   return (
-    <div className="h-screen bg-muted/30 flex overflow-hidden relative p-4 lg:p-6 gap-4 lg:gap-6">
-      {/* Left Sidebar - 上下布局 */}
-      <div className="w-72 lg:w-80 flex flex-col bg-white dark:bg-gray-950 rounded-xl shadow-2xl border overflow-hidden flex-shrink-0">
-        {/* Header */}
-        <div className="px-4 py-4 border-b bg-white dark:bg-gray-950 flex-shrink-0">
-          <div className="flex items-center gap-2 mb-3">
-            <img
-              src="/logo.gif"
-              alt="logo"
-              className="w-7 h-7 object-contain"
-            />
-            <span className="font-semibold text-base truncate">
-              {appConf.appName}
-            </span>
-          </div>
-          <h2 className="text-sm font-medium text-muted-foreground">
-            AI 助手中心
-          </h2>
-        </div>
-
-        {/* 上半部分：助手列表 */}
-        <div className="flex-1 flex flex-col min-h-0 border-b">
-          <div className="px-3 py-2 bg-muted/30 flex-shrink-0">
-            <h3 className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
-              <MessageCircle className="size-3.5" />
-              助手列表
-            </h3>
-          </div>
-
-          {/* Search Bar */}
-          <div className="px-3 py-2 bg-white dark:bg-gray-950 flex-shrink-0">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-muted-foreground size-3.5" />
-              <Input
-                type="text"
-                placeholder="搜索助手..."
-                className="pl-8 h-8 text-xs bg-muted/50"
-                value={keywords}
-                onChange={(e) => handleSearch(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Assistant List */}
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-950 min-h-0">
-            {isLoading && (
-              <div className="flex justify-center items-center py-8">
-                <Loader2 className="size-5 animate-spin text-primary" />
-              </div>
-            )}
-
-            {isError && (
-              <div className="px-3 py-6 text-center">
-                <p className="text-destructive text-xs">加载失败</p>
-              </div>
-            )}
-
-            {data && data.dialogs.length === 0 && (
-              <div className="px-3 py-6 text-center">
-                <p className="text-muted-foreground text-xs">
-                  {debouncedKeywords ? '无匹配结果' : '暂无助手'}
-                </p>
-              </div>
-            )}
-
-            {data && data.dialogs.length > 0 && (
-              <div className="py-1">
-                {data.dialogs.map((dialog) => (
-                  <button
-                    key={dialog.id}
-                    onClick={() => handleDialogClick(dialog)}
-                    className={`w-full px-3 py-2 flex items-center gap-2.5 hover:bg-muted/50 transition-colors text-left ${
-                      selectedDialog?.id === dialog.id
-                        ? 'bg-primary/10 border-l-2 border-primary'
-                        : 'border-l-2 border-transparent'
-                    }`}
-                  >
-                    <RAGFlowAvatar
-                      avatar={dialog.icon}
-                      name={dialog.name}
-                      className="size-7 flex-shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-xs truncate">
-                        {dialog.name}
-                      </div>
-                      <div
-                        className="text-[10px] text-muted-foreground truncate"
-                        title={dialog.description || '暂无描述'}
-                      >
-                        {dialog.description || '暂无描述'}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Pagination */}
-          {data && totalPages > 1 && (
-            <div className="px-3 py-2 border-t bg-white dark:bg-gray-950 flex-shrink-0">
-              <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1.5">
-                <span>
-                  {currentPage}/{totalPages}
-                </span>
-                <span>共 {data.total} 个</span>
-              </div>
-              <div className="flex gap-1.5">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 h-7 text-[10px]"
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                >
-                  上一页
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 h-7 text-[10px]"
-                  disabled={currentPage === totalPages}
-                  onClick={() =>
-                    setCurrentPage((p) => Math.min(totalPages, p + 1))
-                  }
-                >
-                  下一页
-                </Button>
-              </div>
+    <div className="h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 flex overflow-hidden">
+      {/* Left Sidebar - 历史记录 */}
+      <div
+        className={`${
+          sidebarCollapsed ? 'w-12' : 'w-72'
+        } transition-all duration-300 bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm border-r flex flex-col flex-shrink-0`}
+      >
+        <div className="p-2 border-b flex items-center justify-between">
+          {!sidebarCollapsed && (
+            <div className="flex items-center gap-2">
+              <Clock className="size-4 text-muted-foreground" />
+              <span className="text-sm font-medium">历史记录</span>
             </div>
           )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 w-8 p-0"
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          >
+            {sidebarCollapsed ? (
+              <ChevronRight className="size-4" />
+            ) : (
+              <ChevronLeft className="size-4" />
+            )}
+          </Button>
         </div>
 
-        {/* 下半部分：历史会话 */}
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className="px-3 py-2 bg-muted/30 flex-shrink-0 flex items-center justify-between">
-            <h3 className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
-              <Clock className="size-3.5" />
-              历史会话
-            </h3>
-            {selectedDialog && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 px-2 text-[10px]"
-                onClick={handleNewConversation}
-              >
-                新对话
-              </Button>
-            )}
-          </div>
-
-          {/* History List */}
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-950 min-h-0">
+        {!sidebarCollapsed && (
+          <div className="flex-1 overflow-y-auto">
             {allConversations.length === 0 ? (
               <div className="px-4 py-8 text-center">
                 <MessageSquare className="size-10 text-muted-foreground/30 mx-auto mb-2" />
@@ -322,57 +392,216 @@ export default function PortalPage() {
               </div>
             )}
           </div>
-
-          {/* History Count */}
-          {allConversations.length > 0 && (
-            <div className="px-3 py-1.5 border-t bg-white dark:bg-gray-950 flex-shrink-0">
-              <p className="text-[10px] text-muted-foreground text-center">
-                共 {allConversations.length} 条历史记录
-              </p>
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* Right Panel - Chat Interface */}
-      <div className="flex-1 flex flex-col bg-background min-w-0">
-        {selectedDialog ? (
-          <div className="flex-1 overflow-hidden flex items-center justify-end relative rounded-lg">
-            {isIframeLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-20 rounded-lg">
-                <div className="text-center">
-                  <Loader2 className="size-12 animate-spin text-primary mx-auto mb-4" />
-                  <p className="text-sm text-muted-foreground">
-                    正在加载对话...
-                  </p>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {isChatMode ? (
+          // 聊天模式
+          <>
+            {/* Chat Header */}
+            <div className="h-14 border-b bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm flex items-center px-6 flex-shrink-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleBackToHome}
+                className="mr-4"
+              >
+                <ArrowLeft className="size-4 mr-2" />
+                返回
+              </Button>
+              {selectedDialog && (
+                <div className="flex items-center gap-2">
+                  <RAGFlowAvatar
+                    avatar={selectedDialog.icon}
+                    name={selectedDialog.name}
+                    className="size-6"
+                  />
+                  <span className="text-sm font-medium">
+                    {selectedDialog.name}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Messages Area */}
+            <div className="flex-1 overflow-y-auto px-6 py-6">
+              <div className="max-w-4xl mx-auto space-y-6">
+                {messages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={`flex gap-4 ${
+                      msg.role === MessageType.User
+                        ? 'justify-end'
+                        : 'justify-start'
+                    }`}
+                  >
+                    {msg.role === MessageType.Assistant && selectedDialog && (
+                      <RAGFlowAvatar
+                        avatar={selectedDialog.icon}
+                        name={selectedDialog.name}
+                        className="size-9 flex-shrink-0"
+                      />
+                    )}
+                    <div
+                      className={`px-5 py-3 rounded-2xl max-w-[75%] ${
+                        msg.role === MessageType.User
+                          ? 'bg-primary text-primary-foreground shadow-md'
+                          : 'bg-white dark:bg-gray-800 shadow-sm border'
+                      }`}
+                    >
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                        {msg.content}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+            </div>
+
+            {/* Chat Input */}
+            <div className="border-t bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm p-6 flex-shrink-0">
+              <div className="max-w-4xl mx-auto">
+                <div className="flex gap-3 items-end">
+                  <div className="flex-1 relative">
+                    <Input
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      onKeyPress={handleKeyPress}
+                      placeholder="输入消息..."
+                      disabled={isLoading}
+                      className="pr-20 h-12 text-base rounded-xl shadow-sm"
+                    />
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0"
+                        disabled={isLoading}
+                      >
+                        <Mic className="size-4" />
+                      </Button>
+                      {isLoading ? (
+                        <Button
+                          size="sm"
+                          onClick={handleStopGeneration}
+                          variant="destructive"
+                          className="h-8 px-3"
+                        >
+                          停止
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          onClick={handleSendMessage}
+                          disabled={!inputValue.trim()}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Send className="size-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
-            )}
-
-            <div className="w-full h-full">
-              <iframe
-                key={iframeKey}
-                src={
-                  selectedConversationId
-                    ? `${generateShareUrl(selectedDialog)}&conversation_id=${selectedConversationId}`
-                    : generateShareUrl(selectedDialog)
-                }
-                className="w-full h-full border-0 rounded-lg shadow-lg bg-white"
-                title={`Chat with ${selectedDialog.name}`}
-                onLoad={handleIframeLoad}
-              />
             </div>
-          </div>
+          </>
         ) : (
-          <div className="flex-1 flex items-center justify-center rounded-lg">
-            <div className="text-center max-w-sm">
-              <div className="text-5xl mb-4">💬</div>
-              <h3 className="text-lg font-medium mb-2">
-                请选择一个助手开始对话
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                从左侧列表中选择助手
-              </p>
+          // 主页模式
+          <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
+            <div className="w-full max-w-4xl mx-auto space-y-12">
+              {/* Logo and Welcome */}
+              <div className="text-center space-y-4">
+                <div className="flex items-center justify-center gap-3 mb-6">
+                  <img
+                    src="/logo.gif"
+                    alt="logo"
+                    className="w-12 h-12 object-contain"
+                  />
+                  <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                    {appConf.appName}
+                  </h1>
+                </div>
+                <p className="text-xl text-muted-foreground">
+                  👋 {welcomeMessage || '有什么我能帮你分担的吗？'}
+                </p>
+              </div>
+
+              {/* Large Input Box */}
+              <div className="w-full">
+                <div className="relative">
+                  <Input
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    placeholder="和我聊聊天吧..."
+                    disabled={!selectedDialog || isLoading}
+                    className="w-full h-16 text-lg px-6 pr-24 rounded-2xl shadow-lg border-2 focus:border-primary"
+                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-10 w-10 p-0 rounded-full"
+                    >
+                      <Mic className="size-5" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleSendMessage}
+                      disabled={
+                        !selectedDialog || !inputValue.trim() || isLoading
+                      }
+                      className="h-10 w-10 p-0 rounded-full"
+                    >
+                      {isLoading ? (
+                        <Loader2 className="size-5 animate-spin" />
+                      ) : (
+                        <Send className="size-5" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Assistant Cards - 3 columns x 3 rows */}
+              <div className="w-full">
+                {dialogsLoading ? (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="size-8 animate-spin text-primary" />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-4">
+                    {displayedDialogs.map((dialog) => (
+                      <button
+                        key={dialog.id}
+                        onClick={() => handleSelectDialog(dialog)}
+                        className={`group p-5 rounded-xl border-2 transition-all text-left hover:shadow-lg hover:-translate-y-1 ${
+                          selectedDialog?.id === dialog.id
+                            ? 'border-primary bg-primary/5 shadow-md'
+                            : 'border-border bg-white dark:bg-gray-800 hover:border-primary/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 mb-3">
+                          <RAGFlowAvatar
+                            avatar={dialog.icon}
+                            name={dialog.name}
+                            className="size-10"
+                          />
+                          <span className="font-semibold text-base truncate flex-1">
+                            {dialog.name}
+                          </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
+                          {dialog.description || '暂无描述'}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

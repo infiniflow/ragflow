@@ -178,6 +178,8 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
 async def async_iframe_completion(dialog_id, question, session_id=None, stream=True, **kwargs):
     e, dia = DialogService.get_by_id(dialog_id)
     assert e, "Dialog not found"
+    
+    # Create new session if not provided
     if not session_id:
         session_id = get_uuid()
         conv = {
@@ -187,19 +189,10 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
             "message": [{"role": "assistant", "content": dia.prompt_config["prologue"], "created_at": time.time()}]
         }
         API4ConversationService.save(**conv)
-        yield "data:" + json.dumps({"code": 0, "message": "",
-                                    "data": {
-                                        "answer": conv["message"][0]["content"],
-                                        "reference": {},
-                                        "audio_binary": None,
-                                        "id": None,
-                                        "session_id": session_id
-                                    }},
-                                   ensure_ascii=False) + "\n\n"
-        yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
-        return
+        # Get the conversation object for further processing
+        e, conv = API4ConversationService.get_by_id(session_id)
+        assert e, "Failed to create session!"
     else:
-        session_id = session_id
         e, conv = API4ConversationService.get_by_id(session_id)
         assert e, "Session not found!"
 
@@ -213,6 +206,12 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
     }
     messages.append(question)
 
+    # Debug: 打印完整消息历史
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[DEBUG] Total messages in history: {len(messages)}")
+    logger.info(f"[DEBUG] Messages: {messages}")
+
     msg = []
     for m in messages:
         if m["role"] == "system":
@@ -220,6 +219,10 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
         if m["role"] == "assistant" and not msg:
             continue
         msg.append(m)
+    
+    logger.info(f"[DEBUG] Messages sent to LLM: {len(msg)}")
+    logger.info(f"[DEBUG] LLM messages: {msg}")
+    
     if not msg[-1].get("id"):
         msg[-1]["id"] = get_uuid()
     message_id = msg[-1]["id"]
