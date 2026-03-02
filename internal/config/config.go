@@ -34,6 +34,7 @@ type Config struct {
 	DocEngine       DocEngineConfig        `mapstructure:"doc_engine"`
 	RegisterEnabled int                    `mapstructure:"register_enabled"`
 	OAuth           map[string]OAuthConfig `mapstructure:"oauth"`
+	SecretKey       string                 `mapstructure:"secret_key"`
 }
 
 // OAuthConfig OAuth configuration for a channel
@@ -149,6 +150,25 @@ func Init(configPath string) error {
 	}
 	globalConfig.RegisterEnabled = registerEnabled
 
+	// Load SECRET_KEY from environment variable or config file
+	// Priority: RAGFLOW_SECRET_KEY > SECRET_KEY > config file > default
+	if globalConfig.SecretKey == "" {
+		globalConfig.SecretKey = os.Getenv("RAGFLOW_SECRET_KEY")
+	}
+	if globalConfig.SecretKey == "" {
+		globalConfig.SecretKey = os.Getenv("SECRET_KEY")
+	}
+	if globalConfig.SecretKey == "" {
+		// Try to get from service_conf.yaml's ragflow section (secret_key field)
+		if v.IsSet("ragflow.secret_key") {
+			globalConfig.SecretKey = v.GetString("ragflow.secret_key")
+		}
+	}
+	if globalConfig.SecretKey == "" {
+		// Default fallback (must match Python's default or be configured)
+		globalConfig.SecretKey = "infiniflow-token"
+	}
+
 	// If we loaded service_conf.yaml, map mysql fields to DatabaseConfig
 	if globalConfig != nil && globalConfig.Database.Host == "" {
 		// Try to map from mysql section
@@ -172,7 +192,7 @@ func Init(configPath string) error {
 		if v.IsSet("ragflow") {
 			ragflowConfig := v.Sub("ragflow")
 			if ragflowConfig != nil {
-				globalConfig.Server.Port = ragflowConfig.GetInt("http_port") + 2 // 9382, by default
+				globalConfig.Server.Port = ragflowConfig.GetInt("http_port") // + 2 // 9382, by default
 				// globalConfig.Server.Port = ragflowConfig.GetInt("http_port") // Correct
 				// If mode is not set, default to debug
 				if globalConfig.Server.Mode == "" {

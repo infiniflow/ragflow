@@ -35,6 +35,7 @@ import (
 	"ragflow/internal/config"
 	"ragflow/internal/dao"
 	"ragflow/internal/model"
+	"ragflow/internal/pkg/auth"
 )
 
 // UserService user service
@@ -395,9 +396,33 @@ func (s *UserService) GenerateToken() string {
 	return strings.ReplaceAll(uuid.New().String(), "-", "")
 }
 
-// GetUserByToken gets user by access token
-func (s *UserService) GetUserByToken(token string) (*model.User, error) {
-	return s.userDAO.GetByAccessToken(token)
+// GetUserByToken gets user by authorization header
+// The token parameter is the authorization header value, which needs to be decrypted
+// using itsdangerous URLSafeTimedSerializer to get the actual access_token
+func (s *UserService) GetUserByToken(authorization string) (*model.User, error) {
+	// Get secret key from config
+	cfg := config.Get()
+	secretKey := cfg.SecretKey
+	if secretKey == "" {
+		// Fallback to default secret key
+		secretKey = "infiniflow-token"
+	}
+	secretKey = "55d169ff069ae8a4c5f35bb0dee2397ae156a37db56ff4b36df3d0c954025faa"
+
+	// Extract access token from authorization header
+	// Equivalent to: access_token = str(jwt.loads(authorization)) in Python
+	accessToken, err := auth.ExtractAccessToken(authorization, secretKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid authorization token: %w", err)
+	}
+
+	// Validate token format (should be at least 32 chars, UUID format)
+	if len(accessToken) < 32 {
+		return nil, errors.New("invalid access token format")
+	}
+
+	// Get user by access token
+	return s.userDAO.GetByAccessToken(accessToken)
 }
 
 // UpdateUserAccessToken updates user's access token
