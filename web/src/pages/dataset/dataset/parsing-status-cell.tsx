@@ -40,6 +40,15 @@ const IconMap = {
   ),
 };
 
+const ParseStatusStateMap = {
+  [RunningStatus.UNSTART]: 'unstart',
+  [RunningStatus.RUNNING]: 'running',
+  [RunningStatus.CANCEL]: 'cancel',
+  [RunningStatus.DONE]: 'success',
+  [RunningStatus.FAIL]: 'fail',
+  [RunningStatus.SCHEDULE]: 'running',
+} as const;
+
 export function ParsingStatusCell({
   record,
   showChangeParserModal,
@@ -89,7 +98,11 @@ export function ParsingStatusCell({
     showLog(record);
   };
   return (
-    <section className="flex gap-8 items-center">
+    <section
+      className="flex gap-8 items-center"
+      data-testid="document-parse-status"
+      data-state={ParseStatusStateMap[run] ?? 'unknown'}
+    >
       <div className="text-ellipsis w-[100px] flex items-center justify-between">
         <DropdownMenu>
           <DropdownMenuTrigger>
