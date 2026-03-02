@@ -124,7 +124,7 @@ async def set_dialog():
                 "top_n": top_n,
                 "top_k": top_k,
                 "rerank_id": rerank_id,
-                "tenant_rerank_id": dialog_info.get("tenant_rerank_id", None),
+                "tenant_rerank_id": dialog_info.get("tenant_rerank_id", 0),
                 "similarity_threshold": similarity_threshold,
                 "vector_similarity_weight": vector_similarity_weight,
                 "icon": icon
