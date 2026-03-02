@@ -228,6 +228,15 @@ class RAGFlow:
         use_kg: bool = False,
         toc_enhance: bool = False,
     ):
+        """
+        Retrieve chunks from datasets.
+
+        metadata_condition supports:
+        {
+            "logic": "and" | "or",
+            "conditions": [{"key": "...", "value": "...", "op": "..."}]
+        }
+        """
         if document_ids is None:
             document_ids = []
         data_json = {

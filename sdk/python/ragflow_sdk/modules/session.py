@@ -33,11 +33,18 @@ class Session(Base):
         super().__init__(rag, res_dict)
 
 
-    def ask(self, question="", stream=False, **kwargs):
+    def ask(self, question="", stream=False, metadata_condition: dict | None = None, **kwargs):
         """
         Ask a question to the session. If stream=True, yields Message objects as they arrive (SSE streaming).
         If stream=False, returns a single Message object for the final answer.
+        metadata_condition accepts:
+        {
+            "logic": "and" | "or",
+            "conditions": [{"key": "...", "value": "...", "op": "..."}]
+        }
         """
+        if metadata_condition is not None:
+            kwargs["metadata_condition"] = metadata_condition
         if self.__session_type == "agent":
             res = self._ask_agent(question, stream, **kwargs)
         elif self.__session_type == "chat":

@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 
+import json
+
 from .base import Base
 from .document import Document
 
@@ -74,6 +76,9 @@ class DataSet(Base):
         desc: bool = True,
         create_time_from: int = 0,
         create_time_to: int = 0,
+        suffix: list[str] | None = None,
+        run: list[str] | None = None,
+        metadata_condition: dict | None = None,
     ):
         params = {
             "id": id,
@@ -86,6 +91,12 @@ class DataSet(Base):
             "create_time_from": create_time_from,
             "create_time_to": create_time_to,
         }
+        if suffix:
+            params["suffix"] = suffix
+        if run:
+            params["run"] = run
+        if metadata_condition is not None:
+            params["metadata_condition"] = json.dumps(metadata_condition)
         res = self.get(f"/datasets/{self.id}/documents", params=params)
         res = res.json()
         documents = []

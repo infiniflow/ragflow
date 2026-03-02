@@ -29,14 +29,22 @@ def convert_conditions(metadata_condition):
         "<=": "≤",
         "!=": "≠"
     }
-    return [
-        {
-            "op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]),
-            "key": cond["name"],
-            "value": cond["value"]
-        }
-        for cond in metadata_condition.get("conditions", [])
-    ]
+    normalized = []
+    for cond in metadata_condition.get("conditions", []):
+        if not isinstance(cond, dict):
+            continue
+        raw_op = cond.get("op", cond.get("comparison_operator"))
+        raw_key = cond.get("key", cond.get("name"))
+        if raw_op is None or raw_key is None:
+            continue
+        normalized.append(
+            {
+                "op": op_mapping.get(raw_op, raw_op),
+                "key": raw_key,
+                "value": cond.get("value", ""),
+            }
+        )
+    return normalized
 
 
 def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):

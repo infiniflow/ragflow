@@ -129,6 +129,71 @@ async def update(tenant_id, chat_id, session_id):
 @manager.route("/chats/<chat_id>/completions", methods=["POST"])  # noqa: F821
 @token_required
 async def chat_completion(tenant_id, chat_id):
+    """
+    Chat completion.
+    ---
+    tags:
+      - Sessions
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        required: false
+        schema:
+          type: object
+          properties:
+            question:
+              type: string
+              description: User question.
+            stream:
+              type: boolean
+              description: Whether to stream the response.
+              default: true
+            session_id:
+              type: string
+              description: Session ID.
+            metadata_condition:
+              type: object
+              description: Metadata filter condition used to narrow candidate documents before retrieval.
+              properties:
+                logic:
+                  type: string
+                  enum:
+                    - and
+                    - or
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      key:
+                        type: string
+                      value:
+                        type: string
+                      op:
+                        type: string
+                        enum:
+                          - contains
+                          - not contains
+                          - in
+                          - not in
+                          - start with
+                          - end with
+                          - empty
+                          - not empty
+                          - "="
+                          - "≠"
+                          - ">"
+                          - "<"
+                          - "≥"
+                          - "≤"
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    """
     req = await get_request_json()
     if not req:
         req = {"question": ""}
@@ -238,8 +303,8 @@ async def chat_completion_openai_like(tenant_id, chat_id):
                 "logic": "and",
                 "conditions": [
                     {
-                        "name": "author",
-                        "comparison_operator": "is",
+                        "key": "author",
+                        "op": "=",
                         "value": "bob"
                     }
                 ]

@@ -74,20 +74,48 @@ async def retrieval(tenant_id):
               type: object
               description: Metadata filter condition
               properties:
+                logic:
+                  type: string
+                  description: Logic relationship between all conditions. Defaults to "and".
+                  enum:
+                    - and
+                    - or
                 conditions:
                   type: array
                   items:
                     type: object
                     properties:
-                      name:
+                      key:
                         type: string
-                        description: Field name
-                      comparison_operator:
+                        description: Metadata attribute name
+                      op:
                         type: string
-                        description: Comparison operator
+                        description: Operator from the allowed list
+                        enum:
+                          - contains
+                          - not contains
+                          - in
+                          - not in
+                          - start with
+                          - end with
+                          - empty
+                          - not empty
+                          - "="
+                          - "≠"
+                          - ">"
+                          - "<"
+                          - "≥"
+                          - "≤"
                       value:
                         type: string
-                        description: Field value
+                        description: Value to compare
+                    required:
+                      - key
+                      - value
+                      - op
+              required:
+                - conditions
+              additionalProperties: false
     responses:
       200:
         description: Retrieval succeeded
