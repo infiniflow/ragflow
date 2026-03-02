@@ -432,7 +432,7 @@ def _load_user_app(monkeypatch):
     return module
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_login_route_branch_matrix_unit(monkeypatch):
     module = _load_user_app(monkeypatch)
 
@@ -471,7 +471,7 @@ def test_login_route_branch_matrix_unit(monkeypatch):
     assert "do not match" in res["message"]
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_login_channels_and_oauth_login_matrix_unit(monkeypatch):
     module = _load_user_app(monkeypatch)
 
@@ -508,7 +508,7 @@ def test_login_channels_and_oauth_login_matrix_unit(monkeypatch):
     assert module.session["oauth_state"] == "state-123"
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_oauth_callback_matrix_unit(monkeypatch):
     module = _load_user_app(monkeypatch)
     module.settings.OAUTH_CONFIG = {"github": {"display_name": "GitHub", "icon": "gh"}}
@@ -662,7 +662,7 @@ def test_oauth_callback_matrix_unit(monkeypatch):
     assert login_calls and login_calls[-1] is existing_user
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_github_callback_matrix_unit(monkeypatch):
     module = _load_user_app(monkeypatch)
 
@@ -742,7 +742,7 @@ def test_github_callback_matrix_unit(monkeypatch):
     assert login_calls and login_calls[-1] is existing_user
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_feishu_callback_matrix_unit(monkeypatch):
     module = _load_user_app(monkeypatch)
 
@@ -864,7 +864,7 @@ def test_feishu_callback_matrix_unit(monkeypatch):
     assert login_calls and login_calls[-1] is existing_user
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_oauth_user_info_helpers_unit(monkeypatch):
     module = _load_user_app(monkeypatch)
 
@@ -892,7 +892,7 @@ def test_oauth_user_info_helpers_unit(monkeypatch):
     assert github_user["email"] == "primary@example.com"
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_logout_setting_profile_matrix_unit(monkeypatch):
     module = _load_user_app(monkeypatch)
 
@@ -963,7 +963,7 @@ def test_logout_setting_profile_matrix_unit(monkeypatch):
     assert res["data"] == current_user.to_dict()
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_registration_helpers_and_register_route_matrix_unit(monkeypatch):
     module = _load_user_app(monkeypatch)
 
@@ -1049,7 +1049,7 @@ def test_registration_helpers_and_register_route_matrix_unit(monkeypatch):
     assert rollback_calls == ["new-user-id"], rollback_calls
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_tenant_info_and_set_tenant_info_exception_matrix_unit(monkeypatch):
     module = _load_user_app(monkeypatch)
 
@@ -1081,7 +1081,7 @@ def test_tenant_info_and_set_tenant_info_exception_matrix_unit(monkeypatch):
     assert "tenant update boom" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_forget_captcha_and_send_otp_matrix_unit(monkeypatch):
     module = _load_user_app(monkeypatch)
 
@@ -1184,7 +1184,7 @@ def test_forget_captcha_and_send_otp_matrix_unit(monkeypatch):
     assert module.REDIS_CONN.get(k_lock) is None, module.REDIS_CONN.store
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_forget_verify_otp_matrix_unit(monkeypatch):
     module = _load_user_app(monkeypatch)
     email = "ok@example.com"
@@ -1261,7 +1261,7 @@ def test_forget_verify_otp_matrix_unit(monkeypatch):
     assert module.REDIS_CONN.get(module._verified_key(email)) == "1", module.REDIS_CONN.store
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_forget_reset_password_matrix_unit(monkeypatch):
     module = _load_user_app(monkeypatch)
     email = "reset@example.com"

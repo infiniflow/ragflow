@@ -32,14 +32,14 @@ def _parse_done(auth, dataset_id, document_ids=None):
 
 
 class TestGraphRAGTasks:
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_trace_graphrag_before_run(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         res = trace_graphrag(HttpApiAuth, dataset_id)
         assert res["code"] == 0, res
         assert res["data"] == {}, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_run_graphrag_no_documents(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         res = run_graphrag(HttpApiAuth, dataset_id)

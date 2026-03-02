@@ -100,7 +100,7 @@ class TestDatasetCreate:
         assert res["code"] == 0, res
         assert res["data"]["name"] == name, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, expected_message",
         [
@@ -141,7 +141,7 @@ class TestDatasetCreate:
         assert res["code"] == 0, res
         assert res["data"]["name"] == name.lower() + "(1)", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_avatar(self, HttpApiAuth, tmp_path):
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {
@@ -193,7 +193,7 @@ class TestDatasetCreate:
         assert res["code"] == 0, res
         assert res["data"]["avatar"] is None, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_description(self, HttpApiAuth):
         payload = {"name": "description", "description": "description"}
         res = create_dataset(HttpApiAuth, payload)
@@ -236,7 +236,7 @@ class TestDatasetCreate:
         assert res["code"] == 0, res
         assert res["data"]["embedding_model"] == embedding_model, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
@@ -256,7 +256,7 @@ class TestDatasetCreate:
         else:
             assert res["message"] == f"Unsupported model: <{embedding_model}>", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
@@ -279,21 +279,21 @@ class TestDatasetCreate:
         else:
             assert "Both model_name and provider must be non-empty strings" in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_embedding_model_unset(self, HttpApiAuth):
         payload = {"name": "embedding_model_unset"}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_embedding_model_none(self, HttpApiAuth):
         payload = {"name": "embedding_model_none", "embedding_model": None}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, permission",
         [
@@ -308,7 +308,7 @@ class TestDatasetCreate:
         assert res["code"] == 0, res
         assert res["data"]["permission"] == permission.lower().strip(), res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, permission",
         [
@@ -327,7 +327,7 @@ class TestDatasetCreate:
         assert res["code"] == 101
         assert "Input should be 'me' or 'team'" in res["message"]
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_permission_unset(self, HttpApiAuth):
         payload = {"name": "permission_unset"}
         res = create_dataset(HttpApiAuth, payload)
@@ -366,7 +366,7 @@ class TestDatasetCreate:
         assert res["code"] == 0, res
         assert res["data"]["chunk_method"] == chunk_method, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, chunk_method",
         [
@@ -382,7 +382,7 @@ class TestDatasetCreate:
         assert res["code"] == 101, res
         assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_chunk_method_unset(self, HttpApiAuth):
         payload = {"name": "chunk_method_unset"}
         res = create_dataset(HttpApiAuth, payload)
@@ -511,7 +511,7 @@ class TestDatasetCreate:
             else:
                 assert res["data"]["parser_config"][k] == v, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, parser_config, expected_message",
         [
@@ -633,14 +633,14 @@ class TestDatasetCreate:
         assert res["code"] == 101, res
         assert expected_message in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_parser_config_empty(self, HttpApiAuth):
         payload = {"name": "parser_config_empty", "parser_config": {}}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["parser_config"] == DEFAULT_PARSER_CONFIG, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_parser_config_unset(self, HttpApiAuth):
         payload = {"name": "parser_config_unset"}
         res = create_dataset(HttpApiAuth, payload)
@@ -654,7 +654,7 @@ class TestDatasetCreate:
         assert res["code"] == 0, res
         assert res["data"]["parser_config"] == DEFAULT_PARSER_CONFIG, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload",
         [
@@ -726,7 +726,7 @@ class TestParserConfigBugFix:
         assert parser_config["raptor"]["use_raptor"] is True, "User-provided raptor.use_raptor should be preserved"
         assert parser_config["graphrag"]["use_graphrag"] is True, "User-provided graphrag.use_graphrag should be preserved"
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize("chunk_method", ["qa", "manual", "paper", "book", "laws", "presentation"])
     def test_parser_config_different_chunk_methods(self, HttpApiAuth, chunk_method):
         payload = {"name": f"test_parser_config_{chunk_method}", "chunk_method": chunk_method, "parser_config": {"chunk_token_num": 512}}

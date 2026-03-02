@@ -203,7 +203,7 @@ def _load_session_module(monkeypatch):
     return module
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_create_and_update_guard_matrix(monkeypatch):
     module = _load_session_module(monkeypatch)
 
@@ -259,7 +259,7 @@ def test_create_and_update_guard_matrix(monkeypatch):
     assert res["message"] == "Session updates error"
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_completion_metadata_and_stream_paths(monkeypatch):
     module = _load_session_module(monkeypatch)
 
@@ -309,7 +309,7 @@ def test_chat_completion_metadata_and_stream_paths(monkeypatch):
     assert "doc_ids" not in captured_requests[-1]
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_openai_chat_validation_matrix_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
 
@@ -362,7 +362,7 @@ def test_openai_chat_validation_matrix_unit(monkeypatch):
         assert expected in res["message"]
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_openai_stream_generator_branches_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
 
@@ -413,7 +413,7 @@ def test_openai_stream_generator_branches_unit(monkeypatch):
     assert chunks[-1].strip() == "data:[DONE]"
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_openai_nonstream_branch_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
 
@@ -441,7 +441,7 @@ def test_openai_nonstream_branch_unit(monkeypatch):
     assert res["choices"][0]["message"]["content"] == "world"
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_agents_openai_compatibility_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
 
@@ -528,7 +528,7 @@ def test_agents_openai_compatibility_unit(monkeypatch):
     assert captured_calls[-1][1]["session_id"] == "session-1"
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_agent_completions_stream_and_nonstream_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
 
@@ -570,7 +570,7 @@ def test_agent_completions_stream_and_nonstream_unit(monkeypatch):
     assert res["data"].startswith("**ERROR**")
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_list_session_projection_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
 
@@ -608,7 +608,7 @@ def test_list_session_projection_unit(monkeypatch):
     assert res["data"][0]["messages"][0]["reference"][0]["positions"] == [1, 2]
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_list_agent_session_projection_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
 
@@ -657,7 +657,7 @@ def test_list_agent_session_projection_unit(monkeypatch):
     assert projected_chunk["positions"] == [9]
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_delete_routes_partial_duplicate_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
 
@@ -709,7 +709,7 @@ def test_delete_routes_partial_duplicate_unit(monkeypatch):
     assert res["code"] == 0
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_delete_agent_session_error_matrix_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
 
@@ -758,7 +758,7 @@ def test_delete_agent_session_error_matrix_unit(monkeypatch):
     assert res["data"]["errors"] == ["Duplicate session ids: ok"]
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_sessions_ask_route_validation_and_stream_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
     monkeypatch.setattr(module, "Response", _StubResponse)
@@ -808,7 +808,7 @@ def test_sessions_ask_route_validation_and_stream_unit(monkeypatch):
     assert captured == {"question": "q", "kb_ids": ["kb-1"], "uid": "tenant-1"}
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_sessions_related_questions_prompt_build_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
 
@@ -844,7 +844,7 @@ def test_sessions_related_questions_prompt_build_unit(monkeypatch):
     assert captured["options"] == {"temperature": 0.9}
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chatbot_routes_auth_stream_nonstream_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
     monkeypatch.setattr(module, "Response", _StubResponse)
@@ -900,7 +900,7 @@ def test_chatbot_routes_auth_stream_nonstream_unit(monkeypatch):
     assert res["message"] == "Can't find dialog by ID: dialog-404"
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_agentbot_routes_auth_stream_nonstream_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
     monkeypatch.setattr(module, "Response", _StubResponse)
@@ -951,7 +951,7 @@ def test_agentbot_routes_auth_stream_nonstream_unit(monkeypatch):
     assert res["message"] == "Can't find agent by ID: agent-404"
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_searchbots_ask_embedded_auth_and_stream_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
     monkeypatch.setattr(module, "Response", _StubResponse)
@@ -994,7 +994,7 @@ def test_searchbots_ask_embedded_auth_and_stream_unit(monkeypatch):
     assert captured["search_config"] == {"mode": "test"}
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
     handler = inspect.unwrap(module.retrieval_test_embedded)
@@ -1199,7 +1199,7 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
     assert res["message"] == "No chunk found! Check the chunk status please!"
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_searchbots_related_questions_embedded_matrix_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
     handler = inspect.unwrap(module.related_questions_embedded)
@@ -1252,7 +1252,7 @@ def test_searchbots_related_questions_embedded_matrix_unit(monkeypatch):
     assert "Keywords: solar" in captured["messages"][0]["content"]
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_searchbots_detail_share_embedded_matrix_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
     handler = inspect.unwrap(module.detail_share_embedded)
@@ -1289,7 +1289,7 @@ def test_searchbots_detail_share_embedded_matrix_unit(monkeypatch):
     assert res["data"]["id"] == "s-1"
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_searchbots_mindmap_embedded_matrix_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
     handler = inspect.unwrap(module.mindmap)
@@ -1337,7 +1337,7 @@ def test_searchbots_mindmap_embedded_matrix_unit(monkeypatch):
     assert "mindmap boom" in res["message"]
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_sequence2txt_embedded_validation_and_stream_matrix_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
     handler = inspect.unwrap(module.sequence2txt)
@@ -1416,7 +1416,7 @@ def test_sequence2txt_embedded_validation_and_stream_matrix_unit(monkeypatch):
     assert any("stream asr boom" in chunk for chunk in chunks)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_tts_embedded_stream_and_error_matrix_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
     handler = inspect.unwrap(module.tts)
@@ -1458,7 +1458,7 @@ def test_tts_embedded_stream_and_error_matrix_unit(monkeypatch):
     assert any('"code": 500' in chunk and "**ERROR**: tts boom" in chunk for chunk in chunks)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_build_reference_chunks_metadata_matrix_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
 

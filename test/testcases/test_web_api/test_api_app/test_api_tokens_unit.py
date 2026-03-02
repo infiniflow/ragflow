@@ -137,7 +137,7 @@ def _load_api_app(monkeypatch):
     return module
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_new_token_branches_and_error_paths(monkeypatch):
     module = _load_api_app(monkeypatch)
 
@@ -167,7 +167,7 @@ def test_new_token_branches_and_error_paths(monkeypatch):
     assert "query failed" in res["message"]
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_token_list_tenant_guard_and_exception(monkeypatch):
     module = _load_api_app(monkeypatch)
 
@@ -183,7 +183,7 @@ def test_token_list_tenant_guard_and_exception(monkeypatch):
     assert "canvas_id" in res["message"]
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_rm_exception_path(monkeypatch):
     module = _load_api_app(monkeypatch)
 
@@ -202,7 +202,7 @@ def test_rm_exception_path(monkeypatch):
     assert "delete failed" in res["message"]
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_stats_aggregation_and_error_paths(monkeypatch):
     module = _load_api_app(monkeypatch)
 

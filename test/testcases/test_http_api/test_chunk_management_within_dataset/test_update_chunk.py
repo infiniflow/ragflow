@@ -77,7 +77,7 @@ class TestUpdatedChunk:
         if expected_code != 0:
             assert res["message"] == expected_message
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
@@ -96,7 +96,7 @@ class TestUpdatedChunk:
         if expected_code != 0:
             assert res["message"] == expected_message
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
@@ -115,7 +115,7 @@ class TestUpdatedChunk:
         if expected_code != 0:
             assert res["message"] == expected_message
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [

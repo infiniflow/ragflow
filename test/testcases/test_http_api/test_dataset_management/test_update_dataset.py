@@ -73,7 +73,7 @@ class TestRquest:
         assert res["code"] == 101, res
         assert res["message"] == expected_message, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_payload_empty(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         res = update_dataset(HttpApiAuth, dataset_id, {})
@@ -137,7 +137,7 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"][0]["name"] == name, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, expected_message",
         [
@@ -174,7 +174,7 @@ class TestDatasetUpdate:
         assert res["code"] == 102, res
         assert res["message"] == f"Dataset name '{name}' already exists", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_avatar(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         fn = create_image_file(tmp_path / "ragflow_test.png")
@@ -226,7 +226,7 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"][0]["avatar"] is None, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_description(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         payload = {"description": "description"}
@@ -275,7 +275,7 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"][0]["embedding_model"] == embedding_model, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
@@ -296,7 +296,7 @@ class TestDatasetUpdate:
         else:
             assert res["message"] == f"Unsupported model: <{embedding_model}>", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
@@ -320,7 +320,7 @@ class TestDatasetUpdate:
         else:
             assert "Both model_name and provider must be non-empty strings" in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_embedding_model_none(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         payload = {"embedding_model": None}
@@ -331,7 +331,7 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"][0]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "permission",
         [
@@ -350,7 +350,7 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"][0]["permission"] == permission.lower().strip(), res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "permission",
         [
@@ -407,7 +407,7 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"][0]["chunk_method"] == chunk_method, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "chunk_method",
         [
@@ -433,7 +433,7 @@ class TestDatasetUpdate:
         assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
 
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize("pagerank", [0, 50, 100], ids=["min", "mid", "max"])
     def test_pagerank(self, HttpApiAuth, add_dataset_func, pagerank):
         dataset_id = add_dataset_func
@@ -446,7 +446,7 @@ class TestDatasetUpdate:
         assert res["data"][0]["pagerank"] == pagerank
 
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_pagerank_set_to_0(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         payload = {"pagerank": 50}
@@ -466,7 +466,7 @@ class TestDatasetUpdate:
         assert res["data"][0]["pagerank"] == 0, res
 
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") != "infinity", reason="#8208")
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_pagerank_infinity(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         payload = {"pagerank": 50}
@@ -474,7 +474,7 @@ class TestDatasetUpdate:
         assert res["code"] == 101, res
         assert res["message"] == "'pagerank' can only be set when doc_engine is elasticsearch", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "pagerank, expected_message",
         [
@@ -617,7 +617,7 @@ class TestDatasetUpdate:
             else:
                 assert res["data"][0]["parser_config"][k] == v, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "parser_config, expected_message",
         [
@@ -740,7 +740,7 @@ class TestDatasetUpdate:
         assert res["code"] == 101, res
         assert expected_message in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_parser_config_empty(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         payload = {"parser_config": {}}
@@ -810,7 +810,7 @@ class TestDatasetUpdate:
             "table_context_size": 0,
         }, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload",
         [
@@ -834,7 +834,7 @@ class TestDatasetUpdate:
         assert res["code"] == 101, res
         assert "Extra inputs are not permitted" in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_field_unset(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         res = list_datasets(HttpApiAuth)

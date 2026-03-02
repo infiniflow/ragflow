@@ -93,7 +93,7 @@ class TestDocumentsUpload:
         assert res["code"] == 500
         assert res["message"] == f"ragflow_test.{file_type}: This type of file has not been supported yet!"
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_missing_file(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         res = upload_documents(HttpApiAuth, dataset_id)
@@ -127,7 +127,7 @@ class TestDocumentsUpload:
         assert res.json()["code"] == 101
         assert res.json()["message"] == "No file selected!"
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_filename_max_length(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         fp = create_txt_file(tmp_path / f"{'a' * (DOCUMENT_NAME_LIMIT - 4)}.txt")
@@ -135,14 +135,14 @@ class TestDocumentsUpload:
         assert res["code"] == 0
         assert res["data"][0]["name"] == fp.name
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_invalid_dataset_id(self, HttpApiAuth, tmp_path):
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         res = upload_documents(HttpApiAuth, "invalid_dataset_id", [fp])
         assert res["code"] == 100
         assert res["message"] == """LookupError("Can\'t find the dataset with ID invalid_dataset_id!")"""
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_duplicate_files(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
@@ -156,7 +156,7 @@ class TestDocumentsUpload:
                 expected_name = f"{fp.stem}({i}){fp.suffix}"
             assert res["data"][i]["name"] == expected_name
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_same_file_repeat(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         fp = create_txt_file(tmp_path / "ragflow_test.txt")

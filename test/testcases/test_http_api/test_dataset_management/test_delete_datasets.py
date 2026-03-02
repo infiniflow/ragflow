@@ -116,7 +116,7 @@ class TestDatasetsDelete:
         res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == remaining, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.usefixtures("add_dataset_func")
     def test_ids_empty(self, HttpApiAuth):
         payload = {"ids": []}
@@ -136,7 +136,7 @@ class TestDatasetsDelete:
         res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 0, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.usefixtures("add_dataset_func")
     def test_id_not_uuid(self, HttpApiAuth):
         payload = {"ids": ["not_uuid"]}
@@ -155,7 +155,7 @@ class TestDatasetsDelete:
         assert res["code"] == 101, res
         assert "Invalid UUID1 format" in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.usefixtures("add_dataset_func")
     def test_id_wrong_uuid(self, HttpApiAuth):
         payload = {"ids": ["d94a8dc02c9711f0930f7fbc369eab6d"]}
@@ -166,7 +166,7 @@ class TestDatasetsDelete:
         res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 1, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "func",
         [
@@ -186,7 +186,7 @@ class TestDatasetsDelete:
         res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 3, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_ids_duplicate(self, HttpApiAuth, add_datasets_func):
         dataset_ids = add_datasets_func
         payload = {"ids": dataset_ids + dataset_ids}
@@ -197,7 +197,7 @@ class TestDatasetsDelete:
         res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 3, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_repeated_delete(self, HttpApiAuth, add_datasets_func):
         dataset_ids = add_datasets_func
         payload = {"ids": dataset_ids}

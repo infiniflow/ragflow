@@ -41,7 +41,7 @@ def _parse_done(auth, dataset_id, document_ids=None):
 class TestChatCompletionsOpenAI:
     """Test cases for the OpenAI-compatible chat completions endpoint"""
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_openai_chat_completion_non_stream(self, HttpApiAuth, add_dataset_func, tmp_path, request):
         """Test OpenAI-compatible endpoint returns proper response with token usage"""
         dataset_id = add_dataset_func
@@ -80,7 +80,7 @@ class TestChatCompletionsOpenAI:
         assert usage["total_tokens"] == usage["prompt_tokens"] + usage["completion_tokens"], \
             f"total_tokens should equal prompt_tokens + completion_tokens: {usage}"
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_openai_chat_completion_token_count_reasonable(self, HttpApiAuth, add_dataset_func, tmp_path, request):
         """Test that token counts are reasonable (using tiktoken, not character counts)"""
         dataset_id = add_dataset_func
@@ -116,7 +116,7 @@ class TestChatCompletionsOpenAI:
         assert usage["prompt_tokens"] > 0, f"prompt_tokens should be greater than 0: {usage}"
         assert usage["completion_tokens"] > 0, f"completion_tokens should be greater than 0: {usage}"
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_openai_chat_completion_invalid_chat(self, HttpApiAuth):
         """Test OpenAI endpoint returns error for invalid chat ID"""
         res = chat_completions_openai(
@@ -131,7 +131,7 @@ class TestChatCompletionsOpenAI:
         # Should return an error (format may vary based on implementation)
         assert "error" in res or res.get("code") != 0, f"Should return error for invalid chat: {res}"
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, requires_valid_chat, expected_message",
         [

@@ -19,7 +19,7 @@ from common import create_dialog, delete_dialog, get_dialog, update_dialog
 
 @pytest.mark.usefixtures("clear_dialogs")
 class TestDialogEdgeCases:
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_create_dialog_with_tavily_api_key(self, WebApiAuth):
         """Test creating dialog with Tavily API key instead of dataset"""
         payload = {
@@ -45,7 +45,7 @@ class TestDialogEdgeCases:
         assert res["code"] == 102, res
         assert "Datasets use different embedding models" in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_create_dialog_with_extremely_long_system_prompt(self, WebApiAuth):
         """Test creating dialog with very long system prompt"""
         long_prompt = "You are a helpful assistant. " * 1000
@@ -53,7 +53,7 @@ class TestDialogEdgeCases:
         res = create_dialog(WebApiAuth, payload)
         assert res["code"] == 0, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_create_dialog_with_unicode_characters(self, WebApiAuth):
         """Test creating dialog with Unicode characters in various fields"""
         payload = {
@@ -67,7 +67,7 @@ class TestDialogEdgeCases:
         assert res["data"]["name"] == "Unicode测试对话🤖", res
         assert res["data"]["description"] == "测试Unicode字符支持 with émojis 🚀🌟", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_create_dialog_with_extreme_parameter_values(self, WebApiAuth):
         """Test creating dialog with extreme parameter values"""
         payload = {
@@ -85,7 +85,7 @@ class TestDialogEdgeCases:
         assert res["data"]["similarity_threshold"] == 0.0, res
         assert res["data"]["vector_similarity_weight"] == 1.0, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_create_dialog_with_negative_parameter_values(self, WebApiAuth):
         """Test creating dialog with negative parameter values"""
         payload = {
@@ -99,7 +99,7 @@ class TestDialogEdgeCases:
         res = create_dialog(WebApiAuth, payload)
         assert res["code"] in [0, 102], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_update_dialog_with_empty_kb_ids(self, WebApiAuth, add_dialog_func):
         """Test updating dialog to remove all knowledge bases"""
         dataset_id, dialog_id = add_dialog_func
@@ -108,7 +108,7 @@ class TestDialogEdgeCases:
         assert res["code"] == 0, res
         assert res["data"]["kb_ids"] == [], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_update_dialog_with_null_values(self, WebApiAuth, add_dialog_func):
         """Test updating dialog with null/None values"""
         dataset_id, dialog_id = add_dialog_func

@@ -66,7 +66,7 @@ class TestChunksRetrieval:
         else:
             assert res["message"] == expected_message
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_code, expected_page_size, expected_message",
         [
@@ -175,7 +175,7 @@ class TestChunksRetrieval:
         else:
             assert res["message"] == expected_message
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_code, expected_page_size, expected_message",
         [
@@ -358,7 +358,7 @@ class TestDeletedChunksNotRetrievable:
         chunk_ids_after = [c["id"] for c in res["data"]["chunks"]]
         assert chunk_id not in chunk_ids_after, f"Chunk {chunk_id} should NOT be retrievable after deletion"
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_deleted_chunks_batch_not_in_retrieval(self, HttpApiAuth, add_document):
         """
         Test that multiple deleted chunks are not returned by retrieval.

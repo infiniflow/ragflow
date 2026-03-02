@@ -103,7 +103,7 @@ class TestDocumentsDeletion:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload",
         [
@@ -124,7 +124,7 @@ class TestDocumentsDeletion:
         assert len(res["data"]["docs"]) == 0
         assert res["data"]["total"] == 0
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_repeated_deletion(self, HttpApiAuth, add_documents_func):
         dataset_id, document_ids = add_documents_func
         res = delete_documents(HttpApiAuth, dataset_id, {"ids": document_ids})
@@ -134,7 +134,7 @@ class TestDocumentsDeletion:
         assert res["code"] == 102
         assert "Documents not found" in res["message"]
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_duplicate_deletion(self, HttpApiAuth, add_documents_func):
         dataset_id, document_ids = add_documents_func
         res = delete_documents(HttpApiAuth, dataset_id, {"ids": document_ids + document_ids})

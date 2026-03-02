@@ -101,7 +101,7 @@ class TestChatAssistantCreate:
         res = create_chat_assistant(HttpApiAuth, payload)
         assert res["code"] == 0
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "llm, expected_code, expected_message",
         [
@@ -155,7 +155,7 @@ class TestChatAssistantCreate:
         else:
             assert res["message"] == expected_message
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "prompt, expected_code, expected_message",
         [
@@ -231,7 +231,7 @@ class TestChatAssistantCreate:
         else:
             assert res["message"] == expected_message
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_create_additional_guards_p2(self, HttpApiAuth):
         tenant_payload = {"name": "guard-tenant-id", "dataset_ids": [], "tenant_id": "tenant-should-not-pass"}
         res = create_chat_assistant(HttpApiAuth, tenant_payload)
@@ -249,7 +249,7 @@ class TestChatAssistantCreate:
 
 
 class TestChatAssistantCreate2:
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_unparsed_document(self, HttpApiAuth, add_document):
         dataset_id, _ = add_document
         payload = {"name": "prompt_test", "dataset_ids": [dataset_id]}

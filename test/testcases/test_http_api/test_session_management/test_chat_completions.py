@@ -70,7 +70,7 @@ class TestChatCompletions:
             assert key in res["data"], res
         assert res["data"]["session_id"] == session_id, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_chat_completion_invalid_chat(self, HttpApiAuth):
         res = chat_completions(
             HttpApiAuth,
@@ -80,7 +80,7 @@ class TestChatCompletions:
         assert res["code"] == 102, res
         assert "You don't own the chat" in res.get("message", ""), res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_chat_completion_invalid_session(self, HttpApiAuth, request):
         res = create_chat_assistant(HttpApiAuth, {"name": "chat_completion_invalid_session", "dataset_ids": []})
         assert res["code"] == 0, res
@@ -96,7 +96,7 @@ class TestChatCompletions:
         assert res["code"] == 102, res
         assert "You don't own the session" in res.get("message", ""), res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_chat_completion_invalid_metadata_condition(self, HttpApiAuth, request):
         res = create_chat_assistant(HttpApiAuth, {"name": "chat_completion_invalid_meta", "dataset_ids": []})
         assert res["code"] == 0, res

@@ -55,13 +55,13 @@ class TestCapability:
 
 @pytest.mark.usefixtures("add_datasets")
 class TestDatasetsList:
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_params_unset(self, HttpApiAuth):
         res = list_datasets(HttpApiAuth, None)
         assert res["code"] == 0, res
         assert len(res["data"]) == 5, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_params_empty(self, HttpApiAuth):
         res = list_datasets(HttpApiAuth, {})
         assert res["code"] == 0, res
@@ -84,7 +84,7 @@ class TestDatasetsList:
         assert res["code"] == 0, res
         assert len(res["data"]) == expected_page_size, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_code, expected_message",
         [
@@ -98,7 +98,7 @@ class TestDatasetsList:
         assert res["code"] == expected_code, res
         assert expected_message in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_page_none(self, HttpApiAuth):
         params = {"page": None}
         res = list_datasets(HttpApiAuth, params)
@@ -122,7 +122,7 @@ class TestDatasetsList:
         assert res["code"] == 0, res
         assert len(res["data"]) == expected_page_size, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_code, expected_message",
         [
@@ -135,7 +135,7 @@ class TestDatasetsList:
         assert res["code"] == expected_code, res
         assert expected_message in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_page_size_none(self, HttpApiAuth):
         params = {"page_size": None}
         res = list_datasets(HttpApiAuth, params)
@@ -181,7 +181,7 @@ class TestDatasetsList:
         assert res["code"] == 0, res
         assert is_sorted(res["data"], "create_time", True), res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, assertions",
         [
@@ -233,21 +233,21 @@ class TestDatasetsList:
         assert len(res["data"]) == 1, res
         assert res["data"][0]["name"] == "dataset_1", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_name_wrong(self, HttpApiAuth):
         params = {"name": "wrong name"}
         res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 108, res
         assert "lacks permission for dataset" in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_name_empty(self, HttpApiAuth):
         params = {"name": ""}
         res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         assert len(res["data"]) == 5, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_name_none(self, HttpApiAuth):
         params = {"name": None}
         res = list_datasets(HttpApiAuth, params)
@@ -263,42 +263,42 @@ class TestDatasetsList:
         assert len(res["data"]) == 1
         assert res["data"][0]["id"] == dataset_ids[0]
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_id_not_uuid(self, HttpApiAuth):
         params = {"id": "not_uuid"}
         res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 101, res
         assert "Invalid UUID1 format" in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_id_not_uuid1(self, HttpApiAuth):
         params = {"id": uuid.uuid4().hex}
         res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 101, res
         assert "Invalid UUID1 format" in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_id_wrong_uuid(self, HttpApiAuth):
         params = {"id": "d94a8dc02c9711f0930f7fbc369eab6d"}
         res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 108, res
         assert "lacks permission for dataset" in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_id_empty(self, HttpApiAuth):
         params = {"id": ""}
         res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 101, res
         assert "Invalid UUID1 format" in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_id_none(self, HttpApiAuth):
         params = {"id": None}
         res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         assert len(res["data"]) == 5, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "func, name, expected_num",
         [

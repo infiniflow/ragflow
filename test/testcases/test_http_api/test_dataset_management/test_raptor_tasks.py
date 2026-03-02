@@ -32,14 +32,14 @@ def _parse_done(auth, dataset_id, document_ids=None):
 
 
 class TestRaptorTasks:
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_trace_raptor_before_run(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         res = trace_raptor(HttpApiAuth, dataset_id)
         assert res["code"] == 0, res
         assert res["data"] == {}, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_run_raptor_no_documents(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         res = run_raptor(HttpApiAuth, dataset_id)
