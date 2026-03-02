@@ -22,5 +22,5 @@ def ensure_tenant_model_id_for_params(tenant_id: str, param_dict: dict) -> dict:
             if tenant_model:
                 param_dict.update({f"tenant_{key}": tenant_model.id})
             else:
-                param_dict.update({f"tenant_{key}": None})
+                param_dict.update({f"tenant_{key}": 0})
     return param_dict
