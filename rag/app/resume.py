@@ -1076,10 +1076,12 @@ def _call_llm(prompt: str, tenant_id , lang: str) -> Optional[dict]:
                 if attempt > 0:
                     gen_conf["seed"] = random.randint(0, 1000000)
 
-                response = llm.chat(
-                    system=get_system_prompt(lang),
-                    history=[{"role": "user", "content": prompt}],
-                    gen_conf=gen_conf,
+                response = llm._run_coroutine_sync(
+                    llm.async_chat(
+                        system=get_system_prompt(lang),
+                        history=[{"role": "user", "content": prompt}],
+                        gen_conf=gen_conf,
+                    )
                 )
                 cleaned = _clean_llm_json_response(response)
                 return _parse_json_with_repair(cleaned)
