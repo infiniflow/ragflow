@@ -36,7 +36,7 @@ type ConfigResponse struct {
 
 // GetConfig get system configuration
 func (s *SystemService) GetConfig() (*ConfigResponse, error) {
-	cfg := server.Get()
+	cfg := server.GetConfig()
 	return &ConfigResponse{
 		RegisterEnabled: cfg.RegisterEnabled,
 	}, nil

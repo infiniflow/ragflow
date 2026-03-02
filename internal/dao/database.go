@@ -33,7 +33,7 @@ var DB *gorm.DB
 
 // InitDB initialize database connection
 func InitDB() error {
-	cfg := server.Get()
+	cfg := server.GetConfig()
 	dbCfg := cfg.Database
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",

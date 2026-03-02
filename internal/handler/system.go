@@ -82,7 +82,7 @@ func (h *SystemHandler) GetConfig(c *gin.Context) {
 // @Success 200 {object} config.Config
 // @Router /v1/system/configs [get]
 func (h *SystemHandler) GetConfigs(c *gin.Context) {
-	cfg := server.Get()
+	cfg := server.GetConfig()
 	if cfg == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

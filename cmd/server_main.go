@@ -27,7 +27,7 @@ import (
 func main() {
 	// Initialize logger with default level
 	// logger.Init("info"); // set debug log level
-	if err := logger.Init("info"); err != nil {
+	if err := logger.Init("debug"); err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 
@@ -42,7 +42,7 @@ func main() {
 	}
 	logger.Info("Model providers loaded", zap.Int("count", len(server.GetModelProviders())))
 
-	cfg := server.Get()
+	cfg := server.GetConfig()
 
 	// Reinitialize logger with configured level if different
 	if cfg.Log.Level != "" && cfg.Log.Level != "info" {

@@ -43,7 +43,7 @@ type ChunkService struct {
 
 // NewChunkService creates chunk service
 func NewChunkService() *ChunkService {
-	cfg := server.Get()
+	cfg := server.GetConfig()
 	return &ChunkService{
 		docEngine:      engine.Get(),
 		engineType:     cfg.DocEngine.Type,

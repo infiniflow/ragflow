@@ -196,13 +196,13 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, error) 
 
 	// Generate new access token
 	token := s.GenerateToken()
-	if err := s.UpdateUserAccessToken(user, token); err != nil {
-		return nil, fmt.Errorf("failed to update access token: %w", err)
-	}
+	user.AccessToken = &token
 
 	// Update timestamp
 	now := time.Now().Unix()
 	user.UpdateTime = &now
+	now_date := time.Now()
+	user.UpdateDate = &now_date
 	if err := s.userDAO.Update(user); err != nil {
 		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
@@ -401,13 +401,8 @@ func (s *UserService) GenerateToken() string {
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
 func (s *UserService) GetUserByToken(authorization string) (*model.User, error) {
 	// Get secret key from config
-	cfg := server.Get()
-	secretKey := cfg.SecretKey
-	if secretKey == "" {
-		// Fallback to default secret key
-		secretKey = "infiniflow-token"
-	}
-	secretKey = "55d169ff069ae8a4c5f35bb0dee2397ae156a37db56ff4b36df3d0c954025faa"
+	variables := server.GetVariables()
+	secretKey := variables.SecretKey
 
 	// Extract access token from authorization header
 	// Equivalent to: access_token = str(jwt.loads(authorization)) in Python
@@ -601,7 +596,7 @@ type LoginChannel struct {
 
 // GetLoginChannels gets all supported authentication channels
 func (s *UserService) GetLoginChannels() ([]*LoginChannel, error) {
-	cfg := server.Get()
+	cfg := server.GetConfig()
 	channels := make([]*LoginChannel, 0)
 
 	for channel, oauthCfg := range cfg.OAuth {
