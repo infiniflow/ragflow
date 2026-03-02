@@ -1,0 +1,108 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "data": {
+          "form": {
+            "mode": "conversational",
+            "prologue": "Hi! I'm your assistant. What can I do for you?"
+          },
+          "label": "Begin",
+          "name": "begin"
+        },
+        "id": "begin",
+        "position": { "x": 50, "y": 200 },
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "type": "beginNode",
+        "measured": { "width": 200, "height": 82 }
+      },
+      {
+        "id": "Agent:DryBottlesUnite",
+        "type": "agentNode",
+        "position": { "x": 426.80683432048755, "y": 186.8225437237188 },
+        "data": {
+          "label": "Agent",
+          "name": "Agent_0",
+          "form": {
+            "temperatureEnabled": false,
+            "topPEnabled": false,
+            "presencePenaltyEnabled": false,
+            "frequencyPenaltyEnabled": false,
+            "maxTokensEnabled": false,
+            "temperature": 0.1,
+            "top_p": 0.3,
+            "frequency_penalty": 0.7,
+            "presence_penalty": 0.4,
+            "max_tokens": 256,
+            "description": "",
+            "user_prompt": "",
+            "sys_prompt": "\n      <role>\n        You are a helpful assistant, an AI assistant specialized in problem-solving for the user.\n        If a specific domain is provided, adapt your expertise to that domain; otherwise, operate as a generalist.\n      </role>\n      <instructions>\n        1. Understand the user’s request.\n        2. Decompose it into logical subtasks.\n        3. Execute each subtask step by step, reasoning transparently.\n        4. Validate accuracy and consistency.\n        5. Summarize the final result clearly.\n      </instructions>",
+            "prompts": [{ "role": "user", "content": "{sys.query}" }],
+            "message_history_window_size": 12,
+            "max_retries": 3,
+            "delay_after_error": 1,
+            "visual_files_var": "",
+            "max_rounds": 1,
+            "exception_method": "",
+            "exception_goto": [],
+            "exception_default_value": "",
+            "tools": [],
+            "mcp": [],
+            "cite": true,
+            "showStructuredOutput": false,
+            "outputs": { "content": { "type": "string", "value": "" } },
+            "llm_id": "glm-4-flash@ZHIPU-AI"
+          }
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "measured": { "width": 200, "height": 90 },
+        "selected": false,
+        "dragging": false
+      },
+      {
+        "id": "Message:DarkPlanetsTalk",
+        "type": "messageNode",
+        "position": { "x": 752.3381558557825, "y": 193.4112718618594 },
+        "data": {
+          "label": "Message",
+          "name": "Message_0",
+          "form": { "content": ["{Agent:DryBottlesUnite@content}"] }
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "measured": { "width": 200, "height": 86 },
+        "selected": true,
+        "dragging": false
+      }
+    ],
+    "edges": [
+      {
+        "source": "Agent:DryBottlesUnite",
+        "target": "Message:DarkPlanetsTalk",
+        "sourceHandle": "start",
+        "targetHandle": "end",
+        "id": "xy-edge__Agent:DryBottlesUnitestart-Message:DarkPlanetsTalkend",
+        "data": { "isHovered": false }
+      },
+      {
+        "type": "buttonEdge",
+        "markerEnd": "logo",
+        "zIndex": 1001,
+        "source": "begin",
+        "sourceHandle": "start",
+        "target": "Agent:DryBottlesUnite",
+        "targetHandle": "end",
+        "id": "xy-edge__beginstart-Agent:DryBottlesUniteend"
+      }
+    ]
+  },
+  "globals": {
+    "sys.conversation_turns": 0,
+    "sys.files": [],
+    "sys.query": "",
+    "sys.user_id": ""
+  },
+  "variables": []
+}

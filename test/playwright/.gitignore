@@ -1,0 +1,3 @@
+artifacts/
+.auth
+.pytest_cache
