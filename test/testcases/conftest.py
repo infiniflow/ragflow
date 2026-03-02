@@ -234,15 +234,20 @@ def set_tenant_info(auth):
 
 @pytest.fixture(scope="session")
 def storage_impl():
-    orig_sys_path = sys.path[:]
+    project_root = Path(__file__).parents[2]
+    saved_modules = dict(sys.modules)
+
     try:
-        sys.path.insert(0, str(Path(__file__).parents[2]))
-        if "common" in sys.modules:
-            del sys.modules["common"]
+        common_stub = types.ModuleType("common")
+        common_stub.__path__ = [str(project_root / "common")]
+        common_stub.__package__ = "common"
+        common_stub.__file__ = str(project_root / "common" / "__init__.py")
+        sys.modules["common"] = common_stub
+
         from common import settings, config_utils, constants
     finally:
-        sys.path = orig_sys_path
-        del sys.modules["common"]
+        sys.modules.clear()
+        sys.modules.update(saved_modules)
 
     # already initialized
     if settings.STORAGE_IMPL:
