@@ -1200,7 +1200,7 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
 
 def docx_question_level(p, bull=-1):
     txt = re.sub(r"\u3000", " ", p.text).strip()
-    if p.style.name.startswith('Heading'):
+    if hasattr(p.style, 'name') and p.style.name and p.style.name.startswith('Heading'):
         return int(p.style.name.split(' ')[-1]), txt
     else:
         if bull < 0:
