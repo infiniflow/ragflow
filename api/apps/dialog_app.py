@@ -108,6 +108,7 @@ async def set_dialog():
             return get_data_error_result(message=f'Datasets use different embedding models: {[kb.embd_id for kb in kbs]}"')
 
         llm_id = dialog_info.get("llm_id", tenant.llm_id)
+        tenant_llm_id = dialog_info.get("tenant_llm_id", tenant.tenant_llm_id)
         if not dialog_id:
             dia = {
                 "id": get_uuid(),
@@ -116,12 +117,14 @@ async def set_dialog():
                 "kb_ids": dialog_info.get("kb_ids", []),
                 "description": description,
                 "llm_id": llm_id,
+                "tenant_llm_id": tenant_llm_id,
                 "llm_setting": llm_setting,
                 "prompt_config": prompt_config,
                 "meta_data_filter": meta_data_filter,
                 "top_n": top_n,
                 "top_k": top_k,
                 "rerank_id": rerank_id,
+                "tenant_rerank_id": dialog_info.get("tenant_rerank_id", None),
                 "similarity_threshold": similarity_threshold,
                 "vector_similarity_weight": vector_similarity_weight,
                 "icon": icon

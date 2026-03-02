@@ -21,4 +21,6 @@ def ensure_tenant_model_id_for_params(tenant_id: str, param_dict: dict) -> dict:
             tenant_model = TenantLLMService.get_api_key(tenant_id, param_dict[key])
             if tenant_model:
                 param_dict.update({f"tenant_{key}": tenant_model.id})
+            else:
+                param_dict.update({f"tenant_{key}": None})
     return param_dict
