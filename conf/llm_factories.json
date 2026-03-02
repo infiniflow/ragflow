@@ -3055,6 +3055,118 @@
                     "is_tools": false
                 },
                 {
+                    "llm_name": "Pro/MiniMaxAI/MiniMax-M2.5",
+                    "tags": "LLM,CHAT,197k",
+                    "max_tokens": 197000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/zai-org/GLM-5",
+                    "tags": "LLM,CHAT,205k",
+                    "max_tokens": 205000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/moonshotai/Kimi-K2.5",
+                    "tags": "LLM,CHAT,262k",
+                    "max_tokens": 262000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/zai-org/GLM-4.7",
+                    "tags": "LLM,CHAT,205k",
+                    "max_tokens": 205000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-V3.2",
+                    "tags": "LLM,CHAT,164k",
+                    "max_tokens": 164000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-V3.2",
+                    "tags": "LLM,CHAT,164k",
+                    "max_tokens": 164000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-V3.1-Terminus",
+                    "tags": "LLM,CHAT,164k",
+                    "max_tokens": 164000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
+                    "tags": "LLM,CHAT,164k",
+                    "max_tokens": 164000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "PaddlePaddle/PaddleOCR-VL-1.5",
+                    "tags": "LLM,IMAGE2TEXT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "image2text",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "Pro/MiniMaxAI/MiniMax-M2.1",
+                    "tags": "LLM,CHAT,197k",
+                    "max_tokens": 197000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "stepfun-ai/Step-3.5-Flash",
+                    "tags": "LLM,CHAT,262k",
+                    "max_tokens": 262000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "zai-org/GLM-4.6V",
+                    "tags": "LLM,CHAT,131k",
+                    "max_tokens": 131000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "moonshotai/Kimi-K2-Thinking",
+                    "tags": "LLM,CHAT,262k",
+                    "max_tokens": 262000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/moonshotai/Kimi-K2-Thinking",
+                    "tags": "LLM,CHAT,262k",
+                    "max_tokens": 262000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "zai-org/GLM-4.6",
+                    "tags": "LLM,CHAT,131k",
+                    "max_tokens": 131000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Kwaipilot/KAT-Dev",
+                    "tags": "LLM,CHAT,131k",
+                    "max_tokens": 131000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "BAAI/bge-m3",
                     "tags": "LLM,EMBEDDING,8k",
                     "max_tokens": 8192,
