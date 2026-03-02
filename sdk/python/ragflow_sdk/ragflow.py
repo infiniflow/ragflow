@@ -229,13 +229,39 @@ class RAGFlow:
         toc_enhance: bool = False,
     ):
         """
-        Retrieve chunks from datasets.
+        Retrieve chunks from datasets for a question.
 
-        metadata_condition supports:
-        {
-            "logic": "and" | "or",
-            "conditions": [{"name": "...", "comparison_operator": "...", "value": "..."}]
-        }
+        Args:
+            dataset_ids: List of dataset IDs to search.
+            document_ids: Optional list of document IDs to restrict retrieval scope.
+            question: Query text.
+            page: Page number (1-based).
+            page_size: Number of chunks per page.
+            similarity_threshold: Minimum similarity score threshold.
+            vector_similarity_weight: Weight for vector similarity in ranking.
+            top_k: Maximum candidate chunks before pagination.
+            rerank_id: Optional rerank model identifier.
+            keyword: Whether to apply keyword extraction expansion to the query.
+            cross_languages: Optional list of target languages for query expansion.
+            metadata_condition: Optional metadata filter object:
+                {
+                    "logic": "and" | "or",
+                    "conditions": [
+                        {
+                            "name": "<metadata_name>",
+                            "comparison_operator": "is|not is|contains|not contains|in|not in|start with|end with|empty|not empty|=|!=|≠|>|<|>=|<=|≥|≤",
+                            "value": "<compare_value>"
+                        }
+                    ]
+                }
+            use_kg: Whether to include knowledge-graph retrieval.
+            toc_enhance: Whether to enable TOC-aware post processing.
+
+        Returns:
+            list[Chunk]: Retrieved chunks.
+
+        Raises:
+            Exception: If the API request fails.
         """
         if document_ids is None:
             document_ids = []

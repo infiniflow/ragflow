@@ -159,6 +159,7 @@ async def chat_completion(tenant_id, chat_id):
               properties:
                 logic:
                   type: string
+                  description: Logic relationship between all conditions. Defaults to "and".
                   enum:
                     - and
                     - or
@@ -169,10 +170,13 @@ async def chat_completion(tenant_id, chat_id):
                     properties:
                       name:
                         type: string
+                        description: Metadata attribute name.
                       value:
                         type: string
+                        description: Value to compare.
                       comparison_operator:
                         type: string
+                        description: Operator from the allowed list.
                         enum:
                           - is
                           - not is
@@ -192,6 +196,13 @@ async def chat_completion(tenant_id, chat_id):
                           - "<="
                           - "≥"
                           - "≤"
+                    required:
+                      - name
+                      - value
+                      - comparison_operator
+              required:
+                - conditions
+              additionalProperties: false
       - in: header
         name: Authorization
         type: string

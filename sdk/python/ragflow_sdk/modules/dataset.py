@@ -80,6 +80,39 @@ class DataSet(Base):
         run: list[str] | None = None,
         metadata_condition: dict | None = None,
     ):
+        """
+        List documents in the dataset with optional filtering.
+
+        Args:
+            id: Optional document ID for exact match.
+            name: Optional document name for exact match.
+            keywords: Optional fuzzy keyword search on document names.
+            page: Page number (1-based).
+            page_size: Number of documents per page.
+            orderby: Sort field.
+            desc: Whether to sort descending.
+            create_time_from: Unix timestamp lower bound for creation time (0 disables).
+            create_time_to: Unix timestamp upper bound for creation time (0 disables).
+            suffix: Optional list of file suffix filters (for example, ["pdf", "txt"]).
+            run: Optional list of run status filters.
+            metadata_condition: Optional metadata filter object:
+                {
+                    "logic": "and" | "or",
+                    "conditions": [
+                        {
+                            "name": "<metadata_name>",
+                            "comparison_operator": "is|not is|contains|not contains|in|not in|start with|end with|empty|not empty|=|!=|≠|>|<|>=|<=|≥|≤",
+                            "value": "<compare_value>"
+                        }
+                    ]
+                }
+
+        Returns:
+            list[Document]: Matched documents for the current page.
+
+        Raises:
+            Exception: If the API request fails.
+        """
         params = {
             "id": id,
             "name": name,
