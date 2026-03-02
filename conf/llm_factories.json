@@ -496,6 +496,34 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "qwen3.5-plus",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3.5-plus-2026-02-15",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3.5-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3.5-flash-2026-02-23",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "qwen3-max",
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
@@ -3053,6 +3081,111 @@
                     "max_tokens": 32000,
                     "model_type": "chat",
                     "is_tools": false
+                },
+                {
+                    "llm_name": "Pro/MiniMaxAI/MiniMax-M2.5",
+                    "tags": "LLM,CHAT,197k",
+                    "max_tokens": 197000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/zai-org/GLM-5",
+                    "tags": "LLM,CHAT,205k",
+                    "max_tokens": 205000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/moonshotai/Kimi-K2.5",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,262k",
+                    "max_tokens": 262000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/zai-org/GLM-4.7",
+                    "tags": "LLM,CHAT,205k",
+                    "max_tokens": 205000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-V3.2",
+                    "tags": "LLM,CHAT,164k",
+                    "max_tokens": 164000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-V3.2",
+                    "tags": "LLM,CHAT,164k",
+                    "max_tokens": 164000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-V3.1-Terminus",
+                    "tags": "LLM,CHAT,164k",
+                    "max_tokens": 164000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
+                    "tags": "LLM,CHAT,164k",
+                    "max_tokens": 164000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/MiniMaxAI/MiniMax-M2.1",
+                    "tags": "LLM,CHAT,197k",
+                    "max_tokens": 197000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "stepfun-ai/Step-3.5-Flash",
+                    "tags": "LLM,CHAT,262k",
+                    "max_tokens": 262000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "zai-org/GLM-4.6V",
+                    "tags": "LLM,CHAT,131k",
+                    "max_tokens": 131000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "moonshotai/Kimi-K2-Thinking",
+                    "tags": "LLM,CHAT,262k",
+                    "max_tokens": 262000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/moonshotai/Kimi-K2-Thinking",
+                    "tags": "LLM,CHAT,262k",
+                    "max_tokens": 262000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "zai-org/GLM-4.6",
+                    "tags": "LLM,CHAT,131k",
+                    "max_tokens": 131000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Kwaipilot/KAT-Dev",
+                    "tags": "LLM,CHAT,131k",
+                    "max_tokens": 131000,
+                    "model_type": "chat",
+                    "is_tools": true
                 },
                 {
                     "llm_name": "BAAI/bge-m3",
