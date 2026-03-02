@@ -20,6 +20,15 @@ const languageImports: Record<string, () => Promise<{ default: any }>> = {
   [LanguageAbbreviation.Fr]: () => import('./fr'),
   [LanguageAbbreviation.It]: () => import('./it'),
   [LanguageAbbreviation.Bg]: () => import('./bg'),
+  [LanguageAbbreviation.Ar]: () => import('./ar'),
+};
+
+const languageAliases: Record<string, string> = {
+  'pt-br': LanguageAbbreviation.PtBr,
+};
+
+const normalizeLanguageCode = (lng: string): string => {
+  return languageAliases[lng] ?? lng;
 };
 
 const enFlattened = flattenObject(translation_en);
@@ -49,11 +58,13 @@ i18n
   });
 
 export const loadLanguageAsync = async (lng: string): Promise<void> => {
-  if (i18n.hasResourceBundle(lng, 'translation')) {
+  const normalizedLng = normalizeLanguageCode(lng);
+
+  if (i18n.hasResourceBundle(normalizedLng, 'translation')) {
     return;
   }
 
-  const importFn = languageImports[lng];
+  const importFn = languageImports[normalizedLng];
   if (!importFn) {
     console.warn(`Language ${lng} is not supported for lazy loading`);
     return;
@@ -62,7 +73,7 @@ export const loadLanguageAsync = async (lng: string): Promise<void> => {
   try {
     const module = await importFn();
     const translationData = module.default?.translation || module.default;
-    i18n.addResourceBundle(lng, 'translation', translationData);
+    i18n.addResourceBundle(normalizedLng, 'translation', translationData);
 
     const flattened = flattenObject({ translation: translationData });
     translationTable.push(flattened);
@@ -72,16 +83,22 @@ export const loadLanguageAsync = async (lng: string): Promise<void> => {
 };
 
 export const changeLanguageAsync = async (lng: string): Promise<void> => {
-  if (lng !== 'en' && !i18n.hasResourceBundle(lng, 'translation')) {
-    await loadLanguageAsync(lng);
+  const normalizedLng = normalizeLanguageCode(lng);
+  if (
+    normalizedLng !== LanguageAbbreviation.En &&
+    !i18n.hasResourceBundle(normalizedLng, 'translation')
+  ) {
+    await loadLanguageAsync(normalizedLng);
   }
-  await i18n.changeLanguage(lng);
+  await i18n.changeLanguage(normalizedLng);
 };
 
 export const initLanguage = async (): Promise<void> => {
-  const currentLng = i18n.language || localStorage.getItem('lng') || 'en';
+  const currentLng = normalizeLanguageCode(
+    i18n.language || localStorage.getItem('lng') || LanguageAbbreviation.En,
+  );
 
-  if (currentLng !== 'en' && languageImports[currentLng]) {
+  if (currentLng !== LanguageAbbreviation.En && languageImports[currentLng]) {
     await loadLanguageAsync(currentLng);
     await i18n.changeLanguage(currentLng);
   }
