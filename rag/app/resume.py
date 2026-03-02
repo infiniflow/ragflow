@@ -848,8 +848,8 @@ def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
             if "page" not in b:
                 b["page"] = 0
 
-        logger.info(f"YOLOv10 布局检测完成，共 {len(tagged_blocks)} 个文本块，"
-                    f"检测到 {sum(len(pl) for pl in page_layouts)} 个布局区域")
+        logger.info(f"YOLOv10 layout detection complete，{len(tagged_blocks)} text blocks total,"
+                    f"detected {sum(len(pl) for pl in page_layouts)} layout regions")
         return tagged_blocks
 
     except Exception as e:
