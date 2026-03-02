@@ -832,7 +832,7 @@ class TenantLLM(DataBaseModel):
     class Meta:
         db_table = "tenant_llm"
         indexes = (
-            (("tenant_id", "llm_factory", "llm_name"), True, "uk_tenant_llm"),
+            (("tenant_id", "llm_factory", "llm_name"), True),
         )
 
 
