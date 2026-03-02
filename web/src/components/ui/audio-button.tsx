@@ -389,7 +389,7 @@ export const AudioButton = ({
           <div
             className="
             absolute inset-0 rounded-full border-2 border-state-success
-            animate-ping duration-[4s] opacity-75 pointer-events-none"
+            animate-ping opacity-75 pointer-events-none"
           />
         )}
 
