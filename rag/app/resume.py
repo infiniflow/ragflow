@@ -1892,6 +1892,49 @@ def _postprocess_resume(resume: dict, lines: list[str], lang: str = "Chinese") -
                     seen.add(item_str)
                     deduped.append(item_str)
             resume[list_field] = deduped
+    # --- Phase 3.5: Cross-dedup between work_desc_tks and project_desc_tks ---
+    # When a resume has no separate "Project Experience" section, the LLM may extract
+    # the same text into both work_desc_tks and project_desc_tks, causing duplicate chunks.
+    # Strategy: remove project descriptions that overlap heavily with any work description.
+    work_descs = resume.get("work_desc_tks", [])
+    project_descs = resume.get("project_desc_tks", [])
+    if work_descs and project_descs:
+        norm_work_set = [_normalize_for_comparison(d) for d in work_descs]
+        deduped_project_descs = []
+        deduped_project_names = []
+        project_names = resume.get("project_tks", [])
+        for i, proj_desc in enumerate(project_descs):
+            norm_proj = _normalize_for_comparison(proj_desc)
+            if not norm_proj:
+                continue
+            is_dup = False
+            for norm_work in norm_work_set:
+                if not norm_work:
+                    continue
+                # Check substring containment
+                shorter, longer = (norm_proj, norm_work) if len(norm_proj) <= len(norm_work) else (norm_work, norm_proj)
+                if shorter in longer:
+                    is_dup = True
+                    break
+                # Token-level overlap ratio
+                proj_tokens = set(norm_proj.split())
+                work_tokens = set(norm_work.split())
+                if proj_tokens and work_tokens:
+                    overlap = len(proj_tokens & work_tokens)
+                    ratio = overlap / min(len(proj_tokens), len(work_tokens))
+                    if ratio > 0.7:
+                        is_dup = True
+                        break
+            if is_dup:
+                proj_name = project_names[i] if i < len(project_names) else ""
+                logger.debug(f"Project desc duplicates work desc, removed: {proj_name or f'#{i+1}'}")
+            else:
+                deduped_project_descs.append(proj_desc)
+                if i < len(project_names):
+                    deduped_project_names.append(project_names[i])
+        resume["project_desc_tks"] = deduped_project_descs
+        if deduped_project_names:
+            resume["project_tks"] = deduped_project_names
 
     # --- Phase 4: Field completion ---
     required_fields = [
