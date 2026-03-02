@@ -268,6 +268,110 @@ async def oauth_callback(channel):
         return redirect(f"/?error={str(e)}")
 
 
+@manager.route("/oauth/external/<channel>", methods=["POST"])  # noqa: F821
+async def oauth_external(channel):
+    """
+    Login with externally provided OAuth/OIDC tokens.
+    """
+    try:
+        channel_config = settings.OAUTH_CONFIG.get(channel)
+        if not channel_config:
+            return get_json_result(
+                data=False,
+                code=RetCode.ARGUMENT_ERROR,
+                message=f"Invalid channel name: {channel}",
+            )
+
+        req = await get_request_json()
+        access_token = req.get("access_token", "") if req else ""
+        id_token = req.get("id_token") if req else None
+        if not access_token:
+            return get_json_result(
+                data=False,
+                code=RetCode.ARGUMENT_ERROR,
+                message="Missing access_token.",
+            )
+
+        auth_cli = get_auth_client(channel_config)
+        if hasattr(auth_cli, "async_fetch_user_info"):
+            user_info = await auth_cli.async_fetch_user_info(access_token, id_token=id_token)
+        else:
+            user_info = auth_cli.fetch_user_info(access_token, id_token=id_token)
+
+        if not user_info.email:
+            return get_json_result(
+                data=False,
+                code=RetCode.AUTHENTICATION_ERROR,
+                message="Email missing from OAuth/OIDC user info.",
+            )
+
+        users = UserService.query(email=user_info.email)
+        user_id = get_uuid()
+        if not users:
+            try:
+                try:
+                    avatar = download_img(user_info.avatar_url)
+                except Exception as e:
+                    logging.exception(e)
+                    avatar = ""
+
+                users = user_register(
+                    user_id,
+                    {
+                        "access_token": get_uuid(),
+                        "email": user_info.email,
+                        "avatar": avatar,
+                        "nickname": user_info.nickname,
+                        "login_channel": channel,
+                        "last_login_time": get_format_time(),
+                        "is_superuser": False,
+                    },
+                )
+                if not users:
+                    raise Exception(f"Failed to register {user_info.email}")
+                if len(users) > 1:
+                    raise Exception(f"Same email: {user_info.email} exists!")
+
+                user = users[0]
+                login_user(user)
+                return await construct_response(
+                    data=user.to_json(),
+                    auth=user.get_id(),
+                    message="Welcome aboard!",
+                )
+            except Exception as e:
+                rollback_user_registration(user_id)
+                logging.exception(e)
+                return get_json_result(
+                    data=False,
+                    code=RetCode.EXCEPTION_ERROR,
+                    message=str(e),
+                )
+
+        user = users[0]
+        user.access_token = get_uuid()
+        if user and hasattr(user, "is_active") and user.is_active == "0":
+            return get_json_result(
+                data=False,
+                code=RetCode.FORBIDDEN,
+                message="This account has been disabled, please contact the administrator!",
+            )
+        login_user(user)
+        user.save()
+        return await construct_response(
+            data=user.to_json(),
+            auth=user.get_id(),
+            message="Welcome back!",
+        )
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(
+            data=False,
+            code=RetCode.AUTHENTICATION_ERROR,
+            message=f"Failed to validate OAuth/OIDC tokens: {str(e)}",
+        )
+
+
 @manager.route("/github_callback", methods=["GET"])  # noqa: F821
 async def github_callback():
     """
@@ -1056,5 +1160,4 @@ async def forget_reset_password():
 
     msg = "Password reset successful. Logged in."
     return await construct_response(data=user.to_json(), auth=user.get_id(), message=msg)
-
 
