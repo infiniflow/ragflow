@@ -663,6 +663,111 @@ def test_oauth_callback_matrix_unit(monkeypatch):
 
 
 @pytest.mark.p2
+def test_oauth_external_matrix_unit(monkeypatch):
+    module = _load_user_app(monkeypatch)
+    module.settings.OAUTH_CONFIG = {"github": {"display_name": "GitHub", "icon": "gh"}}
+
+    class _SyncAuthClient:
+        def __init__(self, user_info=None, err=None):
+            self._user_info = user_info
+            self._err = err
+            self.calls = []
+
+        def fetch_user_info(self, token, id_token=None):
+            self.calls.append((token, id_token))
+            if self._err:
+                raise self._err
+            return self._user_info
+
+    class _AsyncAuthClient:
+        def __init__(self, user_info=None):
+            self._user_info = user_info
+            self.calls = []
+
+        async def async_fetch_user_info(self, token, id_token=None):
+            self.calls.append((token, id_token))
+            return self._user_info
+
+    _set_request_json(monkeypatch, module, {"access_token": "token", "id_token": "id"})
+    res = _run(module.oauth_external("missing"))
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR
+    assert "Invalid channel name: missing" in res["message"]
+
+    _set_request_json(monkeypatch, module, {})
+    res = _run(module.oauth_external("github"))
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR
+    assert "Missing access_token." in res["message"]
+
+    sync_err = _SyncAuthClient(err=RuntimeError("bad token"))
+    monkeypatch.setattr(module, "get_auth_client", lambda _config: sync_err)
+    _set_request_json(monkeypatch, module, {"access_token": "token-err", "id_token": "id-err"})
+    res = _run(module.oauth_external("github"))
+    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
+    assert "Failed to validate OAuth/OIDC tokens" in res["message"]
+    assert sync_err.calls == [("token-err", "id-err")]
+
+    sync_missing_email = _SyncAuthClient(user_info=SimpleNamespace(email=None, avatar_url="http://img", nickname="sync"))
+    monkeypatch.setattr(module, "get_auth_client", lambda _config: sync_missing_email)
+    _set_request_json(monkeypatch, module, {"access_token": "token-email", "id_token": "id-email"})
+    res = _run(module.oauth_external("github"))
+    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
+    assert "Email missing from OAuth/OIDC user info." in res["message"]
+    assert sync_missing_email.calls == [("token-email", "id-email")]
+
+    async_new_user = _AsyncAuthClient(user_info=SimpleNamespace(email="new@example.com", avatar_url="http://img", nickname="new-user"))
+    monkeypatch.setattr(module, "get_auth_client", lambda _config: async_new_user)
+    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [])
+    monkeypatch.setattr(module, "download_img", lambda _url: "avatar")
+    monkeypatch.setattr(module, "user_register", lambda _user_id, _user: None)
+    rollback_calls = []
+    monkeypatch.setattr(module, "rollback_user_registration", lambda user_id: rollback_calls.append(user_id))
+    monkeypatch.setattr(module, "get_uuid", lambda: "new-user-id")
+    _set_request_json(monkeypatch, module, {"access_token": "token-new", "id_token": "id-new"})
+    res = _run(module.oauth_external("github"))
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR
+    assert "Failed to register new@example.com" in res["message"]
+    assert rollback_calls == ["new-user-id"]
+    assert async_new_user.calls == [("token-new", "id-new")]
+
+    new_user = _DummyUser("new-user", "new@example.com")
+    login_calls = []
+    monkeypatch.setattr(module, "user_register", lambda _user_id, _user: [new_user])
+    monkeypatch.setattr(module, "login_user", lambda user: login_calls.append(user))
+    rollback_calls.clear()
+    _set_request_json(monkeypatch, module, {"access_token": "token-new-ok", "id_token": "id-new-ok"})
+    res = _run(module.oauth_external("github"))
+    assert res["code"] == 0
+    assert res["auth"] == "new-user"
+    assert login_calls and login_calls[-1] is new_user
+    assert rollback_calls == []
+
+    async_existing_user = _AsyncAuthClient(
+        user_info=SimpleNamespace(email="existing@example.com", avatar_url="http://img", nickname="existing")
+    )
+    monkeypatch.setattr(module, "get_auth_client", lambda _config: async_existing_user)
+    inactive_user = _DummyUser("existing-user", "existing@example.com", is_active="0")
+    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [inactive_user])
+    _set_request_json(monkeypatch, module, {"access_token": "token-existing", "id_token": "id-existing"})
+    res = _run(module.oauth_external("github"))
+    assert res["code"] == module.RetCode.FORBIDDEN
+    assert "disabled" in res["message"]
+
+    existing_user = _DummyUser("existing-user", "existing@example.com")
+    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [existing_user])
+    login_calls.clear()
+    monkeypatch.setattr(module, "login_user", lambda user: login_calls.append(user))
+    monkeypatch.setattr(module, "get_uuid", lambda: "existing-token")
+    _set_request_json(monkeypatch, module, {"access_token": "token-existing-ok", "id_token": "id-existing-ok"})
+    res = _run(module.oauth_external("github"))
+    assert res["code"] == 0
+    assert res["auth"] == "existing-user"
+    assert existing_user.access_token == "existing-token"
+    assert existing_user.save_calls == 1
+    assert login_calls and login_calls[-1] is existing_user
+    assert async_existing_user.calls == [("token-existing", "id-existing"), ("token-existing-ok", "id-existing-ok")]
+
+
+@pytest.mark.p2
 def test_github_callback_matrix_unit(monkeypatch):
     module = _load_user_app(monkeypatch)
 
