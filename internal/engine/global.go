@@ -18,11 +18,11 @@ package engine
 
 import (
 	"fmt"
+	"ragflow/internal/server"
 	"sync"
 
 	"go.uber.org/zap"
 
-	"ragflow/internal/config"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
 	"ragflow/internal/logger"
@@ -34,7 +34,7 @@ var (
 )
 
 // Init initializes document engine
-func Init(cfg *config.DocEngineConfig) error {
+func Init(cfg *server.DocEngineConfig) error {
 	var initErr error
 	once.Do(func() {
 		var err error

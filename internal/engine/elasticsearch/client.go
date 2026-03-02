@@ -20,9 +20,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"ragflow/internal/server"
 	"time"
-
-	"ragflow/internal/config"
 
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
@@ -31,12 +30,12 @@ import (
 // Engine Elasticsearch engine implementation
 type elasticsearchEngine struct {
 	client *elasticsearch.Client
-	config *config.ElasticsearchConfig
+	config *server.ElasticsearchConfig
 }
 
 // NewEngine creates an Elasticsearch engine
 func NewEngine(cfg interface{}) (*elasticsearchEngine, error) {
-	esConfig, ok := cfg.(*config.ElasticsearchConfig)
+	esConfig, ok := cfg.(*server.ElasticsearchConfig)
 	if !ok {
 		return nil, fmt.Errorf("invalid Elasticsearch config type, expected *config.ElasticsearchConfig")
 	}

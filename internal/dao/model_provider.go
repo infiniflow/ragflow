@@ -17,9 +17,8 @@
 package dao
 
 import (
+	"ragflow/internal/server"
 	"sync"
-
-	"ragflow/internal/config"
 )
 
 // ModelProviderDAO provides access to model provider configuration data
@@ -39,24 +38,24 @@ func NewModelProviderDAO() *ModelProviderDAO {
 }
 
 // GetAllProviders returns all model providers
-func (dao *ModelProviderDAO) GetAllProviders() []config.ModelProvider {
-	return config.GetModelProviders()
+func (dao *ModelProviderDAO) GetAllProviders() []server.ModelProvider {
+	return server.GetModelProviders()
 }
 
 // GetProviderByName returns the model provider with the given name
-func (dao *ModelProviderDAO) GetProviderByName(name string) *config.ModelProvider {
-	return config.GetModelProviderByName(name)
+func (dao *ModelProviderDAO) GetProviderByName(name string) *server.ModelProvider {
+	return server.GetModelProviderByName(name)
 }
 
 // GetLLMByProviderAndName returns the LLM with the given provider name and model name
-func (dao *ModelProviderDAO) GetLLMByProviderAndName(providerName, modelName string) *config.LLM {
-	return config.GetLLMByProviderAndName(providerName, modelName)
+func (dao *ModelProviderDAO) GetLLMByProviderAndName(providerName, modelName string) *server.LLM {
+	return server.GetLLMByProviderAndName(providerName, modelName)
 }
 
 // GetLLMsByType returns all LLMs across all providers that match the given model type
-func (dao *ModelProviderDAO) GetLLMsByType(modelType string) []config.LLM {
-	var result []config.LLM
-	for _, provider := range config.GetModelProviders() {
+func (dao *ModelProviderDAO) GetLLMsByType(modelType string) []server.LLM {
+	var result []server.LLM
+	for _, provider := range server.GetModelProviders() {
 		for _, llm := range provider.LLMs {
 			if llm.ModelType == modelType {
 				result = append(result, llm)
@@ -67,9 +66,9 @@ func (dao *ModelProviderDAO) GetLLMsByType(modelType string) []config.LLM {
 }
 
 // GetProvidersByTag returns providers that have the given tag in their tags string
-func (dao *ModelProviderDAO) GetProvidersByTag(tag string) []config.ModelProvider {
-	var result []config.ModelProvider
-	for _, provider := range config.GetModelProviders() {
+func (dao *ModelProviderDAO) GetProvidersByTag(tag string) []server.ModelProvider {
+	var result []server.ModelProvider
+	for _, provider := range server.GetModelProviders() {
 		if containsTag(provider.Tags, tag) {
 			result = append(result, provider)
 		}
@@ -78,12 +77,12 @@ func (dao *ModelProviderDAO) GetProvidersByTag(tag string) []config.ModelProvide
 }
 
 // GetLLMsByProviderAndType returns LLMs for a specific provider that match the given model type
-func (dao *ModelProviderDAO) GetLLMsByProviderAndType(providerName, modelType string) []config.LLM {
-	provider := config.GetModelProviderByName(providerName)
+func (dao *ModelProviderDAO) GetLLMsByProviderAndType(providerName, modelType string) []server.LLM {
+	provider := server.GetModelProviderByName(providerName)
 	if provider == nil {
 		return nil
 	}
-	var result []config.LLM
+	var result []server.LLM
 	for _, llm := range provider.LLMs {
 		if llm.ModelType == modelType {
 			result = append(result, llm)

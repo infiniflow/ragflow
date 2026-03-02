@@ -17,7 +17,7 @@
 package service
 
 import (
-	"ragflow/internal/config"
+	"ragflow/internal/server"
 	"ragflow/internal/utility"
 )
 
@@ -36,7 +36,7 @@ type ConfigResponse struct {
 
 // GetConfig get system configuration
 func (s *SystemService) GetConfig() (*ConfigResponse, error) {
-	cfg := config.Get()
+	cfg := server.Get()
 	return &ConfigResponse{
 		RegisterEnabled: cfg.RegisterEnabled,
 	}, nil

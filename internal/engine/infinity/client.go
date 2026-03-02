@@ -19,20 +19,19 @@ package infinity
 import (
 	"context"
 	"fmt"
-
-	"ragflow/internal/config"
+	"ragflow/internal/server"
 )
 
 // Engine Infinity engine implementation
 // Note: Infinity Go SDK is not yet available. This is a placeholder implementation.
 type infinityEngine struct {
-	config *config.InfinityConfig
+	config *server.InfinityConfig
 }
 
 // NewEngine creates an Infinity engine
 // Note: This is a placeholder implementation waiting for official Infinity Go SDK
 func NewEngine(cfg interface{}) (*infinityEngine, error) {
-	infConfig, ok := cfg.(*config.InfinityConfig)
+	infConfig, ok := cfg.(*server.InfinityConfig)
 	if !ok {
 		return nil, fmt.Errorf("invalid infinity config type, expected *config.InfinityConfig")
 	}

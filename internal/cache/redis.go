@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"ragflow/internal/server"
 	"strconv"
 	"sync"
 	"time"
@@ -30,7 +31,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
-	"ragflow/internal/config"
 	"ragflow/internal/logger"
 )
 
@@ -45,7 +45,7 @@ type RedisClient struct {
 	luaDeleteIfEqual *redis.Script
 	luaTokenBucket   *redis.Script
 	luaAutoIncrement *redis.Script
-	config           *config.RedisConfig
+	config           *server.RedisConfig
 }
 
 // RedisMsg represents a message from Redis Stream
@@ -105,7 +105,7 @@ const (
 )
 
 // Init initializes Redis client
-func Init(cfg *config.RedisConfig) error {
+func Init(cfg *server.RedisConfig) error {
 	var initErr error
 	once.Do(func() {
 		if cfg.Host == "" {
@@ -120,7 +120,7 @@ func Init(cfg *config.RedisConfig) error {
 		})
 
 		// Test connection
-		ctx, cancel := context.WithTimeout(context.Background(), config.DefaultConnectTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), server.DefaultConnectTimeout)
 		defer cancel()
 
 		if err := client.Ping(ctx).Err(); err != nil {

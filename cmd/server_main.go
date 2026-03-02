@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"ragflow/internal/server"
 	"syscall"
 	"time"
 
@@ -13,7 +14,6 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/cache"
-	"ragflow/internal/config"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/handler"
@@ -32,17 +32,17 @@ func main() {
 	}
 
 	// Initialize configuration
-	if err := config.Init(""); err != nil {
+	if err := server.Init(""); err != nil {
 		logger.Fatal("Failed to initialize config", zap.Error(err))
 	}
 
 	// Load model providers configuration
-	if err := config.LoadModelProviders(""); err != nil {
+	if err := server.LoadModelProviders(""); err != nil {
 		logger.Fatal("Failed to load model providers", zap.Error(err))
 	}
-	logger.Info("Model providers loaded", zap.Int("count", len(config.GetModelProviders())))
+	logger.Info("Model providers loaded", zap.Int("count", len(server.GetModelProviders())))
 
-	cfg := config.Get()
+	cfg := server.Get()
 
 	// Reinitialize logger with configured level if different
 	if cfg.Log.Level != "" && cfg.Log.Level != "info" {
@@ -50,12 +50,12 @@ func main() {
 			logger.Error("Failed to reinitialize logger with configured level", err)
 		}
 	}
-	config.SetLogger(logger.Logger)
+	server.SetLogger(logger.Logger)
 
 	logger.Info("Server mode", zap.String("mode", cfg.Server.Mode))
 
 	// Print all configuration settings
-	config.PrintAll()
+	server.PrintAll()
 
 	// Set Gin mode
 	if cfg.Server.Mode == "release" {

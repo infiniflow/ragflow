@@ -18,6 +18,7 @@ package dao
 
 import (
 	"fmt"
+	"ragflow/internal/server"
 	"time"
 
 	gormLogger "gorm.io/gorm/logger"
@@ -25,7 +26,6 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 
-	"ragflow/internal/config"
 	"ragflow/internal/logger"
 )
 
@@ -33,7 +33,7 @@ var DB *gorm.DB
 
 // InitDB initialize database connection
 func InitDB() error {
-	cfg := config.Get()
+	cfg := server.Get()
 	dbCfg := cfg.Database
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",

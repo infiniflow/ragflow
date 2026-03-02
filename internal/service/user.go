@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"ragflow/internal/server"
 	"strconv"
 	"strings"
 	"time"
@@ -32,7 +33,6 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/scrypt"
 
-	"ragflow/internal/config"
 	"ragflow/internal/dao"
 	"ragflow/internal/model"
 	"ragflow/internal/utility"
@@ -401,7 +401,7 @@ func (s *UserService) GenerateToken() string {
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
 func (s *UserService) GetUserByToken(authorization string) (*model.User, error) {
 	// Get secret key from config
-	cfg := config.Get()
+	cfg := server.Get()
 	secretKey := cfg.SecretKey
 	if secretKey == "" {
 		// Fallback to default secret key
@@ -601,7 +601,7 @@ type LoginChannel struct {
 
 // GetLoginChannels gets all supported authentication channels
 func (s *UserService) GetLoginChannels() ([]*LoginChannel, error) {
-	cfg := config.Get()
+	cfg := server.Get()
 	channels := make([]*LoginChannel, 0)
 
 	for channel, oauthCfg := range cfg.OAuth {

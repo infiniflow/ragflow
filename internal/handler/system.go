@@ -18,10 +18,10 @@ package handler
 
 import (
 	"net/http"
+	"ragflow/internal/server"
 
 	"github.com/gin-gonic/gin"
 
-	"ragflow/internal/config"
 	"ragflow/internal/service"
 )
 
@@ -82,7 +82,7 @@ func (h *SystemHandler) GetConfig(c *gin.Context) {
 // @Success 200 {object} config.Config
 // @Router /v1/system/configs [get]
 func (h *SystemHandler) GetConfigs(c *gin.Context) {
-	cfg := config.Get()
+	cfg := server.Get()
 	if cfg == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

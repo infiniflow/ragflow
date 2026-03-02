@@ -19,10 +19,10 @@ package service
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/server"
 
 	"go.uber.org/zap"
 
-	"ragflow/internal/config"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/logger"
@@ -34,7 +34,7 @@ import (
 // ChunkService chunk service
 type ChunkService struct {
 	docEngine      engine.DocEngine
-	engineType     config.EngineType
+	engineType     server.EngineType
 	modelProvider  ModelProvider
 	embeddingCache *utility.EmbeddingLRU
 	kbDAO          *dao.KnowledgebaseDAO
@@ -43,7 +43,7 @@ type ChunkService struct {
 
 // NewChunkService creates chunk service
 func NewChunkService() *ChunkService {
-	cfg := config.Get()
+	cfg := server.Get()
 	return &ChunkService{
 		docEngine:      engine.Get(),
 		engineType:     cfg.DocEngine.Type,
@@ -283,7 +283,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	// Reference: rag/nlp/search.py L404-L429
 	tkWeight := 1.0 - *req.VectorSimilarityWeight
 	vtWeight := *req.VectorSimilarityWeight
-	useInfinity := s.engineType == config.EngineInfinity
+	useInfinity := s.engineType == server.EngineInfinity
 
 	sim, term_similarity, vector_similarity := nlp.Rerank(
 		rerankModel,
