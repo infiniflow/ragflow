@@ -1059,6 +1059,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         res.extend(url_res)
     # if table_context_size or image_context_size:
     #    attach_media_context(res, table_context_size, image_context_size)
+
+    # Attach PDF outline as transient metadata on the first chunk.
+    # task_executor.py will extract and persist it as document metadata.
+    if res and pdf_parser and getattr(pdf_parser, "outlines", None):
+        res[0]["__outline__"] = [
+            {"title": title, "depth": depth}
+            for title, depth in pdf_parser.outlines
+        ]
+
     return res
 
 
