@@ -496,6 +496,34 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "qwen3.5-plus",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3.5-plus-2026-02-15",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3.5-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3.5-flash-2026-02-23",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "qwen3-max",
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
@@ -3070,7 +3098,7 @@
                 },
                 {
                     "llm_name": "Pro/moonshotai/Kimi-K2.5",
-                    "tags": "LLM,CHAT,262k",
+                    "tags": "LLM,CHAT,IMAGE2TEXT, 262k",
                     "max_tokens": 262000,
                     "model_type": "chat",
                     "is_tools": true
@@ -3109,13 +3137,6 @@
                     "max_tokens": 164000,
                     "model_type": "chat",
                     "is_tools": true
-                },
-                {
-                    "llm_name": "PaddlePaddle/PaddleOCR-VL-1.5",
-                    "tags": "LLM,IMAGE2TEXT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "image2text",
-                    "is_tools": false
                 },
                 {
                     "llm_name": "Pro/MiniMaxAI/MiniMax-M2.1",
