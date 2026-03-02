@@ -738,7 +738,7 @@ def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
         )
 
         if not tagged_blocks:
-            logger.warning("布局检测无结果，回退到启发式排序")
+            logger.warning("Layout detection returned no results, falling back to heuristic sorting")
             return _layout_aware_reorder(blocks)
         layout_center_map: dict[str, tuple[float, float]] = {}  # layoutno -> (center_y, center_x)
         for pn, lts in enumerate(page_layouts):
@@ -754,7 +754,6 @@ def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
                     cx = (lt.get("x0", 0) + lt.get("x1", 0)) / 2
                     layout_center_map[f"{pn}_{key}"] = (cy, cx)
 
-        # 步骤2: 为每个 block 计算排序用的布局区域中心坐标
         for b in tagged_blocks:
             pg = b.get("page", 0)
             b_cy = (b.get("top", 0) + b.get("bottom", 0)) / 2
@@ -887,7 +886,7 @@ def _build_indexed_text(blocks: list[dict]) -> tuple[str, list[str], list[dict]]
     threshold = 10
 
     def _merge_line_position(line_blocks: list[dict]) -> dict:
-        """将一行中所有 block 的坐标合并为外接矩形"""
+        """Merge coordinates of all blocks in a line into outer bounding rectangle"""
         return {
             "page": line_blocks[0].get("page", 0),
             "x0": min(b.get("x0", 0) for b in line_blocks),
