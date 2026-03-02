@@ -26,7 +26,12 @@ export function UploadAgentDialog({
         </DialogHeader>
         <UploadAgentForm hideModal={hideModal} onOk={onOk}></UploadAgentForm>
         <DialogFooter>
-          <ButtonLoading data-testid="agent-import-save" type="submit" form={TagRenameId} loading={loading}>
+          <ButtonLoading
+            data-testid="agent-import-save"
+            type="submit"
+            form={TagRenameId}
+            loading={loading}
+          >
             {t('common.save')}
           </ButtonLoading>
         </DialogFooter>
