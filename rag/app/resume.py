@@ -37,6 +37,7 @@ import unicodedata
 import concurrent.futures
 from io import BytesIO
 from typing import Optional
+import numpy as np
 
 # tiktoken for long random string filtering (ref: SmartResume should_remove strategy)
 try:
