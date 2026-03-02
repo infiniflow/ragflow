@@ -21,15 +21,20 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
+// DefaultConnectTimeout default connection timeout for external services
+const DefaultConnectTimeout = 5 * time.Second
+
 // Config application configuration
 type Config struct {
 	Server          ServerConfig           `mapstructure:"server"`
 	Database        DatabaseConfig         `mapstructure:"database"`
+	Redis           RedisConfig            `mapstructure:"redis"`
 	Log             LogConfig              `mapstructure:"log"`
 	DocEngine       DocEngineConfig        `mapstructure:"doc_engine"`
 	RegisterEnabled int                    `mapstructure:"register_enabled"`
@@ -93,6 +98,14 @@ type InfinityConfig struct {
 	URI          string `mapstructure:"uri"`
 	PostgresPort int    `mapstructure:"postgres_port"`
 	DBName       string `mapstructure:"db_name"`
+}
+
+// RedisConfig Redis configuration
+type RedisConfig struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
 }
 
 var (
@@ -198,6 +211,34 @@ func Init(configPath string) error {
 				if globalConfig.Server.Mode == "" {
 					globalConfig.Server.Mode = "release"
 				}
+			}
+		}
+	}
+
+	// Map redis section to RedisConfig
+	if globalConfig != nil && globalConfig.Redis.Host != "" {
+		if v.IsSet("redis") {
+			redisConfig := v.Sub("redis")
+			if redisConfig != nil {
+				hostStr := redisConfig.GetString("host")
+				// Handle host:port format (e.g., "localhost:6379")
+				if hostStr == "" {
+					return fmt.Errorf("Empty host of redis configuration")
+				}
+
+				if idx := strings.LastIndex(hostStr, ":"); idx != -1 {
+					globalConfig.Redis.Host = hostStr[:idx]
+					if portStr := hostStr[idx+1:]; portStr != "" {
+						if port, err := strconv.Atoi(portStr); err == nil {
+							globalConfig.Redis.Port = port
+						}
+					}
+				} else {
+					return fmt.Errorf("Error address format of redis: %s", hostStr)
+				}
+
+				globalConfig.Redis.Password = redisConfig.GetString("password")
+				globalConfig.Redis.DB = redisConfig.GetInt("db")
 			}
 		}
 	}

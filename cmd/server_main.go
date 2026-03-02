@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"ragflow/internal/cache"
 	"ragflow/internal/config"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -73,6 +74,12 @@ func main() {
 		logger.Fatal("Failed to initialize doc engine", zap.Error(err))
 	}
 	defer engine.Close()
+
+	// Initialize Redis cache
+	if err := cache.Init(&cfg.Redis); err != nil {
+		logger.Fatal("Failed to initialize Redis", zap.Error(err))
+	}
+	defer cache.Close()
 
 	// Initialize tokenizer (rag_analyzer)
 	tokenizerCfg := &tokenizer.PoolConfig{
