@@ -18,6 +18,8 @@ package handler
 
 import (
 	"net/http"
+	"ragflow/internal/server"
+	"ragflow/internal/utility"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -146,9 +148,13 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		return
 	}
 
+	variables := server.GetVariables()
+	secretKey := variables.SecretKey
+	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+
 	// Set Authorization header with access_token
 	if user.AccessToken != nil {
-		c.Header("Authorization", *user.AccessToken)
+		c.Header("Authorization", authToken)
 	}
 	// Set CORS headers
 	c.Header("Access-Control-Allow-Origin", "*")
