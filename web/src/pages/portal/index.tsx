@@ -70,13 +70,19 @@ export default function PortalPage() {
   const { data: dialogsData, isLoading: dialogsLoading } =
     useFetchPublicDialogs(dialogPage, 9, '');
 
-  // 累积加载的助手
+  // 累积加载的助手（去重）
   useEffect(() => {
     if (dialogsData?.dialogs) {
       if (dialogPage === 1) {
         setAllLoadedDialogs(dialogsData.dialogs);
       } else {
-        setAllLoadedDialogs((prev) => [...prev, ...dialogsData.dialogs]);
+        setAllLoadedDialogs((prev) => {
+          const existingIds = new Set(prev.map((d) => d.id));
+          const newDialogs = dialogsData.dialogs.filter(
+            (d) => !existingIds.has(d.id),
+          );
+          return [...prev, ...newDialogs];
+        });
       }
     }
   }, [dialogsData, dialogPage]);
