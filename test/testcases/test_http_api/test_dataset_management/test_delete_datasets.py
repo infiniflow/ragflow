@@ -232,39 +232,28 @@ class TestStorageDeletion:
     """
 
     @pytest.mark.p2
-    @pytest.mark.usefixtures("init_storage")
-    def test_delete_dataset_removes_storage_files(self, HttpApiAuth, tmp_path):
-        orig_sys_path = sys.path[:]
-        try:
-            sys.path.insert(0, str(Path(__file__).parents[4]))
-            if "common" in sys.modules:
-                del sys.modules["common"]
-            from common import settings
+    def test_delete_dataset_removes_storage_files(self, HttpApiAuth, tmp_path, storage_impl):
+        # create a dataset
+        dataset_ids = batch_create_datasets(HttpApiAuth, 1)
+        dataset_id: str = dataset_ids[0]
 
-            # create a dataset
-            dataset_ids = batch_create_datasets(HttpApiAuth, 1)
-            dataset_id: str = dataset_ids[0]
+        # upload file to dataset
+        test_file = create_txt_file(tmp_path / "ragflow_test.txt")
+        upload_response = upload_documents(HttpApiAuth, dataset_id, [test_file])
+        assert upload_response["code"] == 0, upload_response
+        assert len(upload_response["data"]) == 1, upload_response
+        filename: str = upload_response["data"][0]["location"]
 
-            # upload file to dataset
-            test_file = create_txt_file(tmp_path / "ragflow_test.txt")
-            upload_response = upload_documents(HttpApiAuth, dataset_id, [test_file])
-            assert upload_response["code"] == 0, upload_response
-            assert len(upload_response["data"]) == 1, upload_response
-            filename: str = upload_response["data"][0]["location"]
+        # check storage contains bucket and uploaded document
+        if not storage_impl:
+            pytest.skip("Using unsupported storage backend. Currently only MinIO and S3 are supported by this testcase.")
 
-            # check storage contains bucket and uploaded document
-            if not settings.STORAGE_IMPL:
-                pytest.skip("Using unsupported storage backend. Currently only MinIO and S3 are supported by this testcase.")
+        assert storage_impl.bucket_exists(dataset_id), f"Storage should have bucket for dataset {dataset_id}"
+        assert storage_impl.obj_exist(dataset_id, filename), f"Storage should have file {filename} in bucket of dataset {dataset_id}"
 
-            assert settings.STORAGE_IMPL.bucket_exists(dataset_id), f"Storage should have bucket for dataset {dataset_id}"
-            assert settings.STORAGE_IMPL.obj_exist(dataset_id, filename), f"Storage should have file {filename} in bucket of dataset {dataset_id}"
+        # delete the dataset
+        delete_datasets_response = delete_datasets(HttpApiAuth, {"ids": [dataset_id]})
+        assert delete_datasets_response["code"] == 0, delete_datasets_response
 
-            # delete the dataset
-            delete_datasets_response = delete_datasets(HttpApiAuth, {"ids": [dataset_id]})
-            assert delete_datasets_response["code"] == 0, delete_datasets_response
-
-            # verify bucket got deleted
-            assert not settings.STORAGE_IMPL.bucket_exists(dataset_id), f"Storage should not contain bucket for dataset {dataset_id} after deletion"
-        finally:
-            sys.path = orig_sys_path
-            del sys.modules["common"]
+        # verify bucket got deleted
+        assert not storage_impl.bucket_exists(dataset_id), f"Storage should not contain bucket for dataset {dataset_id} after deletion"
