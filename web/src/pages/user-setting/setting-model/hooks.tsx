@@ -49,11 +49,23 @@ export const useSubmitApiKey = () => {
         verify: isVerify,
       };
       if (savingParams.llm_factory === LLMFactory.SILICONFLOW) {
-        payload.source_fid = (postBody.base_url || '')
-          .toLowerCase()
-          .includes('api.siliconflow.com')
-          ? 'siliconflow_intl'
-          : LLMFactory.SILICONFLOW;
+        let sourceFid = LLMFactory.SILICONFLOW;
+        const baseUrl = postBody.base_url;
+        if (baseUrl) {
+          try {
+            const parsed = new URL(baseUrl);
+            const host = parsed.hostname.toLowerCase();
+            if (
+              host === 'api.siliconflow.com' ||
+              host.endsWith('.api.siliconflow.com')
+            ) {
+              sourceFid = 'siliconflow_intl';
+            }
+          } catch {
+            // ignore invalid URL and keep default sourceFid
+          }
+        }
+        payload.source_fid = sourceFid;
       }
 
       const ret = await saveApiKey(payload);
