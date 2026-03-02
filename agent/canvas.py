@@ -78,13 +78,14 @@ class Graph:
         }
         """
 
-    def __init__(self, dsl: str, tenant_id=None, task_id=None):
+    def __init__(self, dsl: str, tenant_id=None, task_id=None, custom_header=None):
         self.path = []
         self.components = {}
         self.error = ""
         self.dsl = json.loads(dsl)
         self._tenant_id = tenant_id
         self.task_id = task_id if task_id else get_uuid()
+        self.custom_header = custom_header
         self._thread_pool = ThreadPoolExecutor(max_workers=5)
         self.load()
 
@@ -94,6 +95,7 @@ class Graph:
         for k, cpn in self.components.items():
             cpn_nms.add(cpn["obj"]["component_name"])
             param = component_class(cpn["obj"]["component_name"] + "Param")()
+            cpn["obj"]["params"]["custom_header"] = self.custom_header
             param.update(cpn["obj"]["params"])
             try:
                 param.check()
@@ -278,7 +280,7 @@ class Graph:
 
 class Canvas(Graph):
 
-    def __init__(self, dsl: str, tenant_id=None, task_id=None, canvas_id=None):
+    def __init__(self, dsl: str, tenant_id=None, task_id=None, canvas_id=None, custom_header=None):
         self.globals = {
             "sys.query": "",
             "sys.user_id": tenant_id,
@@ -287,7 +289,7 @@ class Canvas(Graph):
             "sys.history": []
         }
         self.variables = {}
-        super().__init__(dsl, tenant_id, task_id)
+        super().__init__(dsl, tenant_id, task_id, custom_header=custom_header)
         self._id = canvas_id
 
     def load(self):
@@ -545,18 +547,10 @@ class Canvas(Graph):
                             yield decorate("message", {"content": "", "audio_binary": self.tts(tts_mdl, buff_m)})
                             buff_m = ""
                         cpn_obj.set_output("content", _m)
-                        cite = re.search(r"\[ID:[ 0-9]+\]", _m)
                     else:
                         yield decorate("message", {"content": cpn_obj.output("content")})
-                        cite = re.search(r"\[ID:[ 0-9]+\]",  cpn_obj.output("content"))
 
-                    message_end = {}
-                    if cpn_obj.get_param("status"):
-                        message_end["status"] = cpn_obj.get_param("status")
-                    if isinstance(cpn_obj.output("attachment"), dict):
-                        message_end["attachment"] = cpn_obj.output("attachment")
-                    if cite:
-                        message_end["reference"] = self.get_reference()
+                    message_end = self._build_message_end(cpn_obj)
                     yield decorate("message_end", message_end)
 
                     while partials:
@@ -817,6 +811,22 @@ class Canvas(Graph):
         if not self.retrieval:
             return {"chunks": {}, "doc_aggs": {}}
         return self.retrieval[-1]
+
+    def _has_reference(self) -> bool:
+        ref = self.get_reference()
+        if not isinstance(ref, dict):
+            return False
+        return bool(ref.get("chunks") or ref.get("doc_aggs"))
+
+    def _build_message_end(self, cpn_obj) -> dict:
+        message_end = {}
+        if cpn_obj.get_param("status"):
+            message_end["status"] = cpn_obj.get_param("status")
+        if isinstance(cpn_obj.output("attachment"), dict):
+            message_end["attachment"] = cpn_obj.output("attachment")
+        if self._has_reference():
+            message_end["reference"] = self.get_reference()
+        return message_end
 
     def add_memory(self, user:str, assist:str, summ: str):
         self.memory.append((user, assist, summ))

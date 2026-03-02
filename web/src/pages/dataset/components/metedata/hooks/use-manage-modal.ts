@@ -11,7 +11,11 @@ import { RowSelectionState } from '@tanstack/react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
-import { DEFAULT_VALUE_TYPE, MetadataType } from '../constant';
+import {
+  DEFAULT_VALUE_TYPE,
+  MetadataType,
+  metadataValueTypeEnum,
+} from '../constant';
 import {
   IBuiltInMetadataItem,
   IMetaDataReturnJSONSettings,
@@ -163,16 +167,16 @@ export const useMetadataOperations = () => {
       newValue: string | string[],
       type?: MetadataValueType,
     ) => {
-      // let newValuesRes: string | string[];
-      // if (type !== metadataValueTypeEnum['list']) {
-      //   if (Array.isArray(newValue) && newValue.length > 0) {
-      //     newValuesRes = newValue[0];
-      //   } else {
-      //     newValuesRes = newValue;
-      //   }
-      // } else {
-      //   newValuesRes = newValue;
-      // }
+      let newValuesRes: string | string[];
+      if (type !== metadataValueTypeEnum['list']) {
+        if (Array.isArray(newValue) && newValue.length > 0) {
+          newValuesRes = newValue[0];
+        } else {
+          newValuesRes = newValue;
+        }
+      } else {
+        newValuesRes = newValue;
+      }
       setOperations((prev) => {
         let updatedUpdates = [...prev.updates];
         const existsIndex = prev.updates.findIndex(
@@ -185,7 +189,7 @@ export const useMetadataOperations = () => {
           updatedUpdates[existsIndex] = {
             key,
             match: originalValue,
-            value: newValue,
+            value: newValuesRes,
             valueType: type || DEFAULT_VALUE_TYPE,
           };
 
@@ -194,7 +198,7 @@ export const useMetadataOperations = () => {
           updatedUpdates.push({
             key,
             match: originalValue,
-            value: newValue,
+            value: newValuesRes,
             valueType: type,
           });
         }

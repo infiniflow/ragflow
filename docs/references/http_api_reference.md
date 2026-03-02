@@ -65,6 +65,10 @@ curl --request POST \
         "stream": true,
         "extra_body": {
           "reference": true,
+          "reference_metadata": {
+            "include": true,
+            "fields": ["author", "year", "source"]
+          },
           "metadata_condition": {
             "logic": "and",
             "conditions": [
@@ -93,6 +97,9 @@ curl --request POST \
 - `extra_body` (*Body parameter*) `object`  
   Extra request parameters:  
   - `reference`: `boolean` - include reference in the final chunk (stream) or in the final message (non-stream).
+  - `reference_metadata`: `object` - include document metadata in each reference chunk.
+    - `include`: `boolean` - enable document metadata in reference chunks.
+    - `fields`: `list[string]` - optional allowlist of metadata keys. Omit to include all. Use an empty list to include none.
   - `metadata_condition`: `object` - metadata filter conditions applied to retrieval results.
 
 #### Response
@@ -275,6 +282,11 @@ data: {
                             "content": "```cd /usr/ports/editors/neovim/ && make install```## Android[Termux](https://github.com/termux/termux-app) offers a Neovim package.",
                             "document_id": "4bdd2ff65e1511f0907f09f583941b45",
                             "document_name": "INSTALL22.md",
+                            "document_metadata": {
+                                "author": "bob",
+                                "year": "2023",
+                                "source": "internal"
+                            },
                             "dataset_id": "456ce60c5e1511f0907f09f583941b45",
                             "image_id": "",
                             "positions": [
@@ -345,6 +357,11 @@ Non-stream:
                             "doc_type": "",
                             "document_id": "4bdd2ff65e1511f0907f09f583941b45",
                             "document_name": "INSTALL22.md",
+                            "document_metadata": {
+                                "author": "bob",
+                                "year": "2023",
+                                "source": "internal"
+                            },
                             "id": "4b8935ac0a22deb1",
                             "image_id": "",
                             "positions": [
@@ -621,7 +638,7 @@ Failure:
 ```json
 {
     "code": 101,
-    "message": "Dataset name 'RAGFlow example' already exists"
+    "message": "Field: <name> - Message: <String should have at least 1 character> - Value: <>"
 }
 ```
 
@@ -677,9 +694,10 @@ Failure:
 
 ```json
 {
-    "code": 102,
-    "message": "You don't own the dataset."
+    "code":108,
+    "message":"User '<tenant_id>' lacks permission for datasets: '<dataset_ids>'"
 }
+
 ```
 
 ---
@@ -896,7 +914,7 @@ Success:
             "vector_similarity_weight": 0.3
         }
     ],
-    "total": 1
+    "total_datasets": 1
 }
 ```
 
@@ -3946,6 +3964,8 @@ data: {
 
 data:[DONE]
 ```
+
+When `extra_body.reference_metadata.include` is `true`, each reference chunk may include a `document_metadata` object.
 
 Non-stream:
 

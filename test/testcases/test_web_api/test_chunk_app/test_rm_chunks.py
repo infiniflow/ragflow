@@ -95,6 +95,30 @@ class TestChunksDeletion:
         assert len(res["data"]["chunks"]) == 0, res
         assert res["data"]["total"] == 0, res
 
+    @pytest.mark.p2
+    def test_delete_scalar_chunk_id_payload(self, WebApiAuth, add_chunks_func):
+        _, doc_id, chunk_ids = add_chunks_func
+        payload = {"chunk_ids": chunk_ids[0], "doc_id": doc_id}
+        res = delete_chunks(WebApiAuth, payload)
+        assert res["code"] == 0, res
+
+        res = list_chunks(WebApiAuth, {"doc_id": doc_id})
+        assert res["code"] == 0, res
+        assert len(res["data"]["chunks"]) == 3, res
+        assert res["data"]["total"] == 3, res
+
+    @pytest.mark.p2
+    def test_delete_duplicate_ids_dedup_behavior(self, WebApiAuth, add_chunks_func):
+        _, doc_id, chunk_ids = add_chunks_func
+        payload = {"chunk_ids": [chunk_ids[0], chunk_ids[0]], "doc_id": doc_id}
+        res = delete_chunks(WebApiAuth, payload)
+        assert res["code"] == 0, res
+
+        res = list_chunks(WebApiAuth, {"doc_id": doc_id})
+        assert res["code"] == 0, res
+        assert len(res["data"]["chunks"]) == 3, res
+        assert res["data"]["total"] == 3, res
+
     @pytest.mark.p3
     def test_concurrent_deletion(self, WebApiAuth, add_document):
         count = 100

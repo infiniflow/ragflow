@@ -51,8 +51,9 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
                 }
             )
             cv_mdl = LLMBundle(tenant_id, llm_type=LLMType.IMAGE2TEXT, lang=lang)
+            video_prompt = str(parser_config.get("video_prompt", "") or "")
             ans = asyncio.run(
-                cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=binary, filename=filename))
+                cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=binary, filename=filename, video_prompt=video_prompt))
             callback(0.8, "CV LLM respond: %s ..." % ans[:32])
             ans += "\n" + ans
             tokenize(doc, ans, eng)
@@ -78,10 +79,10 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         try:
             callback(0.4, "Use CV LLM to describe the picture.")
             cv_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, lang=lang)
-            img_binary = io.BytesIO()
-            img.save(img_binary, format="JPEG")
-            img_binary.seek(0)
-            ans = cv_mdl.describe(img_binary.read())
+            with io.BytesIO() as img_binary:
+                img.save(img_binary, format="JPEG")
+                img_binary.seek(0)
+                ans = cv_mdl.describe(img_binary.read())
             callback(0.8, "CV LLM respond: %s ..." % ans[:32])
             txt += "\n" + ans
             tokenize(doc, txt, eng)

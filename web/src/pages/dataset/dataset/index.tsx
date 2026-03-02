@@ -100,14 +100,14 @@ export default function Dataset() {
   const handleAddMetadataWithDocuments = () => {
     showManageMetadataModal({
       type: MetadataType.Manage,
-      isCanAdd: false,
+      isCanAdd: true,
       isEditField: false,
       isDeleteSingleValue: true,
       isAddValue: true,
       secondTitle: (
         <>
           {t('knowledgeDetails.metadata.selectFiles', {
-            count: documents.length,
+            count: selectedCount,
           })}
         </>
       ),
@@ -254,7 +254,10 @@ export default function Dataset() {
               )
             }
             visible={manageMetadataVisible}
-            hideModal={hideManageMetadataModal}
+            hideModal={() => {
+              setRowSelection({});
+              hideManageMetadataModal();
+            }}
             // selectedRowKeys={selectedRowKeys}
             tableData={tableData}
             isCanAdd={metadataConfig.isCanAdd}

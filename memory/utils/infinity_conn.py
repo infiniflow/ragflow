@@ -30,7 +30,7 @@ from common.time_utils import date_string_to_timestamp
 @singleton
 class InfinityConnection(InfinityConnectionBase):
     def __init__(self):
-        super().__init__(mapping_file_name="message_infinity_mapping.json")
+        super().__init__(mapping_file_name="message_infinity_mapping.json", table_name_prefix="memory_")
 
     """
     Dataframe and fields convert

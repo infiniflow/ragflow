@@ -1,8 +1,10 @@
 import { FileUploadProps } from '@/components/file-upload';
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
-import { AgentGlobals, initialBeginValues } from '@/constants/agent';
+import { AgentCategory, AgentGlobals } from '@/constants/agent';
+import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import {
+  IAgentLogResponse,
   IAgentLogsRequest,
   IAgentLogsResponse,
   IFlow,
@@ -16,11 +18,13 @@ import {
   IDebugSingleRequestBody,
 } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
-import { BeginId } from '@/pages/agent/constant';
 import { IInputs } from '@/pages/agent/interface';
 import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
 import agentService, {
+  createAgentSession,
+  deleteAgentSession,
   fetchAgentLogsByCanvasId,
+  fetchAgentLogsById,
   fetchPipeLineList,
   fetchTrace,
   fetchWebhookTrace,
@@ -39,6 +43,7 @@ import {
 
 export const enum AgentApiAction {
   FetchAgentListByPage = 'fetchAgentListByPage',
+  FetchAllAgentList = 'fetchAllAgentList',
   FetchAgentList = 'fetchAgentList',
   UpdateAgentSetting = 'updateAgentSetting',
   DeleteAgent = 'deleteAgent',
@@ -61,51 +66,12 @@ export const enum AgentApiAction {
   CancelDataflow = 'cancelDataflow',
   CancelCanvas = 'cancelCanvas',
   FetchWebhookTrace = 'fetchWebhookTrace',
+  FetchSessionsByCanvasId = 'fetchSessionsByCanvasId',
+  FetchSessionById = 'fetchSessionById',
+  CreateAgentSession = 'createAgentSession',
+  DeleteAgentSession = 'deleteAgentSession',
+  FetchSessionByIdManually = 'fetchSessionByIdManually',
 }
-
-export const EmptyDsl = {
-  graph: {
-    nodes: [
-      {
-        id: BeginId,
-        type: 'beginNode',
-        position: {
-          x: 50,
-          y: 200,
-        },
-        data: {
-          label: 'Begin',
-          name: 'begin',
-          form: initialBeginValues,
-        },
-        sourcePosition: 'left',
-        targetPosition: 'right',
-      },
-    ],
-    edges: [],
-  },
-  components: {
-    begin: {
-      obj: {
-        component_name: 'Begin',
-        params: {},
-      },
-      downstream: [], // other edge target is downstream, edge source is current node id
-      upstream: [], // edge source is upstream, edge target is current node id
-    },
-  },
-  retrieval: [], // reference
-  history: [],
-  path: [],
-  variables: [],
-  globals: {
-    [AgentGlobals.SysQuery]: '',
-    [AgentGlobals.SysUserId]: '',
-    [AgentGlobals.SysConversationTurns]: 0,
-    [AgentGlobals.SysFiles]: [],
-    [AgentGlobals.SysHistory]: [],
-  },
-};
 
 export const useFetchAgentTemplates = () => {
   const { data } = useQuery<IFlowTemplate[]>({
@@ -193,6 +159,28 @@ export const useFetchAgentListByPage = () => {
     handleFilterSubmit,
   };
 };
+
+export function useFetchAllAgentList() {
+  const { data, isFetching: loading } = useQuery<IFlow[]>({
+    queryKey: [AgentApiAction.FetchAllAgentList],
+    queryFn: async () => {
+      const { data } = await agentService.listCanvas(
+        {
+          params: {
+            page: 1,
+            page_size: 100000,
+            canvas_category: AgentCategory.AgentCanvas,
+          },
+        },
+        true,
+      );
+
+      return data?.data?.canvas;
+    },
+  });
+
+  return { data, loading };
+}
 
 export const useUpdateAgentSetting = () => {
   const queryClient = useQueryClient();
@@ -368,7 +356,7 @@ export const useUploadCanvasFile = () => {
         }
         return data;
       } catch (error) {
-        message.error('error');
+        message.error(error as string);
       }
     },
   });
@@ -376,9 +364,7 @@ export const useUploadCanvasFile = () => {
   return { data, loading, uploadCanvasFile: mutateAsync };
 };
 
-export const useUploadCanvasFileWithProgress = (
-  identifier?: Nullable<string>,
-) => {
+export const useUploadCanvasFileWithProgress = (identifier?: string | null) => {
   const { id } = useParams();
 
   type UploadParameters = Parameters<NonNullable<FileUploadProps['onUpload']>>;
@@ -627,6 +613,37 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
   return { data, loading };
 };
 
+export const useFetchSessionsByCanvasId = () => {
+  const { id: canvasId } = useParams();
+  const { data: tenantInfo } = useFetchTenantInfo();
+
+  const { data, isFetching: loading } = useQuery<IAgentLogsResponse>({
+    queryKey: [AgentApiAction.FetchSessionsByCanvasId, canvasId],
+    initialData: { total: 0, sessions: [] } as IAgentLogsResponse,
+    gcTime: 0,
+    enabled: !!canvasId && !isEmpty(tenantInfo),
+    queryFn: async () => {
+      if (!canvasId) {
+        return { total: 0, sessions: [] };
+      }
+
+      const { data } = await fetchAgentLogsByCanvasId(canvasId, {
+        page: 1,
+        page_size: 100000,
+        exp_user_id: tenantInfo.tenant_id,
+      });
+
+      return data?.data ?? { total: 0, sessions: [] };
+    },
+  });
+
+  return {
+    data: data?.sessions ?? [],
+    loading,
+    total: data?.total ?? 0,
+  };
+};
+
 export const useFetchExternalAgentInputs = () => {
   const { sharedId } = useGetSharedChatSearchParams();
 
@@ -873,3 +890,82 @@ export const useFetchWebhookTrace = (autoStart: boolean = true) => {
     currentNextSinceTs,
   };
 };
+
+export function useCreateAgentSession() {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.CreateAgentSession],
+    mutationFn: async (payload: { id: string; name: string }) => {
+      const { data } = await createAgentSession(payload);
+
+      if (data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: [AgentApiAction.FetchSessionsByCanvasId],
+        });
+      }
+
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading, createAgentSession: mutateAsync };
+}
+
+export function useDeleteAgentSession() {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.DeleteAgentSession],
+    mutationFn: async ({
+      canvasId,
+      sessionId,
+    }: {
+      canvasId: string;
+      sessionId: string;
+    }) => {
+      const { data } = await deleteAgentSession(canvasId, sessionId);
+
+      if (data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: [AgentApiAction.FetchSessionsByCanvasId],
+        });
+      }
+
+      return data?.code ?? -1;
+    },
+  });
+
+  return { data, loading, deleteAgentSession: mutateAsync };
+}
+
+export function useFetchSessionManually() {
+  const { id: canvasId } = useParams();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation<IAgentLogResponse, unknown, string>({
+    mutationKey: [AgentApiAction.FetchSessionByIdManually, canvasId],
+    mutationFn: async (sessionId) => {
+      if (!canvasId || !sessionId) {
+        return null;
+      }
+
+      const { data } = await fetchAgentLogsById(canvasId, sessionId);
+
+      return data?.data;
+    },
+  });
+
+  return { data, loading, fetchSessionManually: mutateAsync };
+}

@@ -28,7 +28,7 @@ from api.db import FileType
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
 from api.utils.file_utils import filename_type
-from api.utils.web_utils import CONTENT_TYPE_MAP
+from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers
 from common import settings
 from common.constants import RetCode
 
@@ -623,11 +623,12 @@ async def get(tenant_id, file_id):
 
         response = await make_response(blob)
         ext = re.search(r"\.([^.]+)$", file.name)
-        if ext:
-            if file.type == FileType.VISUAL.value:
-                response.headers.set('Content-Type', 'image/%s' % ext.group(1))
-            else:
-                response.headers.set('Content-Type', 'application/%s' % ext.group(1))
+        extension = ext.group(1).lower() if ext else None
+        content_type = None
+        if extension:
+            fallback_prefix = "image" if file.type == FileType.VISUAL.value else "application"
+            content_type = CONTENT_TYPE_MAP.get(extension, f"{fallback_prefix}/{extension}")
+        apply_safe_file_response_headers(response, content_type, extension)
         return response
     except Exception as e:
         return server_error_response(e)
@@ -640,7 +641,8 @@ async def download_attachment(tenant_id, attachment_id):
         ext = request.args.get("ext", "markdown")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
         response = await make_response(data)
-        response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
+        content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
+        apply_safe_file_response_headers(response, content_type, ext)
 
         return response
 

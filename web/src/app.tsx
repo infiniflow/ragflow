@@ -24,7 +24,6 @@ import { ThemeProvider, useTheme } from './components/theme-provider';
 import { SidebarProvider } from './components/ui/sidebar';
 import { TooltipProvider } from './components/ui/tooltip';
 import { ThemeEnum } from './constants/common';
-// import { getRouter } from './routes';
 import { routers } from './routes';
 import storage from './utils/authorization-util';
 
@@ -57,14 +56,6 @@ const AntLanguageMap = {
   de: deDE,
 };
 
-// if (process.env.NODE_ENV === 'development') {
-//   const whyDidYouRender = require('@welldone-software/why-did-you-render');
-//   whyDidYouRender(React, {
-//     trackAllPureComponents: true,
-//     trackExtraHooks: [],
-//     logOnDifferentValues: true,
-//   });
-// }
 if (process.env.NODE_ENV === 'development') {
   import('@welldone-software/why-did-you-render').then(
     (whyDidYouRenderModule) => {
@@ -73,11 +64,20 @@ if (process.env.NODE_ENV === 'development') {
         trackAllPureComponents: true,
         trackExtraHooks: [],
         logOnDifferentValues: true,
+        exclude: [/^RouterProvider$/],
       });
     },
   );
 }
-const queryClient = new QueryClient();
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 2,
+    },
+  },
+});
 
 type Locale = ConfigProviderProps['locale'];
 
@@ -88,17 +88,26 @@ function Root({ children }: React.PropsWithChildren) {
 
   const [locale, setLocal] = useState<Locale>(getLocale(storage.getLanguage()));
 
-  i18n.on('languageChanged', function (lng: string) {
-    storage.setLanguage(lng);
-    setLocal(getLocale(lng));
-  });
+  useEffect(() => {
+    const handleLanguageChanged = (lng: string) => {
+      storage.setLanguage(lng);
+      setLocal(getLocale(lng));
+      document.documentElement.lang = lng;
+    };
 
+    i18n.on('languageChanged', handleLanguageChanged);
+
+    return () => {
+      i18n.off('languageChanged', handleLanguageChanged);
+    };
+  }, []);
   return (
     <>
       <ConfigProvider
         theme={{
           token: {
-            fontFamily: 'Inter',
+            fontFamily:
+              "'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif",
           },
           algorithm:
             themeragflow === 'dark'
@@ -113,14 +122,12 @@ function Root({ children }: React.PropsWithChildren) {
         <Sonner position={'top-right'} expand richColors closeButton></Sonner>
         <Toaster />
       </ConfigProvider>
-      {/* <ReactQueryDevtools buttonPosition={'top-left'} initialIsOpen={false} /> */}
     </>
   );
 }
 
 const RootProvider = ({ children }: React.PropsWithChildren) => {
   useEffect(() => {
-    // Because the language is saved in the backend, a token is required to obtain the api. However, the login page cannot obtain the language through the getUserInfo api, so the language needs to be saved in localstorage.
     const lng = storage.getLanguage();
     if (lng) {
       i18n.changeLanguage(lng);
@@ -141,21 +148,17 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
   );
 };
 
+const RouterProviderWrapper: React.FC<{ router: typeof routers }> = ({
+  router,
+}) => {
+  return <RouterProvider router={router}></RouterProvider>;
+};
+RouterProviderWrapper.whyDidYouRender = false;
+
 export default function AppContainer() {
-  // const [router, setRouter] = useState<any>(null);
-
-  // useEffect(() => {
-  //   getRouter().then(setRouter);
-  // }, []);
-
-  // if (!router) {
-  //   return <div>Loading...</div>;
-  // }
-
   return (
     <RootProvider>
-      <RouterProvider router={routers}></RouterProvider>
-      {/* <RouterProvider router={router}></RouterProvider> */}
+      <RouterProviderWrapper router={routers} />
     </RootProvider>
   );
 }

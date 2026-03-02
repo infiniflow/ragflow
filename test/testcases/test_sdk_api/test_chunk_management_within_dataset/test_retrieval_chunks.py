@@ -18,6 +18,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 
+DOC_ENGINE = (os.getenv("DOC_ENGINE") or "").lower()
+
 
 class TestChunksRetrieval:
     @pytest.mark.p1
@@ -159,25 +161,25 @@ class TestChunksRetrieval:
                 {"top_k": 1},
                 4,
                 "",
-                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in ["infinity", "opensearch"], reason="Infinity"),
+                marks=pytest.mark.skipif(DOC_ENGINE in ["infinity", "opensearch"], reason="Infinity"),
             ),
             pytest.param(
                 {"top_k": 1},
                 1,
                 "",
-                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "opensearch", "elasticsearch"], reason="elasticsearch"),
+                marks=pytest.mark.skipif(DOC_ENGINE in ["", "opensearch", "elasticsearch"], reason="elasticsearch"),
             ),
             pytest.param(
                 {"top_k": -1},
                 4,
                 "must be greater than 0",
-                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in ["infinity", "opensearch"], reason="Infinity"),
+                marks=pytest.mark.skipif(DOC_ENGINE in ["infinity", "opensearch"], reason="Infinity"),
             ),
             pytest.param(
                 {"top_k": -1},
                 4,
                 "3014",
-                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "opensearch", "elasticsearch"], reason="elasticsearch"),
+                marks=pytest.mark.skipif(DOC_ENGINE in ["", "opensearch", "elasticsearch"], reason="elasticsearch"),
             ),
             pytest.param(
                 {"top_k": "a"},

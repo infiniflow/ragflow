@@ -27,6 +27,7 @@ const Preview = ({
       {fileType === 'pdf' && highlights && setWidthAndHeight && (
         <section>
           <PdfPreviewer
+            className={className}
             highlights={highlights}
             setWidthAndHeight={setWidthAndHeight}
             url={url}

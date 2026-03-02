@@ -10,7 +10,7 @@ import {
   useFetchExternalChatInfo,
   useFetchNextConversationSSE,
 } from '@/hooks/use-chat-request';
-import i18n from '@/locales/config';
+import i18n, { changeLanguageAsync } from '@/locales/config';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import React, { forwardRef, useMemo } from 'react';
 import { useSendButtonDisabled } from '../hooks/use-button-disabled';
@@ -54,7 +54,7 @@ const ChatContainer = () => {
   }, [from]);
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
-      i18n.changeLanguage(locale);
+      changeLanguageAsync(locale);
     }
   }, [locale, visibleAvatar]);
 
@@ -71,10 +71,10 @@ const ChatContainer = () => {
         avatar={chatInfo.avatar}
         handleReset={removeAllMessagesExceptFirst}
       >
-        <div className="flex flex-1 flex-col p-2.5  h-[90vh] m-3">
+        <div className="flex flex-1 flex-col p-2.5 h-[90vh] m-3">
           <div
             className={
-              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto w-5/6'
+              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto w-full md:w-5/6'
             }
             ref={messageContainerRef}
           >
@@ -109,13 +109,14 @@ const ChatContainer = () => {
             </div>
             <div ref={scrollRef} />
           </div>
-          <div className="flex w-full justify-center mb-8">
-            <div className="w-5/6">
+          <div className="flex w-full justify-center md:mb-8">
+            <div className="w-full md:w-5/6">
               <NextMessageInput
                 isShared
                 value={value}
                 disabled={hasError}
                 sendDisabled={sendDisabled}
+                resize="vertical"
                 conversationId={conversationId}
                 onInputChange={handleInputChange}
                 onPressEnter={handlePressEnter}
