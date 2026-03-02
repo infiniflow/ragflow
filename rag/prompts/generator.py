@@ -225,12 +225,14 @@ async def full_question(tenant_id=None, llm_id=None, messages=[], language=None,
     from common.constants import LLMType
     from api.db.services.llm_service import LLMBundle
     from api.db.services.tenant_llm_service import TenantLLMService
+    from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
 
     if not chat_mdl:
         if TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
-            chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+            chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.IMAGE2TEXT, llm_id)
         else:
-            chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
+            chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, llm_id)
+        chat_mdl = LLMBundle(tenant_id, chat_model_config)
     conv = []
     for m in messages:
         if m["role"] not in ["user", "assistant"]:
@@ -259,12 +261,13 @@ async def cross_languages(tenant_id, llm_id, query, languages=[]):
     from common.constants import LLMType
     from api.db.services.llm_service import LLMBundle
     from api.db.services.tenant_llm_service import TenantLLMService
+    from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
 
     if llm_id and TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
-        chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+        chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.IMAGE2TEXT, llm_id)
     else:
-        chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
-
+        chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, llm_id)
+    chat_mdl = LLMBundle(tenant_id, chat_model_config)
     rendered_sys_prompt = PROMPT_JINJA_ENV.from_string(CROSS_LANGUAGES_SYS_PROMPT_TEMPLATE).render()
     rendered_user_prompt = PROMPT_JINJA_ENV.from_string(CROSS_LANGUAGES_USER_PROMPT_TEMPLATE).render(query=query,
                                                                                                      languages=languages)

@@ -40,7 +40,9 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter, convert_conditions, meta_filter
 from api.db.services.search_service import SearchService
-from api.db.services.user_service import TenantService,UserTenantService
+from api.db.services.user_service import UserTenantService
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_by_id, \
+    get_model_config_by_type_and_name
 from common.misc_utils import get_uuid
 from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, \
     get_result, get_request_json, server_error_response, token_required, validate_request
@@ -877,7 +879,8 @@ async def related_questions(tenant_id):
         return get_error_data_result("`question` is required.")
     question = req["question"]
     industry = req.get("industry", "")
-    chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
+    chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+    chat_mdl = LLMBundle(tenant_id, chat_model_config)
     prompt = """
 Objective: To generate search terms related to the user's search keywords, helping users find more valuable information.
 Instructions:
@@ -1085,6 +1088,7 @@ async def retrieval_test_embedded():
     top = int(req.get("top_k", 1024))
     langs = req.get("cross_languages", [])
     rerank_id = req.get("rerank_id", "")
+    tenant_rerank_id = req.get("tenant_rerank_id", "")
     tenant_id = objs[0].tenant_id
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
@@ -1101,7 +1105,12 @@ async def retrieval_test_embedded():
             search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
             meta_data_filter = search_config.get("meta_data_filter", {})
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
-                chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
+                chat_id = search_config.get("chat_id", "")
+                if chat_id:
+                    chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_id)
+                else:
+                    chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+                chat_mdl = LLMBundle(tenant_id, chat_model_config)
             # Apply search_config settings if not explicitly provided in request
             if not req.get("similarity_threshold"):
                 similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
@@ -1114,7 +1123,8 @@ async def retrieval_test_embedded():
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
-                chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
+                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+                chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
         if meta_data_filter:
             metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
@@ -1136,15 +1146,23 @@ async def retrieval_test_embedded():
 
         if langs:
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
-
-        embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
+        if kb.tenant_embd_id:
+            embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+        else:
+            embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
         rerank_mdl = None
-        if rerank_id:
-            rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK.value, llm_name=rerank_id)
+        if tenant_rerank_id:
+            rerank_model_config = get_model_config_by_id(tenant_rerank_id)
+            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+        elif rerank_id:
+            rerank_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.RERANK, rerank_id)
+            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
         if req.get("keyword", False):
-            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
+            default_chat_model = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(kb.tenant_id, default_chat_model)
             _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
@@ -1153,8 +1171,9 @@ async def retrieval_test_embedded():
             local_doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"), rank_feature=labels
         )
         if use_kg:
+            default_chat_model = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
             ck = await settings.kg_retriever.retrieval(_question, tenant_ids, kb_ids, embd_mdl,
-                                                 LLMBundle(kb.tenant_id, LLMType.CHAT))
+                                                 LLMBundle(kb.tenant_id, default_chat_model))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
@@ -1198,7 +1217,11 @@ async def related_questions_embedded():
     question = req["question"]
 
     chat_id = search_config.get("chat_id", "")
-    chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, chat_id)
+    if chat_id:
+        chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_id)
+    else:
+        chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+    chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
     gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
     prompt = load_prompt("related_question")
@@ -1299,15 +1322,11 @@ async def sequence2txt(tenant_id):
     os.close(fd)
     await uploaded.save(temp_audio_path)
 
-    tenants = TenantService.get_info_by(tenant_id)
-    if not tenants:
-        return get_error_data_result(message="Tenant not found!")
-
-    asr_id = tenants[0]["asr_id"]
-    if not asr_id:
-        return get_error_data_result(message="No default ASR model is set")
-
-    asr_mdl=LLMBundle(tenants[0]["tenant_id"], LLMType.SPEECH2TEXT, asr_id)
+    try:
+        default_asr_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.SPEECH2TEXT)
+    except Exception as e:
+        return get_error_data_result(message=str(e))
+    asr_mdl=LLMBundle(tenant_id, default_asr_model_config)
     if not stream_mode:
         text = asr_mdl.transcription(temp_audio_path)
         try:
@@ -1336,15 +1355,11 @@ async def tts(tenant_id):
     req = await get_request_json()
     text = req["text"]
 
-    tenants = TenantService.get_info_by(tenant_id)
-    if not tenants:
-        return get_error_data_result(message="Tenant not found!")
-
-    tts_id = tenants[0]["tts_id"]
-    if not tts_id:
-        return get_error_data_result(message="No default TTS model is set")
-
-    tts_mdl = LLMBundle(tenants[0]["tenant_id"], LLMType.TTS, tts_id)
+    try:
+        default_tts_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.TTS)
+    except Exception as e:
+        return get_error_data_result(message=str(e))
+    tts_mdl = LLMBundle(tenant_id, default_tts_model_config)
 
     def stream_audio():
         try:
