@@ -1010,22 +1010,18 @@ Example: Virtual Hosted Style`,
         'Connect to your SeaFile server to synchronise files and documents from your libraries.',
       seafileUrlTip:
         'The full URL of your SeaFile server including the protocol. Example: https://seafile.example.com - Do not include a trailing slash or any path after the domain.',
-      seafileAccountScopeTip: 
+      seafileAccountScopeTip:
         'Syncs all libraries visible to the Account API Token below.',
-      seafileTokenPanelHeading:
-        'Provide one of these authentication methods:',
-      seafileTokenPanelAccountBullet: 
-        '- grants access to all your libraries.',
-      seafileTokenPanelLibraryBullet: 
-        '— scoped to a single library only (more secure).',   
-      seafileValidationAccountTokenRequired: 
+      seafileTokenPanelHeading: 'Provide one of these authentication methods:',
+      seafileTokenPanelAccountBullet: '- grants access to all your libraries.',
+      seafileTokenPanelLibraryBullet:
+        '— scoped to a single library only (more secure).',
+      seafileValidationAccountTokenRequired:
         'Account API Token is required for Entire Account scope',
-      seafileValidationTokenRequired: 
+      seafileValidationTokenRequired:
         'Provide either an Account API Token or a Library Token',
-      seafileValidationLibraryIdRequired: 
-        'Library ID is required',
-      seafileValidationDirectoryPathRequired: 
-        'Directory Path is required',
+      seafileValidationLibraryIdRequired: 'Library ID is required',
+      seafileValidationDirectoryPathRequired: 'Directory Path is required',
       seafileSyncScopeTip:
         'Controls what gets synchronised: ' +
         '(1) Entire Account - Syncs all libraries your token has access to. Requires an Account API Token. ' +
@@ -2532,6 +2528,39 @@ Important structured information may include: names, dates, locations, events, k
       registrationWhitelist: 'Registration whitelist',
       roles: 'Roles',
       monitoring: 'Monitoring',
+
+      sandboxSettingsPage: {
+        description:
+          'Configure your code execution sandbox provider. The sandbox is used by the Code component in agents.',
+        providerSelection: 'Provider selection',
+        providerSelectionDescription:
+          'Choose a sandbox provider for code execution',
+
+        namedProviderConfiguration: '{{name}} configuration',
+        namedProviderConfigurationDescription:
+          'Configure the connection settings for {{name}}.',
+
+        saveConfiguration: 'Save configuration',
+        saving: 'Saving...',
+
+        testConnectionResultModal: {
+          title: 'Connection test result',
+          testing: 'Testing connection to sandbox provider...',
+          success: 'Successfully connected to sandbox provider',
+          failed: 'Failed to connect to sandbox provider',
+
+          exitCode: 'Exit code',
+          executionTime: 'Execution time',
+          stdout: 'Standard output',
+          stderr: 'Error output / stack trace',
+        },
+
+        testConnection: 'Test connection',
+        testing: 'Testing...',
+      },
+
+      selectFile: 'Select file',
+      noFileSelected: 'No file selected',
 
       back: 'Back',
       active: 'Active',
