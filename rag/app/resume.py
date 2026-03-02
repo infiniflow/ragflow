@@ -742,7 +742,6 @@ def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
             return _layout_aware_reorder(blocks)
         layout_center_map: dict[str, tuple[float, float]] = {}  # layoutno -> (center_y, center_x)
         for pn, lts in enumerate(page_layouts):
-            # 按类型分组，与 LayoutRecognizer.__call__ 中 findLayout 的逻辑一致
             type_groups: dict[str, list] = {}
             for lt in lts:
                 tp = lt.get("type", "")
@@ -767,11 +766,9 @@ def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
                 if map_key in layout_center_map:
                     b["_ly_center"], b["_lx_center"] = layout_center_map[map_key]
                 else:
-                    # layoutno 存在但在 map 中找不到，用 block 自身坐标
                     b["_ly_center"] = b_cy
                     b["_lx_center"] = b_cx
             else:
-                # 未分配布局区域，暂时用 block 自身坐标
                 b["_ly_center"] = b_cy
                 b["_lx_center"] = b_cx
 
