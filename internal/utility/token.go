@@ -72,6 +72,42 @@ func ExtractAccessToken(authorization, secretKey string) (string, error) {
 	return value, nil
 }
 
+// DumpAccessToken creates an authorization token from access token
+// This is equivalent to: jwt.dumps(access_token) in Python
+// Uses github.com/iromli/go-itsdangerous for itsdangerous compatibility
+func DumpAccessToken(accessToken, secretKey string) (string, error) {
+	if accessToken == "" {
+		return "", errors.New("empty access token")
+	}
+
+	// Create URLSafeTimedSerializer with correct configuration
+	// Matching Python itsdangerous configuration:
+	// - salt: "itsdangerous"
+	// - key_derivation: "django-concat"
+	// - digest_method: sha1
+	algo := &itsdangerous.HMACAlgorithm{DigestMethod: sha1.New}
+	signer := itsdangerous.NewTimestampSignature(
+		secretKey,
+		"itsdangerous",
+		".",
+		"django-concat",
+		sha1.New,
+		algo,
+	)
+
+	// Encode the access token as JSON string (add surrounding quotes)
+	jsonValue := fmt.Sprintf("\"%s\"", accessToken)
+	encodedValue := urlSafeB64Encode([]byte(jsonValue))
+
+	// Sign the token (creates signature)
+	token, err := signer.Sign(encodedValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign token: %w", err)
+	}
+
+	return token, nil
+}
+
 // urlSafeB64Decode URL-safe base64 decode
 func urlSafeB64Decode(s string) ([]byte, error) {
 	// Add padding if needed
@@ -80,6 +116,13 @@ func urlSafeB64Decode(s string) ([]byte, error) {
 		s += strings.Repeat("=", padding)
 	}
 	return base64.URLEncoding.DecodeString(s)
+}
+
+// urlSafeB64Encode URL-safe base64 encode (without padding)
+func urlSafeB64Encode(data []byte) string {
+	encoded := base64.URLEncoding.EncodeToString(data)
+	// Remove padding
+	return strings.TrimRight(encoded, "=")
 }
 
 // generateSecretKey generates a 32-byte hex string (equivalent to Python's secrets.token_hex(32))
