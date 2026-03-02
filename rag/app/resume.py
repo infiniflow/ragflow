@@ -2370,7 +2370,6 @@ def _resort_page_with_layout(page_blocks: list[dict], layout_regions: list[dict]
     if not page_blocks:
         return []
 
-    # 如果没有布局区域，按中心坐标排序
     if not layout_regions:
         return sorted(page_blocks, key=lambda b: (
             (b.get("top", 0) + b.get("bottom", 0)) / 2,
