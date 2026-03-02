@@ -253,7 +253,9 @@ PARSERS = {
     "mineru": by_mineru,
     "docling": by_docling,
     "tcadp": by_tcadp,
+    "tcadp parser": by_tcadp,
     "paddleocr": by_paddleocr,
+    "plain text": by_plaintext,
     "plaintext": by_plaintext,  # default
 }
 
