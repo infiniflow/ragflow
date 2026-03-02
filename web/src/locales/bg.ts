@@ -1137,6 +1137,8 @@ The above is the content you need to summarize.`,
         'Ако вашият API ключ е от OpenAI, просто го игнорирайте. Всеки друг междинен доставчик ще предостави този base url с API ключа.',
       tongyiBaseUrlTip:
         'За китайски потребители не е необходимо да попълвате или използвайте https://dashscope.aliyuncs.com/compatible-mode/v1. За международни потребители използвайте https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'За китайски потребители не е необходимо да попълвате или използвайте https://api.siliconflow.cn/v1. За международни потребители използвайте https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Само за международни потребители, вижте съвета)',
       minimaxBaseUrlTip:

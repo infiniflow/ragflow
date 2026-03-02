@@ -43,11 +43,20 @@ export const useSubmitApiKey = () => {
       if (!isVerify) {
         setSaveLoading(true);
       }
-      const ret = await saveApiKey({
+      const payload: IApiKeySavingParams = {
         ...savingParams,
         ...postBody,
         verify: isVerify,
-      });
+      };
+      if (savingParams.llm_factory === LLMFactory.SILICONFLOW) {
+        payload.source_fid = (postBody.base_url || '')
+          .toLowerCase()
+          .includes('api.siliconflow.com')
+          ? 'siliconflow_intl'
+          : LLMFactory.SILICONFLOW;
+      }
+
+      const ret = await saveApiKey(payload);
       if (!isVerify) {
         setSaveLoading(false);
         if (ret.code === 0) {

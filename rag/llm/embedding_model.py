@@ -770,14 +770,17 @@ class SILICONFLOWEmbed(Base):
     _FACTORY_NAME = "SILICONFLOW"
 
     def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1/embeddings"):
-        if not base_url:
-            base_url = "https://api.siliconflow.cn/v1/embeddings"
+        normalized_base_url = (base_url or "").strip()
+        if not normalized_base_url:
+            normalized_base_url = "https://api.siliconflow.cn/v1/embeddings"
+        if "/embeddings" not in normalized_base_url:
+            normalized_base_url = urljoin(f"{normalized_base_url.rstrip('/')}/", "embeddings").rstrip("/")
         self.headers = {
             "accept": "application/json",
             "content-type": "application/json",
             "authorization": f"Bearer {key}",
         }
-        self.base_url = base_url
+        self.base_url = normalized_base_url
         self.model_name = model_name
 
     def encode(self, texts: list):
