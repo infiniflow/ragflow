@@ -129,6 +129,86 @@ async def update(tenant_id, chat_id, session_id):
 @manager.route("/chats/<chat_id>/completions", methods=["POST"])  # noqa: F821
 @token_required
 async def chat_completion(tenant_id, chat_id):
+    """
+    Chat completion.
+    ---
+    tags:
+      - Sessions
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        required: false
+        schema:
+          type: object
+          properties:
+            question:
+              type: string
+              description: User question.
+            stream:
+              type: boolean
+              description: Whether to stream the response.
+              default: true
+            session_id:
+              type: string
+              description: Session ID.
+            metadata_condition:
+              type: object
+              description: Metadata filter condition used to narrow candidate documents before retrieval.
+              properties:
+                logic:
+                  type: string
+                  description: Logic relationship between all conditions. Defaults to "and".
+                  enum:
+                    - and
+                    - or
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        description: Metadata attribute name.
+                      value:
+                        type: string
+                        description: Value to compare.
+                      comparison_operator:
+                        type: string
+                        description: Operator from the allowed list.
+                        enum:
+                          - is
+                          - not is
+                          - contains
+                          - not contains
+                          - in
+                          - not in
+                          - start with
+                          - end with
+                          - empty
+                          - not empty
+                          - "="
+                          - "≠"
+                          - ">"
+                          - "<"
+                          - ">="
+                          - "<="
+                          - "≥"
+                          - "≤"
+                    required:
+                      - name
+                      - value
+                      - comparison_operator
+              required:
+                - conditions
+              additionalProperties: false
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    """
     req = await get_request_json()
     if not req:
         req = {"question": ""}

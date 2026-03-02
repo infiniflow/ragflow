@@ -74,6 +74,12 @@ async def retrieval(tenant_id):
               type: object
               description: Metadata filter condition
               properties:
+                logic:
+                  type: string
+                  description: Logic relationship between all conditions. Defaults to "and".
+                  enum:
+                    - and
+                    - or
                 conditions:
                   type: array
                   items:
@@ -81,13 +87,39 @@ async def retrieval(tenant_id):
                     properties:
                       name:
                         type: string
-                        description: Field name
+                        description: Metadata attribute name
                       comparison_operator:
                         type: string
-                        description: Comparison operator
+                        description: Operator from the allowed list
+                        enum:
+                          - is
+                          - not is
+                          - contains
+                          - not contains
+                          - in
+                          - not in
+                          - start with
+                          - end with
+                          - empty
+                          - not empty
+                          - "="
+                          - "≠"
+                          - ">"
+                          - "<"
+                          - ">="
+                          - "<="
+                          - "≥"
+                          - "≤"
                       value:
                         type: string
-                        description: Field value
+                        description: Value to compare
+                    required:
+                      - name
+                      - value
+                      - comparison_operator
+              required:
+                - conditions
+              additionalProperties: false
     responses:
       200:
         description: Retrieval succeeded

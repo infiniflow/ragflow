@@ -471,6 +471,16 @@ def list_docs(dataset_id, tenant_id):
         required: false
         description: Filter by document ID.
       - in: query
+        name: name
+        type: string
+        required: false
+        description: Filter by document name.
+      - in: query
+        name: keywords
+        type: string
+        required: false
+        description: Search keywords for document name matching.
+      - in: query
         name: page
         type: integer
         required: false
@@ -520,6 +530,13 @@ def list_docs(dataset_id, tenant_id):
           type: string
         required: false
         description: Filter by document run status. Supports both numeric ("0", "1", "2", "3", "4") and text formats ("UNSTART", "RUNNING", "CANCEL", "DONE", "FAIL").
+      - in: query
+        name: metadata_condition
+        type: string
+        required: false
+        description: >
+          JSON-encoded metadata filter object. Schema:
+          {"logic":"and|or","conditions":[{"name":"<metadata_name>","comparison_operator":"is|not is|contains|not contains|in|not in|start with|end with|empty|not empty|=|!=|>|<|>=|<=|≥|≤","value":"<compare_value>"}]}.
       - in: header
         name: Authorization
         type: string
@@ -1499,7 +1516,54 @@ async def retrieval_test(tenant_id):
               description: Whether to highlight matched content.
             metadata_condition:
               type: object
-              description: metadata filter condition.
+              description: Metadata filter condition.
+              properties:
+                logic:
+                  type: string
+                  description: Logic relationship between all conditions. Defaults to "and".
+                  enum:
+                    - and
+                    - or
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        description: Metadata attribute name.
+                      value:
+                        type: string
+                        description: Value to compare.
+                      comparison_operator:
+                        type: string
+                        description: Operator from the allowed list.
+                        enum:
+                          - is
+                          - not is
+                          - contains
+                          - not contains
+                          - in
+                          - not in
+                          - start with
+                          - end with
+                          - empty
+                          - not empty
+                          - "="
+                          - "≠"
+                          - ">"
+                          - "<"
+                          - ">="
+                          - "<="
+                          - "≥"
+                          - "≤"
+                  required:
+                    - name
+                    - value
+                    - comparison_operator
+              required:
+                - conditions
+              additionalProperties: false
       - in: header
         name: Authorization
         type: string
