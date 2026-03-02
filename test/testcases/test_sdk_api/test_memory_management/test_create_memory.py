@@ -24,7 +24,7 @@ from utils.hypothesis_utils import valid_names
 
 
 class TestAuthorization:
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [

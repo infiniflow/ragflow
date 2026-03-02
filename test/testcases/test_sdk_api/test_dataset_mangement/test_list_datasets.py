@@ -22,7 +22,7 @@ from ragflow_sdk import RAGFlow
 
 
 class TestAuthorization:
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
@@ -54,12 +54,12 @@ class TestCapability:
 
 @pytest.mark.usefixtures("add_datasets")
 class TestDatasetsList:
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_params_unset(self, client):
         datasets = client.list_datasets()
         assert len(datasets) == 5, str(datasets)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_params_empty(self, client):
         datasets = client.list_datasets(**{})
         assert len(datasets) == 5, str(datasets)
@@ -93,7 +93,7 @@ class TestDatasetsList:
             client.list_datasets(**params)
         assert expected_message in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_page_none(self, client):
         params = {"page": None}
         with pytest.raises(Exception) as exception_info:
@@ -128,7 +128,7 @@ class TestDatasetsList:
             client.list_datasets(**params)
         assert expected_message in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_page_size_none(self, client):
         params = {"page_size": None}
         with pytest.raises(Exception) as exception_info:

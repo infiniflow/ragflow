@@ -112,7 +112,7 @@ class TestDocumentsUpload:
             dataset.upload_documents([{"display_name": "", "blob": blob}])
         assert str(exception_info.value) == "No file selected!", str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_filename_max_length(self, add_dataset_func, tmp_path):
         dataset = add_dataset_func
         fp = create_txt_file(tmp_path / f"{'a' * (DOCUMENT_NAME_LIMIT - 4)}.txt")
@@ -125,7 +125,7 @@ class TestDocumentsUpload:
             assert document.dataset_id == dataset.id, str(document)
             assert document.name == fp.name, str(document)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_duplicate_files(self, add_dataset_func, tmp_path):
         dataset = add_dataset_func
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
@@ -141,7 +141,7 @@ class TestDocumentsUpload:
             expected_name = fp.name if i == 0 else f"{fp.stem}({i}){fp.suffix}"
             assert document.name == expected_name, str(document)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_same_file_repeat(self, add_dataset_func, tmp_path):
         dataset = add_dataset_func
         fp = create_txt_file(tmp_path / "ragflow_test.txt")

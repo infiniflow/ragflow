@@ -59,7 +59,7 @@ class TestAddChunk:
             chunks = document.list_chunks()
             assert len(chunks) == chunks_count + 1, str(chunks)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
@@ -87,7 +87,7 @@ class TestAddChunk:
             chunks = document.list_chunks()
             assert len(chunks) == chunks_count + 1, str(chunks)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
@@ -133,7 +133,7 @@ class TestAddChunk:
         chunks = document.list_chunks()
         assert len(chunks) == chunks_count + 1, str(chunks)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_add_chunk_to_deleted_document(self, add_document):
         dataset, document = add_document
         dataset.delete_documents(ids=[document.id])

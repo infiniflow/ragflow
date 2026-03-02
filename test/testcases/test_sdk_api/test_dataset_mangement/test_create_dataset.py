@@ -27,7 +27,7 @@ from utils.hypothesis_utils import valid_names
 
 @pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
@@ -72,7 +72,7 @@ class TestDatasetCreate:
         dataset = client.create_dataset(**{"name": name})
         assert dataset.name == name, str(dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, expected_message",
         [
@@ -108,7 +108,7 @@ class TestDatasetCreate:
         dataset = client.create_dataset(**payload)
         assert dataset.name == name.lower() + "(1)", str(dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_avatar(self, client, tmp_path):
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {
@@ -151,7 +151,7 @@ class TestDatasetCreate:
         dataset = client.create_dataset(**payload)
         assert dataset.avatar is None, str(dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_description(self, client):
         payload = {"name": "description", "description": "description"}
         dataset = client.create_dataset(**payload)
@@ -190,7 +190,7 @@ class TestDatasetCreate:
         dataset = client.create_dataset(**payload)
         assert dataset.embedding_model == embedding_model, str(dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
@@ -210,7 +210,7 @@ class TestDatasetCreate:
         else:
             assert str(exception_info.value) == f"Unsupported model: <{embedding_model}>", str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
@@ -233,19 +233,19 @@ class TestDatasetCreate:
         else:
             assert "Both model_name and provider must be non-empty strings" in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_embedding_model_unset(self, client):
         payload = {"name": "embedding_model_unset"}
         dataset = client.create_dataset(**payload)
         assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_embedding_model_none(self, client):
         payload = {"name": "embedding_model_none", "embedding_model": None}
         dataset = client.create_dataset(**payload)
         assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, permission",
         [
@@ -259,7 +259,7 @@ class TestDatasetCreate:
         dataset = client.create_dataset(**payload)
         assert dataset.permission == permission.lower().strip(), str(dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, permission",
         [
@@ -277,7 +277,7 @@ class TestDatasetCreate:
             client.create_dataset(**payload)
         assert "Input should be 'me' or 'team'" in str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_permission_unset(self, client):
         payload = {"name": "permission_unset"}
         dataset = client.create_dataset(**payload)
@@ -314,7 +314,7 @@ class TestDatasetCreate:
         dataset = client.create_dataset(**payload)
         assert dataset.chunk_method == chunk_method, str(dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, chunk_method",
         [
@@ -329,7 +329,7 @@ class TestDatasetCreate:
             client.create_dataset(**payload)
         assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_chunk_method_unset(self, client):
         payload = {"name": "chunk_method_unset"}
         dataset = client.create_dataset(**payload)
@@ -457,7 +457,7 @@ class TestDatasetCreate:
             else:
                 assert attrgetter(k)(dataset.parser_config) == v, str(dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, parser_config, expected_message",
         [
