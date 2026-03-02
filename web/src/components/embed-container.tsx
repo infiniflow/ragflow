@@ -47,7 +47,7 @@ export function EmbedContainer({
           >
             <div className="flex gap-1 items-center">
               <RefreshCcw size={14} />
-              <span className="text-lg ">Reset</span>
+              <span className="text-lg ">重新对话</span>
             </div>
           </Button>
         </div>

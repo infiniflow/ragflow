@@ -2,6 +2,19 @@ import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { useState } from 'react';
 
+// 会话历史类型定义
+export interface ConversationHistory {
+  id: string;
+  dialog_id: string;
+  dialog_name: string;
+  dialog_icon?: string;
+  title: string;
+  last_message: string;
+  message_count: number;
+  create_time: number;
+  update_time: number;
+}
+
 export interface PublicDialog {
   id: string;
   name: string;
@@ -45,6 +58,27 @@ export const useFetchPublicDialogs = (
       const response = await axios.post(
         `/v1/dialog/public/list?${params.toString()}`,
         {}, // Empty body
+      );
+
+      return response.data.data;
+    },
+  });
+};
+
+export const useFetchConversationHistory = (
+  page: number = 1,
+  pageSize: number = 50,
+) => {
+  return useQuery<{ conversations: ConversationHistory[]; total: number }>({
+    queryKey: ['conversationHistory', page, pageSize],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        page_size: pageSize.toString(),
+      });
+
+      const response = await axios.get(
+        `/v1/dialog/public/conversations?${params.toString()}`,
       );
 
       return response.data.data;

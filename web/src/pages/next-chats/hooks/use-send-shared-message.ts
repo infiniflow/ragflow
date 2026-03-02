@@ -32,6 +32,7 @@ export const useGetSharedChatSearchParams = () => {
   return {
     from: searchParams.get('from') as SharedFrom,
     sharedId: searchParams.get('shared_id'),
+    conversationId: searchParams.get('conversation_id'), // Extract conversation_id from URL
     locale: searchParams.get('locale'),
     theme: searchParams.get('theme'),
     data: data,
@@ -44,14 +45,23 @@ export const useGetSharedChatSearchParams = () => {
 export const useSendSharedMessage = () => {
   const {
     from,
-    sharedId: conversationId,
-    data: data,
+    sharedId,
+    conversationId: urlConversationId, // Get conversation_id from URL
   } = useGetSharedChatSearchParams();
+  const [searchParams] = useSearchParams();
+
+  // Extract data parameters once to avoid recreating object
+  const dataParams = Object.fromEntries(
+    Array.from(searchParams.entries())
+      .filter(([key]) => key.startsWith('data_'))
+      .map(([key, value]) => [key.replace('data_', ''), value]),
+  );
+
   const { createSharedConversation: setConversation } =
     useCreateNextSharedConversation();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const { send, answer, done, stopOutputMessage } = useSendMessageWithSse(
-    `/api/v1/${from === SharedFrom.Agent ? 'agentbots' : 'chatbots'}/${conversationId}/completions`,
+    `/api/v1/${from === SharedFrom.Agent ? 'agentbots' : 'chatbots'}/${sharedId}/completions`,
   );
   const {
     derivedMessages,
@@ -62,21 +72,55 @@ export const useSendSharedMessage = () => {
     messageContainerRef,
     removeAllMessages,
     removeAllMessagesExceptFirst,
+    setDerivedMessages,
   } = useSelectDerivedMessages();
   const [hasError, setHasError] = useState(false);
+  const [conversationId, setConversationId] = useState<string>(
+    urlConversationId || '',
+  );
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  // Load conversation history if conversation_id is provided
+  const loadConversationHistory = useCallback(
+    async (convId: string) => {
+      if (!convId) return;
+
+      setIsLoadingHistory(true);
+      try {
+        const response = await fetch(
+          `/v1/dialog/public/conversation/${convId}/messages`,
+        );
+        const result = await response.json();
+
+        if (result.code === 0 && result.data.messages) {
+          // Set the messages directly
+          setDerivedMessages(result.data.messages);
+          setConversationId(convId);
+        } else {
+          console.error('[loadConversationHistory] 加载失败:', result.message);
+          message.error('加载历史消息失败');
+        }
+      } catch (error) {
+        console.error('[loadConversationHistory] 错误:', error);
+        message.error('加载历史消息失败');
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    },
+    [setDerivedMessages],
+  );
 
   const sendMessage = useCallback(
-    async (message: Message, id?: string) => {
+    async (msg: Message, id?: string) => {
       const res = await send({
         conversation_id: id ?? conversationId,
         quote: true,
-        question: message.content,
-        session_id: get(derivedMessages, '0.session_id'),
+        question: msg.content,
+        session_id: conversationId || get(derivedMessages, '0.session_id'),
       });
 
       if (isCompletionError(res)) {
-        // cancel loading
-        setValue(message.content);
+        setValue(msg.content);
         removeLatestMessage();
       }
     },
@@ -84,38 +128,54 @@ export const useSendSharedMessage = () => {
   );
 
   const handleSendMessage = useCallback(
-    async (message: Message) => {
-      if (conversationId !== '') {
-        sendMessage(message);
+    async (msg: Message) => {
+      if (sharedId !== '') {
+        sendMessage(msg);
       } else {
         const data = await setConversation('user id');
         if (data.code === 0) {
           const id = data.data.id;
-          sendMessage(message, id);
+          sendMessage(msg, id);
         }
       }
     },
-    [conversationId, setConversation, sendMessage],
+    [sharedId, setConversation, sendMessage],
   );
 
-  const fetchSessionId = useCallback(async () => {
-    const payload = { question: '' };
-    const ret = await send({ ...payload, ...data });
-    if (isCompletionError(ret)) {
-      message.error(ret?.data.message);
-      setHasError(true);
-    }
-  }, [send]);
-
+  // Initialize session or load history
   useEffect(() => {
-    fetchSessionId();
-  }, [fetchSessionId]);
+    const initializeSession = async () => {
+      // If we have a conversation_id from URL, load its history
+      if (urlConversationId) {
+        await loadConversationHistory(urlConversationId);
+        return;
+      }
+
+      // Otherwise, initialize a new session
+      const payload = { question: '', ...dataParams };
+      const ret = await send(payload);
+      if (isCompletionError(ret)) {
+        message.error(ret?.data.message);
+        setHasError(true);
+      }
+    };
+
+    initializeSession();
+  }, [urlConversationId]); // Only depend on urlConversationId
 
   useEffect(() => {
     if (answer.answer) {
       addNewestAnswer(answer);
     }
-  }, [answer, addNewestAnswer]);
+
+    // Extract id from answer and set as conversationId if we don't have one
+    // The backend returns session_id in the data, but it's accessed as answer.id
+    const sessionId = (answer as any).session_id || answer.id;
+
+    if (sessionId && !conversationId && !urlConversationId) {
+      setConversationId(sessionId);
+    }
+  }, [answer, addNewestAnswer, conversationId, urlConversationId]);
 
   const handlePressEnter = useCallback(
     (documentIds: string[]) => {
@@ -143,8 +203,8 @@ export const useSendSharedMessage = () => {
     handlePressEnter,
     handleInputChange,
     value,
-    sendLoading: !done,
-    loading: false,
+    sendLoading: !done || isLoadingHistory,
+    loading: isLoadingHistory,
     derivedMessages,
     hasError,
     stopOutputMessage,

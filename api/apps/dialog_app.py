@@ -336,3 +336,178 @@ async def list_public_dialogs():
         
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route('/public/conversations', methods=['GET'])  # noqa: F821
+async def get_public_conversations():
+    """
+    Public API to get all conversation history from public dialogs.
+    No authentication required.
+    
+    Query Parameters:
+        - page: Page number (default: 1)
+        - page_size: Items per page (default: 50)
+    
+    Returns:
+        {
+            "code": 0,
+            "data": {
+                "conversations": [
+                    {
+                        "id": "conversation_id",
+                        "dialog_id": "dialog_id",
+                        "dialog_name": "Assistant Name",
+                        "dialog_icon": "icon_url",
+                        "title": "Conversation title",
+                        "last_message": "Last message preview",
+                        "message_count": 5,
+                        "create_time": "2024-01-01T00:00:00",
+                        "update_time": "2024-01-01T00:00:00"
+                    }
+                ],
+                "total": 100
+            }
+        }
+    
+    Logic:
+        - Query all valid dialogs (public assistants)
+        - Get all conversations for these dialogs
+        - Order by update_time DESC (newest first)
+    """
+    from api.db.services.api_service import API4ConversationService
+    from api.db.db_models import API4Conversation
+    
+    try:
+        # Get pagination parameters
+        args = request.args
+        page_number = int(args.get("page", 1))
+        items_per_page = int(args.get("page_size", 50))
+        
+        # Query conversations from all valid (public) dialogs
+        # Join with Dialog to get dialog info and filter by status
+        query = (
+            API4Conversation.select(
+                API4Conversation.id,
+                API4Conversation.dialog_id,
+                API4Conversation.message,
+                API4Conversation.create_time,
+                API4Conversation.update_time,
+                Dialog.name.alias("dialog_name"),
+                Dialog.icon.alias("dialog_icon"),
+            )
+            .join(Dialog, on=(API4Conversation.dialog_id == Dialog.id))
+            .where(Dialog.status == StatusEnum.VALID.value)
+            .order_by(API4Conversation.update_time.desc())
+        )
+        
+        # Print SQL for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[DEBUG] SQL Query: {query.sql()}")
+        
+        # Get total count
+        total = query.count()
+        
+        # Apply pagination
+        if page_number and items_per_page:
+            query = query.paginate(page_number, items_per_page)
+        
+        conversations = []
+        for conv in query.dicts():
+            # Extract first user message as title
+            messages = conv.get("message", [])
+            first_user_msg = ""
+            last_msg = ""
+            msg_count = len(messages)
+            
+            for msg in messages:
+                if msg.get("role") == "user" and not first_user_msg:
+                    first_user_msg = msg.get("content", "")
+                if msg.get("content"):
+                    last_msg = msg.get("content", "")
+            
+            # Generate title (limit to 20 chars)
+            title = first_user_msg or last_msg or "新对话"
+            if len(title) > 20:
+                title = title[:20] + "..."
+            
+            # Handle timestamp fields (they are integers, not datetime objects)
+            create_time = conv.get("create_time", 0)
+            update_time = conv.get("update_time", 0)
+            
+            conversations.append({
+                "id": conv["id"],
+                "dialog_id": conv["dialog_id"],
+                "dialog_name": conv.get("dialog_name", ""),
+                "dialog_icon": conv.get("dialog_icon", ""),
+                "title": title,
+                "last_message": last_msg[:50] if last_msg else "",
+                "message_count": msg_count,
+                "create_time": create_time,
+                "update_time": update_time,
+            })
+        
+        logger.info(f"[DEBUG] Found {len(conversations)} conversations out of {total} total")
+        
+        return get_json_result(data={"conversations": conversations, "total": total})
+        
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/public/conversation/<conversation_id>/messages", methods=["GET"])
+def get_conversation_messages(conversation_id):
+    """
+    Get messages from a specific conversation.
+    
+    Args:
+        conversation_id: The conversation ID
+    
+    Returns:
+        {
+            "code": 0,
+            "data": {
+                "conversation_id": "xxx",
+                "dialog_id": "xxx",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Hello",
+                        "id": "msg_id"
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "Hi there!",
+                        "id": "msg_id"
+                    }
+                ]
+            }
+        }
+    """
+    from api.db.services.api_service import API4ConversationService
+    from api.db.db_models import API4Conversation
+    
+    try:
+        # Query the conversation
+        conversation = API4Conversation.select().where(
+            API4Conversation.id == conversation_id
+        ).first()
+        
+        if not conversation:
+            return get_json_result(
+                data=False,
+                message=f"Conversation {conversation_id} not found",
+                code=RetCode.DATA_ERROR
+            )
+        
+        # Get messages from the conversation
+        messages = conversation.message or []
+        
+        return get_json_result(data={
+            "conversation_id": conversation.id,
+            "dialog_id": conversation.dialog_id,
+            "messages": messages
+        })
+        
+    except Exception as e:
+        return server_error_response(e)
