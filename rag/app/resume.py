@@ -505,19 +505,24 @@ def _extract_metadata_text(binary: bytes) -> list[dict]:
         logger.warning(f"PDF metadata extraction failed: {e}")
         return []
 
-
-
-def _extract_ocr_text(binary: bytes) -> list[dict]:
+def _extract_ocr_text(binary: bytes, meta_blocks: list[dict] | None = None) -> list[dict]:
     """
-    Use OCR to extract text blocks from PDF (with coordinate info)
+    Extract OCR text blocks using blackout strategy (with coordinate info).
 
-    Applicable to scanned or image-based PDFs, extracting text from image regions.
+    Strategy (ref: SmartResume):
+    1. Render PDF pages to images
+    2. Black out regions already extracted by metadata
+    3. Run OCR on the blacked-out image, only recognizing content metadata missed
+    4. Eliminates duplication at source, no IoU dedup needed downstream
 
     Args:
         binary: PDF file binary content
+        meta_blocks: Text blocks from metadata extraction, used to black out existing text regions
     Returns:
         List of text blocks, each containing text, x0, top, x1, bottom, page fields
     """
+    if meta_blocks is None:
+        meta_blocks = []
     try:
         import pdfplumber
         from deepdoc.vision.ocr import OCR
@@ -528,8 +533,18 @@ def _extract_ocr_text(binary: bytes) -> list[dict]:
 
         with pdfplumber.open(BytesIO(binary)) as pdf:
             for page_idx, page in enumerate(pdf.pages):
+                # Render page to image (resolution=216 = 3x scale, since PDF default is 72 DPI)
                 img = page.to_image(resolution=216)
                 page_img = np.array(img.annotated)
+
+                # Scale factor from PDF coordinates to image coordinates
+                pdf_to_img_scale = 216.0 / 72.0  # = 3.0
+
+                # Black out metadata-extracted text regions before OCR
+                page_meta_blocks = [b for b in meta_blocks if b.get("page") == page_idx]
+                if page_meta_blocks:
+                    page_img = _blackout_text_regions(page_img, meta_blocks, page_idx, pdf_to_img_scale)
+
                 ocr_result = ocr(page_img)
                 if not ocr_result:
                     continue
@@ -557,16 +572,16 @@ def _extract_ocr_text(binary: bytes) -> list[dict]:
 
 def _fuse_text_blocks(meta_blocks: list[dict], ocr_blocks: list[dict]) -> list[dict]:
     """
-    Fuse PDF metadata text and OCR text (ref: SmartResume Content Fusion strategy)
+    Fuse PDF metadata text and OCR text (blackout strategy version).
 
-    Optimization strategy:
-    1. First filter out garbled blocks from metadata
-    2. For regions already covered and valid in metadata, prefer metadata text
-    3. For garbled or uncovered regions in metadata, use OCR text to replace/supplement
+    Since the OCR phase already blacks out metadata-extracted regions, OCR only recognizes
+    content that metadata missed. Therefore this function only needs to:
+    1. Filter out garbled blocks from metadata
+    2. Directly merge valid metadata blocks and OCR blocks (no IoU dedup needed)
 
     Args:
         meta_blocks: Text blocks from metadata extraction
-        ocr_blocks: Text blocks from OCR extraction
+        ocr_blocks: Text blocks from OCR extraction (already deduplicated via blackout strategy)
     Returns:
         Fused text block list
     """
@@ -575,38 +590,23 @@ def _fuse_text_blocks(meta_blocks: list[dict], ocr_blocks: list[dict]) -> list[d
     if not meta_blocks:
         return ocr_blocks
 
-    # Split metadata blocks into valid and garbled blocks
+    # Filter out garbled blocks from metadata
     valid_meta = []
-    garbled_meta = []
+    garbled_count = 0
     for b in meta_blocks:
         if _is_valid_line(b.get("text", "")):
             valid_meta.append(b)
         else:
-            garbled_meta.append(b)
+            garbled_count += 1
 
-    if garbled_meta:
-        logger.info(f"Detected {len(garbled_meta)} garbled blocks in metadata, will attempt OCR replacement")
+    if garbled_count:
+        logger.info(f"Detected {garbled_count} garbled blocks in metadata, filtered out")
 
-    fused = list(valid_meta)
-
-    # For each OCR block, check if it overlaps with valid metadata blocks
-    for ocr_b in ocr_blocks:
-        is_covered = False
-        for meta_b in valid_meta:
-            if meta_b["page"] != ocr_b["page"]:
-                continue
-            # Calculate IoU to determine overlap
-            x_overlap = max(0, min(meta_b["x1"], ocr_b["x1"]) - max(meta_b["x0"], ocr_b["x0"]))
-            y_overlap = max(0, min(meta_b["bottom"], ocr_b["bottom"]) - max(meta_b["top"], ocr_b["top"]))
-            overlap_area = x_overlap * y_overlap
-            ocr_area = max(1, (ocr_b["x1"] - ocr_b["x0"]) * (ocr_b["bottom"] - ocr_b["top"]))
-            if overlap_area / ocr_area > 0.5:
-                is_covered = True
-                break
-        if not is_covered:
-            fused.append(ocr_b)
-
+    # Under blackout strategy, OCR won't re-recognize existing text, just merge directly
+    fused = valid_meta + ocr_blocks
     return fused
+
+
 
 
 def _layout_aware_reorder(blocks: list[dict]) -> list[dict]:
@@ -865,6 +865,9 @@ def _is_valid_line(line: str) -> bool:
         # Short lines may be valid content like names, keep them
         return True
 
+    cid_count = len(re.findall(r'\(cid:\d+\)', line))
+    if cid_count >= 3:
+        return False
     # Valid characters: Chinese (incl. extension), ASCII alphanumeric, common punctuation and spaces, fullwidth chars, CJK punctuation
     valid_chars = re.findall(
         r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff'
@@ -1019,7 +1022,8 @@ def extract_text(filename: str, binary: bytes) -> tuple[str, list[str], list[dic
                         need_ocr = True
 
             if need_ocr:
-                ocr_blocks = _extract_ocr_text(binary)
+                # Blackout strategy: black out metadata-extracted regions before OCR
+                ocr_blocks = _extract_ocr_text(binary, meta_blocks=meta_blocks)
 
             # Text fusion
             fused_blocks = _fuse_text_blocks(meta_blocks, ocr_blocks)
@@ -2382,6 +2386,42 @@ def _build_chunk_document(filename: str, resume: dict,
         add_positions(ck, [[0, 0, 0, i, i]])
 
     return chunks
+
+def _blackout_text_regions(image: "np.ndarray", meta_blocks: list[dict], page_idx: int,
+                           pdf_to_img_scale: float) -> "np.ndarray":
+    """
+    Black out metadata-extracted text regions on the page image to prevent OCR duplication.
+
+    Ref: SmartResume blackout strategy — extract metadata text first, black out those regions,
+    then run OCR on the blacked-out image so it only recognizes content metadata missed.
+    More reliable than IoU-based deduplication.
+
+    Args:
+        image: Page image (numpy array)
+        meta_blocks: Text blocks from metadata extraction
+        page_idx: Current page number
+        pdf_to_img_scale: Scale factor from PDF coordinates to image coordinates
+    Returns:
+        Image with text regions blacked out
+    """
+    import cv2
+    blacked = image.copy()
+    page_blocks = [b for b in meta_blocks if b.get("page") == page_idx]
+    # Draw filled black rectangles over each metadata text block
+    padding = 2  # Extra pixels to ensure full coverage
+    for b in page_blocks:
+        x0 = int(b["x0"] * pdf_to_img_scale) - padding
+        y0 = int(b["top"] * pdf_to_img_scale) - padding
+        x1 = int(b["x1"] * pdf_to_img_scale) + padding
+        y1 = int(b["bottom"] * pdf_to_img_scale) + padding
+        # Clamp to image boundaries
+        x0 = max(0, x0)
+        y0 = max(0, y0)
+        x1 = min(blacked.shape[1], x1)
+        y1 = min(blacked.shape[0], y1)
+        cv2.rectangle(blacked, (x0, y0), (x1, y1), (0, 0, 0), -1)
+    return blacked
+
 
 
 def chunk(filename, binary, tenant_id, from_page=0, to_page=100000,
