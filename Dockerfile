@@ -7,7 +7,7 @@ ARG NEED_MIRROR=0
 
 WORKDIR /ragflow
 
-# Copy models downloaded via download_deps.py
+# copy models downloaded via download_deps.py
 RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
     tar --exclude='.*' -cf - \

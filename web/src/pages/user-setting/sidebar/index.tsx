@@ -68,7 +68,11 @@ export function SideBar() {
                     'bg-bg-card text-text-primary': active === item.key,
                     'bg-bg-base text-text-secondary': active !== item.key,
                   })}
-                  data-testid={item.key === Routes.Model ? 'settings-nav-model-providers' : undefined}
+                  data-testid={
+                    item.key === Routes.Model
+                      ? 'settings-nav-model-providers'
+                      : undefined
+                  }
                   onClick={handleMenuClick(item.key)}
                 >
                   <section className="flex items-center gap-2.5">

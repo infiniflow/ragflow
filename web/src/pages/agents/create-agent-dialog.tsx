@@ -32,7 +32,12 @@ export function CreateAgentDialog({
           shouldChooseAgent={shouldChooseAgent}
         ></CreateAgentForm>
         <DialogFooter>
-          <ButtonLoading data-testid="agent-save" type="submit" form={TagRenameId} loading={loading}>
+          <ButtonLoading
+            data-testid="agent-save"
+            type="submit"
+            form={TagRenameId}
+            loading={loading}
+          >
             {t('common.save')}
           </ButtonLoading>
         </DialogFooter>

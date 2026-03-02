@@ -426,7 +426,11 @@ export const MultiSelect = React.forwardRef<
                           key={option.value}
                           isSelected={isSelected}
                           toggleOption={toggleOption}
-                          optionTestId={optionTestIdPrefix ? `${optionTestIdPrefix}-option-${idx}` : undefined}
+                          optionTestId={
+                            optionTestIdPrefix
+                              ? `${optionTestIdPrefix}-option-${idx}`
+                              : undefined
+                          }
                         ></MultiCommandItem>
                       );
                     },
@@ -444,7 +448,11 @@ export const MultiSelect = React.forwardRef<
                           key={option.value}
                           isSelected={isSelected}
                           toggleOption={toggleOption}
-                          optionTestId={optionTestIdPrefix ? `${optionTestIdPrefix}-option-${optIdx}` : undefined}
+                          optionTestId={
+                            optionTestIdPrefix
+                              ? `${optionTestIdPrefix}-option-${optIdx}`
+                              : undefined
+                          }
                         ></MultiCommandItem>
                       );
                     })}
