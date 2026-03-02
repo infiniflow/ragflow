@@ -1209,6 +1209,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      preprocess: {
+        preprocess: '预处理',
+        mainContent: '主内容',
+        abstract: '摘要',
+        author: '作者',
+        sectionTitle: '章节标题',
+      },
       autoPlay: '自动播放',
       downloadFileTypeTip: '文件下载的类型',
       downloadFileType: '文件类型',

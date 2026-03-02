@@ -5,16 +5,17 @@ import {
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useHover } from 'ahooks';
 import { Trash2 } from 'lucide-react';
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
-  UseFieldArrayRemove,
   useFieldArray,
+  UseFieldArrayRemove,
   useForm,
   useFormContext,
 } from 'react-hook-form';
@@ -24,6 +25,8 @@ import {
   FileType,
   InitialOutputFormatMap,
   initialParserValues,
+  MAIN_CONTENT_PREPROCESS_VALUE,
+  PreprocessValue,
 } from '../../constant/pipeline';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
@@ -40,6 +43,74 @@ import { buildFieldNameWithPrefix } from './utils';
 import { AudioFormFields, VideoFormFields } from './video-form-fields';
 
 const outputList = buildOutputList(initialParserValues.outputs);
+
+type PreprocessOptionConfig = {
+  value: PreprocessValue;
+  required?: boolean;
+};
+
+const DefaultPreprocessOptionConfigs: PreprocessOptionConfig[] = [
+  { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
+];
+
+const PreprocessOptionConfigsMap: Partial<
+  Record<FileType, PreprocessOptionConfig[]>
+> = {
+  [FileType.PDF]: [
+    { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
+    { value: PreprocessValue.abstract },
+    { value: PreprocessValue.author },
+    { value: PreprocessValue.section_title },
+  ],
+  [FileType.PowerPoint]: [
+    { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
+  ],
+  [FileType.Spreadsheet]: [
+    { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
+  ],
+  [FileType.TextMarkdown]: [
+    { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
+    { value: PreprocessValue.section_title },
+  ],
+  [FileType.Docx]: [
+    { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
+    { value: PreprocessValue.section_title },
+  ],
+};
+
+function getPreprocessOptionConfigs(fileType?: FileType) {
+  if (!fileType) {
+    return DefaultPreprocessOptionConfigs;
+  }
+
+  return PreprocessOptionConfigsMap[fileType] ?? DefaultPreprocessOptionConfigs;
+}
+
+function normalizePreprocessValuesByFileType(
+  fileType: FileType | undefined,
+  values: string[] | undefined,
+) {
+  const optionConfigs = getPreprocessOptionConfigs(fileType);
+  const allowedValueSet = new Set(optionConfigs.map((x) => x.value));
+  const requiredValues = optionConfigs
+    .filter((x) => x.required)
+    .map((x) => x.value);
+  const normalizedOptionalValues = (Array.isArray(values) ? values : []).filter(
+    (value) => allowedValueSet.has(value as PreprocessValue),
+  ) as PreprocessValue[];
+
+  return Array.from(
+    new Set<PreprocessValue>([...requiredValues, ...normalizedOptionalValues]),
+  );
+}
+
+function isSameStringArray(a: string[] | undefined, b: string[]) {
+  if (!a || a.length !== b.length) {
+    return false;
+  }
+
+  return a.every((item, idx) => item === b[idx]);
+}
 
 const FileFormatWidgetMap = {
   [FileType.PDF]: PdfFormFields,
@@ -63,6 +134,7 @@ export const FormSchema = z.object({
   setups: z.array(
     z.object({
       fileFormat: z.string().nullish(),
+      preprocess: z.array(z.string()).optional(),
       output_format: z.string().optional(),
       parse_method: z.string().optional(),
       lang: z.string().optional(),
@@ -121,6 +193,57 @@ function ParserItem({
     [form, index],
   );
 
+  const handlePreprocessChange = useCallback(
+    (value: PreprocessValue[]) => {
+      form.setValue(`setups.${index}.preprocess`, value, {
+        shouldDirty: true,
+        shouldValidate: true,
+        shouldTouch: true,
+      });
+    },
+    [form, index],
+  );
+
+  const preprocessOptions = useMemo(() => {
+    const optionConfigs = getPreprocessOptionConfigs(fileFormat as FileType);
+
+    return optionConfigs.map((optionConfig) => {
+      const labelMap: Record<string, string> = {
+        [MAIN_CONTENT_PREPROCESS_VALUE]: t('flow.preprocess.mainContent'),
+        [PreprocessValue.section_title]: t('flow.preprocess.sectionTitle'),
+        [PreprocessValue.abstract]: t('flow.preprocess.abstract'),
+        [PreprocessValue.author]: t('flow.preprocess.author'),
+      };
+
+      const label = labelMap[optionConfig.value] || optionConfig.value;
+
+      return {
+        value: optionConfig.value,
+        disabled: optionConfig.required,
+        label: label,
+      };
+    });
+  }, [fileFormat, t]);
+
+  useEffect(() => {
+    const currentPreprocessValues = form.getValues(
+      `setups.${index}.preprocess`,
+    ) as string[] | undefined;
+    const normalizedPreprocessValues = normalizePreprocessValuesByFileType(
+      fileFormat as FileType,
+      currentPreprocessValues,
+    );
+
+    if (
+      !isSameStringArray(currentPreprocessValues, normalizedPreprocessValues)
+    ) {
+      form.setValue(`setups.${index}.preprocess`, normalizedPreprocessValues, {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+    }
+  }, [fileFormat, form, index]);
+
   return (
     <section
       className={cn('space-y-5 py-2.5 rounded-md', {
@@ -159,6 +282,26 @@ function ParserItem({
           fileType={fileFormat as FileType}
         />
       </div>
+      <RAGFlowFormItem
+        name={buildFieldNameWithPrefix(`preprocess`, prefix)}
+        label={t('flow.preprocess.preprocess')}
+      >
+        {(field) => (
+          <MultiSelect
+            value={field.value || []}
+            onValueChange={(val) => {
+              const nextValues = normalizePreprocessValuesByFileType(
+                fileFormat as FileType,
+                val,
+              );
+              field.onChange(nextValues);
+              handlePreprocessChange(nextValues);
+            }}
+            showSelectAll={false}
+            options={preprocessOptions}
+          ></MultiSelect>
+        )}
+      </RAGFlowFormItem>
       {index < fieldLength - 1 && <Separator />}
     </section>
   );
@@ -192,6 +335,7 @@ const ParserForm = ({ node }: INextOperatorForm) => {
       llm_id: '',
       table_result_type: '',
       markdown_image_response_type: '',
+      preprocess: [],
     });
   }, [append]);
 
