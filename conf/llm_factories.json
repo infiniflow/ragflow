@@ -3098,7 +3098,7 @@
                 },
                 {
                     "llm_name": "Pro/moonshotai/Kimi-K2.5",
-                    "tags": "LLM,CHAT,IMAGE2TEXT, 262k",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,262k",
                     "max_tokens": 262000,
                     "model_type": "chat",
                     "is_tools": true
