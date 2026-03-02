@@ -542,11 +542,6 @@ class Parser(ProcessBase):
             if abstract_idx is not None:
                 bboxes[abstract_idx]["abstract"] = True
 
-        print("\n\n")
-        for b in bboxes:
-            print(b)
-        print("\n")
-
         if conf.get("output_format") == "json":
             self.set_output("json", bboxes)
         if conf.get("output_format") == "markdown":
@@ -672,10 +667,6 @@ class Parser(ProcessBase):
             markdown_text = docx_parser.to_markdown(name, binary=blob)
             self.set_output("markdown", markdown_text)
 
-        print("\n\n")
-        for sec in sections:
-            print(sec)
-        print("\n\n")
 
     def _slides(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PowerPoint Document")
