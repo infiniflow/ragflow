@@ -23,7 +23,9 @@ Field descriptions:
 - desc_lines: [start_line, end_line], line number range for project description (integer array)
   - Refers to the original text reference range for project description, including project content, tech stack, achievements, etc.
   - Does not include lines containing project_name, role, start_date, end_date
-  - Include as much as possible until the next project experience entry
+  - Include as much as possible until the next project experience entry or other section heading
+  - STOP before these section headings (do not include them in desc_lines):
+    Self-evaluation, Personal Summary, Skills, Technical Skills, Education, Work Experience, Certificates, Languages, Hobbies, Career Objective
   - Use [] if not available
 
 Return JSON only. /no_think

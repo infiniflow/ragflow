@@ -24,8 +24,9 @@ Field descriptions:
 - end_date: End date, use "Present" if still employed, "" if not available
 - desc_lines: [start_line, end_line], line number range for job description (integer array)
   - Refers to the original text reference range for job description, including achievements, responsibilities, tech stack, etc.
-  - Does not include lines containing company, position, start_date, end_date
-  - Include as much as possible until the next work experience entry
+  - Include as much as possible until the next work experience entry or other section heading
+  - STOP before these section headings (do not include them in desc_lines):
+    Self-evaluation, Personal Summary, Skills, Technical Skills, Education, Project Experience, Certificates, Languages, Hobbies, Career Objective
   - Use [] if not available
 
 Example:

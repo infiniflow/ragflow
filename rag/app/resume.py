@@ -738,31 +738,118 @@ def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
         )
 
         if not tagged_blocks:
-            logger.warning("Layout detection returned no results, falling back to heuristic sorting")
+            logger.warning("布局检测无结果，回退到启发式排序")
             return _layout_aware_reorder(blocks)
+        layout_center_map: dict[str, tuple[float, float]] = {}  # layoutno -> (center_y, center_x)
+        for pn, lts in enumerate(page_layouts):
+            # 按类型分组，与 LayoutRecognizer.__call__ 中 findLayout 的逻辑一致
+            type_groups: dict[str, list] = {}
+            for lt in lts:
+                tp = lt.get("type", "")
+                type_groups.setdefault(tp, []).append(lt)
+            for tp, group in type_groups.items():
+                for idx, lt in enumerate(group):
+                    key = f"{tp}-{idx}"
+                    cy = (lt.get("top", 0) + lt.get("bottom", 0)) / 2
+                    cx = (lt.get("x0", 0) + lt.get("x1", 0)) / 2
+                    layout_center_map[f"{pn}_{key}"] = (cy, cx)
 
-        # Sort by layoutno groups:
-        # 1. Blocks with layoutno sorted by region position (region Y -> region X -> block Y -> block X)
-        # 2. Blocks without layoutno sorted by original coordinates
+        # 步骤2: 为每个 block 计算排序用的布局区域中心坐标
+        for b in tagged_blocks:
+            pg = b.get("page", 0)
+            b_cy = (b.get("top", 0) + b.get("bottom", 0)) / 2
+            b_cx = (b.get("x0", 0) + b.get("x1", 0)) / 2
+            b["_block_cy"] = b_cy
+            b["_block_cx"] = b_cx
+
+            layoutno = b.get("layoutno", "")
+            if layoutno:
+                map_key = f"{pg}_{layoutno}"
+                if map_key in layout_center_map:
+                    b["_ly_center"], b["_lx_center"] = layout_center_map[map_key]
+                else:
+                    # layoutno 存在但在 map 中找不到，用 block 自身坐标
+                    b["_ly_center"] = b_cy
+                    b["_lx_center"] = b_cx
+            else:
+                # 未分配布局区域，暂时用 block 自身坐标
+                b["_ly_center"] = b_cy
+                b["_lx_center"] = b_cx
+
+        active_layouts_per_page: dict[int, list[tuple[str, dict]]] = {}
+        for b in tagged_blocks:
+            pg = b.get("page", 0)
+            layoutno = b.get("layoutno", "")
+            if layoutno and pg < len(page_layouts):
+                active_layouts_per_page.setdefault(pg, set()).add(layoutno)
+        active_layout_coords: dict[int, list[tuple[str, float, float, float, float, float, float]]] = {}
+        for pg, layoutno_set in active_layouts_per_page.items():
+            coords = []
+            if pg < len(page_layouts):
+                type_groups: dict[str, list] = {}
+                for lt in page_layouts[pg]:
+                    tp = lt.get("type", "")
+                    type_groups.setdefault(tp, []).append(lt)
+                for tp, group in type_groups.items():
+                    for idx, lt in enumerate(group):
+                        key = f"{tp}-{idx}"
+                        if key in layoutno_set:
+                            x0 = lt.get("x0", 0)
+                            x1 = lt.get("x1", 0)
+                            top = lt.get("top", 0)
+                            bottom = lt.get("bottom", 0)
+                            cy = (top + bottom) / 2
+                            cx = (x0 + x1) / 2
+                            coords.append((key, x0, top, x1, bottom, cy, cx))
+            active_layout_coords[pg] = coords
+
+        for b in tagged_blocks:
+            layoutno = b.get("layoutno", "")
+            if layoutno:
+                continue
+            pg = b.get("page", 0)
+            b_cx = b["_block_cx"]
+            b_cy = b["_block_cy"]
+            coords = active_layout_coords.get(pg, [])
+            if not coords:
+                continue
+            min_dist = float("inf")
+            best_cy, best_cx = b_cy, b_cx
+            for _, lx0, ltop, lx1, lbottom, lcy, lcx in coords:
+                # 计算点到矩形的最短距离（参考 SmartResume）
+                dx = max(lx0 - b_cx, 0, b_cx - lx1)
+                dy = max(ltop - b_cy, 0, b_cy - lbottom)
+                dist = min(dx, dy) if dx > 0 and dy > 0 else (dx + dy)
+                if dist < min_dist:
+                    min_dist = dist
+                    best_cy, best_cx = lcy, lcx
+            b["_ly_center"] = best_cy
+            b["_lx_center"] = best_cx
+
         def _sort_key(b):
             layout_type = b.get("layout_type", "")
-            # header sorts first, footer sorts last
+            pg = b.get("page", 0)
             if layout_type == "header":
-                return (0, 0, b.get("top", 0), b.get("x0", 0))
+                return (pg, -9999, 0, b.get("_block_cy", 0), b.get("_block_cx", 0))
             if layout_type == "footer":
-                return (9999, 0, b.get("top", 0), b.get("x0", 0))
-            # Others sorted by top -> x0
-            return (1, b.get("top", 0), b.get("x0", 0), 0)
+                return (pg, 9999, 0, b.get("_block_cy", 0), b.get("_block_cx", 0))
+            return (pg, b.get("_ly_center", 0), b.get("_lx_center", 0),
+                    b.get("_block_cy", 0), b.get("_block_cx", 0))
 
         tagged_blocks.sort(key=_sort_key)
 
-        # Restore page field (LayoutRecognizer may not preserve it)
+        for b in tagged_blocks:
+            b.pop("_ly_center", None)
+            b.pop("_lx_center", None)
+            b.pop("_block_cy", None)
+            b.pop("_block_cx", None)
+
         for b in tagged_blocks:
             if "page" not in b:
                 b["page"] = 0
 
-        logger.info(f"YOLOv10 layout detection complete, {len(tagged_blocks)} text blocks total, "
-                    f"detected {sum(len(pl) for pl in page_layouts)} layout regions")
+        logger.info(f"YOLOv10 布局检测完成，共 {len(tagged_blocks)} 个文本块，"
+                    f"检测到 {sum(len(pl) for pl in page_layouts)} 个布局区域")
         return tagged_blocks
 
     except Exception as e:
@@ -773,6 +860,7 @@ def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
 
 def _build_indexed_text(blocks: list[dict]) -> tuple[str, list[str], list[dict]]:
     """
+
     Build indexed text with line numbers (ref: SmartResume Indexed Linearization)
 
     Merges sorted text blocks into lines and adds a unique index number to each line.
@@ -786,22 +874,20 @@ def _build_indexed_text(blocks: list[dict]) -> tuple[str, list[str], list[dict]]
         - indexed_text: Text string with line numbers
         - lines: Original line text list (without line numbers)
         - line_positions: Coordinate info for each line, format:
-          {"page": int, "x0": float, "x1": float, "top": float, "bottom": float}
     """
     if not blocks:
         return "", [], []
 
-    # Merge adjacent text blocks into lines (based on Y coordinate proximity)
-    # Also record bounding box for each line (outer bounding rectangle of all blocks)
     raw_lines = []
-    raw_positions = []  # Coordinates for each line
+    raw_positions = []
     current_line_parts = []
-    current_line_blocks = []  # All blocks in current line
+    current_line_blocks = []
     current_top = blocks[0].get("top", 0)
-    threshold = 10  # Y coordinate difference threshold
+    current_layoutno = blocks[0].get("layoutno", "")
+    threshold = 10
 
     def _merge_line_position(line_blocks: list[dict]) -> dict:
-        """Merge coordinates of all blocks in a line into outer bounding rectangle"""
+        """将一行中所有 block 的坐标合并为外接矩形"""
         return {
             "page": line_blocks[0].get("page", 0),
             "x0": min(b.get("x0", 0) for b in line_blocks),
@@ -811,12 +897,16 @@ def _build_indexed_text(blocks: list[dict]) -> tuple[str, list[str], list[dict]]
         }
 
     for b in blocks:
-        if abs(b.get("top", 0) - current_top) > threshold and current_line_parts:
+        b_layoutno = b.get("layoutno", "")
+        y_changed = abs(b.get("top", 0) - current_top) > threshold
+        layout_changed = b_layoutno != current_layoutno and current_layoutno and b_layoutno
+        if (y_changed or layout_changed) and current_line_parts:
             raw_lines.append(" ".join(current_line_parts))
             raw_positions.append(_merge_line_position(current_line_blocks))
             current_line_parts = []
             current_line_blocks = []
             current_top = b.get("top", 0)
+            current_layoutno = b_layoutno
         current_line_parts.append(b["text"])
         current_line_blocks.append(b)
 
