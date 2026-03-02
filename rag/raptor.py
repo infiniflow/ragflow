@@ -111,7 +111,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
     async def __call__(self, chunks, random_state, callback=None, task_id: str = ""):
         if len(chunks) <= 1:
-            return []
+            return [], []
         chunks = [(s, a) for s, a in chunks if s and a is not None and len(a) > 0]
         layers = [(0, len(chunks))]
         start, end = 0, len(chunks)
@@ -215,4 +215,4 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             start = end
             end = len(chunks)
 
-        return chunks
+        return chunks, layers
