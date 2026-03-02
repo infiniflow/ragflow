@@ -41,6 +41,7 @@ const modelsWithBaseUrl = [
   LLMFactory.AzureOpenAI,
   LLMFactory.TongYiQianWen,
   LLMFactory.MiniMax,
+  LLMFactory.SILICONFLOW,
 ];
 
 const ApiKeyModal = ({
@@ -127,7 +128,9 @@ const ApiKeyModal = ({
                         ? t('minimaxBaseUrlTip')
                         : llmFactory === LLMFactory.TongYiQianWen
                           ? t('tongyiBaseUrlTip')
-                          : t('baseUrlTip')
+                          : llmFactory === LLMFactory.SILICONFLOW
+                            ? t('siliconBaseUrlTip')
+                            : t('baseUrlTip')
                     }
                   >
                     {t('baseUrl')}
@@ -140,7 +143,9 @@ const ApiKeyModal = ({
                           ? t('tongyiBaseUrlPlaceholder')
                           : llmFactory === LLMFactory.MiniMax
                             ? t('minimaxBaseUrlPlaceholder')
-                            : 'https://api.openai.com/v1'
+                            : llmFactory === LLMFactory.SILICONFLOW
+                              ? 'https://api.siliconflow.cn/v1'
+                              : 'https://api.openai.com/v1'
                       }
                       onKeyDown={handleKeyDown}
                       className="w-full"
