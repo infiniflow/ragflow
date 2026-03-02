@@ -74,11 +74,11 @@
 
 ## 💡 ما هو RAGFlow؟
 
-[RAGFlow](https://ragflow.io/) هو محرك رائد مفتوح المصدر للاسترجاع المعزز ([RAG](https://ragflow.io/basics/what-is-rag)) يدمج أحدث RAG مع إمكانيات Agent لإنشاء طبقة سياق فائقة لـ LLMs. إنه يوفر سير عمل RAG مبسطًا وقابل للتكيف مع المؤسسات من أي حجم. مدعومًا بـ [محرك سياق](https://ragflow.io/basics/what-is-agent-context-engine) وقوالب agent المعدة مسبقًا، يمكّن RAGFlow المطورين من تحويل البيانات المعقدة إلى أنظمة ذكاء اصطناعي عالية الدقة وجاهزة للإنتاج بكفاءة ودقة استثنائية.
+يُعد مشروع [RAGFlow](https://ragflow.io/) محركًا رائدًا ومفتوح المصدر للاسترجاع المعزز بالتوليد (<bdi dir="ltr">RAG</bdi>)، ويجمع أحدث تقنيات <bdi dir="ltr">RAG</bdi> مع قدرات الوكلاء لبناء طبقة سياق متقدمة لنماذج <bdi dir="ltr">LLMs</bdi>. يوفّر سير عمل <bdi dir="ltr">RAG</bdi> مبسّطًا وقابلًا للتكيّف مع المؤسسات بمختلف أحجامها. وبالاعتماد على [محرك سياق موحّد](https://ragflow.io/basics/what-is-agent-context-engine) وقوالب وكلاء جاهزة، يتيح <bdi dir="ltr">RAGFlow</bdi> للمطورين تحويل البيانات المعقّدة إلى أنظمة <bdi dir="ltr">AI</bdi> عالية الدقة وجاهزة للإنتاج بكفاءة وموثوقية.
 
 ## 🎮 Demo
 
-جرب demo على [https://demo.ragflow.io](https://demo.ragflow.io).
+جرّب النسخة التجريبية على [https://demo.ragflow.io](https://demo.ragflow.io).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -87,10 +87,10 @@
 
 ## 🔥 آخر التحديثات
 
-- 2025-12-26 يدعم "الذاكرة" للذكاء الاصطناعي agent.
+- 2025-12-26 يدعم ميزة "Memory" لوكلاء الذكاء الاصطناعي.
 - 11-11-2025 يدعم Gemini 3 Pro.
 - 12-11-2025 يدعم مزامنة البيانات من Confluence، S3، Notion، Discord، Google Drive.
-- 23-10-2025 يدعم MinerU وDocling كطرق تحليل document.
+- 23-10-2025 يدعم MinerU وDocling كطرق لتحليل المستندات.
 - 15-10-2025 يدعم العرض الأوركسترالي pipeline.
 - 08-08-2025 يدعم أحدث موديلات سلسلة OpenAI.
 - 01-08-2025 يدعم سير العمل الوكيل وMCP.
@@ -111,8 +111,8 @@
 
 ### 🍭 **"الجودة في الداخل، الجودة في الخارج"**
 
-- [الفهم العميق document](./deepdoc/README.md) لاستخراج المعرفة من البيانات غير المنظمة ذات التعقيدات
-  التنسيقات.
+- [الفهم العميق للمستندات](./deepdoc/README.md) لاستخراج المعرفة من البيانات غير المنظمة
+  ذات التنسيقات المعقدة.
 - يجد "إبرة في كومة قش بيانات" من الرموز غير المحدودة حرفيًا.
 
 ### 🍱 **التقطيع القائم على القالب**
@@ -235,16 +235,16 @@
     * Running on all addresses (0.0.0.0)
    ```
 
-   > إذا تخطيت خطوة التأكيد هذه وقمت بتسجيل الدخول مباشرة إلى RAGFlow، فقد يكون متصفحك prompt `network abnormal`
+   > إذا تخطيت خطوة التأكيد هذه وقمت بتسجيل الدخول مباشرة إلى RAGFlow، فقد يعرض متصفحك تنبيه `network abnormal`
    > خطأ لأنه في تلك اللحظة، قد لا تتم تهيئة RAGFlow بشكل كامل.
    >
 5. في متصفح الويب الخاص بك، أدخل عنوان IP الخاص بالخادم الخاص بك وقم بتسجيل الدخول إلى RAGFlow.
 
-   > باستخدام الإعدادات الافتراضية، ما عليك سوى إدخال `http://IP_OF_YOUR_MACHINE` (**sans** رقم المنفذ) كإعداد افتراضي
+   > باستخدام الإعدادات الافتراضية، ما عليك سوى إدخال `http://IP_OF_YOUR_MACHINE` (**من دون** رقم المنفذ) كإعداد افتراضي
    > HTTP يمكن حذف منفذ العرض `80` عند استخدام التكوينات الافتراضية.
    >
 6. في [service_conf.yaml.template](./docker/service_conf.yaml.template)، حدد المصنع LLM المطلوب في `user_default_llm` وقم بالتحديث
-   الحقل `API_KEY` مع المفتاح API المقابل.
+   الحقل `API_KEY` مع مفتاح API المقابل.
 
    > راجع [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) لمزيد من المعلومات.
    >
