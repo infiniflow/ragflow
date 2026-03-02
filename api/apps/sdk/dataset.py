@@ -161,16 +161,17 @@ async def create(tenant_id):
 
 
     try:
-      if not KnowledgebaseService.save(**req):
-          return get_error_data_result()
-      ok, k = KnowledgebaseService.get_by_id(req["id"])
-      if not ok:
-        return get_error_data_result(message="Dataset created failed")
-      response_data = remap_dictionary_keys(k.to_dict())
-      return get_result(data=response_data)
+        if not KnowledgebaseService.save(**req):
+            return get_error_data_result()
+        ok, k = KnowledgebaseService.get_by_id(req["id"])
+        if not ok:
+            return get_error_data_result(message="Dataset created failed")
+        response_data = remap_dictionary_keys(k.to_dict())
+        return get_result(data=response_data)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Database operation failed")
+
 
 @manager.route("/datasets", methods=["DELETE"])  # noqa: F821
 @token_required
@@ -256,10 +257,15 @@ async def delete(tenant_id):
             # Drop index for this dataset
             try:
                 from rag.nlp import search
+
                 idxnm = search.index_name(kb.tenant_id)
                 settings.docStoreConn.delete_idx(idxnm, kb_id)
             except Exception as e:
                 logging.warning(f"Failed to drop index for dataset {kb_id}: {e}")
+
+            # delete storage bucket of dataset
+            if hasattr(settings.STORAGE_IMPL, "remove_bucket"):
+                settings.STORAGE_IMPL.remove_bucket(kb.id)
 
             if not KnowledgebaseService.delete_by_id(kb_id):
                 errors.append(f"Delete dataset error for {kb_id}")

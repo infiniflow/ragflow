@@ -329,6 +329,7 @@ def _load_dataset_module(monkeypatch):
             index_exist=lambda *_args, **_kwargs: False,
         ),
         retriever=SimpleNamespace(search=lambda *_args, **_kwargs: _AwaitableValue(SimpleNamespace(ids=[], field={}))),
+        STORAGE_IMPL=SimpleNamespace(),
     )
     monkeypatch.setitem(sys.modules, "common", common_pkg)
 
