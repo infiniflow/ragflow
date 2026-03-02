@@ -809,6 +809,10 @@ async def delete(tenant_id, dataset_id):
     return get_result()
 
 
+DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
+DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
+
+
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @token_required
 async def parse(tenant_id, dataset_id):
@@ -866,7 +870,7 @@ async def parse(tenant_id, dataset_id):
             continue
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if 0.0 < doc[0].progress < 1.0:
+        if doc[0].run == TaskStatus.RUNNING.value:
             return get_error_data_result("Can't parse document that is currently being processed")
         info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
         DocumentService.update_by_id(id, info)
@@ -946,8 +950,12 @@ async def stop_parsing(tenant_id, dataset_id):
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if int(doc[0].progress) == 1 or doc[0].progress == 0:
-            return get_error_data_result("Can't stop parsing document with progress at 0 or 1")
+        if doc[0].run != TaskStatus.RUNNING.value :
+            return construct_json_result(
+                code=RetCode.DATA_ERROR,
+                message=DOC_STOP_PARSING_INVALID_STATE_MESSAGE,
+                data={"error_code": DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE},
+            )
         # Send cancellation signal via Redis to stop background task
         cancel_all_task_of(id)
         info = {"run": "2", "progress": 0, "chunk_num": 0}
