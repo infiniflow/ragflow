@@ -51,6 +51,13 @@ class _DummyTenantLLMModel:
     llm_factory = _ExprField("llm_factory")
     llm_name = _ExprField("llm_name")
 
+    def __init__(self, id=None, **kwargs):
+        self.id = id
+        self.api_key = None
+        self.status = None
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
 
 class _TenantLLMRow:
     def __init__(
@@ -263,7 +270,7 @@ def test_list_app_grouping_availability_and_merge(monkeypatch):
     monkeypatch.setenv("TEI_MODEL", "tei-embed")
 
     res = _run(module.list_app())
-    assert res["code"] == 0
+    assert res["code"] == 0, res["message"]
     assert ensure_calls == ["tenant-1"]
 
     data = res["data"]
@@ -306,7 +313,7 @@ def test_list_app_model_type_filter(monkeypatch):
 
     monkeypatch.setattr(module, "request", SimpleNamespace(args={"model_type": "chat"}))
     res = _run(module.list_app())
-    assert res["code"] == 0
+    assert res["code"] == 0, res["message"]
     assert list(res["data"].keys()) == ["CustomFactory"]
     assert res["data"]["CustomFactory"][0]["model_type"] == "chat"
 
@@ -787,7 +794,7 @@ def test_add_llm_model_type_probe_and_persistence_matrix_unit(monkeypatch):
     monkeypatch.setattr(module.TenantLLMService, "filter_update", lambda _filters, _payload: False)
     monkeypatch.setattr(module.TenantLLMService, "save", lambda **kwargs: saved.append(kwargs) or True)
     res = _call({"llm_factory": "FChatPass", "llm_name": "m", "model_type": module.LLMType.CHAT.value, "api_key": "k"})
-    assert res["code"] == 0
+    assert res["code"] == 0, res["message"]
     assert res["data"] is True
     assert saved
     assert saved[0]["llm_factory"] == "FChatPass"

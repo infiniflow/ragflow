@@ -143,6 +143,19 @@ def _load_conversation_module(monkeypatch):
     apps_mod.login_required = lambda func: func
     monkeypatch.setitem(sys.modules, "api.apps", apps_mod)
 
+    # Create user_service module with TenantService stub if not already exists
+    if "api.db.services.user_service" not in sys.modules:
+        user_service_mod = ModuleType("api.db.services.user_service")
+        user_service_mod.UserService = SimpleNamespace()  # Dummy UserService class
+        user_service_mod.TenantService = SimpleNamespace(
+            get_info_by=lambda _uid: [],
+            get_by_id=lambda _uid: (False, None)
+        )
+        user_service_mod.UserTenantService = SimpleNamespace(
+            query=lambda **_kwargs: []
+        )
+        monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
+
     module_name = "test_conversation_routes_unit_module"
     module_path = repo_root / "api" / "apps" / "conversation_app.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -519,15 +532,15 @@ def test_sequence2txt_validation_and_transcription_paths(monkeypatch):
 
     wav_file = _DummyUploadedFile("audio.wav")
     monkeypatch.setattr(module, "request", _DummyRequest(form={"stream": "false"}, files={"file": wav_file}))
-    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _uid: [])
+    monkeypatch.setattr(sys.modules["api.db.joint_services.tenant_model_service"].TenantService, "get_by_id", lambda _uid: (False, None))
     res = _run(module.sequence2txt())
-    assert res["message"] == "Tenant not found!"
+    assert res["message"] == "Tenant not found"
 
     wav_file = _DummyUploadedFile("audio.wav")
     monkeypatch.setattr(module, "request", _DummyRequest(form={"stream": "false"}, files={"file": wav_file}))
-    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _uid: [{"tenant_id": "tenant-1", "asr_id": ""}])
+    monkeypatch.setattr(sys.modules["api.db.joint_services.tenant_model_service"].TenantService, "get_by_id", lambda _uid: (True, SimpleNamespace(tenant_id="tenant-1", asr_id="")))
     res = _run(module.sequence2txt())
-    assert res["message"] == "No default ASR model is set"
+    assert res["message"] == "No default speech2text model is set."
 
     class _SyncAsr:
         def transcription(self, _path):
@@ -538,7 +551,8 @@ def test_sequence2txt_validation_and_transcription_paths(monkeypatch):
 
     wav_file = _DummyUploadedFile("audio.wav")
     monkeypatch.setattr(module, "request", _DummyRequest(form={"stream": "false"}, files={"file": wav_file}))
-    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _uid: [{"tenant_id": "tenant-1", "asr_id": "asr-model"}])
+    monkeypatch.setattr(sys.modules["api.db.joint_services.tenant_model_service"].TenantService, "get_by_id", lambda _uid: (True, SimpleNamespace(tenant_id="tenant-1", asr_id="asr-model")))
+    monkeypatch.setattr(module.TenantLLMService, "get_api_key", lambda tenant_id, model_name: SimpleNamespace(to_dict=lambda: {"llm_factory": "test", "llm_name": "asr-model"}))
     monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _SyncAsr())
     monkeypatch.setattr(module.os, "remove", lambda _path: (_ for _ in ()).throw(RuntimeError("remove failed")))
     res = _run(module.sequence2txt())
@@ -579,13 +593,13 @@ def test_sequence2txt_validation_and_transcription_paths(monkeypatch):
 def test_tts_request_parse_entry(monkeypatch):
     module = _load_conversation_module(monkeypatch)
     _set_request_json(monkeypatch, module, {"text": "A。B"})
-    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _uid: [])
+    monkeypatch.setattr(sys.modules["api.db.joint_services.tenant_model_service"].TenantService, "get_by_id", lambda _uid: (False, None))
     res = _run(module.tts())
-    assert res["message"] == "Tenant not found!"
+    assert res["message"] == "Tenant not found"
 
-    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _uid: [{"tenant_id": "tenant-1", "tts_id": ""}])
+    monkeypatch.setattr(sys.modules["api.db.joint_services.tenant_model_service"].TenantService, "get_by_id", lambda _uid: (True, SimpleNamespace(tenant_id="tenant-1", tts_id="")))
     res = _run(module.tts())
-    assert res["message"] == "No default TTS model is set"
+    assert res["message"] == "No default tts model is set."
 
     class _TTSOk:
         def tts(self, txt):
@@ -593,7 +607,8 @@ def test_tts_request_parse_entry(monkeypatch):
                 return []
             yield f"chunk-{txt}".encode("utf-8")
 
-    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _uid: [{"tenant_id": "tenant-1", "tts_id": "tts-x"}])
+    monkeypatch.setattr(sys.modules["api.db.joint_services.tenant_model_service"].TenantService, "get_by_id", lambda _uid: (True, SimpleNamespace(tenant_id="tenant-1", tts_id="tts-x")))
+    monkeypatch.setattr(module.TenantLLMService, "get_api_key", lambda tenant_id, model_name: SimpleNamespace(to_dict=lambda: {"llm_factory": "test", "llm_name": model_name}))
     monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _TTSOk())
     resp = _run(module.tts())
     assert resp.mimetype == "audio/mpeg"
@@ -749,18 +764,18 @@ def test_mindmap_and_related_questions_matrix_unit(monkeypatch):
             llm_calls["options"] = options
             return "1. Alpha\n2. Beta\nignored"
 
-    def _fake_bundle(tenant_id, llm_type, chat_id):
-        llm_calls["bundle"] = (tenant_id, llm_type, chat_id)
+    def _fake_bundle(tenant_id, model_config, lang="Chinese", **kwargs):
+        llm_calls["bundle"] = (tenant_id, model_config)
         return _FakeChat()
 
     monkeypatch.setattr(module, "LLMBundle", _fake_bundle)
     monkeypatch.setattr(module, "load_prompt", lambda name: f"prompt-{name}")
+    monkeypatch.setattr(module.TenantLLMService, "get_api_key", lambda tenant_id, model_name: SimpleNamespace(to_dict=lambda: {"llm_factory": "test", "llm_name": model_name}))
     _set_request_json(monkeypatch, module, {"question": "solar", "search_id": "search-1"})
     res = _run(module.related_questions.__wrapped__())
     assert res["code"] == 0
     assert res["data"] == ["Alpha", "Beta"]
     assert llm_calls["bundle"][0] == "user-1"
-    assert llm_calls["bundle"][2] == "chat-x"
     assert llm_calls["options"] == {"temperature": 0.2}
     assert llm_calls["prompt"] == "prompt-related_question"
     assert "Keywords: solar" in llm_calls["messages"][0]["content"]

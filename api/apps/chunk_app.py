@@ -429,8 +429,10 @@ async def retrieval_test():
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
         if kb.tenant_embd_id:
             embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
-        else:
+        elif kb.embd_id:
             embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        else:
+            embd_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.EMBEDDING)
         embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
         rerank_mdl = None
