@@ -1,5 +1,15 @@
 import MarkdownContent from '@/components/next-markdown-content';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -62,6 +72,10 @@ export default function PortalPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isChatMode, setIsChatMode] = useState(false); // 是否进入聊天模式
   const [welcomeMessage, setWelcomeMessage] = useState('');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [conversationToDelete, setConversationToDelete] = useState<
+    string | null
+  >(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const loadingConversationIdRef = useRef<string | null>(null); // 跟踪正在加载的会话ID
@@ -221,15 +235,46 @@ export default function PortalPage() {
   };
 
   const handleDeleteConversation = useCallback(
-    (conversationId: string) => {
-      // TODO: 调用后端API删除会话
-      refetchConversations();
-      if (selectedConversationId === conversationId) {
-        handleBackToHome();
+    async (conversationId: string) => {
+      try {
+        const response = await fetch(
+          `/v1/dialog/public/conversation/${conversationId}`,
+          {
+            method: 'DELETE',
+          },
+        );
+        const result = await response.json();
+
+        if (result.code === 0) {
+          // 删除成功，刷新会话列表
+          refetchConversations();
+          // 如果删除的是当前选中的会话，返回主页
+          if (selectedConversationId === conversationId) {
+            handleBackToHome();
+          }
+          // 关闭对话框
+          setDeleteDialogOpen(false);
+          setConversationToDelete(null);
+        } else {
+          console.error('Failed to delete conversation:', result.message);
+        }
+      } catch (error) {
+        console.error('Error deleting conversation:', error);
       }
     },
     [selectedConversationId, refetchConversations],
   );
+
+  const handleDeleteClick = useCallback((conversationId: string) => {
+    setConversationToDelete(conversationId);
+    setDeleteDialogOpen(true);
+  }, []);
+
+  const handleConfirmDelete = useCallback(() => {
+    if (conversationToDelete) {
+      handleDeleteConversation(conversationToDelete);
+    }
+  }, [conversationToDelete, handleDeleteConversation]);
 
   const handleBackToHome = () => {
     // 如果正在加载，先停止
@@ -466,7 +511,7 @@ export default function PortalPage() {
                           className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDeleteConversation(conversation.id);
+                            handleDeleteClick(conversation.id);
                           }}
                         >
                           <Trash2 className="size-3.5 text-destructive" />
@@ -755,6 +800,29 @@ export default function PortalPage() {
           )}
         </div>
       </TooltipProvider>
+
+      {/* 删除确认对话框 */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除这个会话吗？此操作无法撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConversationToDelete(null)}>
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

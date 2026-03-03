@@ -511,3 +511,45 @@ def get_conversation_messages(conversation_id):
         
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route('/public/conversation/<conversation_id>', methods=['DELETE'])  # noqa: F821
+def delete_public_conversation(conversation_id):
+    """
+    Delete a public conversation by ID
+    ---
+    tags:
+      - Dialog
+    parameters:
+      - name: conversation_id
+        in: path
+        required: true
+        type: string
+        description: The ID of the conversation to delete
+    responses:
+      200:
+        description: Conversation deleted successfully
+      404:
+        description: Conversation not found
+      500:
+        description: Server error
+    """
+    try:
+        from api.db.services.api_service import API4ConversationService
+        
+        # Check if conversation exists
+        e, conversation = API4ConversationService.get_by_id(conversation_id)
+        if not e:
+            return get_json_result(
+                data=False,
+                message=f"Conversation {conversation_id} not found",
+                code=RetCode.DATA_ERROR
+            )
+        
+        # Delete the conversation
+        API4ConversationService.delete_by_id(conversation_id)
+        
+        return get_json_result(data=True, message="Conversation deleted successfully")
+        
+    except Exception as e:
+        return server_error_response(e)
