@@ -184,3 +184,64 @@ func (h *LLMHandler) Factories(c *gin.Context) {
 		"data": filtered,
 	})
 }
+
+// ListApp lists LLMs grouped by factory
+// @Summary List LLMs
+// @Description Get list of LLMs grouped by factory with availability info
+// @Tags llm
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param model_type query string false "Filter by model type"
+// @Success 200 {object} map[string][]service.LLMListItem
+// @Router /v1/llm/list [get]
+func (h *LLMHandler) ListApp(c *gin.Context) {
+	// Extract token from request
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Missing Authorization header",
+		})
+		return
+	}
+
+	// Get user by token
+	user, err := h.userService.GetUserByToken(token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Invalid access token",
+		})
+		return
+	}
+
+	// Get tenant ID from user
+	tenantID := user.ID
+	if tenantID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "User has no tenant ID",
+		})
+		return
+	}
+
+	// Parse model_type query parameter
+	modelType := c.Query("model_type")
+
+	// Get LLM list
+	llms, err := h.llmService.ListLLMs(tenantID, modelType)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    llms,
+		"message": "success",
+	})
+}

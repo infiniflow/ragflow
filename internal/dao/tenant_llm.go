@@ -114,3 +114,23 @@ func (dao *TenantLLMDAO) GetMyLLMs(tenantID string, includeDetails bool) ([]mode
 	}
 	return myLLMs, nil
 }
+
+// ListValidByTenant lists valid tenant LLMs for a tenant
+func (dao *TenantLLMDAO) ListValidByTenant(tenantID string) ([]*model.TenantLLM, error) {
+	var tenantLLMs []*model.TenantLLM
+	err := DB.Where("tenant_id = ? AND api_key IS NOT NULL AND api_key != ? AND status = ?", tenantID, "", "1").Find(&tenantLLMs).Error
+	if err != nil {
+		return nil, err
+	}
+	return tenantLLMs, nil
+}
+
+// ListAllByTenant lists all tenant LLMs for a tenant
+func (dao *TenantLLMDAO) ListAllByTenant(tenantID string) ([]*model.TenantLLM, error) {
+	var tenantLLMs []*model.TenantLLM
+	err := DB.Where("tenant_id = ?", tenantID).Find(&tenantLLMs).Error
+	if err != nil {
+		return nil, err
+	}
+	return tenantLLMs, nil
+}

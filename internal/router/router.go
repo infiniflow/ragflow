@@ -146,6 +146,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		{
 			llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
 			llm.GET("/factories", r.llmHandler.Factories)
+			llm.GET("/list", r.llmHandler.ListApp)
 		}
 
 		// Chat routes

@@ -17,18 +17,22 @@
 package service
 
 import (
+	"strings"
+
 	"ragflow/internal/dao"
 )
 
 // LLMService LLM service
 type LLMService struct {
 	tenantLLMDAO *dao.TenantLLMDAO
+	llmDAO       *dao.LLMDAO
 }
 
 // NewLLMService create LLM service
 func NewLLMService() *LLMService {
 	return &LLMService{
 		tenantLLMDAO: dao.NewTenantLLMDAO(),
+		llmDAO:       dao.NewLLMDAO(),
 	}
 }
 
@@ -103,6 +107,119 @@ func (s *LLMService) GetMyLLMs(tenantID string, includeDetails bool) (map[string
 
 		resp.LLM = append(resp.LLM, item)
 		result[llm.LLMFactory] = resp
+	}
+
+	return result, nil
+}
+
+// LLMListItem represents a single LLM item in the list response
+type LLMListItem struct {
+	LLMName   string `json:"llm_name"`
+	ModelType string `json:"model_type"`
+	FID       string `json:"fid"`
+	Available bool   `json:"available"`
+	Status    string `json:"status"`
+	MaxTokens int64  `json:"max_tokens,omitempty"`
+}
+
+// ListLLMsResponse represents the response for list LLMs
+type ListLLMsResponse map[string][]LLMListItem
+
+// ListLLMs lists LLMs for a tenant with availability info
+func (s *LLMService) ListLLMs(tenantID string, modelType string) (ListLLMsResponse, error) {
+	selfDeployed := map[string]bool{
+		"FastEmbed":  true,
+		"Ollama":     true,
+		"Xinference": true,
+		"LocalAI":    true,
+		"LM-Studio":  true,
+		"GPUStack":   true,
+	}
+
+	// Get tenant LLMs
+	tenantLLMs, err := s.tenantLLMDAO.ListAllByTenant(tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build set of factories with valid API keys
+	facts := make(map[string]bool)
+	// Build set of valid LLM names@factories
+	status := make(map[string]bool)
+	for _, tl := range tenantLLMs {
+		if tl.APIKey != "" && tl.Status == "1" {
+			facts[tl.LLMFactory] = true
+		}
+		key := tl.LLMName + "@" + tl.LLMFactory
+		if tl.Status == "1" {
+			status[key] = true
+		}
+	}
+
+	// Get all valid LLMs
+	allLLMs, err := s.llmDAO.GetAllValid()
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter and build result
+	llmSet := make(map[string]bool)
+	result := make(ListLLMsResponse)
+
+	for _, llm := range allLLMs {
+		if llm.Status == nil || *llm.Status != "1" {
+			continue
+		}
+
+		key := llm.LLMName + "@" + llm.FID
+
+		// Check if valid (Builtin factory or in status set)
+		if llm.FID != "Builtin" && !status[key] {
+			continue
+		}
+
+		// Filter by model type if specified
+		if modelType != "" && !strings.Contains(llm.ModelType, modelType) {
+			continue
+		}
+
+		// Determine availability
+		available := facts[llm.FID] || selfDeployed[llm.FID] || llm.LLMName == "flag-embedding"
+
+		item := LLMListItem{
+			LLMName:   llm.LLMName,
+			ModelType: llm.ModelType,
+			FID:       llm.FID,
+			Available: available,
+			Status:    "1",
+			MaxTokens: llm.MaxTokens,
+		}
+
+		result[llm.FID] = append(result[llm.FID], item)
+		llmSet[key] = true
+	}
+
+	// Add tenant LLMs that are not in the global list
+	for _, tl := range tenantLLMs {
+		key := tl.LLMName + "@" + tl.LLMFactory
+		if llmSet[key] {
+			continue
+		}
+
+		// Filter by model type if specified
+		if modelType != "" && !strings.Contains(tl.ModelType, modelType) {
+			continue
+		}
+
+		item := LLMListItem{
+			LLMName:   tl.LLMName,
+			ModelType: tl.ModelType,
+			FID:       tl.LLMFactory,
+			Available: true,
+			Status:    tl.Status,
+		}
+
+		result[tl.LLMFactory] = append(result[tl.LLMFactory], item)
 	}
 
 	return result, nil
