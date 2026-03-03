@@ -1,5 +1,5 @@
 ---
-sidebar_position: 20
+sidebar_position: 15
 slug: /migrate_to_single_bucket_mode
 ---
 
