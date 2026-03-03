@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat Kiosk</title>
+
+  <!-- marked.js for Markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/lib/marked.umd.js"></script>
+
+  <!-- highlight.js for code syntax highlighting -->
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+  <!-- Light theme (default) -->
+  <link rel="stylesheet" media="(prefers-color-scheme: light)"
+        href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github.min.css">
+  <!-- Dark theme -->
+  <link rel="stylesheet" media="(prefers-color-scheme: dark)"
+        href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github-dark.min.css">
+
+  <!-- ===================================================================
+       CSS: Theme Variables + Full Styling
+       =================================================================== -->
+  <style>
+    /* ---------- CSS Custom Properties (Light / Dark) ---------- */
+
+    :root {
+      --bg: #ffffff;
+      --bg-sidebar: #f8f9fa;
+      --bg-bubble-user: #e3f2fd;
+      --bg-bubble-assistant: #f5f5f5;
+      --text: #1a1a1a;
+      --text-muted: #6b7280;
+      --border: #e5e7eb;
+      --accent: #2563eb;
+
+      --sidebar-width: 260px;
+      --input-max-height: 120px;
+      --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    "Helvetica Neue", Arial, sans-serif;
+      --font-mono: "Fira Code", "JetBrains Mono", "Cascadia Code",
+                   "Consolas", "Courier New", monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1a1a1a;
+        --bg-sidebar: #242424;
+        --bg-bubble-user: #1e3a5f;
+        --bg-bubble-assistant: #2d2d2d;
+        --text: #e5e5e5;
+        --text-muted: #9ca3af;
+        --border: #374151;
+        --accent: #60a5fa;
+      }
+    }
+
+    /* ---------- Reset & Base ---------- */
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      font-family: var(--font-body);
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    body { display: flex; overflow: hidden; }
+
+    /* ---------- Sidebar ---------- */
+
+    .sidebar {
+      width: var(--sidebar-width);
+      min-width: var(--sidebar-width);
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow-y: auto;
+      z-index: 100;
+    }
+
+    .sidebar-title {
+      padding: 20px 16px 12px;
+      font-size: 1.15rem;
+      font-weight: 700;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .sidebar-chats {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .chat-btn {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      width: 100%;
+      padding: 10px 12px;
+      margin-bottom: 4px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+      font-family: inherit;
+      font-size: 0.875rem;
+      transition: background 0.15s;
+    }
+
+    .chat-btn:hover { background: var(--border); }
+    .chat-btn.active { background: var(--accent); color: #ffffff; }
+    .chat-btn.active .chat-btn-desc { color: rgba(255,255,255,0.75); }
+
+    .chat-btn-icon {
+      font-size: 1.4rem;
+      line-height: 1;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .chat-btn-text { flex: 1; min-width: 0; }
+
+    .chat-btn-title {
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .chat-btn-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* ---------- Mobile Sidebar (Drawer) ---------- */
+
+    .hamburger {
+      display: none;
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 200;
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      color: var(--text);
+      font-size: 1.3rem;
+      line-height: 1;
+    }
+
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 90;
+    }
+
+    @media (max-width: 767px) {
+      .hamburger { display: block; }
+
+      .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+        box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+      }
+
+      .sidebar.open { transform: translateX(0); }
+      .sidebar.open + .sidebar-overlay { display: block; }
+
+      .main { margin-left: 0 !important; }
+    }
+
+    /* ---------- Main Area ---------- */
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      min-width: 0;
+    }
+
+    /* Placeholder when no chat is selected */
+    .placeholder {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      padding: 24px;
+      text-align: center;
+    }
+
+    /* ---------- Messages Area ---------- */
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 16px 8px;
+      scroll-behavior: smooth;
+    }
+
+    .message {
+      max-width: 80%;
+      margin-bottom: 12px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      line-height: 1.55;
+      font-size: 0.925rem;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .message.user {
+      margin-left: auto;
+      background: var(--bg-bubble-user);
+      border-bottom-right-radius: 4px;
+      white-space: pre-wrap;
+    }
+
+    .message.assistant {
+      margin-right: auto;
+      background: var(--bg-bubble-assistant);
+      border-bottom-left-radius: 4px;
+    }
+
+    /* ---------- Markdown inside Assistant Bubbles ---------- */
+
+    .message.assistant p { margin-bottom: 0.6em; }
+    .message.assistant p:last-child { margin-bottom: 0; }
+
+    .message.assistant ul, .message.assistant ol {
+      margin: 0.4em 0 0.6em 1.4em;
+    }
+
+    .message.assistant li { margin-bottom: 0.25em; }
+
+    .message.assistant a {
+      color: var(--accent);
+      text-decoration: underline;
+    }
+
+    .message.assistant table {
+      border-collapse: collapse;
+      margin: 0.6em 0;
+      font-size: 0.85rem;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+    }
+
+    .message.assistant th,
+    .message.assistant td {
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      text-align: left;
+    }
+
+    .message.assistant th {
+      background: var(--bg-sidebar);
+      font-weight: 600;
+    }
+
+    .message.assistant pre {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      overflow-x: auto;
+      margin: 0.6em 0;
+    }
+
+    .message.assistant code {
+      font-family: var(--font-mono);
+      font-size: 0.85em;
+    }
+
+    .message.assistant :not(pre) > code {
+      background: var(--bg-sidebar);
+      padding: 2px 5px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    .message.assistant blockquote {
+      border-left: 3px solid var(--accent);
+      padding-left: 12px;
+      margin: 0.6em 0;
+      color: var(--text-muted);
+    }
+
+    .message.assistant h1,
+    .message.assistant h2,
+    .message.assistant h3,
+    .message.assistant h4 {
+      margin: 0.8em 0 0.4em;
+      line-height: 1.3;
+    }
+
+    .message.assistant h1 { font-size: 1.3em; }
+    .message.assistant h2 { font-size: 1.15em; }
+    .message.assistant h3 { font-size: 1.05em; }
+
+    /* ---------- References (collapsible) ---------- */
+
+    .references {
+      margin-top: 8px;
+      font-size: 0.825rem;
+    }
+
+    .references summary {
+      cursor: pointer;
+      color: var(--accent);
+      font-weight: 600;
+      padding: 4px 0;
+      user-select: none;
+    }
+
+    .references summary:hover { text-decoration: underline; }
+
+    .ref-item {
+      padding: 8px 10px;
+      margin-top: 6px;
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    .ref-item-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: var(--text);
+    }
+
+    .ref-item-content {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      line-height: 1.45;
+    }
+
+    /* ---------- Loading / Typing Indicator ---------- */
+
+    .typing-indicator {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      max-width: 80px;
+      background: var(--bg-bubble-assistant);
+      border-radius: 12px;
+      border-bottom-left-radius: 4px;
+    }
+
+    .typing-indicator.visible { display: flex; }
+
+    .typing-dot {
+      width: 7px;
+      height: 7px;
+      background: var(--text-muted);
+      border-radius: 50%;
+      animation: typingBounce 1.2s infinite ease-in-out;
+    }
+
+    .typing-dot:nth-child(2) { animation-delay: 0.15s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+    @keyframes typingBounce {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30% { transform: translateY(-5px); opacity: 1; }
+    }
+
+    /* ---------- Input Area ---------- */
+
+    .input-area {
+      padding: 12px 16px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+      flex-shrink: 0;
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+
+    .input-area textarea {
+      flex: 1;
+      resize: none;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-family: inherit;
+      font-size: 0.9rem;
+      color: var(--text);
+      background: var(--bg);
+      outline: none;
+      line-height: 1.45;
+      min-height: 42px;
+      max-height: var(--input-max-height);
+      overflow-y: auto;
+      transition: border-color 0.15s;
+    }
+
+    .input-area textarea:focus { border-color: var(--accent); }
+
+    .input-area textarea::placeholder { color: var(--text-muted); }
+
+    .send-btn {
+      flex-shrink: 0;
+      width: 42px;
+      height: 42px;
+      border: none;
+      border-radius: 10px;
+      background: var(--accent);
+      color: #ffffff;
+      cursor: pointer;
+      font-size: 1.15rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.15s;
+    }
+
+    .send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .send-btn:not(:disabled):hover { opacity: 0.85; }
+  </style>
+</head>
+
+<body>
+
+  <!-- ===================================================================
+       HTML Structure
+       =================================================================== -->
+
+  <!-- Hamburger button (visible on mobile only) -->
+  <button class="hamburger" id="hamburger" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-title" id="sidebarTitle"></div>
+    <div class="sidebar-chats" id="sidebarChats"></div>
+  </aside>
+
+  <!-- Overlay behind sidebar on mobile -->
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+  <!-- Main content area -->
+  <main class="main" id="main">
+    <div class="placeholder" id="placeholder">W&auml;hle einen Chat-Assistenten</div>
+  </main>
+
+  <!-- ===================================================================
+       JavaScript: Configuration, State, Logic (Tasks 2-4)
+       =================================================================== -->
+  <script>
+
+    /* ==================================================================
+       Task 2: Configuration + State
+       ================================================================== */
+
+    /**
+     * CONFIG -- Edit these values to match your RAGFlow deployment.
+     *
+     * apiBase : The base URL of your RAGFlow API (no trailing slash).
+     * title   : Text shown at the top of the sidebar.
+     * chats   : Array of chat assistant definitions.
+     *   - id          : The chatbot / dialog ID (UUID from RAGFlow).
+     *   - auth        : Bearer token for this chatbot.
+     *   - title       : Display name in the sidebar.
+     *   - description : Short description shown below the title.
+     *   - icon        : Emoji or short string used as the icon.
+     */
+    const CONFIG = {
+      apiBase: 'http://localhost:9380',
+      title: 'Chat Assistenten',
+      chats: [
+        {
+          id: '00000000-0000-0000-0000-000000000001',
+          auth: 'ragflow-REPLACE-ME-token-1',
+          title: 'Allgemeiner Assistent',
+          description: 'Beantwortet allgemeine Fragen zu Ihren Dokumenten.',
+          icon: '\uD83D\uDCAC'
+        },
+        {
+          id: '00000000-0000-0000-0000-000000000002',
+          auth: 'ragflow-REPLACE-ME-token-2',
+          title: 'Technischer Support',
+          description: 'Hilfe bei technischen Problemen und Anleitungen.',
+          icon: '\uD83D\uDD27'
+        },
+        {
+          id: '00000000-0000-0000-0000-000000000003',
+          auth: 'ragflow-REPLACE-ME-token-3',
+          title: 'HR & Personal',
+          description: 'Fragen zu Arbeitsvertr\u00e4gen, Urlaub und Richtlinien.',
+          icon: '\uD83D\uDCCB'
+        }
+      ]
+    };
+
+    /** Application state */
+    const state = {
+      activeChat: -1,          // index into CONFIG.chats, -1 = none
+      sessions: {},            // keyed by chat index -> session_id
+      messages: {},            // keyed by chat index -> [{role, content, references}]
+      streaming: false,
+      abortController: null
+    };
+
+    /* ==================================================================
+       marked.js Configuration (with highlight.js integration)
+       ================================================================== */
+
+    // Custom renderer: highlight code blocks via highlight.js at parse time
+    const renderer = new marked.Renderer();
+    renderer.code = function(codeObj) {
+      // marked v15 passes { text, lang, escaped } as a single object
+      var text = (typeof codeObj === 'object') ? codeObj.text : codeObj;
+      var lang = (typeof codeObj === 'object') ? codeObj.lang : arguments[1];
+      var highlighted = '';
+      if (lang && hljs.getLanguage(lang)) {
+        try { highlighted = hljs.highlight(text, { language: lang }).value; }
+        catch (_) { highlighted = escapeHtml(text); }
+      } else {
+        try { highlighted = hljs.highlightAuto(text).value; }
+        catch (_) { highlighted = escapeHtml(text); }
+      }
+      var langClass = lang ? ' class="language-' + escapeHtml(lang) + '"' : '';
+      return '<pre><code' + langClass + '>' + highlighted + '</code></pre>\n';
+    };
+
+    marked.setOptions({
+      breaks: true,
+      gfm: true,
+      renderer: renderer
+    });
+
+    /* ==================================================================
+       Task 2: Sidebar Rendering
+       ================================================================== */
+
+    /** Render sidebar title and chat buttons from CONFIG */
+    function initSidebar() {
+      document.getElementById('sidebarTitle').textContent = CONFIG.title;
+
+      const container = document.getElementById('sidebarChats');
+      container.innerHTML = '';
+
+      CONFIG.chats.forEach(function(chat, idx) {
+        const btn = document.createElement('button');
+        btn.className = 'chat-btn';
+        btn.setAttribute('data-idx', idx);
+        btn.onclick = function() { selectChat(idx); };
+
+        btn.innerHTML =
+          '<span class="chat-btn-icon">' + escapeHtml(chat.icon) + '</span>' +
+          '<span class="chat-btn-text">' +
+            '<span class="chat-btn-title">' + escapeHtml(chat.title) + '</span>' +
+            '<span class="chat-btn-desc">' + escapeHtml(chat.description) + '</span>' +
+          '</span>';
+
+        container.appendChild(btn);
+      });
+    }
+
+    /** Toggle mobile sidebar drawer */
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('open');
+    }
+
+    /** Close mobile sidebar */
+    function closeSidebar() {
+      document.getElementById('sidebar').classList.remove('open');
+    }
+
+    /* ==================================================================
+       Task 3: Chat Selection + Session Init + Rendering
+       ================================================================== */
+
+    /**
+     * Select a chat assistant by index.
+     * - Highlights the active button in the sidebar.
+     * - Closes mobile sidebar.
+     * - If we already have messages for this chat, re-renders them.
+     * - Otherwise, initializes a new session.
+     */
+    function selectChat(idx) {
+      // Abort any ongoing stream when switching chats
+      if (state.abortController) {
+        state.abortController.abort();
+        state.abortController = null;
+        state.streaming = false;
+      }
+
+      state.activeChat = idx;
+
+      // Update sidebar button highlights
+      document.querySelectorAll('.chat-btn').forEach(function(btn) {
+        btn.classList.toggle('active', parseInt(btn.getAttribute('data-idx')) === idx);
+      });
+
+      // Close mobile sidebar
+      closeSidebar();
+
+      if (state.messages[idx] && state.messages[idx].length > 0) {
+        // Re-render cached messages
+        renderChat();
+      } else {
+        // Init new session
+        initSession(CONFIG.chats[idx]);
+      }
+    }
+
+    /**
+     * Initialize a new chat session.
+     * Calls the completions endpoint with an empty question to obtain the
+     * session_id and the prologue message.
+     */
+    async function initSession(chat) {
+      const idx = state.activeChat;
+      state.messages[idx] = [];
+
+      // Show the chat area with a loading indicator
+      renderChat();
+      showLoading(true);
+
+      try {
+        const response = await fetch(
+          CONFIG.apiBase + '/api/v1/chatbots/' + chat.id + '/completions',
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + chat.auth,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ question: '', stream: true })
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let sessionId = null;
+        let prologueText = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Process complete SSE lines
+          let lines = buffer.split('\n');
+          buffer = lines.pop(); // keep incomplete line in buffer
+
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line.startsWith('data:')) continue;
+
+            const jsonStr = line.substring(5).trim();
+            if (!jsonStr) continue;
+
+            try {
+              const parsed = JSON.parse(jsonStr);
+
+              if (parsed.code !== 0) {
+                throw new Error(parsed.message || 'API error (code ' + parsed.code + ')');
+              }
+
+              // data:true signals end of stream
+              if (parsed.data === true) continue;
+
+              if (parsed.data && parsed.data.session_id) {
+                sessionId = parsed.data.session_id;
+              }
+
+              if (parsed.data && typeof parsed.data.answer === 'string') {
+                prologueText = parsed.data.answer;
+              }
+            } catch (parseErr) {
+              // If it's a JSON parse error, skip this line
+              if (parseErr instanceof SyntaxError) continue;
+              throw parseErr;
+            }
+          }
+        }
+
+        if (sessionId) {
+          state.sessions[idx] = sessionId;
+        }
+
+        if (prologueText) {
+          state.messages[idx].push({
+            role: 'assistant',
+            content: prologueText,
+            references: null
+          });
+        }
+
+      } catch (err) {
+        state.messages[idx].push({
+          role: 'assistant',
+          content: '**Fehler:** ' + escapeHtml(err.message),
+          references: null
+        });
+      }
+
+      showLoading(false);
+      renderChat();
+      highlightCode();
+    }
+
+    /**
+     * Render the chat area (messages list + input).
+     * Replaces the main area content entirely.
+     */
+    function renderChat() {
+      const main = document.getElementById('main');
+      const idx = state.activeChat;
+      const msgs = state.messages[idx] || [];
+
+      let html = '<div class="messages" id="messages">';
+
+      msgs.forEach(function(msg) {
+        html += createMessageHtml(msg);
+      });
+
+      // Typing indicator
+      html += '<div class="typing-indicator" id="typingIndicator">' +
+              '<span class="typing-dot"></span>' +
+              '<span class="typing-dot"></span>' +
+              '<span class="typing-dot"></span>' +
+              '</div>';
+
+      html += '</div>';
+
+      // Input area
+      html += '<div class="input-area">' +
+              '<textarea id="chatInput" rows="1" placeholder="Nachricht eingeben..."' +
+              ' onkeydown="handleKeyDown(event)" oninput="autoResize(this)"></textarea>' +
+              '<button class="send-btn" id="sendBtn" onclick="sendMessage()"' +
+              (state.streaming ? ' disabled' : '') +
+              ' aria-label="Senden">&#10148;</button>' +
+              '</div>';
+
+      main.innerHTML = html;
+      scrollToBottom();
+    }
+
+    /**
+     * Create the HTML string for a single message bubble.
+     */
+    function createMessageHtml(msg) {
+      let html = '<div class="message ' + msg.role + '">';
+
+      if (msg.role === 'assistant') {
+        html += renderMarkdown(msg.content || '');
+        if (msg.references) {
+          html += createReferencesHtml(msg.references);
+        }
+      } else {
+        html += escapeHtml(msg.content);
+      }
+
+      html += '</div>';
+      return html;
+    }
+
+    /**
+     * Render a Markdown string to HTML via marked.js.
+     */
+    function renderMarkdown(text) {
+      if (!text) return '';
+      try {
+        return marked.parse(text);
+      } catch (_) {
+        return escapeHtml(text);
+      }
+    }
+
+    /**
+     * Create the collapsible references element HTML from an array of chunks.
+     */
+    function createReferencesHtml(chunks) {
+      if (!chunks || !Array.isArray(chunks) || chunks.length === 0) return '';
+
+      let html = '<details class="references"><summary>Quellen (' + chunks.length + ')</summary>';
+
+      chunks.forEach(function(chunk) {
+        const title = chunk.document_name || 'Unbekanntes Dokument';
+        const snippet = (chunk.content || '').substring(0, 200);
+        html += '<div class="ref-item">' +
+                '<div class="ref-item-title">' + escapeHtml(title) + '</div>' +
+                '<div class="ref-item-content">' + escapeHtml(snippet) +
+                (chunk.content && chunk.content.length > 200 ? '...' : '') +
+                '</div></div>';
+      });
+
+      html += '</details>';
+      return html;
+    }
+
+    /**
+     * Run highlight.js on all code blocks in the messages area.
+     */
+    function highlightCode() {
+      document.querySelectorAll('.messages pre code').forEach(function(el) {
+        hljs.highlightElement(el);
+      });
+    }
+
+    /** Scroll the messages container to the bottom. */
+    function scrollToBottom() {
+      const container = document.getElementById('messages');
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+
+    /** Show or hide the typing/loading indicator. */
+    function showLoading(show) {
+      const indicator = document.getElementById('typingIndicator');
+      if (indicator) {
+        indicator.classList.toggle('visible', show);
+      }
+      if (show) scrollToBottom();
+    }
+
+    /* ==================================================================
+       Task 4: Message Sending with SSE Streaming
+       ================================================================== */
+
+    /**
+     * Keyboard handler for the textarea.
+     * Enter sends the message; Shift+Enter inserts a newline.
+     */
+    function handleKeyDown(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    }
+
+    /**
+     * Send the user's message and stream the assistant's response.
+     *
+     * If a stream is already in progress, abort it instead.
+     * Posts to the completions endpoint with the session_id and streams
+     * the response, updating the assistant bubble incrementally.
+     */
+    async function sendMessage() {
+      // If currently streaming, abort
+      if (state.streaming && state.abortController) {
+        state.abortController.abort();
+        state.abortController = null;
+        state.streaming = false;
+        setSendEnabled(true);
+        return;
+      }
+
+      const input = document.getElementById('chatInput');
+      if (!input) return;
+
+      const text = input.value.trim();
+      if (!text) return;
+
+      const idx = state.activeChat;
+      if (idx < 0) return;
+
+      const chat = CONFIG.chats[idx];
+      const sessionId = state.sessions[idx];
+
+      if (!sessionId) {
+        // Session not initialized -- should not normally happen
+        state.messages[idx].push({
+          role: 'assistant',
+          content: '**Fehler:** Keine aktive Sitzung. Bitte w\u00e4hle den Chat erneut aus.',
+          references: null
+        });
+        renderChat();
+        return;
+      }
+
+      // Add user message
+      state.messages[idx].push({ role: 'user', content: text, references: null });
+
+      // Add placeholder assistant message
+      state.messages[idx].push({ role: 'assistant', content: '', references: null });
+
+      // Clear input and re-render
+      input.value = '';
+      autoResize(input);
+      renderChat();
+      showLoading(true);
+      setSendEnabled(false);
+
+      // Start streaming
+      state.streaming = true;
+      state.abortController = new AbortController();
+
+      try {
+        const response = await fetch(
+          CONFIG.apiBase + '/api/v1/chatbots/' + chat.id + '/completions',
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + chat.auth,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              question: text,
+              session_id: sessionId,
+              quote: true,
+              stream: true
+            }),
+            signal: state.abortController.signal
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Process complete SSE lines
+          let lines = buffer.split('\n');
+          buffer = lines.pop(); // keep incomplete line in buffer
+
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line.startsWith('data:')) continue;
+
+            const jsonStr = line.substring(5).trim();
+            if (!jsonStr) continue;
+
+            try {
+              const parsed = JSON.parse(jsonStr);
+
+              // Stream end signal
+              if (parsed.data === true) continue;
+
+              // Error from API
+              if (parsed.code !== 0) {
+                const errMsg = parsed.message || 'Unbekannter Fehler';
+                updateLastAssistantMessage(
+                  '**Fehler:** ' + errMsg,
+                  null
+                );
+                continue;
+              }
+
+              if (parsed.data && typeof parsed.data.answer === 'string') {
+                const chunks =
+                  parsed.data.reference &&
+                  parsed.data.reference.chunks &&
+                  Array.isArray(parsed.data.reference.chunks)
+                    ? parsed.data.reference.chunks
+                    : null;
+
+                updateLastAssistantMessage(parsed.data.answer, chunks);
+              }
+            } catch (parseErr) {
+              // Skip JSON parse errors for incomplete data
+              if (parseErr instanceof SyntaxError) continue;
+              throw parseErr;
+            }
+          }
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          updateLastAssistantMessage(
+            '**Fehler:** ' + escapeHtml(err.message),
+            null
+          );
+        }
+      }
+
+      // Finalize
+      state.streaming = false;
+      state.abortController = null;
+      showLoading(false);
+      setSendEnabled(true);
+      renderChat();
+      highlightCode();
+      scrollToBottom();
+    }
+
+    /**
+     * Update the last assistant message in state and in the DOM (incremental).
+     * This avoids a full re-render on every SSE chunk for smooth streaming.
+     */
+    function updateLastAssistantMessage(content, references) {
+      const idx = state.activeChat;
+      const msgs = state.messages[idx];
+      if (!msgs || msgs.length === 0) return;
+
+      // Update state
+      const lastMsg = msgs[msgs.length - 1];
+      if (lastMsg.role === 'assistant') {
+        lastMsg.content = content;
+        if (references !== null) {
+          lastMsg.references = references;
+        }
+      }
+
+      // Update DOM directly for smooth streaming
+      const messageEls = document.querySelectorAll('.message.assistant');
+      if (messageEls.length > 0) {
+        const lastEl = messageEls[messageEls.length - 1];
+        lastEl.innerHTML = renderMarkdown(content);
+        // References are only rendered on final render to avoid flickering
+      }
+
+      scrollToBottom();
+    }
+
+    /** Enable or disable the send button. */
+    function setSendEnabled(enabled) {
+      const btn = document.getElementById('sendBtn');
+      if (btn) btn.disabled = !enabled;
+    }
+
+    /* ==================================================================
+       Utility Functions
+       ================================================================== */
+
+    /** Auto-resize textarea to fit content, capped at max height. */
+    function autoResize(textarea) {
+      textarea.style.height = 'auto';
+      const maxH = parseInt(
+        getComputedStyle(document.documentElement)
+          .getPropertyValue('--input-max-height')
+      ) || 120;
+      textarea.style.height = Math.min(textarea.scrollHeight, maxH) + 'px';
+    }
+
+    /** Escape HTML special characters. */
+    function escapeHtml(str) {
+      if (!str) return '';
+      const div = document.createElement('div');
+      div.appendChild(document.createTextNode(str));
+      return div.innerHTML;
+    }
+
+    /* ==================================================================
+       Initialization
+       ================================================================== */
+
+    document.addEventListener('DOMContentLoaded', function() {
+      initSidebar();
+    });
+
+  </script>
+</body>
+</html>
