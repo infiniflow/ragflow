@@ -108,6 +108,7 @@ def test_chat_create_select_dataset_and_receive_answer_flow(
     flow_state,
     base_url,
     login_url,
+    ensure_chat_ready,
     active_auth_context,
     step,
     snap,
