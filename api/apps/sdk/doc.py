@@ -809,6 +809,10 @@ async def delete(tenant_id, dataset_id):
     return get_result()
 
 
+DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
+DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
+
+
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @token_required
 async def parse(tenant_id, dataset_id):
@@ -947,7 +951,11 @@ async def stop_parsing(tenant_id, dataset_id):
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
         if doc[0].run != TaskStatus.RUNNING.value :
-            return get_error_data_result("Can't stop parsing document that has not started or already completed")
+            return construct_json_result(
+                code=RetCode.DATA_ERROR,
+                message=DOC_STOP_PARSING_INVALID_STATE_MESSAGE,
+                data={"error_code": DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE},
+            )
         # Send cancellation signal via Redis to stop background task
         cancel_all_task_of(id)
         info = {"run": "2", "progress": 0, "chunk_num": 0}

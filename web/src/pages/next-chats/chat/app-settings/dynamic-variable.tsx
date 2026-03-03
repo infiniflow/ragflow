@@ -9,6 +9,7 @@ import {
 import { BlurInput } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
+import { getDirAttribute } from '@/utils/text-direction';
 import { Plus, X } from 'lucide-react';
 import { useCallback } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
@@ -58,53 +59,58 @@ export function DynamicVariableForm() {
         </div>
 
         <div className="grid grid-cols-subgrid items-center col-span-4 gap-y-4">
-          {fields.map((field, index) => (
-            <div key={field.id} className="contents">
-              <FormField
-                control={form.control}
-                name={`${name}.${index}.key`}
-                render={({ field }) => (
-                  <FormItem className="flex-1">
-                    <FormControl>
-                      <BlurInput
-                        {...field}
-                        placeholder={t('common.pleaseInput')}
-                      ></BlurInput>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          {fields.map((field, index) => {
+            const typeField = `${name}.${index}.key`;
+            const keyValue = form.watch(typeField);
+            return (
+              <div key={field.id} className="contents">
+                <FormField
+                  control={form.control}
+                  name={`${name}.${index}.key`}
+                  render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormControl>
+                        <BlurInput
+                          {...field}
+                          placeholder={t('common.pleaseInput')}
+                          dir={getDirAttribute(keyValue || '')}
+                        ></BlurInput>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <Separator className="w-3 text-text-secondary" />
+                <Separator className="w-3 text-text-secondary" />
 
-              <FormField
-                control={form.control}
-                name={`${name}.${index}.optional`}
-                render={({ field }) => (
-                  <FormItem className="flex-1">
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      ></Switch>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name={`${name}.${index}.optional`}
+                  render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        ></Switch>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="border-0"
-                type="button"
-                onClick={() => remove(index)}
-              >
-                <X className="text-text-sub-title-invert " />
-              </Button>
-            </div>
-          ))}
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="border-0"
+                  type="button"
+                  onClick={() => remove(index)}
+                >
+                  <X className="text-text-sub-title-invert " />
+                </Button>
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>

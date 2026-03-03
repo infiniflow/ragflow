@@ -27,7 +27,16 @@ export default {
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
       russian: 'Russian',
+      indonesian: 'Indonesian',
+      indonesia: 'Indonesian',
+      spanish: 'Spanish',
+      vietnamese: 'Vietnamese',
+      japanese: 'Japanese',
+      german: 'German',
+      french: 'French',
+      italian: 'Italian',
       bulgarian: 'Bulgarian',
+      arabic: 'Arabic',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -529,6 +538,22 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model.',
       chunkMethodPlaceholder: 'Please select a chunking method.',
+      parserLabel: {
+        naive: 'General',
+        qa: 'Q&A',
+        resume: 'Resume',
+        manual: 'Manual',
+        table: 'Table',
+        paper: 'Paper',
+        book: 'Book',
+        laws: 'Laws',
+        presentation: 'Presentation',
+        picture: 'Picture',
+        one: 'One',
+        audio: 'Audio',
+        email: 'Email',
+        tag: 'Tag',
+      },
       save: 'Save',
       me: 'Only me',
       team: 'Team',
@@ -1010,22 +1035,18 @@ Example: Virtual Hosted Style`,
         'Connect to your SeaFile server to synchronise files and documents from your libraries.',
       seafileUrlTip:
         'The full URL of your SeaFile server including the protocol. Example: https://seafile.example.com - Do not include a trailing slash or any path after the domain.',
-      seafileAccountScopeTip: 
+      seafileAccountScopeTip:
         'Syncs all libraries visible to the Account API Token below.',
-      seafileTokenPanelHeading:
-        'Provide one of these authentication methods:',
-      seafileTokenPanelAccountBullet: 
-        '- grants access to all your libraries.',
-      seafileTokenPanelLibraryBullet: 
-        '— scoped to a single library only (more secure).',   
-      seafileValidationAccountTokenRequired: 
+      seafileTokenPanelHeading: 'Provide one of these authentication methods:',
+      seafileTokenPanelAccountBullet: '- grants access to all your libraries.',
+      seafileTokenPanelLibraryBullet:
+        '— scoped to a single library only (more secure).',
+      seafileValidationAccountTokenRequired:
         'Account API Token is required for Entire Account scope',
-      seafileValidationTokenRequired: 
+      seafileValidationTokenRequired:
         'Provide either an Account API Token or a Library Token',
-      seafileValidationLibraryIdRequired: 
-        'Library ID is required',
-      seafileValidationDirectoryPathRequired: 
-        'Directory Path is required',
+      seafileValidationLibraryIdRequired: 'Library ID is required',
+      seafileValidationDirectoryPathRequired: 'Directory Path is required',
       seafileSyncScopeTip:
         'Controls what gets synchronised: ' +
         '(1) Entire Account - Syncs all libraries your token has access to. Requires an Account API Token. ' +
@@ -1176,6 +1197,8 @@ Example: Virtual Hosted Style`,
         'If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key.',
       tongyiBaseUrlTip:
         'For Chinese users, no need to fill in or use https://dashscope.aliyuncs.com/compatible-mode/v1. For international users, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'For Chinese users, no need to fill in or use https://api.siliconflow.cn/v1. For international users, use https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder: '(International users only, please see tip)',
       minimaxBaseUrlTip:
         'International users only: use https://api.minimax.io/v1',
@@ -1433,6 +1456,13 @@ Example: Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      preprocess: {
+        preprocess: 'Preprocess',
+        mainContent: 'Main content',
+        abstract: 'Abstract',
+        author: 'Author',
+        sectionTitle: 'Section title',
+      },
       autoPlay: 'Auto play audio',
       downloadFileTypeTip: 'The file type to download',
       downloadFileType: 'Download file type',
@@ -2532,6 +2562,39 @@ Important structured information may include: names, dates, locations, events, k
       registrationWhitelist: 'Registration whitelist',
       roles: 'Roles',
       monitoring: 'Monitoring',
+
+      sandboxSettingsPage: {
+        description:
+          'Configure your code execution sandbox provider. The sandbox is used by the Code component in agents.',
+        providerSelection: 'Provider selection',
+        providerSelectionDescription:
+          'Choose a sandbox provider for code execution',
+
+        namedProviderConfiguration: '{{name}} configuration',
+        namedProviderConfigurationDescription:
+          'Configure the connection settings for {{name}}.',
+
+        saveConfiguration: 'Save configuration',
+        saving: 'Saving...',
+
+        testConnectionResultModal: {
+          title: 'Connection test result',
+          testing: 'Testing connection to sandbox provider...',
+          success: 'Successfully connected to sandbox provider',
+          failed: 'Failed to connect to sandbox provider',
+
+          exitCode: 'Exit code',
+          executionTime: 'Execution time',
+          stdout: 'Standard output',
+          stderr: 'Error output / stack trace',
+        },
+
+        testConnection: 'Test connection',
+        testing: 'Testing...',
+      },
+
+      selectFile: 'Select file',
+      noFileSelected: 'No file selected',
 
       back: 'Back',
       active: 'Active',
