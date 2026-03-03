@@ -573,6 +573,8 @@ export default {
       baseUrl: 'Base-Url',
       baseUrlTip:
         'Nếu khóa API của bạn từ OpenAI, chỉ cần bỏ qua nó. Bất kỳ nhà cung cấp trung gian nào khác sẽ cung cấp URL cơ sở này với khóa API.',
+      siliconBaseUrlTip:
+        'For Chinese users, no need to fill in or use https://api.siliconflow.cn/v1. For international users, use https://api.siliconflow.com/v1',
       minimaxBaseUrlTip:
         'Chỉ người dùng quốc tế: dùng https://api.minimax.io/v1.',
       minimaxBaseUrlPlaceholder:

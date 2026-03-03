@@ -1,10 +1,11 @@
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { Toaster } from '@/components/ui/toaster';
-import i18n from '@/locales/config';
+import i18n, { changeLanguageAsync } from '@/locales/config';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { configResponsive } from 'ahooks';
 import { App, ConfigProvider, ConfigProviderProps, theme } from 'antd';
 import pt_BR from 'antd/lib/locale/pt_BR';
+import arEG from 'antd/locale/ar_EG';
 import deDE from 'antd/locale/de_DE';
 import enUS from 'antd/locale/en_US';
 import ru_RU from 'antd/locale/ru_RU';
@@ -54,6 +55,7 @@ const AntLanguageMap = {
   vi: vi_VN,
   'pt-BR': pt_BR,
   de: deDE,
+  ar: arEG,
 };
 
 if (process.env.NODE_ENV === 'development') {
@@ -85,6 +87,12 @@ function Root({ children }: React.PropsWithChildren) {
   const { theme: themeragflow } = useTheme();
   const getLocale = (lng: string) =>
     AntLanguageMap[lng as keyof typeof AntLanguageMap] ?? enUS;
+  const updateDocumentLocale = (lng: string) => {
+    document.documentElement.lang = lng;
+    document.documentElement.dir = lng.toLowerCase().startsWith('ar')
+      ? 'rtl'
+      : 'ltr';
+  };
 
   const [locale, setLocal] = useState<Locale>(getLocale(storage.getLanguage()));
 
@@ -92,9 +100,10 @@ function Root({ children }: React.PropsWithChildren) {
     const handleLanguageChanged = (lng: string) => {
       storage.setLanguage(lng);
       setLocal(getLocale(lng));
-      document.documentElement.lang = lng;
+      updateDocumentLocale(lng);
     };
 
+    updateDocumentLocale(storage.getLanguage() || i18n.language || 'en');
     i18n.on('languageChanged', handleLanguageChanged);
 
     return () => {
@@ -130,7 +139,7 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
   useEffect(() => {
     const lng = storage.getLanguage();
     if (lng) {
-      i18n.changeLanguage(lng);
+      void changeLanguageAsync(lng);
     }
   }, []);
 

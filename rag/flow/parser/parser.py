@@ -305,8 +305,10 @@ class Parser(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
-        abstract_enabled = kwargs.get("abstract", False)
-        author_enabled = kwargs.get("author", False)
+
+        abstract_enabled = "abstract" in self._param.setups["pdf"].get("preprocess", [])
+        author_enabled = "author" in self._param.setups["pdf"].get("preprocess", [])
+        title_enabled = "title" in self._param.setups["pdf"].get("preprocess", [])
 
         raw_parse_method = conf.get("parse_method", "")
         parser_model_name = None
@@ -390,8 +392,6 @@ class Parser(ProcessBase):
                 if position_tag:
                     # Extract position information from TCADP's position tag
                     # Format: @@{page_number}\t{x0}\t{x1}\t{top}\t{bottom}##
-                    import re
-
                     match = re.match(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##", position_tag)
                     if match:
                         pn, x0, x1, top, bott = match.groups()
@@ -484,6 +484,8 @@ class Parser(ProcessBase):
                 b["doc_type_kwd"] = "image"
             elif layout == "table":
                 b["doc_type_kwd"] = "table"
+            if title_enabled and "title" in str(b.get("layout_type", "").lower()):
+                b["title"] = True
 
         # Get authors
         if author_enabled:
@@ -546,7 +548,6 @@ class Parser(ProcessBase):
                     break
             if abstract_idx is not None:
                 bboxes[abstract_idx]["abstract"] = True
-
 
         if conf.get("output_format") == "json":
             self.set_output("json", bboxes)
@@ -661,7 +662,7 @@ class Parser(ProcessBase):
             for text, image, html in main_sections:
                 section = {"text": text, "image": image}
                 text_key = text.strip() if isinstance(text, str) else ""
-                if text_key and text_key in title_texts:
+                if text_key and text_key in title_texts and "title" in self._param.setups["word"].get("preprocess", []):
                     section["title"] = True
                 sections.append(section)
                 tbls.append(((None, html), ""))
@@ -768,7 +769,7 @@ class Parser(ProcessBase):
                     "text": section_text,
                 }
                 text_key = section_text.strip() if isinstance(section_text, str) else ""
-                if text_key and text_key in title_texts:
+                if text_key and text_key in title_texts and "title" in self._param.setups["text&markdown"].get("preprocess", []):
                     json_result["title"] = True
 
                 images = []
@@ -1021,6 +1022,7 @@ class Parser(ProcessBase):
             call_kwargs = dict(kwargs)
             call_kwargs.pop("name", None)
             call_kwargs.pop("blob", None)
+
             await thread_pool_exec(function_map[p_type], name, blob, **call_kwargs)
             done = True
             break
