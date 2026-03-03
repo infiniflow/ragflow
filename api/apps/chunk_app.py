@@ -175,7 +175,10 @@ async def set():
                 embd_model_config = get_model_config_by_id(tenant_embd_id)
             else:
                 embd_id = DocumentService.get_embd_id(req["doc_id"])
-                embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_id)
+                if embd_id:
+                    embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_id)
+                else:
+                    embd_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.EMBEDDING)
             embd_mdl = LLMBundle(tenant_id, embd_model_config)
 
             _d = d

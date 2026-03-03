@@ -253,8 +253,8 @@ def test_set_dialog_branch_matrix_unit(monkeypatch):
 
     monkeypatch.setattr(module, "duplicate_name", _dup_name)
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(name="new dialog")])
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _id: (True, SimpleNamespace(llm_id="llm-x")))
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_ids", lambda _ids: [SimpleNamespace(embd_id="embd-a@builtin")])
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _id: (True, SimpleNamespace(llm_id="llm-x", tenant_llm_id=1)))
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_ids", lambda _ids: [SimpleNamespace(embd_id="embd-a@builtin", tenant_embd_id=2)])
     monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda embd_id: embd_id.split("@"))
     monkeypatch.setattr(module.DialogService, "save", lambda **kwargs: captured.update(kwargs) or False)
     _set_request_json(
@@ -301,7 +301,7 @@ def test_set_dialog_branch_matrix_unit(monkeypatch):
     res = _run(handler())
     assert res["message"] == "Tenant not found!"
 
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _id: (True, SimpleNamespace(llm_id="llm-x")))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _id: (True, SimpleNamespace(llm_id="llm-x", tenant_llm_id=1)))
     monkeypatch.setattr(
         module,
         "get_request_json",
@@ -316,7 +316,7 @@ def test_set_dialog_branch_matrix_unit(monkeypatch):
     monkeypatch.setattr(
         module.KnowledgebaseService,
         "get_by_ids",
-        lambda _ids: [SimpleNamespace(embd_id="embd-a@f1"), SimpleNamespace(embd_id="embd-b@f2")],
+        lambda _ids: [SimpleNamespace(embd_id="embd-a@f1", tenant_embd_id=2), SimpleNamespace(embd_id="embd-b@f2", tenant_embd_id=2)],
     )
     monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda embd_id: embd_id.split("@"))
     res = _run(handler())
