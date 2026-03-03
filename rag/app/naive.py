@@ -253,9 +253,7 @@ PARSERS = {
     "mineru": by_mineru,
     "docling": by_docling,
     "tcadp": by_tcadp,
-    "tcadp parser": by_tcadp,
     "paddleocr": by_paddleocr,
-    "plain text": by_plaintext,
     "plaintext": by_plaintext,  # default
 }
 
@@ -856,7 +854,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             urls = extract_links_from_pdf(binary)
 
         if isinstance(layout_recognizer, bool):
-            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
+            layout_recognizer = "DeepDOC" if layout_recognizer else "PlainText"
 
         name = layout_recognizer.strip().lower()
         parser = PARSERS.get(name, by_plaintext)
@@ -882,7 +880,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         if table_context_size or image_context_size:
             tables = append_context2table_image4pdf(sections, tables, image_context_size)
 
-        if name in ["tcadp", "tcadp parser", "docling", "mineru", "paddleocr"]:
+        if name in ["tcadp", "docling", "mineru", "paddleocr"]:
             if int(parser_config.get("chunk_token_num", 0)) <= 0:
                 parser_config["chunk_token_num"] = 0
 
