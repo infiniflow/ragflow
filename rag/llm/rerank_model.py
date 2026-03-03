@@ -106,6 +106,41 @@ class XInferenceRerank(Base):
         return rank, token_count
 
 
+class OllamaRerank(Base):
+    _FACTORY_NAME = "Ollama"
+
+    def __init__(self, key="x", model_name="", base_url=""):
+        self.model_name = model_name
+        self.base_url = str(URL(base_url) / "v1" / "rerank") if base_url else "http://127.0.0.1:11434/v1/rerank"
+        self.headers = {"Content-Type": "application/json"}
+        if key and key != "x":
+            self.headers["Authorization"] = f"Bearer {key}"
+
+    def similarity(self, query: str, texts: list):
+        if len(texts) == 0:
+            return np.array([]), 0
+        texts = [truncate(t, 4096) for t in texts]
+        token_count = 0
+        for t in texts:
+            token_count += num_tokens_from_string(t)
+        data = {
+            "model": self.model_name,
+            "query": query,
+            "documents": texts,
+            "top_n": len(texts),
+        }
+        res = requests.post(self.base_url, headers=self.headers, json=data).json()
+        rank = np.zeros(len(texts), dtype=float)
+        try:
+            for d in res["results"]:
+                rank[d["index"]] = d["relevance_score"]
+        except Exception as _e:
+            log_exception(_e, res)
+
+        rank = Base._normalize_rank(rank)
+        return rank, token_count
+
+
 class LocalAIRerank(Base):
     _FACTORY_NAME = "LocalAI"
 
