@@ -55,7 +55,8 @@ var (
 func LoadModelProviders(path string) error {
 	modelProvidersOnce.Do(func() {
 		if path == "" {
-			path = "conf/model_providers.json"
+			path = "conf/llm_factories.json"
+			//path = "conf/model_providers.json"
 		}
 
 		data, err := os.ReadFile(path)
@@ -65,7 +66,7 @@ func LoadModelProviders(path string) error {
 		}
 
 		var root struct {
-			Providers []ModelProvider `json:"model_providers"`
+			Providers []ModelProvider `json:"factory_llm_infos"`
 		}
 		if err := json.Unmarshal(data, &root); err != nil {
 			modelProvidersErr = fmt.Errorf("failed to unmarshal model providers JSON: %w", err)
