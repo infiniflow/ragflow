@@ -1594,15 +1594,32 @@ class RAGFlowPdfParser:
                 return math.sqrt(dx * dx + dy * dy)  # + (pn2-pn1)*10000
 
             for (img, txt), poss in tbls_or_figs:
+                # Positions coming from _extract_table_figure carry absolute 0-based page
+                # indices (page_from offset). Convert back to chunk-local indices so we
+                # stay consistent with self.boxes/page_cum_height, which are all relative
+                # to the current parsing window.
+                local_poss = []
+                for pn, left, right, top, bott in poss:
+                    local_pn = pn - self.page_from
+                    if 0 <= local_pn < len(self.page_cum_height) - 1:
+                        local_poss.append((local_pn, left, right, top, bott))
+                    else:
+                        logging.debug(f"Skip out-of-range table/figure position pn={pn}, page_from={self.page_from}")
+                if not local_poss:
+                    logging.debug("No valid local positions for table/figure; skip insertion.")
+                    continue
+
                 bboxes = [(i, (b["page_number"], b["x0"], b["x1"], b["top"], b["bottom"])) for i, b in enumerate(self.boxes)]
                 dists = [
-                    (min_rectangle_distance((pn, left, right, top + self.page_cum_height[pn], bott + self.page_cum_height[pn]), rect), i) for i, rect in bboxes for pn, left, right, top, bott in poss
+                    (min_rectangle_distance((pn, left, right, top + self.page_cum_height[pn], bott + self.page_cum_height[pn]), rect), i)
+                    for i, rect in bboxes
+                    for pn, left, right, top, bott in local_poss
                 ]
                 min_i = np.argmin(dists, axis=0)[0]
                 min_i, rect = bboxes[dists[min_i][-1]]
                 if isinstance(txt, list):
                     txt = "\n".join(txt)
-                pn, left, right, top, bott = poss[0]
+                pn, left, right, top, bott = local_poss[0]
                 if self.boxes[min_i]["bottom"] < top + self.page_cum_height[pn]:
                     min_i += 1
                 self.boxes.insert(

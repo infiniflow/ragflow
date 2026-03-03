@@ -92,6 +92,8 @@ kg_retriever = None
 # user registration switch
 REGISTER_ENABLED = 1
 
+# SSO-only mode: hide password login form
+DISABLE_PASSWORD_LOGIN = False
 
 # sandbox-executor-manager
 SANDBOX_HOST = None
@@ -186,6 +188,17 @@ def init_settings():
     except Exception:
         pass
 
+    global DISABLE_PASSWORD_LOGIN
+    try:
+        env_val = os.environ.get("DISABLE_PASSWORD_LOGIN", "").lower()
+        if env_val in ("1", "true", "yes"):
+            DISABLE_PASSWORD_LOGIN = True
+        else:
+            authentication_conf = get_base_config("authentication", {})
+            DISABLE_PASSWORD_LOGIN = bool(authentication_conf.get("disable_password_login", False))
+    except Exception:
+        pass
+
     global FACTORY_LLM_INFOS
     try:
         with open(os.path.join(get_project_base_directory(), "conf", "llm_factories.json"), "r") as f:
@@ -244,7 +257,7 @@ def init_settings():
     OAUTH_CONFIG = get_base_config("oauth", {})
 
     global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, docStoreConn, ES, OB, OS, INFINITY
-    DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
+    DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch").strip()
     DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
     DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
     lower_case_doc_engine = DOC_ENGINE.lower()

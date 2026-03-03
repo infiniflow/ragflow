@@ -5,8 +5,8 @@ import {
 import { DynamicForm, FormFieldType } from '@/components/dynamic-form';
 import EditTag from '@/components/edit-tag';
 import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
-import { DateInput } from '@/components/ui/input-date';
 import { Modal } from '@/components/ui/modal/modal';
 import { formatDate } from '@/utils/date';
 import dayjs from 'dayjs';
@@ -74,7 +74,7 @@ const ValueInputItem = memo(
       >
         <div className="flex-1 w-full">
           {type === 'time' && (
-            <DateInput
+            <DatePicker
               value={value as Date}
               onChange={(value) => {
                 onValueChange(

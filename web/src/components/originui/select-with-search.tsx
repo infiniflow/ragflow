@@ -48,6 +48,7 @@ export type SelectWithSearchFlagProps = {
   disabled?: boolean;
   placeholder?: string;
   emptyData?: string;
+  testId?: string;
 };
 
 function findLabelWithoutOptions(
@@ -80,6 +81,7 @@ export const SelectWithSearch = forwardRef<
       disabled = false,
       placeholder = t('common.selectPlaceholder'),
       emptyData = t('common.noDataFound'),
+      testId,
     },
     ref,
   ) => {
@@ -154,6 +156,7 @@ export const SelectWithSearch = forwardRef<
             aria-expanded={open}
             ref={ref}
             disabled={disabled}
+            data-testid={testId}
             className={cn(
               '!bg-bg-input hover:bg-background border-border-button w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto group',
               triggerClassName,
@@ -161,7 +164,9 @@ export const SelectWithSearch = forwardRef<
           >
             {selectLabel || value ? (
               <span className="flex min-w-0 options-center gap-2">
-                <span className="leading-none truncate">{selectLabel || value}</span>
+                <span className="leading-none truncate">
+                  {selectLabel || value}
+                </span>
               </span>
             ) : (
               <span className="text-text-disabled">{placeholder}</span>
@@ -213,6 +218,7 @@ export const SelectWithSearch = forwardRef<
                             value={option.value}
                             disabled={option.disabled}
                             onSelect={handleSelect}
+                            data-testid="combobox-option"
                             className={
                               value === option.value ? 'bg-bg-card' : ''
                             }
@@ -234,6 +240,7 @@ export const SelectWithSearch = forwardRef<
                       value={group.value}
                       disabled={group.disabled}
                       onSelect={handleSelect}
+                      data-testid="combobox-option"
                       className={cn('mb-1 min-h-10 ', {
                         'bg-bg-card ': value === group.value,
                       })}

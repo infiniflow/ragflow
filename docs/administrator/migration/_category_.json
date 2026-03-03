@@ -1,0 +1,11 @@
+{
+  "label": "Data backup and migration",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "description": "Data backup and migration guide"
+  },
+  "customProps": {
+    "categoryIcon": "LucideArrowRightLeft"
+  }
+}

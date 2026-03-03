@@ -71,6 +71,20 @@ Are you asking about the fruit itself, or its use in a specific context?
             assert message["agent_id"] == agent_id, message
             assert message["session_id"] == session_id, message
 
+    @pytest.mark.p2
+    def test_add_message_invalid_memory_id(self, WebApiAuth):
+        message_payload = {
+            "memory_id": ["missing_memory_id"],
+            "agent_id": uuid.uuid4().hex,
+            "session_id": uuid.uuid4().hex,
+            "user_id": "",
+            "user_input": "what is pineapple?",
+            "agent_response": "pineapple response",
+        }
+        res = add_message(WebApiAuth, message_payload)
+        assert res["code"] == 500, res
+        assert "Some messages failed to add" in res["message"], res
+
 
 @pytest.mark.usefixtures("add_empty_multiple_type_memory")
 class TestAddMultipleTypeMessage:

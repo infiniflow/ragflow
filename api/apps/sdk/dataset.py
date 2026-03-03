@@ -40,6 +40,7 @@ from api.utils.api_utils import (
     verify_embedding_availability,
 )
 from api.utils.validation_utils import (
+    AutoMetadataConfig,
     CreateDatasetReq,
     DeleteDatasetReq,
     ListDatasetReq,
@@ -119,6 +120,24 @@ async def create(tenant_id):
     req, err = await validate_and_parse_json_request(request, CreateDatasetReq)
     if err is not None:
         return get_error_argument_result(err)
+    # Map auto_metadata_config (if provided) into parser_config structure
+    auto_meta = req.pop("auto_metadata_config", None)
+    if auto_meta:
+        parser_cfg = req.get("parser_config") or {}
+        fields = []
+        for f in auto_meta.get("fields", []):
+            fields.append(
+                {
+                    "name": f.get("name", ""),
+                    "type": f.get("type", ""),
+                    "description": f.get("description"),
+                    "examples": f.get("examples"),
+                    "restrict_values": f.get("restrict_values", False),
+                }
+            )
+        parser_cfg["metadata"] = fields
+        parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
+        req["parser_config"] = parser_cfg
     e, req = KnowledgebaseService.create_with_name(
         name = req.pop("name", None),
         tenant_id = tenant_id,
@@ -341,6 +360,25 @@ async def update(tenant_id, dataset_id):
             return get_error_permission_result(
                 message=f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'")
 
+        # Map auto_metadata_config into parser_config if present
+        auto_meta = req.pop("auto_metadata_config", None)
+        if auto_meta:
+            parser_cfg = req.get("parser_config") or {}
+            fields = []
+            for f in auto_meta.get("fields", []):
+                fields.append(
+                    {
+                        "name": f.get("name", ""),
+                        "type": f.get("type", ""),
+                        "description": f.get("description"),
+                        "examples": f.get("examples"),
+                        "restrict_values": f.get("restrict_values", False),
+                    }
+                )
+            parser_cfg["metadata"] = fields
+            parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
+            req["parser_config"] = parser_cfg
+
         if req.get("parser_config"):
             req["parser_config"] = deep_merge(kb.parser_config, req["parser_config"])
 
@@ -483,6 +521,83 @@ def list_datasets(tenant_id):
         for kb in kbs:
             response_data_list.append(remap_dictionary_keys(kb))
         return get_result(data=response_data_list, total=total)
+    except OperationalError as e:
+        logging.exception(e)
+        return get_error_data_result(message="Database operation failed")
+
+
+@manager.route("/datasets/<dataset_id>/auto_metadata", methods=["GET"])  # noqa: F821
+@token_required
+def get_auto_metadata(tenant_id, dataset_id):
+    """
+    Get auto-metadata configuration for a dataset.
+    """
+    try:
+        kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
+        if kb is None:
+            return get_error_permission_result(
+                message=f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
+            )
+
+        parser_cfg = kb.parser_config or {}
+        metadata = parser_cfg.get("metadata") or []
+        enabled = parser_cfg.get("enable_metadata", bool(metadata))
+        # Normalize to AutoMetadataConfig-like JSON
+        fields = []
+        for f in metadata:
+            if not isinstance(f, dict):
+                continue
+            fields.append(
+                {
+                    "name": f.get("name", ""),
+                    "type": f.get("type", ""),
+                    "description": f.get("description"),
+                    "examples": f.get("examples"),
+                    "restrict_values": f.get("restrict_values", False),
+                }
+            )
+        return get_result(data={"enabled": enabled, "fields": fields})
+    except OperationalError as e:
+        logging.exception(e)
+        return get_error_data_result(message="Database operation failed")
+
+
+@manager.route("/datasets/<dataset_id>/auto_metadata", methods=["PUT"])  # noqa: F821
+@token_required
+async def update_auto_metadata(tenant_id, dataset_id):
+    """
+    Update auto-metadata configuration for a dataset.
+    """
+    cfg, err = await validate_and_parse_json_request(request, AutoMetadataConfig)
+    if err is not None:
+        return get_error_argument_result(err)
+
+    try:
+        kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
+        if kb is None:
+            return get_error_permission_result(
+                message=f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
+            )
+
+        parser_cfg = kb.parser_config or {}
+        fields = []
+        for f in cfg.get("fields", []):
+            fields.append(
+                {
+                    "name": f.get("name", ""),
+                    "type": f.get("type", ""),
+                    "description": f.get("description"),
+                    "examples": f.get("examples"),
+                    "restrict_values": f.get("restrict_values", False),
+                }
+            )
+        parser_cfg["metadata"] = fields
+        parser_cfg["enable_metadata"] = cfg.get("enabled", True)
+
+        if not KnowledgebaseService.update_by_id(kb.id, {"parser_config": parser_cfg}):
+            return get_error_data_result(message="Update auto-metadata error.(Database error)")
+
+        return get_result(data={"enabled": parser_cfg["enable_metadata"], "fields": fields})
     except OperationalError as e:
         logging.exception(e)
         return get_error_data_result(message="Database operation failed")

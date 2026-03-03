@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 1
 slug: /release_notes
 sidebar_custom_props: {
   sidebarIcon: LucideClipboardPenLine
@@ -16,8 +16,8 @@ Released on February 10, 2026.
 ### New features
 
 - Memory
-  - Introduces APIs and an SDK for developer integration.
-  - Outputs Memory extraction log to the console for debugging and tracing.
+  - Introduces memory management APIs (HTTP and Python).
+  - Outputs Memory extraction log to the console.
 - Dataset
   - Supports batch metadata management.
   - Renames "ToC (Table of Contents)" to "PageIndex". See [here](./guides/dataset/extract_table_of_contents.md).
@@ -28,9 +28,9 @@ Released on February 10, 2026.
   - Adds a new "Thinking" mode and removes the previous "Reasoning" configuration option.
   - Optimizes retrieval strategies for deep-research scenarios, enhancing recall accuracy.
 - Admin
-  - Supports configuring multiple Admin accounts.
+  - Supports multiple Admin accounts.
 - Model configuration center
-  - Adds a model connection test feature when adding new models.
+  - Adds model connection test for new models.
 
 ### MySQL alternative
 
@@ -47,6 +47,16 @@ Released on February 10, 2026.
 
 - Zendesk
 - Bitbucket
+
+### API changes
+
+#### HTTP API
+
+[Memory management API](./references/http_api_reference.md#memory-management)
+
+#### Python API
+
+[Memory management API](./references/python_api_reference.md#memory-management)
 
 ## v0.23.1
 
@@ -724,7 +734,7 @@ From this release onwards, **service_config.yaml.template** replaces **service_c
 This approach eliminates the need to manually update **service_config.yaml** after making changes to **.env**, facilitating dynamic environment configurations.
 
 :::danger IMPORTANT
-Ensure that you [upgrade **both** your code **and** Docker image to this release](https://ragflow.io/docs/dev/upgrade_ragflow#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
+Ensure that you [upgrade **both** your code **and** Docker image to this release](./administrator/upgrade_ragflow.mdx#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
 :::
 
 ### API changes
@@ -802,13 +812,13 @@ The default Docker image edition is `nightly-slim`. The following list clarifies
 - `nightly`: The full edition of the most recent tested Docker image.
 - `v0.12.0`: The full edition of the most recent **officially released** Docker image.
 
-See [Upgrade RAGFlow](https://ragflow.io/docs/dev/upgrade_ragflow) for instructions on upgrading.
+See [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx) for instructions on upgrading.
 
 ### Documentation
 
 #### Added documents
 
-- [Upgrade RAGFlow](https://ragflow.io/docs/dev/upgrade_ragflow)
+- [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx)
 
 ## v0.11.0
 
