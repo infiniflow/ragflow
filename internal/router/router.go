@@ -35,6 +35,7 @@ type Router struct {
 	chatSessionHandler   *handler.ChatSessionHandler
 	connectorHandler     *handler.ConnectorHandler
 	searchHandler        *handler.SearchHandler
+	fileHandler          *handler.FileHandler
 }
 
 // NewRouter create router
@@ -50,6 +51,7 @@ func NewRouter(
 	chatSessionHandler *handler.ChatSessionHandler,
 	connectorHandler *handler.ConnectorHandler,
 	searchHandler *handler.SearchHandler,
+	fileHandler *handler.FileHandler,
 ) *Router {
 	return &Router{
 		userHandler:          userHandler,
@@ -63,6 +65,7 @@ func NewRouter(
 		chatSessionHandler:   chatSessionHandler,
 		connectorHandler:     connectorHandler,
 		searchHandler:        searchHandler,
+		fileHandler:          fileHandler,
 	}
 }
 
@@ -173,6 +176,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 		search := engine.Group("/v1/search")
 		{
 			search.POST("/list", r.searchHandler.ListSearchApps)
+		}
+
+		// File routes
+		file := engine.Group("/v1/file")
+		{
+			file.GET("/list", r.fileHandler.ListFiles)
+			file.GET("/root_folder", r.fileHandler.GetRootFolder)
 		}
 	}
 
