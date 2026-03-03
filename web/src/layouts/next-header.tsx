@@ -33,7 +33,7 @@ import { useLocation } from 'react-router';
 import { BellButton } from './bell-button';
 
 const handleDocHelpCLick = () => {
-  window.open('https://ragflow.io/docs/dev/category/guides', 'target');
+  window.open('https://ragflow.io/docs/category/user-guides', 'target');
 };
 
 const PathMap = {

@@ -3,12 +3,7 @@ import * as AvatarPrimitive from '@radix-ui/react-avatar';
 import { forwardRef, memo, useEffect, useRef, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 
-const PREDEFINED_COLORS = [
-  { from: '#4F6DEE', to: '#67BDF9' },
-  { from: '#38A04D', to: '#93DCA2' },
-  { from: '#C35F2B', to: '#EDB395' },
-  { from: '#633897', to: '#CBA1FF' },
-];
+const PREDEFINED_COLORS = [{ from: '#9B348E', to: '#ee0000' }];
 
 const getStringHash = (str: string): number => {
   if (typeof str !== 'string') return 0;
