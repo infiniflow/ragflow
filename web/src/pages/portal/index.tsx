@@ -1,3 +1,4 @@
+import MarkdownContent from '@/components/next-markdown-content';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -547,9 +548,16 @@ export default function PortalPage() {
                               : 'bg-white dark:bg-gray-800 shadow-sm border border-gray-200 max-w-[50%]'
                           }`}
                         >
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                            {msg.content}
-                          </p>
+                          {msg.role === MessageType.User ? (
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                              {msg.content}
+                            </p>
+                          ) : (
+                            <MarkdownContent
+                              content={msg.content}
+                              loading={false}
+                            />
+                          )}
                         </div>
                         {msg.role === MessageType.User && (
                           <div className="size-9 flex-shrink-0" />
