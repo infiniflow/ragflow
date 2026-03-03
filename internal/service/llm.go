@@ -114,12 +114,18 @@ func (s *LLMService) GetMyLLMs(tenantID string, includeDetails bool) (map[string
 
 // LLMListItem represents a single LLM item in the list response
 type LLMListItem struct {
-	LLMName   string `json:"llm_name"`
-	ModelType string `json:"model_type"`
-	FID       string `json:"fid"`
-	Available bool   `json:"available"`
-	Status    string `json:"status"`
-	MaxTokens int64  `json:"max_tokens,omitempty"`
+	LLMName   string     `json:"llm_name"`
+	ModelType string     `json:"model_type"`
+	FID       string     `json:"fid"`
+	Available bool       `json:"available"`
+	Status    string     `json:"status"`
+	MaxTokens int64      `json:"max_tokens,omitempty"`
+	CreateDate *string   `json:"create_date,omitempty"`
+	CreateTime int64      `json:"create_time,omitempty"`
+	UpdateDate *string   `json:"update_date,omitempty"`
+	UpdateTime *int64    `json:"update_time,omitempty"`
+	IsTools   bool       `json:"is_tools"`
+	Tags      string     `json:"tags,omitempty"`
 }
 
 // ListLLMsResponse represents the response for list LLMs
@@ -193,6 +199,22 @@ func (s *LLMService) ListLLMs(tenantID string, modelType string) (ListLLMsRespon
 			Available: available,
 			Status:    "1",
 			MaxTokens: llm.MaxTokens,
+			IsTools:   llm.IsTools,
+			Tags:      llm.Tags,
+		}
+
+		// Add BaseModel fields
+		if llm.CreateDate != nil {
+			createDateStr := llm.CreateDate.Format("2006-01-02T15:04:05")
+			item.CreateDate = &createDateStr
+		}
+		item.CreateTime = llm.CreateTime
+		if llm.UpdateDate != nil {
+			updateDateStr := llm.UpdateDate.Format("2006-01-02T15:04:05")
+			item.UpdateDate = &updateDateStr
+		}
+		if llm.UpdateTime != nil {
+			item.UpdateTime = llm.UpdateTime
 		}
 
 		result[llm.FID] = append(result[llm.FID], item)
