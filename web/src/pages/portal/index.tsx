@@ -1,4 +1,8 @@
 import MarkdownContent from '@/components/next-markdown-content';
+import { ReferenceDocumentList } from '@/components/next-message-item/reference-document-list';
+import { ReferenceImageList } from '@/components/next-message-item/reference-image-list';
+import PdfSheet from '@/components/pdf-drawer';
+import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import {
   AlertDialog,
@@ -20,7 +24,11 @@ import {
 } from '@/components/ui/tooltip';
 import { MessageType } from '@/constants/chat';
 import { useFetchAppConf } from '@/hooks/logic-hooks';
-import { Message } from '@/interfaces/database/chat';
+import {
+  IReference,
+  IReferenceObject,
+  Message,
+} from '@/interfaces/database/chat';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -36,6 +44,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { DocumentSelector } from './document-selector';
 import {
   PublicDialog,
   useFetchConversationHistory,
@@ -54,6 +63,26 @@ interface ConversationHistory {
   create_time: number;
   update_time: number;
 }
+
+// 转换 IReference 到 IReferenceObject
+const convertReferenceToObject = (
+  reference: IReference | undefined,
+): IReferenceObject | undefined => {
+  if (!reference) return undefined;
+
+  const chunks: Record<string, any> = {};
+  const doc_aggs: Record<string, any> = {};
+
+  reference.chunks?.forEach((chunk, index) => {
+    chunks[index] = chunk;
+  });
+
+  reference.doc_aggs?.forEach((doc) => {
+    doc_aggs[doc.doc_id] = doc;
+  });
+
+  return { chunks, doc_aggs };
+};
 
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
@@ -81,6 +110,17 @@ export default function PortalPage() {
   const loadingConversationIdRef = useRef<string | null>(null); // 跟踪正在加载的会话ID
   const [dialogPage, setDialogPage] = useState(1);
   const [allLoadedDialogs, setAllLoadedDialogs] = useState<PublicDialog[]>([]);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
+  const [availableDocuments, setAvailableDocuments] = useState<
+    Array<{ doc_id: string; doc_name: string }>
+  >([]);
+  const [messageReferences, setMessageReferences] = useState<
+    Record<string, any>
+  >({});
+
+  // PDF 查看器
+  const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
+    useClickDrawer();
 
   // 获取公开助手（支持分页）
   const { data: dialogsData, isLoading: dialogsLoading } =
@@ -140,8 +180,53 @@ export default function PortalPage() {
       if (result.code === 0 && result.data.prologue) {
         setWelcomeMessage(result.data.prologue);
       }
+
+      // 获取关联的知识库文档
+      if (
+        result.code === 0 &&
+        result.data.kb_ids &&
+        result.data.kb_ids.length > 0
+      ) {
+        fetchAvailableDocuments(result.data.kb_ids);
+      } else {
+        setAvailableDocuments([]);
+      }
     } catch (error) {
       console.error('Failed to fetch welcome message:', error);
+    }
+  };
+
+  const fetchAvailableDocuments = async (kbIds: string[]) => {
+    try {
+      const allDocs: Array<{ doc_id: string; doc_name: string }> = [];
+
+      for (const kbId of kbIds) {
+        const response = await fetch(`/v1/document/list`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            kb_id: kbId,
+            page: 1,
+            page_size: 1000,
+          }),
+        });
+        const result = await response.json();
+
+        if (result.code === 0 && result.data.docs) {
+          const docs = result.data.docs.map((doc: any) => ({
+            doc_id: doc.id,
+            doc_name: doc.name,
+          }));
+          allDocs.push(...docs);
+        }
+      }
+
+      setAvailableDocuments(allDocs);
+    } catch (error) {
+      console.error('Failed to fetch documents:', error);
+      setAvailableDocuments([]);
     }
   };
 
@@ -150,6 +235,7 @@ export default function PortalPage() {
     setSelectedConversationId(undefined);
     setIsChatMode(false);
     setMessages([]);
+    setSelectedDocumentIds([]);
     await fetchWelcomeMessage(dialog);
   };
 
@@ -161,6 +247,7 @@ export default function PortalPage() {
 
     // 立即清空消息和设置加载状态，防止显示旧数据
     setMessages([]);
+    setMessageReferences({});
     setIsLoading(true);
     setIsChatMode(true);
 
@@ -220,6 +307,26 @@ export default function PortalPage() {
       if (loadingConversationIdRef.current === conversation.id) {
         if (result.code === 0 && result.data.messages) {
           setMessages(result.data.messages);
+
+          // 加载引文数据
+          if (result.data.reference && Array.isArray(result.data.reference)) {
+            const refs: Record<string, any> = {};
+
+            // 过滤出助手消息（排除第一条欢迎消息）
+            const assistantMessages = result.data.messages.filter(
+              (msg: any, index: number) =>
+                msg.role === MessageType.Assistant && index > 0,
+            );
+
+            // 将引文数据与助手消息匹配
+            assistantMessages.forEach((msg: any, assistantIndex: number) => {
+              if (result.data.reference[assistantIndex]) {
+                refs[msg.id] = result.data.reference[assistantIndex];
+              }
+            });
+
+            setMessageReferences(refs);
+          }
         }
       } else {
         console.log('Conversation changed, ignoring stale response');
@@ -284,6 +391,7 @@ export default function PortalPage() {
     }
     setIsChatMode(false);
     setMessages([]);
+    setMessageReferences({});
     setSelectedConversationId(undefined);
     setInputValue('');
     setIsLoading(false);
@@ -312,11 +420,15 @@ export default function PortalPage() {
       role: MessageType.User,
       content: inputValue.trim(),
       id: `user-${Date.now()}`,
+      doc_ids: selectedDocumentIds.length > 0 ? selectedDocumentIds : undefined,
     };
 
     setMessages((prev) => [...prev, userMessage]);
     const questionText = inputValue.trim();
+    const docIds =
+      selectedDocumentIds.length > 0 ? selectedDocumentIds : undefined;
     setInputValue('');
+    setSelectedDocumentIds([]); // 清空选中的文档
     setIsLoading(true);
 
     // 创建 AbortController
@@ -350,6 +462,7 @@ export default function PortalPage() {
             session_id: selectedConversationId,
             quote: true,
             stream: true,
+            doc_ids: docIds,
           }),
           signal: abortController.signal, // 添加 abort signal
         },
@@ -394,6 +507,14 @@ export default function PortalPage() {
                     }
                     return newMessages;
                   });
+                }
+
+                // 保存引文数据
+                if (data.data.reference) {
+                  setMessageReferences((prev) => ({
+                    ...prev,
+                    [assistantMessageId]: data.data.reference,
+                  }));
                 }
 
                 if (data.data.session_id && !selectedConversationId) {
@@ -569,7 +690,7 @@ export default function PortalPage() {
                   </div>
                 ) : (
                   <div className="w-full space-y-8">
-                    {messages.map((msg) => (
+                    {messages.map((msg, i) => (
                       <div
                         key={msg.id}
                         className={`flex gap-4 ${
@@ -590,7 +711,7 @@ export default function PortalPage() {
                           className={`px-5 py-3 rounded-2xl ${
                             msg.role === MessageType.User
                               ? 'bg-blue-500 text-white shadow-lg max-w-[50%]'
-                              : 'bg-white dark:bg-gray-800 shadow-sm border border-gray-200 max-w-[50%]'
+                              : 'bg-white dark:bg-gray-800 shadow-sm border border-gray-200 max-w-[70%]'
                           }`}
                         >
                           {msg.role === MessageType.User ? (
@@ -598,10 +719,33 @@ export default function PortalPage() {
                               {msg.content}
                             </p>
                           ) : (
-                            <MarkdownContent
-                              content={msg.content}
-                              loading={false}
-                            />
+                            <div className="space-y-3">
+                              <MarkdownContent
+                                content={msg.content}
+                                loading={isLoading && i === messages.length - 1}
+                                reference={convertReferenceToObject(
+                                  messageReferences[msg.id],
+                                )}
+                                clickDocumentButton={clickDocumentButton}
+                              />
+                              {/* 只有当消息有引文数据时才显示引文组件 */}
+                              {messageReferences[msg.id] && (
+                                <>
+                                  <ReferenceImageList
+                                    referenceChunks={
+                                      messageReferences[msg.id]?.chunks
+                                    }
+                                    messageContent={msg.content}
+                                  />
+                                  {messageReferences[msg.id]?.doc_aggs?.length >
+                                    0 && (
+                                    <ReferenceDocumentList
+                                      list={messageReferences[msg.id].doc_aggs}
+                                    />
+                                  )}
+                                </>
+                              )}
+                            </div>
                           )}
                         </div>
                         {msg.role === MessageType.User && (
@@ -618,43 +762,53 @@ export default function PortalPage() {
               <div className="border-t bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm p-6 flex-shrink-0">
                 <div className="max-w-4xl mx-auto">
                   <div className="flex gap-3 items-end">
-                    <div className="flex-1 relative">
-                      <Input
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        onKeyPress={handleKeyPress}
-                        placeholder="输入消息..."
-                        disabled={isLoading}
-                        className="pr-20 h-12 text-lg rounded-xl shadow-sm !border-2 !border-blue-200 focus-visible:!border-blue-400 focus-visible:!ring-2 focus-visible:!ring-blue-200"
-                      />
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 w-8 p-0"
+                    <div className="flex-1 space-y-2">
+                      {availableDocuments.length > 0 && (
+                        <DocumentSelector
+                          documents={availableDocuments}
+                          selectedDocumentIds={selectedDocumentIds}
+                          onSelectionChange={setSelectedDocumentIds}
                           disabled={isLoading}
-                        >
-                          <Mic className="size-4" />
-                        </Button>
-                        {isLoading ? (
+                        />
+                      )}
+                      <div className="relative">
+                        <Input
+                          value={inputValue}
+                          onChange={(e) => setInputValue(e.target.value)}
+                          onKeyPress={handleKeyPress}
+                          placeholder="输入消息..."
+                          disabled={isLoading}
+                          className="pr-20 h-12 text-lg rounded-xl shadow-sm !border-2 !border-blue-200 focus-visible:!border-blue-400 focus-visible:!ring-2 focus-visible:!ring-blue-200"
+                        />
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
                           <Button
                             size="sm"
-                            onClick={handleStopGeneration}
-                            variant="destructive"
-                            className="h-8 px-3"
-                          >
-                            停止
-                          </Button>
-                        ) : (
-                          <Button
-                            size="sm"
-                            onClick={handleSendMessage}
-                            disabled={!inputValue.trim()}
+                            variant="ghost"
                             className="h-8 w-8 p-0"
+                            disabled={isLoading}
                           >
-                            <Send className="size-4" />
+                            <Mic className="size-4" />
                           </Button>
-                        )}
+                          {isLoading ? (
+                            <Button
+                              size="sm"
+                              onClick={handleStopGeneration}
+                              variant="destructive"
+                              className="h-8 px-3"
+                            >
+                              停止
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              onClick={handleSendMessage}
+                              disabled={!inputValue.trim()}
+                              className="h-8 w-8 p-0"
+                            >
+                              <Send className="size-4" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -684,37 +838,49 @@ export default function PortalPage() {
 
                 {/* Large Input Box */}
                 <div className="w-full">
-                  <div className="relative">
-                    <Input
-                      value={inputValue}
-                      onChange={(e) => setInputValue(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      placeholder="在此输入问题"
-                      disabled={!selectedDialog || isLoading}
-                      className="w-full h-20 text-xl px-6 pr-28 rounded-2xl shadow-xl border-2 border-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all"
-                    />
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-12 w-12 p-0 rounded-full hover:bg-blue-50"
-                      >
-                        <Mic className="size-5 text-blue-600" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={handleSendMessage}
-                        disabled={
-                          !selectedDialog || !inputValue.trim() || isLoading
-                        }
-                        className="h-12 w-12 p-0 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
-                      >
-                        {isLoading ? (
-                          <Loader2 className="size-5 animate-spin" />
-                        ) : (
-                          <Send className="size-5" />
-                        )}
-                      </Button>
+                  <div className="space-y-3">
+                    {availableDocuments.length > 0 && (
+                      <div className="flex justify-center">
+                        <DocumentSelector
+                          documents={availableDocuments}
+                          selectedDocumentIds={selectedDocumentIds}
+                          onSelectionChange={setSelectedDocumentIds}
+                          disabled={!selectedDialog || isLoading}
+                        />
+                      </div>
+                    )}
+                    <div className="relative">
+                      <Input
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder="在此输入问题"
+                        disabled={!selectedDialog || isLoading}
+                        className="w-full h-20 text-xl px-6 pr-28 rounded-2xl shadow-xl border-2 border-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all"
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-12 w-12 p-0 rounded-full hover:bg-blue-50"
+                        >
+                          <Mic className="size-5 text-blue-600" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={handleSendMessage}
+                          disabled={
+                            !selectedDialog || !inputValue.trim() || isLoading
+                          }
+                          className="h-12 w-12 p-0 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
+                        >
+                          {isLoading ? (
+                            <Loader2 className="size-5 animate-spin" />
+                          ) : (
+                            <Send className="size-5" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -823,6 +989,16 @@ export default function PortalPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* PDF 查看器 */}
+      {visible && (
+        <PdfSheet
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={selectedChunk}
+        />
+      )}
     </div>
   );
 }

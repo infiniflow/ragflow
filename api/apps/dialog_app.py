@@ -480,6 +480,12 @@ def get_conversation_messages(conversation_id):
                         "content": "Hi there!",
                         "id": "msg_id"
                     }
+                ],
+                "reference": [
+                    {
+                        "chunks": [...],
+                        "doc_aggs": [...]
+                    }
                 ]
             }
         }
@@ -500,13 +506,15 @@ def get_conversation_messages(conversation_id):
                 code=RetCode.DATA_ERROR
             )
         
-        # Get messages from the conversation
+        # Get messages and reference from the conversation
         messages = conversation.message or []
+        reference = conversation.reference or []
         
         return get_json_result(data={
             "conversation_id": conversation.id,
             "dialog_id": conversation.dialog_id,
-            "messages": messages
+            "messages": messages,
+            "reference": reference
         })
         
     except Exception as e:
