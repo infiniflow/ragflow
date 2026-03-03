@@ -138,7 +138,13 @@ class RAGFlowConnector:
         id: str | None = None,
         name: str | None = None,
     ):
-        res = await self._get("/datasets", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name}, api_key=api_key)
+        params = {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc}
+        if id:
+            params['id'] = id
+        if name :
+            params['name'] = name
+            
+        res = await self._get("/datasets", params, api_key=api_key)
         if not res or res.status_code != 200:
             raise Exception([types.TextContent(type="text", text="Cannot process this operation.")])
 

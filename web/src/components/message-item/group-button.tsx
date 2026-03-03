@@ -1,20 +1,26 @@
 import { PromptIcon } from '@/assets/icon/next-icon';
 import CopyToClipboard from '@/components/copy-to-clipboard';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
+import { cn } from '@/lib/utils';
 import {
-  DeleteOutlined,
-  DislikeOutlined,
-  LikeOutlined,
-  PauseCircleOutlined,
-  SoundOutlined,
-  SyncOutlined,
-} from '@ant-design/icons';
-import { Radio, Tooltip } from 'antd';
+  LucidePauseCircle,
+  LucideRefreshCw,
+  LucideThumbsDown,
+  LucideThumbsUp,
+  LucideTrash2,
+  LucideVolume2,
+} from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import FeedbackDialog from '../feedback-dialog';
 import { PromptDialog } from '../prompt-dialog';
+import { Button } from '../ui/button';
 import { useRemoveMessage, useSendFeedback, useSpeech } from './hooks';
 
 interface IProps {
@@ -50,34 +56,57 @@ export const AssistantGroupButton = ({
 
   return (
     <>
-      <Radio.Group size="small">
-        <Radio.Button value="a">
-          <CopyToClipboard text={content}></CopyToClipboard>
-        </Radio.Button>
+      <div className="flex gap-1" role="toolbar">
+        <CopyToClipboard text={content} className="border-0" size="icon-xs" />
+
         {showLoudspeaker && (
-          <Radio.Button value="b" onClick={handleRead}>
-            <Tooltip title={t('chat.read')}>
-              {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="transparent"
+                  size="icon-xs"
+                  className="border-0"
+                  onClick={handleRead}
+                >
+                  <span>
+                    {isPlaying ? <LucidePauseCircle /> : <LucideVolume2 />}
+                  </span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('chat.read')}</TooltipContent>
             </Tooltip>
+
             <audio src="" ref={ref}></audio>
-          </Radio.Button>
+          </>
         )}
         {showLikeButton && (
           <>
-            <Radio.Button value="c" onClick={handleLike}>
-              <LikeOutlined />
-            </Radio.Button>
-            <Radio.Button value="d" onClick={showModal}>
-              <DislikeOutlined />
-            </Radio.Button>
+            <Button
+              variant="transparent"
+              size="icon-xs"
+              className="border-0"
+              onClick={handleLike}
+            >
+              <LucideThumbsUp />
+            </Button>
+
+            <Button
+              variant="transparent"
+              size="icon-xs"
+              className="border-0"
+              onClick={showModal}
+            >
+              <LucideThumbsDown />
+            </Button>
           </>
         )}
         {prompt && (
-          <Radio.Button value="e" onClick={showPromptModal}>
+          <Button onClick={showPromptModal}>
             <PromptIcon style={{ fontSize: '16px' }} />
-          </Radio.Button>
+          </Button>
         )}
-      </Radio.Group>
+      </div>
       {visible && (
         <FeedbackDialog
           visible={visible}
@@ -118,28 +147,41 @@ export const UserGroupButton = ({
   const { t } = useTranslation();
 
   return (
-    <Radio.Group size="small">
-      <Radio.Button value="a">
-        <CopyToClipboard text={content}></CopyToClipboard>
-      </Radio.Button>
+    <div className="flex gap-1">
+      <CopyToClipboard text={content} className="border-0" size="icon-xs" />
+
       {regenerateMessage && (
-        <Radio.Button
-          value="b"
-          onClick={regenerateMessage}
-          disabled={sendLoading}
-        >
-          <Tooltip title={t('chat.regenerate')}>
-            <SyncOutlined spin={sendLoading} />
-          </Tooltip>
-        </Radio.Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="transparent"
+              size="icon-xs"
+              className="border-0"
+              onClick={regenerateMessage}
+              disabled={sendLoading}
+            >
+              <LucideRefreshCw className={cn(sendLoading && 'animate-spin')} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('chat.regenerate')}</TooltipContent>
+        </Tooltip>
       )}
       {removeMessageById && (
-        <Radio.Button value="c" onClick={onRemoveMessage} disabled={loading}>
-          <Tooltip title={t('common.delete')}>
-            <DeleteOutlined spin={loading} />
-          </Tooltip>
-        </Radio.Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="transparent"
+              size="icon-xs"
+              className="border-0"
+              onClick={onRemoveMessage}
+              disabled={loading}
+            >
+              <LucideTrash2 />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('common.delete')}</TooltipContent>
+        </Tooltip>
       )}
-    </Radio.Group>
+    </div>
   );
 };

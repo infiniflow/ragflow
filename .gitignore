@@ -7,7 +7,7 @@ hudet/
 cv/
 layout_app.py
 api/flask_session
-
+venv/
 # Remove Cargo.lock from gitignore if creating an executable, leave it for libraries
 # More information here https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html
 Cargo.lock
@@ -211,3 +211,9 @@ backup
 # Added by cargo
 
 /target
+
+# Do not include in PR (local dev / build artifacts)
+ragflow.egg-info/
+uv-aarch64*.tar.gz
+uv-aarch64-unknown-linux-gnu.tar.gz
+docker/launch_backend_service_windows.sh

@@ -182,3 +182,20 @@ class TestDatasetsList:
         res = list_kbs(WebApiAuth, params)
         assert res["code"] == 0, res
         assert len(res["data"]["kbs"]) == expected_page_size, res
+
+    @pytest.mark.p2
+    def test_owner_ids_payload_mode(self, WebApiAuth):
+        base_res = list_kbs(WebApiAuth, {"page_size": 10})
+        assert base_res["code"] == 0, base_res
+        assert base_res["data"]["kbs"], base_res
+        owner_id = base_res["data"]["kbs"][0]["tenant_id"]
+
+        res = list_kbs(
+            WebApiAuth,
+            params={"page": 1, "page_size": 2, "desc": "false"},
+            payload={"owner_ids": [owner_id]},
+        )
+        assert res["code"] == 0, res
+        assert res["data"]["total"] >= len(res["data"]["kbs"]), res
+        assert len(res["data"]["kbs"]) <= 2, res
+        assert all(kb["tenant_id"] == owner_id for kb in res["data"]["kbs"]), res

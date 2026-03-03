@@ -17,7 +17,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import message from '@/components/ui/message';
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
@@ -211,7 +210,7 @@ export default function Agent() {
   } = useRunDataflow({ showLogSheet: showPipelineLogSheet, setMessageId });
 
   return (
-    <section className="h-full">
+    <section className="h-full" data-testid="agent-detail">
       <PageHeader>
         <section>
           <Breadcrumb>
@@ -246,7 +245,11 @@ export default function Agent() {
           >
             <MessageSquareCode /> {t('flow.conversationVariable')}
           </ButtonLoading>
-          <Button variant={'secondary'} onClick={handleButtonRunClick}>
+          <Button
+            data-testid="agent-run"
+            variant={'secondary'}
+            onClick={handleButtonRunClick}
+          >
             <CirclePlay />
             {t('flow.run')}
           </Button>
