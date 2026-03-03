@@ -231,6 +231,10 @@ class TestStorageDeletion:
 
     @pytest.mark.p2
     def test_delete_dataset_removes_storage_files(self, HttpApiAuth, tmp_path, storage_impl):
+        # check storage contains bucket and uploaded document
+        if not storage_impl:
+            pytest.skip("Using unsupported storage backend. Currently only MinIO and S3 are supported by this testcase.")
+
         # create a dataset
         dataset_ids = batch_create_datasets(HttpApiAuth, 1)
         dataset_id: str = dataset_ids[0]
@@ -241,10 +245,6 @@ class TestStorageDeletion:
         assert upload_response["code"] == 0, upload_response
         assert len(upload_response["data"]) == 1, upload_response
         filename: str = upload_response["data"][0]["location"]
-
-        # check storage contains bucket and uploaded document
-        if not storage_impl:
-            pytest.skip("Using unsupported storage backend. Currently only MinIO and S3 are supported by this testcase.")
 
         assert storage_impl.bucket_exists(dataset_id), f"Storage should have bucket for dataset {dataset_id}"
         assert storage_impl.obj_exist(dataset_id, filename), f"Storage should have file {filename} in bucket of dataset {dataset_id}"

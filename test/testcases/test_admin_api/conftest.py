@@ -163,7 +163,7 @@ def change_user_activation(session: requests.Session, username: str, active: boo
 
 
 def delete_user(session: requests.Session, username: str) -> dict[str, Any]:
-    """Helper function to delete an API key for a user
+    """Helper function to delete a user.
 
     Returns:
         Dict containing the full API response with keys: code, message, data
