@@ -444,7 +444,7 @@ export default function PortalPage() {
             {!sidebarCollapsed && (
               <div className="flex items-center gap-2">
                 <Clock className="size-4 text-muted-foreground" />
-                <span className="text-sm font-medium">历史记录</span>
+                <span className="text-base font-medium">历史记录</span>
               </div>
             )}
             <Button
@@ -466,7 +466,7 @@ export default function PortalPage() {
               {allConversations.length === 0 ? (
                 <div className="px-4 py-8 text-center">
                   <MessageSquare className="size-10 text-muted-foreground/30 mx-auto mb-2" />
-                  <p className="text-xs text-muted-foreground">暂无历史会话</p>
+                  <p className="text-sm text-muted-foreground">暂无历史会话</p>
                 </div>
               ) : (
                 <div className="py-1">
@@ -484,20 +484,20 @@ export default function PortalPage() {
                         <MessageSquare className="size-4 text-muted-foreground flex-shrink-0 mt-1" />
                         <div className="flex-1 min-w-0">
                           <div
-                            className="font-medium text-sm truncate mb-1"
+                            className="font-medium text-base truncate mb-1"
                             title={conversation.title}
                           >
                             {conversation.title}
                           </div>
-                          <div className="text-xs text-muted-foreground/70 truncate mb-1">
+                          <div className="text-sm text-muted-foreground/70 truncate mb-1">
                             {conversation.dialog_name}
                           </div>
                           {conversation.last_message && (
-                            <div className="text-xs text-muted-foreground/60 truncate mb-1.5">
+                            <div className="text-sm text-muted-foreground/60 truncate mb-1.5">
                               {conversation.last_message}
                             </div>
                           )}
-                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                             <span>
                               {dayjs(conversation.update_time).fromNow()}
                             </span>
@@ -539,7 +539,7 @@ export default function PortalPage() {
                       name={selectedDialog.name}
                       className="size-6"
                     />
-                    <span className="text-sm font-medium">
+                    <span className="text-base font-medium">
                       {selectedDialog.name}
                     </span>
                   </div>
@@ -548,7 +548,7 @@ export default function PortalPage() {
                   variant="ghost"
                   size="sm"
                   onClick={handleBackToHome}
-                  className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-9 px-3 text-sm"
+                  className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-9 px-3 text-base"
                 >
                   <ArrowLeft className="size-4 mr-1.5" />
                   返回
@@ -562,7 +562,7 @@ export default function PortalPage() {
                   <div className="flex items-center justify-center h-full">
                     <div className="text-center">
                       <Loader2 className="size-12 animate-spin text-blue-500 mx-auto mb-4" />
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-base text-muted-foreground">
                         加载历史消息中...
                       </p>
                     </div>
@@ -594,7 +594,7 @@ export default function PortalPage() {
                           }`}
                         >
                           {msg.role === MessageType.User ? (
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                            <p className="text-base leading-relaxed whitespace-pre-wrap break-words">
                               {msg.content}
                             </p>
                           ) : (
@@ -625,7 +625,7 @@ export default function PortalPage() {
                         onKeyPress={handleKeyPress}
                         placeholder="输入消息..."
                         disabled={isLoading}
-                        className="pr-20 h-12 text-base rounded-xl shadow-sm !border-2 !border-blue-200 focus-visible:!border-blue-400 focus-visible:!ring-2 focus-visible:!ring-blue-200"
+                        className="pr-20 h-12 text-lg rounded-xl shadow-sm !border-2 !border-blue-200 focus-visible:!border-blue-400 focus-visible:!ring-2 focus-visible:!ring-blue-200"
                       />
                       <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
                         <Button
@@ -673,11 +673,11 @@ export default function PortalPage() {
                       alt="logo"
                       className="w-14 h-14 object-contain"
                     />
-                    <h1 className="text-4xl font-bold text-blue-600">
+                    <h1 className="text-5xl font-bold text-blue-600">
                       {appConf.appName}
                     </h1>
                   </div>
-                  <p className="text-lg text-muted-foreground font-medium">
+                  <p className="text-xl text-muted-foreground font-medium">
                     👋 {welcomeMessage || '有什么我能帮你分担的吗？'}
                   </p>
                 </div>
@@ -691,7 +691,7 @@ export default function PortalPage() {
                       onKeyPress={handleKeyPress}
                       placeholder="在此输入问题"
                       disabled={!selectedDialog || isLoading}
-                      className="w-full h-20 text-lg px-6 pr-28 rounded-2xl shadow-xl border-2 border-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all"
+                      className="w-full h-20 text-xl px-6 pr-28 rounded-2xl shadow-xl border-2 border-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all"
                     />
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-2">
                       <Button
@@ -745,7 +745,7 @@ export default function PortalPage() {
                                 className="size-12"
                               />
                               <span
-                                className={`font-semibold text-base truncate flex-1 ${
+                                className={`font-semibold text-lg truncate flex-1 ${
                                   selectedDialog?.id === dialog.id
                                     ? 'text-blue-700'
                                     : ''
@@ -756,13 +756,13 @@ export default function PortalPage() {
                             </div>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
+                                <p className="text-base text-muted-foreground line-clamp-2 leading-relaxed">
                                   {dialog.description || '暂无描述'}
                                 </p>
                               </TooltipTrigger>
                               {dialog.description && (
                                 <TooltipContent className="max-w-sm">
-                                  <p className="text-sm">
+                                  <p className="text-base">
                                     {dialog.description}
                                   </p>
                                 </TooltipContent>
