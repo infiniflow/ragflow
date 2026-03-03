@@ -529,6 +529,8 @@ export default {
         'Jika kunci API Anda berasal dari OpenAI, abaikan saja. Penyedia perantara lainnya akan memberikan base url ini dengan kunci API.',
       tongyiBaseUrlTip:
         'Untuk pengguna Tiongkok, tidak perlu diisi atau gunakan https://dashscope.aliyuncs.com/compatible-mode/v1. Untuk pengguna internasional, gunakan https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Untuk pengguna Tiongkok, tidak perlu diisi atau gunakan https://api.siliconflow.cn/v1. Untuk pengguna internasional, gunakan https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Hanya untuk pengguna internasional, silakan lihat tip)',
       minimaxBaseUrlTip:

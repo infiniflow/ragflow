@@ -16,11 +16,16 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslate } from '@/hooks/common-hooks';
+import { getDirAttribute } from '@/utils/text-direction';
 import { useFormContext } from 'react-hook-form';
 
 export default function ChatBasicSetting() {
   const { t } = useTranslate('chat');
   const form = useFormContext();
+  const nameValue = form.watch('name');
+  const descriptionValue = form.watch('description');
+  const emptyResponseValue = form.watch('prompt_config.empty_response');
+  const prologueValue = form.watch('prompt_config.prologue');
 
   return (
     <div className="space-y-8">
@@ -46,7 +51,7 @@ export default function ChatBasicSetting() {
           <FormItem>
             <FormLabel required>{t('assistantName')}</FormLabel>
             <FormControl>
-              <Input {...field}></Input>
+              <Input {...field} dir={getDirAttribute(nameValue || '')}></Input>
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -59,7 +64,10 @@ export default function ChatBasicSetting() {
           <FormItem>
             <FormLabel>{t('description')}</FormLabel>
             <FormControl>
-              <Textarea {...field}></Textarea>
+              <Textarea
+                {...field}
+                dir={getDirAttribute(descriptionValue || '')}
+              ></Textarea>
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -74,7 +82,10 @@ export default function ChatBasicSetting() {
               {t('emptyResponse')}
             </FormLabel>
             <FormControl>
-              <Textarea {...field}></Textarea>
+              <Textarea
+                {...field}
+                dir={getDirAttribute(emptyResponseValue || '')}
+              ></Textarea>
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -89,7 +100,10 @@ export default function ChatBasicSetting() {
               {t('setAnOpener')}
             </FormLabel>
             <FormControl>
-              <Textarea {...field}></Textarea>
+              <Textarea
+                {...field}
+                dir={getDirAttribute(prologueValue || '')}
+              ></Textarea>
             </FormControl>
             <FormMessage />
           </FormItem>

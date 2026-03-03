@@ -12,7 +12,7 @@ import { IDataSourceInfoMap } from '../interface';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
 import { S3Constant } from './s3-constant';
-import { seafileConstant } from './seafile-constant'; 
+import { seafileConstant } from './seafile-constant';
 
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
@@ -1222,14 +1222,14 @@ export const DataSourceFormDefaultValues = {
     source: DataSourceKey.SEAFILE,
     config: {
       seafile_url: '',
-      sync_scope: 'account', 
-      repo_id: '',             
-      sync_path: '',            
-      include_shared: true,     
+      sync_scope: 'account',
+      repo_id: '',
+      sync_path: '',
+      include_shared: true,
       batch_size: 100,
       credentials: {
-        seafile_token: '',   
-        repo_token: '',          
+        seafile_token: '',
+        repo_token: '',
       },
     },
   },

@@ -1,9 +1,9 @@
 import { useToast } from '@/components/hooks/use-toast';
 import message from '@/components/ui/message';
-import { AgentCategory, DataflowOperator } from '@/constants/agent';
+import { AgentCategory, DataflowOperator, EmptyDsl } from '@/constants/agent';
 import { FileMimeType } from '@/constants/common';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { EmptyDsl, useSetAgent } from '@/hooks/use-agent-request';
+import { useSetAgent } from '@/hooks/use-agent-request';
 import { Node } from '@xyflow/react';
 import isEmpty from 'lodash/isEmpty';
 import { useCallback } from 'react';

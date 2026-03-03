@@ -33,7 +33,12 @@ export function RenameDialog({
           onOk={onOk}
         ></RenameForm>
         <DialogFooter>
-          <ButtonLoading data-testid="rename-save" type="submit" form={TagRenameId} loading={loading}>
+          <ButtonLoading
+            data-testid="rename-save"
+            type="submit"
+            form={TagRenameId}
+            loading={loading}
+          >
             {t('common.save')}
           </ButtonLoading>
         </DialogFooter>

@@ -10,7 +10,8 @@ describe('preprocessLaTeX', () => {
   });
 
   it('does not cut block math at \\right] (Closes #13134)', () => {
-    const content = '\\[ C_{seq}(y|x) = \\frac{1}{|y|} \\sum_{t=1}^{|y|} \\right] \\]';
+    const content =
+      '\\[ C_{seq}(y|x) = \\frac{1}{|y|} \\sum_{t=1}^{|y|} \\right] \\]';
     const result = preprocessLaTeX(content);
     expect(result).toContain('\\right]');
     expect(result).toContain('\\frac{1}{|y|}');

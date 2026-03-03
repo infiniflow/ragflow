@@ -8,12 +8,15 @@ import {
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import {
   currentReg,
+  parseCitationIndex,
   preprocessLaTeX,
   replaceTextByOldReg,
   replaceThinkToSection,
   showImage,
 } from '@/utils/chat';
+import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
+import { getDirAttribute } from '@/utils/text-direction';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import classNames from 'classnames';
 import DOMPurify from 'dompurify';
@@ -41,7 +44,8 @@ import { Button } from './ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
-const getChunkIndex = (match: string) => Number(match.replace(/\[|\]/g, ''));
+const getChunkIndex = (match: string) =>
+  parseCitationIndex(match.replace(/\[|\]/g, ''));
 
 const FloatingChatWidgetMarkdown = ({
   reference,
@@ -281,14 +285,19 @@ const FloatingChatWidgetMarkdown = ({
     [getPopoverContent, getReferenceInfo, handleDocumentButtonClick],
   );
 
+  const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+
   return (
-    <div className="floating-chat-widget">
+    <div className="floating-chat-widget" dir={dir}>
       <Markdown
         rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
         remarkPlugins={[remarkGfm, remarkMath]}
         className="text-sm leading-relaxed space-y-2 prose-sm max-w-full"
         components={
           {
+            p: ({ children, node, ...props }: any) => (
+              <p {...props}>{children}</p>
+            ),
             'custom-typography': ({ children }: { children: string }) =>
               renderReference(children),
             code(props: any) {

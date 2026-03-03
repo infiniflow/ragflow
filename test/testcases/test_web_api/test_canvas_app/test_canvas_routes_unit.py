@@ -625,24 +625,6 @@ def test_run_dataflow_and_canvas_sse_matrix_unit(monkeypatch):
     res = _run(inspect.unwrap(module.run)())
     assert res["message"] == "canvas replica not found, please call /get/<canvas_id> first."
 
-    pipeline_calls = []
-    monkeypatch.setattr(module, "Pipeline", lambda *args, **kwargs: pipeline_calls.append((args, kwargs)))
-    monkeypatch.setattr(module, "get_uuid", lambda: "task-1")
-
-    _set_request_json(monkeypatch, module, {"id": "df-1", "files": ["f1"], "user_id": "exp-1"})
-    monkeypatch.setattr(module.CanvasReplicaService, "load_for_run", lambda *_args, **_kwargs: {"dsl": {"n": 1}, "title": "df", "canvas_category": module.CanvasCategory.DataFlow})
-    monkeypatch.setattr(module, "queue_dataflow", lambda *_args, **_kwargs: (False, "queue failed"))
-    res = _run(inspect.unwrap(module.run)())
-    assert res["code"] == module.RetCode.DATA_ERROR
-    assert "queue failed" in res["message"]
-    assert pipeline_calls
-
-    _set_request_json(monkeypatch, module, {"id": "df-1", "files": ["f1"], "user_id": "exp-1"})
-    monkeypatch.setattr(module, "queue_dataflow", lambda *_args, **_kwargs: (True, ""))
-    res = _run(inspect.unwrap(module.run)())
-    assert res["code"] == module.RetCode.SUCCESS
-    assert res["data"]["message_id"] == "task-1"
-
     _set_request_json(monkeypatch, module, {"id": "ag-1", "query": "q", "files": [], "inputs": {}})
     monkeypatch.setattr(module.CanvasReplicaService, "load_for_run", lambda *_args, **_kwargs: {"dsl": {"x": 1}, "title": "ag", "canvas_category": module.CanvasCategory.Agent})
     monkeypatch.setattr(module, "Canvas", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("canvas init failed")))

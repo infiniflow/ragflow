@@ -894,6 +894,8 @@ export default {
         'Если ваш API ключ от OpenAI, просто проигнорируйте это. Любые другие промежуточные провайдеры дадут этот базовый url вместе с API ключом.',
       tongyiBaseUrlTip:
         'Для китайских пользователей не нужно заполнять или используйте https://dashscope.aliyuncs.com/compatible-mode/v1. Для международных пользователей используйте https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Для китайских пользователей не нужно заполнять или используйте https://api.siliconflow.cn/v1. Для международных пользователей используйте https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Только для международных пользователей, см. подсказку)',
       minimaxBaseUrlTip:

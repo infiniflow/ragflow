@@ -1,5 +1,5 @@
 import { IReference } from '@/interfaces/database/chat';
-import { currentReg, showImage } from '@/utils/chat';
+import { currentReg, normalizeCitationDigits, showImage } from '@/utils/chat';
 
 export interface ReferenceMatch {
   id: string;
@@ -15,7 +15,7 @@ export const findAllReferenceMatches = (text: string): ReferenceMatch[] => {
   let match;
   while ((match = currentReg.exec(text)) !== null) {
     matches.push({
-      id: match[1],
+      id: normalizeCitationDigits(match[1]),
       fullMatch: match[0],
       start: match.index,
       end: match.index + match[0].length,

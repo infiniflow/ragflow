@@ -40,6 +40,18 @@
   tr:nth-child(even) {
     background-color: #f2f2f22a;
   }
+
+  // RTL Support for tables
+  &[dir='rtl'] {
+    table {
+      direction: rtl;
+    }
+
+    th,
+    td {
+      text-align: right;
+    }
+  }
 }
 
 .pointerCursor() {

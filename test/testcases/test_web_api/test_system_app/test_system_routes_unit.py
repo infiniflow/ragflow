@@ -76,6 +76,7 @@ def _load_system_module(monkeypatch):
     settings_mod.STORAGE_IMPL_TYPE = "MINIO"
     settings_mod.DATABASE_TYPE = "MYSQL"
     settings_mod.REGISTER_ENABLED = True
+    settings_mod.DISABLE_PASSWORD_LOGIN = False
     common_pkg.settings = settings_mod
     monkeypatch.setitem(sys.modules, "common.settings", settings_mod)
 

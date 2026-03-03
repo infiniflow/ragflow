@@ -626,6 +626,8 @@ export default {
         '如果您的 API 密鑰來自 OpenAI，請忽略它。任何其他中間提供商都會提供帶有 API 密鑰的基本 URL。',
       tongyiBaseUrlTip:
         '中國用戶無需填寫或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。國際用戶請使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        '中國用戶無需填寫或使用 https://api.siliconflow.cn/v1。國際用戶請使用 https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder: '（僅國際用戶，請參閱提示）',
       minimaxBaseUrlTip: '僅國際用戶：使用 https://api.minimax.io/v1。',
       minimaxBaseUrlPlaceholder: '（僅國際用戶填寫 https://api.minimax.io/v1）',

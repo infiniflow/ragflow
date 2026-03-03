@@ -140,7 +140,10 @@ export function Header() {
   }, [pathname]);
 
   return (
-    <section className="py-5 px-10 flex justify-between items-center " data-testid="top-nav">
+    <section
+      className="py-5 px-10 flex justify-between items-center "
+      data-testid="top-nav"
+    >
       <div className="flex items-center gap-4">
         <img
           src={'/logo.svg'}
@@ -158,7 +161,10 @@ export function Header() {
         onChange={handleChange}
         activeClassName="text-bg-base bg-metallic-gradient border-b-[#00BEB4] border-b-2"
       ></Segmented>
-      <div className="flex items-center gap-5 text-text-badge" data-testid="auth-status">
+      <div
+        className="flex items-center gap-5 text-text-badge"
+        data-testid="auth-status"
+      >
         <a
           target="_blank"
           href="https://discord.com/invite/NjYzJD3GM3"

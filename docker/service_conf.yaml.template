@@ -143,12 +143,13 @@ user_default_llm:
 #     client_secret: "your_client_secret"
 #     redirect_uri: "https://your-app.com/v1/user/oauth/callback/github"
 # authentication:
-#   client:
-#     switch: false
-#     http_app_key:
-#     http_secret_key:
-#   site:
-#     switch: false
+#  client:
+#    switch: false
+#    http_app_key:
+#    http_secret_key:
+#  site:
+#    switch: false
+#  disable_password_login: false
 # permission:
 #   switch: false
 #   component: false

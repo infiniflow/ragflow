@@ -586,7 +586,11 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               >
                 {t('search.cancelText')}
               </Button>
-              <Button data-testid="search-settings-save" type="submit" disabled={formSubmitLoading}>
+              <Button
+                data-testid="search-settings-save"
+                type="submit"
+                disabled={formSubmitLoading}
+              >
                 {formSubmitLoading && (
                   <div className="size-4">
                     <Spin size="small" />
