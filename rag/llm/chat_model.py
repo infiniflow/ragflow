@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -58,6 +59,58 @@ class ReActMode(StrEnum):
 ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
+
+
+def _apply_vision_images(history, images):
+    """Convert the last user message to multimodal format with vision images.
+
+    Modifies *history* in-place so that the most recent ``user`` message
+    carries the supplied *images* using the OpenAI Vision ``image_url``
+    content-block format.  Providers that need a different wire format
+    (Anthropic, Gemini, Ollama …) are expected to translate from this
+    canonical representation in their own transport layer (e.g. LiteLLM
+    does this automatically when ``drop_params=True``).
+
+    Accepts images as raw ``bytes``, data-URI strings, or plain base-64
+    strings.
+    """
+    if not images:
+        return
+
+    for idx in range(len(history) - 1, -1, -1):
+        if history[idx].get("role") != "user":
+            continue
+
+        content = history[idx].get("content", "")
+        if isinstance(content, list):
+            blocks = list(content)
+        else:
+            text = "" if content is None else str(content)
+            blocks = [{"type": "text", "text": text}] if text else []
+
+        for img in images:
+            if isinstance(img, (bytes, bytearray, memoryview)):
+                raw = bytes(img) if not isinstance(img, bytes) else img
+                b64 = base64.b64encode(raw).decode("utf-8")
+                mime = "image/jpeg" if raw[:2] == b"\xff\xd8" else "image/png"
+                url = f"data:{mime};base64,{b64}"
+            elif isinstance(img, str):
+                url = img.strip()
+                if not url.startswith(("data:", "http://", "https://")):
+                    url = f"data:image/png;base64,{url}"
+            elif isinstance(img, dict):
+                url = (
+                    img.get("image_url", {}).get("url", "")
+                    or img.get("url", "")
+                )
+                if not url:
+                    continue
+            else:
+                continue
+            blocks.append({"type": "image_url", "image_url": {"url": url}})
+
+        history[idx]["content"] = blocks
+        return
 
 
 class Base(ABC):
@@ -135,6 +188,9 @@ class Base(ABC):
         return gen_conf
 
     async def _async_chat_streamly(self, history, gen_conf, **kwargs):
+        images = kwargs.pop("images", None)
+        if images:
+            _apply_vision_images(history, images)
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
 
@@ -441,6 +497,9 @@ class Base(ABC):
         assert False, "Shouldn't be here."
 
     async def _async_chat(self, history, gen_conf, **kwargs):
+        images = kwargs.pop("images", None)
+        if images:
+            _apply_vision_images(history, images)
         logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
         if self.model_name.lower().find("qwq") >= 0:
             logging.info(f"[INFO] {self.model_name} detected as reasoning model, using async_chat_streamly")
@@ -1217,10 +1276,13 @@ class LiteLLMBase(ABC):
         return gen_conf
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
+        images = kwargs.pop("images", None)
         hist = list(history) if history else []
         if system:
             if not hist or hist[0].get("role") != "system":
                 hist.insert(0, {"role": "system", "content": system})
+        if images:
+            _apply_vision_images(hist, images)
 
         logging.info("[HISTORY]" + json.dumps(hist, ensure_ascii=False, indent=2))
         if self.model_name.lower().find("qwen3") >= 0:
@@ -1251,8 +1313,11 @@ class LiteLLMBase(ABC):
         assert False, "Shouldn't be here."
 
     async def async_chat_streamly(self, system, history, gen_conf, **kwargs):
+        images = kwargs.pop("images", None)
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
+        if images:
+            _apply_vision_images(history, images)
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         gen_conf = self._clean_conf(gen_conf)
         reasoning_start = False
