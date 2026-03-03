@@ -721,7 +721,7 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       function: 'Funktion',
       chunkMessage: 'Bitte Wert eingeben!',
       full: 'Volltext',
-      ellipse: 'Ellipse',
+      ellipse: 'Zusammenfassung',
       graph: 'Wissensgraph',
       mind: 'Mind Map',
       question: 'Frage',

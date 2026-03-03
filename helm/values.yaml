@@ -16,8 +16,8 @@ env:
   # - `elasticsearch` (default)
   # - `infinity` (https://github.com/infiniflow/infinity)
   # - `opensearch` (https://github.com/opensearch-project/OpenSearch)
-  # DOC_ENGINE: elasticsearch
-  DOC_ENGINE: infinity
+  DOC_ENGINE: elasticsearch
+  # DOC_ENGINE: infinity
   # DOC_ENGINE: opensearch
 
   # The version of Elasticsearch.
@@ -58,7 +58,7 @@ env:
   # REDIS_PORT: "6379"
 
   # The local time zone.
-  TZ: "Asia/Shanghai"
+  TZ: "Europe/Berlin"
 
   # Uncomment the following line if you have limited access to huggingface.co:
   # HF_ENDPOINT: https://hf-mirror.com
@@ -69,14 +69,25 @@ env:
   # After making the change, ensure you update `client_max_body_size` in nginx/nginx.conf correspondingly.
 
   # The number of document chunks processed in a single batch during document parsing.
-  DOC_BULK_SIZE: 4
+  DOC_BULK_SIZE: 8
 
   # The number of text chunks processed in a single batch during embedding vectorization.
-  EMBEDDING_BATCH_SIZE: 16
+  EMBEDDING_BATCH_SIZE: 32
+
+  #Port auf dem der MCP-Server Exposed wird.
+  SVR_MCP_PORT: 9382
+  # Deaktiviere die Registrierung von neuen Benutzern, um die Sicherheit zu erhöhen. Setze diesen Wert auf "1", wenn du die Registrierung aktivieren möchtest.
+  REGISTER_ENABLED: 0
+
+  #Aktiviere DOCLING als Parsing Engine
+  USE_DOCLING: true
+
+  #Maximale Dateigröße für den Upload von Dokumenten, in Bytes (aktuell 5 GB pro Dokument).
+  MAX_CONTENT_LENGTH: 40000000000
 
 ragflow:
   image:
-    repository: infiniflow/ragflow
+    repository: TIMBLOCKER/kira
     tag: v0.24.0
     pullPolicy: IfNotPresent
     pullSecrets: []
