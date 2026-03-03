@@ -271,11 +271,14 @@ class RAGFlowConnector:
                     doc_id_meta_list = []
                     docs = {}
                     while page:
-                        docs_res = await self._get(f"/datasets/{dataset_id}/documents?page={page}", api_key=api_key)
-                        if not docs_res:
-                            break
+                        docs_res = self._get(f"/datasets/{dataset_id}/documents?page={page}&page_size={page_size}")
                         docs_data = docs_res.json()
-                        if docs_data.get("code") == 0 and docs_data.get("data", {}).get("docs"):
+
+                        if not docs_data.get("data", {}).get("docs"):
+                            # Break on the first page with no documents
+                            break
+
+                        if docs_data.get("code") == 0:
                             for doc in docs_data["data"]["docs"]:
                                 doc_id = doc.get("id")
                                 if not doc_id:
@@ -298,8 +301,6 @@ class RAGFlowConnector:
                                 docs[doc_id] = doc_meta
 
                             page += 1
-                            if docs_data.get("data", {}).get("total", 0) - page * page_size <= 0:
-                                page = None
 
                         self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
                 if docs:
