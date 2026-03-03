@@ -67,6 +67,8 @@ async def create(tenant_id):
         for new_key, old_key in key_mapping.items():
             if old_key in prompt:
                 prompt[new_key] = prompt.pop(old_key)
+        if "vector_similarity_weight" in prompt:
+            prompt["vector_similarity_weight"] = 1 - prompt["vector_similarity_weight"]
         for key in key_list:
             if key in prompt:
                 req[key] = prompt.pop(key)
@@ -192,6 +194,8 @@ async def update(tenant_id, chat_id):
         for new_key, old_key in key_mapping.items():
             if old_key in prompt:
                 prompt[new_key] = prompt.pop(old_key)
+        if "vector_similarity_weight" in prompt:
+            prompt["vector_similarity_weight"] = 1 - prompt["vector_similarity_weight"]
         for key in key_list:
             if key in prompt:
                 req[key] = prompt.pop(key)
