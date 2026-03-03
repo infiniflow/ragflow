@@ -1364,6 +1364,23 @@ def alter_db_rename_column(migrator, table_name, old_column_name, new_column_nam
 
 def migrate_add_unique_email(migrator):
     """Deduplicates user emails and add UNIQUE constraint to email column (idempotent)"""
+    # step 0: check if UNIQUE index on email already exists
+    try:
+        cursor = DB.execute_sql("""
+            SELECT COUNT(*)
+            FROM information_schema.statistics
+            WHERE table_schema = DATABASE()
+              AND table_name = 'user'
+              AND index_name = 'user_email'
+              AND non_unique = 0
+        """)
+        result = cursor.fetchone()
+        if result and result[0] > 0:
+            logging.info("UNIQUE index on user.email already exists, skipping migration")
+            return
+    except Exception as ex:
+        logging.warning("Failed to check if UNIQUE index exists on user.email: %s, continuing with migration", ex)
+
     # step 1: rename duplicate rows so the UNIQUE constraint can be applied
     try:
         duplicates = User.select(User.email).group_by(User.email).having(fn.COUNT(User.id) > 1).tuples()
