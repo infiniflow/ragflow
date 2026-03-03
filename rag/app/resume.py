@@ -1892,50 +1892,143 @@ def _postprocess_resume(resume: dict, lines: list[str], lang: str = "Chinese") -
                     seen.add(item_str)
                     deduped.append(item_str)
             resume[list_field] = deduped
-    # --- Phase 3.5: Cross-dedup between work_desc_tks and project_desc_tks ---
-    # When a resume has no separate "Project Experience" section, the LLM may extract
-    # the same text into both work_desc_tks and project_desc_tks, causing duplicate chunks.
-    # Strategy: remove project descriptions that overlap heavily with any work description.
+    # --- Phase 3.4: work_desc_tks dedup by company name + time period ---
+    # LLM often extracts the same company's content twice: once from the "Work Experience"
+    # section and once from the "Project Experience" section, producing entries like
+    # "上海司顺电子商务" (real work) and "司顺电子商务" (from project section).
+    # These have different descriptions (daily work vs project details), so content-based
+    # Jaccard dedup cannot catch them. Instead, we detect duplicate companies by checking
+    # if one company name is a substring of another AND their time periods overlap.
+    # This also fixes the inflated work_exp_flt (e.g. 25.5 years instead of ~14).
+    work_descs = resume.get("work_desc_tks", [])
+    if len(work_descs) > 1:
+        corp_names = resume.get("corp_nm_tks", [])
+        work_details = resume.get("_work_exp_details", [])
+        positions = resume.get("position_name_tks", [])
+        kept_indices = []
+        for i in range(len(work_descs)):
+            is_dup = False
+            corp_i = _normalize_for_comparison(corp_names[i]) if i < len(corp_names) else ""
+            detail_i = work_details[i] if i < len(work_details) else {}
+            start_i = detail_i.get("start_date", "")
+            end_i = detail_i.get("end_date", "")
+            # Parse dates for entry i once (reused across inner loop)
+            dt_start_i = _parse_date_str(start_i) if start_i else None
+            dt_end_i = _parse_date_str(end_i) if end_i else None
+            for j in kept_indices:
+                # Strategy A: company name substring + time period overlap
+                corp_j = _normalize_for_comparison(corp_names[j]) if j < len(corp_names) else ""
+                if corp_i and corp_j:
+                    shorter_c, longer_c = (corp_i, corp_j) if len(corp_i) <= len(corp_j) else (corp_j, corp_i)
+                    if shorter_c in longer_c:
+                        # Check time period overlap using parsed dates
+                        # Two intervals [s1,e1] and [s2,e2] overlap iff s1 <= e2 and s2 <= e1
+                        # Use <= because resume dates are month-granularity (e.g. "2018.03" means "sometime in March 2018")
+                        detail_j = work_details[j] if j < len(work_details) else {}
+                        start_j = detail_j.get("start_date", "")
+                        end_j = detail_j.get("end_date", "")
+                        dt_start_j = _parse_date_str(start_j) if start_j else None
+                        dt_end_j = _parse_date_str(end_j) if end_j else None
+                        # Need at least one valid date on each side to compare
+                        if dt_start_i and dt_start_j:
+                            # Use far-future as default end if missing
+                            eff_end_i = dt_end_i or datetime.datetime(2099, 12, 1)
+                            eff_end_j = dt_end_j or datetime.datetime(2099, 12, 1)
+                            if dt_start_i <= eff_end_j and dt_start_j <= eff_end_i:
+                                is_dup = True
+                                break
+                        elif (start_i and start_j and start_i == start_j) or \
+                                (end_i and end_j and end_i == end_j):
+                            # Fallback: exact string match if date parsing fails
+                            is_dup = True
+                            break
+                # Strategy B: content-based Jaccard similarity (fallback)
+                norm_i = _normalize_for_comparison(work_descs[i])
+                norm_j = _normalize_for_comparison(work_descs[j])
+                shorter, longer = (norm_i, norm_j) if len(norm_i) <= len(norm_j) else (norm_j, norm_i)
+                if shorter and longer and shorter in longer:
+                    is_dup = True
+                    break
+                jac = _shingling_jaccard(work_descs[i], work_descs[j], n=5)
+                if jac > 0.5:
+                    is_dup = True
+                    break
+            if is_dup:
+                dup_corp = corp_names[i] if i < len(corp_names) else f"#{i+1}"
+                logger.debug(f"Work desc internal duplicate removed: {dup_corp}")
+            else:
+                kept_indices.append(i)
+        # Only update when entries were actually removed
+        if len(kept_indices) < len(work_descs):
+            resume["work_desc_tks"] = [work_descs[i] for i in kept_indices]
+            if corp_names:
+                resume["corp_nm_tks"] = [corp_names[i] for i in kept_indices if i < len(corp_names)]
+            if work_details:
+                resume["_work_exp_details"] = [work_details[i] for i in kept_indices if i < len(work_details)]
+            if positions:
+                resume["position_name_tks"] = [positions[i] for i in kept_indices if i < len(positions)]
+            # Recalculate work years based on deduplicated entries
+            new_details = resume.get("_work_exp_details", [])
+            if new_details:
+                recalc_years = sum(d.get("years", 0) for d in new_details)
+                recalc_years = round(recalc_years, 1)
+                if recalc_years > 0:
+                    resume["work_exp_flt"] = recalc_years
+                    logger.info(f"Work years recalculated: {recalc_years} yrs (before dedup: {_calculate_work_years([{'start_date': d.get('start_date',''), 'end_date': d.get('end_date','')} for d in work_details])} yrs)")
+            new_corps = resume.get("corp_nm_tks", [])
+            if new_corps:
+                resume["corporation_name_tks"] = new_corps[0]
+
+    # --- Phase 3.5: Merge project_desc_tks into work_desc_tks ---
+    # Instead of complex cross-dedup, we simply merge unique project descriptions into
+    # work_desc_tks and clear project_desc_tks. This avoids the problem where LLM extracts
+    # the same content into both fields with slightly different wording.
+    # After merge, project_desc_tks is emptied so _build_chunk_document won't generate
+    # duplicate chunks. Project names are preserved in project_tks for reference.
     work_descs = resume.get("work_desc_tks", [])
     project_descs = resume.get("project_desc_tks", [])
-    if work_descs and project_descs:
-        norm_work_set = [_normalize_for_comparison(d) for d in work_descs]
-        deduped_project_descs = []
-        deduped_project_names = []
+    # Save pre-merge project descriptions for debugging
+    resume["_raw_project_descs"] = list(project_descs) if project_descs else []
+    if project_descs:
         project_names = resume.get("project_tks", [])
+        merged_count = 0
+        skipped_count = 0
         for i, proj_desc in enumerate(project_descs):
             norm_proj = _normalize_for_comparison(proj_desc)
             if not norm_proj:
                 continue
-            is_dup = False
-            for norm_work in norm_work_set:
-                if not norm_work:
+            # Check if this project desc already exists in work_descs (exact or near-duplicate)
+            already_exists = False
+            for wd in work_descs:
+                norm_wd = _normalize_for_comparison(wd)
+                if not norm_wd:
                     continue
-                # Check substring containment
-                shorter, longer = (norm_proj, norm_work) if len(norm_proj) <= len(norm_work) else (norm_work, norm_proj)
+                # Substring containment check
+                shorter, longer = (norm_proj, norm_wd) if len(norm_proj) <= len(norm_wd) else (norm_wd, norm_proj)
                 if shorter in longer:
-                    is_dup = True
+                    already_exists = True
                     break
-                # Token-level overlap ratio
-                proj_tokens = set(norm_proj.split())
-                work_tokens = set(norm_work.split())
-                if proj_tokens and work_tokens:
-                    overlap = len(proj_tokens & work_tokens)
-                    ratio = overlap / min(len(proj_tokens), len(work_tokens))
-                    if ratio > 0.7:
-                        is_dup = True
-                        break
-            if is_dup:
-                proj_name = project_names[i] if i < len(project_names) else ""
-                logger.debug(f"Project desc duplicates work desc, removed: {proj_name or f'#{i+1}'}")
+                # Jaccard similarity check
+                if _shingling_jaccard(proj_desc, wd, n=5) > 0.5:
+                    already_exists = True
+                    break
+            if already_exists:
+                skipped_count += 1
+                proj_name = project_names[i] if i < len(project_names) else f"#{i+1}"
+                logger.debug(f"Project desc already in work_desc, skipped: {proj_name}")
             else:
-                deduped_project_descs.append(proj_desc)
-                if i < len(project_names):
-                    deduped_project_names.append(project_names[i])
-        resume["project_desc_tks"] = deduped_project_descs
-        if deduped_project_names:
-            resume["project_tks"] = deduped_project_names
-
+                # Append to work_desc_tks with project name prefix for context
+                proj_name = project_names[i] if i < len(project_names) else ""
+                if proj_name:
+                    proj_desc_with_prefix = f"[{proj_name}] {proj_desc}"
+                else:
+                    proj_desc_with_prefix = proj_desc
+                work_descs.append(proj_desc_with_prefix)
+                merged_count += 1
+        resume["work_desc_tks"] = work_descs
+        # Clear project_desc_tks — all content is now in work_desc_tks
+        resume["project_desc_tks"] = []
+        logger.info(f"Merged project descs into work_desc_tks: {merged_count} merged, {skipped_count} skipped (duplicate)")
     # --- Phase 4: Field completion ---
     required_fields = [
         "name_kwd", "gender_kwd", "phone_kwd", "email_tks",
@@ -2604,3 +2697,45 @@ def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
     except Exception as e:
         logger.warning(f"Layout detector unavailable, falling back to heuristic sorting: {e}")
         return _layout_aware_reorder(blocks)
+
+
+
+def _text_shingles(text: str, n: int = 5) -> set[tuple[int, ...]]:
+    """
+    Generate text fingerprint set using tiktoken BPE tokenization + n-gram shingling.
+
+    Compared to character-level splitting, BPE tokens have better granularity,
+    and n-grams preserve word order, providing more accurate overlap measurement.
+
+    Args:
+        text: Original text
+        n: Shingling window size, default 5
+    Returns:
+        Set of n-gram shingles (each shingle is a tuple of token ids)
+    """
+    if not text or _tiktoken_encoding is None:
+        return set()
+    tokens = _tiktoken_encoding.encode(text)
+    if len(tokens) < n:
+        # Text too short: return the entire token sequence as a single shingle
+        return {tuple(tokens)} if tokens else set()
+    return {tuple(tokens[i:i + n]) for i in range(len(tokens) - n + 1)}
+
+
+def _shingling_jaccard(text1: str, text2: str, n: int = 5) -> float:
+    """
+    Compute Jaccard similarity between two texts using tiktoken shingling.
+
+    Args:
+        text1: First text
+        text2: Second text
+        n: Shingling window size
+    Returns:
+        Jaccard similarity [0.0, 1.0]
+    """
+    s1 = _text_shingles(text1, n=n)
+    s2 = _text_shingles(text2, n=n)
+    union = s1 | s2
+    if not union:
+        return 1.0
+    return len(s1 & s2) / len(union)
