@@ -1,6 +1,9 @@
 ---
 sidebar_position: 15
 slug: /migrate_to_single_bucket_mode
+sidebar_custom_props: {
+  categoryIcon: LucideLocateFixed
+}
 ---
 
 # Migrate from multi-Bucket to single-bucket mode
