@@ -711,15 +711,15 @@ export default function PortalPage() {
                           className={`px-5 py-3 rounded-2xl ${
                             msg.role === MessageType.User
                               ? 'bg-blue-500 text-white shadow-lg max-w-[50%]'
-                              : 'bg-white dark:bg-gray-800 shadow-sm border border-gray-200 max-w-[70%]'
+                              : 'bg-white dark:bg-gray-800 shadow-sm border border-gray-200 max-w-[50%]'
                           }`}
                         >
                           {msg.role === MessageType.User ? (
-                            <p className="text-base leading-relaxed whitespace-pre-wrap break-words">
+                            <p className="text-lg leading-relaxed whitespace-pre-wrap break-words">
                               {msg.content}
                             </p>
                           ) : (
-                            <div className="space-y-3">
+                            <div className="space-y-3 text-lg">
                               <MarkdownContent
                                 content={msg.content}
                                 loading={isLoading && i === messages.length - 1}
