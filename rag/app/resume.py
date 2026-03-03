@@ -1895,7 +1895,6 @@ def _postprocess_resume(resume: dict, lines: list[str], lang: str = "Chinese") -
     # --- Phase 3.4: work_desc_tks dedup by company name + time period ---
     # LLM often extracts the same company's content twice: once from the "Work Experience"
     # section and once from the "Project Experience" section, producing entries like
-    # "上海司顺电子商务" (real work) and "司顺电子商务" (from project section).
     # These have different descriptions (daily work vs project details), so content-based
     # Jaccard dedup cannot catch them. Instead, we detect duplicate companies by checking
     # if one company name is a substring of another AND their time periods overlap.
