@@ -63,6 +63,7 @@ export default function PortalPage() {
   const [welcomeMessage, setWelcomeMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const loadingConversationIdRef = useRef<string | null>(null); // 跟踪正在加载的会话ID
   const [dialogPage, setDialogPage] = useState(1);
   const [allLoadedDialogs, setAllLoadedDialogs] = useState<PublicDialog[]>([]);
 
@@ -140,6 +141,14 @@ export default function PortalPage() {
   const handleSelectConversation = async (
     conversation: ConversationHistory,
   ) => {
+    // 记录正在加载的会话ID
+    loadingConversationIdRef.current = conversation.id;
+
+    // 立即清空消息和设置加载状态，防止显示旧数据
+    setMessages([]);
+    setIsLoading(true);
+    setIsChatMode(true);
+
     let dialog = allLoadedDialogs.find((d) => d.id === conversation.dialog_id);
 
     // 如果在已加载的列表中找不到，尝试从后端获取
@@ -167,20 +176,24 @@ export default function PortalPage() {
         }
       } catch (error) {
         console.error('Failed to fetch dialog:', error);
+        if (loadingConversationIdRef.current === conversation.id) {
+          setIsLoading(false);
+        }
+        return;
       }
     }
 
     if (!dialog) {
       console.error('Dialog not found:', conversation.dialog_id);
+      if (loadingConversationIdRef.current === conversation.id) {
+        setIsLoading(false);
+      }
       return;
     }
 
-    // 先清空当前消息，避免显示其他会话的消息
-    setMessages([]);
+    // 设置选中的对话和会话ID
     setSelectedDialog(dialog);
     setSelectedConversationId(conversation.id);
-    setIsLoading(true);
-    setIsChatMode(true);
 
     try {
       const response = await fetch(
@@ -188,13 +201,21 @@ export default function PortalPage() {
       );
       const result = await response.json();
 
-      if (result.code === 0 && result.data.messages) {
-        setMessages(result.data.messages);
+      // 只有当前正在加载的会话ID还是这个时，才更新消息（防止快速切换导致的问题）
+      if (loadingConversationIdRef.current === conversation.id) {
+        if (result.code === 0 && result.data.messages) {
+          setMessages(result.data.messages);
+        }
+      } else {
+        console.log('Conversation changed, ignoring stale response');
       }
     } catch (error) {
       console.error('Failed to load conversation:', error);
     } finally {
-      setIsLoading(false);
+      // 只有当前正在加载的会话ID还是这个时，才关闭加载状态
+      if (loadingConversationIdRef.current === conversation.id) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -490,38 +511,54 @@ export default function PortalPage() {
 
               {/* Messages Area */}
               <div className="flex-1 overflow-y-auto px-6 py-6">
-                <div className="max-w-4xl mx-auto space-y-6">
-                  {messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`flex gap-4 ${
-                        msg.role === MessageType.User
-                          ? 'justify-end'
-                          : 'justify-start'
-                      }`}
-                    >
-                      {msg.role === MessageType.Assistant && selectedDialog && (
-                        <RAGFlowAvatar
-                          avatar={selectedDialog.icon}
-                          name={selectedDialog.name}
-                          className="size-9 flex-shrink-0"
-                        />
-                      )}
+                {isLoading && messages.length === 0 ? (
+                  // 加载中的过渡效果
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <Loader2 className="size-12 animate-spin text-blue-500 mx-auto mb-4" />
+                      <p className="text-sm text-muted-foreground">
+                        加载历史消息中...
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-full space-y-8">
+                    {messages.map((msg) => (
                       <div
-                        className={`px-5 py-3 rounded-2xl max-w-[75%] ${
+                        key={msg.id}
+                        className={`flex gap-4 ${
                           msg.role === MessageType.User
-                            ? 'bg-blue-500 text-white shadow-lg'
-                            : 'bg-white dark:bg-gray-800 shadow-sm border border-gray-200'
+                            ? 'justify-end'
+                            : 'justify-start'
                         }`}
                       >
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                          {msg.content}
-                        </p>
+                        {msg.role === MessageType.Assistant &&
+                          selectedDialog && (
+                            <RAGFlowAvatar
+                              avatar={selectedDialog.icon}
+                              name={selectedDialog.name}
+                              className="size-9 flex-shrink-0"
+                            />
+                          )}
+                        <div
+                          className={`px-5 py-3 rounded-2xl ${
+                            msg.role === MessageType.User
+                              ? 'bg-blue-500 text-white shadow-lg max-w-[50%]'
+                              : 'bg-white dark:bg-gray-800 shadow-sm border border-gray-200 max-w-[50%]'
+                          }`}
+                        >
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                            {msg.content}
+                          </p>
+                        </div>
+                        {msg.role === MessageType.User && (
+                          <div className="size-9 flex-shrink-0" />
+                        )}
                       </div>
-                    </div>
-                  ))}
-                  <div ref={messagesEndRef} />
-                </div>
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </div>
+                )}
               </div>
 
               {/* Chat Input */}
@@ -587,7 +624,7 @@ export default function PortalPage() {
                       {appConf.appName}
                     </h1>
                   </div>
-                  <p className="text-2xl text-muted-foreground font-medium">
+                  <p className="text-lg text-muted-foreground font-medium">
                     👋 {welcomeMessage || '有什么我能帮你分担的吗？'}
                   </p>
                 </div>
