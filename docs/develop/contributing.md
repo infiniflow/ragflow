@@ -1,5 +1,5 @@
 ---
-sidebar_position: 1
+sidebar_position: 20
 slug: /contributing
 sidebar_custom_props: {
   categoryIcon: LucideBookA

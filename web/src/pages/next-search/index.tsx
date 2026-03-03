@@ -57,7 +57,7 @@ export default function SearchPage() {
   }, [isSearching]);
 
   return (
-    <section>
+    <section data-testid="search-detail">
       <PageHeader>
         <Breadcrumb>
           <BreadcrumbList>
@@ -100,7 +100,7 @@ export default function SearchPage() {
         </div>
         {openSetting && (
           <SearchSetting
-            className="mt-20 mr-2"
+            className="mt-20 me-2"
             open={openSetting}
             setOpen={setOpenSetting}
             data={SearchData as ISearchAppDetailProps}
@@ -128,7 +128,7 @@ export default function SearchPage() {
           // ></EmbedDialog>
         }
       </div>
-      <div className="absolute right-5 top-4 ">
+      <div className="absolute end-5 top-4 ">
         <Button
           className="bg-text-primary  text-bg-base border-b-accent-primary border-b-2"
           onClick={() => {
@@ -145,7 +145,7 @@ export default function SearchPage() {
         </Button>
       </div>
       {!isSearching && (
-        <div className="absolute left-5 bottom-12 ">
+        <div className="absolute start-5 bottom-12 ">
           <Button
             variant="transparent"
             className="bg-bg-card"

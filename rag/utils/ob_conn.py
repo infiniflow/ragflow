@@ -127,7 +127,7 @@ FTS_COLUMNS_TKS: list[str] = [
 ]
 
 # Extra columns to add after table creation (for migration)
-EXTRA_COLUMNS: list[Column] = [column_order_id, column_group_id, column_mom_id]
+EXTRA_COLUMNS: list[Column] = [column_order_id, column_group_id, column_mom_id, column_chunk_data]
 
 
 class SearchResult(BaseModel):

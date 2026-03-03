@@ -265,6 +265,14 @@ def _load_agents_app(monkeypatch):
         def delete_all_versions(*_args, **_kwargs):
             return True
 
+        @staticmethod
+        def save_or_replace_latest(*_args, **_kwargs):
+            return True
+
+        @staticmethod
+        def build_version_title(*_args, **_kwargs):
+            return "stub_version_title"
+
     canvas_version_mod.UserCanvasVersionService = _StubUserCanvasVersionService
     monkeypatch.setitem(sys.modules, "api.db.services.user_canvas_version", canvas_version_mod)
     services_pkg.user_canvas_version = canvas_version_mod
@@ -279,6 +287,67 @@ def _load_agents_app(monkeypatch):
     tenant_llm_service_mod.LLMFactoriesService = _StubLLMFactoriesService
     monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_service_mod)
     services_pkg.tenant_llm_service = tenant_llm_service_mod
+
+    user_service_mod = ModuleType("api.db.services.user_service")
+
+    class _StubUserService:
+        @staticmethod
+        def query(**_kwargs):
+            return []
+
+        @staticmethod
+        def get_by_id(_id):
+            return False, None
+
+    user_service_mod.UserService = _StubUserService
+    monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
+    services_pkg.user_service = user_service_mod
+    services_pkg.UserService = _StubUserService
+
+    # Stub api.apps package to prevent api/apps/__init__.py from executing
+    # (it triggers heavy imports like quart, settings, DB connections).
+    api_apps_pkg = ModuleType("api.apps")
+    api_apps_pkg.__path__ = []
+    monkeypatch.setitem(sys.modules, "api.apps", api_apps_pkg)
+
+    api_apps_services_pkg = ModuleType("api.apps.services")
+    api_apps_services_pkg.__path__ = []
+    monkeypatch.setitem(sys.modules, "api.apps.services", api_apps_services_pkg)
+    api_apps_pkg.services = api_apps_services_pkg
+
+    canvas_replica_mod = ModuleType("api.apps.services.canvas_replica_service")
+
+    class _StubCanvasReplicaService:
+        @classmethod
+        def normalize_dsl(cls, dsl):
+            import json
+            if isinstance(dsl, str):
+                return json.loads(dsl)
+            return dsl
+
+        @classmethod
+        def bootstrap(cls, *_args, **_kwargs):
+            return {}
+
+        @classmethod
+        def load_for_run(cls, *_args, **_kwargs):
+            return None
+
+        @classmethod
+        def commit_after_run(cls, *_args, **_kwargs):
+            return True
+
+        @classmethod
+        def replace_for_set(cls, *_args, **_kwargs):
+            return True
+
+        @classmethod
+        def create_if_absent(cls, *_args, **_kwargs):
+            return {}
+
+    canvas_replica_mod.CanvasReplicaService = _StubCanvasReplicaService
+    monkeypatch.setitem(sys.modules, "api.apps.services.canvas_replica_service", canvas_replica_mod)
+    api_apps_services_pkg.canvas_replica_service = canvas_replica_mod
 
     redis_obj = _StubRedisConn()
     redis_mod = ModuleType("rag.utils.redis_conn")
@@ -368,7 +437,7 @@ def test_agents_crud_unit_branches(monkeypatch):
     res = _run(module.update_agent.__wrapped__("tenant-1", "agent-1"))
     assert res["code"] == module.RetCode.OPERATING_ERROR
 
-    calls = {"update": 0, "insert": 0, "delete_versions": 0}
+    calls = {"update": 0, "save_or_replace_latest": 0}
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: True)
     monkeypatch.setattr(
         module.UserCanvasService,
@@ -377,17 +446,12 @@ def test_agents_crud_unit_branches(monkeypatch):
     )
     monkeypatch.setattr(
         module.UserCanvasVersionService,
-        "insert",
-        lambda **_kwargs: calls.__setitem__("insert", calls["insert"] + 1),
-    )
-    monkeypatch.setattr(
-        module.UserCanvasVersionService,
-        "delete_all_versions",
-        lambda *_args, **_kwargs: calls.__setitem__("delete_versions", calls["delete_versions"] + 1),
+        "save_or_replace_latest",
+        lambda *_args, **_kwargs: calls.__setitem__("save_or_replace_latest", calls["save_or_replace_latest"] + 1),
     )
     res = _run(module.update_agent.__wrapped__("tenant-1", "agent-1"))
     assert res["code"] == module.RetCode.SUCCESS
-    assert calls == {"update": 1, "insert": 1, "delete_versions": 1}
+    assert calls == {"update": 1, "save_or_replace_latest": 1}
 
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: False)
     res = module.delete_agent.__wrapped__("tenant-1", "agent-1")
