@@ -171,6 +171,30 @@ func (dao *FileDAO) HasChildFolder(folderID string) (bool, error) {
 	return count > 0, err
 }
 
+// GetAllParentFolders gets all parent folders in path (from current to root)
+func (dao *FileDAO) GetAllParentFolders(startID string) ([]*model.File, error) {
+	var parentFolders []*model.File
+	currentID := startID
+
+	for currentID != "" {
+		var file model.File
+		err := DB.Where("id = ?", currentID).First(&file).Error
+		if err != nil {
+			return nil, err
+		}
+
+		parentFolders = append(parentFolders, &file)
+
+		// Stop if we've reached the root folder (parent_id == id)
+		if file.ParentID == file.ID {
+			break
+		}
+		currentID = file.ParentID
+	}
+
+	return parentFolders, nil
+}
+
 // generateUUID generates a UUID
 func generateUUID() string {
 	id := uuid.New().String()

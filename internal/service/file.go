@@ -168,15 +168,53 @@ func (s *FileService) fileInfoToResponse(info *FileInfo) map[string]interface{} 
 		"update_time": info.File.UpdateTime,
 		"kbs_info":    info.KbsInfo,
 	}
-	
+
 	if info.File.Location != nil {
 		result["location"] = *info.File.Location
 	}
 	result["source_type"] = info.File.SourceType
-	
+
 	if info.File.Type == "folder" {
 		result["has_child_folder"] = info.HasChildFolder
 	}
-	
+
 	return result
+}
+
+// GetParentFolder gets parent folder of a file
+func (s *FileService) GetParentFolder(fileID string) (map[string]interface{}, error) {
+	// Check if file exists
+	if _, err := s.fileDAO.GetByID(fileID); err != nil {
+		return nil, err
+	}
+
+	// Get parent folder
+	parentFolder, err := s.fileDAO.GetParentFolder(fileID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.toFileResponse(parentFolder), nil
+}
+
+// GetAllParentFolders gets all parent folders in path
+func (s *FileService) GetAllParentFolders(fileID string) ([]map[string]interface{}, error) {
+	// Check if file exists
+	if _, err := s.fileDAO.GetByID(fileID); err != nil {
+		return nil, err
+	}
+
+	// Get all parent folders
+	parentFolders, err := s.fileDAO.GetAllParentFolders(fileID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to response format
+	result := make([]map[string]interface{}, len(parentFolders))
+	for i, folder := range parentFolders {
+		result[i] = s.toFileResponse(folder)
+	}
+
+	return result, nil
 }

@@ -167,3 +167,117 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 		"message": "success",
 	})
 }
+
+// GetParentFolder gets parent folder of a file
+// @Summary Get Parent Folder
+// @Description Get parent folder of a file by file ID
+// @Tags file
+// @Accept json
+// @Produce json
+// @Param file_id query string true "file ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/file/parent_folder [get]
+func (h *FileHandler) GetParentFolder(c *gin.Context) {
+	// Get access token from Authorization header
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Missing Authorization header",
+		})
+		return
+	}
+
+	// Get user by access token (for validation)
+	_, err := h.userService.GetUserByToken(token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Invalid access token",
+		})
+		return
+	}
+
+	// Get file_id from query
+	fileID := c.Query("file_id")
+	if fileID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "file_id is required",
+		})
+		return
+	}
+
+	// Get parent folder
+	parentFolder, err := h.fileService.GetParentFolder(fileID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    gin.H{"parent_folder": parentFolder},
+		"message": "success",
+	})
+}
+
+// GetAllParentFolders gets all parent folders in path
+// @Summary Get All Parent Folders
+// @Description Get all parent folders in path from file to root
+// @Tags file
+// @Accept json
+// @Produce json
+// @Param file_id query string true "file ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/file/all_parent_folder [get]
+func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
+	// Get access token from Authorization header
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Missing Authorization header",
+		})
+		return
+	}
+
+	// Get user by access token (for validation)
+	_, err := h.userService.GetUserByToken(token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Invalid access token",
+		})
+		return
+	}
+
+	// Get file_id from query
+	fileID := c.Query("file_id")
+	if fileID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "file_id is required",
+		})
+		return
+	}
+
+	// Get all parent folders
+	parentFolders, err := h.fileService.GetAllParentFolders(fileID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    gin.H{"parent_folders": parentFolders},
+		"message": "success",
+	})
+}

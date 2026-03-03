@@ -183,6 +183,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		{
 			file.GET("/list", r.fileHandler.ListFiles)
 			file.GET("/root_folder", r.fileHandler.GetRootFolder)
+			file.GET("/parent_folder", r.fileHandler.GetParentFolder)
+			file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
 		}
 	}
 
