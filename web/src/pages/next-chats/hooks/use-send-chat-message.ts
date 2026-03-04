@@ -90,11 +90,13 @@ export const useSendMessage = (controller: AbortController) => {
       message,
       currentConversationId,
       messages,
+      enableInternet,
+      enableThinking,
     }: {
       message: IMessage;
       currentConversationId?: string;
       messages?: IMessage[];
-    }) => {
+    } & NextMessageInputOnPressEnterParameter) => {
       const res = await send(
         {
           conversation_id: currentConversationId ?? conversationId,
@@ -104,6 +106,8 @@ export const useSendMessage = (controller: AbortController) => {
               : (derivedMessages ?? [])),
             message,
           ],
+          reasoning: enableThinking,
+          internet: enableInternet,
         },
         controller,
       );
@@ -135,11 +139,10 @@ export const useSendMessage = (controller: AbortController) => {
     useCreateConversationBeforeSendMessage();
 
   const handlePressEnter = useCallback(
-    async (
-      ...[
-        { enableThinking, enableInternet },
-      ]: NextMessageInputOnPressEnterParameter
-    ) => {
+    async ({
+      enableThinking,
+      enableInternet,
+    }: NextMessageInputOnPressEnterParameter) => {
       if (trim(value) === '') return;
 
       const data = await createConversationBeforeSendMessage(value);
@@ -169,14 +172,26 @@ export const useSendMessage = (controller: AbortController) => {
             id,
             content: value.trim(),
             role: MessageType.User,
-            files: files,
+            files,
             conversationId: targetConversationId,
-            reasoning: enableThinking,
-            internet: enableInternet,
           },
+          enableInternet,
+          enableThinking,
         });
       }
+
       clearFiles();
+
+      // Auto scroll to bottom when sending new message
+      if (messageContainerRef.current) {
+        const el = messageContainerRef.current;
+
+        requestAnimationFrame(() => {
+          el.scrollTo({
+            top: el.scrollHeight,
+          });
+        });
+      }
     },
     [
       value,
@@ -187,6 +202,7 @@ export const useSendMessage = (controller: AbortController) => {
       clearFiles,
       setValue,
       sendMessage,
+      messageContainerRef,
     ],
   );
 

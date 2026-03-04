@@ -27,6 +27,8 @@ from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from api.common.exceptions import AdminException, UserNotFoundError
 from api.common.base64 import encode_to_base64
 from api.db.services import UserService
+from api.db import UserTenantRole
+from api.db.services.user_service import TenantService, UserTenantService
 from common.constants import ActiveEnum, StatusEnum
 from api.utils.crypt import decrypt
 from common.misc_utils import get_uuid
@@ -85,8 +87,45 @@ def init_default_admin():
         }
         if not UserService.save(**default_admin):
             raise AdminException("Can't init admin.", 500)
+        add_tenant_for_admin(default_admin, UserTenantRole.OWNER)
     elif not any([u.is_active == ActiveEnum.ACTIVE.value for u in users]):
         raise AdminException("No active admin. Please update 'is_active' in db manually.", 500)
+    else:
+        default_admin_rows = [u for u in users if u.email == "admin@ragflow.io"]
+        if default_admin_rows:
+            default_admin = default_admin_rows[0].to_dict()
+            exist, default_admin_tenant = TenantService.get_by_id(default_admin["id"])
+            if not exist:
+                add_tenant_for_admin(default_admin, UserTenantRole.OWNER)
+
+
+def add_tenant_for_admin(user_info: dict, role: str):
+    from api.db.services.tenant_llm_service import TenantLLMService
+    from api.db.services.llm_service import get_init_tenant_llm
+
+    tenant = {
+        "id": user_info["id"],
+        "name": user_info["nickname"] + "‘s Kingdom",
+        "llm_id": settings.CHAT_MDL,
+        "embd_id": settings.EMBEDDING_MDL,
+        "asr_id": settings.ASR_MDL,
+        "parser_ids": settings.PARSERS,
+        "img2txt_id": settings.IMAGE2TEXT_MDL,
+        "rerank_id": settings.RERANK_MDL,
+    }
+    usr_tenant = {
+        "tenant_id": user_info["id"],
+        "user_id": user_info["id"],
+        "invited_by": user_info["id"],
+        "role": role
+    }
+
+    tenant_llm = get_init_tenant_llm(user_info["id"])
+    TenantService.insert(**tenant)
+    UserTenantService.insert(**usr_tenant)
+    TenantLLMService.insert_many(tenant_llm)
+    logging.info(
+        f"Added tenant for email: {user_info['email']}, A default tenant has been set; changing the default models after login is strongly recommended.")
 
 
 def check_admin_auth(func):

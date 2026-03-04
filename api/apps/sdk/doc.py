@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, validator
 
 from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileType
-from api.db.db_models import File, Task
+from api.db.db_models import APIToken, File, Task
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.file2document_service import File2DocumentService
@@ -419,6 +419,36 @@ async def download(tenant_id, dataset_id, document_id):
     )
 
 
+@manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
+async def download_doc(document_id):
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+    
+    if not document_id:
+        return get_error_data_result(message="Specify document_id please.")
+    doc = DocumentService.query(id=document_id)
+    if not doc:
+        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+    # The process of downloading
+    doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
+    file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
+    if not file_stream:
+        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
+    file = BytesIO(file_stream)
+    # Use send_file with a proper filename and MIME type
+    return await send_file(
+        file,
+        as_attachment=True,
+        attachment_filename=doc[0].name,
+        mimetype="application/octet-stream",  # Set a default MIME type
+    )
+
+
 @manager.route("/datasets/<dataset_id>/documents", methods=["GET"])  # noqa: F821
 @token_required
 def list_docs(dataset_id, tenant_id):
@@ -779,6 +809,10 @@ async def delete(tenant_id, dataset_id):
     return get_result()
 
 
+DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
+DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
+
+
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @token_required
 async def parse(tenant_id, dataset_id):
@@ -836,7 +870,7 @@ async def parse(tenant_id, dataset_id):
             continue
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if 0.0 < doc[0].progress < 1.0:
+        if doc[0].run == TaskStatus.RUNNING.value:
             return get_error_data_result("Can't parse document that is currently being processed")
         info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
         DocumentService.update_by_id(id, info)
@@ -916,8 +950,12 @@ async def stop_parsing(tenant_id, dataset_id):
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if int(doc[0].progress) == 1 or doc[0].progress == 0:
-            return get_error_data_result("Can't stop parsing document with progress at 0 or 1")
+        if doc[0].run != TaskStatus.RUNNING.value :
+            return construct_json_result(
+                code=RetCode.DATA_ERROR,
+                message=DOC_STOP_PARSING_INVALID_STATE_MESSAGE,
+                data={"error_code": DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE},
+            )
         # Send cancellation signal via Redis to stop background task
         cancel_all_task_of(id)
         info = {"run": "2", "progress": 0, "chunk_num": 0}
@@ -1549,10 +1587,18 @@ async def retrieval_test(tenant_id):
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
-    if req.get("highlight") == "False" or req.get("highlight") == "false":
+    highlight_val = req.get("highlight", None)
+    if highlight_val is None:
         highlight = False
+    elif isinstance(highlight_val, bool):
+        highlight = highlight_val
+    elif isinstance(highlight_val, str):
+        if highlight_val.lower() in ["true", "false"]:
+            highlight = highlight_val.lower() == "true"
+        else:
+            return get_error_data_result("`highlight` should be a boolean")
     else:
-        highlight = True
+        return get_error_data_result("`highlight` should be a boolean")
     try:
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])

@@ -272,7 +272,7 @@ class TestChunksRetrieval:
         [
             ({"highlight": True}, 0, True, ""),
             ({"highlight": "True"}, 0, True, ""),
-            pytest.param({"highlight": False}, 0, False, "", marks=pytest.mark.skip(reason="issues/6648")),
+            ({"highlight": False}, 0, False, ""),
             ({"highlight": "False"}, 0, False, ""),
             pytest.param({"highlight": None}, 0, False, "", marks=pytest.mark.skip(reason="issues/6648")),
         ],
@@ -282,8 +282,7 @@ class TestChunksRetrieval:
         payload.update({"question": "chunk", "dataset_ids": [dataset_id]})
         res = retrieval_chunks(HttpApiAuth, payload)
         assert res["code"] == expected_code
-        doc_engine = os.environ.get("DOC_ENGINE", "elasticsearch").lower()
-        if expected_highlight and doc_engine != "infinity":
+        if expected_highlight:
             for chunk in res["data"]["chunks"]:
                 assert "highlight" in chunk
         else:

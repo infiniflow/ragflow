@@ -17,7 +17,7 @@ import json
 import os.path
 import pathlib
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from quart import request, make_response
 from api.apps import current_user, login_required
 from api.common.check_team_permission import check_kb_team_permission
@@ -44,10 +44,22 @@ from api.utils.api_utils import (
 from api.utils.file_utils import filename_type, thumbnail
 from common.file_utils import get_project_base_directory
 from common.constants import RetCode, VALID_TASK_STATUS, ParserType, TaskStatus
-from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url
+from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers, html2pdf, is_valid_url
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search, rag_tokenizer
 from common import settings
+
+
+def _is_safe_download_filename(name: str) -> bool:
+    if not name or name in {".", ".."}:
+        return False
+    if "\x00" in name or len(name) > 255:
+        return False
+    if name != PurePosixPath(name).name:
+        return False
+    if name != PureWindowsPath(name).name:
+        return False
+    return True
 
 
 @manager.route("/upload", methods=["POST"])  # noqa: F821
@@ -113,7 +125,7 @@ async def web_crawl():
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
         raise LookupError("Can't find this dataset!")
-    if check_kb_team_permission(kb, current_user.id):
+    if not check_kb_team_permission(kb, current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     blob = html2pdf(url)
@@ -617,7 +629,9 @@ async def run():
                     return get_data_error_result(message="Document not found!")
 
                 if str(req["run"]) == TaskStatus.CANCEL.value:
-                    if str(doc.run) == TaskStatus.RUNNING.value:
+                    tasks = list(TaskService.query(doc_id=id))
+                    has_unfinished_task = any((task.progress or 0) < 1 for task in tasks)
+                    if str(doc.run) in [TaskStatus.RUNNING.value, TaskStatus.CANCEL.value] or has_unfinished_task:
                         cancel_all_task_of(id)
                     else:
                         return get_data_error_result(message="Cannot cancel a task that is not in RUNNING status")
@@ -703,7 +717,7 @@ async def rename():
 
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
-# @login_required
+@login_required
 async def get(doc_id):
     try:
         e, doc = DocumentService.get_by_id(doc_id)
@@ -716,13 +730,11 @@ async def get(doc_id):
 
         ext = re.search(r"\.([^.]+)$", doc.name.lower())
         ext = ext.group(1) if ext else None
+        content_type = None
         if ext:
-            if doc.type == FileType.VISUAL.value:
-
-                content_type = CONTENT_TYPE_MAP.get(ext, f"image/{ext}")
-            else:
-                content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
-            response.headers.set("Content-Type", content_type)
+            fallback_prefix = "image" if doc.type == FileType.VISUAL.value else "application"
+            content_type = CONTENT_TYPE_MAP.get(ext, f"{fallback_prefix}/{ext}")
+        apply_safe_file_response_headers(response, content_type, ext)
         return response
     except Exception as e:
         return server_error_response(e)
@@ -735,7 +747,8 @@ async def download_attachment(attachment_id):
         ext = request.args.get("ext", "markdown")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, current_user.id, attachment_id)
         response = await make_response(data)
-        response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
+        content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
+        apply_safe_file_response_headers(response, content_type, ext)
 
         return response
 
@@ -873,7 +886,11 @@ async def parse():
         r = re.search(r"filename=\"([^\"]+)\"", str(res_headers))
         if not r or not r.group(1):
             return get_json_result(data=False, message="Can't not identify downloaded file", code=RetCode.ARGUMENT_ERROR)
-        f = File(r.group(1), os.path.join(download_path, r.group(1)))
+        filename = r.group(1).strip()
+        if not _is_safe_download_filename(filename):
+            return get_json_result(data=False, message="Invalid downloaded filename", code=RetCode.ARGUMENT_ERROR)
+        filepath = os.path.join(download_path, filename)
+        f = File(filename, filepath)
         txt = FileService.parse_docs([f], current_user.id)
         return get_json_result(data=txt)
 

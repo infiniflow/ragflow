@@ -27,6 +27,16 @@ export default {
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
       russian: 'Russian',
+      indonesian: 'Indonesian',
+      indonesia: 'Indonesian',
+      spanish: 'Spanish',
+      vietnamese: 'Vietnamese',
+      japanese: 'Japanese',
+      german: 'German',
+      french: 'French',
+      italian: 'Italian',
+      bulgarian: 'Bulgarian',
+      arabic: 'Arabic',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -45,6 +55,7 @@ export default {
       submit: 'Submit',
       clear: 'Clear',
       embedIntoSite: 'Embed into webpage',
+      openInNewTab: 'Chat in new tab',
       previousPage: 'Previous',
       nextPage: 'Next',
       add: 'Add',
@@ -61,6 +72,7 @@ export default {
         tokenPlaceholder: 'e.g. eyJhbGciOiJIUzI1Ni...',
       },
       selected: 'Selected',
+      seeAll: 'See all',
     },
     login: {
       loginTitle: 'Sign in to your account',
@@ -129,6 +141,17 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       delMemoryWarn: `After deletion, all messages in this memory will be deleted and cannot be retrieved by agents.`,
     },
     memory: {
+      taskLogDialog: {
+        title: 'Memory',
+        startTime: 'Start time',
+        status: 'Status',
+        details: 'Details',
+
+        success: 'Success',
+        running: 'Running',
+        failed: 'Failed',
+      },
+
       messages: {
         forget: 'Forget',
         forgetMessageTip: 'Are you sure you want to forget?',
@@ -185,6 +208,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       metadata: {
+        fields: 'fields',
         selectFiles: 'Selected {{count}} files',
         type: 'Type',
         fieldNameInvalid: 'Field name can only contain letters or underscores.',
@@ -220,6 +244,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         description: 'Description',
         fieldName: 'Field name',
         editMetadata: 'Edit metadata',
+        addMetadata: 'Add metadata',
         deleteWarn: 'This {{field}} will be removed from all associated files',
         deleteManageFieldAllWarn:
           'This field and all its corresponding values will be deleted from all associated files.',
@@ -253,7 +278,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       generate: 'Generate',
       raptor: 'RAPTOR',
       processingType: 'Processing type',
-      dataPipeline: 'Ingestion pipeline',
+      dataPipeline: 'Switch or configure ingestion pipeline.',
       operations: 'Operations',
       taskId: 'Task ID',
       duration: 'Duration',
@@ -456,7 +481,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dataSource: 'Data source',
       linkSourceSetTip: 'Manage data source linkage with this dataset',
       linkDataSource: 'Link data source',
-      tocExtraction: 'TOC enhance',
+      tocExtraction: 'PageIndex',
       tocExtractionTip:
         " For existing chunks, generate a hierarchical table of contents (one directory per file). During queries, when Directory Enhancement is activated, the system will use a large model to determine which directory items are relevant to the user's question, thereby identifying the relevant chunks.",
       deleteGenerateModalContent: `
@@ -476,7 +501,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       editLinkDataPipeline: 'Edit ingestion pipeline',
       linkPipelineSetTip: 'Manage ingestion pipeline linkage with this dataset',
       default: 'Default',
-      dataPipeline: 'Ingestion pipeline',
+      dataPipeline: 'Switch or configure ingestion pipeline.',
       linkDataPipeline: 'Link ingestion pipeline',
       enableAutoGenerate: 'Enable auto generate',
       teamPlaceholder: 'Please select a team.',
@@ -490,7 +515,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Update your memory configuration here, particularly the LLM and prompts.',
       name: 'Knowledge base name',
       photo: 'Knowledge base photo',
-      photoTip: 'You can upload a file with 4 MB',
+      photoTip: 'You can upload an image up to 4 MB.',
       description: 'Description',
       language: 'Document language',
       languageMessage: 'Please input your language!',
@@ -513,6 +538,22 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model.',
       chunkMethodPlaceholder: 'Please select a chunking method.',
+      parserLabel: {
+        naive: 'General',
+        qa: 'Q&A',
+        resume: 'Resume',
+        manual: 'Manual',
+        table: 'Table',
+        paper: 'Paper',
+        book: 'Book',
+        laws: 'Laws',
+        presentation: 'Presentation',
+        picture: 'Picture',
+        one: 'One',
+        audio: 'Audio',
+        email: 'Email',
+        tag: 'Tag',
+      },
       save: 'Save',
       me: 'Only me',
       team: 'Team',
@@ -872,12 +913,15 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       },
       cancel: 'Cancel',
       chatSetting: 'Chat setting',
-      tocEnhance: 'TOC enhance',
-      tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
+      tocEnhance: 'PageIndex',
+      tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach mimics human information-searching behavior in books.`,
       batchDeleteSessions: 'Batch delete',
-      deleteSelectedConfirm: 'Delete the selected {count} session(s)?',
+      deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
     },
     setting: {
+      Verify: 'Verify',
+      keyValid: 'Your API key is valid.',
+      keyInvalid: 'Your API key is invalid.',
       deleteModel: 'Delete model',
       bedrockCredentialsHint:
         'Tip: Leave Access Key / Secret Key blank to use AWS IAM authentication.',
@@ -987,6 +1031,56 @@ Example: Virtual Hosted Style`,
         'The base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
       moodleTokenTip:
         'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
+      seafileDescription:
+        'Connect to your SeaFile server to synchronise files and documents from your libraries.',
+      seafileUrlTip:
+        'The full URL of your SeaFile server including the protocol. Example: https://seafile.example.com - Do not include a trailing slash or any path after the domain.',
+      seafileAccountScopeTip:
+        'Syncs all libraries visible to the Account API Token below.',
+      seafileTokenPanelHeading: 'Provide one of these authentication methods:',
+      seafileTokenPanelAccountBullet: '- grants access to all your libraries.',
+      seafileTokenPanelLibraryBullet:
+        '— scoped to a single library only (more secure).',
+      seafileValidationAccountTokenRequired:
+        'Account API Token is required for Entire Account scope',
+      seafileValidationTokenRequired:
+        'Provide either an Account API Token or a Library Token',
+      seafileValidationLibraryIdRequired: 'Library ID is required',
+      seafileValidationDirectoryPathRequired: 'Directory Path is required',
+      seafileSyncScopeTip:
+        'Controls what gets synchronised: ' +
+        '(1) Entire Account - Syncs all libraries your token has access to. Requires an Account API Token. ' +
+        '(2) Single Library - Syncs all files within one specific library. Requires the Library ID and either an Account API Token or a Library API Token. ' +
+        '(3) Specific Directory - Syncs only files within a specific folder inside a library. Requires the Library ID, the folder path within that library, and either an Account API Token or a Library API Token.',
+      seafileTokenTip:
+        'Your account-level SeaFile API token. ' +
+        'Grants access to all libraries visible to your account. ' +
+        'Required when sync scope is "Entire Account". ' +
+        'For "Single Library" or "Specific Directory" you can use this token or a Library API Token instead.',
+      seafileRepoTokenTip:
+        'A library-scoped API token that only grants access to one specific library. ' +
+        'Can be used instead of the Account API Token for "Single Library" and "Specific Directory" sync scopes.',
+      seafileRepoIdTip:
+        'The unique identifier (UUID) of the SeaFile library you want to synchronise. ' +
+        'You can find it in your browser address bar when you open the library in the SeaFile web interface. ' +
+        'Example: 7a9e1b3c-4d5f-6a7b-8c9d-0e1f2a3b4c5d. ' +
+        'Required when sync scope is "Single Library" or "Specific Directory".',
+      seafileSyncPathTip:
+        'The absolute path of the folder to synchronise within the library specified by the Library ID above. ' +
+        'Must start with a forward slash. ' +
+        'All files and subfolders under this path will be included recursively. ' +
+        'Example: /Documents/Reports. ' +
+        'Important: The folder must exist inside the specified library. ' +
+        'Paths outside the library are not supported. ' +
+        'Only used when sync scope is "Specific Directory".',
+      seafileIncludeSharedTip:
+        'When enabled, libraries that other users have shared with you are included in the synchronisation. ' +
+        'When disabled, only libraries owned by your account are synchronised. ' +
+        'Only applies when sync scope is "Entire Account".',
+      seafileBatchSizeTip:
+        'The number of documents processed and returned per batch during synchronisation. ' +
+        'A smaller value uses less memory but may be slower overall. ' +
+        'Default: 100.',
       jiraDescription:
         'Connect your Jira workspace to sync issues, comments, and attachments.',
       jiraBaseUrlTip:
@@ -1103,6 +1197,8 @@ Example: Virtual Hosted Style`,
         'If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key.',
       tongyiBaseUrlTip:
         'For Chinese users, no need to fill in or use https://dashscope.aliyuncs.com/compatible-mode/v1. For international users, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'For Chinese users, no need to fill in or use https://api.siliconflow.cn/v1. For international users, use https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder: '(International users only, please see tip)',
       minimaxBaseUrlTip:
         'International users only: use https://api.minimax.io/v1',
@@ -1295,6 +1391,8 @@ Example: Virtual Hosted Style`,
         image2text: 'OCR',
         speech2text: 'ASR',
       },
+      showToc: 'Show content',
+      hideToc: 'Hide content',
     },
     message: {
       registered: 'Registered!',
@@ -1358,6 +1456,13 @@ Example: Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      preprocess: {
+        preprocess: 'Preprocess',
+        mainContent: 'Main content',
+        abstract: 'Abstract',
+        author: 'Author',
+        sectionTitle: 'Section title',
+      },
       autoPlay: 'Auto play audio',
       downloadFileTypeTip: 'The file type to download',
       downloadFileType: 'Download file type',
@@ -1873,11 +1978,12 @@ Example: Virtual Hosted Style`,
         'A component that formats the output of other components.1. Supports Jinja2 templates, will first convert the input to an object and then render the template, 2. Simultaneously retains the original method of using {parameter} string replacement',
       emailComponent: 'Email',
       emailDescription: 'Send an email to a specified address.',
-      smtpServer: 'SMTP server',
+      smtpServer: 'SMTP host',
       smtpPort: 'SMTP port',
-      senderEmail: 'Sender email',
-      authCode: 'Authorization code',
-      senderName: 'Sender name',
+      senderEmail: 'From email address',
+      smtpUsername: 'SMTP login username',
+      authCode: 'SMTP password / app password',
+      senderName: 'From display name',
       toEmail: 'Recipient email',
       ccEmail: 'CC email',
       emailSubject: 'Subject',
@@ -1992,7 +2098,7 @@ This process aggregates variables from multiple branches into a single variable 
       conversational: 'Conversational',
       task: 'Task',
       beginInputTip:
-        'By defining input parameters, this content can be accessed by other components in subsequent processes.',
+        'Input parameters defined here can be accessed by components in the downstream workflow.',
       query: 'Query variables',
       switchPromptMessage:
         'The prompt words will change. Please confirm whether you want to discard the existing prompt words?',
@@ -2115,7 +2221,7 @@ The Indexer will store the content in the corresponding data structures for the 
       keywords: 'Keywords',
       questions: 'Questions',
       metadata: 'Metadata',
-      toc: 'Table of contents',
+      toc: 'PageIndex',
       fieldName: 'Result destination',
       prompts: {
         system: {
@@ -2335,6 +2441,7 @@ Important structured information may include: names, dates, locations, events, k
       korean: 'Korean',
       vietnamese: 'Vietnamese',
       russian: 'Russian',
+      bulgarian: 'Bulgarian',
     },
     pagination: {
       total: 'Total {{total}}',
@@ -2456,6 +2563,39 @@ Important structured information may include: names, dates, locations, events, k
       roles: 'Roles',
       monitoring: 'Monitoring',
 
+      sandboxSettingsPage: {
+        description:
+          'Configure your code execution sandbox provider. The sandbox is used by the Code component in agents.',
+        providerSelection: 'Provider selection',
+        providerSelectionDescription:
+          'Choose a sandbox provider for code execution',
+
+        namedProviderConfiguration: '{{name}} configuration',
+        namedProviderConfigurationDescription:
+          'Configure the connection settings for {{name}}.',
+
+        saveConfiguration: 'Save configuration',
+        saving: 'Saving...',
+
+        testConnectionResultModal: {
+          title: 'Connection test result',
+          testing: 'Testing connection to sandbox provider...',
+          success: 'Successfully connected to sandbox provider',
+          failed: 'Failed to connect to sandbox provider',
+
+          exitCode: 'Exit code',
+          executionTime: 'Execution time',
+          stdout: 'Standard output',
+          stderr: 'Error output / stack trace',
+        },
+
+        testConnection: 'Test connection',
+        testing: 'Testing...',
+      },
+
+      selectFile: 'Select file',
+      noFileSelected: 'No file selected',
+
       back: 'Back',
       active: 'Active',
       inactive: 'Inactive',
@@ -2553,6 +2693,24 @@ Important structured information may include: names, dates, locations, events, k
       alive: 'Alive',
       timeout: 'Timeout',
       fail: 'Fail',
+    },
+    explore: {
+      title: 'Launch',
+      canvasList: 'Canvas List',
+      sessions: 'Sessions',
+      newSession: 'New Session',
+      newSessionLabel: 'Start a new conversation',
+      deleteSession: 'Delete Session',
+      searchCanvas: 'Search canvas...',
+      searchSessions: 'Search sessions...',
+      noCanvasSelected: 'Please select a canvas',
+      noSessionSelected: 'Please select a session or create a new one',
+      noSessionsFound: 'No sessions found',
+      createFirstSession: 'Create your first session',
+      noCanvasFound: 'No canvas found',
+      deleteSelectedConfirm:
+        'Are you sure you want to delete {{count}} session(s)?',
+      batchDeleteSessions: 'Delete Sessions',
     },
   },
 };

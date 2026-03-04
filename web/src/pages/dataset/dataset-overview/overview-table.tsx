@@ -44,7 +44,7 @@ import { ArrowUpDown, ClipboardList, Eye, MonitorUp } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { RunningStatus } from '../dataset/constant';
-import ProcessLogModal from '../process-log-modal';
+import ProcessLogModal, { ILogInfo } from '../process-log-modal';
 import { LogTabs, ProcessingType, ProcessingTypeMap } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
 
@@ -474,7 +474,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           title={active === LogTabs.FILE_LOGS ? t('fileLogs') : t('datasetLog')}
           visible={isModalVisible}
           onCancel={() => setIsModalVisible(false)}
-          logInfo={logInfo}
+          logInfo={logInfo as unknown as ILogInfo}
         />
       )}
     </div>

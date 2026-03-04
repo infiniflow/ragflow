@@ -26,7 +26,6 @@ from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
 from configs import DEFAULT_PARSER_CONFIG
-# TODO: Missing scenario for updating embedding_model with chunk_count != 0
 
 
 class TestAuthorization:
@@ -125,7 +124,8 @@ class TestDatasetUpdate:
     @pytest.mark.p1
     @given(name=valid_names())
     @example("a" * 128)
-    @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    # Network-bound API call; disable Hypothesis deadline to avoid flaky timeouts.
+    @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
     def test_name(self, HttpApiAuth, add_dataset_func, name):
         dataset_id = add_dataset_func
         payload = {"name": name}
@@ -273,6 +273,30 @@ class TestDatasetUpdate:
         res = list_datasets(HttpApiAuth)
         assert res["code"] == 0, res
         assert res["data"][0]["embedding_model"] == embedding_model, res
+
+    @pytest.mark.p1
+    def test_embedding_model_with_existing_chunks(self, HttpApiAuth, add_chunks):
+        """Guard: embedding_model cannot change when dataset has chunks (chunk_count > 0)."""
+        dataset_id, _, _ = add_chunks
+
+        res = list_datasets(HttpApiAuth, {"id": dataset_id})
+        assert res["code"] == 0, res
+        assert res["data"], res
+        dataset = res["data"][0]
+        assert dataset.get("chunk_count", 0) > 0, res
+
+        current_embedding = dataset["embedding_model"]
+        candidates = ["BAAI/bge-small-en-v1.5@Builtin", "embedding-3@ZHIPU-AI"]
+        new_embedding = candidates[0] if current_embedding != candidates[0] else candidates[1]
+
+        payload = {"embedding_model": new_embedding}
+        res = update_dataset(HttpApiAuth, dataset_id, payload)
+        assert res["code"] == 102, res
+        expected_message = (
+            f"When chunk_num ({dataset['chunk_count']}) > 0, "
+            f"embedding_model must remain {current_embedding}"
+        )
+        assert res["message"] == expected_message, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

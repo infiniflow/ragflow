@@ -27,7 +27,23 @@ from functools import wraps
 
 from quart_auth import AuthUser
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
-from peewee import InterfaceError, OperationalError, BigIntegerField, BooleanField, CharField, CompositeKey, DateTimeField, Field, FloatField, IntegerField, Metadata, Model, TextField
+from peewee import (
+    fn,
+    InterfaceError,
+    OperationalError,
+    ProgrammingError,
+    BigIntegerField,
+    BooleanField,
+    CharField,
+    CompositeKey,
+    DateTimeField,
+    Field,
+    FloatField,
+    IntegerField,
+    Metadata,
+    Model,
+    TextField,
+)
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
 
@@ -692,7 +708,7 @@ class User(DataBaseModel, AuthUser):
     access_token = CharField(max_length=255, null=True, index=True)
     nickname = CharField(max_length=100, null=False, help_text="nicky name", index=True)
     password = CharField(max_length=255, null=True, help_text="password", index=True)
-    email = CharField(max_length=255, null=False, help_text="email", index=True)
+    email = CharField(max_length=255, null=False, help_text="email", unique=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
     language = CharField(max_length=32, null=True, help_text="English|Chinese", default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", index=True)
     color_schema = CharField(max_length=32, null=True, help_text="Bright|Dark", default="Bright", index=True)
@@ -991,8 +1007,10 @@ class APIToken(DataBaseModel):
 
 class API4Conversation(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
+    name = CharField(max_length=255, null=True, help_text="conversation name", index=False)
     dialog_id = CharField(max_length=32, null=False, index=True)
     user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
+    exp_user_id = CharField(max_length=255, null=True, help_text="exp_user_id", index=True)
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
     tokens = IntegerField(default=0)
@@ -1330,6 +1348,42 @@ def alter_db_rename_column(migrator, table_name, old_column_name, new_column_nam
         # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
         pass
 
+def migrate_add_unique_email(migrator):
+    """Deduplicates user emails and add UNIQUE constraint to email column (idempotent)"""
+    # step 1: rename duplicate rows so the UNIQUE constraint can be applied
+    try:
+        duplicates = User.select(User.email).group_by(User.email).having(fn.COUNT(User.id) > 1).tuples()
+        for (dup_email,) in duplicates:
+            # Keep the superuser row, or the oldest row if there is no superuser
+            rows = list(
+                User
+                    .select(User.id)
+                    .where(User.email == dup_email)
+                    .order_by(User.is_superuser.desc(), User.create_time.asc())
+                    .tuples()
+            )
+            for (uid,) in rows[1:]:
+                new_email = f"{dup_email}_DUPLICATE_{uid[:8]}"
+                User.update(email=new_email).where(User.id == uid).execute()
+                logging.warning("Renamed duplicate user %s email to %s during migration", uid, new_email)
+    except Exception as ex:
+        logging.critical("Failed to deduplicate user.email before adding UNIQUE constraint: %s", ex)
+        return
+
+    # step 2: add UNIQUE index via migrator
+    try:
+        migrate(migrator.add_index("user", ("email",), unique=True))
+    except (OperationalError, ProgrammingError) as ex:
+        msg = str(ex)
+        # MySQL 1061 "Duplicate key name" or PostgreSQL "already exists" -> already migrated
+        if "1061" in msg or "Duplicate key name" in msg or "already exists" in msg.lower():
+            pass
+        else:
+            logging.critical("Failed to add UNIQUE constraint on user.email: %s", ex)
+    except Exception as ex:
+        logging.critical("Failed to add UNIQUE constraint on user.email: %s", ex)
+
+
 def migrate_db():
     logging.disable(logging.ERROR)
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
@@ -1376,6 +1430,10 @@ def migrate_db():
     alter_db_add_column(migrator, "tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
     alter_db_add_column(migrator, "connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False))
     alter_db_add_column(migrator, "llm_factories", "rank", IntegerField(default=0, index=False))
+    alter_db_add_column(migrator, "api_4_conversation", "name", CharField(max_length=255, null=True, help_text="conversation name", index=False))
+    alter_db_add_column(migrator, "api_4_conversation", "exp_user_id", CharField(max_length=255, null=True, help_text="exp_user_id", index=True))
     # Migrate system_settings.value from CharField to TextField for longer sandbox configs
     alter_db_column_type(migrator, "system_settings", "value", TextField(null=False, help_text="Configuration value (JSON, string, etc.)"))
     logging.disable(logging.NOTSET)
+    # this is after re-enabling logging to allow logging changed user emails
+    migrate_add_unique_email(migrator)

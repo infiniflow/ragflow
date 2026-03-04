@@ -33,6 +33,7 @@ from common.token_utils import num_tokens_from_string
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
+from rag.utils.lazy_image import LazyDocxImage
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
@@ -40,6 +41,7 @@ from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.float_utils import normalize_overlapped_percent
 from common.parser_config_utils import normalize_layout_recognizer
+from common.text_utils import normalize_arabic_presentation_forms
 from rag.nlp import (
     concat_img,
     find_codec,
@@ -53,6 +55,33 @@ from rag.nlp import (
     append_context2table_image4pdf,
     tokenize_chunks_with_images,
 )  # noqa: F401
+
+
+def _normalize_section_text_for_rtl_presentation_forms(sections):
+    if not sections:
+        return sections
+
+    normalized_sections = []
+    for section in sections:
+        if isinstance(section, tuple):
+            if not section:
+                normalized_sections.append(section)
+                continue
+            text = section[0]
+            normalized_text = normalize_arabic_presentation_forms(text)
+            normalized_sections.append((normalized_text, *section[1:]))
+            continue
+        if isinstance(section, list):
+            if not section:
+                normalized_sections.append(section)
+                continue
+            text = section[0]
+            normalized_text = normalize_arabic_presentation_forms(text)
+            normalized_sections.append([normalized_text, *section[1:]])
+            continue
+        normalized_sections.append(normalize_arabic_presentation_forms(section))
+
+    return normalized_sections
 
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
@@ -223,7 +252,7 @@ PARSERS = {
     "deepdoc": by_deepdoc,
     "mineru": by_mineru,
     "docling": by_docling,
-    "tcadp": by_tcadp,
+    "tcadp parser": by_tcadp,
     "paddleocr": by_paddleocr,
     "plaintext": by_plaintext,  # default
 }
@@ -237,7 +266,7 @@ class Docx(DocxParser):
         imgs = paragraph._element.xpath(".//pic:pic")
         if not imgs:
             return None
-        res_img = None
+        image_blobs = []
         for img in imgs:
             embed = img.xpath(".//a:blip/@r:embed")
             if not embed:
@@ -261,17 +290,11 @@ class Docx(DocxParser):
             except Exception as e:
                 logging.warning(f"The recognized image stream appears to be corrupted. Skipping image, exception: {e}")
                 continue
-            try:
-                image = Image.open(BytesIO(image_blob)).convert("RGB")
-                if res_img is None:
-                    res_img = image
-                else:
-                    res_img = concat_img(res_img, image)
-            except Exception as e:
-                logging.warning(f"Fail to open or concat images, exception: {e}")
-                continue
+            image_blobs.append(image_blob)
 
-        return res_img
+        if not image_blobs:
+            return None
+        return LazyDocxImage(image_blobs)
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
@@ -807,6 +830,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         # sections = (text, image, tables)
         sections = Docx()(filename, binary)
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
 
         # chunks list[dict]
         # images list - index of image chunk in chunks
@@ -830,7 +854,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             urls = extract_links_from_pdf(binary)
 
         if isinstance(layout_recognizer, bool):
-            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
+            layout_recognizer = "DeepDOC" if layout_recognizer else "PlainText"
 
         name = layout_recognizer.strip().lower()
         parser = PARSERS.get(name, by_plaintext)
@@ -848,6 +872,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             paddleocr_llm_name=parser_model_name,
             **kwargs,
         )
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
 
         if not sections and not tables:
             return []
@@ -856,7 +881,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             tables = append_context2table_image4pdf(sections, tables, image_context_size)
 
         if name in ["tcadp", "docling", "mineru", "paddleocr"]:
-            parser_config["chunk_token_num"] = 0
+            if int(parser_config.get("chunk_token_num", 0)) <= 0:
+                parser_config["chunk_token_num"] = 0
 
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
@@ -878,6 +904,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             file_type = "XLSX" if re.search(r"\.xlsx?$", filename, re.IGNORECASE) else "CSV"
 
             sections, tables = tcadp_parser.parse_pdf(filepath=filename, binary=binary, callback=callback, output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""), file_type=file_type)
+            sections = _normalize_section_text_for_rtl_presentation_forms(sections)
             parser_config["chunk_token_num"] = 0
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")
@@ -889,10 +916,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 parser_config["chunk_token_num"] = 0
             else:
                 sections = [(_, "") for _ in excel_parser(binary) if _]
+            sections = _normalize_section_text_for_rtl_presentation_forms(sections)
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?;。；！？"))
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(md|markdown|mdx)$", filename, re.IGNORECASE):
@@ -905,6 +934,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
             return_section_images=True,
         )
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
 
         is_markdown = True
 
@@ -950,6 +980,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         chunk_token_num = int(parser_config.get("chunk_token_num", 128))
         sections = HtmlParser()(filename, binary, chunk_token_num)
         sections = [(_, "") for _ in sections if _]
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(json|jsonl|ldjson)$", filename, re.IGNORECASE):
@@ -957,6 +988,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         chunk_token_num = int(parser_config.get("chunk_token_num", 128))
         sections = JsonParser(chunk_token_num)(binary)
         sections = [(_, "") for _ in sections if _]
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
@@ -974,6 +1006,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         if doc_parsed.get("content", None) is not None:
             sections = doc_parsed["content"].split("\n")
             sections = [(_, "") for _ in sections if _]
+            sections = _normalize_section_text_for_rtl_presentation_forms(sections)
             callback(0.8, "Finish parsing.")
         else:
             error_msg = f"tika.parser got empty content from {filename}."

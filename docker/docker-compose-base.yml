@@ -36,7 +36,7 @@ services:
   opensearch01:
     profiles:
       - opensearch
-    image: hub.icert.top/opensearchproject/opensearch:2.19.1
+    image: opensearchproject/opensearch:2.19.1
     volumes:
       - osdata01:/usr/share/opensearch/data
     ports:

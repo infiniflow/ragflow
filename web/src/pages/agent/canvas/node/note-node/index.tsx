@@ -98,7 +98,7 @@ function NoteNode({
                 <FormControl>
                   <Textarea
                     placeholder={t('flow.notePlaceholder')}
-                    className="resize-none rounded-none p-1 py-0 overflow-auto bg-transparent focus-visible:ring-0 border-none text-text-secondary focus-visible:ring-offset-0 !text-xs"
+                    className="resize-none rounded-none p-1 py-0 overflow-auto bg-transparent focus-visible:ring-0 border-none text-text-secondary focus-visible:ring-offset-0 !text-xs h-full"
                     {...field}
                   />
                 </FormControl>

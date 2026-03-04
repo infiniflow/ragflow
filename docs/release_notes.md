@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 1
 slug: /release_notes
 sidebar_custom_props: {
   sidebarIcon: LucideClipboardPenLine
@@ -9,6 +9,54 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.24.0
+
+Released on February 10, 2026.
+
+### New features
+
+- Memory
+  - Introduces memory management APIs (HTTP and Python).
+  - Outputs Memory extraction log to the console.
+- Dataset
+  - Supports batch metadata management.
+  - Renames "ToC (Table of Contents)" to "PageIndex". See [here](./guides/dataset/extract_table_of_contents.md).
+- Agent
+  - Launches a new Chat-like Agent conversation management interface that retains sessions and dialogue history.
+  - Introduces a multi-Sandbox mechanism supporting local gVisor and Alibaba Cloud, with compatibility for mainstream Sandbox APIs (configurable in the Admin page).
+- Chat
+  - Adds a new "Thinking" mode and removes the previous "Reasoning" configuration option.
+  - Optimizes retrieval strategies for deep-research scenarios, enhancing recall accuracy.
+- Admin
+  - Supports multiple Admin accounts.
+- Model configuration center
+  - Adds model connection test for new models.
+
+### MySQL alternative
+
+- Supports OceanBase as an alternative to MySQL.
+
+### Model support
+
+- Kimi 2.5
+- Stepfun 3
+- doubao-embedding-vision
+- PaddleOCR-VL
+
+### Data sources
+
+- Zendesk
+- Bitbucket
+
+### API changes
+
+#### HTTP API
+
+[Memory management API](./references/http_api_reference.md#memory-management)
+
+#### Python API
+
+[Memory management API](./references/python_api_reference.md#memory-management)
 
 ## v0.23.1
 
@@ -686,7 +734,7 @@ From this release onwards, **service_config.yaml.template** replaces **service_c
 This approach eliminates the need to manually update **service_config.yaml** after making changes to **.env**, facilitating dynamic environment configurations.
 
 :::danger IMPORTANT
-Ensure that you [upgrade **both** your code **and** Docker image to this release](https://ragflow.io/docs/dev/upgrade_ragflow#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
+Ensure that you [upgrade **both** your code **and** Docker image to this release](./administrator/upgrade_ragflow.mdx#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
 :::
 
 ### API changes
@@ -764,13 +812,13 @@ The default Docker image edition is `nightly-slim`. The following list clarifies
 - `nightly`: The full edition of the most recent tested Docker image.
 - `v0.12.0`: The full edition of the most recent **officially released** Docker image.
 
-See [Upgrade RAGFlow](https://ragflow.io/docs/dev/upgrade_ragflow) for instructions on upgrading.
+See [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx) for instructions on upgrading.
 
 ### Documentation
 
 #### Added documents
 
-- [Upgrade RAGFlow](https://ragflow.io/docs/dev/upgrade_ragflow)
+- [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx)
 
 ## v0.11.0
 

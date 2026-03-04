@@ -78,7 +78,7 @@ class Extractor:
                     raise TaskCanceledException(f"Task {task_id} was cancelled")
             try:
                 response = asyncio.run(self._llm.async_chat(system_msg[0]["content"], hist, conf))
-                response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
+                response = re.sub(r"^.*</think>", "", response[0], flags=re.DOTALL)
                 if response.find("**ERROR**") >= 0:
                     raise Exception(response)
                 set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)
