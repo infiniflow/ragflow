@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 import asyncio
+import sys
+import types
 import warnings
 
 import pytest
@@ -25,6 +27,43 @@ warnings.filterwarnings(
     message="pkg_resources is deprecated as an API.*",
     category=UserWarning,
 )
+
+
+def _install_cv2_stub_if_unavailable():
+    try:
+        import cv2  # noqa: F401
+        return
+    except Exception:
+        pass
+
+    stub = types.ModuleType("cv2")
+
+    # Constants referenced by deepdoc import-time defaults.
+    stub.INTER_LINEAR = 1
+    stub.INTER_CUBIC = 2
+    stub.BORDER_CONSTANT = 0
+    stub.BORDER_REPLICATE = 1
+    stub.COLOR_BGR2RGB = 0
+    stub.COLOR_BGR2GRAY = 1
+    stub.COLOR_GRAY2BGR = 2
+    stub.IMREAD_IGNORE_ORIENTATION = 128
+    stub.IMREAD_COLOR = 1
+    stub.RETR_LIST = 1
+    stub.CHAIN_APPROX_SIMPLE = 2
+
+    def _missing(*_args, **_kwargs):
+        raise RuntimeError("cv2 runtime call is unavailable in this test environment")
+
+    def _module_getattr(name):
+        if name.isupper():
+            return 0
+        return _missing
+
+    stub.__getattr__ = _module_getattr
+    sys.modules["cv2"] = stub
+
+
+_install_cv2_stub_if_unavailable()
 
 from api.db.services import dialog_service
 
