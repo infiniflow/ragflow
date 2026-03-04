@@ -426,7 +426,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                         <TableHead>
                           {t('knowledgeDetails.metadata.description')}
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead className="[text-align:end]">
                           {t('knowledgeDetails.metadata.action')}
                         </TableHead>
                       </TableRow>
@@ -451,7 +451,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                               {row.description}
                             </div>
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="[text-align:end]">
                             <Switch
                               checked={builtInSelectionKeys.has(row.field)}
                               onCheckedChange={(checked) => {
@@ -539,7 +539,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
             )}
           </div>
           {metadataType === MetadataType.Manage && (
-            <div className=" absolute bottom-6 left-5 text-text-secondary text-sm">
+            <div className=" absolute bottom-6 start-5 text-text-secondary text-sm">
               {t('knowledgeDetails.metadata.toMetadataSettingTip')}
             </div>
           )}
