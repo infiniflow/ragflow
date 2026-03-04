@@ -22,6 +22,7 @@ export function GeneralSavingButton() {
     <ButtonLoading
       type="button"
       loading={submitLoading}
+      data-testid="ds-settings-basic-save-btn"
       onClick={() => {
         (async () => {
           let isValidate = await form.trigger('name');
@@ -55,6 +56,7 @@ export function SavingButton() {
   return (
     <ButtonLoading
       loading={submitLoading}
+      data-testid="ds-settings-page-save-btn"
       onClick={() => {
         (async () => {
           try {
