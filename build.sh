@@ -14,7 +14,7 @@ PROJECT_ROOT="$SCRIPT_DIR"
 # Build directories
 CPP_DIR="$PROJECT_ROOT/internal/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
-OUTPUT_BINARY="$PROJECT_ROOT/server_main"
+OUTPUT_BINARY="$PROJECT_ROOT/bin/server_main"
 
 echo -e "${GREEN}=== RAGFlow Go Server Build Script ===${NC}"
 
@@ -24,13 +24,12 @@ print_section() {
 }
 
 # Check dependencies
-check_deps() {
-    print_section "Checking dependencies"
-    
+check_cpp_deps() {
+    print_section "Checking c++ dependencies"
+
     command -v cmake >/dev/null 2>&1 || { echo -e "${RED}Error: cmake is required but not installed.${NC}"; exit 1; }
-    command -v go >/dev/null 2>&1 || { echo -e "${RED}Error: go is required but not installed.${NC}"; exit 1; }
     command -v g++ >/dev/null 2>&1 || { echo -e "${RED}Error: g++ is required but not installed.${NC}"; exit 1; }
-    
+
     # Check for pcre2 library
     if [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.a" ] || [ -f "/usr/local/lib/libpcre2-8.a" ]; then
         echo "✓ pcre2 library found"
@@ -38,8 +37,16 @@ check_deps() {
         echo -e "${YELLOW}Warning: libpcre2-8.a not found. You may need to install libpcre2-dev:${NC}"
         echo "  sudo apt-get install libpcre2-dev"
     fi
+
+    echo "✓ Required tools are available"
+}
+
+check_go_deps() {
+    print_section "Checking go dependencies"
     
-    echo "✓ All required tools are available"
+    command -v go >/dev/null 2>&1 || { echo -e "${RED}Error: go is required but not installed.${NC}"; exit 1; }
+
+    echo "✓ Required tools are available"
 }
 
 # Build C++ static library
@@ -75,7 +82,7 @@ build_go() {
         exit 1
     fi
     
-    echo "Building Go binary..."
+    echo "Building Go binary: $OUTPUT_BINARY"
     CGO_ENABLED=1 go build -o "$OUTPUT_BINARY" ./cmd/server_main.go
     
     if [ ! -f "$OUTPUT_BINARY" ]; then
@@ -142,18 +149,19 @@ EOF
 main() {
     case "${1:-}" in
         --cpp|-c)
-            check_deps
+            check_cpp_deps
             build_cpp
             ;;
         --go|-g)
-            check_deps
+            check_go_deps
             build_go
             ;;
         --clean|-C)
             clean
             ;;
         --run|-r)
-            check_deps
+            check_cpp_deps
+            check_go_deps
             build_cpp
             build_go
             run
@@ -162,7 +170,8 @@ main() {
             show_help
             ;;
         --all|-a|"")
-            check_deps
+            check_cpp_deps
+            check_go_deps
             build_cpp
             build_go
             echo -e "\n${GREEN}=== Build completed successfully! ===${NC}"
