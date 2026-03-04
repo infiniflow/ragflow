@@ -5,9 +5,16 @@ import { SliderInputFormField } from './slider-input-form-field';
 interface IProps {
   initialValue?: number;
   max?: number;
+  sliderTestId?: string;
+  numberInputTestId?: string;
 }
 
-export function MaxTokenNumberFormField({ max = 2048, initialValue }: IProps) {
+export function MaxTokenNumberFormField({
+  max = 2048,
+  initialValue,
+  sliderTestId,
+  numberInputTestId,
+}: IProps) {
   const { t } = useTranslate('knowledgeConfiguration');
 
   return (
@@ -18,6 +25,8 @@ export function MaxTokenNumberFormField({ max = 2048, initialValue }: IProps) {
       max={max}
       defaultValue={initialValue ?? 0}
       layout={FormLayout.Horizontal}
+      sliderTestId={sliderTestId}
+      numberInputTestId={numberInputTestId}
     ></SliderInputFormField>
   );
 }

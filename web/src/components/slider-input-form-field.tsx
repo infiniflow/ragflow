@@ -27,6 +27,8 @@ type SliderInputFormFieldProps = {
   className?: string;
   numberInputClassName?: string;
   percentage?: boolean;
+  sliderTestId?: string;
+  numberInputTestId?: string;
 } & FormLayoutType;
 
 export const SliderInputFormField = forwardRef<
@@ -46,6 +48,8 @@ export const SliderInputFormField = forwardRef<
       numberInputClassName,
       layout = FormLayout.Horizontal,
       percentage = false,
+      sliderTestId,
+      numberInputTestId,
     },
     ref,
   ) => {
@@ -95,6 +99,7 @@ export const SliderInputFormField = forwardRef<
                   max={displayMax}
                   min={displayMin}
                   step={displayStep}
+                  data-testid={sliderTestId}
                 ></SingleFormSlider>
               </FormControl>
               <FormControl>
@@ -118,6 +123,7 @@ export const SliderInputFormField = forwardRef<
                       );
                     }
                   }}
+                  data-testid={numberInputTestId}
                 ></NumberInput>
               </FormControl>
             </div>
