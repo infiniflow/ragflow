@@ -1,5 +1,5 @@
 ---
-sidebar_position: 7
+sidebar_position: 2
 slug: /enable_raptor
 sidebar_custom_props: {
   categoryIcon: LucideNetwork
