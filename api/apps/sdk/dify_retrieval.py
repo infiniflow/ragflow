@@ -171,6 +171,8 @@ async def retrieval(tenant_id):
             c.pop("vector", None)
             meta = getattr(doc, 'meta_fields', {})
             meta["doc_id"] = c["doc_id"]
+            # Dify expects metadata.document_id for external retrieval sources.
+            meta["document_id"] = c["doc_id"]
             records.append({
                 "content": c["content_with_weight"],
                 "score": c["similarity"],

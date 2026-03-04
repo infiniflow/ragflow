@@ -109,6 +109,13 @@ ragflow:
   service:
     # Use LoadBalancer to expose the web interface externally
     type: ClusterIP
+  admin:
+    # Enable Admin Service
+    enabled: true
+    # Admin Service port configuration
+    port: 9381
+    # Admin Service type
+    serviceType: ClusterIP
   api:
     service:
       enabled: true
