@@ -32,7 +32,6 @@ The service status page displays of all services within the RAGFlow system.
   - **Extra Info**: Display additional configuration information of a service in a dialog.
   - **Service Details**: Display detailed status information of a service in a dialog. According to service's type, a service's status information could be displayed as a plain text, a key-value data list, a data table or a bar chart.
 
-
 ### User management
 
 The user management page provides comprehensive tools for managing all users in the RAGFlow system.
