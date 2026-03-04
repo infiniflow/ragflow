@@ -87,7 +87,7 @@ build_go() {
         echo "✓ pcre2 library found"
     else
         echo -e "${YELLOW}Warning: libpcre2-8.a not found. You may need to install libpcre2-dev:${NC}"
-        sudo -y apt install libpcre2-dev"
+        sudo apt -y install libpcre2-dev
     fi
     
     echo "Building Go binary: $OUTPUT_BINARY"
