@@ -1,53 +1,52 @@
-# Aliyun Code Interpreter Provider - 使用官方 SDK
+# Aliyun Code Interpreter Provider - Migration to Official SDK
 
-## 重要变更
+## Important Changes
 
-### 官方资源
-- **Code Interpreter API**: https://help.aliyun.com/zh/functioncompute/fc/sandbox-sandbox-code-interepreter
-- **官方 SDK**: https://github.com/Serverless-Devs/agentrun-sdk-python
-- **SDK 文档**: https://docs.agent.run
+### Official Resources
+- **Official SDK**: https://github.com/Serverless-Devs/agentrun-sdk-python
+- **SDK Documentation**: https://docs.agent.run
 
-## 使用官方 SDK 的优势
+## Benefits of Using the Official SDK
 
-从手动 HTTP 请求迁移到官方 SDK (`agentrun-sdk`) 有以下优势：
+Migrating from manual HTTP requests to the official SDK (`agentrun-sdk`) provides the following advantages:
 
-### 1. **自动签名认证**
-- SDK 自动处理 Aliyun API 签名（无需手动实现 `Authorization` 头）
-- 支持多种认证方式：AccessKey、STS Token
-- 自动读取环境变量
+### 1. **Automatic Signature Authentication**
+- SDK automatically handles Aliyun API signature (no manual `Authorization` header implementation)
+- Supports multiple authentication methods: AccessKey, STS Token
+- Automatically reads environment variables
 
-### 2. **简化的 API**
+### 2. **Simplified API**
 ```python
-# 旧实现（手动 HTTP 请求）
+# Old implementation (manual HTTP requests)
 response = requests.post(
     f"{DATA_ENDPOINT}/sandboxes/{sandbox_id}/execute",
     headers={"X-Acs-Parent-Id": account_id},
     json={"code": code, "language": "python"}
 )
 
-# 新实现（使用 SDK）
+# New implementation (using SDK)
 sandbox = CodeInterpreterSandbox(template_name="python-sandbox", config=config)
 result = sandbox.context.execute(code="print('hello')")
 ```
 
-### 3. **更好的错误处理**
-- 结构化的异常类型 (`ServerError`)
-- 自动重试机制
-- 详细的错误信息
+### 3. **Better Error Handling**
+- Structured exception types (`ServerError`)
+- Automatic retry mechanism
+- Detailed error messages
 
-## 主要变更
+## Major Changes
 
-### 1. 文件重命名
+### 1. File Renaming
 
-| 旧文件名 | 新文件名 | 说明 |
-|---------|---------|------|
-| `aliyun_opensandbox.py` | `aliyun_codeinterpreter.py` | 提供商实现 |
-| `test_aliyun_provider.py` | `test_aliyun_codeinterpreter.py` | 单元测试 |
-| `test_aliyun_integration.py` | `test_aliyun_codeinterpreter_integration.py` | 集成测试 |
+| Old Filename | New Filename | Description |
+|--------------|--------------|-------------|
+| `aliyun_opensandbox.py` | `aliyun_codeinterpreter.py` | Provider implementation |
+| `test_aliyun_provider.py` | `test_aliyun_codeinterpreter.py` | Unit tests |
+| `test_aliyun_integration.py` | `test_aliyun_codeinterpreter_integration.py` | Integration tests |
 
-### 2. 配置字段变更
+### 2. Configuration Field Changes
 
-#### 旧配置（OpenSandbox）
+#### Old Configuration (OpenSandbox)
 ```json
 {
   "access_key_id": "LTAI5t...",
@@ -57,59 +56,59 @@ result = sandbox.context.execute(code="print('hello')")
 }
 ```
 
-#### 新配置（Code Interpreter）
+#### New Configuration (Code Interpreter)
 ```json
 {
   "access_key_id": "LTAI5t...",
   "access_key_secret": "...",
-  "account_id": "1234567890...",  // 新增：阿里云主账号ID（必需）
+  "account_id": "1234567890...",  // New: Aliyun primary account ID (required)
   "region": "cn-hangzhou",
-  "template_name": "python-sandbox",  // 新增：沙箱模板名称
-  "timeout": 30  // 最大 30 秒（硬限制）
+  "template_name": "python-sandbox",  // New: Sandbox template name
+  "timeout": 30  // Maximum 30 seconds (hard limit)
 }
 ```
 
-### 3. 关键差异
+### 3. Key Differences
 
-| 特性 | OpenSandbox | Code Interpreter |
-|------|-------------|-----------------|
-| **API 端点** | `opensandbox.{region}.aliyuncs.com` | `agentrun.{region}.aliyuncs.com` (控制面) |
-| **API 版本** | `2024-01-01` | `2025-09-10` |
-| **认证** | 需要 AccessKey | 需要 AccessKey + 主账号ID |
-| **请求头** | 标准签名 | 需要 `X-Acs-Parent-Id` 头 |
-| **超时限制** | 可配置 | **最大 30 秒**（硬限制） |
-| **上下文** | 不支持 | 支持上下文（Jupyter kernel） |
+| Feature | OpenSandbox | Code Interpreter |
+|---------|-------------|-----------------|
+| **API Endpoint** | `opensandbox.{region}.aliyuncs.com` | `agentrun.{region}.aliyuncs.com` (Control Plane) |
+| **API Version** | `2024-01-01` | `2025-09-10` |
+| **Authentication** | Requires AccessKey | Requires AccessKey + Account ID |
+| **Request Header** | Standard signature | Requires `X-Acs-Parent-Id` header |
+| **Timeout Limit** | Configurable | **Maximum 30 seconds** (hard limit) |
+| **Context** | Not supported | Supports context (Jupyter kernel) |
 
-### 4. API 调用方式变更
+### 4. API Call Changes
 
-#### 旧实现（假设的 OpenSandbox）
+#### Old Implementation (Assumed OpenSandbox)
 ```python
-# 单一端点
+# Single endpoint
 API_ENDPOINT = "https://opensandbox.cn-hangzhou.aliyuncs.com"
 
-# 简单的请求/响应
+# Simple request/response
 response = requests.post(
     f"{API_ENDPOINT}/execute",
     json={"code": "print('hello')", "language": "python"}
 )
 ```
 
-#### 新实现（Code Interpreter）
+#### New Implementation (Code Interpreter)
 ```python
-# 控制面 API - 管理沙箱生命周期
+# Control Plane API - Manage sandbox lifecycle
 CONTROL_ENDPOINT = "https://agentrun.cn-hangzhou.aliyuncs.com/2025-09-10"
 
-# 数据面 API - 执行代码
+# Data Plane API - Execute code
 DATA_ENDPOINT = "https://{account_id}.agentrun-data.cn-hangzhou.aliyuncs.com"
 
-# 创建沙箱（控制面）
+# Create sandbox (Control Plane)
 response = requests.post(
     f"{CONTROL_ENDPOINT}/sandboxes",
     headers={"X-Acs-Parent-Id": account_id},
     json={"templateName": "python-sandbox"}
 )
 
-# 执行代码（数据面）
+# Execute code (Data Plane)
 response = requests.post(
     f"{DATA_ENDPOINT}/sandboxes/{sandbox_id}/execute",
     headers={"X-Acs-Parent-Id": account_id},
@@ -117,13 +116,13 @@ response = requests.post(
 )
 ```
 
-### 5. 迁移步骤
+### 5. Migration Steps
 
-#### 步骤 1: 更新配置
+#### Step 1: Update Configuration
 
-如果您之前使用的是 `aliyun_opensandbox`：
+If you were previously using `aliyun_opensandbox`:
 
-**旧配置**:
+**Old Configuration**:
 ```json
 {
   "name": "sandbox.provider_type",
@@ -131,7 +130,7 @@ response = requests.post(
 }
 ```
 
-**新配置**:
+**New Configuration**:
 ```json
 {
   "name": "sandbox.provider_type",
@@ -139,123 +138,123 @@ response = requests.post(
 }
 ```
 
-#### 步骤 2: 添加必需的 account_id
+#### Step 2: Add Required account_id
 
-在 Aliyun 控制台右上角点击头像，获取主账号 ID：
-1. 登录 [阿里云控制台](https://ram.console.aliyun.com/manage/ak)
-2. 点击右上角头像
-3. 复制主账号 ID（16 位数字）
+Get the primary account ID from the Aliyun console:
+1. Log in to [Aliyun Console](https://ram.console.aliyun.com/manage/ak)
+2. Click the profile icon in the upper right corner
+3. Copy the account ID (16 digits)
 
-#### 步骤 3: 更新环境变量
+#### Step 3: Update Environment Variables
 
 ```bash
-# 新增必需的环境变量
+# New required environment variable
 export ALIYUN_ACCOUNT_ID="1234567890123456"
 
-# 其他环境变量保持不变
+# Other environment variables remain unchanged
 export ALIYUN_ACCESS_KEY_ID="LTAI5t..."
 export ALIYUN_ACCESS_KEY_SECRET="..."
 export ALIYUN_REGION="cn-hangzhou"
 ```
 
-#### 步骤 4: 运行测试
+#### Step 4: Run Tests
 
 ```bash
-# 单元测试（不需要真实凭据）
+# Unit tests (don't require real credentials)
 pytest agent/sandbox/tests/test_aliyun_codeinterpreter.py -v
 
-# 集成测试（需要真实凭据）
+# Integration tests (require real credentials)
 pytest agent/sandbox/tests/test_aliyun_codeinterpreter_integration.py -v -m integration
 ```
 
-## 文件变更清单
+## File Change Checklist
 
-### ✅ 已完成
+### Completed
 
-- [x] 创建 `aliyun_codeinterpreter.py` - 新的提供商实现
-- [x] 更新 `sandbox_spec.md` - 规范文档
-- [x] 更新 `admin/services.py` - 服务管理器
-- [x] 更新 `providers/__init__.py` - 包导出
-- [x] 创建 `test_aliyun_codeinterpreter.py` - 单元测试
-- [x] 创建 `test_aliyun_codeinterpreter_integration.py` - 集成测试
+- [x] Created `aliyun_codeinterpreter.py` - New provider implementation
+- [x] Updated `sandbox_spec.md` - Specification document
+- [x] Updated `admin/services.py` - Service manager
+- [x] Updated `providers/__init__.py` - Package exports
+- [x] Created `test_aliyun_codeinterpreter.py` - Unit tests
+- [x] Created `test_aliyun_codeinterpreter_integration.py` - Integration tests
 
-### 📝 可选清理
+### Optional Cleanup
 
-如果您想删除旧的 OpenSandbox 实现：
+If you want to remove the old OpenSandbox implementation:
 
 ```bash
-# 删除旧文件（可选）
+# Delete old files (optional)
 rm agent/sandbox/providers/aliyun_opensandbox.py
 rm agent/sandbox/tests/test_aliyun_provider.py
 rm agent/sandbox/tests/test_aliyun_integration.py
 ```
 
-**注意**: 保留旧文件不会影响新功能，只是代码冗余。
+**Note**: Keeping old files won't affect new functionality, it's just code redundancy.
 
-## API 参考
+## API Reference
 
-### 控制面 API（沙箱管理）
+### Control Plane API (Sandbox Management)
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/sandboxes` | POST | 创建沙箱实例 |
-| `/sandboxes/{id}/stop` | POST | 停止实例 |
-| `/sandboxes/{id}` | DELETE | 删除实例 |
-| `/templates` | GET | 列出模板 |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/sandboxes` | POST | Create sandbox instance |
+| `/sandboxes/{id}/stop` | POST | Stop instance |
+| `/sandboxes/{id}` | DELETE | Delete instance |
+| `/templates` | GET | List templates |
 
-### 数据面 API（代码执行）
+### Data Plane API (Code Execution)
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/sandboxes/{id}/execute` | POST | 执行代码（简化版） |
-| `/sandboxes/{id}/contexts` | POST | 创建上下文 |
-| `/sandboxes/{id}/contexts/{ctx_id}/execute` | POST | 在上下文中执行 |
-| `/sandboxes/{id}/health` | GET | 健康检查 |
-| `/sandboxes/{id}/files` | GET/POST | 文件读写 |
-| `/sandboxes/{id}/processes/cmd` | POST | 执行 Shell 命令 |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/sandboxes/{id}/execute` | POST | Execute code (simplified) |
+| `/sandboxes/{id}/contexts` | POST | Create context |
+| `/sandboxes/{id}/contexts/{ctx_id}/execute` | POST | Execute in context |
+| `/sandboxes/{id}/health` | GET | Health check |
+| `/sandboxes/{id}/files` | GET/POST | File read/write |
+| `/sandboxes/{id}/processes/cmd` | POST | Execute shell command |
 
-## 常见问题
+## Frequently Asked Questions
 
-### Q: 为什么要添加 account_id？
+### Q: Why do we need to add account_id?
 
-**A**: Code Interpreter API 需要在请求头中提供 `X-Acs-Parent-Id`（阿里云主账号ID）进行身份验证。这是 Aliyun Code Interpreter API 的必需参数。
+**A**: The Code Interpreter API requires `X-Acs-Parent-Id` (Aliyun primary account ID) in the request header for authentication. This is a required parameter for the Aliyun Code Interpreter API.
 
-### Q: 30 秒超时限制可以绕过吗？
+### Q: Can we bypass the 30-second timeout limit?
 
-**A**: 不可以。这是 Aliyun Code Interpreter 的**硬限制**，无法通过配置或请求参数绕过。如果代码执行时间超过 30 秒，请考虑：
-1. 优化代码逻辑
-2. 分批处理数据
-3. 使用上下文保持状态
+**A**: No. This is a **hard limit** of Aliyun Code Interpreter and cannot be bypassed through configuration or request parameters. If your code execution exceeds 30 seconds, consider:
+1. Optimize code logic
+2. Process data in batches
+3. Use context to maintain state
 
-### Q: 旧的 OpenSandbox 配置还能用吗？
+### Q: Can we still use the old OpenSandbox configuration?
 
-**A**: 不能。OpenSandbox 和 Code Interpreter 是两个不同的服务，API 不兼容。必须迁移到新的配置格式。
+**A**: No. OpenSandbox and Code Interpreter are two different services with incompatible APIs. You must migrate to the new configuration format.
 
-### Q: 如何获取阿里云主账号 ID？
-
-**A**:
-1. 登录阿里云控制台
-2. 点击右上角的头像
-3. 在弹出的信息中可以看到"主账号ID"
-
-### Q: 迁移后会影响现有功能吗？
+### Q: How to get the Aliyun primary account ID?
 
 **A**:
-- **自我管理提供商（self_managed）**: 不受影响
-- **E2B 提供商**: 不受影响
-- **Aliyun 提供商**: 需要更新配置并重新测试
+1. Log in to Aliyun Console
+2. Click the profile icon in the upper right corner
+3. The account ID will be displayed in the popup
 
-## 相关文档
+### Q: Will migration affect existing functionality?
 
-- [官方文档](https://help.aliyun.com/zh/functioncompute/fc/sandbox-sandbox-code-interepreter)
-- [sandbox 规范](../docs/develop/sandbox_spec.md)
-- [测试指南](./README.md)
-- [快速开始](./QUICKSTART.md)
+**A**:
+- **Self-managed provider**: Not affected
+- **E2B provider**: Not affected
+- **Aliyun provider**: Need to update configuration and re-test
 
-## 技术支持
+## Related Documentation
 
-如有问题，请：
-1. 查看官方文档
-2. 检查配置是否正确
-3. 查看测试输出中的错误信息
-4. 联系 RAGFlow 团队
+- [Official Documentation](https://help.aliyun.com/zh/functioncompute/fc/sandbox-sandbox-code-interepreter)
+- [Sandbox Specification](../docs/develop/sandbox_spec.md)
+- [Testing Guide](./README.md)
+- [Quick Start](./QUICKSTART.md)
+
+## Support
+
+If you have questions:
+1. Check the official documentation
+2. Verify the configuration is correct
+3. Check error messages in test output
+4. Contact the RAGFlow team

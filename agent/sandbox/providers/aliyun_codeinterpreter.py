@@ -68,7 +68,7 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
             config: Configuration dictionary with keys:
                 - access_key_id: Aliyun AccessKey ID
                 - access_key_secret: Aliyun AccessKey Secret
-                - account_id: Aliyun primary account ID (主账号ID)
+                - account_id: Aliyun primary account ID
                 - region: Region (default: "cn-hangzhou")
                 - template_name: Optional sandbox template name
                 - timeout: Request timeout in seconds (default: 30, max 30)
@@ -97,7 +97,7 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
             return False
 
         if not self.account_id:
-            logger.error("Aliyun Code Interpreter: Missing account_id (主账号ID)")
+            logger.error("Aliyun Code Interpreter: Missing account_id")
             return False
 
         # Create SDK configuration
@@ -429,7 +429,7 @@ console.log(typeof result === 'object' ? JSON.stringify(result) : String(result)
                 "required": True,
                 "label": "Account ID",
                 "placeholder": "1234567890...",
-                "description": "Aliyun primary account ID (主账号ID), required for API calls",
+                "description": "Aliyun primary account ID, required for API calls",
             },
             "region": {
                 "type": "string",
