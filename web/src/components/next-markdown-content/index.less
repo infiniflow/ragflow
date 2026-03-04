@@ -1,4 +1,6 @@
 .markdownContentWrapper {
+  line-height: 1.8;
+
   :global(section.think) {
     padding-left: 10px;
     color: #8b8b8b;
@@ -6,9 +8,127 @@
     margin-bottom: 10px;
     font-size: 12px;
   }
+
   :global(blockquote) {
     padding-left: 10px;
     border-left: 4px solid #ccc;
+    margin: 16px 0;
+  }
+
+  // 段落间距
+  :global(p) {
+    margin: 12px 0;
+    line-height: 1.8;
+  }
+
+  // 标题样式和间距
+  :global(h1) {
+    font-size: 1.5em;
+    font-weight: 600;
+    margin: 24px 0 16px 0;
+    line-height: 1.4;
+  }
+
+  :global(h2) {
+    font-size: 1.3em;
+    font-weight: 600;
+    margin: 20px 0 12px 0;
+    line-height: 1.4;
+  }
+
+  :global(h3) {
+    font-size: 1.15em;
+    font-weight: 600;
+    margin: 16px 0 10px 0;
+    line-height: 1.4;
+  }
+
+  :global(h4),
+  :global(h5),
+  :global(h6) {
+    font-size: 1em;
+    font-weight: 600;
+    margin: 14px 0 8px 0;
+    line-height: 1.4;
+  }
+
+  // 列表样式和间距
+  :global(ul),
+  :global(ol) {
+    margin: 12px 0;
+    padding-left: 24px;
+  }
+
+  :global(li) {
+    margin: 8px 0;
+    line-height: 1.8;
+  }
+
+  :global(li > p) {
+    margin: 4px 0;
+  }
+
+  // 嵌套列表
+  :global(ul ul),
+  :global(ol ol),
+  :global(ul ol),
+  :global(ol ul) {
+    margin: 6px 0;
+  }
+
+  // 代码块
+  :global(pre) {
+    margin: 16px 0;
+    border-radius: 6px;
+    overflow: auto;
+  }
+
+  :global(code) {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9em;
+  }
+
+  // 行内代码
+  :global(p code),
+  :global(li code) {
+    background-color: rgba(175, 184, 193, 0.2);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  // 表格
+  :global(table) {
+    margin: 16px 0;
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  :global(th),
+  :global(td) {
+    border: 1px solid #ddd;
+    padding: 8px 12px;
+    text-align: left;
+  }
+
+  :global(th) {
+    background-color: #f5f5f5;
+    font-weight: 600;
+  }
+
+  // 分隔线
+  :global(hr) {
+    margin: 20px 0;
+    border: none;
+    border-top: 1px solid #e0e0e0;
+  }
+
+  // 强调文本
+  :global(strong) {
+    font-weight: 600;
+  }
+
+  :global(em) {
+    font-style: italic;
   }
 }
 

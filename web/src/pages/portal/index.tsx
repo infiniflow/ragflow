@@ -691,27 +691,27 @@ export default function PortalPage() {
                 ) : (
                   <div className="w-full space-y-8">
                     {messages.map((msg, i) => (
-                      <div
-                        key={msg.id}
-                        className={`flex gap-4 ${
-                          msg.role === MessageType.User
-                            ? 'justify-end'
-                            : 'justify-start'
-                        }`}
-                      >
-                        {msg.role === MessageType.Assistant &&
+                      <div key={msg.id} className="flex gap-4 justify-start">
+                        {msg.role === MessageType.User ? (
+                          <img
+                            src="/logo.gif"
+                            alt="user"
+                            className="size-9 flex-shrink-0 rounded-full object-contain"
+                          />
+                        ) : (
                           selectedDialog && (
                             <RAGFlowAvatar
                               avatar={selectedDialog.icon}
                               name={selectedDialog.name}
                               className="size-9 flex-shrink-0"
                             />
-                          )}
+                          )
+                        )}
                         <div
                           className={`px-5 py-3 rounded-2xl ${
                             msg.role === MessageType.User
-                              ? 'bg-blue-500 text-white shadow-lg max-w-[50%]'
-                              : 'bg-white dark:bg-gray-800 shadow-sm border border-gray-200 max-w-[50%]'
+                              ? 'bg-blue-500 text-white shadow-lg max-w-[70%]'
+                              : 'bg-white dark:bg-gray-800 shadow-sm border border-gray-200 max-w-[70%]'
                           }`}
                         >
                           {msg.role === MessageType.User ? (
@@ -748,9 +748,6 @@ export default function PortalPage() {
                             </div>
                           )}
                         </div>
-                        {msg.role === MessageType.User && (
-                          <div className="size-9 flex-shrink-0" />
-                        )}
                       </div>
                     ))}
                     <div ref={messagesEndRef} />
