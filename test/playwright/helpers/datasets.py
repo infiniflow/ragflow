@@ -394,54 +394,24 @@ def open_create_dataset_modal(page, expect, timeout_ms: int):
             debug(f"[dataset] entrypoint_wait_timeout url={url} snippet={snippet!r}")
         raise
 
-    empty_text = page.locator("text=/no dataset created yet/i").first
-    if empty_text.count() > 0:
-        debug("[dataset] using empty-state entrypoint")
-        expect(empty_text).to_be_visible(timeout=5000)
-        element_handle = empty_text.element_handle()
-        if element_handle is None:
-            debug("[dataset] empty-state text element handle not available")
-            dump_clickable_candidates(page)
-            raise AssertionError("Empty-state text element not available for click.")
-        handle = page.evaluate_handle(
-            """
-            (el) => {
-              const closest = el.closest('button, a, [role="button"]');
-              if (closest) return closest;
-              let node = el;
-              for (let i = 0; i < 6 && node; i += 1) {
-                if (node.nodeType !== Node.ELEMENT_NODE) {
-                  node = node.parentElement;
-                  continue;
-                }
-                const element = node;
-                const hasOnClick = typeof element.onclick === 'function' || element.hasAttribute('onclick');
-                const tabIndex = element.getAttribute('tabindex');
-                const hasTab = tabIndex === '0';
-                const cursor = window.getComputedStyle(element).cursor;
-                if (hasOnClick || hasTab || cursor === 'pointer') {
-                  return element;
-                }
-                node = element.parentElement;
-              }
-              return null;
-            }
-            """,
-            element_handle,
-        )
-        element = handle.as_element()
-        if element is None:
-            debug("[dataset] empty-state clickable ancestor not found")
-            dump_clickable_candidates(page)
-            raise AssertionError("No clickable ancestor found for empty dataset state.")
-        element.click()
-    else:
+    def _click_entrypoint(locator) -> None:
+        try:
+            locator.click()
+        except Exception as exc:
+            message = str(exc).lower()
+            if (
+                "not attached to the dom" not in message
+                and "intercepts pointer events" not in message
+                and "element is not stable" not in message
+            ):
+                raise
+            locator.click(force=True)
+
+    def _click_create_button_entrypoint() -> None:
         debug("[dataset] using create button entrypoint")
         create_btn = None
         if hasattr(page, "get_by_role"):
-            create_btn = page.get_by_role(
-                "button", name=re.compile(r"create dataset", re.I)
-            )
+            create_btn = page.get_by_role("button", name=re.compile(r"create dataset", re.I))
         if create_btn is None or create_btn.count() == 0:
             create_btn = page.locator(
                 "button", has_text=re.compile(r"create dataset", re.I)
@@ -470,7 +440,23 @@ def open_create_dataset_modal(page, expect, timeout_ms: int):
                 snippet = "\n".join(lines[:20])[:500]
                 debug(f"[dataset] entrypoint_not_found url={url} snippet={snippet!r}")
             raise
-        create_btn.click()
+        _click_entrypoint(create_btn)
+
+    empty_text = page.locator("text=/no dataset created yet/i").first
+    if empty_text.count() > 0:
+        debug("[dataset] using empty-state entrypoint")
+        expect(empty_text).to_be_visible(timeout=5000)
+        entrypoint = empty_text.locator(
+            "xpath=ancestor-or-self::*[self::button or self::a or @role='button'][1]"
+        )
+        if entrypoint.count() > 0:
+            expect(entrypoint.first).to_be_visible(timeout=5000)
+            _click_entrypoint(entrypoint.first)
+        else:
+            debug("[dataset] empty-state clickable ancestor not found; falling back")
+            _click_create_button_entrypoint()
+    else:
+        _click_create_button_entrypoint()
 
     modal = page.locator("[role='dialog']").filter(has_text=re.compile("create dataset", re.I))
     expect(modal).to_be_visible(timeout=timeout_ms)
