@@ -137,17 +137,29 @@ class MinerUParseOptions:
 def _is_continuation(prev_text: str, next_text: str, prev_tag: str, next_tag: str) -> bool:
     """Detect if next_text is a cross-page continuation of prev_text.
 
-    Heuristics:
-    1. prev_text must NOT end with terminal punctuation (.?!:;)
+    Uses conservative heuristics to avoid false merges (e.g. dialogue-heavy
+    text where closing quotes hide terminal punctuation).
+
+    Requires ALL of:
+    1. prev_text must NOT end with terminal punctuation (after stripping
+       trailing quotes and brackets so that patterns like '."' are detected)
     2. Tags must be from adjacent pages
     3. next_text must not start with a paragraph/section number pattern
+    4. next_text must begin with a lowercase letter (positive evidence of
+       a mid-sentence continuation)
     """
     if not prev_text or not next_text:
         return False
 
-    # Check terminal punctuation
+    # Strip trailing quotation marks and brackets to expose the real
+    # punctuation underneath (e.g. '."' '!"' '?"' '."»' etc.)
     stripped = prev_text.rstrip()
-    if stripped and stripped[-1] in '.?!:;':
+    while stripped and stripped[-1] in "\"'\u201d\u2019\u00bb)]\u300d\u300f":
+        stripped = stripped[:-1]
+    stripped = stripped.rstrip()
+    if not stripped:
+        return False
+    if stripped[-1] in '.?!\u2026:;':
         return False
 
     # Extract page numbers from tags like "@@207\t100.0\t500.0\t50.0\t800.0##"
@@ -165,6 +177,14 @@ def _is_continuation(prev_text: str, next_text: str, prev_tag: str, next_tag: st
 
     # Don't merge if next section starts with a paragraph number (e.g., "123. The")
     if re.match(r'^\d+\.\s', next_text.lstrip()):
+        return False
+
+    # Require positive evidence: the continuation must start with a lowercase
+    # letter (genuine mid-sentence breaks almost always continue in lowercase).
+    # This prevents merging separate paragraphs that happen to cross a page
+    # boundary (new paragraphs start with uppercase).
+    first_alpha = re.search(r'[a-zA-Z\u00c0-\u024f]', next_text)
+    if not first_alpha or first_alpha.group()[0].isupper():
         return False
 
     return True
