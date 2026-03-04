@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import os
+import enum
 from common import settings
 from common.constants import LLMType
 from api.db.services.llm_service import LLMService
@@ -62,12 +63,13 @@ def get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_nam
     return config_dict
 
 
-def get_tenant_default_model_by_type(tenant_id: str, model_type: str):
+def get_tenant_default_model_by_type(tenant_id: str, model_type: str|enum.Enum):
     exist, tenant = TenantService.get_by_id(tenant_id)
     if not exist:
         raise LookupError("Tenant not found")
+    model_type_val = model_type if isinstance(model_type, str) else model_type.value
     model_name: str = ""
-    match model_type:
+    match model_type_val:
         case LLMType.EMBEDDING.value:
             model_name = tenant.embd_id
         case LLMType.SPEECH2TEXT.value:
