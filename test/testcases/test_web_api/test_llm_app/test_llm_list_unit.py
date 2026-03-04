@@ -63,6 +63,7 @@ class _TenantLLMRow:
     def __init__(
         self,
         *,
+        id,
         llm_name,
         llm_factory,
         model_type,
@@ -72,6 +73,7 @@ class _TenantLLMRow:
         api_base="",
         max_tokens=8192,
     ):
+        self.id = id
         self.llm_name = llm_name
         self.llm_factory = llm_factory
         self.model_type = model_type
@@ -83,6 +85,7 @@ class _TenantLLMRow:
 
     def to_dict(self):
         return {
+            "id": self.id,
             "llm_name": self.llm_name,
             "llm_factory": self.llm_factory,
             "model_type": self.model_type,
@@ -253,8 +256,8 @@ def test_list_app_grouping_availability_and_merge(monkeypatch):
     monkeypatch.setattr(module.TenantLLMService, "ensure_mineru_from_env", lambda tenant_id: ensure_calls.append(tenant_id))
 
     tenant_rows = [
-        _TenantLLMRow(llm_name="fast-emb", llm_factory="FastEmbed", model_type="embedding", api_key="k1", status="1"),
-        _TenantLLMRow(llm_name="tenant-only", llm_factory="CustomFactory", model_type="chat", api_key="k2", status="1"),
+        _TenantLLMRow(id=1, llm_name="fast-emb", llm_factory="FastEmbed", model_type="embedding", api_key="k1", status="1"),
+        _TenantLLMRow(id=2, llm_name="tenant-only", llm_factory="CustomFactory", model_type="chat", api_key="k2", status="1"),
     ]
     monkeypatch.setattr(module.TenantLLMService, "query", lambda **_kwargs: tenant_rows)
 
@@ -298,8 +301,8 @@ def test_list_app_model_type_filter(monkeypatch):
         module.TenantLLMService,
         "query",
         lambda **_kwargs: [
-            _TenantLLMRow(llm_name="fast-emb", llm_factory="FastEmbed", model_type="embedding", api_key="k1", status="1"),
-            _TenantLLMRow(llm_name="tenant-only", llm_factory="CustomFactory", model_type="chat", api_key="k2", status="1"),
+            _TenantLLMRow(id=1, llm_name="fast-emb", llm_factory="FastEmbed", model_type="embedding", api_key="k1", status="1"),
+            _TenantLLMRow(id=2, llm_name="tenant-only", llm_factory="CustomFactory", model_type="chat", api_key="k2", status="1"),
         ],
     )
     monkeypatch.setattr(
@@ -836,6 +839,7 @@ def test_my_llms_include_details_and_exception_unit(monkeypatch):
         "query",
         lambda **_kwargs: [
             _TenantLLMRow(
+                id=1,
                 llm_name="chat-model",
                 llm_factory="FactoryX",
                 model_type="chat",

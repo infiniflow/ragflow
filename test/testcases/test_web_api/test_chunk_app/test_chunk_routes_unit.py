@@ -209,6 +209,8 @@ def _load_chunk_module(monkeypatch):
         RERANK = SimpleNamespace(value="rerank")
         SPEECH2TEXT = SimpleNamespace(value="speech2text")
         IMAGE2TEXT = SimpleNamespace(value="image2text")
+        TTS = SimpleNamespace(value="tts")
+        OCR = SimpleNamespace(value="ocr")
 
     constants_mod.RetCode = _DummyRetCode
     constants_mod.LLMType = _DummyLLMType
