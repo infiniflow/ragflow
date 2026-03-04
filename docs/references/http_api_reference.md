@@ -6124,6 +6124,69 @@ Failure:
 
 ---
 
+### Upload document
+
+**POST** `/api/v1/file/upload_info`
+
+Uploads a file and creates the respective document
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/upload_info`
+- Headers:
+  - `'Content-Type: multipart/form-data`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Form:
+  - `'file=@{FILE_PATH}'`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/upload_info \
+     --header 'Content-Type: multipart/form-data' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --form 'file=@./test1.txt'
+```
+
+##### Request parameters
+
+- `'file'`: (*Form parameter*), `file`, *Required*  
+  The file to upload.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+      "created_at": 1772451421.7924063,
+      "created by": "be951084066611f18f5f00155d2f98f4",
+      "extension": "pdf",
+      "id": "2143a03d162c11f1b80f00155d334d02",
+      "mime_type": "application/pdf",
+      "name": "sample-local-pdf.pdf",
+      "preview_url": null,
+      "size": 49705
+    },
+    "message": "success"
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 400,
+    "message": "Provide either multipart file(s) or ?url=...!"
+}
+```
+
+---
+
 ### Create file or folder
 
 **POST** `/api/v1/file/create`
