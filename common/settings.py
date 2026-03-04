@@ -16,7 +16,6 @@
 import os
 import json
 import secrets
-from datetime import date
 import logging
 from common.constants import RAG_FLOW_SERVICE_NAME
 from common.file_utils import get_project_base_directory
