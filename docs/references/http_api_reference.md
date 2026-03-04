@@ -6147,7 +6147,7 @@ curl --request POST \
      --url http://{address}/api/v1/file/upload_info \
      --header 'Content-Type: multipart/form-data' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
-     --form 'file=@./test1.txt'
+     --form 'file=@./test1.pdf'
 ```
 
 ##### Request parameters
@@ -6168,7 +6168,7 @@ Success:
       "extension": "pdf",
       "id": "2143a03d162c11f1b80f00155d334d02",
       "mime_type": "application/pdf",
-      "name": "sample-local-pdf.pdf",
+      "name": "test1.pdf",
       "preview_url": null,
       "size": 49705
     },
