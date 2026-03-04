@@ -823,8 +823,19 @@ export default function PortalPage() {
           ) : (
             // 主页模式
             <div className="flex-1 flex flex-col relative overflow-hidden">
+              {/* 视频背景 */}
+              <video
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="absolute inset-0 w-full h-full object-cover z-0"
+              >
+                <source src="/bg.mp4" type="video/mp4" />
+              </video>
+
               {/* 可滚动内容层 */}
-              <div className="flex-1 overflow-y-auto custom-scrollbar">
+              <div className="flex-1 overflow-y-auto custom-scrollbar relative z-10">
                 <div className="min-h-full flex flex-col items-center justify-center px-6 py-12">
                   <div className="w-full max-w-4xl mx-auto space-y-12 relative z-10">
                     {/* Logo and Welcome */}
@@ -835,7 +846,7 @@ export default function PortalPage() {
                           alt="logo"
                           className="w-14 h-14 object-contain"
                         />
-                        <h1 className="text-5xl font-bold text-blue-600">
+                        <h1 className="text-5xl font-bold text-white drop-shadow-lg">
                           {appConf.appName}
                         </h1>
                       </div>
@@ -843,7 +854,7 @@ export default function PortalPage() {
                         text={welcomeMessage || '有什么我能帮你分担的吗？'}
                         speed={80}
                         delay={3000}
-                        className="text-xl text-muted-foreground font-medium"
+                        className="text-xl text-white font-medium drop-shadow-lg"
                       />
                     </div>
 
@@ -872,7 +883,7 @@ export default function PortalPage() {
                             }}
                             placeholder="在此输入问题"
                             disabled={!selectedDialog || isLoading}
-                            className="w-full p-5 pr-24 min-h-[140px] max-h-[300px] !text-lg rounded-2xl shadow-xl border-2 border-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all resize-none leading-relaxed"
+                            className="w-full p-5 pr-24 min-h-[140px] max-h-[300px] !text-lg rounded-2xl shadow-xl border-2 border-white/50 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm focus:border-white focus:ring-2 focus:ring-white/50 transition-all resize-none leading-relaxed text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
                             rows={4}
                           />
                           <div className="absolute right-3 bottom-3 flex gap-2">
@@ -927,10 +938,10 @@ export default function PortalPage() {
                                 <button
                                   key={dialog.id}
                                   onClick={() => handleSelectDialog(dialog)}
-                                  className={`group p-6 rounded-2xl border-2 transition-all text-left hover:shadow-xl hover:-translate-y-1 ${
+                                  className={`group p-6 rounded-2xl border-2 transition-all text-left hover:shadow-xl hover:-translate-y-1 backdrop-blur-sm ${
                                     selectedDialog?.id === dialog.id
-                                      ? 'border-blue-400 bg-blue-50 shadow-lg ring-2 ring-blue-200'
-                                      : 'border-gray-200 bg-white dark:bg-gray-800 hover:border-gray-300 hover:shadow-md'
+                                      ? 'border-blue-400 bg-blue-50/90 shadow-lg ring-2 ring-blue-200'
+                                      : 'border-white/40 bg-white/85 dark:bg-gray-800/85 hover:border-white/60 hover:shadow-md'
                                   }`}
                                 >
                                   <div className="flex items-center gap-3 mb-3">
@@ -995,7 +1006,7 @@ export default function PortalPage() {
                                 }
                                 disabled={dialogsLoading}
                                 variant="outline"
-                                className="px-8 py-2 text-blue-600 border-blue-200 hover:bg-blue-50 hover:border-blue-400"
+                                className="px-8 py-2 text-white border-white/50 bg-white/10 backdrop-blur-sm hover:bg-white/20 hover:border-white"
                               >
                                 {dialogsLoading ? (
                                   <>
