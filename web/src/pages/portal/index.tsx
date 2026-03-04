@@ -91,7 +91,7 @@ dayjs.locale('zh-cn');
 
 export default function PortalPage() {
   const appConf = useFetchAppConf();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedDialog, setSelectedDialog] = useState<PublicDialog | null>(
     null,
   );
@@ -691,7 +691,7 @@ export default function PortalPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="w-full space-y-8">
+                  <div className="max-w-6xl mx-auto w-full space-y-8">
                     {messages.map((msg, i) => (
                       <div key={msg.id} className="flex gap-4 justify-start">
                         {msg.role === MessageType.User ? (
@@ -712,8 +712,8 @@ export default function PortalPage() {
                         <div
                           className={`px-5 py-3 rounded-2xl ${
                             msg.role === MessageType.User
-                              ? 'bg-blue-500 text-white shadow-lg max-w-[70%]'
-                              : 'bg-white dark:bg-gray-800 shadow-sm border border-gray-200 max-w-[70%]'
+                              ? 'bg-blue-500 text-white shadow-lg max-w-[100%]'
+                              : 'bg-white dark:bg-gray-800 shadow-sm border border-gray-200 max-w-[100%]'
                           }`}
                         >
                           {msg.role === MessageType.User ? (
@@ -816,155 +816,163 @@ export default function PortalPage() {
             </>
           ) : (
             // 主页模式
-            <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 relative overflow-hidden">
+            <div className="flex-1 flex flex-col relative overflow-hidden">
               {/* 粒子背景 */}
               <ParticleBackground />
               {/* 鼠标轨迹发光 */}
               <MouseGlow />
 
-              {/* 内容层 */}
-              <div className="w-full max-w-4xl mx-auto space-y-20 relative z-10">
-                {/* Logo and Welcome */}
-                <div className="text-center space-y-6">
-                  <div className="flex items-center justify-center gap-3 mb-8">
-                    <img
-                      src="/logo.gif"
-                      alt="logo"
-                      className="w-14 h-14 object-contain"
-                    />
-                    <h1 className="text-5xl font-bold text-blue-600">
-                      {appConf.appName}
-                    </h1>
-                  </div>
-                  <p className="text-xl text-muted-foreground font-medium">
-                    👋 {welcomeMessage || '有什么我能帮你分担的吗？'}
-                  </p>
-                </div>
-
-                {/* Large Input Box */}
-                <div className="w-full">
-                  <div className="space-y-3">
-                    {availableDocuments.length > 0 && (
-                      <div className="flex justify-center">
-                        <DocumentSelector
-                          documents={availableDocuments}
-                          selectedDocumentIds={selectedDocumentIds}
-                          onSelectionChange={setSelectedDocumentIds}
-                          disabled={!selectedDialog || isLoading}
+              {/* 可滚动内容层 */}
+              <div className="flex-1 overflow-y-auto">
+                <div className="min-h-full flex flex-col items-center justify-center px-6 py-12">
+                  <div className="w-full max-w-4xl mx-auto space-y-20 relative z-10">
+                    {/* Logo and Welcome */}
+                    <div className="text-center space-y-6">
+                      <div className="flex items-center justify-center gap-3 mb-8">
+                        <img
+                          src="/logo.gif"
+                          alt="logo"
+                          className="w-14 h-14 object-contain"
                         />
+                        <h1 className="text-5xl font-bold text-blue-600">
+                          {appConf.appName}
+                        </h1>
                       </div>
-                    )}
-                    <div className="relative">
-                      <Input
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        onKeyPress={handleKeyPress}
-                        placeholder="在此输入问题"
-                        disabled={!selectedDialog || isLoading}
-                        className="w-full h-20 text-xl px-6 pr-28 rounded-2xl shadow-xl border-2 border-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all"
-                      />
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-12 w-12 p-0 rounded-full hover:bg-blue-50"
-                        >
-                          <Mic className="size-5 text-blue-600" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={handleSendMessage}
-                          disabled={
-                            !selectedDialog || !inputValue.trim() || isLoading
-                          }
-                          className="h-12 w-12 p-0 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
-                        >
-                          {isLoading ? (
-                            <Loader2 className="size-5 animate-spin" />
-                          ) : (
-                            <Send className="size-5" />
-                          )}
-                        </Button>
-                      </div>
+                      <p className="text-xl text-muted-foreground font-medium">
+                        👋 {welcomeMessage || '有什么我能帮你分担的吗？'}
+                      </p>
                     </div>
-                  </div>
-                </div>
 
-                {/* Assistant Cards - 瀑布流 */}
-                <div className="w-full pt-8">
-                  {dialogsLoading && dialogPage === 1 ? (
-                    <div className="flex justify-center py-12">
-                      <Loader2 className="size-8 animate-spin text-primary" />
+                    {/* Large Input Box */}
+                    <div className="w-full">
+                      <div className="space-y-3">
+                        {availableDocuments.length > 0 && (
+                          <div className="flex justify-center">
+                            <DocumentSelector
+                              documents={availableDocuments}
+                              selectedDocumentIds={selectedDocumentIds}
+                              onSelectionChange={setSelectedDocumentIds}
+                              disabled={!selectedDialog || isLoading}
+                            />
+                          </div>
+                        )}
+                        <div className="relative">
+                          <Input
+                            value={inputValue}
+                            onChange={(e) => setInputValue(e.target.value)}
+                            onKeyPress={handleKeyPress}
+                            placeholder="在此输入问题"
+                            disabled={!selectedDialog || isLoading}
+                            className="w-full h-36 text-xl px-6 pr-28 rounded-2xl shadow-xl border-2 border-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all"
+                          />
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-12 w-12 p-0 rounded-full hover:bg-blue-50"
+                            >
+                              <Mic className="size-5 text-blue-600" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={handleSendMessage}
+                              disabled={
+                                !selectedDialog ||
+                                !inputValue.trim() ||
+                                isLoading
+                              }
+                              className="h-12 w-12 p-0 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
+                            >
+                              {isLoading ? (
+                                <Loader2 className="size-5 animate-spin" />
+                              ) : (
+                                <Send className="size-5" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <>
-                      <div className="grid grid-cols-3 gap-6">
-                        {allLoadedDialogs.map((dialog) => (
-                          <button
-                            key={dialog.id}
-                            onClick={() => handleSelectDialog(dialog)}
-                            className={`group p-6 rounded-2xl border-2 transition-all text-left hover:shadow-xl hover:-translate-y-1 ${
-                              selectedDialog?.id === dialog.id
-                                ? 'border-blue-400 bg-blue-50 shadow-lg ring-2 ring-blue-200'
-                                : 'border-gray-200 bg-white dark:bg-gray-800 hover:border-gray-300 hover:shadow-md'
-                            }`}
-                          >
-                            <div className="flex items-center gap-3 mb-3">
-                              <RAGFlowAvatar
-                                avatar={dialog.icon}
-                                name={dialog.name}
-                                className="size-12"
-                              />
-                              <span
-                                className={`font-semibold text-lg truncate flex-1 ${
+
+                    {/* Assistant Cards - 瀑布流 */}
+                    <div className="w-full pt-8">
+                      {dialogsLoading && dialogPage === 1 ? (
+                        <div className="flex justify-center py-12">
+                          <Loader2 className="size-8 animate-spin text-primary" />
+                        </div>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-3 gap-6">
+                            {allLoadedDialogs.map((dialog) => (
+                              <button
+                                key={dialog.id}
+                                onClick={() => handleSelectDialog(dialog)}
+                                className={`group p-6 rounded-2xl border-2 transition-all text-left hover:shadow-xl hover:-translate-y-1 ${
                                   selectedDialog?.id === dialog.id
-                                    ? 'text-blue-700'
-                                    : ''
+                                    ? 'border-blue-400 bg-blue-50 shadow-lg ring-2 ring-blue-200'
+                                    : 'border-gray-200 bg-white dark:bg-gray-800 hover:border-gray-300 hover:shadow-md'
                                 }`}
                               >
-                                {dialog.name}
-                              </span>
-                            </div>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <p className="text-base text-muted-foreground line-clamp-2 leading-relaxed">
-                                  {dialog.description || '暂无描述'}
-                                </p>
-                              </TooltipTrigger>
-                              {dialog.description && (
-                                <TooltipContent className="max-w-sm">
-                                  <p className="text-base">
-                                    {dialog.description}
-                                  </p>
-                                </TooltipContent>
-                              )}
-                            </Tooltip>
-                          </button>
-                        ))}
-                      </div>
+                                <div className="flex items-center gap-3 mb-3">
+                                  <RAGFlowAvatar
+                                    avatar={dialog.icon}
+                                    name={dialog.name}
+                                    className="size-12"
+                                  />
+                                  <span
+                                    className={`font-semibold text-lg truncate flex-1 ${
+                                      selectedDialog?.id === dialog.id
+                                        ? 'text-blue-700'
+                                        : ''
+                                    }`}
+                                  >
+                                    {dialog.name}
+                                  </span>
+                                </div>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <p className="text-base text-muted-foreground line-clamp-2 leading-relaxed">
+                                      {dialog.description || '暂无描述'}
+                                    </p>
+                                  </TooltipTrigger>
+                                  {dialog.description && (
+                                    <TooltipContent className="max-w-sm">
+                                      <p className="text-base">
+                                        {dialog.description}
+                                      </p>
+                                    </TooltipContent>
+                                  )}
+                                </Tooltip>
+                              </button>
+                            ))}
+                          </div>
 
-                      {/* 加载更多按钮 */}
-                      {hasMoreDialogs && (
-                        <div className="flex justify-center mt-8">
-                          <Button
-                            onClick={() => setDialogPage((prev) => prev + 1)}
-                            disabled={dialogsLoading}
-                            variant="outline"
-                            className="px-8 py-2 text-blue-600 border-blue-200 hover:bg-blue-50 hover:border-blue-400"
-                          >
-                            {dialogsLoading ? (
-                              <>
-                                <Loader2 className="size-4 mr-2 animate-spin" />
-                                加载中...
-                              </>
-                            ) : (
-                              '加载更多助手'
-                            )}
-                          </Button>
-                        </div>
+                          {/* 加载更多按钮 */}
+                          {hasMoreDialogs && (
+                            <div className="flex justify-center mt-8">
+                              <Button
+                                onClick={() =>
+                                  setDialogPage((prev) => prev + 1)
+                                }
+                                disabled={dialogsLoading}
+                                variant="outline"
+                                className="px-8 py-2 text-blue-600 border-blue-200 hover:bg-blue-50 hover:border-blue-400"
+                              >
+                                {dialogsLoading ? (
+                                  <>
+                                    <Loader2 className="size-4 mr-2 animate-spin" />
+                                    加载中...
+                                  </>
+                                ) : (
+                                  '加载更多助手'
+                                )}
+                              </Button>
+                            </div>
+                          )}
+                        </>
                       )}
-                    </>
-                  )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
