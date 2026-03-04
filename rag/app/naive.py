@@ -854,7 +854,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             urls = extract_links_from_pdf(binary)
 
         if isinstance(layout_recognizer, bool):
-            layout_recognizer = "DeepDOC" if layout_recognizer else "PlainText"
+            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
 
         name = layout_recognizer.strip().lower()
         parser = PARSERS.get(name, by_plaintext)
