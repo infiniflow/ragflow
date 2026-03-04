@@ -137,10 +137,33 @@ def _load_dialog_module(monkeypatch):
 
     tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
 
+    class _MockTableObject:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+        def to_dict(self):
+            return {k: v for k, v in self.__dict__.items()}
+
     class _TenantLLMService:
         @staticmethod
         def split_model_name_and_factory(embd_id):
             return embd_id.split("@")
+
+        @staticmethod
+        def get_api_key(tenant_id, model_name):
+            return _MockTableObject(
+                id=1,
+                tenant_id=tenant_id,
+                llm_factory="",
+                model_type="chat",
+                llm_name=model_name,
+                api_key="fake-api-key",
+                api_base="https://api.example.com",
+                max_tokens=8192,
+                used_tokens=0,
+                status=1
+            )
 
     tenant_llm_service_mod.TenantLLMService = _TenantLLMService
     monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_service_mod)

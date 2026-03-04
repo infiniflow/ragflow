@@ -68,19 +68,19 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str):
         raise LookupError("Tenant not found")
     model_name: str = ""
     match model_type:
-        case LLMType.EMBEDDING:
+        case LLMType.EMBEDDING.value:
             model_name = tenant.embd_id
-        case LLMType.SPEECH2TEXT:
+        case LLMType.SPEECH2TEXT.value:
             model_name =  tenant.asr_id
-        case LLMType.IMAGE2TEXT:
+        case LLMType.IMAGE2TEXT.value:
             model_name = tenant.img2txt_id
-        case LLMType.CHAT:
+        case LLMType.CHAT.value:
             model_name = tenant.llm_id
-        case LLMType.RERANK:
+        case LLMType.RERANK.value:
             model_name = tenant.rerank_id
-        case LLMType.TTS:
+        case LLMType.TTS.value:
             model_name = tenant.tts_id
-        case LLMType.OCR:
+        case LLMType.OCR.value:
             raise Exception("OCR model name is required")
         case _:
             raise Exception(f"Unknown model type {model_type}")
