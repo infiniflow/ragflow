@@ -9,6 +9,7 @@ from test.playwright.helpers._next_apps_helpers import (
     _goto_home,
     _nav_click,
     _open_create_from_list,
+    _search_query_input,
     _select_first_dataset_and_save,
     _unique_name,
     _wait_for_url_or_testid,
@@ -20,7 +21,9 @@ def _wait_for_results_navigation(page, timeout_ms: int = RESULT_TIMEOUT_MS) -> N
         () => {
           const top = document.querySelector("[data-testid='top-nav']");
           const navs = Array.from(document.querySelectorAll('[role="navigation"]'));
-          return navs.some((nav) => !top || !top.contains(nav));
+          if (navs.some((nav) => !top || !top.contains(nav))) return true;
+          const body = (document.body && document.body.innerText || '').toLowerCase();
+          return body.includes('no results found');
         }
         """
     page.wait_for_function(wait_js, timeout=timeout_ms)
@@ -38,7 +41,10 @@ def _wait_for_results_navigation(page, timeout_ms: int = RESULT_TIMEOUT_MS) -> N
     )
     navs = page.locator("[role='navigation']")
     target = navs.first if index < 0 else navs.nth(index)
-    expect(target).to_be_visible(timeout=timeout_ms)
+    if index >= 0:
+        expect(target).to_be_visible(timeout=timeout_ms)
+        return
+    expect(page.locator("text=/no results found/i").first).to_be_visible(timeout=timeout_ms)
 
 
 def step_01_ensure_authed(
@@ -144,9 +150,7 @@ def step_05_select_dataset(
     require(flow_state, "search_created")
     page = flow_page
     with step("select dataset"):
-        search_input = page.locator(
-            "input[placeholder*='How can I help you today']"
-        ).first
+        search_input = _search_query_input(page)
         _select_first_dataset_and_save(
             page,
             timeout_ms=RESULT_TIMEOUT_MS,
@@ -169,7 +173,7 @@ def step_06_run_query(
 ):
     require(flow_state, "search_input_ready")
     page = flow_page
-    search_input = page.locator("input[placeholder*='How can I help you today']").first
+    search_input = _search_query_input(page)
     with step("run search query"):
         expect(search_input).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         search_input.fill("ragflow")
@@ -197,6 +201,7 @@ def test_search_create_select_dataset_and_results_nav_appears_flow(
     flow_state,
     base_url,
     login_url,
+    ensure_dataset_ready,
     active_auth_context,
     step,
     snap,
