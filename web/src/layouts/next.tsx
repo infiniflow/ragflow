@@ -1,3 +1,5 @@
+import { useAuth } from '@/hooks/auth-hooks';
+import { redirectToLogin } from '@/utils/authorization-util';
 import { Outlet } from 'react-router';
 import { Header } from './next-header';
 
@@ -12,6 +14,14 @@ export function NextLayoutContainer({ children }: React.PropsWithChildren) {
 }
 
 export default function NextLayout() {
+  const { isLogin } = useAuth();
+
+  if (isLogin === false) {
+    redirectToLogin();
+    return null;
+  }
+  if (isLogin === null) return null;
+
   return (
     <NextLayoutContainer>
       <Outlet />

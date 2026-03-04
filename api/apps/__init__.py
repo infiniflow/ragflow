@@ -99,6 +99,9 @@ def _load_user():
     if not authorization:
         return None
 
+    if authorization.startswith("Bearer "):
+        authorization = authorization[7:]
+
     try:
         access_token = str(jwt.loads(authorization))
 
