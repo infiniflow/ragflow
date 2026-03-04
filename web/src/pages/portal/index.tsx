@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Tooltip,
   TooltipContent,
@@ -52,6 +52,8 @@ import {
 } from './hooks';
 import { MouseGlow } from './mouse-glow';
 import { ParticleBackground } from './particle-background';
+import './portal.css';
+import { TypewriterText } from './typewriter-text';
 
 // 会话历史类型定义
 interface ConversationHistory {
@@ -561,9 +563,9 @@ export default function PortalPage() {
         <div
           className={`${
             sidebarCollapsed ? 'w-12' : 'w-72'
-          } transition-all duration-300 bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm border-r flex flex-col flex-shrink-0`}
+          } transition-all duration-300 bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm flex flex-col flex-shrink-0`}
         >
-          <div className="p-2 border-b flex items-center justify-between">
+          <div className="h-14 flex items-center justify-between px-4">
             {!sidebarCollapsed && (
               <div className="flex items-center gap-2">
                 <Clock className="size-4 text-muted-foreground" />
@@ -585,7 +587,7 @@ export default function PortalPage() {
           </div>
 
           {!sidebarCollapsed && (
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
               {allConversations.length === 0 ? (
                 <div className="px-4 py-8 text-center">
                   <MessageSquare className="size-10 text-muted-foreground/30 mx-auto mb-2" />
@@ -654,7 +656,7 @@ export default function PortalPage() {
             // 聊天模式
             <>
               {/* Chat Header */}
-              <div className="h-14 border-b bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm flex items-center justify-between px-6 flex-shrink-0">
+              <div className="h-14 bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm flex items-center justify-between px-6 flex-shrink-0">
                 {selectedDialog && (
                   <div className="flex items-center gap-2">
                     <RAGFlowAvatar
@@ -679,7 +681,7 @@ export default function PortalPage() {
               </div>
 
               {/* Messages Area */}
-              <div className="flex-1 overflow-y-auto px-6 py-6">
+              <div className="flex-1 overflow-y-auto px-6 py-6 custom-scrollbar">
                 {isLoading && messages.length === 0 ? (
                   // 加载中的过渡效果
                   <div className="flex items-center justify-center h-full">
@@ -758,7 +760,7 @@ export default function PortalPage() {
               </div>
 
               {/* Chat Input */}
-              <div className="border-t bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm p-6 flex-shrink-0">
+              <div className="bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm p-6 flex-shrink-0">
                 <div className="max-w-4xl mx-auto">
                   <div className="flex gap-3 items-end">
                     <div className="flex-1 space-y-2">
@@ -771,15 +773,21 @@ export default function PortalPage() {
                         />
                       )}
                       <div className="relative">
-                        <Input
+                        <Textarea
                           value={inputValue}
                           onChange={(e) => setInputValue(e.target.value)}
-                          onKeyPress={handleKeyPress}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendMessage();
+                            }
+                          }}
                           placeholder="输入消息..."
                           disabled={isLoading}
-                          className="pr-20 h-12 text-lg rounded-xl shadow-sm !border-2 !border-blue-200 focus-visible:!border-blue-400 focus-visible:!ring-2 focus-visible:!ring-blue-200"
+                          className="p-5 pr-24 min-h-[140px] max-h-[300px] !text-lg rounded-xl shadow-sm !border-2 !border-blue-200 focus-visible:!border-blue-400 focus-visible:!ring-2 focus-visible:!ring-blue-200 resize-none leading-relaxed"
+                          rows={4}
                         />
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
+                        <div className="absolute right-2 bottom-2 flex gap-1">
                           <Button
                             size="sm"
                             variant="ghost"
@@ -823,9 +831,9 @@ export default function PortalPage() {
               <MouseGlow />
 
               {/* 可滚动内容层 */}
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
                 <div className="min-h-full flex flex-col items-center justify-center px-6 py-12">
-                  <div className="w-full max-w-4xl mx-auto space-y-20 relative z-10">
+                  <div className="w-full max-w-4xl mx-auto space-y-12 relative z-10">
                     {/* Logo and Welcome */}
                     <div className="text-center space-y-6">
                       <div className="flex items-center justify-center gap-3 mb-8">
@@ -838,9 +846,12 @@ export default function PortalPage() {
                           {appConf.appName}
                         </h1>
                       </div>
-                      <p className="text-xl text-muted-foreground font-medium">
-                        👋 {welcomeMessage || '有什么我能帮你分担的吗？'}
-                      </p>
+                      <TypewriterText
+                        text={welcomeMessage || '有什么我能帮你分担的吗？'}
+                        speed={80}
+                        delay={3000}
+                        className="text-xl text-muted-foreground font-medium"
+                      />
                     </div>
 
                     {/* Large Input Box */}
@@ -857,15 +868,21 @@ export default function PortalPage() {
                           </div>
                         )}
                         <div className="relative">
-                          <Input
+                          <Textarea
                             value={inputValue}
                             onChange={(e) => setInputValue(e.target.value)}
-                            onKeyPress={handleKeyPress}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSendMessage();
+                              }
+                            }}
                             placeholder="在此输入问题"
                             disabled={!selectedDialog || isLoading}
-                            className="w-full h-36 text-xl px-6 pr-28 rounded-2xl shadow-xl border-2 border-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all"
+                            className="w-full p-5 pr-24 min-h-[140px] max-h-[300px] !text-lg rounded-2xl shadow-xl border-2 border-blue-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all resize-none leading-relaxed"
+                            rows={4}
                           />
-                          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-2">
+                          <div className="absolute right-3 bottom-3 flex gap-2">
                             <Button
                               size="sm"
                               variant="ghost"
