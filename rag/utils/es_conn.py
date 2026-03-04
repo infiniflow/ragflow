@@ -180,11 +180,9 @@ class ESConnection(ESConnectionBase):
                 similarity = 0.0
                 if "similarity" in m.extra_options:
                     similarity = m.extra_options["similarity"]
-                # Ensure k is at least 1 to avoid Elasticsearch error
-                k_value = max(1, m.topn)
                 s = s.knn(m.vector_column_name,
-                          k_value,
-                          k_value * 2,
+                          m.topn,
+                          m.topn * 2,
                           query_vector=list(m.embedding_data),
                           filter=bool_query.to_dict(),
                           similarity=similarity,

@@ -205,8 +205,7 @@ class OSConnection(DocStoreConnection):
                 vector_column_name = m.vector_column_name
                 knn_query[vector_column_name] = {}
                 knn_query[vector_column_name]["vector"] = list(m.embedding_data)
-                # Ensure k is at least 1 to avoid Elasticsearch error
-                knn_query[vector_column_name]["k"] = max(1, m.topn)
+                knn_query[vector_column_name]["k"] = m.topn
                 knn_query[vector_column_name]["filter"] = bqry.to_dict()
                 knn_query[vector_column_name]["boost"] = similarity
 
