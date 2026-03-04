@@ -81,9 +81,17 @@ build_go() {
         echo -e "${RED}Error: C++ static library not found. Run with --cpp first.${NC}"
         exit 1
     fi
+
+    # Check for pcre2 library
+    if [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.a" ] || [ -f "/usr/local/lib/libpcre2-8.a" ]; then
+        echo "✓ pcre2 library found"
+    else
+        echo -e "${YELLOW}Warning: libpcre2-8.a not found. You may need to install libpcre2-dev:${NC}"
+        sudo -y apt install libpcre2-dev"
+    fi
     
     echo "Building Go binary: $OUTPUT_BINARY"
-    CGO_ENABLED=1 go build -o "$OUTPUT_BINARY" ./cmd/server_main.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$OUTPUT_BINARY" ./cmd/server_main.go
     
     if [ ! -f "$OUTPUT_BINARY" ]; then
         echo -e "${RED}Error: Failed to build Go binary${NC}"
