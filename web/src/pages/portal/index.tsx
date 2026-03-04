@@ -50,6 +50,8 @@ import {
   useFetchConversationHistory,
   useFetchPublicDialogs,
 } from './hooks';
+import { MouseGlow } from './mouse-glow';
+import { ParticleBackground } from './particle-background';
 
 // 会话历史类型定义
 interface ConversationHistory {
@@ -124,7 +126,7 @@ export default function PortalPage() {
 
   // 获取公开助手（支持分页）
   const { data: dialogsData, isLoading: dialogsLoading } =
-    useFetchPublicDialogs(dialogPage, 9, '');
+    useFetchPublicDialogs(dialogPage, 6, '');
 
   // 累积加载的助手（去重）
   useEffect(() => {
@@ -814,8 +816,14 @@ export default function PortalPage() {
             </>
           ) : (
             // 主页模式
-            <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
-              <div className="w-full max-w-4xl mx-auto space-y-20">
+            <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 relative overflow-hidden">
+              {/* 粒子背景 */}
+              <ParticleBackground />
+              {/* 鼠标轨迹发光 */}
+              <MouseGlow />
+
+              {/* 内容层 */}
+              <div className="w-full max-w-4xl mx-auto space-y-20 relative z-10">
                 {/* Logo and Welcome */}
                 <div className="text-center space-y-6">
                   <div className="flex items-center justify-center gap-3 mb-8">
