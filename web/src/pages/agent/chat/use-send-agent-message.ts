@@ -268,8 +268,10 @@ export const useSendAgentMessage = ({
   const stopConversation = useCallback(() => {
     const taskId = answerList.at(0)?.task_id;
     stopOutputMessage();
-    stopMessage(taskId);
-  }, [answerList, stopMessage, stopOutputMessage]);
+    if (!isShared) {
+      stopMessage(taskId);
+    }
+  }, [answerList, isShared, stopMessage, stopOutputMessage]);
 
   const sendMessage = useCallback(
     async ({

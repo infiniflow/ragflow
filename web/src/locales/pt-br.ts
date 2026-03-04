@@ -36,6 +36,7 @@ export default {
       pleaseInput: 'Por favor, insira',
       submit: 'Enviar',
       embedIntoSite: 'Incorporar no site',
+      openInNewTab: 'Chat em nova aba',
       previousPage: 'Anterior',
       nextPage: 'Próxima',
     },
@@ -523,6 +524,8 @@ export default {
         'Se sua chave da API for do OpenAI, ignore isso. Outros provedores intermediários fornecerão essa URL base com a chave da API.',
       tongyiBaseUrlTip:
         'Para usuários chineses, não é necessário preencher ou usar https://dashscope.aliyuncs.com/compatible-mode/v1. Para usuários internacionais, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Para usuários chineses, não é necessário preencher ou usar https://api.siliconflow.cn/v1. Para usuários internacionais, use https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Apenas para usuários internacionais, consulte a dica)',
       minimaxBaseUrlTip:
@@ -1131,11 +1134,12 @@ export default {
 
       emailComponent: 'Email',
       emailDescription: 'Enviar um email para um endereço especificado.',
-      smtpServer: 'Servidor SMTP',
+      smtpServer: 'Host SMTP',
       smtpPort: 'Porta SMTP',
-      senderEmail: 'Email do remetente',
-      authCode: 'Código de autorização',
-      senderName: 'Nome do remetente',
+      senderEmail: 'Endereço do remetente (From)',
+      smtpUsername: 'Usuário de login SMTP',
+      authCode: 'Senha SMTP / senha de app',
+      senderName: 'Nome de exibição do remetente',
       toEmail: 'Email do destinatário',
       ccEmail: 'Email CC',
       emailSubject: 'Assunto',

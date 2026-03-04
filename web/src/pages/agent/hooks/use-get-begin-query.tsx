@@ -152,7 +152,15 @@ export function useBuildBeginDynamicVariableOptions() {
         options: inputs.map((x) => ({
           label: x.name,
           parentLabel: <span>{t('flow.beginInput')}</span>,
-          icon: <OperatorIcon name={Operator.Begin} className="block" />,
+          icon: (
+            <OperatorIcon
+              name={Operator.Begin}
+              className="
+                p-0 mr-1 relative
+                before:-z-10 before:content-[''] before:absolute before:inset-0
+                before:-m-[.25em] before:bg-accent-primary before:rounded-sm"
+            />
+          ),
           value: `begin@${x.key}`,
           type: transferToVariableType(x.type),
         })),
@@ -174,7 +182,15 @@ export function useBuildGlobalWithBeginVariableOptions() {
     .map(([key, value]) => ({
       label: key,
       value: key,
-      icon: <OperatorIcon name={Operator.Begin} className="block" />,
+      icon: (
+        <OperatorIcon
+          name={Operator.Begin}
+          className="
+            p-0 mr-1 relative
+            before:-z-10 before:content-[''] before:absolute before:inset-0
+            before:-m-[.25em] before:bg-accent-primary before:rounded-sm"
+        />
+      ),
       parentLabel: <span>{t('flow.beginInput')}</span>,
       type: Array.isArray(value)
         ? `${VariableType.Array}${key === AgentGlobals.SysFiles ? '<file>' : ''}`

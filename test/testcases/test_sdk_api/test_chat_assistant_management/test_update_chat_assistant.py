@@ -23,6 +23,38 @@ from utils.file_utils import create_image_file
 
 
 class TestChatAssistantUpdate:
+    @pytest.mark.p2
+    def test_update_rejects_non_dict_and_empty_llm_prompt(self, add_chat_assistants_func):
+        _, _, chat_assistants = add_chat_assistants_func
+        chat_assistant = chat_assistants[0]
+
+        with pytest.raises(Exception) as exception_info:
+            chat_assistant.update.__wrapped__(chat_assistant, "bad")
+        assert "`update_message` must be a dict" in str(exception_info.value)
+
+        with pytest.raises(Exception) as exception_info:
+            chat_assistant.update({"llm": {}})
+        assert "`llm` cannot be empty" in str(exception_info.value)
+
+        with pytest.raises(Exception) as exception_info:
+            chat_assistant.update({"prompt": {}})
+        assert "`prompt` cannot be empty" in str(exception_info.value)
+
+    @pytest.mark.p2
+    def test_update_raises_on_nonzero_response(self, add_chat_assistants_func, monkeypatch):
+        _, _, chat_assistants = add_chat_assistants_func
+        chat_assistant = chat_assistants[0]
+
+        class _DummyResponse:
+            def json(self):
+                return {"code": 1, "message": "boom"}
+
+        monkeypatch.setattr(chat_assistant, "put", lambda *_args, **_kwargs: _DummyResponse())
+
+        with pytest.raises(Exception) as exception_info:
+            chat_assistant.update({"name": "error-case"})
+        assert "boom" in str(exception_info.value)
+
     @pytest.mark.parametrize(
         "payload, expected_message",
         [

@@ -4,6 +4,7 @@ import { useIsDarkTheme } from '../theme-provider';
 
 import { Plus } from 'lucide-react';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import SvgIcon from '../svg-icon';
 import { EmptyCardData, EmptyCardType, EmptyType } from './constant';
 import { EmptyCardProps, EmptyProps } from './interface';
@@ -79,10 +80,16 @@ export const EmptyAppCard = (props: {
   isSearch?: boolean;
   size?: 'small' | 'large';
   children?: React.ReactNode;
+  testId?: string;
 }) => {
-  const { type, showIcon, className, isSearch, children } = props;
+  const { type, showIcon, className, isSearch, children, testId } = props;
+  const { t } = useTranslation();
   let defaultClass = '';
   let style = {};
+  const cardData = EmptyCardData[type];
+  const title = t(cardData.titleKey);
+  const notFound = t(cardData.notFoundKey);
+
   switch (props.size) {
     case 'small':
       style = { width: '256px' };
@@ -97,12 +104,10 @@ export const EmptyAppCard = (props: {
       break;
   }
   return (
-    <div onClick={isSearch ? undefined : props.onClick}>
+    <div onClick={isSearch ? undefined : props.onClick} data-testid={testId}>
       <EmptyCard
-        icon={showIcon ? EmptyCardData[type].icon : undefined}
-        title={
-          isSearch ? EmptyCardData[type].notFound : EmptyCardData[type].title
-        }
+        icon={showIcon ? cardData.icon : undefined}
+        title={isSearch ? notFound : title}
         className={cn('cursor-pointer ', className)}
         style={style}
         // description={EmptyCardData[type].description}

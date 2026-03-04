@@ -107,7 +107,7 @@ export default function Dataset() {
       secondTitle: (
         <>
           {t('knowledgeDetails.metadata.selectFiles', {
-            count: documents.length,
+            count: selectedCount,
           })}
         </>
       ),
@@ -142,7 +142,7 @@ export default function Dataset() {
       </div>
       <section className="p-5 min-w-[880px]">
         <ListFilterBar
-          title="Dataset"
+          title={t('header.dataset')}
           onSearchChange={handleInputChange}
           searchString={searchString}
           value={filterValue}
@@ -236,7 +236,7 @@ export default function Dataset() {
             hideModal={hideCreateModal}
             onOk={onCreateOk}
             loading={createLoading}
-            title={'File Name'}
+            title={t('knowledgeDetails.fileName')}
           ></RenameDialog>
         )}
         {manageMetadataVisible && (
