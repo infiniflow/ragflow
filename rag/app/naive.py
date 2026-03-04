@@ -855,7 +855,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         if table_context_size or image_context_size:
             tables = append_context2table_image4pdf(sections, tables, image_context_size)
 
-        if name in ["tcadp", "docling", "mineru", "paddleocr"]:
+        if name in ["tcadp", "docling", "paddleocr"]:
             parser_config["chunk_token_num"] = 0
 
         res = tokenize_table(tables, doc, is_english)
