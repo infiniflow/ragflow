@@ -27,6 +27,9 @@ interface IProps {
   };
   okButtonText?: string;
   cancelButtonText?: string;
+  testId?: string;
+  confirmButtonTestId?: string;
+  cancelButtonTestId?: string;
 }
 
 export function ConfirmDeleteDialog({
@@ -41,6 +44,9 @@ export function ConfirmDeleteDialog({
   content,
   okButtonText,
   cancelButtonText,
+  testId,
+  confirmButtonTestId,
+  cancelButtonTestId,
 }: IProps & DialogProps) {
   const { t } = useTranslation();
 
@@ -60,6 +66,7 @@ export function ConfirmDeleteDialog({
         onSelect={(e) => e.preventDefault()}
         onClick={(e) => e.stopPropagation()}
         className="bg-bg-base "
+        data-testid={testId ?? 'confirm-delete-dialog'}
       >
         <AlertDialogHeader className="space-y-5">
           <AlertDialogTitle>
@@ -86,12 +93,20 @@ export function ConfirmDeleteDialog({
           )}
         </AlertDialogHeader>
         <AlertDialogFooter className="px-5 flex items-center gap-2">
-          <AlertDialogCancel onClick={onCancel}>
+          <AlertDialogCancel
+            onClick={onCancel}
+            data-testid={
+              cancelButtonTestId ?? 'confirm-delete-dialog-cancel-btn'
+            }
+          >
             {cancelButtonText || t('common.cancel')}
           </AlertDialogCancel>
           <AlertDialogAction
             className="bg-state-error text-text-primary hover:text-text-primary hover:bg-state-error"
             onClick={onOk}
+            data-testid={
+              confirmButtonTestId ?? 'confirm-delete-dialog-confirm-btn'
+            }
           >
             {okButtonText || t('common.delete')}
           </AlertDialogAction>
