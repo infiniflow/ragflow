@@ -27,6 +27,7 @@ const llmFactoryToUrlMap: Partial<Record<LLMFactory, string>> = {
   [LLMFactory.LMStudio]: 'https://lmstudio.ai/docs/basics',
   [LLMFactory.OpenAiAPICompatible]:
     'https://platform.openai.com/docs/models/gpt-4',
+  [LLMFactory.RAGcon]: 'https://ragcon.ai',
   [LLMFactory.TogetherAI]: 'https://docs.together.ai/docs/deployment-options',
   [LLMFactory.Replicate]: 'https://replicate.com/docs/topics/deployments',
   [LLMFactory.OpenRouter]: 'https://openrouter.ai/docs',
@@ -74,6 +75,14 @@ const OllamaModal = ({
       'image2text',
     ]),
     [LLMFactory.Xinference]: buildModelTypeOptions([
+      'chat',
+      'embedding',
+      'rerank',
+      'image2text',
+      'speech2text',
+      'tts',
+    ]),
+    [LLMFactory.RAGcon]: buildModelTypeOptions([
       'chat',
       'embedding',
       'rerank',
@@ -133,7 +142,10 @@ const OllamaModal = ({
         label: t('addLlmBaseUrl'),
         type: FormFieldType.Text,
         required: true,
-        placeholder: t('baseUrlNameMessage'),
+        placeholder:
+          llmFactory === LLMFactory.RAGcon
+            ? 'https://connect.ragcon.com/v1'
+            : t('baseUrlNameMessage'),
         validation: {
           message: t('baseUrlNameMessage'),
         },
@@ -142,8 +154,11 @@ const OllamaModal = ({
         name: 'api_key',
         label: t('apiKey'),
         type: FormFieldType.Text,
-        required: false,
-        placeholder: t('apiKeyMessage'),
+        required: llmFactory === LLMFactory.RAGcon,
+        placeholder:
+          llmFactory === LLMFactory.RAGcon
+            ? 'RAGcon API key (used for all model types)'
+            : t('apiKeyMessage'),
       },
       {
         name: 'max_tokens',
