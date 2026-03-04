@@ -7,9 +7,8 @@ from urllib.parse import urljoin
 import pytest
 from playwright.sync_api import expect
 
+from test.playwright.helpers._auth_helpers import ensure_authed
 from test.playwright.helpers.flow_steps import flow_params, require
-from test.playwright.helpers.auth_selectors import EMAIL_INPUT, PASSWORD_INPUT, SUBMIT_BUTTON
-from test.playwright.helpers.auth_waits import wait_for_login_complete
 from test.playwright.helpers.response_capture import capture_response
 from test.playwright.helpers.datasets import (
     delete_uploaded_file,
@@ -37,8 +36,6 @@ def step_01_login(
     auth_click,
     seeded_user_credentials,
 ):
-    email, password = seeded_user_credentials
-
     repo_root = Path(__file__).resolve().parents[3]
     file_paths = [
         repo_root / "test/benchmark/test_docs/Doc1.pdf",
@@ -52,25 +49,14 @@ def step_01_login(
     flow_state["filenames"] = [path.name for path in file_paths]
 
     with step("open login page"):
-        flow_page.goto(login_url, wait_until="domcontentloaded")
-
-    form, _ = active_auth_context()
-    email_input = form.locator(EMAIL_INPUT)
-    password_input = form.locator(PASSWORD_INPUT)
-    with step("fill credentials"):
-        expect(email_input).to_have_count(1)
-        expect(password_input).to_have_count(1)
-        email_input.fill(email)
-        password_input.fill(password)
-        password_input.blur()
-
-    with step("submit login"):
-        submit_button = form.locator(SUBMIT_BUTTON)
-        expect(submit_button).to_have_count(1)
-        auth_click(submit_button, "submit_login")
-
-    with step("wait for login"):
-        wait_for_login_complete(flow_page, timeout_ms=RESULT_TIMEOUT_MS)
+        ensure_authed(
+            flow_page,
+            login_url,
+            active_auth_context,
+            auth_click,
+            seeded_user_credentials=seeded_user_credentials,
+            timeout_ms=RESULT_TIMEOUT_MS,
+        )
     flow_state["logged_in"] = True
     snap("login_complete")
 
@@ -276,6 +262,7 @@ def test_dataset_upload_parse_and_delete_flow(
     flow_state,
     base_url,
     login_url,
+    ensure_model_provider_configured,
     active_auth_context,
     step,
     snap,
