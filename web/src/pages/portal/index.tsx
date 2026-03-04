@@ -50,8 +50,6 @@ import {
   useFetchConversationHistory,
   useFetchPublicDialogs,
 } from './hooks';
-import { MouseGlow } from './mouse-glow';
-import { ParticleBackground } from './particle-background';
 import './portal.css';
 import { TypewriterText } from './typewriter-text';
 
@@ -825,11 +823,6 @@ export default function PortalPage() {
           ) : (
             // 主页模式
             <div className="flex-1 flex flex-col relative overflow-hidden">
-              {/* 粒子背景 */}
-              <ParticleBackground />
-              {/* 鼠标轨迹发光 */}
-              <MouseGlow />
-
               {/* 可滚动内容层 */}
               <div className="flex-1 overflow-y-auto custom-scrollbar">
                 <div className="min-h-full flex flex-col items-center justify-center px-6 py-12">
@@ -920,48 +913,77 @@ export default function PortalPage() {
                       ) : (
                         <>
                           <div className="grid grid-cols-3 gap-6">
-                            {allLoadedDialogs.map((dialog) => (
-                              <button
-                                key={dialog.id}
-                                onClick={() => handleSelectDialog(dialog)}
-                                className={`group p-6 rounded-2xl border-2 transition-all text-left hover:shadow-xl hover:-translate-y-1 ${
-                                  selectedDialog?.id === dialog.id
-                                    ? 'border-blue-400 bg-blue-50 shadow-lg ring-2 ring-blue-200'
-                                    : 'border-gray-200 bg-white dark:bg-gray-800 hover:border-gray-300 hover:shadow-md'
-                                }`}
-                              >
-                                <div className="flex items-center gap-3 mb-3">
-                                  <RAGFlowAvatar
-                                    avatar={dialog.icon}
-                                    name={dialog.name}
-                                    className="size-12"
-                                  />
-                                  <span
-                                    className={`font-semibold text-lg truncate flex-1 ${
-                                      selectedDialog?.id === dialog.id
-                                        ? 'text-blue-700'
-                                        : ''
-                                    }`}
-                                  >
-                                    {dialog.name}
-                                  </span>
-                                </div>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <p className="text-base text-muted-foreground line-clamp-2 leading-relaxed">
-                                      {dialog.description || '暂无描述'}
-                                    </p>
-                                  </TooltipTrigger>
-                                  {dialog.description && (
-                                    <TooltipContent className="max-w-sm">
-                                      <p className="text-base">
-                                        {dialog.description}
+                            {allLoadedDialogs.map((dialog) => {
+                              // 解析名称和标签
+                              const nameMatch =
+                                dialog.name.match(/^(.+?)(\((.+?)\))?$/);
+                              const displayName = nameMatch
+                                ? nameMatch[1].trim()
+                                : dialog.name;
+                              const tag =
+                                nameMatch && nameMatch[3] ? nameMatch[3] : null;
+
+                              return (
+                                <button
+                                  key={dialog.id}
+                                  onClick={() => handleSelectDialog(dialog)}
+                                  className={`group p-6 rounded-2xl border-2 transition-all text-left hover:shadow-xl hover:-translate-y-1 ${
+                                    selectedDialog?.id === dialog.id
+                                      ? 'border-blue-400 bg-blue-50 shadow-lg ring-2 ring-blue-200'
+                                      : 'border-gray-200 bg-white dark:bg-gray-800 hover:border-gray-300 hover:shadow-md'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 mb-3">
+                                    <RAGFlowAvatar
+                                      avatar={dialog.icon}
+                                      name={dialog.name}
+                                      className="size-12"
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span
+                                            className={`font-semibold text-lg truncate block ${
+                                              selectedDialog?.id === dialog.id
+                                                ? 'text-blue-700'
+                                                : ''
+                                            }`}
+                                          >
+                                            {displayName}
+                                          </span>
+                                        </TooltipTrigger>
+                                        {displayName.length > 15 && (
+                                          <TooltipContent>
+                                            <p className="text-base">
+                                              {displayName}
+                                            </p>
+                                          </TooltipContent>
+                                        )}
+                                      </Tooltip>
+                                      {tag && (
+                                        <span className="inline-block mt-1 px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
+                                          {tag}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <p className="text-base text-muted-foreground line-clamp-2 leading-relaxed">
+                                        {dialog.description || '暂无描述'}
                                       </p>
-                                    </TooltipContent>
-                                  )}
-                                </Tooltip>
-                              </button>
-                            ))}
+                                    </TooltipTrigger>
+                                    {dialog.description && (
+                                      <TooltipContent className="max-w-sm">
+                                        <p className="text-base">
+                                          {dialog.description}
+                                        </p>
+                                      </TooltipContent>
+                                    )}
+                                  </Tooltip>
+                                </button>
+                              );
+                            })}
                           </div>
 
                           {/* 加载更多按钮 */}
