@@ -27,7 +27,7 @@ const llmFactoryToUrlMap: Partial<Record<LLMFactory, string>> = {
   [LLMFactory.LMStudio]: 'https://lmstudio.ai/docs/basics',
   [LLMFactory.OpenAiAPICompatible]:
     'https://platform.openai.com/docs/models/gpt-4',
-  [LLMFactory.RAGcon]: 'https://ragcon.ai',
+  [LLMFactory.RAGcon]: 'https://www.ragcon.ai/erste-schritte-mit-ragflow/',
   [LLMFactory.TogetherAI]: 'https://docs.together.ai/docs/deployment-options',
   [LLMFactory.Replicate]: 'https://replicate.com/docs/topics/deployments',
   [LLMFactory.OpenRouter]: 'https://openrouter.ai/docs',
