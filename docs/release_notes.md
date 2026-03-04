@@ -20,7 +20,7 @@ Released on February 10, 2026.
   - Outputs Memory extraction log to the console.
 - Dataset
   - Supports batch metadata management.
-  - Renames "ToC (Table of Contents)" to "PageIndex". See [here](./guides/dataset/advanced/extract_table_of_contents.md).
+  - Renames "ToC (Table of Contents)" to "PageIndex". See [here](./guides/dataset/extract_table_of_contents.md).
 - Agent
   - Launches a new Chat-like Agent conversation management interface that retains sessions and dialogue history.
   - Introduces a multi-Sandbox mechanism supporting local gVisor and Alibaba Cloud, with compatibility for mainstream Sandbox APIs (configurable in the Admin page).
@@ -225,7 +225,7 @@ Released on October 15, 2025.
 
 - Orchestratable ingestion pipeline: Supports customized data ingestion and cleansing workflows, enabling users to flexibly design their data flows or directly apply the official data flow templates on the canvas.
 - GraphRAG & RAPTOR write process optimized: Replaces the automatic incremental build process with manual batch building, significantly reducing construction overhead.
-- Long-context RAG: Automatically generates document-level table of contents (TOC) structures to mitigate context loss caused by inaccurate or excessive chunking, substantially improving retrieval quality. This feature is now available via a TOC extraction template. See [here](./guides/dataset/advanced/extract_table_of_contents.md).
+- Long-context RAG: Automatically generates document-level table of contents (TOC) structures to mitigate context loss caused by inaccurate or excessive chunking, substantially improving retrieval quality. This feature is now available via a TOC extraction template. See [here](./guides/dataset/extract_table_of_contents.md).
 - Video file parsing: Expands the system's multimodal data processing capabilities by supporting video file parsing.
 - Admin CLI: Introduces a new command-line tool for system administration, allowing users to manage and monitor RAGFlow's service status via command line.
 
@@ -480,7 +480,7 @@ From this release onwards, built-in rerank models have been removed because they
 #### Added documents
 
 - [Set page rank](./guides/dataset/set_page_rank.md)
-- [Enable RAPTOR](./guides/dataset/advanced/enable_raptor.md)
+- [Enable RAPTOR](./guides/dataset/enable_raptor.md)
 - [Set variables for your chat assistant](./guides/chat/set_chat_variables.md)
 - [Launch RAGFlow MCP server](./develop/mcp/launch_mcp_server.md)
 
@@ -592,7 +592,7 @@ Released on February 6, 2025.
 ### New features
 
 - Supports DeepSeek R1 and DeepSeek V3.
-- GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](./guides/dataset/advanced/construct_knowledge_graph.md).
+- GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](https://ragflow.io/docs/dev/construct_knowledge_graph).
 - Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_component_reference/iteration.mdx).
 - New UI language: Portuguese.
 - Allows setting metadata for a specific file in a dataset to enhance AI-powered chats. See [here](./guides/dataset/set_metadata.md).
@@ -608,7 +608,7 @@ The **Tag dataset** feature is *unavailable* on the [Infinity](https://github.co
 
 #### Added documents
 
-- [Construct knowledge graph](./guides/dataset/advanced/construct_knowledge_graph.md)
+- [Construct knowledge graph](./guides/dataset/construct_knowledge_graph.md)
 - [Set metadata](./guides/dataset/set_metadata.md)
 - [Begin component](./guides/agent/agent_component_reference/begin.mdx)
 - [Generate component](./guides/agent/agent_component_reference/generate.mdx)

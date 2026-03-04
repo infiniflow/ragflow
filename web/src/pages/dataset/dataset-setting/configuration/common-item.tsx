@@ -107,13 +107,11 @@ export const EmbeddingSelect = ({
   field,
   name,
   disabled = false,
-  testId,
 }: {
   isEdit: boolean;
   field: FieldValues;
   name?: string;
   disabled?: boolean;
-  testId?: string;
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
@@ -151,7 +149,6 @@ export const EmbeddingSelect = ({
         value={field.value}
         options={embeddingModelOptions}
         placeholder={t('embeddingModelPlaceholder')}
-        testId={testId}
       />
     </Spin>
   );
@@ -191,7 +188,6 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
                     isEdit={!!isEdit}
                     field={field}
                     disabled={disabled}
-                    testId="ds-settings-basic-embedding-model-select"
                   ></EmbeddingSelect>
                 </FormControl>
               </div>
@@ -317,7 +313,6 @@ export function EnableTocToggle() {
                 <Switch
                   checked={field.value}
                   onCheckedChange={field.onChange}
-                  data-testid="ds-settings-parser-page-index-switch"
                 />
               </FormControl>
             </div>
@@ -350,8 +345,6 @@ export function ImageContextWindow() {
               defaultValue={0}
               min={0}
               max={256}
-              sliderTestId="ds-settings-parser-image-table-context-window-slider"
-              numberInputTestId="ds-settings-parser-image-table-context-window-input"
             />
           </FormControl>
           <div className="flex pt-1">
@@ -372,8 +365,6 @@ export function OverlappedPercent() {
       label={t('knowledgeConfiguration.overlappedPercent')}
       max={0.3}
       step={0.01}
-      sliderTestId="ds-settings-parser-overlapped-percent-slider"
-      numberInputTestId="ds-settings-parser-overlapped-percent-input"
     ></SliderInputFormField>
   );
 }
@@ -448,12 +439,7 @@ export function AutoMetadata({
     tooltip: t('knowledgeConfiguration.autoMetadataTip'),
     render: (fieldProps: ControllerRenderProps) => (
       <div className="flex items-center justify-between">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={handleClickOpenMetadata}
-          data-testid="ds-settings-metadata-open-modal-btn"
-        >
+        <Button type="button" variant="ghost" onClick={handleClickOpenMetadata}>
           <div className="flex items-center gap-2">
             <Settings />
             {t('knowledgeConfiguration.settings')}
@@ -462,7 +448,6 @@ export function AutoMetadata({
         <Switch
           checked={fieldProps.value}
           onCheckedChange={fieldProps.onChange}
-          data-testid="ds-settings-metadata-switch"
         />
       </div>
     ),
@@ -515,11 +500,6 @@ export function AutoMetadata({
           }) => {
             handleSaveMetadata(data);
           }}
-          testId="ds-settings-metadata-modal"
-          okButtonTestId="ds-settings-metadata-modal-save-btn"
-          addButtonTestId="ds-settings-metadata-add-btn"
-          nestedModalTestId="ds-settings-metadata-add-modal"
-          nestedModalOkButtonTestId="ds-settings-metadata-add-modal-confirm-btn"
         />
       )}
     </>

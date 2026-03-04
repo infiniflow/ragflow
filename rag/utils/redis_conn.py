@@ -334,42 +334,6 @@ class RedisDB:
             self.__open__()
         return -1
 
-    def get_or_create_secret_key(self, key_name: str, new_value: str) -> str:
-        """
-        Atomically get an existing key or create a new one.
-
-        This method guarantees that across multiple concurrent calls, only one
-        key will be created and all callers will receive the same key.
-
-        Returns:
-            The secret key string
-
-        Raises:
-            redis.RedisError: If Redis operations fail
-        """
-        # First, try to get the existing key
-        existing_value = self.REDIS.get(key_name)
-        if existing_value is not None:
-            logging.debug("Retrieved existing key from Redis")
-            return existing_value
-
-        # Use SETNX to atomically set the key only if it doesn't exist
-        # SETNX returns True if the key was set, False if it already existed
-        if self.REDIS.setnx(key_name, new_value):
-            logging.info("Successfully created new secret key in Redis")
-            return new_value
-
-        # SETNX failed, meaning another process created the key concurrently
-        # Retrieve and return that key
-        final_key = self.REDIS.get(key_name)
-        if final_key is None:
-            # This should rarely happen, but retry if it does
-            logging.warning("Key disappeared during concurrent access, retrying...")
-            return self.get_or_create_secret_key(key_name, new_value)
-
-        logging.debug("Retrieved key created by another process")
-        return final_key
-
     def transaction(self, key, value, exp=3600):
         try:
             pipeline = self.REDIS.pipeline(transaction=True)

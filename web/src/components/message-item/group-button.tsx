@@ -102,12 +102,7 @@ export const AssistantGroupButton = ({
           </>
         )}
         {prompt && (
-          <Button
-            onClick={showPromptModal}
-            variant="transparent"
-            size="icon-xs"
-            className="border-0"
-          >
+          <Button onClick={showPromptModal}>
             <PromptIcon style={{ fontSize: '16px' }} />
           </Button>
         )}

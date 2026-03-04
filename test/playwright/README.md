@@ -1,59 +1,122 @@
-# Playwright Test README
+# Playwright auth UI tests
 
-## One-line command (run everything)
+## Quick start
 
-```bash
-BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@ragflow.io E2E_ADMIN_PASSWORD=admin PW_FIXTURE_DEBUG=1 uv run pytest -q test/playwright -s --junitxml=/tmp/playwright-full.xml
-```
-
-## Common commands
-
-Run smoke subset:
+Smoke test (always runs at least one test):
 
 ```bash
-BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@ragflow.io E2E_ADMIN_PASSWORD=admin uv run pytest -q test/playwright -m smoke -s --junitxml=/tmp/playwright-smoke.xml
+pytest -q test/playwright -m smoke
 ```
 
-Run full suite:
+Run all auth UI tests:
 
 ```bash
-BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@ragflow.io E2E_ADMIN_PASSWORD=admin uv run pytest -q test/playwright -s --junitxml=/tmp/playwright-full.xml
+pytest -q test/playwright -m auth
 ```
 
-Run one file in isolation:
+If you use `uv`:
 
 ```bash
-BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@ragflow.io E2E_ADMIN_PASSWORD=admin uv run pytest -q test/playwright/e2e/test_next_apps_agent.py -s --junitxml=/tmp/playwright-agent.xml
+uv run pytest -q test/playwright -m smoke
 ```
 
-Run one test case in isolation:
+## Environment variables
+
+Required/optional:
+
+- `BASE_URL` (default: `http://127.0.0.1`)
+  - Example dev UI: `http://localhost:9222`.
+  - For Docker (`SVR_WEB_HTTP_PORT=80`), set `BASE_URL=http://localhost`.
+- `LOGIN_PATH` (default: `/login`)
+- `SEEDED_USER_EMAIL` and `SEEDED_USER_PASSWORD` (optional; enables login success test)
+- `DEMO_CREDS=1` (optional; uses demo credentials `qa@infiniflow.com` / `123` for login success test)
+- `REG_EMAIL_BASE` (default: `qa@infiniflow.org`)
+- `REG_EMAIL_UNIQUE=1` (optional; enables unique registration emails like `qa_1700000000000_123456@infiniflow.org`)
+- `POST_LOGIN_PATH` (optional; expected path after login success, e.g. `/`)
+- `REGISTER_ENABLED_EXPECTED` (optional; reserved for future gating checks)
+
+Diagnostics and debugging:
+
+- `PW_STEP_LOG=1` enable step logging
+- `PW_NET_LOG=1` log `requestfailed` + console errors during the run
+- `PW_TRACE=1` save a Playwright trace on failure
+- `PW_BROWSER` (default: `chromium`)
+- `PW_HEADLESS` (default: `1`, set `0` to see the browser)
+- `PLAYWRIGHT_ACTION_TIMEOUT_MS` (default: `30000`)
+  - Legacy: `PW_TIMEOUT_MS`
+- `PW_SLOWMO_MS` (default: `0`)
+- `PLAYWRIGHT_HANG_TIMEOUT_S` (default: `1800`, set `0` to disable)
+  - Legacy: `HANG_TIMEOUT_S`
+- `PLAYWRIGHT_AUTH_READY_TIMEOUT_MS` (default: `15000`)
+  - Legacy: `AUTH_READY_TIMEOUT_MS`
+
+## What runs without credentials
+
+- `auth/test_smoke_auth_page.py` (marker: `smoke`, always runs)
+- `auth/test_toggle_login_register.py` (skips if register toggle is gated off)
+- `auth/test_validation_presence.py`
+- `auth/test_sso_optional.py` (skips if no SSO providers are rendered)
+- `auth/test_register_success_optional.py` (skips if register toggle is gated off)
+- `auth/test_register_then_login_flow.py` (skips unless `REG_EMAIL_UNIQUE=1`)
+
+`auth/test_login_success_optional.py` only runs if `DEMO_CREDS=1` or `SEEDED_USER_EMAIL` and `SEEDED_USER_PASSWORD` are set.
+
+## Login success examples
+
+Run with demo credentials:
 
 ```bash
-BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@ragflow.io E2E_ADMIN_PASSWORD=admin uv run pytest -q test/playwright/e2e/test_next_apps_chat.py::test_chat_create_select_dataset_and_receive_answer_flow -s -x --junitxml=/tmp/playwright-chat-one.xml
+DEMO_CREDS=1 BASE_URL=http://localhost:9222 \
+  pytest -q test/playwright/auth/test_login_success_optional.py::test_login_success_optional -s -vv
 ```
 
-## Argument reference
+Run with env credentials:
 
-- `uv run`: run `pytest` inside the project-managed Python environment.
-- `pytest`: test runner.
-- `-q`: quieter output.
-- `test/playwright`: run the whole Playwright suite folder.
-- `test/playwright/...py`: run one file only.
-- `::test_name`: run one test function only.
-- `-m smoke`: run tests with `@pytest.mark.smoke`.
-- `-s`: show `print()` and fixture logs live.
-- `-x`: stop at first failure.
-- `--junitxml=/tmp/<name>.xml`: write machine-readable results to XML.
+```bash
+SEEDED_USER_EMAIL=user@yourdomain.com SEEDED_USER_PASSWORD=secret BASE_URL=http://localhost:9222 \
+  pytest -q test/playwright/auth/test_login_success_optional.py::test_login_success_optional -s -vv
+```
 
-## Environment variables used in commands
+## Registration examples
 
-- `BASE_URL`: app URL (this suite is currently run against `http://localhost:9222`).
-- `E2E_ADMIN_EMAIL`: login email for authenticated flows.
-- `E2E_ADMIN_PASSWORD`: login password for authenticated flows.
-- `PW_FIXTURE_DEBUG=1`: optional; prints fixture provisioning details.
+Registration rejects plus-addressing; the backend only allows local-part characters `[A-Za-z0-9_.-]`.
 
-## Output and artifacts
+Register only:
 
-- JUnit XML files are written to `/tmp/...` from `--junitxml`.
-- Screenshots and diagnostics are written under:
-  - `test/playwright/artifacts/`
+```bash
+REG_EMAIL_UNIQUE=1 BASE_URL=http://localhost:9222 \
+  pytest -q test/playwright/auth/test_register_success_optional.py::test_register_success_optional -s -vv
+```
+
+Register then login (single test):
+
+```bash
+REG_EMAIL_UNIQUE=1 BASE_URL=http://localhost:9222 \
+  pytest -q test/playwright/auth/test_register_then_login_flow.py::test_register_then_login_flow -s -vv
+```
+
+Run the end-to-end demo script:
+
+```bash
+BASE_URL=http://localhost:9222 \
+  scripts/run_auth_demo.sh
+```
+
+## Artifacts on failure
+
+Artifacts are written to:
+
+- `test/playwright/artifacts/`
+  - per-test screenshots are stored under `test/playwright/artifacts/<testname>/`
+
+On failure, the suite writes:
+
+- a full-page screenshot (`.png`)
+- a full HTML dump (`.html`)
+- a diagnostics log (`.log`)
+- an optional trace (`.zip`) if `PW_TRACE=1`
+
+## Hang investigation
+
+- Automatic stack dump after `PLAYWRIGHT_HANG_TIMEOUT_S` seconds.
+- Manual dump: `kill -USR1 <pytest_pid>` (writes traceback to stderr).

@@ -14,8 +14,6 @@ export function PageRankFormField() {
       max={100}
       min={0}
       layout={FormLayout.Horizontal}
-      sliderTestId="ds-settings-parser-page-rank-slider"
-      numberInputTestId="ds-settings-parser-page-rank-input"
     ></SliderInputFormField>
   );
 }

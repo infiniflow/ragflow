@@ -519,7 +519,7 @@ class FileService(CommonService):
         return "\n\n".join(res)
 
     @staticmethod
-    def parse(filename, blob, img_base64=True, tenant_id=None, layout_recognize=None):
+    def parse(filename, blob, img_base64=True, tenant_id=None):
         from rag.app import audio, email, naive, picture, presentation
         from api.apps import current_user
 
@@ -527,7 +527,7 @@ class FileService(CommonService):
             pass
 
         FACTORY = {ParserType.PRESENTATION.value: presentation, ParserType.PICTURE.value: picture, ParserType.AUDIO.value: audio, ParserType.EMAIL.value: email}
-        parser_config = {"chunk_token_num": 16096, "delimiter": "\n!?;。；！？", "layout_recognize": layout_recognize or "Plain Text"}
+        parser_config = {"chunk_token_num": 16096, "delimiter": "\n!?;。；！？", "layout_recognize": "Plain Text"}
         kwargs = {"lang": "English", "callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": 100000, "tenant_id": current_user.id if current_user else tenant_id}
         file_type = filename_type(filename)
         if img_base64 and file_type == FileType.VISUAL.value:
@@ -663,7 +663,7 @@ class FileService(CommonService):
         return structured(file.filename, filename_type(file.filename), file.read(), file.content_type)
 
     @staticmethod
-    def get_files(files: Union[None, list[dict]], raw: bool = False, layout_recognize: str = None) -> Union[list[str], tuple[list[str], list[dict]]]:
+    def get_files(files: Union[None, list[dict]], raw: bool = False) -> Union[list[str], tuple[list[str], list[dict]]]:
         if not files:
             return  []
         def image_to_base64(file):
@@ -679,7 +679,7 @@ class FileService(CommonService):
                 else:
                     threads.append(exe.submit(image_to_base64, file))
                 continue
-            threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"], layout_recognize))
+            threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"]))
     
         if raw:
             return [th.result() for th in threads], imgs

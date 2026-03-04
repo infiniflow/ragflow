@@ -203,8 +203,6 @@ export type RAGFlowSelectProps = Partial<ControllerRenderProps> & {
   contentProps?: React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>;
   triggerClassName?: string;
   onlyShowSelectedIcon?: boolean;
-  triggerTestId?: string;
-  optionTestIdPrefix?: string;
 } & SelectPrimitive.SelectProps;
 
 /**
@@ -239,8 +237,6 @@ export const RAGFlowSelect = forwardRef<
     // defaultValue,
     triggerClassName,
     onlyShowSelectedIcon = false,
-    triggerTestId,
-    optionTestIdPrefix,
   },
   ref,
 ) {
@@ -305,7 +301,6 @@ export const RAGFlowSelect = forwardRef<
           allowClear={allowClear}
           ref={ref}
           className={triggerClassName}
-          data-testid={triggerTestId}
         >
           <SelectValue placeholder={placeholder}>{label}</SelectValue>
         </SelectTrigger>
@@ -318,11 +313,6 @@ export const RAGFlowSelect = forwardRef<
                 value={o.value as RAGFlowSelectOptionType['value']}
                 key={o.value}
                 disabled={o.disabled}
-                data-testid={
-                  optionTestIdPrefix
-                    ? `${optionTestIdPrefix}-${o.value}`
-                    : undefined
-                }
               >
                 <div className="flex items-center gap-1">
                   {o.icon}
@@ -336,16 +326,7 @@ export const RAGFlowSelect = forwardRef<
             <SelectGroup key={idx}>
               <SelectLabel className="pl-2">{o.label}</SelectLabel>
               {o.options.map((x) => (
-                <SelectItem
-                  value={x.value}
-                  key={x.value}
-                  disabled={x.disabled}
-                  data-testid={
-                    optionTestIdPrefix
-                      ? `${optionTestIdPrefix}-${x.value}`
-                      : undefined
-                  }
-                >
+                <SelectItem value={x.value} key={x.value} disabled={x.disabled}>
                   {x.label}
                 </SelectItem>
               ))}

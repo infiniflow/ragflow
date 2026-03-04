@@ -111,16 +111,6 @@ def _open_create_from_list(
                 ).first
                 expect(fallback_card).to_be_visible(timeout=RESULT_TIMEOUT_MS)
                 fallback_card.click()
-    if modal_testid == "agent-create-modal":
-        menu = page.locator("[data-testid='agent-create-menu']")
-        if menu.count() > 0 and menu.first.is_visible():
-            create_blank = menu.locator("text=/create from blank/i")
-            if create_blank.count() > 0 and create_blank.first.is_visible():
-                create_blank.first.click()
-            else:
-                first_item = menu.locator("[role='menuitem']").first
-                expect(first_item).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-                first_item.click()
     modal = page.locator(f"[data-testid='{modal_testid}']")
     expect(modal).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     return modal
@@ -142,18 +132,6 @@ def _fill_and_save_create_modal(
     expect(save_button).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     save_button.click()
     expect(modal).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
-
-
-def _search_query_input(page):
-    candidates = [
-        page.locator("[data-testid='search-query-input']"),
-        page.locator("input[placeholder*='How can I help you today']"),
-        page.locator("input[placeholder*='help you today']"),
-    ]
-    for candidate in candidates:
-        if candidate.count() > 0:
-            return candidate.first
-    return page.locator("input[type='text']").first
 
 
 def _select_first_dataset_and_save(

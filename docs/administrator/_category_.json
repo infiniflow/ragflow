@@ -1,11 +1,11 @@
 {
   "label": "Administrator guides",
-  "position": 4,
+  "position": 3,
   "link": {
     "type": "generated-index",
     "description": "Guides for system administrtors"
   },
   "customProps": {
-    "sidebarIcon": "LucideComputer"
+    "sidebarIcon": "LucidComputer"
   }
 }

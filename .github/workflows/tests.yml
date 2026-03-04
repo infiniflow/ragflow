@@ -129,21 +129,20 @@ jobs:
             fi
           fi
 
-      - name: Build ragflow go server
+      - name: Run unit test
         run: |
-          BUILDER_CONTAINER=ragflow_build_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
-          echo "BUILDER_CONTAINER=${BUILDER_CONTAINER}" >> ${GITHUB_ENV}
-          TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
-          sudo docker run --privileged -d --name ${BUILDER_CONTAINER} -e TZ=${TZ} -e UV_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple -v ${PWD}:/ragflow -v ${PWD}/internal/cpp/resource:/usr/share/infinity/resource infiniflow/infinity_builder:ubuntu22_clang20
-          sudo docker exec ${BUILDER_CONTAINER} bash -c "git config --global safe.directory \"*\" && cd /ragflow && ./build.sh --cpp"
-          ./build.sh --go
+          uv sync --python 3.12 --group test --frozen
+          source .venv/bin/activate
+          which pytest || echo "pytest not in PATH"
+          echo "Start to run unit test"
+          python3 run_tests.py
 
       - name: Build ragflow:nightly
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
           RAGFLOW_IMAGE=infiniflow/ragflow:${GITHUB_RUN_ID}
           echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> ${GITHUB_ENV}
-          sudo docker pull ubuntu:24.04
+          sudo docker pull ubuntu:22.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
           if [[ ${GITHUB_EVENT_NAME} == "schedule" ]]; then
             export HTTP_API_TEST_LEVEL=p3
@@ -152,14 +151,6 @@ jobs:
           fi
           echo "HTTP_API_TEST_LEVEL=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_ENV}
           echo "RAGFLOW_CONTAINER=${GITHUB_RUN_ID}-ragflow-cpu-1" >> ${GITHUB_ENV}
-
-      - name: Run unit test
-        run: |
-          uv sync --python 3.12 --group test --frozen
-          source .venv/bin/activate
-          which pytest || echo "pytest not in PATH"
-          echo "Start to run unit test"
-          python3 run_tests.py
 
       - name: Start ragflow:nightly
         run: |
@@ -276,7 +267,7 @@ jobs:
             local tmp_log
             tmp_log="$(mktemp)"
             set +e
-            timeout 300s "$@" 2>&1 | tee "${tmp_log}"
+            timeout 180s "$@" 2>&1 | tee "${tmp_log}"
             local status=${PIPESTATUS[0]}
             set -e
             cat "${tmp_log}" >> "${logfile}"
@@ -462,7 +453,7 @@ jobs:
             local tmp_log
             tmp_log="$(mktemp)"
             set +e
-            timeout 300s "$@" 2>&1 | tee "${tmp_log}"
+            timeout 180s "$@" 2>&1 | tee "${tmp_log}"
             local status=${PIPESTATUS[0]}
             set -e
             cat "${tmp_log}" >> "${logfile}"

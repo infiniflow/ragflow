@@ -22,7 +22,7 @@ To run these tests, set the following environment variables:
 
     export AGENTRUN_ACCESS_KEY_ID="LTAI5t..."
     export AGENTRUN_ACCESS_KEY_SECRET="..."
-    export AGENTRUN_ACCOUNT_ID="1234567890..."  # Aliyun primary account ID
+    export AGENTRUN_ACCOUNT_ID="1234567890..."  # Aliyun primary account ID (主账号ID)
     export AGENTRUN_REGION="cn-hangzhou"  # Note: AGENTRUN_REGION (SDK will read this)
 
 Then run:
