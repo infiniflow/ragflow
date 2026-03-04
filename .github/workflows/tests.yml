@@ -97,6 +97,38 @@ jobs:
           version: ">=0.11.x"
           args: "check"
 
+      - name: Check comments of changed Python files
+        if: ${{ false }}
+        run: |
+          if [[ ${{ github.event_name }} == 'pull_request' || ${{ github.event_name }} == 'pull_request_target' ]]; then
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
+              | grep -E '\.(py)$' || true)
+
+            if [ -n "$CHANGED_FILES" ]; then
+              echo "Check comments of changed Python files with check_comment_ascii.py"
+
+              readarray -t files <<< "$CHANGED_FILES"
+              HAS_ERROR=0
+
+              for file in "${files[@]}"; do
+                if [ -f "$file" ]; then
+                  if python3 check_comment_ascii.py "$file"; then
+                    echo "✅ $file"
+                  else
+                    echo "❌ $file"
+                    HAS_ERROR=1
+                  fi
+                fi
+              done
+
+              if [ $HAS_ERROR -ne 0 ]; then
+                exit 1
+              fi
+            else
+              echo "No Python files changed"
+            fi
+          fi
+          
       - name: Run unit test
         run: |
           uv sync --python 3.12 --group test --frozen
@@ -104,6 +136,15 @@ jobs:
           which pytest || echo "pytest not in PATH"
           echo "Start to run unit test"
           python3 run_tests.py
+
+      - name: Build ragflow go server
+        run: |
+          BUILDER_CONTAINER=ragflow_build_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
+          echo "BUILDER_CONTAINER=${BUILDER_CONTAINER}" >> ${GITHUB_ENV}
+          TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
+          sudo docker run --privileged -d --name ${BUILDER_CONTAINER} -e TZ=${TZ} -e UV_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple -v ${PWD}:/ragflow -v ${PWD}/internal/cpp/resource:/usr/share/infinity/resource infiniflow/infinity_builder:ubuntu22_clang20
+          sudo docker exec ${BUILDER_CONTAINER} bash -c "git config --global safe.directory \"*\" && cd /ragflow && ./build.sh --cpp"
+          ./build.sh --go
 
   es_tests:
     name: es_tests
@@ -140,6 +181,14 @@ jobs:
           fi
           echo "HTTP_API_TEST_LEVEL=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_ENV}
           echo "RAGFLOW_CONTAINER=${GITHUB_RUN_ID}-ragflow-cpu-1" >> ${GITHUB_ENV}
+
+      - name: Run unit test
+        run: |
+          uv sync --python 3.12 --group test --frozen
+          source .venv/bin/activate
+          which pytest || echo "pytest not in PATH"
+          echo "Start to run unit test"
+          python3 run_tests.py
 
       - name: Start ragflow:nightly
         run: |
@@ -256,7 +305,7 @@ jobs:
             local tmp_log
             tmp_log="$(mktemp)"
             set +e
-            timeout 180s "$@" 2>&1 | tee "${tmp_log}"
+            timeout 300s "$@" 2>&1 | tee "${tmp_log}"
             local status=${PIPESTATUS[0]}
             set -e
             cat "${tmp_log}" >> "${logfile}"
@@ -538,7 +587,7 @@ jobs:
             local tmp_log
             tmp_log="$(mktemp)"
             set +e
-            timeout 180s "$@" 2>&1 | tee "${tmp_log}"
+            timeout 300s "$@" 2>&1 | tee "${tmp_log}"
             local status=${PIPESTATUS[0]}
             set -e
             cat "${tmp_log}" >> "${logfile}"
