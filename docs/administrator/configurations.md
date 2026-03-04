@@ -1,5 +1,5 @@
 ---
-sidebar_position: 1
+sidebar_position: 0
 slug: /configurations
 sidebar_custom_props: {
   sidebarIcon: LucideCog
@@ -111,7 +111,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - For the `nightly` edition:
   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
   - `RAGFLOW_IMAGE=infiniflow-registry.cn-shanghai.cr.aliyuncs.com/infiniflow/ragflow:nightly`.
-:::
+  :::
 
 ### Embedding service
 

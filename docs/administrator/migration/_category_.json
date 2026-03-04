@@ -1,9 +1,9 @@
 {
-  "label": "Migration",
-  "position": 5,
+  "label": "Data backup and migration",
+  "position": 2,
   "link": {
     "type": "generated-index",
-    "description": "RAGFlow migration guide"
+    "description": "Data backup and migration guide"
   },
   "customProps": {
     "categoryIcon": "LucideArrowRightLeft"
