@@ -143,6 +143,7 @@ export const S3Constant = (t: TFunction) => [
     tooltip: t('setting.S3CompatibleAddressingStyleTip'),
     required: false,
     type: FormFieldType.Select,
+    defaultValue: 'virtual',
     options: [
       { label: 'Virtual Hosted Style', value: 'virtual' },
       { label: 'Path Style', value: 'path' },

@@ -1,14 +1,18 @@
 import { FormFieldType } from '@/components/dynamic-form';
+import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
+import { Mail } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
-import { ConfluenceIndexingModeField } from '../component/confluence-token-field';
 import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
 import { IDataSourceInfoMap } from '../interface';
+import { bitbucketConstant } from './bitbucket-constant';
+import { confluenceConstant } from './confluence-constant';
 import { S3Constant } from './s3-constant';
+
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   S3 = 's3',
@@ -29,6 +33,11 @@ export enum DataSourceKey {
   ASANA = 'asana',
   IMAP = 'imap',
   GITHUB = 'github',
+  BITBUCKET = 'bitbucket',
+  ZENDESK = 'zendesk',
+  SEAFILE = 'seafile',
+  MYSQL = 'mysql',
+  POSTGRESQL = 'postgresql',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -126,12 +135,43 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.GITHUB]: {
       name: 'GitHub',
       description: t(`setting.${DataSourceKey.GITHUB}Description`),
-      icon: <SvgIcon name={'data-source/github'} width={38} />,
+      icon: (
+        <IconFontFill
+          // name="a-DiscordIconSVGVectorIcon"
+          name="GitHub"
+          className="text-text-primary size-6"
+        ></IconFontFill>
+      ),
     },
     [DataSourceKey.IMAP]: {
       name: 'IMAP',
       description: t(`setting.${DataSourceKey.IMAP}Description`),
-      icon: <SvgIcon name={'data-source/imap'} width={38} />,
+      icon: <Mail className="text-text-primary" size={22} />,
+    },
+    [DataSourceKey.BITBUCKET]: {
+      name: 'Bitbucket',
+      description: t(`setting.${DataSourceKey.BITBUCKET}Description`),
+      icon: <SvgIcon name={'data-source/bitbucket'} width={38} />,
+    },
+    [DataSourceKey.ZENDESK]: {
+      name: 'Zendesk',
+      description: t(`setting.${DataSourceKey.ZENDESK}Description`),
+      icon: <SvgIcon name={'data-source/zendesk'} width={38} />,
+    },
+    [DataSourceKey.SEAFILE]: {
+      name: 'SeaFile',
+      description: t(`setting.${DataSourceKey.SEAFILE}Description`),
+      icon: <SvgIcon name={'data-source/seafile'} width={38} />,
+    },
+    [DataSourceKey.MYSQL]: {
+      name: 'MySQL',
+      description: t(`setting.${DataSourceKey.MYSQL}Description`),
+      icon: <SvgIcon name={'data-source/mysql'} width={38} />,
+    },
+    [DataSourceKey.POSTGRESQL]: {
+      name: 'PostgreSQL',
+      description: t(`setting.${DataSourceKey.POSTGRESQL}Description`),
+      icon: <SvgIcon name={'data-source/postgresql'} width={38} />,
     },
   };
 };
@@ -160,6 +200,7 @@ export const DataSourceFormBaseFields = [
     name: 'name',
     type: FormFieldType.Text,
     required: true,
+    tooltip: t('setting.connectorNameTip'),
   },
   {
     label: 'Source',
@@ -288,67 +329,7 @@ export const DataSourceFormFields = {
     },
   ],
 
-  [DataSourceKey.CONFLUENCE]: [
-    {
-      label: 'Confluence Username',
-      name: 'config.credentials.confluence_username',
-      type: FormFieldType.Text,
-      required: true,
-      tooltip: 'A descriptive name for the connector.',
-    },
-    {
-      label: 'Confluence Access Token',
-      name: 'config.credentials.confluence_access_token',
-      type: FormFieldType.Password,
-      required: true,
-    },
-    {
-      label: 'Wiki Base URL',
-      name: 'config.wiki_base',
-      type: FormFieldType.Text,
-      required: false,
-      tooltip: t('setting.confluenceWikiBaseUrlTip'),
-    },
-    {
-      label: 'Is Cloud',
-      name: 'config.is_cloud',
-      type: FormFieldType.Checkbox,
-      required: false,
-      tooltip: t('setting.confluenceIsCloudTip'),
-    },
-    {
-      label: 'Index Method',
-      name: 'config.index_mode',
-      type: FormFieldType.Text,
-      required: false,
-      horizontal: true,
-      labelClassName: 'self-start pt-4',
-      render: (fieldProps: any) => (
-        <ConfluenceIndexingModeField {...fieldProps} />
-      ),
-    },
-    {
-      label: 'Space Key',
-      name: 'config.space',
-      type: FormFieldType.Text,
-      required: false,
-      hidden: true,
-    },
-    {
-      label: 'Page ID',
-      name: 'config.page_id',
-      type: FormFieldType.Text,
-      required: false,
-      hidden: true,
-    },
-    {
-      label: 'Index Recursively',
-      name: 'config.index_recursively',
-      type: FormFieldType.Checkbox,
-      required: false,
-      hidden: true,
-    },
-  ],
+  [DataSourceKey.CONFLUENCE]: confluenceConstant(t),
   [DataSourceKey.GOOGLE_DRIVE]: [
     {
       label: 'Primary Admin Email',
@@ -822,6 +803,170 @@ export const DataSourceFormFields = {
       required: false,
     },
   ],
+  [DataSourceKey.BITBUCKET]: bitbucketConstant(t),
+  [DataSourceKey.ZENDESK]: [
+    {
+      label: 'Zendesk Domain',
+      name: 'config.credentials.zendesk_subdomain',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Zendesk Email',
+      name: 'config.credentials.zendesk_email',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Zendesk Token',
+      name: 'config.credentials.zendesk_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Content',
+      name: 'config.zendesk_content_type',
+      type: FormFieldType.Segmented,
+      required: true,
+      options: [
+        { label: 'Articles', value: 'articles' },
+        { label: 'Tickets', value: 'tickets' },
+      ],
+    },
+  ],
+  [DataSourceKey.SEAFILE]: [
+    {
+      label: 'SeaFile Server URL',
+      name: 'config.seafile_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://seafile.example.com',
+      tooltip: t('setting.seafileUrlTip'),
+    },
+    {
+      label: 'API Token',
+      name: 'config.credentials.seafile_token',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.seafileTokenTip'),
+    },
+    {
+      label: 'Include Shared Libraries',
+      name: 'config.include_shared',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+      tooltip: t('setting.seafileIncludeSharedTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '100',
+      tooltip: t('setting.seafileBatchSizeTip'),
+    },
+  ],
+  [DataSourceKey.MYSQL]: [
+    {
+      label: 'Host',
+      name: 'config.host',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'localhost',
+    },
+    {
+      label: 'Port',
+      name: 'config.port',
+      type: FormFieldType.Number,
+      required: true,
+      placeholder: '3306',
+    },
+    {
+      label: 'Database',
+      name: 'config.database',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Username',
+      name: 'config.credentials.username',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Password',
+      name: 'config.credentials.password',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'SQL Query',
+      name: 'config.query',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: 'Leave empty to load all tables',
+      tooltip: t('setting.mysqlQueryTip'),
+    },
+    {
+      label: 'Content Columns',
+      name: 'config.content_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'title,description,content',
+      tooltip: t('setting.mysqlContentColumnsTip'),
+    },
+  ],
+  [DataSourceKey.POSTGRESQL]: [
+    {
+      label: 'Host',
+      name: 'config.host',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'localhost',
+    },
+    {
+      label: 'Port',
+      name: 'config.port',
+      type: FormFieldType.Number,
+      required: true,
+      placeholder: '5432',
+    },
+    {
+      label: 'Database',
+      name: 'config.database',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Username',
+      name: 'config.credentials.username',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Password',
+      name: 'config.credentials.password',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'SQL Query',
+      name: 'config.query',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: 'Leave empty to load all tables',
+      tooltip: t('setting.postgresqlQueryTip'),
+    },
+    {
+      label: 'Content Columns',
+      name: 'config.content_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'title,description,content',
+      tooltip: t('setting.postgresqlContentColumnsTip'),
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -883,6 +1028,7 @@ export const DataSourceFormDefaultValues = {
       wiki_base: '',
       is_cloud: true,
       space: '',
+      page_id: '',
       credentials: {
         confluence_username: '',
         confluence_access_token: '',
@@ -1073,6 +1219,80 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         imap_username: '',
         imap_password: '',
+      },
+    },
+  },
+  [DataSourceKey.BITBUCKET]: {
+    name: '',
+    source: DataSourceKey.BITBUCKET,
+    config: {
+      workspace: '',
+      index_mode: 'workspace',
+      repository_slugs: '',
+      projects: '',
+    },
+    credentials: {
+      bitbucket_api_token: '',
+    },
+  },
+  [DataSourceKey.ZENDESK]: {
+    name: '',
+    source: DataSourceKey.ZENDESK,
+    config: {
+      name: '',
+      zendesk_content_type: 'articles',
+      credentials: {
+        zendesk_subdomain: '',
+        zendesk_email: '',
+        zendesk_token: '',
+      },
+    },
+  },
+  [DataSourceKey.SEAFILE]: {
+    name: '',
+    source: DataSourceKey.SEAFILE,
+    config: {
+      seafile_url: '',
+      include_shared: true,
+      batch_size: 100,
+      credentials: {
+        seafile_token: '',
+      },
+    },
+  },
+  [DataSourceKey.MYSQL]: {
+    name: '',
+    source: DataSourceKey.MYSQL,
+    config: {
+      host: 'localhost',
+      port: 3306,
+      database: '',
+      query: '',
+      content_columns: '',
+      metadata_columns: '',
+      id_column: '',
+      timestamp_column: '',
+      credentials: {
+        username: '',
+        password: '',
+      },
+    },
+  },
+  [DataSourceKey.POSTGRESQL]: {
+    name: '',
+    source: DataSourceKey.POSTGRESQL,
+    config: {
+      host: 'localhost',
+      port: 5432,
+      database: '',
+      query: '',
+      content_columns: '',
+      metadata_columns: '',
+      id_column: '',
+      timestamp_column: '',
+      credentials: {
+        username: '',
+        password: '',
       },
     },
   },

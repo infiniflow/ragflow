@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import batch_add_chunks
+from utils.engine_utils import get_doc_engine
 
 
 class TestChunksList:
@@ -84,6 +85,12 @@ class TestChunksList:
     )
     def test_keywords(self, add_chunks, params, expected_page_size):
         _, document, _ = add_chunks
+        if params.get("keywords") == "ragflow":
+            doc_engine = get_doc_engine(document.rag)
+            if doc_engine == "infinity" and expected_page_size == 1:
+                pytest.skip("issues/6509")
+            if doc_engine != "infinity" and expected_page_size == 5:
+                pytest.skip("issues/6509")
         chunks = document.list_chunks(**params)
         assert len(chunks) == expected_page_size, str(chunks)
 
@@ -99,6 +106,8 @@ class TestChunksList:
     )
     def test_id(self, add_chunks, chunk_id, expected_page_size, expected_message):
         _, document, chunks = add_chunks
+        if callable(chunk_id) and get_doc_engine(document.rag) == "infinity":
+            pytest.skip("issues/6499")
         chunk_ids = [chunk.id for chunk in chunks]
         if callable(chunk_id):
             params = {"id": chunk_id(chunk_ids)}

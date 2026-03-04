@@ -21,7 +21,7 @@ cp pyproject.toml release/$PROJECT_NAME/pyproject.toml
 cp README.md release/$PROJECT_NAME/README.md
 
 mkdir release/$PROJECT_NAME/$SOURCE_DIR/$PACKAGE_DIR -p
-cp admin_client.py release/$PROJECT_NAME/$SOURCE_DIR/$PACKAGE_DIR/admin_client.py
+cp ragflow_cli.py release/$PROJECT_NAME/$SOURCE_DIR/$PACKAGE_DIR/ragflow_cli.py
 
 if [ -d "release/$PROJECT_NAME/$SOURCE_DIR" ]; then
     echo "✅ source dir: release/$PROJECT_NAME/$SOURCE_DIR"

@@ -233,6 +233,15 @@ async def delete(tenant_id):
                 File2DocumentService.delete_by_document_id(doc.id)
             FileService.filter_delete(
                 [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kb.name])
+
+            # Drop index for this dataset
+            try:
+                from rag.nlp import search
+                idxnm = search.index_name(kb.tenant_id)
+                settings.docStoreConn.delete_idx(idxnm, kb_id)
+            except Exception as e:
+                logging.warning(f"Failed to drop index for dataset {kb_id}: {e}")
+
             if not KnowledgebaseService.delete_by_id(kb_id):
                 errors.append(f"Delete dataset error for {kb_id}")
                 continue
@@ -481,7 +490,7 @@ def list_datasets(tenant_id):
 
 @manager.route('/datasets/<dataset_id>/knowledge_graph', methods=['GET'])  # noqa: F821
 @token_required
-def knowledge_graph(tenant_id, dataset_id):
+async def knowledge_graph(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return get_result(
             data=False,
@@ -497,7 +506,7 @@ def knowledge_graph(tenant_id, dataset_id):
     obj = {"graph": {}, "mind_map": {}}
     if not settings.docStoreConn.index_exist(search.index_name(kb.tenant_id), dataset_id):
         return get_result(data=obj)
-    sres = settings.retriever.search(req, search.index_name(kb.tenant_id), [dataset_id])
+    sres = await settings.retriever.search(req, search.index_name(kb.tenant_id), [dataset_id])
     if not len(sres.ids):
         return get_result(data=obj)
 

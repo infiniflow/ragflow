@@ -32,6 +32,7 @@ import {
   initialLoopValues,
   initialMessageValues,
   initialNoteValues,
+  initialPDFGeneratorValues,
   initialParserValues,
   initialPubMedValues,
   initialRetrievalValues,
@@ -179,7 +180,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Loop]: initialLoopValues,
       [Operator.LoopStart]: {},
       [Operator.ExitLoop]: {},
-      [Operator.PDFGenerator]: {},
+      [Operator.PDFGenerator]: initialPDFGeneratorValues,
       [Operator.ExcelProcessor]: {},
     };
   }, [llmId]);

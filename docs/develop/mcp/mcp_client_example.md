@@ -1,9 +1,11 @@
 ---
 sidebar_position: 3
 slug: /mcp_client
+sidebar_custom_props: {
+  categoryIcon: LucideBookMarked
+}
 
 ---
-
 # RAGFlow MCP client examples
 
 Python and curl MCP client examples.

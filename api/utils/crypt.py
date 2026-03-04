@@ -24,7 +24,7 @@ from common.file_utils import get_project_base_directory
 
 def crypt(line):
     """
-    decrypt(crypt(input_string)) == base64(input_string), which frontend and admin_client use.
+    decrypt(crypt(input_string)) == base64(input_string), which frontend and ragflow_cli use.
     """
     file_path = os.path.join(get_project_base_directory(), "conf", "public.pem")
     rsa_key = RSA.importKey(open(file_path).read(), "Welcome")

@@ -142,6 +142,7 @@ function BeginForm({ node }: INextOperatorForm) {
                   <Textarea
                     rows={5}
                     {...field}
+                    className="overflow-auto"
                     placeholder={t('common.pleaseInput')}
                   ></Textarea>
                 </FormControl>

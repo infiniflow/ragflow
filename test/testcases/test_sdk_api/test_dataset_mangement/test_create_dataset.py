@@ -27,7 +27,7 @@ from utils.hypothesis_utils import valid_names
 
 @pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
@@ -117,7 +117,7 @@ class TestDatasetCreate:
         }
         client.create_dataset(**payload)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_avatar_exceeds_limit_length(self, client):
         payload = {"name": "avatar_exceeds_limit_length", "avatar": "a" * 65536}
         with pytest.raises(Exception) as exception_info:
@@ -157,7 +157,7 @@ class TestDatasetCreate:
         dataset = client.create_dataset(**payload)
         assert dataset.description == "description", str(dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_description_exceeds_limit_length(self, client):
         payload = {"name": "description_exceeds_limit_length", "description": "a" * 65536}
         with pytest.raises(Exception) as exception_info:
@@ -245,7 +245,7 @@ class TestDatasetCreate:
         dataset = client.create_dataset(**payload)
         assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(dataset)
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "name, permission",
         [

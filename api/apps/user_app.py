@@ -98,9 +98,7 @@ async def login():
         return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="Unauthorized!")
 
     email = json_body.get("email", "")
-    if email == "admin@ragflow.io":
-        return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="Default admin account cannot be used to login normal services!")
-    
+
     users = UserService.query(email=email)
     if not users:
         return get_json_result(

@@ -1,3 +1,4 @@
+import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
 import { MessageType } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
@@ -10,7 +11,7 @@ import { IMessage } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { trim } from 'lodash';
 import { useCallback, useEffect } from 'react';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
 import { useCreateConversationBeforeSendMessage } from './use-chat-url';
 import { useFindPrologueFromDialogList } from './use-select-conversation-list';
@@ -89,20 +90,24 @@ export const useSendMessage = (controller: AbortController) => {
       message,
       currentConversationId,
       messages,
+      enableInternet,
+      enableThinking,
     }: {
       message: IMessage;
       currentConversationId?: string;
       messages?: IMessage[];
-    }) => {
+    } & NextMessageInputOnPressEnterParameter) => {
       const res = await send(
         {
           conversation_id: currentConversationId ?? conversationId,
           messages: [
             ...(Array.isArray(messages) && messages?.length > 0
               ? messages
-              : derivedMessages ?? []),
+              : (derivedMessages ?? [])),
             message,
           ],
+          reasoning: enableThinking,
+          internet: enableInternet,
         },
         controller,
       );
@@ -133,52 +138,60 @@ export const useSendMessage = (controller: AbortController) => {
   const { createConversationBeforeSendMessage } =
     useCreateConversationBeforeSendMessage();
 
-  const handlePressEnter = useCallback(async () => {
-    if (trim(value) === '') return;
+  const handlePressEnter = useCallback(
+    async ({
+      enableThinking,
+      enableInternet,
+    }: NextMessageInputOnPressEnterParameter) => {
+      if (trim(value) === '') return;
 
-    const data = await createConversationBeforeSendMessage(value);
+      const data = await createConversationBeforeSendMessage(value);
 
-    if (data === undefined) {
-      return;
-    }
+      if (data === undefined) {
+        return;
+      }
 
-    const { targetConversationId, currentMessages } = data;
+      const { targetConversationId, currentMessages } = data;
 
-    const id = uuid();
+      const id = uuid();
 
-    addNewestQuestion({
-      content: value,
-      files: files,
-      id,
-      role: MessageType.User,
-      conversationId: targetConversationId,
-    });
-
-    if (done) {
-      setValue('');
-      sendMessage({
-        currentConversationId: targetConversationId,
-        messages: currentMessages,
-        message: {
-          id,
-          content: value.trim(),
-          role: MessageType.User,
-          files: files,
-          conversationId: targetConversationId,
-        },
+      addNewestQuestion({
+        content: value,
+        files: files,
+        id,
+        role: MessageType.User,
+        conversationId: targetConversationId,
       });
-    }
-    clearFiles();
-  }, [
-    value,
-    createConversationBeforeSendMessage,
-    addNewestQuestion,
-    files,
-    done,
-    clearFiles,
-    setValue,
-    sendMessage,
-  ]);
+
+      if (done) {
+        setValue('');
+        sendMessage({
+          currentConversationId: targetConversationId,
+          messages: currentMessages,
+          message: {
+            id,
+            content: value.trim(),
+            role: MessageType.User,
+            files: files,
+            conversationId: targetConversationId,
+          },
+          enableInternet,
+          enableThinking,
+        });
+      }
+      clearFiles();
+    },
+    [
+      value,
+      createConversationBeforeSendMessage,
+      addNewestQuestion,
+      files,
+      done,
+      clearFiles,
+      setValue,
+      sendMessage,
+    ],
+  );
 
   useEffect(() => {
     //  #1289

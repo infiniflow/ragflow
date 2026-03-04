@@ -29,15 +29,20 @@ export function useUploadFile() {
       conversationId?: string,
     ) => {
       if (Array.isArray(files) && files.length) {
-        const file = files[0];
-        const ret = await uploadAndParseFile({ file, options, conversationId });
-        if (ret?.code === 0) {
-          const data = ret.data;
-          setCurrentFiles((list) => [...list, data]);
-          setFileMap((map) => {
-            map.set(files[0], data);
-            return map;
+        for (const file of files) {
+          const ret = await uploadAndParseFile({
+            file,
+            options,
+            conversationId,
           });
+          if (ret?.code === 0) {
+            const data = ret.data;
+            setCurrentFiles((list) => [...list, data]);
+            setFileMap((map) => {
+              map.set(file, data);
+              return map;
+            });
+          }
         }
       }
     },

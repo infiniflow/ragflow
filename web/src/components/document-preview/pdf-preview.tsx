@@ -14,7 +14,7 @@ import { Spin } from '@/components/ui/spin';
 import { Authorization } from '@/constants/authorization';
 import FileError from '@/pages/document-viewer/file-error';
 import { getAuthorization } from '@/utils/authorization-util';
-import styles from './index.less';
+import styles from './index.module.less';
 type PdfLoaderProps = React.ComponentProps<typeof PdfLoader> & {
   httpHeaders?: Record<string, string>;
 };
@@ -52,9 +52,15 @@ const PdfPreview = ({
   const resetHash = () => {};
 
   useEffect(() => {
+    let timer = null;
     if (state?.length && state?.length > 0) {
-      ref?.current(state[0]);
+      timer = setTimeout(() => {
+        ref?.current(state[0]);
+      }, 100);
     }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [state]);
 
   const httpHeaders = {

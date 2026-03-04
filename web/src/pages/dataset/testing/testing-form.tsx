@@ -37,7 +37,7 @@ import { trim } from 'lodash';
 import { Send } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 
 type TestingFormProps = Pick<
   ReturnType<typeof useTestRetrieval>,

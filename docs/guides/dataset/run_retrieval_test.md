@@ -1,8 +1,10 @@
 ---
 sidebar_position: 10
 slug: /run_retrieval_test
+sidebar_custom_props: {
+  categoryIcon: LucideTextSearch
+}
 ---
-
 # Run retrieval test
 
 Conduct a retrieval test on your dataset to check whether the intended chunks can be retrieved.

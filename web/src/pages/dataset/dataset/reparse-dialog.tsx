@@ -15,6 +15,7 @@ export const ReparseDialog = memo(
   ({
     handleOperationIconClick,
     chunk_num,
+    enable_metadata = false,
     hidden = false,
     visible = true,
     hideModal,
@@ -24,6 +25,7 @@ export const ReparseDialog = memo(
       delete: boolean;
       apply_kb: boolean;
     }) => void;
+    enable_metadata?: boolean;
     visible: boolean;
     hideModal: () => void;
     hidden?: boolean;
@@ -92,13 +94,16 @@ export const ReparseDialog = memo(
           </div>
         ),
       };
-      if (chunk_num > 0) {
+      if (chunk_num > 0 && enable_metadata) {
         setFields([deleteField, applyKBField]);
-      }
-      if (chunk_num <= 0) {
+      } else if (chunk_num > 0 && !enable_metadata) {
+        setFields([deleteField]);
+      } else if (chunk_num <= 0 && enable_metadata) {
         setFields([applyKBField]);
+      } else {
+        setFields([]);
       }
-    }, [chunk_num, t]);
+    }, [chunk_num, t, enable_metadata]);
 
     const formCallbackRef = useRef<DynamicFormRef>(null);
 
@@ -167,3 +172,5 @@ export const ReparseDialog = memo(
     );
   },
 );
+
+ReparseDialog.displayName = 'ReparseDialog';

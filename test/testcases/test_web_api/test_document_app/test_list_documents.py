@@ -22,7 +22,7 @@ from libs.auth import RAGFlowWebApiAuth
 from utils import is_sorted
 
 
-@pytest.mark.p1
+@pytest.mark.p2
 class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",

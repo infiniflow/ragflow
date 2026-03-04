@@ -42,6 +42,7 @@ class InfinityConnection(InfinityConnectionBase):
         return False
 
     def convert_select_fields(self, output_fields: list[str]) -> list[str]:
+        need_empty_count = "important_kwd" in output_fields
         for i, field in enumerate(output_fields):
             if field in ["docnm_kwd", "title_tks", "title_sm_tks"]:
                 output_fields[i] = "docnm"
@@ -53,6 +54,8 @@ class InfinityConnection(InfinityConnectionBase):
                 output_fields[i] = "content"
             elif field in ["authors_tks", "authors_sm_tks"]:
                 output_fields[i] = "authors"
+        if need_empty_count and "important_kwd_empty_count" not in output_fields:
+            output_fields.append("important_kwd_empty_count")
         return list(set(output_fields))
 
     @staticmethod
@@ -131,11 +134,11 @@ class InfinityConnection(InfinityConnectionBase):
                     score_column = "SIMILARITY"
                     break
         if match_expressions:
-            if score_func not in output:
+            if score_func and score_func not in output:
                 output.append(score_func)
             if PAGERANK_FLD not in output:
                 output.append(PAGERANK_FLD)
-        output = [f for f in output if f != "_score"]
+        output = [f for f in output if f and f != "_score"]
         if limit <= 0:
             # ElasticSearch default limit is 10000
             limit = 10000
@@ -144,10 +147,16 @@ class InfinityConnection(InfinityConnectionBase):
         filter_cond = None
         filter_fulltext = ""
         if condition:
+            # Remove kb_id filter for Infinity (it uses table separation instead)
+            condition = {k: v for k, v in condition.items() if k != "kb_id"}
+
             table_found = False
             for indexName in index_names:
-                for kb_id in knowledgebase_ids:
-                    table_name = f"{indexName}_{kb_id}"
+                if indexName.startswith("ragflow_doc_meta_"):
+                    table_names_to_search = [indexName]
+                else:
+                    table_names_to_search = [f"{indexName}_{kb_id}" for kb_id in knowledgebase_ids]
+                for table_name in table_names_to_search:
                     try:
                         filter_cond = self.equivalent_condition_to_str(condition, db_instance.get_table(table_name))
                         table_found = True
@@ -218,8 +227,11 @@ class InfinityConnection(InfinityConnectionBase):
         total_hits_count = 0
         # Scatter search tables and gather the results
         for indexName in index_names:
-            for knowledgebaseId in knowledgebase_ids:
-                table_name = f"{indexName}_{knowledgebaseId}"
+            if indexName.startswith("ragflow_doc_meta_"):
+                table_names_to_search = [indexName]
+            else:
+                table_names_to_search = [f"{indexName}_{kb_id}" for kb_id in knowledgebase_ids]
+            for table_name in table_names_to_search:
                 try:
                     table_instance = db_instance.get_table(table_name)
                 except Exception:
@@ -260,7 +272,7 @@ class InfinityConnection(InfinityConnectionBase):
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
         res = self.concat_dataframes(df_list, output)
-        if match_expressions:
+        if match_expressions and score_column:
             res["_score"] = res[score_column] + res[PAGERANK_FLD]
             res = res.sort_values(by="_score", ascending=False).reset_index(drop=True)
             res = res.head(limit)
@@ -273,8 +285,11 @@ class InfinityConnection(InfinityConnectionBase):
         df_list = list()
         assert isinstance(knowledgebase_ids, list)
         table_list = list()
-        for knowledgebaseId in knowledgebase_ids:
-            table_name = f"{index_name}_{knowledgebaseId}"
+        if index_name.startswith("ragflow_doc_meta_"):
+            table_names_to_search = [index_name]
+        else:
+            table_names_to_search = [f"{index_name}_{kb_id}" for kb_id in knowledgebase_ids]
+        for table_name in table_names_to_search:
             table_list.append(table_name)
             try:
                 table_instance = db_instance.get_table(table_name)
@@ -298,7 +313,10 @@ class InfinityConnection(InfinityConnectionBase):
     def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None) -> list[str]:
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
-        table_name = f"{index_name}_{knowledgebase_id}"
+        if index_name.startswith("ragflow_doc_meta_"):
+            table_name = index_name
+        else:
+            table_name = f"{index_name}_{knowledgebase_id}"
         try:
             table_instance = db_instance.get_table(table_name)
         except InfinityException as e:
@@ -314,7 +332,18 @@ class InfinityConnection(InfinityConnectionBase):
                     break
             if vector_size == 0:
                 raise ValueError("Cannot infer vector size from documents")
-            self.create_idx(index_name, knowledgebase_id, vector_size)
+
+            # Determine parser_id from document structure
+            # Table parser documents have 'chunk_data' field
+            parser_id = None
+            if "chunk_data" in documents[0] and isinstance(documents[0].get("chunk_data"), dict):
+                from common.constants import ParserType
+                parser_id = ParserType.TABLE.value
+                self.logger.debug("Detected TABLE parser from document structure")
+
+            # Fallback: Create table with base schema (shouldn't normally happen as init_kb() creates it)
+            self.logger.debug(f"Fallback: Creating table {table_name} with base schema, parser_id: {parser_id}")
+            self.create_idx(index_name, knowledgebase_id, vector_size, parser_id)
             table_instance = db_instance.get_table(table_name)
 
         # embedding fields can't have a default value....
@@ -340,7 +369,13 @@ class InfinityConnection(InfinityConnectionBase):
                     if not d.get("docnm_kwd"):
                         d["docnm"] = self.list2str(v)
                 elif k == "important_kwd":
-                    d["important_keywords"] = self.list2str(v)
+                    if isinstance(v, list):
+                        empty_count = sum(1 for kw in v if kw == "")
+                        tokens = [kw for kw in v if kw != ""]
+                        d["important_keywords"] = self.list2str(tokens, ",")
+                        d["important_kwd_empty_count"] = empty_count
+                    else:
+                        d["important_keywords"] = self.list2str(v, ",")
                 elif k == "important_tks":
                     if not d.get("important_kwd"):
                         d["important_keywords"] = v
@@ -369,6 +404,12 @@ class InfinityConnection(InfinityConnectionBase):
                         d[k] = v
                 elif re.search(r"_feas$", k):
                     d[k] = json.dumps(v)
+                elif k == "chunk_data":
+                    # Convert data dict to JSON string for storage
+                    if isinstance(v, dict):
+                        d[k] = json.dumps(v)
+                    else:
+                        d[k] = v
                 elif k == "kb_id":
                     if isinstance(d[k], list):
                         d[k] = d[k][0]  # since d[k] is a list, but we need a str
@@ -379,6 +420,11 @@ class InfinityConnection(InfinityConnectionBase):
                 elif k in ["page_num_int", "top_int"]:
                     assert isinstance(v, list)
                     d[k] = "_".join(f"{num:08x}" for num in v)
+                elif k == "meta_fields":
+                    if isinstance(v, dict):
+                        d[k] = json.dumps(v, ensure_ascii=False)
+                    else:
+                        d[k] = v if v else "{}"
                 else:
                     d[k] = v
             for k in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "content_with_weight",
@@ -408,7 +454,10 @@ class InfinityConnection(InfinityConnectionBase):
         #     logger.info(f"update position_int: {newValue['position_int']}")
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
-        table_name = f"{index_name}_{knowledgebase_id}"
+        if index_name.startswith("ragflow_doc_meta_"):
+            table_name = index_name
+        else:
+            table_name = f"{index_name}_{knowledgebase_id}"
         table_instance = db_instance.get_table(table_name)
         # if "exists" in condition:
         #    del condition["exists"]
@@ -429,7 +478,13 @@ class InfinityConnection(InfinityConnectionBase):
                 if not new_value.get("docnm_kwd"):
                     new_value["docnm"] = v
             elif k == "important_kwd":
-                new_value["important_keywords"] = self.list2str(v)
+                if isinstance(v, list):
+                    empty_count = sum(1 for kw in v if kw == "")
+                    tokens = [kw for kw in v if kw != ""]
+                    new_value["important_keywords"] = self.list2str(tokens, ",")
+                    new_value["important_kwd_empty_count"] = empty_count
+                else:
+                    new_value["important_keywords"] = self.list2str(v, ",")
             elif k == "important_tks":
                 if not new_value.get("important_kwd"):
                     new_value["important_keywords"] = v
@@ -532,7 +587,15 @@ class InfinityConnection(InfinityConnectionBase):
                     res[field] = res["docnm"]
         if "important_keywords" in res.columns:
             if "important_kwd" in fields_all:
-                res["important_kwd"] = res["important_keywords"].apply(lambda v: v.split())
+                if "important_kwd_empty_count" in res.columns:
+                    base = res["important_keywords"].apply(lambda raw: raw.split(",") if raw else [])
+                    counts = res["important_kwd_empty_count"].fillna(0).astype(int)
+                    res["important_kwd"] = [
+                        tokens + [""] * empty_count
+                        for tokens, empty_count in zip(base.tolist(), counts.tolist())
+                    ]
+                else:
+                    res["important_kwd"] = res["important_keywords"].apply(lambda v: v.split(",") if v else [])
             if "important_tks" in fields_all:
                 res["important_tks"] = res["important_keywords"]
         if "questions" in res.columns:
@@ -563,6 +626,9 @@ class InfinityConnection(InfinityConnectionBase):
                 res2[column] = res2[column].apply(lambda v: [kwd for kwd in v.split("###") if kwd])
             elif re.search(r"_feas$", k):
                 res2[column] = res2[column].apply(lambda v: json.loads(v) if v else {})
+            elif k == "chunk_data":
+                # Parse JSON data back to dict for table parser fields
+                res2[column] = res2[column].apply(lambda v: json.loads(v) if v and isinstance(v, str) else v)
             elif k == "position_int":
                 def to_position_int(v):
                     if v:

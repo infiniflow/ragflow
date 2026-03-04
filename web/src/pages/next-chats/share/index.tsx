@@ -116,6 +116,7 @@ const ChatContainer = () => {
                 value={value}
                 disabled={hasError}
                 sendDisabled={sendDisabled}
+                resize="vertical"
                 conversationId={conversationId}
                 onInputChange={handleInputChange}
                 onPressEnter={handlePressEnter}
@@ -123,6 +124,8 @@ const ChatContainer = () => {
                 uploadMethod="external_upload_and_parse"
                 showUploadIcon={false}
                 stopOutputMessage={stopOutputMessage}
+                showReasoning
+                showInternet={chatInfo?.has_tavily_key}
               ></NextMessageInput>
             </div>
           </div>

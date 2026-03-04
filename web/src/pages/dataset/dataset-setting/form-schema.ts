@@ -84,19 +84,17 @@ export const formSchema = z
               path: ['entity_types'],
             },
           ),
-        metadata: z
+        metadata: z.any().optional(),
+        built_in_metadata: z
           .array(
-            z
-              .object({
-                key: z.string().optional(),
-                description: z.string().optional(),
-                enum: z.array(z.string().optional()).optional(),
-              })
-              .optional(),
+            z.object({
+              key: z.string().optional(),
+              type: z.string().optional(),
+            }),
           )
           .optional(),
         enable_metadata: z.boolean().optional(),
-        llm_id: z.string().min(1, { message: 'Indexing model is required' }),
+        llm_id: z.string().optional(),
       })
       .optional(),
     pagerank: z.number(),

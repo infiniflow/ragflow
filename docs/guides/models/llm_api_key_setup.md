@@ -1,8 +1,10 @@
 ---
 sidebar_position: 1
 slug: /llm_api_key_setup
+sidebar_custom_props: {
+  categoryIcon: LucideKey
+}
 ---
-
 # Configure model API key
 
 An API key is required for RAGFlow to interact with an online AI model. This guide provides information about setting your model API key in RAGFlow.

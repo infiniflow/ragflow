@@ -15,7 +15,7 @@ import {
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { memo, useCallback, useContext } from 'react';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 import { AgentChatContext } from '../context';
 import DebugContent from '../debug-content';
 import { useAwaitCompentData } from '../hooks/use-chat-logic';
@@ -36,6 +36,7 @@ function AgentChatBox() {
     sendFormMessage,
     findReferenceByMessageId,
     appendUploadResponseList,
+    removeFile,
   } = useSendAgentMessage({ refetch });
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
@@ -126,10 +127,12 @@ function AgentChatBox() {
             disabled={isWaitting}
             sendDisabled={sendLoading || isWaitting}
             isUploading={loading || isWaitting}
+            resize="vertical"
             onPressEnter={handlePressEnter}
             onInputChange={handleInputChange}
             stopOutputMessage={stopOutputMessage}
             onUpload={handleUploadFile}
+            removeFile={removeFile}
             conversationId=""
           />
         )}

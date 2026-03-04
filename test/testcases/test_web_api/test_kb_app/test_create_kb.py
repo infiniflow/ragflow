@@ -25,7 +25,7 @@ from utils.hypothesis_utils import valid_names
 
 @pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [

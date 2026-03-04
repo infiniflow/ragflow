@@ -1,8 +1,8 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { CheckOutlined, CopyOutlined } from '@ant-design/icons';
-import { Tooltip } from 'antd';
 import { useState } from 'react';
 import { CopyToClipboard as Clipboard, Props } from 'react-copy-to-clipboard';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 const CopyToClipboard = ({ text }: Props) => {
   const [copied, setCopied] = useState(false);
@@ -16,10 +16,13 @@ const CopyToClipboard = ({ text }: Props) => {
   };
 
   return (
-    <Tooltip title={copied ? t('copied') : t('copy')}>
-      <Clipboard text={text} onCopy={handleCopy}>
-        {copied ? <CheckOutlined /> : <CopyOutlined />}
-      </Clipboard>
+    <Tooltip>
+      <TooltipTrigger>
+        <Clipboard text={text} onCopy={handleCopy}>
+          {copied ? <CheckOutlined /> : <CopyOutlined />}
+        </Clipboard>
+      </TooltipTrigger>
+      <TooltipContent>{copied ? t('copied') : t('copy')}</TooltipContent>
     </Tooltip>
   );
 };

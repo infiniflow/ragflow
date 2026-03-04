@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 
-import asyncio
 import base64
 import json
 import logging
@@ -35,6 +34,10 @@ from common.token_utils import num_tokens_from_string, total_token_count_from_re
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 
+
+
+
+from common.misc_utils import thread_pool_exec
 
 class Base(ABC):
     def __init__(self, **kwargs):
@@ -648,7 +651,7 @@ class OllamaCV(Base):
 
     async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
-            response = await asyncio.to_thread(self.client.chat, model=self.model_name, messages=self._form_history(system, history, images), options=self._clean_conf(gen_conf), keep_alive=self.keep_alive)
+            response = await thread_pool_exec(self.client.chat, model=self.model_name, messages=self._form_history(system, history, images), options=self._clean_conf(gen_conf), keep_alive=self.keep_alive)
 
             ans = response["message"]["content"].strip()
             return ans, response["eval_count"] + response.get("prompt_eval_count", 0)
@@ -658,7 +661,7 @@ class OllamaCV(Base):
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         try:
-            response = await asyncio.to_thread(self.client.chat, model=self.model_name, messages=self._form_history(system, history, images), stream=True, options=self._clean_conf(gen_conf), keep_alive=self.keep_alive)
+            response = await thread_pool_exec(self.client.chat, model=self.model_name, messages=self._form_history(system, history, images), stream=True, options=self._clean_conf(gen_conf), keep_alive=self.keep_alive)
             for resp in response:
                 if resp["done"]:
                     yield resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
@@ -796,7 +799,7 @@ class GeminiCV(Base):
             try:
                 size = len(video_bytes) if video_bytes else 0
                 logging.info(f"[GeminiCV] async_chat called with video: filename={filename} size={size}")
-                summary, summary_num_tokens = await asyncio.to_thread(self._process_video, video_bytes, filename)
+                summary, summary_num_tokens = await thread_pool_exec(self._process_video, video_bytes, filename)
                 return summary, summary_num_tokens
             except Exception as e:
                 logging.info(f"[GeminiCV] async_chat video error: {e}")
@@ -952,7 +955,7 @@ class NvidiaCV(Base):
 
     async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
-            response = await asyncio.to_thread(self._request, self._form_history(system, history, images), gen_conf)
+            response = await thread_pool_exec(self._request, self._form_history(system, history, images), gen_conf)
             return (response["choices"][0]["message"]["content"].strip(), total_token_count_from_response(response))
         except Exception as e:
             return "**ERROR**: " + str(e), 0
@@ -960,7 +963,7 @@ class NvidiaCV(Base):
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         total_tokens = 0
         try:
-            response = await asyncio.to_thread(self._request, self._form_history(system, history, images), gen_conf)
+            response = await thread_pool_exec(self._request, self._form_history(system, history, images), gen_conf)
             cnt = response["choices"][0]["message"]["content"]
             total_tokens += total_token_count_from_response(response)
             for resp in cnt:

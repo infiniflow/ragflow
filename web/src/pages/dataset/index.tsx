@@ -9,40 +9,43 @@ import {
 } from '@/components/ui/breadcrumb';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
+import { KnowledgeBaseProvider } from '@/pages/dataset/contexts/knowledge-base-context';
 import { useTranslation } from 'react-i18next';
-import { Outlet } from 'umi';
+import { Outlet } from 'react-router';
 import { SideBar } from './sidebar';
 
 export default function DatasetWrapper() {
   const { navigateToDatasetList } = useNavigatePage();
   const { t } = useTranslation();
-  const { data } = useFetchKnowledgeBaseConfiguration();
+  const { data, loading } = useFetchKnowledgeBaseConfiguration();
 
   return (
-    <section className="flex h-full flex-col w-full">
-      <PageHeader>
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink onClick={navigateToDatasetList}>
-                {t('knowledgeDetails.dataset')}
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage className="w-28 whitespace-nowrap text-ellipsis overflow-hidden">
-                {data.name}
-              </BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-      </PageHeader>
-      <div className="flex flex-1 min-h-0">
-        <SideBar></SideBar>
-        <div className="flex-1 overflow-auto">
-          <Outlet />
+    <KnowledgeBaseProvider knowledgeBase={data} loading={loading}>
+      <section className="flex h-full flex-col w-full">
+        <PageHeader>
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink onClick={navigateToDatasetList}>
+                  {t('knowledgeDetails.dataset')}
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage className="w-28 whitespace-nowrap text-ellipsis overflow-hidden">
+                  {data.name}
+                </BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        </PageHeader>
+        <div className="flex flex-1 min-h-0">
+          <SideBar></SideBar>
+          <div className="flex-1 overflow-auto">
+            <Outlet />
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </KnowledgeBaseProvider>
   );
 }

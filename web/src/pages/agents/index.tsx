@@ -17,7 +17,7 @@ import { t } from 'i18next';
 import { pick } from 'lodash';
 import { Clipboard, ClipboardPlus, FileInput, Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
-import { useSearchParams } from 'umi';
+import { useSearchParams } from 'react-router';
 import { AgentCard } from './agent-card';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
@@ -86,11 +86,35 @@ export default function Agents() {
           <EmptyAppCard
             showIcon
             size="large"
-            className="w-[480px] p-14"
+            className="w-[480px] p-14 !cursor-default"
             isSearch={!!searchString}
             type={EmptyCardType.Agent}
-            onClick={() => showCreatingModal()}
-          />
+            // onClick={() => showCreatingModal()}
+          >
+            <div className="flex flex-col gap-y-5 text-text-secondary text-sm pt-5">
+              <div
+                className="flex items-center gap-x-2 hover:text-text-primary cursor-pointer"
+                onClick={showCreatingModal}
+              >
+                <Clipboard size={14} />
+                {t('flow.createFromBlank')}
+              </div>
+              <div
+                className="flex items-center gap-x-2 hover:text-text-primary cursor-pointer"
+                onClick={navigateToAgentTemplates}
+              >
+                <ClipboardPlus size={14} />
+                {t('flow.createFromTemplate')}
+              </div>
+              <div
+                className="flex items-center gap-x-2 hover:text-text-primary cursor-pointer"
+                onClick={handleImportJson}
+              >
+                <FileInput size={14} />
+                {t('flow.importJsonFile')}
+              </div>
+            </div>
+          </EmptyAppCard>
         </div>
       )}
       <section className="flex flex-col w-full flex-1">
@@ -109,7 +133,7 @@ export default function Agents() {
                 <DropdownMenu>
                   <DropdownMenuTrigger>
                     <Button>
-                      <Plus className="mr-2 h-4 w-4" />
+                      <Plus className="h-4 w-4" />
                       {t('flow.createGraph')}
                     </Button>
                   </DropdownMenuTrigger>

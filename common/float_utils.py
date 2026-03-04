@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+
 def get_float(v):
     """
     Convert a value to float, handling None and exceptions gracefully.
@@ -39,8 +40,19 @@ def get_float(v):
         42.0
     """
     if v is None:
-        return float('-inf')
+        return float("-inf")
     try:
         return float(v)
     except Exception:
-        return float('-inf')
+        return float("-inf")
+
+
+def normalize_overlapped_percent(overlapped_percent):
+    try:
+        value = float(overlapped_percent)
+    except (TypeError, ValueError):
+        return 0
+    if 0 < value < 1:
+        value *= 100
+    value = int(value)
+    return max(0, min(value, 90))

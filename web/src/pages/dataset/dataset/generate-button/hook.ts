@@ -4,7 +4,7 @@ import kbService, { deletePipelineTask } from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { useEffect, useState } from 'react';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 import { ProcessingType } from '../../dataset-overview/dataset-common';
 import { GenerateType, GenerateTypeMap } from './generate';
 export const generateStatus = {

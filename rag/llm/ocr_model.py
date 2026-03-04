@@ -19,6 +19,7 @@ import os
 from typing import Any, Optional
 
 from deepdoc.parser.mineru_parser import MinerUParser
+from deepdoc.parser.paddleocr_parser import PaddleOCRParser
 
 
 class Base:
@@ -60,16 +61,11 @@ class MinerUOcrModel(Base, MinerUParser):
         # Redact sensitive config keys before logging
         redacted_config = {}
         for k, v in config.items():
-            if any(
-                sensitive_word in k.lower()
-                for sensitive_word in ("key", "password", "token", "secret")
-            ):
+            if any(sensitive_word in k.lower() for sensitive_word in ("key", "password", "token", "secret")):
                 redacted_config[k] = "[REDACTED]"
             else:
                 redacted_config[k] = v
-        logging.info(
-            f"Parsed MinerU config (sensitive fields redacted): {redacted_config}"
-        )
+        logging.info(f"Parsed MinerU config (sensitive fields redacted): {redacted_config}")
 
         MinerUParser.__init__(self, mineru_api=self.mineru_api, mineru_server_url=self.mineru_server_url)
 
@@ -93,6 +89,60 @@ class MinerUOcrModel(Base, MinerUParser):
             server_url=self.mineru_server_url,
             delete_output=self.mineru_delete_output,
             parse_method=parse_method,
-            **kwargs
+            **kwargs,
         )
+        return sections, tables
+
+
+class PaddleOCROcrModel(Base, PaddleOCRParser):
+    _FACTORY_NAME = "PaddleOCR"
+
+    def __init__(self, key: str | dict, model_name: str, **kwargs):
+        Base.__init__(self, key, model_name, **kwargs)
+        raw_config = {}
+        if key:
+            try:
+                raw_config = json.loads(key)
+            except Exception:
+                raw_config = {}
+
+        # nested {"api_key": {...}} from UI
+        # flat {"PADDLEOCR_*": "..."} payload auto-provisioned from env vars
+        config = raw_config.get("api_key", raw_config)
+        if not isinstance(config, dict):
+            config = {}
+
+        def _resolve_config(key: str, env_key: str, default=""):
+            # lower-case keys (UI), upper-case PADDLEOCR_* (env auto-provision), env vars
+            return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
+
+        self.paddleocr_api_url = _resolve_config("paddleocr_api_url", "PADDLEOCR_API_URL", "")
+        self.paddleocr_algorithm = _resolve_config("paddleocr_algorithm", "PADDLEOCR_ALGORITHM", "PaddleOCR-VL")
+        self.paddleocr_access_token = _resolve_config("paddleocr_access_token", "PADDLEOCR_ACCESS_TOKEN", None)
+
+        # Redact sensitive config keys before logging
+        redacted_config = {}
+        for k, v in config.items():
+            if any(sensitive_word in k.lower() for sensitive_word in ("key", "password", "token", "secret")):
+                redacted_config[k] = "[REDACTED]"
+            else:
+                redacted_config[k] = v
+        logging.info(f"Parsed PaddleOCR config (sensitive fields redacted): {redacted_config}")
+
+        PaddleOCRParser.__init__(
+            self,
+            api_url=self.paddleocr_api_url,
+            access_token=self.paddleocr_access_token,
+            algorithm=self.paddleocr_algorithm,
+        )
+
+    def check_available(self) -> tuple[bool, str]:
+        return self.check_installation()
+
+    def parse_pdf(self, filepath: str, binary=None, callback=None, parse_method: str = "raw", **kwargs):
+        ok, reason = self.check_available()
+        if not ok:
+            raise RuntimeError(f"PaddleOCR server not accessible: {reason}")
+
+        sections, tables = PaddleOCRParser.parse_pdf(self, filepath=filepath, binary=binary, callback=callback, parse_method=parse_method, **kwargs)
         return sections, tables
