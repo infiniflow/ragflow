@@ -1,5 +1,5 @@
 ---
-sidebar_position: -6
+sidebar_position: 4
 slug: /auto_metadata
 sidebar_custom_props: {
    categoryIcon: LucideFileCodeCorner
