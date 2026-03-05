@@ -289,6 +289,19 @@ async def build_chunks(task, progress_callback):
         logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
         raise
 
+    # Extract and persist PDF outline if the parser attached it.
+    if cks and cks[0].get("__outline__"):
+        outline = cks[0].pop("__outline__")
+        try:
+            DocMetadataService.update_document_metadata(
+                task["doc_id"],
+                update_metadata_to({"outline": outline},
+                                   DocMetadataService.get_document_metadata(task["doc_id"]) or {})
+            )
+            logging.info("Persisted PDF outline (%d entries) for doc %s", len(outline), task["doc_id"])
+        except Exception as e:
+            logging.warning("Failed to persist PDF outline for doc %s: %s", task["doc_id"], e)
+
     docs = []
     doc = {
         "doc_id": task["doc_id"],
