@@ -2,7 +2,7 @@
 sidebar_position: 0
 slug: /configurations
 sidebar_custom_props: {
-  sidebarIcon: LucideCog
+  categoryIcon: LucideCog
 }
 ---
 # Configuration

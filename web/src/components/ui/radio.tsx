@@ -13,9 +13,17 @@ type RadioProps = {
   disabled?: boolean;
   onChange?: (checked: boolean) => void;
   children?: React.ReactNode;
+  testId?: string;
 };
 
-function Radio({ value, checked, disabled, onChange, children }: RadioProps) {
+function Radio({
+  value,
+  checked,
+  disabled,
+  onChange,
+  children,
+  testId,
+}: RadioProps) {
   const groupContext = useContext(RadioGroupContext);
   const isControlled = checked !== undefined;
   // const [internalChecked, setInternalChecked] = useState(false);
@@ -54,6 +62,7 @@ function Radio({ value, checked, disabled, onChange, children }: RadioProps) {
           mergedDisabled && 'border-muted',
         )}
         onClick={handleClick}
+        data-testid={testId}
       >
         {isChecked && (
           <div className="h-3 w-3 fill-primary text-primary bg-text-primary rounded-full" />
