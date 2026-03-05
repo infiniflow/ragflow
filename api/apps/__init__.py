@@ -46,14 +46,11 @@ UNAUTHORIZED_MESSAGE = "<Unauthorized '401: Unauthorized'>"
 def _unauthorized_message(error):
     if error is None:
         return UNAUTHORIZED_MESSAGE
-    try:
-        msg = repr(error)
-    except Exception:
-        return UNAUTHORIZED_MESSAGE
-    if msg == UNAUTHORIZED_MESSAGE:
-        return msg
-    if "Unauthorized" in msg and "401" in msg:
-        return msg
+
+    description = getattr(error, "description", None)
+    if description:
+        return description
+
     return UNAUTHORIZED_MESSAGE
 
 app = Quart(__name__)
