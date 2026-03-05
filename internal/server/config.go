@@ -278,6 +278,10 @@ func SetLogger(l *zap.Logger) {
 	zapLogger = l
 }
 
+func GetGlobalViperConfig() *viper.Viper {
+	return globalViper
+}
+
 // PrintAll prints all configuration settings
 func PrintAll() {
 	if globalViper == nil {

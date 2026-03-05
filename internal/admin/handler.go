@@ -255,7 +255,7 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.UpdateUserPassword(username, req.NewPassword); err != nil {
+	if err := h.service.ChangePassword(username, req.NewPassword); err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
 	}
@@ -265,7 +265,7 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 
 // UpdateActivateStatusHTTPRequest update activate status request
 type UpdateActivateStatusHTTPRequest struct {
-	ActivateStatus string `json:"activate_status" binding:"required"`
+	ActivateStatus bool `json:"activate_status" binding:"required"`
 }
 
 // UpdateUserActivateStatus handle update user activate status

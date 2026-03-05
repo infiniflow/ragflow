@@ -21,11 +21,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"time"
-
+	"net/url"
+	"os"
 	"ragflow/internal/dao"
 	"ragflow/internal/model"
+	"ragflow/internal/server"
 	"ragflow/internal/utility"
+	"strconv"
+	"strings"
 )
 
 // Service admin service layer
@@ -62,13 +65,13 @@ func (s *Service) Login(req *LoginRequest) (*LoginResponse, error) {
 		return nil, ErrInvalidCredentials
 	}
 
-	// Verify password
-	if user.Password == nil || *user.Password != req.Password {
-		return nil, ErrInvalidCredentials
+	// Check if user is active
+	if user.IsActive != "1" {
+		return nil, errors.New("user is not active")
 	}
 
 	// Generate access token
-	token := generateToken()
+	token := utility.GenerateToken()
 	if err := s.userDAO.UpdateAccessToken(user, token); err != nil {
 		return nil, err
 	}
@@ -91,19 +94,14 @@ func (s *Service) Logout(user interface{}) error {
 	return nil
 }
 
-// ValidateToken validate access token
-func (s *Service) ValidateToken(token string) (*model.User, error) {
-	// Check if token starts with INVALID_
-	if len(token) > 8 && token[:8] == "INVALID_" {
-		return nil, ErrInvalidToken
-	}
-
-	user, err := s.userDAO.GetByAccessToken(token)
-	if err != nil {
-		return nil, ErrInvalidToken
-	}
-	return user, nil
+// generateRandomHex generate random hex string
+func generateRandomHex(n int) string {
+	bytes := make([]byte, n)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
 }
+
+// User management methods
 
 // ListUsers list all users
 func (s *Service) ListUsers() ([]map[string]interface{}, error) {
@@ -144,10 +142,10 @@ func (s *Service) GetUserDetails(username string) (map[string]interface{}, error
 	}
 
 	return map[string]interface{}{
-		"id":         user.ID,
-		"email":      user.Email,
-		"nickname":   user.Nickname,
-		"is_active":  user.IsActive,
+		"id":          user.ID,
+		"email":       user.Email,
+		"nickname":    user.Nickname,
+		"is_active":   user.IsActive,
 		"create_time": user.CreateTime,
 		"update_time": user.UpdateTime,
 	}, nil
@@ -155,197 +153,523 @@ func (s *Service) GetUserDetails(username string) (map[string]interface{}, error
 
 // DeleteUser delete user
 func (s *Service) DeleteUser(username string) error {
-	return dao.DB.Where("email = ?", username).Delete(&model.User{}).Error
+	// TODO: Implement user deletion
+	return nil
 }
 
-// UpdateUserPassword update user password
-func (s *Service) UpdateUserPassword(username, newPassword string) error {
-	// TODO: Implement password hashing
-	return dao.DB.Model(&model.User{}).Where("email = ?", username).Update("password", newPassword).Error
+// ChangePassword change user password
+func (s *Service) ChangePassword(username, newPassword string) error {
+	// TODO: Implement password change
+	return nil
 }
 
 // UpdateUserActivateStatus update user activate status
-func (s *Service) UpdateUserActivateStatus(username, activateStatus string) error {
-	return dao.DB.Model(&model.User{}).Where("email = ?", username).Update("is_active", activateStatus).Error
+func (s *Service) UpdateUserActivateStatus(username string, isActive bool) error {
+	// TODO: Implement activate status update
+	return nil
 }
 
-// GrantAdmin grant admin role
+// GrantAdmin grant admin privileges
 func (s *Service) GrantAdmin(username string) error {
-	isSuperuser := true
-	return dao.DB.Model(&model.User{}).Where("email = ?", username).Update("is_superuser", &isSuperuser).Error
+	// TODO: Implement grant admin
+	return nil
 }
 
-// RevokeAdmin revoke admin role
+// RevokeAdmin revoke admin privileges
 func (s *Service) RevokeAdmin(username string) error {
-	isSuperuser := false
-	return dao.DB.Model(&model.User{}).Where("email = ?", username).Update("is_superuser", &isSuperuser).Error
+	// TODO: Implement revoke admin
+	return nil
 }
 
 // GetUserDatasets get user datasets
 func (s *Service) GetUserDatasets(username string) ([]map[string]interface{}, error) {
-	// TODO: Implement with proper DAO
+	// TODO: Implement get user datasets
 	return []map[string]interface{}{}, nil
 }
 
 // GetUserAgents get user agents
 func (s *Service) GetUserAgents(username string) ([]map[string]interface{}, error) {
-	// TODO: Implement with proper DAO
+	// TODO: Implement get user agents
 	return []map[string]interface{}{}, nil
 }
+
+// API Key methods
 
 // GetUserAPIKeys get user API keys
 func (s *Service) GetUserAPIKeys(username string) ([]map[string]interface{}, error) {
-	// TODO: Implement with proper DAO
+	// TODO: Implement get API keys
 	return []map[string]interface{}{}, nil
 }
 
-// GenerateUserAPIKey generate user API key
+// GenerateUserAPIKey generate API key for user
 func (s *Service) GenerateUserAPIKey(username string) (map[string]interface{}, error) {
-	// Get user details
-	userDetails, err := s.GetUserDetails(username)
-	if err != nil {
-		return nil, errors.New("user not found")
-	}
-
-	// TODO: Get tenant info
-	_ = userDetails
-
-	key := generateConfirmationToken()
-	beta := generateRandomString(32)
-	now := time.Now()
-
-	obj := map[string]interface{}{
-		"tenant_id":   "", // TODO: Get from tenant
-		"token":       key,
-		"beta":        beta,
-		"create_time": now.Unix(),
-		"create_date": now.Format("2006-01-02 15:04:05"),
-		"update_time": nil,
-		"update_date": nil,
-	}
-
-	// TODO: Save API key to database
-	_ = obj
-
-	return obj, nil
+	// TODO: Implement generate API key
+	return map[string]interface{}{}, nil
 }
 
 // DeleteUserAPIKey delete user API key
 func (s *Service) DeleteUserAPIKey(username, key string) error {
-	// TODO: Implement with proper DAO
-	_ = username
-	_ = key
+	// TODO: Implement delete API key
 	return nil
 }
 
-// Role related methods
+// Role management methods
 
 // ListRoles list all roles
 func (s *Service) ListRoles() ([]map[string]interface{}, error) {
-	// TODO: Implement with proper DAO
+	// TODO: Implement list roles
 	return []map[string]interface{}{}, nil
 }
 
-// CreateRole create role
+// CreateRole create a new role
 func (s *Service) CreateRole(roleName, description string) (map[string]interface{}, error) {
-	// TODO: Implement with proper DAO
-	return map[string]interface{}{
-		"role_name":   roleName,
-		"description": description,
-	}, nil
+	// TODO: Implement create role
+	return map[string]interface{}{}, nil
 }
 
-// GetRole get role
+// GetRole get role details
 func (s *Service) GetRole(roleName string) (map[string]interface{}, error) {
-	// TODO: Implement with proper DAO
-	return map[string]interface{}{
-		"role_name": roleName,
-	}, nil
+	// TODO: Implement get role
+	return map[string]interface{}{}, nil
 }
 
 // UpdateRole update role
 func (s *Service) UpdateRole(roleName, description string) (map[string]interface{}, error) {
-	// TODO: Implement with proper DAO
-	return map[string]interface{}{
-		"role_name":   roleName,
-		"description": description,
-	}, nil
+	// TODO: Implement update role
+	return map[string]interface{}{}, nil
 }
 
 // DeleteRole delete role
 func (s *Service) DeleteRole(roleName string) error {
-	// TODO: Implement with proper DAO
-	_ = roleName
+	// TODO: Implement delete role
 	return nil
 }
 
-// GetRolePermission get role permission
-func (s *Service) GetRolePermission(roleName string) (map[string]interface{}, error) {
-	// TODO: Implement with proper DAO
-	return map[string]interface{}{
-		"role_name":   roleName,
-		"permissions": []map[string]interface{}{},
-	}, nil
+// GetRolePermission get role permissions
+func (s *Service) GetRolePermission(roleName string) ([]map[string]interface{}, error) {
+	// TODO: Implement get role permissions
+	return []map[string]interface{}{}, nil
 }
 
-// GrantRolePermission grant role permission
+// GrantRolePermission grant permission to role
 func (s *Service) GrantRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
-	// TODO: Implement with proper DAO
-	return map[string]interface{}{
-		"role_name": roleName,
-		"actions":   actions,
-		"resource":  resource,
-	}, nil
+	// TODO: Implement grant role permission
+	return map[string]interface{}{}, nil
 }
 
-// RevokeRolePermission revoke role permission
+// RevokeRolePermission revoke permission from role
 func (s *Service) RevokeRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
-	// TODO: Implement with proper DAO
-	return map[string]interface{}{
-		"role_name": roleName,
-		"actions":   actions,
-		"resource":  resource,
-	}, nil
+	// TODO: Implement revoke role permission
+	return map[string]interface{}{}, nil
 }
 
 // UpdateUserRole update user role
-func (s *Service) UpdateUserRole(username, roleName string) (map[string]interface{}, error) {
-	// TODO: Implement with proper DAO
-	return map[string]interface{}{
-		"username":  username,
-		"role_name": roleName,
-	}, nil
+func (s *Service) UpdateUserRole(username, roleName string) ([]map[string]interface{}, error) {
+	// TODO: Implement update user role
+	return []map[string]interface{}{}, nil
 }
 
-// GetUserPermission get user permission
-func (s *Service) GetUserPermission(username string) (map[string]interface{}, error) {
-	// TODO: Implement with proper DAO
-	return map[string]interface{}{
-		"username":    username,
-		"permissions": []map[string]interface{}{},
-	}, nil
+// GetUserPermission get user permissions
+func (s *Service) GetUserPermission(username string) ([]map[string]interface{}, error) {
+	// TODO: Implement get user permissions
+	return []map[string]interface{}{}, nil
 }
 
 // Service management methods
 
+// parseHostPort parses host:port string and returns host and port
+func parseHostPort(hostPort string) (string, int) {
+	if hostPort == "" {
+		return "", 0
+	}
+
+	// Handle URL format like http://host:port
+	if strings.Contains(hostPort, "://") {
+		u, err := url.Parse(hostPort)
+		if err == nil {
+			hostPort = u.Host
+		}
+	}
+
+	// Split host:port
+	parts := strings.Split(hostPort, ":")
+	host := parts[0]
+	port := 0
+	if len(parts) > 1 {
+		port, _ = strconv.Atoi(parts[1])
+	}
+	return host, port
+}
+
+// getString gets string value from map
+func getString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+// getInt gets int value from map
+func getInt(m map[string]interface{}, key string) int {
+	if v, ok := m[key].(int); ok {
+		return v
+	}
+	if v, ok := m[key].(float64); ok {
+		return int(v)
+	}
+	return 0
+}
+
 // GetAllServices get all services
 func (s *Service) GetAllServices() ([]map[string]interface{}, error) {
-	// TODO: Implement with proper service manager
-	return []map[string]interface{}{}, nil
+	viperConfig := server.GetGlobalViperConfig()
+	if viperConfig == nil {
+		return nil, errors.New("configuration not initialized")
+	}
+
+	docEngine := os.Getenv("DOC_ENGINE")
+	if docEngine == "" {
+		docEngine = "elasticsearch"
+	}
+
+	var result []map[string]interface{}
+	id := 0
+
+	for k, v := range viperConfig.AllSettings() {
+		configDict, ok := v.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		switch k {
+		case "ragflow":
+			configDict["id"] = id
+			configDict["name"] = fmt.Sprintf("ragflow_%d", id)
+			configDict["service_type"] = "ragflow_server"
+			configDict["extra"] = map[string]interface{}{}
+			configDict["port"] = configDict["http_port"]
+			delete(configDict, "http_port")
+		case "es":
+			// Skip if retrieval_type doesn't match doc_engine
+			if docEngine != "elasticsearch" {
+				continue
+			}
+			hosts := getString(configDict, "hosts")
+			host, port := parseHostPort(hosts)
+			username := getString(configDict, "username")
+			password := getString(configDict, "password")
+			configDict["id"] = id
+			configDict["name"] = "elasticsearch"
+			configDict["host"] = host
+			configDict["port"] = port
+			configDict["service_type"] = "retrieval"
+			configDict["extra"] = map[string]interface{}{
+				"retrieval_type": "elasticsearch",
+				"username":       username,
+				"password":       password,
+			}
+			delete(configDict, "hosts")
+			delete(configDict, "username")
+			delete(configDict, "password")
+		case "infinity":
+			// Skip if retrieval_type doesn't match doc_engine
+			if docEngine != "infinity" {
+				continue
+			}
+			uri := getString(configDict, "uri")
+			host, port := parseHostPort(uri)
+			dbName := getString(configDict, "db_name")
+			if dbName == "" {
+				dbName = "default_db"
+			}
+			configDict["id"] = id
+			configDict["name"] = "infinity"
+			configDict["host"] = host
+			configDict["port"] = port
+			configDict["service_type"] = "retrieval"
+			configDict["extra"] = map[string]interface{}{
+				"retrieval_type": "infinity",
+				"db_name":        dbName,
+			}
+		case "minio":
+			hostPort := getString(configDict, "host")
+			host, port := parseHostPort(hostPort)
+			user := getString(configDict, "user")
+			password := getString(configDict, "password")
+			configDict["id"] = id
+			configDict["name"] = "minio"
+			configDict["host"] = host
+			configDict["port"] = port
+			configDict["service_type"] = "file_store"
+			configDict["extra"] = map[string]interface{}{
+				"store_type": "minio",
+				"user":       user,
+				"password":   password,
+			}
+			delete(configDict, "bucket")
+			delete(configDict, "user")
+			delete(configDict, "password")
+		case "redis":
+			hostPort := getString(configDict, "host")
+			host, port := parseHostPort(hostPort)
+			password := getString(configDict, "password")
+			db := getInt(configDict, "db")
+			configDict["id"] = id
+			configDict["name"] = "redis"
+			configDict["host"] = host
+			configDict["port"] = port
+			configDict["service_type"] = "message_queue"
+			configDict["extra"] = map[string]interface{}{
+				"mq_type":  "redis",
+				"database": db,
+				"password": password,
+			}
+			delete(configDict, "password")
+			delete(configDict, "db")
+		case "mysql":
+			host := getString(configDict, "host")
+			port := getInt(configDict, "port")
+			user := getString(configDict, "user")
+			password := getString(configDict, "password")
+			configDict["id"] = id
+			configDict["name"] = "mysql"
+			configDict["host"] = host
+			configDict["port"] = port
+			configDict["service_type"] = "meta_data"
+			configDict["extra"] = map[string]interface{}{
+				"meta_type": "mysql",
+				"username":  user,
+				"password":  password,
+			}
+			delete(configDict, "stale_timeout")
+			delete(configDict, "max_connections")
+			delete(configDict, "max_allowed_packet")
+			delete(configDict, "user")
+			delete(configDict, "password")
+		case "task_executor":
+			mqType := getString(configDict, "message_queue_type")
+			configDict["id"] = id
+			configDict["name"] = "task_executor"
+			configDict["service_type"] = "task_executor"
+			configDict["extra"] = map[string]interface{}{
+				"message_queue_type": mqType,
+			}
+			delete(configDict, "message_queue_type")
+		case "admin":
+			// Skip admin section
+			continue
+		default:
+			// Skip unknown sections
+			continue
+		}
+
+		// Get service details to check status
+		serviceDetail, err := s.GetServiceDetails(strconv.Itoa(id))
+		if err == nil {
+			if status, ok := serviceDetail["status"]; ok {
+				configDict["status"] = status
+			} else {
+				configDict["status"] = "timeout"
+			}
+		} else {
+			configDict["status"] = "timeout"
+		}
+
+		// Set default values for empty host/port
+		if configDict["host"] == "" {
+			configDict["host"] = "-"
+		}
+		if configDict["port"] == 0 {
+			configDict["port"] = "-"
+		}
+
+		delete(configDict, "prefix_path")
+		delete(configDict, "username")
+		result = append(result, configDict)
+		id++
+	}
+
+	return result, nil
 }
 
 // GetServicesByType get services by type
 func (s *Service) GetServicesByType(serviceType string) ([]map[string]interface{}, error) {
-	// TODO: Implement with proper service manager
-	_ = serviceType
-	return []map[string]interface{}{}, nil
+	return nil, errors.New("get_services_by_type: not implemented")
 }
 
 // GetServiceDetails get service details
 func (s *Service) GetServiceDetails(serviceID string) (map[string]interface{}, error) {
-	// TODO: Implement with proper service manager
+	id, err := strconv.Atoi(serviceID)
+	if err != nil {
+		return nil, errors.New("invalid service_id")
+	}
+
+	rawConfig := server.GetGlobalViperConfig()
+	if rawConfig == nil {
+		return nil, errors.New("configuration not initialized")
+	}
+
+	docEngine := os.Getenv("DOC_ENGINE")
+	if docEngine == "" {
+		docEngine = "elasticsearch"
+	}
+
+	// Build service list to find by index (same logic as GetAllServices)
+	var serviceList []struct {
+		key         string
+		name        string
+		serviceType string
+	}
+
+	for k := range rawConfig.AllSettings() {
+		switch k {
+		case "ragflow":
+			serviceList = append(serviceList, struct {
+				key         string
+				name        string
+				serviceType string
+			}{"ragflow", "ragflow_0", "ragflow_server"})
+		case "es":
+			if docEngine == "elasticsearch" {
+				serviceList = append(serviceList, struct {
+					key         string
+					name        string
+					serviceType string
+				}{"es", "elasticsearch", "retrieval"})
+			}
+		case "infinity":
+			if docEngine == "infinity" {
+				serviceList = append(serviceList, struct {
+					key         string
+					name        string
+					serviceType string
+				}{"infinity", "infinity", "retrieval"})
+			}
+		case "minio":
+			serviceList = append(serviceList, struct {
+				key         string
+				name        string
+				serviceType string
+			}{"minio", "minio", "file_store"})
+		case "redis":
+			serviceList = append(serviceList, struct {
+				key         string
+				name        string
+				serviceType string
+			}{"redis", "redis", "message_queue"})
+		case "mysql":
+			serviceList = append(serviceList, struct {
+				key         string
+				name        string
+				serviceType string
+			}{"mysql", "mysql", "meta_data"})
+		case "task_executor":
+			serviceList = append(serviceList, struct {
+				key         string
+				name        string
+				serviceType string
+			}{"task_executor", "task_executor", "task_executor"})
+		}
+	}
+
+	if id < 0 || id >= len(serviceList) {
+		return nil, fmt.Errorf("invalid service_index: %d", id)
+	}
+
+	svc := serviceList[id]
+
+	// Check if retrieval service type matches doc_engine
+	if svc.serviceType == "retrieval" {
+		if (svc.key == "es" && docEngine != "elasticsearch") ||
+			(svc.key == "infinity" && docEngine != "infinity") {
+			return nil, fmt.Errorf("invalid service_index: %d", id)
+		}
+	}
+
+	// Call detail function based on service key
+	switch svc.key {
+	case "mysql":
+		return s.getMySQLStatus(svc.name)
+	case "redis":
+		return s.getRedisInfo(svc.name)
+	case "es":
+		return s.getESClusterStats(svc.name)
+	case "infinity":
+		return s.getInfinityStatus(svc.name)
+	case "ragflow":
+		return s.checkRAGFlowServerAlive(svc.name)
+	case "minio":
+		return s.checkMinioAlive(svc.name)
+	case "task_executor":
+		return s.checkTaskExecutorAlive(svc.name)
+	default:
+		return map[string]interface{}{
+			"service_name": svc.name,
+			"status":       "unknown",
+		}, nil
+	}
+}
+
+// getMySQLStatus gets MySQL service status
+func (s *Service) getMySQLStatus(name string) (map[string]interface{}, error) {
+	// TODO: Implement actual MySQL health check
 	return map[string]interface{}{
-		"service_id": serviceID,
+		"service_name": name,
+		"status":       "unknown",
+	}, nil
+}
+
+// getRedisInfo gets Redis service info
+func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
+	// TODO: Implement actual Redis health check
+	return map[string]interface{}{
+		"service_name": name,
+		"status":       "unknown",
+	}, nil
+}
+
+// getESClusterStats gets Elasticsearch cluster stats
+func (s *Service) getESClusterStats(name string) (map[string]interface{}, error) {
+	// TODO: Implement actual ES health check
+	return map[string]interface{}{
+		"service_name": name,
+		"status":       "unknown",
+	}, nil
+}
+
+// getInfinityStatus gets Infinity service status
+func (s *Service) getInfinityStatus(name string) (map[string]interface{}, error) {
+	// TODO: Implement actual Infinity health check
+	return map[string]interface{}{
+		"service_name": name,
+		"status":       "unknown",
+	}, nil
+}
+
+// checkRAGFlowServerAlive checks if RAGFlow server is alive
+func (s *Service) checkRAGFlowServerAlive(name string) (map[string]interface{}, error) {
+	// TODO: Implement actual RAGFlow server health check
+	return map[string]interface{}{
+		"service_name": name,
+		"status":       "unknown",
+	}, nil
+}
+
+// checkMinioAlive checks if MinIO is alive
+func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
+	// TODO: Implement actual MinIO health check
+	return map[string]interface{}{
+		"service_name": name,
+		"status":       "unknown",
+	}, nil
+}
+
+// checkTaskExecutorAlive checks if task executor is alive
+func (s *Service) checkTaskExecutorAlive(name string) (map[string]interface{}, error) {
+	// TODO: Implement actual task executor health check
+	return map[string]interface{}{
+		"service_name": name,
+		"status":       "unknown",
 	}, nil
 }
 
@@ -426,10 +750,7 @@ func (s *Service) ListSandboxProviders() ([]map[string]interface{}, error) {
 // GetSandboxProviderSchema get sandbox provider schema
 func (s *Service) GetSandboxProviderSchema(providerID string) (map[string]interface{}, error) {
 	// TODO: Implement with sandbox manager
-	return map[string]interface{}{
-		"provider_id": providerID,
-		"schema":      map[string]interface{}{},
-	}, nil
+	return map[string]interface{}{}, nil
 }
 
 // GetSandboxConfig get sandbox config
@@ -453,37 +774,7 @@ func (s *Service) TestSandboxConnection(providerType string, config map[string]i
 	// TODO: Implement with sandbox manager
 	return map[string]interface{}{
 		"provider_type": providerType,
-		"status":        "ok",
+		"config":        config,
+		"connected":     true,
 	}, nil
-}
-
-// Helper functions
-
-// generateToken generate a simple token
-func generateToken() string {
-	return fmt.Sprintf("ragflow-%d-%s", time.Now().Unix(), generateRandomString(16))
-}
-
-// generateConfirmationToken generate confirmation token
-func generateConfirmationToken() string {
-	return "ragflow-" + generateRandomString(32)
-}
-
-// generateRandomString generate random string
-func generateRandomString(n int) string {
-	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, n)
-	for i := range b {
-		randByte := make([]byte, 1)
-		rand.Read(randByte)
-		b[i] = letters[int(randByte[0])%len(letters)]
-	}
-	return string(b)
-}
-
-// generateRandomHex generate random hex string
-func generateRandomHex(n int) string {
-	bytes := make([]byte, n)
-	rand.Read(bytes)
-	return hex.EncodeToString(bytes)
 }

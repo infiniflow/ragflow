@@ -30,7 +30,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"golang.org/x/crypto/scrypt"
 
 	"ragflow/internal/dao"
@@ -150,7 +149,7 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, error) {
 	}
 
 	// Generate new access token
-	token := s.GenerateToken()
+	token := utility.GenerateToken()
 	if err := s.UpdateUserAccessToken(user, token); err != nil {
 		return nil, fmt.Errorf("failed to update access token: %w", err)
 	}
@@ -190,7 +189,7 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, error) 
 	}
 
 	// Generate new access token
-	token := s.GenerateToken()
+	token := utility.GenerateToken()
 	user.AccessToken = &token
 
 	// Update timestamp
@@ -386,11 +385,6 @@ func (s *UserService) decryptPassword(encryptedPassword string) (string, error) 
 	return string(plaintext), nil
 }
 
-// GenerateToken generates a new access token
-func (s *UserService) GenerateToken() string {
-	return strings.ReplaceAll(uuid.New().String(), "-", "")
-}
-
 // GetUserByToken gets user by authorization header
 // The token parameter is the authorization header value, which needs to be decrypted
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
@@ -424,7 +418,7 @@ func (s *UserService) UpdateUserAccessToken(user *model.User, token string) erro
 func (s *UserService) Logout(user *model.User) error {
 	// Invalidate token by setting it to an invalid value
 	// Similar to Python implementation: "INVALID_" + secrets.token_hex(16)
-	invalidToken := "INVALID_" + s.GenerateToken()
+	invalidToken := "INVALID_" + utility.GenerateToken()
 	return s.UpdateUserAccessToken(user, invalidToken)
 }
 
