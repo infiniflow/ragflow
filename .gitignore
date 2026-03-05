@@ -222,4 +222,5 @@ docker/launch_backend_service_windows.sh
 
 # Go server build output
 bin/
-internal/
+internal/cpp/cmake-build-release/
+internal/cpp/cmake-build-debug/

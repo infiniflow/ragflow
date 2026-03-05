@@ -137,6 +137,9 @@ jobs:
           sudo docker run --privileged -d --name ${BUILDER_CONTAINER} -e TZ=${TZ} -e UV_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple -v ${PWD}:/ragflow -v ${PWD}/internal/cpp/resource:/usr/share/infinity/resource infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec ${BUILDER_CONTAINER} bash -c "git config --global safe.directory \"*\" && cd /ragflow && ./build.sh --cpp"
           ./build.sh --go
+          if [[ -n "${BUILDER_CONTAINER}" ]]; then
+            sudo docker rm -f -v "${BUILDER_CONTAINER}"
+          fi
 
       - name: Build ragflow:nightly
         run: |
