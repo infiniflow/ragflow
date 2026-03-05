@@ -8,9 +8,8 @@ sidebar_custom_props: {
 
 # Backup & migration
 
-import TOCInline from '@theme/TOCInline';
-
-<TOCInline toc={toc} />
+- [Data migration](#data-migration)
+- [Migrate from multi-bucket to single-bucket mode](#migrate-from-multi-bucket-to-single-bucket-mode)
 
 ## Data migration
 
