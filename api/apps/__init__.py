@@ -319,7 +319,7 @@ async def unauthorized_werkzeug(error):
     return get_json_result(code=RetCode.UNAUTHORIZED, message=_unauthorized_message(error)), RetCode.UNAUTHORIZED
 
 
-@app.errorhandler(Unauthorized)
+@app.errorhandler(WerkzeugUnauthorized)
 async def handle_unauthorized(e):
     """
     Handle Unauthorized exceptions across the backend.

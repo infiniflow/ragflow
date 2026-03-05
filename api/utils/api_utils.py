@@ -38,7 +38,7 @@ try:
     from quart.exceptions import BadRequest as QuartBadRequest
 except ImportError:  # pragma: no cover - optional dependency
     QuartBadRequest = None
-
+from werkzeug.exceptions import BadRequest as WerkzeugBadRequest
 from peewee import OperationalError
 
 from common.constants import ActiveEnum
