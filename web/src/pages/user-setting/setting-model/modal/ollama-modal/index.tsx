@@ -142,10 +142,7 @@ const OllamaModal = ({
         label: t('addLlmBaseUrl'),
         type: FormFieldType.Text,
         required: true,
-        placeholder:
-          llmFactory === LLMFactory.RAGcon
-            ? 'https://connect.ragcon.com/v1'
-            : t('baseUrlNameMessage'),
+        placeholder: t('baseUrlNameMessage'),
         validation: {
           message: t('baseUrlNameMessage'),
         },
@@ -154,11 +151,8 @@ const OllamaModal = ({
         name: 'api_key',
         label: t('apiKey'),
         type: FormFieldType.Text,
-        required: llmFactory === LLMFactory.RAGcon,
-        placeholder:
-          llmFactory === LLMFactory.RAGcon
-            ? 'RAGcon API key (used for all model types)'
-            : t('apiKeyMessage'),
+        required: false,
+        placeholder: t('apiKeyMessage'),
       },
       {
         name: 'max_tokens',
