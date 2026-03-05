@@ -83,7 +83,9 @@ async def create(tenant_id, chat_id):
 @manager.route("/agents/<agent_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
 async def create_agent_session(tenant_id, agent_id):
-    user_id = request.args.get("user_id", tenant_id)
+    req = await get_request_json()
+    user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
+    release_mode = req.get("release", request.args.get("release", False))
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
         return get_error_data_result("Agent not found.")
@@ -92,6 +94,8 @@ async def create_agent_session(tenant_id, agent_id):
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
+    if release_mode and not bool(cvs.release):
+        raise PermissionError("No available published version")
     session_id = get_uuid()
     canvas = Canvas(cvs.dsl, tenant_id, agent_id, canvas_id=cvs.id)
     canvas.reset()
@@ -986,15 +990,35 @@ async def agent_bot_completions(agent_id):
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
     if req.get("stream", True):
-        resp = Response(agent_completion(objs[0].tenant_id, agent_id, **req), mimetype="text/event-stream")
+        async def stream():
+            try:
+                async for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
+                    yield answer
+            except Exception as e:
+                logging.exception(e)
+                error_result = get_error_data_result(message=str(e) or "Unknown error")
+                yield "data:" + json.dumps(
+                    {
+                        "event": "message",
+                        "data": {"content": f"Error {error_result['code']}: {error_result['message']}\n\n"},
+                        **error_result,
+                    },
+                    ensure_ascii=False,
+                ) + "\n\n"
+
+        resp = Response(stream(), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
 
-    async for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
-        return get_result(data=answer)
+    try:
+        async for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
+            return get_result(data=answer)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message=str(e) or "Unknown error")
 
     return None
 
