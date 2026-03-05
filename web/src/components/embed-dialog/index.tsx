@@ -1,6 +1,7 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
 import HighLightMarkdown from '@/components/highlight-markdown';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -28,12 +29,14 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { Routes } from '@/routes';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { ExternalLink } from 'lucide-react';
 import { memo, useCallback, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
 const FormSchema = z.object({
   visibleAvatar: z.boolean(),
+  publishAvatar: z.boolean(),
   locale: z.string(),
   embedType: z.enum(['fullscreen', 'widget']),
   enableStreaming: z.boolean(),
@@ -60,6 +63,7 @@ function EmbedDialog({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       visibleAvatar: false,
+      publishAvatar: false,
       locale: '',
       embedType: 'fullscreen' as const,
       enableStreaming: false,
@@ -77,7 +81,14 @@ function EmbedDialog({
   }, []);
 
   const generateIframeSrc = useCallback(() => {
-    const { visibleAvatar, locale, embedType, enableStreaming, theme } = values;
+    const {
+      visibleAvatar,
+      publishAvatar,
+      locale,
+      embedType,
+      enableStreaming,
+      theme,
+    } = values;
     const baseRoute =
       embedType === 'widget'
         ? Routes.ChatWidget
@@ -85,6 +96,9 @@ function EmbedDialog({
           ? Routes.AgentShare
           : Routes.ChatShare;
     let src = `${location.origin}${baseRoute}?shared_id=${token}&from=${from}&auth=${beta}`;
+    if (publishAvatar) {
+      src += '&release=true';
+    }
     if (visibleAvatar) {
       src += '&visible_avatar=1';
     }
@@ -145,6 +159,11 @@ function EmbedDialog({
   `;
     }
   }, [generateIframeSrc, values]);
+
+  const handleOpenInNewTab = useCallback(() => {
+    const iframeSrc = generateIframeSrc();
+    window.open(iframeSrc, '_blank');
+  }, [generateIframeSrc]);
 
   return (
     <Dialog open onOpenChange={hideModal}>
@@ -238,6 +257,22 @@ function EmbedDialog({
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="publishAvatar"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Publish Avatar</FormLabel>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      ></Switch>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               {values.embedType === 'widget' && (
                 <FormField
                   control={form.control}
@@ -280,6 +315,14 @@ function EmbedDialog({
               <HighLightMarkdown>{text}</HighLightMarkdown>
             </div>
           </div>
+          <Button
+            onClick={handleOpenInNewTab}
+            className="w-full"
+            variant="secondary"
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            {t('openInNewTab', { keyPrefix: 'common' })}
+          </Button>
           <div className=" font-medium mt-4 mb-1">
             {t(isAgent ? 'flow' : 'chat', { keyPrefix: 'header' })}
             <span className="ml-1 inline-block">ID</span>

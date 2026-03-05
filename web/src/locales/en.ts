@@ -4,7 +4,7 @@ export default {
       confirm: 'Confirm',
       back: 'Back',
       noResults: 'No results found',
-      selectPlaceholder: 'select value',
+      selectPlaceholder: 'Select value',
       selectAll: 'Select all',
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete it ?',
@@ -27,7 +27,16 @@ export default {
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
       russian: 'Russian',
+      indonesian: 'Indonesian',
+      indonesia: 'Indonesian',
+      spanish: 'Spanish',
+      vietnamese: 'Vietnamese',
+      japanese: 'Japanese',
+      german: 'German',
+      french: 'French',
+      italian: 'Italian',
       bulgarian: 'Bulgarian',
+      arabic: 'Arabic',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -46,6 +55,7 @@ export default {
       submit: 'Submit',
       clear: 'Clear',
       embedIntoSite: 'Embed into webpage',
+      openInNewTab: 'Chat in new tab',
       previousPage: 'Previous',
       nextPage: 'Next',
       add: 'Add',
@@ -162,6 +172,7 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         action: 'Action',
       },
       config: {
+        descriptionPlaceholder: 'Describe your memory',
         memorySizeTooltip: `Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes).
 Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.`,
         avatar: 'Avatar',
@@ -198,6 +209,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       metadata: {
+        fields: 'fields',
         selectFiles: 'Selected {{count}} files',
         type: 'Type',
         fieldNameInvalid: 'Field name can only contain letters or underscores.',
@@ -267,7 +279,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       generate: 'Generate',
       raptor: 'RAPTOR',
       processingType: 'Processing type',
-      dataPipeline: 'Ingestion pipeline',
+      dataPipeline: 'Switch or configure ingestion pipeline.',
       operations: 'Operations',
       taskId: 'Task ID',
       duration: 'Duration',
@@ -379,7 +391,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       cancel: 'Cancel',
       close: 'Close',
       rerankModel: 'Rerank model',
-      rerankPlaceholder: 'Please select',
+      rerankPlaceholder: 'Select value',
       rerankTip: `Optional. If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time. If you wish to use a rerank model, ensure you use a SaaS reranker; if you prefer a locally deployed rerank model, ensure you start RAGFlow with docker-compose-gpu.yml.`,
       topK: 'Top-K',
       topKTip: `Used together with the Rerank model, this setting defines the number of text chunks to be sent to the specified reranking model.`,
@@ -426,6 +438,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      randomSeedTip:
+        'Seed is the starting point for a pseudo-random algorithm that ensures reproducibility of the same output across different runs.',
+      datasetDescription: 'Describe your dataset',
+      overlappedPercentTip: 'The overlapped percent between two nearby chunks',
       globalIndexModelTip:
         'Used to generate Knowledge graphs, RAPTOR, auto-metadata, auto-keyword and auto-question. Model performance will affects generation quality.',
       globalIndexModel: 'Indexing model',
@@ -490,7 +506,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       editLinkDataPipeline: 'Edit ingestion pipeline',
       linkPipelineSetTip: 'Manage ingestion pipeline linkage with this dataset',
       default: 'Default',
-      dataPipeline: 'Ingestion pipeline',
+      dataPipeline: 'Switch or configure ingestion pipeline.',
       linkDataPipeline: 'Link ingestion pipeline',
       enableAutoGenerate: 'Enable auto generate',
       teamPlaceholder: 'Please select a team.',
@@ -527,6 +543,22 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model.',
       chunkMethodPlaceholder: 'Please select a chunking method.',
+      parserLabel: {
+        naive: 'General',
+        qa: 'Q&A',
+        resume: 'Resume',
+        manual: 'Manual',
+        table: 'Table',
+        paper: 'Paper',
+        book: 'Book',
+        laws: 'Laws',
+        presentation: 'Presentation',
+        picture: 'Picture',
+        one: 'One',
+        audio: 'Audio',
+        email: 'Email',
+        tag: 'Tag',
+      },
       save: 'Save',
       me: 'Only me',
       team: 'Team',
@@ -745,16 +777,26 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       assistantAvatar: 'Assistant avatar',
       language: 'Language',
       emptyResponse: 'Empty response',
+      emptyResponsePlaceholder:
+        'The answer you are looking for is not found in the dataset!',
       emptyResponseTip: `Set this as a response if no results are retrieved from the knowledge bases for your query, or leave this field blank to allow the LLM to improvise when nothing is found.`,
       emptyResponseMessage: `Empty response will be triggered when nothing relevant is retrieved from knowledge bases. You must clear the 'Empty response' field if no knowledge base is selected.`,
       setAnOpener: 'Opening greeting',
       setAnOpenerInitial: `Hi! I'm your assistant. What can I do for you?`,
       setAnOpenerTip: 'Set an opening greeting for users.',
       knowledgeBases: 'Datasets',
+      knowledgeBasesPlaceholder: 'Select value',
       knowledgeBasesMessage: 'Please select',
       knowledgeBasesTip:
         'Select the datasets to associate with this chat assistant. An empty knowledge base will not appear in the dropdown list.',
       system: 'System prompt',
+      systemPlaceholder: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+
+**Essential Rules:**
+  - Your answer must be derived **solely** from this dataset: {knowledge}.
+  - **When information is available**: Summarize the content to give a detailed answer.
+  - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the knowledge base!"
+  - **Always consider** the entire conversation history.`,
       systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
 
       **Essential Rules:**
@@ -852,7 +894,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'This optimizes user queries using context in a multi-round conversation. When enabled, it will consume additional LLM tokens.',
       howUseId: 'How to use chat ID?',
       description: 'Description of assistant',
-      descriptionPlaceholder: 'e.g. A chat assistant for resume.',
+      descriptionPlaceholder: "I'm a chat assistant.",
       useKnowledgeGraph: 'Use knowledge graph',
       useKnowledgeGraphTip:
         'Whether to use knowledge graph(s) in the specified knowledge base(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.',
@@ -870,6 +912,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tavilyApiKeyMessage: 'Please enter your Tavily API Key',
       tavilyApiKeyHelp: 'How to get it?',
       crossLanguage: 'Cross-language search',
+      crossLanguagePlaceholder: 'Select value',
       crossLanguageTip: `Select one or more languages for cross‑language search. If no language is selected, the system searches with the original query.`,
       createChat: 'Create chat',
       metadata: 'Meta data',
@@ -889,7 +932,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhance: 'PageIndex',
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach mimics human information-searching behavior in books.`,
       batchDeleteSessions: 'Batch delete',
-      deleteSelectedConfirm: 'Delete the selected {count} session(s)?',
+      deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
     },
     setting: {
       Verify: 'Verify',
@@ -1005,15 +1048,55 @@ Example: Virtual Hosted Style`,
       moodleTokenTip:
         'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
       seafileDescription:
-        'Connect to your SeaFile server to sync files and documents from your libraries.',
+        'Connect to your SeaFile server to synchronise files and documents from your libraries.',
       seafileUrlTip:
-        'The base URL of your SeaFile server (e.g., https://seafile.example.com). Do not include /api2 or other paths.',
+        'The full URL of your SeaFile server including the protocol. Example: https://seafile.example.com - Do not include a trailing slash or any path after the domain.',
+      seafileAccountScopeTip:
+        'Syncs all libraries visible to the Account API Token below.',
+      seafileTokenPanelHeading: 'Provide one of these authentication methods:',
+      seafileTokenPanelAccountBullet: '- grants access to all your libraries.',
+      seafileTokenPanelLibraryBullet:
+        '— scoped to a single library only (more secure).',
+      seafileValidationAccountTokenRequired:
+        'Account API Token is required for Entire Account scope',
+      seafileValidationTokenRequired:
+        'Provide either an Account API Token or a Library Token',
+      seafileValidationLibraryIdRequired: 'Library ID is required',
+      seafileValidationDirectoryPathRequired: 'Directory Path is required',
+      seafileSyncScopeTip:
+        'Controls what gets synchronised: ' +
+        '(1) Entire Account - Syncs all libraries your token has access to. Requires an Account API Token. ' +
+        '(2) Single Library - Syncs all files within one specific library. Requires the Library ID and either an Account API Token or a Library API Token. ' +
+        '(3) Specific Directory - Syncs only files within a specific folder inside a library. Requires the Library ID, the folder path within that library, and either an Account API Token or a Library API Token.',
       seafileTokenTip:
-        'Generate an API token in SeaFile: Go to Settings → API Token → Generate Token. The token provides access to all libraries visible to your account.',
+        'Your account-level SeaFile API token. ' +
+        'Grants access to all libraries visible to your account. ' +
+        'Required when sync scope is "Entire Account". ' +
+        'For "Single Library" or "Specific Directory" you can use this token or a Library API Token instead.',
+      seafileRepoTokenTip:
+        'A library-scoped API token that only grants access to one specific library. ' +
+        'Can be used instead of the Account API Token for "Single Library" and "Specific Directory" sync scopes.',
+      seafileRepoIdTip:
+        'The unique identifier (UUID) of the SeaFile library you want to synchronise. ' +
+        'You can find it in your browser address bar when you open the library in the SeaFile web interface. ' +
+        'Example: 7a9e1b3c-4d5f-6a7b-8c9d-0e1f2a3b4c5d. ' +
+        'Required when sync scope is "Single Library" or "Specific Directory".',
+      seafileSyncPathTip:
+        'The absolute path of the folder to synchronise within the library specified by the Library ID above. ' +
+        'Must start with a forward slash. ' +
+        'All files and subfolders under this path will be included recursively. ' +
+        'Example: /Documents/Reports. ' +
+        'Important: The folder must exist inside the specified library. ' +
+        'Paths outside the library are not supported. ' +
+        'Only used when sync scope is "Specific Directory".',
       seafileIncludeSharedTip:
-        'When enabled, libraries shared with you by other users will also be synced.',
+        'When enabled, libraries that other users have shared with you are included in the synchronisation. ' +
+        'When disabled, only libraries owned by your account are synchronised. ' +
+        'Only applies when sync scope is "Entire Account".',
       seafileBatchSizeTip:
-        'Number of documents to process per batch. Higher values may improve performance but use more memory. Default: 100.',
+        'The number of documents processed and returned per batch during synchronisation. ' +
+        'A smaller value uses less memory but may be slower overall. ' +
+        'Default: 100.',
       jiraDescription:
         'Connect your Jira workspace to sync issues, comments, and attachments.',
       jiraBaseUrlTip:
@@ -1130,6 +1213,8 @@ Example: Virtual Hosted Style`,
         'If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key.',
       tongyiBaseUrlTip:
         'For Chinese users, no need to fill in or use https://dashscope.aliyuncs.com/compatible-mode/v1. For international users, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'For Chinese users, no need to fill in or use https://api.siliconflow.cn/v1. For international users, use https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder: '(International users only, please see tip)',
       minimaxBaseUrlTip:
         'International users only: use https://api.minimax.io/v1',
@@ -1322,8 +1407,8 @@ Example: Virtual Hosted Style`,
         image2text: 'OCR',
         speech2text: 'ASR',
       },
-      showToc: 'Show TOC',
-      hideToc: 'Hide TOC',
+      showToc: 'Show content',
+      hideToc: 'Hide content',
     },
     message: {
       registered: 'Registered!',
@@ -1387,6 +1472,13 @@ Example: Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      preprocess: {
+        preprocess: 'Preprocess',
+        mainContent: 'Main content',
+        abstract: 'Abstract',
+        author: 'Author',
+        sectionTitle: 'Section title',
+      },
       autoPlay: 'Auto play audio',
       downloadFileTypeTip: 'The file type to download',
       downloadFileType: 'Download file type',
@@ -1902,11 +1994,12 @@ Example: Virtual Hosted Style`,
         'A component that formats the output of other components.1. Supports Jinja2 templates, will first convert the input to an object and then render the template, 2. Simultaneously retains the original method of using {parameter} string replacement',
       emailComponent: 'Email',
       emailDescription: 'Send an email to a specified address.',
-      smtpServer: 'SMTP server',
+      smtpServer: 'SMTP host',
       smtpPort: 'SMTP port',
-      senderEmail: 'Sender email',
-      authCode: 'Authorization code',
-      senderName: 'Sender name',
+      senderEmail: 'From email address',
+      smtpUsername: 'SMTP login username',
+      authCode: 'SMTP password / app password',
+      senderName: 'From display name',
       toEmail: 'Recipient email',
       ccEmail: 'CC email',
       emailSubject: 'Subject',
@@ -2485,6 +2578,39 @@ Important structured information may include: names, dates, locations, events, k
       registrationWhitelist: 'Registration whitelist',
       roles: 'Roles',
       monitoring: 'Monitoring',
+
+      sandboxSettingsPage: {
+        description:
+          'Configure your code execution sandbox provider. The sandbox is used by the Code component in agents.',
+        providerSelection: 'Provider selection',
+        providerSelectionDescription:
+          'Choose a sandbox provider for code execution',
+
+        namedProviderConfiguration: '{{name}} configuration',
+        namedProviderConfigurationDescription:
+          'Configure the connection settings for {{name}}.',
+
+        saveConfiguration: 'Save configuration',
+        saving: 'Saving...',
+
+        testConnectionResultModal: {
+          title: 'Connection test result',
+          testing: 'Testing connection to sandbox provider...',
+          success: 'Successfully connected to sandbox provider',
+          failed: 'Failed to connect to sandbox provider',
+
+          exitCode: 'Exit code',
+          executionTime: 'Execution time',
+          stdout: 'Standard output',
+          stderr: 'Error output / stack trace',
+        },
+
+        testConnection: 'Test connection',
+        testing: 'Testing...',
+      },
+
+      selectFile: 'Select file',
+      noFileSelected: 'No file selected',
 
       back: 'Back',
       active: 'Active',

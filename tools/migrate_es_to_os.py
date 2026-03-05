@@ -2,7 +2,6 @@ import os
 import sys
 import json
 import logging
-import time
 from elasticsearch import Elasticsearch
 from opensearchpy import OpenSearch
 from dotenv import load_dotenv
@@ -22,12 +21,12 @@ def migrate():
     else:
         logger.warning(f"Env file not found at {env_path}, using defaults.")
 
-    es_host = os.getenv('ES_HOST', 'localhost')
+    # es_host = os.getenv('ES_HOST', 'localhost')
     es_port = os.getenv('ES_PORT', '1200')
     es_user = 'elastic'
     es_password = os.getenv('ELASTIC_PASSWORD', 'infini_rag_flow')
 
-    os_host = os.getenv('OS_HOST', 'localhost')
+    # os_host = os.getenv('OS_HOST', 'localhost')
     os_port = os.getenv('OS_PORT', '1201')
     os_user = os.getenv('OS_USER', 'admin')
     os_password = os.getenv('OPENSEARCH_PASSWORD', 'infini_rag_flow_OS_01')
@@ -103,7 +102,7 @@ def migrate():
             if current_mapping:
                 os_client.indices.create(index=index_name, body=current_mapping)
             else:
-                logger.warning(f"No mapping file found, creating index with default settings.")
+                logger.warning("No mapping file found, creating index with default settings.")
                 os_client.indices.create(index=index_name)
         else:
             logger.info(f"Index {index_name} already exists in OpenSearch.")

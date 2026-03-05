@@ -125,3 +125,20 @@ class TestChatAssistantsDelete:
 
         res = list_chat_assistants(HttpApiAuth)
         assert len(res["data"]) == 0
+
+    @pytest.mark.p2
+    def test_delete_all_errors_no_success_p2(self, HttpApiAuth, add_chat_assistants_func):
+        delete_payload = {"ids": ["missing-1", "missing-2"]}
+        res = delete_chat_assistants(HttpApiAuth, delete_payload)
+        assert res["code"] == 102
+        assert "Assistant(missing-1) not found." in res["message"]
+        assert "Assistant(missing-2) not found." in res["message"]
+
+    @pytest.mark.p2
+    def test_delete_duplicate_partial_success_p2(self, HttpApiAuth, add_chat_assistants_func):
+        _, _, chat_assistant_ids = add_chat_assistants_func
+        payload = {"ids": [chat_assistant_ids[0], chat_assistant_ids[0]]}
+        res = delete_chat_assistants(HttpApiAuth, payload)
+        assert res["code"] == 0
+        assert res["data"]["success_count"] == 1
+        assert "Duplicate assistant ids" in res["data"]["errors"][0]

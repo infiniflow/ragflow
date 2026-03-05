@@ -36,6 +36,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.task_service import TaskService, queue_tasks, cancel_all_task_of
+from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_tenant_default_model_by_type, get_model_config_by_type_and_name
 from common.metadata_utils import meta_filter, convert_conditions
 from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required, \
     get_request_json
@@ -423,7 +424,7 @@ async def download(tenant_id, dataset_id, document_id):
 async def download_doc(document_id):
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!"')
+        return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -809,6 +810,10 @@ async def delete(tenant_id, dataset_id):
     return get_result()
 
 
+DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
+DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
+
+
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @token_required
 async def parse(tenant_id, dataset_id):
@@ -866,7 +871,7 @@ async def parse(tenant_id, dataset_id):
             continue
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if 0.0 < doc[0].progress < 1.0:
+        if doc[0].run == TaskStatus.RUNNING.value:
             return get_error_data_result("Can't parse document that is currently being processed")
         info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
         DocumentService.update_by_id(id, info)
@@ -946,8 +951,12 @@ async def stop_parsing(tenant_id, dataset_id):
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if int(doc[0].progress) == 1 or doc[0].progress == 0:
-            return get_error_data_result("Can't stop parsing document with progress at 0 or 1")
+        if doc[0].run != TaskStatus.RUNNING.value :
+            return construct_json_result(
+                code=RetCode.DATA_ERROR,
+                message=DOC_STOP_PARSING_INVALID_STATE_MESSAGE,
+                data={"error_code": DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE},
+            )
         # Send cancellation signal via Redis to stop background task
         cancel_all_task_of(id)
         info = {"run": "2", "progress": 0, "chunk_num": 0}
@@ -1062,6 +1071,8 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         "question": question,
         "sort": True,
     }
+    if "available" in req:
+        query["available_int"] = 1 if req["available"] == "true" else 0
     key_mapping = {
         "chunk_num": "chunk_count",
         "kb_id": "dataset_id",
@@ -1108,6 +1119,8 @@ async def list_chunks(tenant_id, dataset_id, document_id):
             "image_id": chunk.get("img_id", ""),
             "available": bool(chunk.get("available_int", 1)),
             "positions": chunk.get("position_int", []),
+            "tag_kwd": chunk.get("tag_kwd", []),
+            "tag_feas": chunk.get("tag_feas", {}),
         }
         res["chunks"].append(final_chunk)
         _ = Chunk(**final_chunk)
@@ -1232,8 +1245,17 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     d["kb_id"] = dataset_id
     d["docnm_kwd"] = doc.name
     d["doc_id"] = document_id
-    embd_id = DocumentService.get_embd_id(document_id)
-    embd_mdl = TenantLLMService.model_instance(tenant_id, LLMType.EMBEDDING.value, embd_id)
+    if "tag_kwd" in req:
+        d["tag_kwd"] = req["tag_kwd"]
+    if "tag_feas" in req:
+        d["tag_feas"] = req["tag_feas"]
+    tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
+    if tenant_embd_id:
+        model_config = get_model_config_by_id(tenant_embd_id)
+    else:
+        embd_id = DocumentService.get_embd_id(document_id)
+        model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING.value, embd_id)
+    embd_mdl = TenantLLMService.model_instance(model_config)
     v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
@@ -1426,8 +1448,17 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         if not isinstance(req["positions"], list):
             return get_error_data_result("`positions` should be a list")
         d["position_int"] = req["positions"]
-    embd_id = DocumentService.get_embd_id(document_id)
-    embd_mdl = TenantLLMService.model_instance(tenant_id, LLMType.EMBEDDING.value, embd_id)
+    if "tag_kwd" in req:
+        d["tag_kwd"] = req["tag_kwd"]
+    if "tag_feas" in req:
+        d["tag_feas"] = req["tag_feas"]
+    tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
+    if tenant_embd_id:
+        model_config = get_model_config_by_id(tenant_embd_id)
+    else:
+        embd_id = DocumentService.get_embd_id(document_id)
+        model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING.value, embd_id)
+    embd_mdl = TenantLLMService.model_instance(model_config)
     if doc.parser_id == ParserType.QA:
         arr = [t for t in re.split(r"[\n\t]", d["content_with_weight"]) if len(t) > 1]
         if len(arr) != 2:
@@ -1596,17 +1627,26 @@ async def retrieval_test(tenant_id):
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
             return get_error_data_result(message="Dataset not found!")
-        embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id)
+        if kb.tenant_embd_id:
+            embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+        else:
+            embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
         rerank_mdl = None
-        if req.get("rerank_id"):
-            rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK, llm_name=req["rerank_id"])
+        if req.get("tenant_rerank_id"):
+            rerank_model_config = get_model_config_by_id(req["tenant_rerank_id"])
+            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+        elif req.get("rerank_id"):
+            rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK, req["rerank_id"])
+            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
         if langs:
             question = await cross_languages(kb.tenant_id, None, question, langs)
 
         if req.get("keyword", False):
-            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
+            chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(kb.tenant_id, chat_model_config)
             question += await keyword_extraction(chat_mdl, question)
 
         ranks = await settings.retriever.retrieval(
@@ -1625,13 +1665,15 @@ async def retrieval_test(tenant_id):
             rank_feature=label_question(question, kbs),
         )
         if toc_enhance:
-            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
+            chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(kb.tenant_id, chat_model_config)
             cks = await settings.retriever.retrieval_by_toc(question, ranks["chunks"], tenant_ids, chat_mdl, size)
             if cks:
                 ranks["chunks"] = cks
         ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
         if use_kg:
-            ck = await settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
+            chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
+            ck = await settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, chat_model_config))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 

@@ -304,6 +304,12 @@ def metadata_summary(auth, dataset_id, params=None):
     return res.json()
 
 
+def metadata_batch_update(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/metadata/update"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
 # CHAT COMPLETIONS AND RELATED QUESTIONS
 def related_questions(auth, payload=None):
     url = f"{HOST_ADDRESS}/api/{VERSION}/sessions/related_questions"

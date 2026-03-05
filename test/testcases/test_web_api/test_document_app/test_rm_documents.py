@@ -13,12 +13,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import bulk_upload_documents, delete_document, list_documents
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
+
+
+def _run(coro):
+    return asyncio.run(coro)
 
 
 @pytest.mark.p2
@@ -73,6 +78,32 @@ class TestDocumentsDeletion:
             res = delete_document(WebApiAuth, {"doc_id": doc_id})
             assert res["code"] == 109, res
             assert res["message"] == "No authorization.", res
+
+
+@pytest.mark.p2
+class TestDocumentsDeletionUnit:
+    def test_rm_string_doc_id_normalization_success_unit(self, document_app_module, monkeypatch):
+        module = document_app_module
+        captured = {}
+
+        async def fake_request_json():
+            return {"doc_id": "doc1"}
+
+        async def fake_thread_pool_exec(func, doc_ids, user_id):
+            captured["func"] = func
+            captured["doc_ids"] = doc_ids
+            captured["user_id"] = user_id
+            return None
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        monkeypatch.setattr(module.DocumentService, "accessible4deletion", lambda *_args, **_kwargs: True)
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        res = _run(module.rm.__wrapped__())
+        assert res["code"] == 0
+        assert res["data"] is True
+        assert captured["func"] == module.FileService.delete_docs
+        assert captured["doc_ids"] == ["doc1"]
+        assert captured["user_id"] == module.current_user.id
 
 
 @pytest.mark.p3

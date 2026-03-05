@@ -22,14 +22,13 @@ import os
 
 import copy
 from opensearchpy import OpenSearch, NotFoundError
-from opensearchpy import UpdateByQuery, Q, Search, Index
+from opensearchpy import UpdateByQuery, Q, Search
 from opensearchpy import ConnectionTimeout
 from opensearchpy.client import IndicesClient
 from common.decorator import singleton
 from common.file_utils import get_project_base_directory
 from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, FusionExpr
 from common.float_utils import get_float
-from common.constants import PAGERANK_FLD, TAG_FLD
 from rag.nlp.rag_tokenizer import tokenize, fine_grained_tokenize
 from common import settings
 
@@ -300,10 +299,10 @@ class OSConnection(DocStoreConnection):
 
             elif isinstance(m, MatchDenseExpr):
                 assert (bool_query is not None)
-                similarity = 0.0
-                if "similarity" in m.extra_options:
-                    similarity = m.extra_options["similarity"]
-                
+                # similarity = 0.0
+                # if "similarity" in m.extra_options:
+                #     similarity = m.extra_options["similarity"]
+
                 # KNN in OpenSearch
                 knn_query = {
                     "knn": {
@@ -491,24 +490,31 @@ class OSConnection(DocStoreConnection):
             try:
                 self.os.update(index=index_name, id=message_id, body={"doc": update_dict})
                 return True
-            except Exception as e:
+            except Exception:
                 logger.exception(f"OSConnection.update(index={index_name}, id={message_id}) got exception")
                 return False
 
         bool_query = Q("bool")
         for k, v in condition_dict.items():
-            if not isinstance(k, str) or not v: continue
-            if k == "exists": bool_query.filter.append(Q("exists", field=v))
-            elif isinstance(v, list): bool_query.filter.append(Q("terms", **{k: v}))
-            elif isinstance(v, str) or isinstance(v, int): bool_query.filter.append(Q("term", **{k: v}))
-        
+            if not isinstance(k, str) or not v:
+                continue
+            if k == "exists":
+                bool_query.filter.append(Q("exists", field=v))
+            elif isinstance(v, list):
+                bool_query.filter.append(Q("terms", **{k: v}))
+            elif isinstance(v, str) or isinstance(v, int):
+                bool_query.filter.append(Q("term", **{k: v}))
+
         scripts = []
         params = {}
         for k, v in update_dict.items():
-            if k == "remove": continue # Simplified for now
-            if k == "add": continue # Simplified for now
-            if (not isinstance(k, str) or not v) and k != "status_int": continue
-            
+            if k == "remove":
+                continue  # Simplified for now
+            if k == "add":
+                continue  # Simplified for now
+            if (not isinstance(k, str) or not v) and k != "status_int":
+                continue
+
             if isinstance(v, str):
                 v = re.sub(r"(['\n\r]|\\.)", " ", v)
                 params[f"pp_{k}"] = v
@@ -534,14 +540,18 @@ class OSConnection(DocStoreConnection):
         
         if "id" in condition_dict:
             message_ids = condition_dict["id"]
-            if not isinstance(message_ids, list): message_ids = [message_ids]
+            if not isinstance(message_ids, list):
+                message_ids = [message_ids]
             qry = Q("ids", values=message_ids) if message_ids else Q("match_all")
         else:
             qry = Q("bool")
             for k, v in condition_dict.items():
-                if k == "exists": qry.filter.append(Q("exists", field=v))
-                elif isinstance(v, list): qry.must.append(Q("terms", **{k: v}))
-                elif isinstance(v, str) or isinstance(v, int): qry.must.append(Q("term", **{k: v}))
+                if k == "exists":
+                    qry.filter.append(Q("exists", field=v))
+                elif isinstance(v, list):
+                    qry.must.append(Q("terms", **{k: v}))
+                elif isinstance(v, str) or isinstance(v, int):
+                    qry.must.append(Q("term", **{k: v}))
         
         try:
             res = self.os.delete_by_query(index=index_name, body=Search().query(qry).to_dict(), refresh=True)
@@ -563,7 +573,8 @@ class OSConnection(DocStoreConnection):
 
     def get_fields(self, res, fields: list[str]) -> dict[str, dict]:
         res_fields = {}
-        if not fields: return {}
+        if not fields:
+            return {}
         for doc in self._get_source(res):
             message = self.get_message_from_os_doc(doc)
             m = {n: v for n, v in message.items() if n in fields}

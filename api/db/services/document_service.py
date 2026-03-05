@@ -361,9 +361,10 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
         from api.db.services.task_service import TaskService, cancel_all_task_of
-        cls.clear_chunk_num(doc.id)
+        if not cls.delete_document_and_update_kb_counts(doc.id):
+            return True
 
-        # Cancel all running tasks first Using preset function in task_service.py ---  set cancel flag in Redis 
+        # Cancel all running tasks first Using preset function in task_service.py ---  set cancel flag in Redis
         try:
             cancel_all_task_of(doc.id)
             logging.info(f"Cancelled all tasks for document {doc.id}")
@@ -419,7 +420,7 @@ class DocumentService(CommonService):
         except Exception as e:
             logging.warning(f"Failed to cleanup knowledge graph for document {doc.id}: {e}")
 
-        return cls.delete_by_id(doc.id)
+        return True
 
     @classmethod
     @DB.connection_context()
@@ -523,7 +524,30 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def delete_document_and_update_kb_counts(cls, doc_id) -> bool:
+        """Atomically delete the document row and update KB counters.
+
+        Returns True if the document was deleted by this call, False if it was
+        already deleted by a concurrent request (idempotent).
+        """
+        with DB.atomic():
+            doc = cls.model.get_or_none(cls.model.id == doc_id)
+            if doc is None:
+                return False
+            deleted = cls.model.delete().where(cls.model.id == doc_id).execute()
+            if not deleted:
+                return False
+            Knowledgebase.update(
+                token_num=Knowledgebase.token_num - doc.token_num,
+                chunk_num=Knowledgebase.chunk_num - doc.chunk_num,
+                doc_num=Knowledgebase.doc_num - 1,
+            ).where(Knowledgebase.id == doc.kb_id).execute()
+        return True
+
+    @classmethod
+    @DB.connection_context()
     def clear_chunk_num(cls, doc_id):
+        """Deprecated: use delete_document_and_update_kb_counts instead."""
         doc = cls.model.get_by_id(doc_id)
         assert doc, "Can't fine document in database."
 
@@ -636,6 +660,19 @@ class DocumentService(CommonService):
         if not docs:
             return None
         return docs[0]["embd_id"]
+
+    @classmethod
+    @DB.connection_context()
+    def get_tenant_embd_id(cls, doc_id):
+        docs = cls.model.select(
+            Knowledgebase.tenant_embd_id).join(
+            Knowledgebase, on=(
+                    Knowledgebase.id == cls.model.kb_id)).where(
+            cls.model.id == doc_id, Knowledgebase.status == StatusEnum.VALID.value)
+        docs = docs.dicts()
+        if not docs:
+            return None
+        return docs[0]["tenant_embd_id"]
 
     @classmethod
     @DB.connection_context()
@@ -983,6 +1020,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     from api.db.services.file_service import FileService
     from api.db.services.llm_service import LLMBundle
     from api.db.services.user_service import TenantService
+    from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
     from rag.app import audio, email, naive, picture, presentation
 
     e, conv = ConversationService.get_by_id(conversation_id)
@@ -998,8 +1036,11 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
         raise LookupError("Can't find this dataset!")
-
-    embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id, lang=kb.language)
+    if kb.tenant_embd_id:
+        embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+    else:
+        embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+    embd_mdl = LLMBundle(kb.tenant_id, embd_model_config, lang=kb.language)
 
     err, files = FileService.upload_document(kb, file_objs, user_id)
     assert not err, "\n".join(err)
@@ -1077,7 +1118,8 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     try_create_idx = True
 
     _, tenant = TenantService.get_by_id(kb.tenant_id)
-    llm_bdl = LLMBundle(kb.tenant_id, LLMType.CHAT, tenant.llm_id)
+    tenant_llm_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
+    llm_bdl = LLMBundle(kb.tenant_id, tenant_llm_config)
     for doc_id in docids:
         cks = [c for c in docs if c["doc_id"] == doc_id]
 

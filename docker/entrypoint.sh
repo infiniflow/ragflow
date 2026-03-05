@@ -212,10 +212,16 @@ function ensure_docling() {
       || uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
 }
 
+function ensure_db_init() {
+  echo "Initializing database tables..."
+  "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
+}
+
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
 ensure_docling
+ensure_db_init
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
@@ -224,6 +230,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting ragflow_server..."
     while true; do
         "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
+        bin/server_main &
         wait;
         sleep 1;
     done &
