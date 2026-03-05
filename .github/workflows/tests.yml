@@ -29,8 +29,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ragflow_tests:
-    name: ragflow_tests
+  lint:
+    name: lint
     # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
     # https://github.com/orgs/community/discussions/26261
     if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci')) }}
@@ -128,6 +128,14 @@ jobs:
               echo "No Python files changed"
             fi
           fi
+          
+      - name: Run unit test
+        run: |
+          uv sync --python 3.12 --group test --frozen
+          source .venv/bin/activate
+          which pytest || echo "pytest not in PATH"
+          echo "Start to run unit test"
+          python3 run_tests.py
 
       - name: Build ragflow go server
         run: |
@@ -137,6 +145,27 @@ jobs:
           sudo docker run --privileged -d --name ${BUILDER_CONTAINER} -e TZ=${TZ} -e UV_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple -v ${PWD}:/ragflow -v ${PWD}/internal/cpp/resource:/usr/share/infinity/resource infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec ${BUILDER_CONTAINER} bash -c "git config --global safe.directory \"*\" && cd /ragflow && ./build.sh --cpp"
           ./build.sh --go
+
+  es_tests:
+    name: es_tests
+    needs: lint
+    # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
+    # https://github.com/orgs/community/discussions/26261
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci')) }}
+    runs-on: [ "self-hosted", "ragflow-test" ]
+    steps:
+      - name: Ensure workspace ownership
+        run: |
+          echo "Workflow triggered by ${{ github.event_name }}"
+          echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      # https://github.com/actions/checkout/issues/1781
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Build ragflow:nightly
         run: |
@@ -234,7 +263,7 @@ jobs:
             sleep 5
           done
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api 2>&1 | tee es_web_api_test.log
-          
+
       - name: Run http api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
@@ -272,7 +301,7 @@ jobs:
               shift 2
             fi
             local cmd_display="$*"
-            echo "===== $(date -u +\"%Y-%m-%dT%H:%M:%SZ\") CMD: ${cmd_display} =====" | tee -a "${logfile}"
+            echo "===== $(date -u +"%Y-%m-%dT%H:%M:%SZ") CMD: ${cmd_display} =====" | tee -a "${logfile}"
             local tmp_log
             tmp_log="$(mktemp)"
             set +e
@@ -380,7 +409,7 @@ jobs:
           else
             echo ".coverage file not found!"
           fi
-          
+
       - name: Collect ragflow log Elasticsearch
         if: ${{ !cancelled() }}
         run: |
@@ -398,10 +427,106 @@ jobs:
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
 
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        if: ${{ !cancelled() }}
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  infinity_tests:
+    name: infinity_tests
+    needs: lint
+    # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
+    # https://github.com/orgs/community/discussions/26261
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci')) }}
+    runs-on: [ "self-hosted", "ragflow-test" ]
+    steps:
+      - name: Ensure workspace ownership
+        run: |
+          echo "Workflow triggered by ${{ github.event_name }}"
+          echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      # https://github.com/actions/checkout/issues/1781
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+
+      - name: Build ragflow:nightly
+        run: |
+          RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
+          RAGFLOW_IMAGE=infiniflow/ragflow:${GITHUB_RUN_ID}
+          echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> ${GITHUB_ENV}
+          sudo docker pull ubuntu:22.04
+          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+          if [[ ${GITHUB_EVENT_NAME} == "schedule" ]]; then
+            export HTTP_API_TEST_LEVEL=p3
+          else
+            export HTTP_API_TEST_LEVEL=p2
+          fi
+          echo "HTTP_API_TEST_LEVEL=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_ENV}
+          echo "RAGFLOW_CONTAINER=${GITHUB_RUN_ID}-ragflow-cpu-1" >> ${GITHUB_ENV}
+
       - name: Start ragflow:nightly
         run: |
+          # Determine runner number (default to 1 if not found)
+          RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
+          RUNNER_NUM=${RUNNER_NUM:-1}
+
+          # Compute port numbers using bash arithmetic
+          ES_PORT=$((1200 + RUNNER_NUM * 10))
+          OS_PORT=$((1201 + RUNNER_NUM * 10))
+          INFINITY_THRIFT_PORT=$((23817 + RUNNER_NUM * 10))
+          INFINITY_HTTP_PORT=$((23820 + RUNNER_NUM * 10))
+          INFINITY_PSQL_PORT=$((5432 + RUNNER_NUM * 10))
+          EXPOSE_MYSQL_PORT=$((5455 + RUNNER_NUM * 10))
+          MINIO_PORT=$((9000 + RUNNER_NUM * 10))
+          MINIO_CONSOLE_PORT=$((9001 + RUNNER_NUM * 10))
+          REDIS_PORT=$((6379 + RUNNER_NUM * 10))
+          TEI_PORT=$((6380 + RUNNER_NUM * 10))
+          KIBANA_PORT=$((6601 + RUNNER_NUM * 10))
+          SVR_HTTP_PORT=$((9380 + RUNNER_NUM * 10))
+          ADMIN_SVR_HTTP_PORT=$((9381 + RUNNER_NUM * 10))
+          SVR_MCP_PORT=$((9382 + RUNNER_NUM * 10))
+          SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + RUNNER_NUM * 10))
+          SVR_WEB_HTTP_PORT=$((80 + RUNNER_NUM * 10))
+          SVR_WEB_HTTPS_PORT=$((443 + RUNNER_NUM * 10))
+
+          # Persist computed ports into docker/.env so docker-compose uses the correct host bindings
+          echo "" >> docker/.env
+          echo -e "ES_PORT=${ES_PORT}" >> docker/.env
+          echo -e "OS_PORT=${OS_PORT}" >> docker/.env
+          echo -e "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}" >> docker/.env
+          echo -e "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}" >> docker/.env
+          echo -e "INFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}" >> docker/.env
+          echo -e "EXPOSE_MYSQL_PORT=${EXPOSE_MYSQL_PORT}" >> docker/.env
+          echo -e "MINIO_PORT=${MINIO_PORT}" >> docker/.env
+          echo -e "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}" >> docker/.env
+          echo -e "REDIS_PORT=${REDIS_PORT}" >> docker/.env
+          echo -e "TEI_PORT=${TEI_PORT}" >> docker/.env
+          echo -e "KIBANA_PORT=${KIBANA_PORT}" >> docker/.env
+          echo -e "SVR_HTTP_PORT=${SVR_HTTP_PORT}" >> docker/.env
+          echo -e "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}" >> docker/.env
+          echo -e "SVR_MCP_PORT=${SVR_MCP_PORT}" >> docker/.env
+          echo -e "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}" >> docker/.env
+          echo -e "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}" >> docker/.env
+          echo -e "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}" >> docker/.env
+
+          echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> docker/.env
+          echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env
+          echo -e "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> docker/.env
+          echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
+
+          # Patch entrypoint.sh for coverage
+          sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' docker/entrypoint.sh
+
           sed -i '1i DOC_ENGINE=infinity' docker/.env
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
+          uv sync --python 3.12 --group test --frozen && uv pip install -e sdk/python
 
       - name: Run sdk tests against Infinity
         run: |
@@ -458,7 +583,7 @@ jobs:
               shift 2
             fi
             local cmd_display="$*"
-            echo "===== $(date -u +\"%Y-%m-%dT%H:%M:%SZ\") CMD: ${cmd_display} =====" | tee -a "${logfile}"
+            echo "===== $(date -u +"%Y-%m-%dT%H:%M:%SZ") CMD: ${cmd_display} =====" | tee -a "${logfile}"
             local tmp_log
             tmp_log="$(mktemp)"
             set +e
@@ -564,13 +689,6 @@ jobs:
           else
             echo ".coverage file not found!"
           fi
-          
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
-        if: ${{ !cancelled() }}
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
 
       - name: Collect ragflow log
         if: ${{ !cancelled() }}
@@ -592,3 +710,10 @@ jobs:
           if [[ -n ${RAGFLOW_IMAGE} ]]; then
             sudo docker rmi -f ${RAGFLOW_IMAGE}
           fi
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        if: ${{ !cancelled() }}
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
