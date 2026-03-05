@@ -386,8 +386,7 @@ class DocMetadataService:
             if not settings.DOC_ENGINE_INFINITY:
                 try:
                     # Handle both Elasticsearch and OpenSearch
-                    engine_type = settings.docStoreConn.health().get("type", "")
-                    if engine_type == "opensearch":
+                    if settings.DOC_ENGINE_OPENSEARCH:
                         settings.docStoreConn.os.indices.refresh(index=index_name)
                     else:
                         settings.docStoreConn.es.indices.refresh(index=index_name)
@@ -463,8 +462,7 @@ class DocMetadataService:
                     if doc_exists:
                         # Document exists - use partial update
                         # Handle both Elasticsearch and OpenSearch
-                        engine_type = settings.docStoreConn.health().get("type", "")
-                        if engine_type == "opensearch":
+                        if settings.DOC_ENGINE_OPENSEARCH:
                             settings.docStoreConn.update_doc_metadata_field(
                                 index_name=index_name,
                                 doc_id=doc_id,
@@ -602,8 +600,7 @@ class DocMetadataService:
             # Note: No need to refresh since delete operation already uses refresh=True
             try:
                 # Handle both Elasticsearch and OpenSearch
-                engine_type = settings.docStoreConn.health().get("type", "")
-                if engine_type == "opensearch":
+                if settings.DOC_ENGINE_OPENSEARCH:
                     count_response = settings.docStoreConn.os.count(index=index_name)
                 else:
                     count_response = settings.docStoreConn.es.count(index=index_name)
