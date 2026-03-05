@@ -17,9 +17,15 @@
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
+	"net/http"
 	"os"
+	"os/signal"
 	"ragflow/internal/cache"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -133,14 +139,36 @@ func main() {
 		logger.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
-	// Create and start admin server (port 9381)
-	adminServer := NewAdminServer("9381")
-	if err := adminServer.Init(); err != nil {
-		logger.Error("Failed to initialize admin server", err)
-		os.Exit(1)
+	adminService := admin.NewService()
+	adminHandler := admin.NewHandler(adminService)
+	userService := service.NewUserService()
+	userHandler := handler.NewUserHandler(userService)
+
+	// Initialize router
+	r := admin.NewRouter(adminHandler, userHandler)
+
+	// Create Gin engine
+	ginEngine := gin.New()
+
+	// Middleware
+	if cfg.Server.Mode == "debug" {
+		ginEngine.Use(gin.Logger())
+	}
+	ginEngine.Use(gin.Recovery())
+
+	// Setup routes
+	r.Setup(ginEngine)
+
+	// Create HTTP server
+	addr := fmt.Sprintf(":9381")
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: ginEngine,
 	}
 
-	// Print RAGFlow Admin logo
+	// Print RAGFlow version
+	logger.Info("RAGFlow version", zap.String("version", utility.GetRAGFlowVersion()))
+
 	logger.Info("" +
 		"\n        ____  ___   ______________                 ___       __          _     \n" +
 		"       / __ \\/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___ \n" +
@@ -148,12 +176,30 @@ func main() {
 		"     / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / / /\n" +
 		"    /_/ |_/_/  |_\\____/_/   /_/\\____/|__/|__/  /_/  |_\\__,_/_/ /_/ /_/_/_/ /_/ \n")
 
-	// Print RAGFlow version
-	logger.Info("RAGFlow version", zap.String("version", utility.GetRAGFlowVersion()))
+	// Start server in a goroutine
+	go func() {
+		logger.Info(fmt.Sprintf("Server starting on port: %d", cfg.Server.Port))
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal("Failed to start server", zap.Error(err))
+		}
+	}()
 
-	logger.Info("Starting RAGFlow Admin Server", zap.String("port", "9381"))
-	if err := adminServer.Run(); err != nil {
-		logger.Error("Admin server error", err)
-		os.Exit(1)
+	// Wait for interrupt signal to gracefully shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
+	sig := <-quit
+
+	logger.Info("Received signal", zap.String("signal", sig.String()))
+	logger.Info("Shutting down server...")
+
+	// Create context with timeout for graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Shutdown server
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Fatal("Server forced to shutdown", zap.Error(err))
 	}
+
+	logger.Info("Server exited")
 }
