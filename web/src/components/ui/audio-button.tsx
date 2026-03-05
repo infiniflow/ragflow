@@ -215,6 +215,19 @@ export const AudioButton = ({
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const recorderControls = useAudioRecorder();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isRecordingRef = useRef(isRecording);
+  const isProcessingRef = useRef(isProcessing);
+  const startRecordingRef = useRef<(() => Promise<void>) | null>(null);
+  const stopRecordingRef = useRef<(() => void) | null>(null);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
+  useEffect(() => {
+    isProcessingRef.current = isProcessing;
+  }, [isProcessing]);
 
   // Check microphone permission on mount
   useEffect(() => {
@@ -254,12 +267,14 @@ export const AudioButton = ({
       // Ctrl/Cmd + M to toggle recording
       if ((e.ctrlKey || e.metaKey) && e.key === 'm') {
         e.preventDefault();
-        if (isProcessing) return;
 
-        if (isRecording) {
-          stopRecording();
+        // Use refs to get the latest state values and functions
+        if (isProcessingRef.current) return;
+
+        if (isRecordingRef.current) {
+          stopRecordingRef.current?.();
         } else {
-          startRecording();
+          startRecordingRef.current?.();
         }
       }
     };
@@ -268,7 +283,7 @@ export const AudioButton = ({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isRecording, isProcessing, enableKeyboardShortcut]);
+  }, [enableKeyboardShortcut]);
   // Handle logic after recording is complete
   const handleRecordingComplete = async (blob: Blob) => {
     setIsRecording(false);
@@ -402,6 +417,11 @@ export const AudioButton = ({
     }
   };
 
+  // Update ref when function changes
+  useEffect(() => {
+    startRecordingRef.current = startRecording;
+  }, [recorderControls]);
+
   // Stop recording
   const stopRecording = () => {
     recorderControls.stopRecording();
@@ -416,6 +436,11 @@ export const AudioButton = ({
       intervalRef.current = null;
     }
   };
+
+  // Update ref when function changes
+  useEffect(() => {
+    stopRecordingRef.current = stopRecording;
+  }, [recorderControls]);
 
   //  Clear transcription content
   // const clearTranscript = () => {
