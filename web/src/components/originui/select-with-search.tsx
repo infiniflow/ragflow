@@ -49,6 +49,7 @@ export type SelectWithSearchFlagProps = {
   placeholder?: string;
   emptyData?: string;
   testId?: string;
+  optionTestIdPrefix?: string;
 };
 
 function findLabelWithoutOptions(
@@ -82,6 +83,7 @@ export const SelectWithSearch = forwardRef<
       placeholder = t('common.selectPlaceholder'),
       emptyData = t('common.noDataFound'),
       testId,
+      optionTestIdPrefix,
     },
     ref,
   ) => {
@@ -218,7 +220,11 @@ export const SelectWithSearch = forwardRef<
                             value={option.value}
                             disabled={option.disabled}
                             onSelect={handleSelect}
-                            data-testid="combobox-option"
+                            data-testid={
+                              optionTestIdPrefix && option.value
+                                ? `${optionTestIdPrefix}${option.value}`
+                                : 'combobox-option'
+                            }
                             className={
                               value === option.value ? 'bg-bg-card' : ''
                             }
@@ -240,7 +246,11 @@ export const SelectWithSearch = forwardRef<
                       value={group.value}
                       disabled={group.disabled}
                       onSelect={handleSelect}
-                      data-testid="combobox-option"
+                      data-testid={
+                        optionTestIdPrefix && group.value
+                          ? `${optionTestIdPrefix}${group.value}`
+                          : 'combobox-option'
+                      }
                       className={cn('mb-1 min-h-10 ', {
                         'bg-bg-card ': value === group.value,
                       })}
