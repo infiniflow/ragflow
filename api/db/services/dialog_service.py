@@ -262,7 +262,13 @@ def get_models(dialog):
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
-    chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
+    if dialog.tenant_llm_id:
+        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
+    elif dialog.llm_id:
+        chat_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+    else:
+        chat_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
+
     chat_mdl = LLMBundle(dialog.tenant_id, chat_model_config)
 
     if dialog.rerank_id:
