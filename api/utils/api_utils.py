@@ -281,7 +281,7 @@ def token_required(func):
         authorization_str = request.headers.get("Authorization")
         if not authorization_str:
             err = WerkzeugUnauthorized(description="`Authorization` can't be empty")
-            err.code = RetCode.AUTHENTICATION_ERROR
+            err.code = RetCode.SUCCESS
             raise err
 
         authorization_list = authorization_str.split()
