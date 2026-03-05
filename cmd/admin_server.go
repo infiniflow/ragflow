@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"ragflow/internal/cache"
+	"ragflow/internal/engine"
 	"syscall"
 	"time"
 
@@ -94,6 +95,12 @@ func main() {
 		logger.Error("Failed to initialize database", err)
 		os.Exit(1)
 	}
+
+	// Initialize doc engine
+	if err := engine.Init(&cfg.DocEngine); err != nil {
+		logger.Fatal("Failed to initialize doc engine", zap.Error(err))
+	}
+	defer engine.Close()
 
 	// Initialize Redis cache
 	if err := cache.Init(&cfg.Redis); err != nil {

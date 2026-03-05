@@ -18,11 +18,15 @@ package admin
 
 import (
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
+	"os"
 	"ragflow/internal/cache"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/model"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
@@ -405,11 +409,53 @@ func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
 
 // getESClusterStats gets Elasticsearch cluster stats
 func (s *Service) getESClusterStats(name string) (map[string]interface{}, error) {
-	// TODO: Implement actual ES health check
+	// Check if Elasticsearch is the doc engine
+	docEngine := os.Getenv("DOC_ENGINE")
+	if docEngine == "" {
+		docEngine = "elasticsearch"
+	}
+	if docEngine != "elasticsearch" {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "timeout",
+			"message":      "error: Elasticsearch is not in use.",
+		}, nil
+	}
+
+	// Get ES config from server config
+	cfg := server.GetConfig()
+	if cfg == nil || cfg.DocEngine.ES == nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "timeout",
+			"message":      "error: Elasticsearch configuration not found",
+		}, nil
+	}
+
+	// Create ES engine and get cluster stats
+	esEngine, err := elasticsearch.NewEngine(cfg.DocEngine.ES)
+	if err != nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "timeout",
+			"message":      fmt.Sprintf("error: %s", err.Error()),
+		}, nil
+	}
+	defer esEngine.Close()
+
+	clusterStats, err := esEngine.GetClusterStats()
+	if err != nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "timeout",
+			"message":      fmt.Sprintf("error: %s", err.Error()),
+		}, nil
+	}
+
 	return map[string]interface{}{
 		"service_name": name,
-		"status":       "unknown",
-		"message":      "Elasticsearch health check not implemented",
+		"status":       "alive",
+		"message":      clusterStats,
 	}, nil
 }
 
@@ -425,21 +471,151 @@ func (s *Service) getInfinityStatus(name string) (map[string]interface{}, error)
 
 // checkRAGFlowServerAlive checks if RAGFlow server is alive
 func (s *Service) checkRAGFlowServerAlive(name string) (map[string]interface{}, error) {
-	// TODO: Implement actual RAGFlow server health check
+	startTime := time.Now()
+
+	// Get ragflow config from allConfigs
+	var host string
+	var port int
+	allConfigs := server.GetAllConfigs()
+	for _, config := range allConfigs {
+		if serviceType, ok := config["service_type"].(string); ok && serviceType == "ragflow_server" {
+			if h, ok := config["host"].(string); ok {
+				host = h
+			}
+			if p, ok := config["port"].(int); ok {
+				port = p
+			}
+			break
+		}
+	}
+
+	// Default values
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	if port == 0 {
+		port = 9380
+	}
+
+	// Replace 0.0.0.0 with 127.0.0.1 for local check
+	if host == "0.0.0.0" {
+		host = "127.0.0.1"
+	}
+
+	url := fmt.Sprintf("http://%s:%d/v1/system/ping", host, port)
+
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "timeout",
+			"message":      fmt.Sprintf("error: %s", err.Error()),
+		}, nil
+	}
+	defer resp.Body.Close()
+
+	elapsed := time.Since(startTime).Milliseconds()
+	if resp.StatusCode == 200 {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "alive",
+			"message":      fmt.Sprintf("Confirm elapsed: %.1f ms.", float64(elapsed)),
+		}, nil
+	}
+
 	return map[string]interface{}{
 		"service_name": name,
-		"status":       "unknown",
-		"message":      "RAGFlow server health check not implemented",
+		"status":       "timeout",
+		"message":      fmt.Sprintf("Confirm elapsed: %.1f ms.", float64(elapsed)),
 	}, nil
 }
 
 // checkMinioAlive checks if MinIO is alive
 func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
-	// TODO: Implement actual MinIO health check
+	startTime := time.Now()
+
+	// Get minio config from allConfigs
+	var host string
+	var secure bool
+	var verify bool = true
+
+	allConfigs := server.GetAllConfigs()
+	for _, config := range allConfigs {
+		if serviceType, ok := config["service_type"].(string); ok && serviceType == "file_store" {
+			// Get host from config
+			if h, ok := config["host"].(string); ok {
+				host = h
+			}
+			// Get secure from extra config
+			if extra, ok := config["extra"].(map[string]interface{}); ok {
+				if s, ok := extra["secure"].(bool); ok {
+					secure = s
+				} else if s, ok := extra["secure"].(string); ok {
+					secure = s == "true" || s == "1" || s == "yes"
+				}
+				if v, ok := extra["verify"].(bool); ok {
+					verify = v
+				} else if v, ok := extra["verify"].(string); ok {
+					verify = !(v == "false" || v == "0" || v == "no")
+				}
+			}
+			break
+		}
+	}
+
+	// Default host
+	if host == "" {
+		host = "localhost:9000"
+	}
+
+	// Determine scheme
+	scheme := "http"
+	if secure {
+		scheme = "https"
+	}
+
+	url := fmt.Sprintf("%s://%s/minio/health/live", scheme, host)
+
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	// If verify is false, we need to skip SSL verification
+	if !verify && scheme == "https" {
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "timeout",
+			"message":      fmt.Sprintf("error: %s", err.Error()),
+		}, nil
+	}
+	defer resp.Body.Close()
+
+	elapsed := time.Since(startTime).Milliseconds()
+	if resp.StatusCode == 200 {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "alive",
+			"message":      fmt.Sprintf("Confirm elapsed: %.1f ms.", float64(elapsed)),
+		}, nil
+	}
+
 	return map[string]interface{}{
 		"service_name": name,
-		"status":       "unknown",
-		"message":      "MinIO health check not implemented",
+		"status":       "timeout",
+		"message":      fmt.Sprintf("Confirm elapsed: %.1f ms.", float64(elapsed)),
 	}, nil
 }
 
