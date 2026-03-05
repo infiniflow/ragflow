@@ -93,7 +93,14 @@ func (dao *UserDAO) List(offset, limit int) ([]*model.User, int64, error) {
 		return nil, 0, err
 	}
 
-	err := DB.Offset(offset).Limit(limit).Find(&users).Error
+	query := DB.Model(&model.User{})
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	err := query.Find(&users).Error
 	return users, total, err
 }
 

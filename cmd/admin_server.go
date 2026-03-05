@@ -122,6 +122,11 @@ func main() {
 		ginEngine.Use(gin.Logger())
 	}
 	ginEngine.Use(gin.Recovery())
+	// Log request URL for every request
+	ginEngine.Use(func(c *gin.Context) {
+		logger.Info("HTTP Request", zap.String("url", c.Request.URL.String()), zap.String("method", c.Request.Method))
+		c.Next()
+	})
 
 	// Setup routes
 	r.Setup(ginEngine)

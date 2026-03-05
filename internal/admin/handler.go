@@ -900,16 +900,13 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Remove "Bearer " prefix
-		if len(token) > 7 && token[:7] == "Bearer " {
-			token = token[7:]
-		}
-
-		// Validate token
-		user, err := h.service.ValidateToken(token)
+		// Get user by access token
+		user, err := h.userService.GetUserByToken(token)
 		if err != nil {
-			errorResponse(c, "invalid token", 401)
-			c.Abort()
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code":    401,
+				"message": "Invalid access token",
+			})
 			return
 		}
 

@@ -107,8 +107,22 @@ func (s *Service) ValidateToken(token string) (*model.User, error) {
 
 // ListUsers list all users
 func (s *Service) ListUsers() ([]map[string]interface{}, error) {
-	// For now, return empty list - needs implementation with proper DAO methods
-	return []map[string]interface{}{}, nil
+	users, _, err := s.userDAO.List(0, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]map[string]interface{}, 0, len(users))
+	for _, user := range users {
+		result = append(result, map[string]interface{}{
+			"email":        user.Email,
+			"nickname":     user.Nickname,
+			"create_date":  user.CreateTime,
+			"is_active":    user.IsActive,
+			"is_superuser": user.IsSuperuser,
+		})
+	}
+	return result, nil
 }
 
 // CreateUser create a new user
