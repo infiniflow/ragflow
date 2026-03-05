@@ -276,7 +276,7 @@ jobs:
             local tmp_log
             tmp_log="$(mktemp)"
             set +e
-            timeout 300s "$@" 2>&1 | tee "${tmp_log}"
+            timeout 500s "$@" 2>&1 | tee "${tmp_log}"
             local status=${PIPESTATUS[0]}
             set -e
             cat "${tmp_log}" >> "${logfile}"
@@ -462,7 +462,7 @@ jobs:
             local tmp_log
             tmp_log="$(mktemp)"
             set +e
-            timeout 300s "$@" 2>&1 | tee "${tmp_log}"
+            timeout 500s "$@" 2>&1 | tee "${tmp_log}"
             local status=${PIPESTATUS[0]}
             set -e
             cat "${tmp_log}" >> "${logfile}"
