@@ -35,7 +35,7 @@ const buttonVariants = cva(
         `,
 
         link: 'text-primary underline-offset-4 hover:underline',
-        icon: 'bg-colors-background-inverse-standard text-foreground hover:bg-colors-background-inverse-standard/80',
+        icon: 'bg-transparent text-foreground hover:bg-transparent/80',
         dashed: 'border border-dashed border-border-button hover:bg-accent',
 
         transparent: `

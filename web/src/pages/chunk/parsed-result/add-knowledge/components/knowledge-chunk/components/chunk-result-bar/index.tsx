@@ -20,7 +20,7 @@ interface ChunkResultBarProps {
   handleInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   searchString: string;
 }
-export default ({
+export default function ChunkResultBar({
   changeChunkTextMode,
   available,
   selectAllChunk,
@@ -28,7 +28,7 @@ export default ({
   createChunk,
   handleInputChange,
   searchString,
-}: ChunkResultBarProps) => {
+}: ChunkResultBarProps) {
   const { t } = useTranslate('chunk');
   const [textSelectValue, setTextSelectValue] = useState<string | number>(
     ChunkTextMode.Full,
@@ -99,4 +99,4 @@ export default ({
       <div className="w-[20px]"></div> */}
     </div>
   );
-};
+}

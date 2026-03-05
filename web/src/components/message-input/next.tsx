@@ -14,6 +14,7 @@ import {
 } from '@/components/file-upload';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import {
   Atom,
@@ -245,8 +246,10 @@ export function NextMessageInput({
               <Button
                 type="button"
                 size="sm"
-                variant={enableThinking ? 'accent' : 'transparent'}
-                className="border-0 h-7 text-sm"
+                variant={'outline'}
+                className={cn('border-0 h-7 text-sm bg-bg-card', {
+                  'bg-text-primary text-bg-base': enableThinking,
+                })}
                 onClick={handleThinkingToggle}
               >
                 <Atom />
