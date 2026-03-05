@@ -51,6 +51,13 @@ def _unauthorized_message(error):
     if description:
         return description
 
+    try:
+        msg = repr(error)
+        if msg != UNAUTHORIZED_MESSAGE:
+            return msg
+    except Exception:
+        pass
+
     return UNAUTHORIZED_MESSAGE
 
 app = Quart(__name__)
