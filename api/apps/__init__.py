@@ -52,13 +52,10 @@ def _unauthorized_message(error):
         return description
 
     try:
-        msg = repr(error)
-        if msg != UNAUTHORIZED_MESSAGE:
-            return msg
+        return repr(error)
     except Exception:
-        pass
+        return UNAUTHORIZED_MESSAGE
 
-    return UNAUTHORIZED_MESSAGE
 
 app = Quart(__name__)
 app = cors(app, allow_origin="*")
