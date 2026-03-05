@@ -36,7 +36,7 @@ export function ChatPromptEngine() {
               <Textarea
                 {...field}
                 rows={8}
-                placeholder={t('messagePlaceholder')}
+                placeholder={t('systemPlaceholder')}
                 className="overflow-y-auto"
                 dir={getDirAttribute(systemPromptValue || '')}
               />

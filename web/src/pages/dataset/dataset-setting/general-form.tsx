@@ -99,7 +99,7 @@ export function GeneralForm() {
         render={({ field }) => {
           // null initialize empty string
           if (typeof field.value === 'object' && !field.value) {
-            form.setValue('description', '  ');
+            form.setValue('description', '');
           }
           return (
             <FormItem className="items-center space-y-0">
@@ -110,6 +110,7 @@ export function GeneralForm() {
                 <FormControl className="w-3/4">
                   <Input
                     {...field}
+                    placeholder={t('knowledgeConfiguration.datasetDescription')}
                     data-testid="ds-settings-basic-description-input"
                   ></Input>
                 </FormControl>

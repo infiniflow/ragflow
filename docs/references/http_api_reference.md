@@ -3682,6 +3682,7 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"inputs"`: `object` (optional)
   - `"user_id"`: `string` (optional)
   - `"return_trace"`: `boolean` (optional, default `false`) — include execution trace logs.
+  - `"release"`: `boolean` (optional, default `false`) - whether to visit the latest published canvas.
 
 #### Streaming events to handle
 
