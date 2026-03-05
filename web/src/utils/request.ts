@@ -9,6 +9,8 @@ import authorizationUtil, {
 import notification from '@/utils/notification';
 import { RequestMethod, extend } from 'umi-request';
 import { convertTheKeysOfTheObjectToSnake } from './common-util';
+import { setCachedLlmList } from './llm-cache';
+import { addTenantParams } from './llm-util';
 
 const FAILED_TO_FETCH = 'Failed to fetch';
 
@@ -82,11 +84,14 @@ request.interceptors.request.use((url: string, options: any) => {
   const data = convertTheKeysOfTheObjectToSnake(options.data);
   const params = convertTheKeysOfTheObjectToSnake(options.params);
 
+  // Add tenant parameters to data
+  const dataWithTenantParams = addTenantParams(data, url);
+
   return {
     url,
     options: {
       ...options,
-      data,
+      data: dataWithTenantParams,
       params,
       headers: {
         ...(options.skipToken
@@ -109,6 +114,15 @@ request.interceptors.response.use(async (response: Response, options) => {
   }
 
   const data: ResponseType = await response?.clone()?.json();
+
+  // Update LLM list cache when fetching my_llm or llm_list
+  if (data?.code === 0 && data?.data) {
+    const url = response?.url || '';
+    if (url.includes('/v1/llm/my_llms') || url.includes('/v1/llm/list')) {
+      setCachedLlmList(data.data);
+    }
+  }
+
   if (data?.code === 100) {
     message.error(data?.message);
   } else if (data?.code === 401) {
