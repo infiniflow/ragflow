@@ -370,6 +370,7 @@ export function OverlappedPercent() {
       percentage={true}
       name="parser_config.overlapped_percent"
       label={t('knowledgeConfiguration.overlappedPercent')}
+      tooltip={t('knowledgeConfiguration.overlappedPercentTip')}
       max={0.3}
       step={0.01}
       sliderTestId="ds-settings-parser-overlapped-percent-slider"
