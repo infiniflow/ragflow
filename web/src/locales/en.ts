@@ -512,7 +512,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       manualSetup: 'Choose pipeline',
       builtIn: 'Built-in',
       titleDescription:
-        'Update your memory configuration here, particularly the LLM and prompts.',
+        'Update your dataset configuration here, particularly the LLM and prompts.',
       name: 'Knowledge base name',
       photo: 'Knowledge base photo',
       photoTip: 'You can upload an image up to 4 MB.',

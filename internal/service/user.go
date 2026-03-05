@@ -167,11 +167,6 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, error) {
 
 // LoginByEmail user login by email
 func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, error) {
-	// Check for default admin account
-	if req.Email == "admin@ragflow.io" {
-		return nil, errors.New("default admin account cannot be used to login normal services")
-	}
-
 	// Get user by email
 	user, err := s.userDAO.GetByEmail(req.Email)
 	if err != nil {

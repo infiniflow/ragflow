@@ -19,24 +19,28 @@ package main
 import (
 	"flag"
 	"os"
+	"ragflow/internal/cache"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
 	"ragflow/internal/admin"
 	"ragflow/internal/dao"
+	"ragflow/internal/handler"
 	"ragflow/internal/logger"
 	"ragflow/internal/server"
+	"ragflow/internal/service"
 	"ragflow/internal/utility"
 )
 
 // AdminServer admin server
 type AdminServer struct {
-	router  *admin.Router
-	handler *admin.Handler
-	service *admin.Service
-	engine  *gin.Engine
-	port    string
+	router      *admin.Router
+	handler     *admin.Handler
+	service     *admin.Service
+	userHandler *handler.UserHandler
+	engine      *gin.Engine
+	port        string
 }
 
 // NewAdminServer create admin server
@@ -55,7 +59,9 @@ func (s *AdminServer) Init() error {
 	// Initialize layers
 	s.service = admin.NewService()
 	s.handler = admin.NewHandler(s.service)
-	s.router = admin.NewRouter(s.handler)
+	userService := service.NewUserService()
+	s.userHandler = handler.NewUserHandler(userService)
+	s.router = admin.NewRouter(s.handler, s.userHandler)
 
 	// Setup routes
 	s.router.Setup(s.engine)
@@ -85,19 +91,46 @@ func main() {
 		os.Exit(1)
 	}
 
+	cfg := server.GetConfig()
+
+	// Reinitialize logger with configured level if different
+	if cfg.Log.Level != "" && cfg.Log.Level != "info" {
+		if err := logger.Init(cfg.Log.Level); err != nil {
+			logger.Error("Failed to reinitialize logger with configured level", err)
+		}
+	}
+
 	// Set logger for server package
 	server.SetLogger(logger.Logger)
 
-	cfg := server.GetConfig()
-	logger.Info("Configuration loaded",
-		zap.String("database_host", cfg.Database.Host),
-		zap.Int("database_port", cfg.Database.Port),
-	)
+	logger.Info("Server mode", zap.String("mode", cfg.Server.Mode))
+
+	// Print all configuration settings
+	server.PrintAll()
+
+	// Set Gin mode
+	if cfg.Server.Mode == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	} else {
+		gin.SetMode(gin.DebugMode)
+	}
 
 	// Initialize database
 	if err := dao.InitDB(); err != nil {
 		logger.Error("Failed to initialize database", err)
 		os.Exit(1)
+	}
+
+	// Initialize Redis cache
+	if err := cache.Init(&cfg.Redis); err != nil {
+		logger.Fatal("Failed to initialize Redis", zap.Error(err))
+	}
+	defer cache.Close()
+
+	// Initialize server variables (runtime variables that can change during operation)
+	// This must be done after Cache is initialized
+	if err := server.InitVariables(cache.Get()); err != nil {
+		logger.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
 	// Create and start admin server (port 9381)
@@ -117,9 +150,6 @@ func main() {
 
 	// Print RAGFlow version
 	logger.Info("RAGFlow version", zap.String("version", utility.GetRAGFlowVersion()))
-
-	// Print all configuration settings
-	server.PrintAll()
 
 	logger.Info("Starting RAGFlow Admin Server", zap.String("port", "9381"))
 	if err := adminServer.Run(); err != nil {
