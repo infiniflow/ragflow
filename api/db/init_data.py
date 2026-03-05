@@ -95,7 +95,7 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
     if tenant["llm_id"]:
         chat_model_config = get_tenant_default_model_by_type(tenant["id"], LLMType.CHAT)
         chat_mdl = LLMBundle(tenant["id"], chat_model_config)
-        msg = asyncio.run(chat_mdl.async_chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={}))
+        msg, _ = asyncio.run(chat_mdl.async_chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={}))
         if msg.find("ERROR: ") == 0:
             logging.error("'{}' doesn't work. {}".format( tenant["llm_id"], msg))
 
