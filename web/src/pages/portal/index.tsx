@@ -14,6 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { AudioButton } from '@/components/ui/audio-button';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -39,7 +40,6 @@ import {
   Clock,
   Loader2,
   MessageSquare,
-  Mic,
   Send,
   Trash2,
 } from 'lucide-react';
@@ -554,6 +554,16 @@ export default function PortalPage() {
     }
   };
 
+  const handleVoiceInput = useCallback((transcript: string) => {
+    setInputValue(transcript);
+    // 自动发送语音识别的文本
+    setTimeout(() => {
+      if (transcript.trim()) {
+        handleSendMessage();
+      }
+    }, 100);
+  }, []);
+
   return (
     <div className="h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 flex overflow-hidden">
       <TooltipProvider>
@@ -785,15 +795,10 @@ export default function PortalPage() {
                           className="p-5 pr-24 min-h-[140px] max-h-[300px] !text-lg rounded-xl shadow-sm !border-2 !border-blue-200 focus-visible:!border-blue-400 focus-visible:!ring-2 focus-visible:!ring-blue-200 resize-none leading-relaxed"
                           rows={4}
                         />
-                        <div className="absolute right-2 bottom-2 flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 w-8 p-0"
-                            disabled={isLoading}
-                          >
-                            <Mic className="size-4" />
-                          </Button>
+                        <div className="absolute right-2 bottom-2 flex gap-1 items-center">
+                          <div className="flex items-center justify-center h-8 w-8">
+                            <AudioButton onOk={handleVoiceInput} />
+                          </div>
                           {isLoading ? (
                             <Button
                               size="sm"
@@ -886,14 +891,10 @@ export default function PortalPage() {
                             className="w-full p-5 pr-24 min-h-[140px] max-h-[300px] !text-lg rounded-2xl shadow-xl border-2 border-white/50 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm focus:border-white focus:ring-2 focus:ring-white/50 transition-all resize-none leading-relaxed text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
                             rows={4}
                           />
-                          <div className="absolute right-3 bottom-3 flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-12 w-12 p-0 rounded-full hover:bg-blue-50"
-                            >
-                              <Mic className="size-5 text-blue-600" />
-                            </Button>
+                          <div className="absolute right-3 bottom-3 flex gap-2 items-center">
+                            <div className="flex items-center justify-center h-12 w-12 rounded-full hover:bg-blue-50">
+                              <AudioButton onOk={handleVoiceInput} />
+                            </div>
                             <Button
                               size="sm"
                               onClick={handleSendMessage}

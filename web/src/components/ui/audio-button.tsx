@@ -5,8 +5,9 @@ import { Authorization } from '@/constants/authorization';
 import { cn } from '@/lib/utils';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
-import { Loader2, Mic, Square } from 'lucide-react';
+import { AlertCircle, Loader2, Mic, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { useIsDarkTheme } from '../theme-provider';
 import { Input } from './input';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
@@ -200,8 +201,10 @@ const VoiceInputBox = ({
 };
 export const AudioButton = ({
   onOk,
+  enableKeyboardShortcut = true,
 }: {
   onOk?: (transcript: string) => void;
+  enableKeyboardShortcut?: boolean;
 }) => {
   // const [showInputBox, setShowInputBox] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -209,8 +212,63 @@ export const AudioButton = ({
   const [recordingTime, setRecordingTime] = useState(0);
   const [transcript, setTranscript] = useState('');
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const recorderControls = useAudioRecorder();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Check microphone permission on mount
+  useEffect(() => {
+    const checkPermission = async () => {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          setHasPermission(false);
+          return;
+        }
+
+        // Try to get permission status
+        if (navigator.permissions && navigator.permissions.query) {
+          const permissionStatus = await navigator.permissions.query({
+            name: 'microphone' as PermissionName,
+          });
+          setHasPermission(permissionStatus.state === 'granted');
+
+          permissionStatus.onchange = () => {
+            setHasPermission(permissionStatus.state === 'granted');
+          };
+        }
+      } catch (error) {
+        console.log('Permission check not supported:', error);
+        // Permission API not supported, will check on first use
+        setHasPermission(null);
+      }
+    };
+
+    checkPermission();
+  }, []);
+
+  // Keyboard shortcut handler
+  useEffect(() => {
+    if (!enableKeyboardShortcut) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + M to toggle recording
+      if ((e.ctrlKey || e.metaKey) && e.key === 'm') {
+        e.preventDefault();
+        if (isProcessing) return;
+
+        if (isRecording) {
+          stopRecording();
+        } else {
+          startRecording();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isRecording, isProcessing, enableKeyboardShortcut]);
   // Handle logic after recording is complete
   const handleRecordingComplete = async (blob: Blob) => {
     setIsRecording(false);
@@ -255,36 +313,93 @@ export const AudioButton = ({
       // }
 
       console.log('Response:', response);
-      const { data, code } = await response.json();
+      const { data, code, message } = await response.json();
       if (code === 0 && data && data.text) {
         setTranscript(data.text);
         console.log('Transcript:', data.text);
         onOk?.(data.text);
+        //toast.success('语音识别成功');
+      } else {
+        toast.error('语音识别失败', {
+          description: message || '请重试',
+          duration: 5000,
+        });
       }
       setPopoverOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to process audio:', error);
-      // setTranscript(t('voiceRecorder.processingError'));
+      toast.error('语音处理失败', {
+        description: error.message || '请检查网络连接或稍后重试',
+        duration: 5000,
+      });
     } finally {
       setIsProcessing(false);
     }
   };
 
   //  Start recording
-  const startRecording = () => {
-    recorderControls.startRecording();
-    setIsRecording(true);
-    // setShowInputBox(true);
-    setPopoverOpen(true);
-    setRecordingTime(0);
+  const startRecording = async () => {
+    try {
+      // Check if browser supports getUserMedia
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        toast.error('您的浏览器不支持录音功能', {
+          description: '请使用最新版本的 Chrome、Firefox 或 Edge 浏览器',
+          duration: 5000,
+        });
+        return;
+      }
 
-    // Start timing
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
+      // Request microphone permission
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+        setHasPermission(true);
+      } catch (error: any) {
+        setHasPermission(false);
+
+        if (
+          error.name === 'NotFoundError' ||
+          error.name === 'DevicesNotFoundError'
+        ) {
+          toast.error('未检测到麦克风设备', {
+            description: '请确保您的设备已连接麦克风',
+            duration: 5000,
+          });
+        } else if (
+          error.name === 'NotAllowedError' ||
+          error.name === 'PermissionDeniedError'
+        ) {
+          toast.error('麦克风权限被拒绝', {
+            description: '请在浏览器设置中允许访问麦克风',
+            duration: 5000,
+          });
+        } else {
+          toast.error('无法访问麦克风', {
+            description: error.message || '请检查麦克风设置',
+            duration: 5000,
+          });
+        }
+        return;
+      }
+
+      recorderControls.startRecording();
+      setIsRecording(true);
+      setPopoverOpen(true);
+      setRecordingTime(0);
+
+      // Start timing
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      intervalRef.current = setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } catch (error) {
+      console.error('Failed to start recording:', error);
+      toast.error('启动录音失败', {
+        description: '请重试或检查麦克风设置',
+        duration: 5000,
+      });
     }
-    intervalRef.current = setInterval(() => {
-      setRecordingTime((prev) => prev + 1);
-    }, 1000);
   };
 
   // Stop recording
@@ -314,6 +429,27 @@ export const AudioButton = ({
       }
     };
   }, []);
+
+  // Show warning icon if no permission
+  const showWarning = hasPermission === false;
+
+  // Show keyboard shortcut hint
+  const [showShortcutHint, setShowShortcutHint] = useState(false);
+
+  useEffect(() => {
+    if (!enableKeyboardShortcut) return;
+
+    // Show hint for first-time users
+    const hasSeenHint = localStorage.getItem('audio-shortcut-hint-seen');
+    if (!hasSeenHint) {
+      setShowShortcutHint(true);
+      setTimeout(() => {
+        setShowShortcutHint(false);
+        localStorage.setItem('audio-shortcut-hint-seen', 'true');
+      }, 5000);
+    }
+  }, [enableKeyboardShortcut]);
+
   return (
     <div>
       {false && (
@@ -361,7 +497,7 @@ export const AudioButton = ({
         </div>
       )}
 
-      <div className=" relative w-6 h-6 flex items-center justify-center">
+      <div className="relative w-6 h-6 flex items-center justify-center">
         {isRecording && (
           <div
             className={cn(
@@ -375,15 +511,20 @@ export const AudioButton = ({
         {isRecording && (
           <div className="absolute inset-0 rounded-full border-2 border-state-success animate-ping opacity-75"></div>
         )}
+        {showWarning && !isRecording && (
+          <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full flex items-center justify-center">
+            <AlertCircle size={10} className="text-white" />
+          </div>
+        )}
+        {showShortcutHint && enableKeyboardShortcut && !isRecording && (
+          <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50 animate-in fade-in slide-in-from-bottom-2">
+            按 Ctrl+M
+            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45"></div>
+          </div>
+        )}
         <Button
           variant="outline"
           size="sm"
-          // onMouseDown={() => {
-          //   startRecording();
-          // }}
-          // onMouseUp={() => {
-          //   stopRecording();
-          // }}
           onClick={() => {
             if (isRecording) {
               stopRecording();
@@ -395,16 +536,21 @@ export const AudioButton = ({
             isRecording
               ? 'animate-pulse bg-state-success-5 text-state-success'
               : ''
-          }`}
+          } ${showWarning ? 'text-red-500' : ''}`}
           disabled={isProcessing}
+          title={
+            showWarning
+              ? '麦克风权限未授予'
+              : enableKeyboardShortcut
+                ? '点击或按 Ctrl+M 开始录音'
+                : '点击开始录音'
+          }
         >
           {isProcessing ? (
-            <Loader2 size={16} className=" animate-spin" />
+            <Loader2 size={16} className="animate-spin" />
           ) : isRecording ? (
             <></>
           ) : (
-            // <Mic size={16} className="text-text-primary" />
-            // <Square size={12} className="text-text-primary" />
             <Mic size={16} />
           )}
         </Button>
