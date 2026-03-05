@@ -13,10 +13,15 @@ interface EditTagsProps {
   value?: string[];
   onChange?: (tags: string[]) => void;
   disabled?: boolean;
+  addButtonTestId?: string;
+  inputTestId?: string;
 }
 
 const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
-  function EditTag({ value = [], onChange, disabled }, ref) {
+  function EditTag(
+    { value = [], onChange, disabled, addButtonTestId, inputTestId },
+    ref,
+  ) {
     const [inputVisible, setInputVisible] = useState(false);
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
@@ -92,6 +97,7 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
             onChange={handleInputChange}
             onBlur={handleInputConfirm}
             disabled={disabled}
+            data-testid={inputTestId}
             onKeyDown={(e) => {
               if (e?.key === 'Enter') {
                 handleInputConfirm();
@@ -107,6 +113,7 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
               className="w-fit flex items-center justify-center gap-2 bg-bg-card border-border-button border"
               onClick={showInput}
               disabled={disabled}
+              data-testid={addButtonTestId}
             >
               <PlusOutlined />
             </Button>

@@ -802,6 +802,47 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         table_name = base_table
         logging.debug(f"use_sql: Using ES/OS table name: {table_name}")
 
+    expected_doc_name_column = "docnm" if doc_engine == "infinity" else "docnm_kwd"
+
+    def has_source_columns(columns):
+        normalized_names = {str(col.get("name", "")).lower() for col in columns}
+        return "doc_id" in normalized_names and bool({"docnm_kwd", "docnm"} & normalized_names)
+
+    def is_aggregate_sql(sql_text):
+        return bool(re.search(r"(count|sum|avg|max|min|distinct)\s*\(", (sql_text or "").lower()))
+
+    def normalize_sql(sql):
+        logging.debug(f"use_sql: Raw SQL from LLM: {repr(sql[:500])}")
+        # Remove think blocks if present (format: </think>...)
+        sql = re.sub(r"</think>\n.*?\n\s*", "", sql, flags=re.DOTALL)
+        sql = re.sub(r"思考\n.*?\n", "", sql, flags=re.DOTALL)
+        # Remove markdown code blocks (```sql ... ```)
+        sql = re.sub(r"```(?:sql)?\s*", "", sql, flags=re.IGNORECASE)
+        sql = re.sub(r"```\s*$", "", sql, flags=re.IGNORECASE)
+        # Remove trailing semicolon that ES SQL parser doesn't like
+        return sql.rstrip().rstrip(';').strip()
+
+    def add_kb_filter(sql):
+        # Add kb_id filter for ES/OS only (Infinity already has it in table name)
+        if doc_engine == "infinity" or not kb_ids:
+            return sql
+
+        # Build kb_filter: single KB or multiple KBs with OR
+        if len(kb_ids) == 1:
+            kb_filter = f"kb_id = '{kb_ids[0]}'"
+        else:
+            kb_filter = "(" + " OR ".join([f"kb_id = '{kb_id}'" for kb_id in kb_ids]) + ")"
+
+        if "where " not in sql.lower():
+            o = sql.lower().split("order by")
+            if len(o) > 1:
+                sql = o[0] + f" WHERE {kb_filter}  order by " + o[1]
+            else:
+                sql += f" WHERE {kb_filter}"
+        elif "kb_id =" not in sql.lower() and "kb_id=" not in sql.lower():
+            sql = re.sub(r"\bwhere\b ", f"where {kb_filter} and ", sql, flags=re.IGNORECASE)
+        return sql
+
     def is_row_count_question(q: str) -> bool:
         q = (q or "").lower()
         if not re.search(r"\bhow many rows\b|\bnumber of rows\b|\brow count\b", q):
@@ -905,38 +946,15 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
 
     tried_times = 0
 
-    async def get_table():
+    async def get_table(custom_user_prompt=None):
         nonlocal sys_prompt, user_prompt, question, tried_times, row_count_override
-        if row_count_override:
+        if row_count_override and custom_user_prompt is None:
             sql = row_count_override
         else:
-            sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
-        logging.debug(f"use_sql: Raw SQL from LLM: {repr(sql[:500])}")
-        # Remove think blocks if present (format: </think>...)
-        sql = re.sub(r"</think>\n.*?\n\s*", "", sql, flags=re.DOTALL)
-        sql = re.sub(r"思考\n.*?\n", "", sql, flags=re.DOTALL)
-        # Remove markdown code blocks (```sql ... ```)
-        sql = re.sub(r"```(?:sql)?\s*", "", sql, flags=re.IGNORECASE)
-        sql = re.sub(r"```\s*$", "", sql, flags=re.IGNORECASE)
-        # Remove trailing semicolon that ES SQL parser doesn't like
-        sql = sql.rstrip().rstrip(';').strip()
-
-        # Add kb_id filter for ES/OS only (Infinity already has it in table name)
-        if doc_engine != "infinity" and kb_ids:
-            # Build kb_filter: single KB or multiple KBs with OR
-            if len(kb_ids) == 1:
-                kb_filter = f"kb_id = '{kb_ids[0]}'"
-            else:
-                kb_filter = "(" + " OR ".join([f"kb_id = '{kb_id}'" for kb_id in kb_ids]) + ")"
-
-            if "where " not in sql.lower():
-                o = sql.lower().split("order by")
-                if len(o) > 1:
-                    sql = o[0] + f" WHERE {kb_filter}  order by " + o[1]
-                else:
-                    sql += f" WHERE {kb_filter}"
-            elif "kb_id =" not in sql.lower() and "kb_id=" not in sql.lower():
-                sql = re.sub(r"\bwhere\b ", f"where {kb_filter} and ", sql, flags=re.IGNORECASE)
+            prompt = custom_user_prompt if custom_user_prompt is not None else user_prompt
+            sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": prompt}], {"temperature": 0.06})
+        sql = normalize_sql(sql)
+        sql = add_kb_filter(sql)
 
         logging.debug(f"{question} get SQL(refined): {sql}")
         tried_times += 1
@@ -947,6 +965,46 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
             return None, sql
         logging.debug(f"use_sql: SQL retrieval completed, got {len(tbl.get('rows', []))} rows")
         return tbl, sql
+
+    async def repair_table_for_missing_source_columns(previous_sql):
+        if doc_engine in ("infinity", "oceanbase"):
+            json_field_names = list(field_map.keys())
+            repair_prompt = """Table name: {};
+JSON fields available in 'chunk_data' column (use exact names):
+{}
+
+Question: {}
+Previous SQL:
+{}
+
+The previous SQL result is missing required source columns for citations.
+Rewrite SQL to keep the same query intent and include doc_id and {} in the SELECT list.
+For extracted JSON fields, use json_extract_string(chunk_data, '$.field_name').
+Return ONLY SQL.""".format(
+                table_name,
+                "\n".join([f"  - {field}" for field in json_field_names]),
+                question,
+                previous_sql,
+                expected_doc_name_column
+            )
+        else:
+            repair_prompt = """Table name: {}
+Available fields:
+{}
+
+Question: {}
+Previous SQL:
+{}
+
+The previous SQL result is missing required source columns for citations.
+Rewrite SQL to keep the same query intent and include doc_id and docnm_kwd in the SELECT list.
+Return ONLY SQL.""".format(
+                table_name,
+                "\n".join([f"  - {k} ({v})" for k, v in field_map.items()]),
+                question,
+                previous_sql
+            )
+        return await get_table(custom_user_prompt=repair_prompt)
 
     try:
         tbl, sql = await get_table()
@@ -1000,6 +1058,22 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
     if len(tbl["rows"]) == 0:
         logging.warning(f"use_sql: No rows returned from SQL query, returning None. SQL: {sql}")
         return None
+
+    if not is_aggregate_sql(sql) and not has_source_columns(tbl.get("columns", [])):
+        logging.warning(f"use_sql: Non-aggregate SQL missing required source columns; retrying once. SQL: {sql}")
+        try:
+            repaired_tbl, repaired_sql = await repair_table_for_missing_source_columns(sql)
+            if (
+                repaired_tbl
+                and len(repaired_tbl.get("rows", [])) > 0
+                and has_source_columns(repaired_tbl.get("columns", []))
+            ):
+                tbl, sql = repaired_tbl, repaired_sql
+                logging.info(f"use_sql: Source-column SQL repair succeeded. SQL: {sql}")
+            else:
+                logging.warning(f"use_sql: Source-column SQL repair did not provide required columns. Repaired SQL: {repaired_sql}")
+        except Exception as e:
+            logging.warning(f"use_sql: Source-column SQL repair failed, returning best-effort answer. Error: {e}")
 
     logging.debug(f"use_sql: Proceeding with {len(tbl['rows'])} rows to build answer")
 
@@ -1096,7 +1170,7 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
         logging.warning(f"use_sql: SQL missing required doc_id or docnm_kwd field. docid_idx={docid_idx}, doc_name_idx={doc_name_idx}. SQL: {sql}")
         # For aggregate queries (COUNT, SUM, AVG, MAX, MIN, DISTINCT), fetch doc_id, docnm_kwd separately
         # to provide source chunks, but keep the original table format answer
-        if re.search(r"(count|sum|avg|max|min|distinct)\s*\(", sql.lower()):
+        if is_aggregate_sql(sql):
             # Keep original table format as answer
             answer = "\n".join([columns, line, rows])
 

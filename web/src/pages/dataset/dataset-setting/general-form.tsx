@@ -42,7 +42,10 @@ export function GeneralForm() {
                 {t('common.name')}
               </FormLabel>
               <FormControl className="w-3/4">
-                <Input {...field}></Input>
+                <Input
+                  {...field}
+                  data-testid="ds-settings-basic-name-input"
+                ></Input>
               </FormControl>
             </div>
             <div className="flex pt-1">
@@ -61,6 +64,7 @@ export function GeneralForm() {
           <SelectWithSearch
             options={languageOptions}
             triggerClassName="w-full"
+            testId="ds-settings-basic-language-select"
           ></SelectWithSearch>
         </RAGFlowFormItem>
       </div>
@@ -74,7 +78,12 @@ export function GeneralForm() {
                 {t('setting.avatar')}
               </FormLabel>
               <FormControl className="w-3/4">
-                <AvatarUpload {...field}></AvatarUpload>
+                <AvatarUpload
+                  {...field}
+                  uploadInputTestId="ds-settings-basic-avatar-upload"
+                  cropModalTestId="ds-settings-basic-avatar-crop-modal"
+                  cropModalOkButtonTestId="ds-settings-basic-avatar-crop-confirm-btn"
+                ></AvatarUpload>
               </FormControl>
             </div>
             <div className="flex pt-1">
@@ -99,7 +108,10 @@ export function GeneralForm() {
                   {t('flow.description')}
                 </FormLabel>
                 <FormControl className="w-3/4">
-                  <Input {...field}></Input>
+                  <Input
+                    {...field}
+                    data-testid="ds-settings-basic-description-input"
+                  ></Input>
                 </FormControl>
               </div>
               <div className="flex pt-1">
