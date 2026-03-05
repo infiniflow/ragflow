@@ -20,10 +20,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"ragflow/internal/cache"
 	"ragflow/internal/dao"
 	"ragflow/internal/model"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
+	"time"
 )
 
 // Service admin service layer
@@ -336,21 +339,67 @@ func (s *Service) GetServiceDetails(configDict map[string]interface{}) (map[stri
 
 // getMySQLStatus gets MySQL service status
 func (s *Service) getMySQLStatus(name string) (map[string]interface{}, error) {
-	// TODO: Implement actual MySQL health check
+	startTime := time.Now()
+
+	// Check basic connectivity with SELECT 1
+	sqlDB, err := dao.DB.DB()
+	if err != nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "timeout",
+			"elapsed":      fmt.Sprintf("%.1f", time.Since(startTime).Milliseconds()),
+			"message":      err.Error(),
+		}, nil
+	}
+
+	// Execute SELECT 1 to check connectivity
+	_, err = sqlDB.Exec("SELECT 1")
+	if err != nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "timeout",
+			"elapsed":      fmt.Sprintf("%.1f", time.Since(startTime).Milliseconds()),
+			"message":      err.Error(),
+		}, nil
+	}
+
 	return map[string]interface{}{
 		"service_name": name,
-		"status":       "unknown",
-		"message":      "Mysql health check not implemented",
+		"status":       "alive",
+		"elapsed":      fmt.Sprintf("%.1f", time.Since(startTime).Milliseconds()),
+		"message":      "MySQL connection successful",
 	}, nil
 }
 
 // getRedisInfo gets Redis service info
 func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
-	// TODO: Implement actual Redis health check
+	startTime := time.Now()
+
+	redisClient := cache.Get()
+	if redisClient == nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "timeout",
+			"elapsed":      fmt.Sprintf("%.1f", time.Since(startTime).Milliseconds()),
+			"error":        "Redis client not initialized",
+		}, nil
+	}
+
+	// Check health
+	if !redisClient.Health() {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "timeout",
+			"elapsed":      fmt.Sprintf("%.1f", time.Since(startTime).Milliseconds()),
+			"error":        "Redis health check failed",
+		}, nil
+	}
+
 	return map[string]interface{}{
 		"service_name": name,
-		"status":       "unknown",
-		"message":      "Redis health check not implemented",
+		"status":       "alive",
+		"elapsed":      fmt.Sprintf("%.1f", time.Since(startTime).Milliseconds()),
+		"message":      "Redis connection successful",
 	}, nil
 }
 
