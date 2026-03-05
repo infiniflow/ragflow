@@ -3,7 +3,7 @@ import { Toaster } from '@/components/ui/toaster';
 import i18n, { changeLanguageAsync } from '@/locales/config';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { configResponsive } from 'ahooks';
-import { App, ConfigProvider, ConfigProviderProps, theme } from 'antd';
+import { ConfigProvider, ConfigProviderProps, theme } from 'antd';
 import pt_BR from 'antd/lib/locale/pt_BR';
 import arEG from 'antd/locale/ar_EG';
 import deDE from 'antd/locale/de_DE';
@@ -22,7 +22,6 @@ import weekday from 'dayjs/plugin/weekday';
 import React, { useEffect, useState } from 'react';
 import { RouterProvider } from 'react-router';
 import { ThemeProvider, useTheme } from './components/theme-provider';
-import { SidebarProvider } from './components/ui/sidebar';
 import { TooltipProvider } from './components/ui/tooltip';
 import { ThemeEnum } from './constants/common';
 import { routers } from './routes';
@@ -125,10 +124,10 @@ function Root({ children }: React.PropsWithChildren) {
         }}
         locale={locale}
       >
-        <SidebarProvider className="h-full">
-          <App className="w-full h-dvh relative">{children}</App>
-        </SidebarProvider>
-        <Sonner position={'top-right'} expand richColors closeButton></Sonner>
+        {children}
+
+        <Sonner position="top-right" expand richColors closeButton />
+
         <Toaster />
       </ConfigProvider>
     </>

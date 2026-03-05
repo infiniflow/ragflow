@@ -137,9 +137,6 @@ export default function Dataset() {
 
   return (
     <>
-      <div className="absolute top-4 right-5">
-        <Generate disabled={!(dataSetData.chunk_num > 0)} />
-      </div>
       <section className="p-5 min-w-[880px]">
         <ListFilterBar
           title={t('header.dataset')}
@@ -158,6 +155,7 @@ export default function Dataset() {
               </div>
             </div>
           }
+          preChildren={<Generate disabled={!(dataSetData.chunk_num > 0)} />}
           // preChildren={
           //   <Button
           //     variant={'ghost'}
