@@ -51,11 +51,19 @@ class _DummyTenantLLMModel:
     llm_factory = _ExprField("llm_factory")
     llm_name = _ExprField("llm_name")
 
+    def __init__(self, id=None, **kwargs):
+        self.id = id
+        self.api_key = None
+        self.status = None
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
 
 class _TenantLLMRow:
     def __init__(
         self,
         *,
+        id,
         llm_name,
         llm_factory,
         model_type,
@@ -65,6 +73,7 @@ class _TenantLLMRow:
         api_base="",
         max_tokens=8192,
     ):
+        self.id = id
         self.llm_name = llm_name
         self.llm_factory = llm_factory
         self.model_type = model_type
@@ -76,6 +85,7 @@ class _TenantLLMRow:
 
     def to_dict(self):
         return {
+            "id": self.id,
             "llm_name": self.llm_name,
             "llm_factory": self.llm_factory,
             "model_type": self.model_type,
@@ -246,8 +256,8 @@ def test_list_app_grouping_availability_and_merge(monkeypatch):
     monkeypatch.setattr(module.TenantLLMService, "ensure_mineru_from_env", lambda tenant_id: ensure_calls.append(tenant_id))
 
     tenant_rows = [
-        _TenantLLMRow(llm_name="fast-emb", llm_factory="FastEmbed", model_type="embedding", api_key="k1", status="1"),
-        _TenantLLMRow(llm_name="tenant-only", llm_factory="CustomFactory", model_type="chat", api_key="k2", status="1"),
+        _TenantLLMRow(id=1, llm_name="fast-emb", llm_factory="FastEmbed", model_type="embedding", api_key="k1", status="1"),
+        _TenantLLMRow(id=2, llm_name="tenant-only", llm_factory="CustomFactory", model_type="chat", api_key="k2", status="1"),
     ]
     monkeypatch.setattr(module.TenantLLMService, "query", lambda **_kwargs: tenant_rows)
 
@@ -263,7 +273,7 @@ def test_list_app_grouping_availability_and_merge(monkeypatch):
     monkeypatch.setenv("TEI_MODEL", "tei-embed")
 
     res = _run(module.list_app())
-    assert res["code"] == 0
+    assert res["code"] == 0, res["message"]
     assert ensure_calls == ["tenant-1"]
 
     data = res["data"]
@@ -291,8 +301,8 @@ def test_list_app_model_type_filter(monkeypatch):
         module.TenantLLMService,
         "query",
         lambda **_kwargs: [
-            _TenantLLMRow(llm_name="fast-emb", llm_factory="FastEmbed", model_type="embedding", api_key="k1", status="1"),
-            _TenantLLMRow(llm_name="tenant-only", llm_factory="CustomFactory", model_type="chat", api_key="k2", status="1"),
+            _TenantLLMRow(id=1, llm_name="fast-emb", llm_factory="FastEmbed", model_type="embedding", api_key="k1", status="1"),
+            _TenantLLMRow(id=2, llm_name="tenant-only", llm_factory="CustomFactory", model_type="chat", api_key="k2", status="1"),
         ],
     )
     monkeypatch.setattr(
@@ -306,7 +316,7 @@ def test_list_app_model_type_filter(monkeypatch):
 
     monkeypatch.setattr(module, "request", SimpleNamespace(args={"model_type": "chat"}))
     res = _run(module.list_app())
-    assert res["code"] == 0
+    assert res["code"] == 0, res["message"]
     assert list(res["data"].keys()) == ["CustomFactory"]
     assert res["data"]["CustomFactory"][0]["model_type"] == "chat"
 
@@ -799,7 +809,7 @@ def test_add_llm_model_type_probe_and_persistence_matrix_unit(monkeypatch):
     monkeypatch.setattr(module.TenantLLMService, "filter_update", lambda _filters, _payload: False)
     monkeypatch.setattr(module.TenantLLMService, "save", lambda **kwargs: saved.append(kwargs) or True)
     res = _call({"llm_factory": "FChatPass", "llm_name": "m", "model_type": module.LLMType.CHAT.value, "api_key": "k"})
-    assert res["code"] == 0
+    assert res["code"] == 0, res["message"]
     assert res["data"] is True
     assert saved
     assert saved[0]["llm_factory"] == "FChatPass"
@@ -841,6 +851,7 @@ def test_my_llms_include_details_and_exception_unit(monkeypatch):
         "query",
         lambda **_kwargs: [
             _TenantLLMRow(
+                id=1,
                 llm_name="chat-model",
                 llm_factory="FactoryX",
                 model_type="chat",
