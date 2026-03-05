@@ -1,5 +1,5 @@
 ---
-sidebar_position: 4
+sidebar_position: 3
 slug: /enable_table_of_contents
 sidebar_custom_props: {
   categoryIcon: LucideTableOfContents
