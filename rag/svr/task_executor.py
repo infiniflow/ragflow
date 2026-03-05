@@ -1115,8 +1115,18 @@ async def process_risk_ai_task(task):
         if parser_type == "structured":
           try:
             parsed_json = json.loads(cleaned)
+            # Fill "相关制度" directly from RAG retrieval results
+            relevant_system_idx = structured_headers.index("相关制度") if "相关制度" in structured_headers else -1
+            if relevant_system_idx >= 0:
+              # Extract content from retrieved chunks
+              chunks_list = ranks.get("chunks", [])
+              relevant_content = "\n\n".join([c.get("content_with_weight", "") for c in chunks_list if c.get("content_with_weight")])
+              parsed_values[relevant_system_idx] = relevant_content
+            
+            # Fill other fields from LLM output
             for idx, key in enumerate(structured_headers):
-              parsed_values[idx] = str(parsed_json.get(key, "") or "")
+              if idx != relevant_system_idx:  # Skip "相关制度" as it's already filled
+                parsed_values[idx] = str(parsed_json.get(key, "") or "")
           except Exception:
             parsed_values[-1] = cleaned
         else:
@@ -1273,8 +1283,18 @@ async def process_risk_ai_row_task(task):
         if parser_type == "structured":
           try:
             parsed_json = json.loads(cleaned)
+            # Fill "相关制度" directly from RAG retrieval results
+            relevant_system_idx = structured_headers.index("相关制度") if "相关制度" in structured_headers else -1
+            if relevant_system_idx >= 0:
+              # Extract content from retrieved chunks
+              chunks_list = ranks.get("chunks", [])
+              relevant_content = "\n\n".join([c.get("content_with_weight", "") for c in chunks_list if c.get("content_with_weight")])
+              parsed_values[relevant_system_idx] = relevant_content
+            
+            # Fill other fields from LLM output
             for idx, key in enumerate(structured_headers):
-              parsed_values[idx] = str(parsed_json.get(key, "") or "")
+              if idx != relevant_system_idx:  # Skip "相关制度" as it's already filled
+                parsed_values[idx] = str(parsed_json.get(key, "") or "")
           except Exception:
             parsed_values[-1] = cleaned
         else:
