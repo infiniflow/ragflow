@@ -25,6 +25,7 @@ from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
 from configs import DEFAULT_PARSER_CONFIG
+from utils.engine_utils import get_doc_engine
 
 class TestRquest:
     @pytest.mark.p2
@@ -105,7 +106,7 @@ class TestDatasetUpdate:
         retrieved_dataset = client.get_dataset(name=dataset.name)
         assert retrieved_dataset.avatar == avatar_data, str(retrieved_dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_avatar_exceeds_limit_length(self, add_dataset_func):
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
@@ -148,7 +149,7 @@ class TestDatasetUpdate:
         retrieved_dataset = client.get_dataset(name=dataset.name)
         assert retrieved_dataset.description == "description", str(retrieved_dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_description_exceeds_limit_length(self, add_dataset_func):
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
@@ -235,7 +236,7 @@ class TestDatasetUpdate:
         retrieved_dataset = client.get_dataset(name=dataset.name)
         assert retrieved_dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(retrieved_dataset)
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "permission",
         [
@@ -332,6 +333,8 @@ class TestDatasetUpdate:
     @pytest.mark.p2
     @pytest.mark.parametrize("pagerank", [0, 50, 100], ids=["min", "mid", "max"])
     def test_pagerank(self, client, add_dataset_func, pagerank):
+        if get_doc_engine(client) == "infinity":
+            pytest.skip("#8208")
         dataset = add_dataset_func
         dataset.update({"pagerank": pagerank})
         assert dataset.pagerank == pagerank, str(dataset)
@@ -342,6 +345,8 @@ class TestDatasetUpdate:
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
     @pytest.mark.p2
     def test_pagerank_set_to_0(self, client, add_dataset_func):
+        if get_doc_engine(client) == "infinity":
+            pytest.skip("#8208")
         dataset = add_dataset_func
         dataset.update({"pagerank": 50})
         assert dataset.pagerank == 50, str(dataset)
@@ -358,6 +363,8 @@ class TestDatasetUpdate:
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") != "infinity", reason="#8208")
     @pytest.mark.p2
     def test_pagerank_infinity(self, client, add_dataset_func):
+        if get_doc_engine(client) != "infinity":
+            pytest.skip("#8208")
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"pagerank": 50})

@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 3
 slug: /launch_ragflow_from_source
 sidebar_custom_props: {
   categoryIcon: LucideMonitorPlay
@@ -90,7 +90,7 @@ docker compose -f docker/docker-compose-base.yml up -d
    ```
 
 3. **Optional:** If you cannot access HuggingFace, set the HF_ENDPOINT environment variable to use a mirror site:
- 
+
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
@@ -116,10 +116,10 @@ docker compose -f docker/docker-compose-base.yml up -d
    npm install
    ```
 
-2. Update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:
+2. Update `server.proxy.target` in **vite.config.ts** to `http://127.0.0.1:9380`:
 
    ```bash
-   vim .umirc.ts
+   vim vite.config.ts
    ```
 
 3. Start up the RAGFlow frontend service:

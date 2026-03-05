@@ -24,7 +24,7 @@ from utils.hypothesis_utils import valid_names
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
@@ -84,7 +84,7 @@ class TestMemoryUpdate:
         res_1 = memory_1.update(update_dict)
         assert res_1.name == "Test_Memory(1)", str(res_1)
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_avatar(self, client, tmp_path):
         memory_ids = self.memory_ids
         fn = create_image_file(tmp_path / "ragflow_test.png")
@@ -93,7 +93,7 @@ class TestMemoryUpdate:
         res = memory.update(update_dict)
         assert res.avatar == f"data:image/png;base64,{encode_avatar(fn)}", str(res)
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_description(self, client):
         memory_ids = self.memory_ids
         description = "This is a test description."
@@ -111,7 +111,7 @@ class TestMemoryUpdate:
         res = memory.update(update_dict)
         assert res.llm_id == llm_id, str(res)
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "permission",
         [

@@ -59,6 +59,30 @@
       "source": "variable",
       "data_type": "string",
       "value": ""
+    },
+    {
+      "name": "sandbox.provider_type",
+      "source": "variable",
+      "data_type": "string",
+      "value": "self_managed"
+    },
+    {
+      "name": "sandbox.self_managed",
+      "source": "variable",
+      "data_type": "json",
+      "value": "{\"endpoint\": \"http://localhost:9385\", \"timeout\": 30, \"max_retries\": 3, \"pool_size\": 10}"
+    },
+    {
+      "name": "sandbox.aliyun_codeinterpreter",
+      "source": "variable",
+      "data_type": "json",
+      "value": "{}"
+    },
+    {
+      "name": "sandbox.e2b",
+      "source": "variable",
+      "data_type": "json",
+      "value": "{}"
     }
   ]
 }

@@ -25,6 +25,7 @@ from api.db import InputType
 from api.db.db_models import Connector, SyncLogs, Connector2Kb, Knowledgebase
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
+from api.db.services.document_service import DocMetadataService
 from common.misc_utils import get_uuid
 from common.constants import TaskStatus
 from common.time_utils import current_timestamp, timestamp_to_date
@@ -227,7 +228,7 @@ class SyncLogsService(CommonService):
             
             # Set metadata if available for this document
             if doc["name"] in metadata_map:
-                DocumentService.update_by_id(doc["id"], {"meta_fields": metadata_map[doc["name"]]})
+                DocMetadataService.update_document_metadata(doc["id"], metadata_map[doc["name"]])
             
             if not auto_parse or auto_parse == "0":
                 continue

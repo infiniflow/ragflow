@@ -1,21 +1,23 @@
 import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
-import {
-  DocumentApiAction,
-  useSetDocumentMeta,
-} from '@/hooks/use-document-request';
+import { useSelectedIds } from '@/hooks/logic-hooks/use-row-selection';
+import { DocumentApiAction } from '@/hooks/use-document-request';
 import kbService, {
   getMetaDataService,
   updateMetaData,
 } from '@/services/knowledge-service';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { TFunction } from 'i18next';
-import { useCallback, useEffect, useState } from 'react';
+import { RowSelectionState } from '@tanstack/react-table';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import {
+  DEFAULT_VALUE_TYPE,
+  MetadataType,
+  metadataValueTypeEnum,
+} from '../constant';
+import {
   IBuiltInMetadataItem,
-  IMetaDataJsonSchemaProperty,
   IMetaDataReturnJSONSettings,
   IMetaDataReturnJSONType,
   IMetaDataReturnType,
@@ -23,152 +25,39 @@ import {
   MetadataOperations,
   MetadataValueType,
   ShowManageMetadataModalProps,
+  UpdateOperation,
 } from '../interface';
-export enum MetadataType {
-  Manage = 1,
-  UpdateSingle = 2,
-  Setting = 3,
-  SingleFileSetting = 4,
-}
-
-export const MetadataDeleteMap = (
-  t: TFunction<'translation', undefined>,
-): Record<
-  MetadataType,
-  {
-    title: string;
-    warnFieldText: string;
-    warnValueText: string;
-    warnFieldName: string;
-    warnValueName: string;
-  }
-> => {
-  return {
-    [MetadataType.Manage]: {
-      title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
-      warnFieldText: t('knowledgeDetails.metadata.deleteManageFieldAllWarn'),
-      warnValueText: t('knowledgeDetails.metadata.deleteManageValueAllWarn'),
-      warnFieldName: t('knowledgeDetails.metadata.fieldNameExists'),
-      warnValueName: t('knowledgeDetails.metadata.valueExists'),
-    },
-    [MetadataType.Setting]: {
-      title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
-      warnFieldText: t('knowledgeDetails.metadata.deleteSettingFieldWarn'),
-      warnValueText: t('knowledgeDetails.metadata.deleteSettingValueWarn'),
-      warnFieldName: t('knowledgeDetails.metadata.fieldExists'),
-      warnValueName: t('knowledgeDetails.metadata.valueExists'),
-    },
-    [MetadataType.UpdateSingle]: {
-      title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
-      warnFieldText: t('knowledgeDetails.metadata.deleteManageFieldSingleWarn'),
-      warnValueText: t('knowledgeDetails.metadata.deleteManageValueSingleWarn'),
-      warnFieldName: t('knowledgeDetails.metadata.fieldSingleNameExists'),
-      warnValueName: t('knowledgeDetails.metadata.valueSingleExists'),
-    },
-    [MetadataType.SingleFileSetting]: {
-      title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
-      warnFieldText: t('knowledgeDetails.metadata.deleteSettingFieldWarn'),
-      warnValueText: t('knowledgeDetails.metadata.deleteSettingValueWarn'),
-      warnFieldName: t('knowledgeDetails.metadata.fieldExists'),
-      warnValueName: t('knowledgeDetails.metadata.valueSingleExists'),
-    },
-  };
-};
-
-const DEFAULT_VALUE_TYPE: MetadataValueType = 'string';
-const VALUE_TYPES_WITH_ENUM = new Set<MetadataValueType>(['enum']);
-const VALUE_TYPE_LABELS: Record<MetadataValueType, string> = {
-  string: 'String',
-  bool: 'Bool',
-  enum: 'Enum',
-  time: 'Time',
-  int: 'Int',
-  float: 'Float',
-};
-
-export const metadataValueTypeOptions = Object.entries(VALUE_TYPE_LABELS).map(
-  ([value, label]) => ({ label, value }),
-);
-
-export const getMetadataValueTypeLabel = (value?: MetadataValueType) =>
-  VALUE_TYPE_LABELS[value || DEFAULT_VALUE_TYPE] || VALUE_TYPE_LABELS.string;
-
-export const isMetadataValueTypeWithEnum = (value?: MetadataValueType) =>
-  VALUE_TYPES_WITH_ENUM.has(value || DEFAULT_VALUE_TYPE);
-
-const schemaToValueType = (
-  property?: IMetaDataJsonSchemaProperty,
-): MetadataValueType => {
-  if (!property) return DEFAULT_VALUE_TYPE;
-  if (
-    property.type === 'array' &&
-    property.items?.type === 'string' &&
-    (property.items.enum?.length || 0) > 0
-  ) {
-    return 'enum';
-  }
-  if (property.type === 'boolean') return 'bool';
-  if (property.type === 'integer') return 'int';
-  if (property.type === 'number') return 'float';
-  if (property.type === 'string' && property.format) {
-    return 'time';
-  }
-  if (property.type === 'string' && property.enum?.length) {
-    return 'enum';
-  }
-  return DEFAULT_VALUE_TYPE;
-};
-
-const valueTypeToSchema = (
-  valueType: MetadataValueType,
-  description: string,
-  values: string[],
-): IMetaDataJsonSchemaProperty => {
-  const schema: IMetaDataJsonSchemaProperty = {
-    description: description || '',
-  };
-
-  switch (valueType) {
-    case 'bool':
-      schema.type = 'boolean';
-      return schema;
-    case 'int':
-      schema.type = 'integer';
-      return schema;
-    case 'float':
-      schema.type = 'number';
-      return schema;
-    case 'time':
-      schema.type = 'string';
-      schema.format = 'date-time';
-      return schema;
-    case 'enum':
-      schema.type = 'string';
-      if (values?.length) {
-        schema.enum = values;
-      }
-      return schema;
-    case 'string':
-    default:
-      schema.type = 'string';
-      if (values?.length) {
-        schema.enum = values;
-      }
-      return schema;
-  }
-};
 
 export const util = {
   changeToMetaDataTableData(data: IMetaDataReturnType): IMetaDataTableData[] {
-    return Object.entries(data).map(([key, value]) => {
-      const values = value.map(([v]) => v.toString());
-      console.log('values', values);
-      return {
-        field: key,
-        description: '',
-        values: values,
-      } as IMetaDataTableData;
-    });
+    const res = Object.entries(data).map(
+      ([key, value]: [
+        string,
+        (
+          | { type: string; values: Array<Array<string | number>> }
+          | Array<Array<string | number>>
+        ),
+      ]) => {
+        if (Array.isArray(value)) {
+          const values = value.map(([v]) => v.toString());
+          return {
+            field: key,
+            valueType: DEFAULT_VALUE_TYPE,
+            description: '',
+            values: values,
+          } as IMetaDataTableData;
+        }
+        const { type, values } = value;
+        const valueArr = values.map(([v]) => v.toString());
+        return {
+          field: key,
+          valueType: type,
+          description: '',
+          values: valueArr,
+        } as IMetaDataTableData;
+      },
+    );
+    return res;
   },
 
   JSONToMetaDataTableData(
@@ -204,31 +93,13 @@ export const util = {
   tableDataToMetaDataSettingJSON(
     data: IMetaDataTableData[],
   ): IMetaDataReturnJSONSettings {
-    const properties = data.reduce<Record<string, IMetaDataJsonSchemaProperty>>(
-      (acc, item) => {
-        if (!item.field) {
-          return acc;
-        }
-        const valueType = item.valueType || DEFAULT_VALUE_TYPE;
-        const values =
-          isMetadataValueTypeWithEnum(valueType) && item.restrictDefinedValues
-            ? item.values
-            : [];
-        acc[item.field] = valueTypeToSchema(
-          valueType,
-          item.description,
-          values,
-        );
-        return acc;
-      },
-      {},
-    );
-
-    return {
-      type: 'object',
-      properties,
-      additionalProperties: false,
-    };
+    return data.map((item) => {
+      return {
+        key: item.field,
+        description: item.description,
+        enum: item.values,
+      };
+    });
   },
 
   metaDataSettingJSONToMetaDataTableData(
@@ -248,7 +119,7 @@ export const util = {
     }
     const properties = data.properties || {};
     return Object.entries(properties).map(([key, property]) => {
-      const valueType = schemaToValueType(property);
+      const valueType = 'string';
       const values = property.enum || property.items?.enum || [];
       return {
         field: key,
@@ -266,11 +137,19 @@ export const useMetadataOperations = () => {
     deletes: [],
     updates: [],
   });
+  // const operationsRef = useRef(operations);
 
   const addDeleteRow = useCallback((key: string) => {
     setOperations((prev) => ({
       ...prev,
       deletes: [...prev.deletes, { key }],
+    }));
+  }, []);
+
+  const addDeleteBatch = useCallback((keys: string[]) => {
+    setOperations((prev) => ({
+      ...prev,
+      deletes: [...prev.deletes, ...keys.map((key) => ({ key }))],
     }));
   }, []);
 
@@ -281,41 +160,67 @@ export const useMetadataOperations = () => {
     }));
   }, []);
 
-  // const addUpdateValue = useCallback(
-  //   (key: string, value: string | string[]) => {
-  //     setOperations((prev) => ({
-  //       ...prev,
-  //       updates: [...prev.updates, { key, value }],
-  //     }));
-  //   },
-  //   [],
-  // );
   const addUpdateValue = useCallback(
-    (key: string, originalValue: string, newValue: string) => {
+    (
+      key: string,
+      originalValue: string,
+      newValue: string | string[],
+      type?: MetadataValueType,
+    ) => {
+      let newValuesRes: string | string[];
+      if (type !== metadataValueTypeEnum['list']) {
+        if (Array.isArray(newValue) && newValue.length > 0) {
+          newValuesRes = newValue[0];
+        } else {
+          newValuesRes = newValue;
+        }
+      } else {
+        newValuesRes = newValue;
+      }
       setOperations((prev) => {
+        let updatedUpdates = [...prev.updates];
         const existsIndex = prev.updates.findIndex(
-          (update) => update.key === key && update.match === originalValue,
+          (update) =>
+            update.key === key &&
+            update.match === originalValue &&
+            update.match !== '',
         );
-
         if (existsIndex > -1) {
-          const updatedUpdates = [...prev.updates];
           updatedUpdates[existsIndex] = {
             key,
             match: originalValue,
-            value: newValue,
+            value: newValuesRes,
+            valueType: type || DEFAULT_VALUE_TYPE,
           };
-          return {
-            ...prev,
-            updates: updatedUpdates,
-          };
+
+          // operationsRef.current = updatedOperations;
+        } else {
+          updatedUpdates.push({
+            key,
+            match: originalValue,
+            value: newValuesRes,
+            valueType: type,
+          });
         }
-        return {
+        updatedUpdates = updatedUpdates.reduce((pre, cur) => {
+          if (
+            !pre.some(
+              (item) =>
+                item.key === cur.key &&
+                item.match === cur.match &&
+                item.value === cur.value,
+            )
+          ) {
+            pre.push(cur);
+          }
+          return pre;
+        }, [] as UpdateOperation[]);
+
+        const updatedOperations = {
           ...prev,
-          updates: [
-            ...prev.updates,
-            { key, match: originalValue, value: newValue },
-          ],
+          updates: updatedUpdates,
         };
+        return updatedOperations;
       });
     },
     [],
@@ -329,7 +234,9 @@ export const useMetadataOperations = () => {
   }, []);
 
   return {
+    // operationsRef,
     operations,
+    addDeleteBatch,
     addDeleteRow,
     addDeleteValue,
     addUpdateValue,
@@ -339,48 +246,29 @@ export const useMetadataOperations = () => {
 
 export const useFetchMetaDataManageData = (
   type: MetadataType = MetadataType.Manage,
+  documentIds?: string[],
 ) => {
   const { id } = useParams();
-  // const [data, setData] = useState<IMetaDataTableData[]>([]);
-  // const [loading, setLoading] = useState(false);
-  // const fetchData = useCallback(async (): Promise<IMetaDataTableData[]> => {
-  //   setLoading(true);
-  //   const { data } = await getMetaDataService({
-  //     kb_id: id as string,
-  //   });
-  //   setLoading(false);
-  //   if (data?.data?.summary) {
-  //     return util.changeToMetaDataTableData(data.data.summary);
-  //   }
-  //   return [];
-  // }, [id]);
-  // useEffect(() => {
-  //   if (type === MetadataType.Manage) {
-  //     fetchData()
-  //       .then((res) => {
-  //         setData(res);
-  //       })
-  //       .catch((res) => {
-  //         console.error(res);
-  //       });
-  //   }
-  // }, [type, fetchData]);
 
   const {
     data,
     isFetching: loading,
     refetch,
   } = useQuery<IMetaDataTableData[]>({
-    queryKey: ['fetchMetaData', id],
-    enabled: !!id && type === MetadataType.Manage,
+    queryKey: ['fetchMetaData', id, documentIds],
+    enabled:
+      !!id &&
+      (type === MetadataType.Manage || type === MetadataType.UpdateSingle),
     initialData: [],
     gcTime: 1000,
     queryFn: async () => {
       const { data } = await getMetaDataService({
         kb_id: id as string,
+        doc_ids: documentIds,
       });
       if (data?.data?.summary) {
-        return util.changeToMetaDataTableData(data.data.summary);
+        const res = util.changeToMetaDataTableData(data.data.summary);
+        return res;
       }
       return [];
     },
@@ -392,29 +280,33 @@ export const useFetchMetaDataManageData = (
   };
 };
 
+const fetchTypeList = [MetadataType.Manage, MetadataType.UpdateSingle];
 export const useManageMetaDataModal = (
   metaData: IMetaDataTableData[] = [],
   type: MetadataType = MetadataType.Manage,
   otherData?: Record<string, any>,
+  documentIds?: string[],
 ) => {
   const { id } = useParams();
   const { t } = useTranslation();
-  const { data, loading } = useFetchMetaDataManageData(type);
+  const { data, loading } = useFetchMetaDataManageData(type, documentIds);
 
   const [tableData, setTableData] = useState<IMetaDataTableData[]>(metaData);
   const queryClient = useQueryClient();
   const {
+    // operationsRef,
     operations,
     addDeleteRow,
+    addDeleteBatch,
     addDeleteValue,
     addUpdateValue,
     resetOperations,
   } = useMetadataOperations();
 
-  const { setDocumentMeta } = useSetDocumentMeta();
+  // const { setDocumentMeta } = useSetDocumentMeta();
 
   useEffect(() => {
-    if (type === MetadataType.Manage) {
+    if (fetchTypeList.includes(type)) {
       if (data) {
         setTableData(data);
       } else {
@@ -424,7 +316,7 @@ export const useManageMetaDataModal = (
   }, [data, type]);
 
   useEffect(() => {
-    if (type !== MetadataType.Manage) {
+    if (!fetchTypeList.includes(type)) {
       if (metaData) {
         setTableData(metaData);
       } else {
@@ -447,7 +339,6 @@ export const useManageMetaDataModal = (
           }
           return item;
         });
-        // console.log('newTableData', newTableData, prevTableData);
         return newTableData;
       });
     },
@@ -461,18 +352,32 @@ export const useManageMetaDataModal = (
         const newTableData = prevTableData.filter(
           (item) => item.field !== field,
         );
-        // console.log('newTableData', newTableData, prevTableData);
         return newTableData;
       });
     },
     [addDeleteRow],
   );
 
+  const handleDeleteBatchRow = useCallback(
+    (fields: string[]) => {
+      addDeleteBatch(fields);
+      setTableData((prevTableData) => {
+        const newTableData = prevTableData.filter(
+          (item) => !fields.includes(item.field),
+        );
+        return newTableData;
+      });
+    },
+    [addDeleteBatch],
+  );
+
   const handleSaveManage = useCallback(
     async (callback: () => void) => {
+      console.log('handleSaveManage', tableData);
       const { data: res } = await updateMetaData({
         kb_id: id as string,
         data: operations,
+        doc_ids: documentIds,
       });
       if (res.code === 0) {
         queryClient.invalidateQueries({
@@ -483,36 +388,45 @@ export const useManageMetaDataModal = (
         callback();
       }
     },
-    [operations, id, t, queryClient, resetOperations],
+    [operations, id, t, queryClient, resetOperations, documentIds, tableData],
   );
 
-  const handleSaveUpdateSingle = useCallback(
-    async (callback: () => void) => {
-      const reqData = util.tableDataToMetaDataJSON(tableData);
-      if (otherData?.id) {
-        const ret = await setDocumentMeta({
-          documentId: otherData?.id,
-          meta: JSON.stringify(reqData),
-        });
-        if (ret === 0) {
-          // message.success(t('message.success'));
-          callback();
-        }
-      }
-    },
-    [tableData, otherData, setDocumentMeta],
-  );
+  // const handleSaveUpdateSingle = useCallback(
+  //   async (callback: () => void) => {
+  //     const reqData = util.tableDataToMetaDataJSON(tableData);
+  //     if (otherData?.id) {
+  //       const ret = await setDocumentMeta({
+  //         documentId: otherData?.id,
+  //         meta: JSON.stringify(reqData),
+  //       });
+  //       if (ret === 0) {
+  //         // message.success(t('message.success'));
+  //         callback();
+  //       }
+  //     }
+  //   },
+  //   [tableData, otherData, setDocumentMeta],
+  // );
 
   const handleSaveSettings = useCallback(
     async (callback: () => void, builtInMetadata?: IBuiltInMetadataItem[]) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
-      callback?.();
+      const { data: res } = await kbService.kbUpdateMetaData({
+        kb_id: id,
+        metadata: data,
+        builtInMetadata: builtInMetadata || [],
+      });
+      if (res.code === 0) {
+        message.success(t('message.operated'));
+        callback?.();
+      }
+      // callback?.();
       return {
         metadata: data,
         builtInMetadata: builtInMetadata || [],
       };
     },
-    [tableData],
+    [tableData, t, id],
   );
 
   const handleSaveSingleFileSettings = useCallback(
@@ -540,17 +454,19 @@ export const useManageMetaDataModal = (
       builtInMetadata,
     }: {
       callback: () => void;
-      builtInMetadata?: string[];
+      builtInMetadata?: IBuiltInMetadataItem[];
     }) => {
       switch (type) {
         case MetadataType.UpdateSingle:
-          handleSaveUpdateSingle(callback);
+          // handleSaveUpdateSingle(callback);
+          handleSaveManage(callback);
           break;
         case MetadataType.Manage:
           handleSaveManage(callback);
           break;
         case MetadataType.Setting:
           return handleSaveSettings(callback, builtInMetadata);
+
         case MetadataType.SingleFileSetting:
           return handleSaveSingleFileSettings(callback);
         default:
@@ -561,7 +477,7 @@ export const useManageMetaDataModal = (
     [
       handleSaveManage,
       type,
-      handleSaveUpdateSingle,
+      // handleSaveUpdateSingle,
       handleSaveSettings,
       handleSaveSingleFileSettings,
     ],
@@ -572,6 +488,7 @@ export const useManageMetaDataModal = (
     setTableData,
     handleDeleteSingleValue,
     handleDeleteSingleRow,
+    handleDeleteBatchRow,
     loading,
     handleSave,
     addUpdateValue,
@@ -593,17 +510,8 @@ export const useManageMetadata = () => {
     (config?: ShowManageMetadataModalProps) => {
       const { metadata } = config || {};
       if (metadata) {
-        // const dataTemp = Object.entries(metadata).map(([key, value]) => {
-        //   return {
-        //     field: key,
-        //     description: '',
-        //     values: Array.isArray(value) ? value : [value],
-        //   } as IMetaDataTableData;
-        // });
         setTableData(metadata);
-        console.log('metadata-2', metadata);
       }
-      console.log('metadata-3', metadata);
       if (config) {
         setConfig(config);
       }
@@ -618,4 +526,36 @@ export const useManageMetadata = () => {
     tableData,
     config,
   };
+};
+
+export const useOperateData = ({
+  rowSelection,
+  list,
+  handleDeleteBatchRow,
+}: {
+  rowSelection: RowSelectionState;
+  list: IMetaDataTableData[];
+  handleDeleteBatchRow: (keys: string[]) => void;
+}) => {
+  const mapList = useMemo(() => {
+    return list.map((x) => {
+      return { ...x, id: x.field };
+    });
+  }, [list]);
+  const { selectedIds: selectedRowKeys } = useSelectedIds(
+    rowSelection,
+    mapList,
+  );
+  // const handleDelete = useCallback(() => {
+  //   console.log('rowSelection', rowSelection);
+  // }, [rowSelection]);
+
+  const handleDelete = useCallback(() => {
+    const deletedKeys = selectedRowKeys.filter((x) =>
+      mapList.some((y) => y.id === x),
+    );
+    handleDeleteBatchRow(deletedKeys);
+    return;
+  }, [selectedRowKeys, mapList, handleDeleteBatchRow]);
+  return { handleDelete };
 };

@@ -63,7 +63,7 @@ class TestDocumentsUpload:
             assert document.dataset_id == dataset.id, str(document)
             assert document.name == fp.name, str(document)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "file_type",
         ["exe", "unknown"],

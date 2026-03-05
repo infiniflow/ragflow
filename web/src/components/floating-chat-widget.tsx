@@ -3,7 +3,7 @@ import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useFetchExternalAgentInputs } from '@/hooks/use-agent-request';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
-import i18n from '@/locales/config';
+import i18n, { changeLanguageAsync } from '@/locales/config';
 import { useSendNextSharedMessage } from '@/pages/agent/hooks/use-send-shared-message';
 import { MessageCircle, Minimize2, Send, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -68,8 +68,9 @@ const FloatingChatWidget = () => {
   // Play sound when opening
   const playNotificationSound = useCallback(() => {
     try {
-      const audioContext = new (window.AudioContext ||
-        (window as any).webkitAudioContext)();
+      const audioContext = new (
+        window.AudioContext || (window as any).webkitAudioContext
+      )();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
 
@@ -95,8 +96,9 @@ const FloatingChatWidget = () => {
   // Play sound for AI responses (Intercom-style)
   const playResponseSound = useCallback(() => {
     try {
-      const audioContext = new (window.AudioContext ||
-        (window as any).webkitAudioContext)();
+      const audioContext = new (
+        window.AudioContext || (window as any).webkitAudioContext
+      )();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
 
@@ -134,7 +136,7 @@ const FloatingChatWidget = () => {
     }, 50);
 
     if (locale && i18n.language !== locale) {
-      i18n.changeLanguage(locale);
+      changeLanguageAsync(locale);
     }
 
     return () => clearTimeout(timer);
@@ -266,7 +268,7 @@ const FloatingChatWidget = () => {
 
     // Wait for state to update, then send
     setTimeout(() => {
-      handlePressEnter([]);
+      handlePressEnter({ enableThinking: false, enableInternet: false });
       // Clear our local input after sending
       setInputValue('');
     }, 50);

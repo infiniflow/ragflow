@@ -15,6 +15,8 @@ import { KeyboardEventHandler, useCallback, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { ApiKeyPostBody } from '../../../interface';
 import { LLMHeader } from '../../components/llm-header';
+import { VerifyResult } from '../../hooks';
+import VerifyButton from '../verify-button';
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   loading: boolean;
@@ -22,6 +24,9 @@ interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   llmFactory: string;
   editMode?: boolean;
   onOk: (postBody: ApiKeyPostBody) => void;
+  onVerify: (
+    postBody: any,
+  ) => Promise<boolean | void | VerifyResult | undefined>;
   showModal?(): void;
 }
 
@@ -36,6 +41,7 @@ const modelsWithBaseUrl = [
   LLMFactory.AzureOpenAI,
   LLMFactory.TongYiQianWen,
   LLMFactory.MiniMax,
+  LLMFactory.SILICONFLOW,
 ];
 
 const ApiKeyModal = ({
@@ -46,6 +52,7 @@ const ApiKeyModal = ({
   initialValue,
   editMode = false,
   onOk,
+  onVerify,
 }: IProps) => {
   const form = useForm<FieldType>();
   const { t } = useTranslate('setting');
@@ -80,6 +87,8 @@ const ApiKeyModal = ({
       okText={t('save')}
       cancelText={t('cancel')}
       className="!w-[600px]"
+      testId="apikey-modal"
+      okButtonTestId="apikey-save"
     >
       <Form {...form}>
         <div className="space-y-4 py-4">
@@ -97,6 +106,7 @@ const ApiKeyModal = ({
                 <FormControl>
                   <Input
                     {...field}
+                    data-testid="apikey-input"
                     onKeyDown={handleKeyDown}
                     className="w-full"
                   />
@@ -118,7 +128,9 @@ const ApiKeyModal = ({
                         ? t('minimaxBaseUrlTip')
                         : llmFactory === LLMFactory.TongYiQianWen
                           ? t('tongyiBaseUrlTip')
-                          : t('baseUrlTip')
+                          : llmFactory === LLMFactory.SILICONFLOW
+                            ? t('siliconBaseUrlTip')
+                            : t('baseUrlTip')
                     }
                   >
                     {t('baseUrl')}
@@ -131,7 +143,9 @@ const ApiKeyModal = ({
                           ? t('tongyiBaseUrlPlaceholder')
                           : llmFactory === LLMFactory.MiniMax
                             ? t('minimaxBaseUrlPlaceholder')
-                            : 'https://api.openai.com/v1'
+                            : llmFactory === LLMFactory.SILICONFLOW
+                              ? 'https://api.siliconflow.cn/v1'
+                              : 'https://api.openai.com/v1'
                       }
                       onKeyDown={handleKeyDown}
                       className="w-full"
@@ -181,6 +195,8 @@ const ApiKeyModal = ({
               )}
             />
           )}
+
+          <VerifyButton onVerify={onVerify} />
         </div>
       </Form>
     </Modal>

@@ -94,7 +94,19 @@ export function Header() {
           tag.path === Routes.Root ? (
             <HeaderIcon className="size-6"></HeaderIcon>
           ) : (
-            <span>{tag.name}</span>
+            <span
+              data-testid={
+                tag.path === Routes.Chats
+                  ? 'nav-chat'
+                  : tag.path === Routes.Searches
+                    ? 'nav-search'
+                    : tag.path === Routes.Agents
+                      ? 'nav-agent'
+                      : undefined
+              }
+            >
+              {tag.name}
+            </span>
           ),
         value: tag.path,
       };
@@ -128,7 +140,10 @@ export function Header() {
   }, [pathname]);
 
   return (
-    <section className="py-5 px-10 flex justify-between items-center ">
+    <section
+      className="py-5 px-10 flex justify-between items-center "
+      data-testid="top-nav"
+    >
       <div className="flex items-center gap-4">
         <img
           src={'/logo.svg'}
@@ -146,7 +161,10 @@ export function Header() {
         onChange={handleChange}
         activeClassName="text-bg-base bg-metallic-gradient border-b-[#00BEB4] border-b-2"
       ></Segmented>
-      <div className="flex items-center gap-5 text-text-badge">
+      <div
+        className="flex items-center gap-5 text-text-badge"
+        data-testid="auth-status"
+      >
         <a
           target="_blank"
           href="https://discord.com/invite/NjYzJD3GM3"
@@ -183,7 +201,7 @@ export function Header() {
           {theme === 'light' ? <Sun /> : <Moon />}
         </Button>
         <BellButton></BellButton>
-        <div className="relative">
+        <div className="relative" data-testid="settings-entrypoint">
           <RAGFlowAvatar
             name={nickname}
             avatar={avatar}

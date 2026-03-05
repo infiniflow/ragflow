@@ -1,9 +1,9 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { t } from 'i18next';
 import { BrushCleaning } from 'lucide-react';
 import { ReactNode, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ConfirmDeleteDialog,
   ConfirmDeleteDialogNode,
@@ -21,22 +21,28 @@ type BulkOperateBarProps = {
   list: BulkOperateItemType[];
   count: number;
   className?: string;
+  unit?: string;
 };
 
 export function BulkOperateBar({
   list,
   count,
   className,
+  unit,
 }: BulkOperateBarProps) {
   const isDeleteItem = useCallback((id: string) => {
     return id === 'delete';
   }, []);
+  const { t } = useTranslation();
 
   return (
     <Card className={cn('mb-4', className)}>
       <CardContent className="p-1 pl-5 flex items-center gap-6">
         <section className="text-text-sub-title-invert flex items-center gap-2">
-          <span>Selected: {count} Files</span>
+          <span>
+            {t('common.selected')}: {count}{' '}
+            {unit ?? t('knowledgeDetails.files')}
+          </span>
           <BrushCleaning className="size-3" />
         </section>
         <Separator orientation={'vertical'} className="h-3"></Separator>
@@ -49,19 +55,27 @@ export function BulkOperateBar({
               <ConfirmDeleteDialog
                 hidden={!isDeleteItem(x.id)}
                 onOk={x.onClick}
-                title={t('deleteModal.delFiles')}
+                title={
+                  unit
+                    ? t('common.delete') + ' ' + unit
+                    : t('deleteModal.delFiles')
+                }
                 content={{
                   title: t('common.deleteThem'),
                   node: (
                     <ConfirmDeleteDialogNode
-                      name={`${t('deleteModal.delFilesContent', { count })}`}
+                      name={`${unit ? t('common.selected') + ' ' + count + ' ' + unit : t('deleteModal.delFilesContent', { count })}`}
                     ></ConfirmDeleteDialogNode>
                   ),
                 }}
               >
                 <Button
-                  variant={'ghost'}
+                  variant={!isDeleteItem(x.id) ? 'ghost' : 'delete'}
                   onClick={isDeleteItem(x.id) ? () => {} : x.onClick}
+                  className={cn({
+                    ['text-state-error border border-state-error bg-state-error/5']:
+                      isDeleteItem(x.id),
+                  })}
                 >
                   {x.icon} {x.label}
                 </Button>

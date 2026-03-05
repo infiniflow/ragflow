@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import list_chat_assistants, update_chat_assistant
+from common import create_chat_assistant, list_chat_assistants, update_chat_assistant
 from configs import CHAT_ASSISTANT_NAME_LIMIT, INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 from utils import encode_avatar
@@ -100,7 +100,7 @@ class TestChatAssistantUpdate:
     @pytest.mark.parametrize(
         "llm, expected_code, expected_message",
         [
-            ({}, 100, "ValueError"),
+            ({}, 0, ""),
             ({"model_name": "glm-4"}, 0, ""),
             ({"model_name": "unknown"}, 102, "`model_name` unknown doesn't exist"),
             ({"temperature": 0}, 0, ""),
@@ -131,9 +131,11 @@ class TestChatAssistantUpdate:
             pytest.param({"unknown": "unknown"}, 0, "", marks=pytest.mark.skip),
         ],
     )
-    def test_llm(self, HttpApiAuth, add_chat_assistants_func, llm, expected_code, expected_message):
+    def test_llm(self, HttpApiAuth, add_chat_assistants_func, chat_assistant_llm_model_type, llm, expected_code, expected_message):
         dataset_id, _, chat_assistant_ids = add_chat_assistants_func
-        payload = {"name": "llm_test", "dataset_ids": [dataset_id], "llm": llm}
+        llm_payload = dict(llm)
+        llm_payload.setdefault("model_type", chat_assistant_llm_model_type)
+        payload = {"name": "llm_test", "dataset_ids": [dataset_id], "llm": llm_payload}
         res = update_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code == 0:
@@ -227,3 +229,64 @@ class TestChatAssistantUpdate:
                 )
         else:
             assert expected_message in res["message"]
+
+    @pytest.mark.p2
+    def test_update_mapping_and_validation_branches_p2(self, HttpApiAuth, add_chat_assistants_func, chat_assistant_llm_model_type):
+        dataset_id, _, chat_assistant_ids = add_chat_assistants_func
+        chat_id = chat_assistant_ids[0]
+
+        res = update_chat_assistant(HttpApiAuth, "invalid-chat-id", {"name": "anything"})
+        assert res["code"] == 102
+        assert res["message"] == "You do not own the chat"
+
+        res = update_chat_assistant(HttpApiAuth, chat_id, {"show_quotation": False, "dataset_ids": [dataset_id]})
+        assert res["code"] == 0
+
+        res = update_chat_assistant(
+            HttpApiAuth,
+            chat_id,
+            {"llm": {"model_name": "unknown-llm-model", "model_type": chat_assistant_llm_model_type}},
+        )
+        assert res["code"] == 102
+        assert "`model_name` unknown-llm-model doesn't exist" in res["message"]
+
+        res = update_chat_assistant(
+            HttpApiAuth,
+            chat_id,
+            {"prompt": {"rerank_model": "unknown-rerank-model"}},
+        )
+        assert res["code"] == 102
+        assert "`rerank_model` unknown-rerank-model doesn't exist" in res["message"]
+
+        res = update_chat_assistant(HttpApiAuth, chat_id, {"name": ""})
+        assert res["code"] == 102
+        assert res["message"] == "`name` cannot be empty."
+
+        res = update_chat_assistant(HttpApiAuth, chat_id, {"name": "test_chat_assistant_1"})
+        assert res["code"] == 102
+        assert res["message"] == "Duplicated chat name in updating chat."
+
+        res = update_chat_assistant(
+            HttpApiAuth,
+            chat_id,
+            {"prompt": {"prompt": "No required placeholder", "variables": [{"key": "knowledge", "optional": False}]}},
+        )
+        assert res["code"] == 102
+        assert "Parameter 'knowledge' is not used" in res["message"]
+
+        res = update_chat_assistant(HttpApiAuth, chat_id, {"avatar": "raw-avatar-value"})
+        assert res["code"] == 0
+        listed = list_chat_assistants(HttpApiAuth, {"id": chat_id})
+        assert listed["code"] == 0
+        assert listed["data"][0]["avatar"] == "raw-avatar-value"
+
+    @pytest.mark.p2
+    def test_update_unparsed_dataset_guard_p2(self, HttpApiAuth, add_dataset_func, clear_chat_assistants):
+        dataset_id = add_dataset_func
+        create_res = create_chat_assistant(HttpApiAuth, {"name": "update-unparsed-target", "dataset_ids": []})
+        assert create_res["code"] == 0
+
+        chat_id = create_res["data"]["id"]
+        res = update_chat_assistant(HttpApiAuth, chat_id, {"dataset_ids": [dataset_id]})
+        assert res["code"] == 102
+        assert "doesn't own parsed file" in res["message"]

@@ -20,7 +20,7 @@ from ragflow_sdk import RAGFlow
 from configs import INVALID_API_TOKEN, HOST_ADDRESS
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
@@ -47,13 +47,13 @@ class TestCapability:
 
 @pytest.mark.usefixtures("add_memory_func")
 class TestMemoryList:
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_params_unset(self, client):
         res  = client.list_memory()
         assert len(res["memory_list"]) == 3, str(res)
         assert res["total_count"] == 3, str(res)
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_params_empty(self, client):
         res = client.list_memory(**{})
         assert len(res["memory_list"]) == 3, str(res)
@@ -114,3 +114,13 @@ class TestMemoryList:
                       "embd_id", "llm_id", "permissions", "description", "memory_size", "forgetting_policy",
                       "temperature", "system_prompt", "user_prompt"]:
             assert hasattr(memory, field), memory_config
+
+    @pytest.mark.p2
+    def test_get_config_invalid_memory_id_raises(self, client):
+        memory_list = client.list_memory()
+        assert len(memory_list["memory_list"]) > 0, str(memory_list)
+        memory = memory_list["memory_list"][0]
+        memory.id = "missing-memory-id-for-config"
+        with pytest.raises(Exception) as exception_info:
+            memory.get_config()
+        assert str(exception_info.value), exception_info

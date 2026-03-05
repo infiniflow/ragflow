@@ -17,12 +17,12 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import batch_add_chunks, list_chunks
+from common import batch_add_chunks, list_chunks, update_chunk
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
 
-@pytest.mark.p1
+@pytest.mark.p2
 class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
@@ -87,6 +87,33 @@ class TestChunksList:
             assert len(res["data"]["chunks"]) == expected_page_size, res
         else:
             assert res["message"] == expected_message, res
+
+    @pytest.mark.p2
+    def test_available_int_filter(self, WebApiAuth, add_chunks):
+        _, doc_id, chunk_ids = add_chunks
+        chunk_id = chunk_ids[0]
+
+        res = update_chunk(
+            WebApiAuth,
+            {"doc_id": doc_id, "chunk_id": chunk_id, "content_with_weight": "unchanged content", "available_int": 0},
+        )
+        assert res["code"] == 0, res
+
+        from time import sleep
+
+        sleep(1)
+        res = list_chunks(WebApiAuth, {"doc_id": doc_id, "available_int": 0})
+        assert res["code"] == 0, res
+        assert len(res["data"]["chunks"]) >= 1, res
+        assert all(chunk["available_int"] == 0 for chunk in res["data"]["chunks"]), res
+
+        # Restore the class-scoped fixture state for subsequent keyword cases.
+        res = update_chunk(
+            WebApiAuth,
+            {"doc_id": doc_id, "chunk_id": chunk_id, "content_with_weight": "chunk test 0", "available_int": 1},
+        )
+        assert res["code"] == 0, res
+        sleep(1)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

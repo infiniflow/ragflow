@@ -62,6 +62,8 @@ export enum LLMFactory {
   Builtin = 'Builtin',
   MinerU = 'MinerU',
   PaddleOCR = 'PaddleOCR',
+  N1n = 'n1n',
+  Avian = 'Avian',
 }
 
 // Please lowercase the file name
@@ -129,6 +131,8 @@ export const IconMap = {
   [LLMFactory.Builtin]: 'builtin',
   [LLMFactory.MinerU]: 'mineru',
   [LLMFactory.PaddleOCR]: 'paddleocr',
+  [LLMFactory.N1n]: 'n1n',
+  [LLMFactory.Avian]: 'avian',
 };
 
 export const APIMapUrl = {
@@ -166,8 +170,7 @@ export const APIMapUrl = {
   [LLMFactory.ModelScope]: 'https://modelscope.cn/my/myaccesstoken',
   [LLMFactory.GoogleCloud]: 'https://console.cloud.google.com/apis/credentials',
   [LLMFactory.FishAudio]: 'https://fish.audio/app/api-keys/',
-  [LLMFactory.GiteeAI]:
-    'https://ai.gitee.com/hhxzgrjn/dashboard/settings/tokens',
+  [LLMFactory.GiteeAI]: 'https://ai.gitee.com/dashboard/settings/tokens',
   [LLMFactory.StepFun]: 'https://platform.stepfun.com/interface-key',
   [LLMFactory.BaiChuan]: 'https://platform.baichuan-ai.com/console/apikey',
   [LLMFactory.PPIO]: 'https://ppio.com/settings/key-management',
@@ -181,4 +184,6 @@ export const APIMapUrl = {
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
   [LLMFactory.PaddleOCR]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.N1n]: 'https://docs.n1n.ai',
+  [LLMFactory.Avian]: 'https://avian.io',
 };

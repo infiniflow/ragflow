@@ -18,6 +18,7 @@ import {
 import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
 import { useSendMessage } from '../../hooks/use-send-chat-message';
 import { buildMessageItemReference } from '../../utils';
+import { useShowInternet } from '../use-show-internet';
 
 interface IProps {
   controller: AbortController;
@@ -55,6 +56,8 @@ export function SingleChatBox({
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
+  const showInternet = useShowInternet();
+
   useEffect(() => {
     const messages = conversation?.message;
     if (Array.isArray(messages)) {
@@ -70,64 +73,71 @@ export function SingleChatBox({
   }, [conversationId, setDerivedMessages]);
 
   return (
-    <section className="flex flex-col p-5 h-full">
-      <div ref={messageContainerRef} className="flex-1 overflow-auto min-h-0">
+    <section className="flex flex-col h-full gap-4">
+      <div
+        ref={messageContainerRef}
+        className="p-5 flex-1 overflow-auto min-h-0 scrollbar-auto"
+      >
         <div className="w-full pr-5">
-          {derivedMessages?.map((message, i) => {
-            return (
-              <MessageItem
-                loading={
-                  message.role === MessageType.Assistant &&
-                  sendLoading &&
-                  derivedMessages.length - 1 === i
-                }
-                key={buildMessageUuidWithRole(message)}
-                item={message}
-                nickname={userInfo.nickname}
-                avatar={userInfo.avatar}
-                avatarDialog={currentDialog.icon}
-                reference={buildMessageItemReference(
-                  {
-                    message: derivedMessages,
-                    reference: conversation.reference,
-                  },
-                  message,
-                )}
-                clickDocumentButton={clickDocumentButton}
-                index={i}
-                removeMessageById={removeMessageById}
-                regenerateMessage={regenerateMessage}
-                sendLoading={sendLoading}
-              ></MessageItem>
-            );
-          })}
+          {derivedMessages?.map((message, i) => (
+            <MessageItem
+              loading={
+                message.role === MessageType.Assistant &&
+                sendLoading &&
+                derivedMessages.length - 1 === i
+              }
+              key={buildMessageUuidWithRole(message)}
+              item={message}
+              nickname={userInfo.nickname}
+              avatar={userInfo.avatar}
+              avatarDialog={currentDialog.icon}
+              reference={buildMessageItemReference(
+                {
+                  message: derivedMessages,
+                  reference: conversation.reference,
+                },
+                message,
+              )}
+              clickDocumentButton={clickDocumentButton}
+              index={i}
+              removeMessageById={removeMessageById}
+              regenerateMessage={regenerateMessage}
+              sendLoading={sendLoading}
+            />
+          ))}
         </div>
         <div ref={scrollRef} />
       </div>
-      <NextMessageInput
-        disabled={disabled}
-        sendDisabled={sendDisabled}
-        sendLoading={sendLoading}
-        value={value}
-        onInputChange={handleInputChange}
-        onPressEnter={handlePressEnter}
-        conversationId={conversationId}
-        createConversationBeforeUploadDocument={
-          createConversationBeforeUploadDocument
-        }
-        stopOutputMessage={stopOutputMessage}
-        onUpload={handleUploadFile}
-        isUploading={isUploading}
-        removeFile={removeFile}
-      />
-      {visible && (
-        <PdfSheet
-          visible={visible}
-          hideModal={hideModal}
-          documentId={documentId}
-          chunk={selectedChunk}
-        ></PdfSheet>
-      )}
+
+      <div className="p-5 pt-0">
+        <NextMessageInput
+          disabled={disabled}
+          sendDisabled={sendDisabled}
+          sendLoading={sendLoading}
+          value={value}
+          resize="vertical"
+          onInputChange={handleInputChange}
+          onPressEnter={handlePressEnter}
+          conversationId={conversationId}
+          createConversationBeforeUploadDocument={
+            createConversationBeforeUploadDocument
+          }
+          stopOutputMessage={stopOutputMessage}
+          onUpload={handleUploadFile}
+          isUploading={isUploading}
+          removeFile={removeFile}
+          showReasoning
+          showInternet={showInternet}
+        />
+        {visible && (
+          <PdfSheet
+            visible={visible}
+            hideModal={hideModal}
+            documentId={documentId}
+            chunk={selectedChunk}
+          ></PdfSheet>
+        )}
+      </div>
     </section>
   );
 }

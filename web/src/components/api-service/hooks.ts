@@ -11,8 +11,8 @@ import {
 } from '@/hooks/use-user-setting-request';
 import { IStats } from '@/interfaces/database/chat';
 import { useQueryClient } from '@tanstack/react-query';
-import { message } from 'antd';
 import { useCallback } from 'react';
+import message from '../ui/message';
 
 export const useOperateApiKey = (idKey: string, dialogId?: string) => {
   const { removeToken } = useRemoveSystemToken();

@@ -16,7 +16,6 @@
 import logging
 import boto3
 from botocore.exceptions import ClientError
-from botocore.config import Config
 import time
 from io import BytesIO
 from common.decorator import singleton
@@ -34,6 +33,8 @@ class RAGFlowOSS:
         self.region = self.oss_config.get('region', None)
         self.bucket = self.oss_config.get('bucket', None)
         self.prefix_path = self.oss_config.get('prefix_path', None)
+        self.signature_version = self.oss_config.get('signature_version', None)
+        self.addressing_style = self.oss_config.get('addressing_style', None)
         self.__open__()
 
     @staticmethod
@@ -62,6 +63,15 @@ class RAGFlowOSS:
             pass
 
         try:
+            config_kwargs = {}
+
+            if self.signature_version:
+                config_kwargs['signature_version'] = self.signature_version
+            if self.addressing_style:
+                config_kwargs['s3'] = {
+                    'addressing_style': self.addressing_style
+                }
+
             # Reference：https://help.aliyun.com/zh/oss/developer-reference/use-amazon-s3-sdks-to-access-oss
             self.conn = boto3.client(
                 's3',
@@ -69,7 +79,7 @@ class RAGFlowOSS:
                 aws_access_key_id=self.access_key,
                 aws_secret_access_key=self.secret_key,
                 endpoint_url=self.endpoint_url,
-                config=Config(s3={"addressing_style": "virtual"}, signature_version='v4')
+                config=config_kwargs
             )
         except Exception:
             logging.exception(f"Fail to connect at region {self.region}")

@@ -1,4 +1,5 @@
 import message from '@/components/ui/message';
+import { Modal } from '@/components/ui/modal/modal';
 import { LanguageTranslationMap } from '@/constants/common';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
@@ -11,6 +12,8 @@ import {
   IUserInfo,
 } from '@/interfaces/database/user-setting';
 import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
+import { changeLanguageAsync } from '@/locales/config';
+import { Routes } from '@/routes';
 import userService, {
   addTenantUser,
   agreeTenant,
@@ -18,13 +21,12 @@ import userService, {
   listTenant,
   listTenantUser,
 } from '@/services/user-service';
-import { history } from '@/utils/simple-history-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Modal } from 'antd';
 import DOMPurify from 'dompurify';
 import { isEmpty } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
 
 export const enum UserSettingApiAction {
   UserInfo = 'userInfo',
@@ -54,11 +56,13 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
     queryFn: async () => {
       const { data } = await userService.user_info();
       if (data.code === 0) {
-        i18n.changeLanguage(
+        const targetLng =
           LanguageTranslationMap[
             data.data.language as keyof typeof LanguageTranslationMap
-          ],
-        );
+          ];
+        if (targetLng) {
+          await changeLanguageAsync(targetLng);
+        }
       }
       return data?.data ?? {};
     },
@@ -71,6 +75,7 @@ export const useFetchTenantInfo = (
   showEmptyModelWarn = false,
 ): ResponseGetType<ITenantInfo> => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { data, isFetching: loading } = useQuery({
     queryKey: [UserSettingApiAction.TenantInfo, showEmptyModelWarn],
     initialData: {},
@@ -94,8 +99,11 @@ export const useFetchTenantInfo = (
                 }}
               ></div>
             ),
+            closable: false,
+            showCancel: false,
             onOk() {
-              history.push('/user-setting/model');
+              // window.open('/user-setting/model', '_self');
+              navigate(`${Routes.UserSetting}${Routes.Model}`);
             },
           });
         }
@@ -112,42 +120,58 @@ export const useFetchTenantInfo = (
   return { data, loading };
 };
 
-const DEFAULT_PARSERS = [
-  { value: 'naive', label: 'General' },
-  { value: 'qa', label: 'Q&A' },
-  { value: 'resume', label: 'Resume' },
-  { value: 'manual', label: 'Manual' },
-  { value: 'table', label: 'Table' },
-  { value: 'paper', label: 'Paper' },
-  { value: 'book', label: 'Book' },
-  { value: 'laws', label: 'Laws' },
-  { value: 'presentation', label: 'Presentation' },
-  { value: 'picture', label: 'Picture' },
-  { value: 'one', label: 'One' },
-  { value: 'audio', label: 'Audio' },
-  { value: 'email', label: 'Email' },
-  { value: 'tag', label: 'Tag' },
-];
-
 export const useSelectParserList = (): Array<{
   value: string;
   label: string;
 }> => {
   const { data: tenantInfo } = useFetchTenantInfo(true);
+  const { t, i18n } = useTranslation();
+
+  const defaultParsers = useMemo(
+    () => [
+      { value: 'naive', label: t('knowledgeConfiguration.parserLabel.naive') },
+      { value: 'qa', label: t('knowledgeConfiguration.parserLabel.qa') },
+      {
+        value: 'resume',
+        label: t('knowledgeConfiguration.parserLabel.resume'),
+      },
+      {
+        value: 'manual',
+        label: t('knowledgeConfiguration.parserLabel.manual'),
+      },
+      { value: 'table', label: t('knowledgeConfiguration.parserLabel.table') },
+      { value: 'paper', label: t('knowledgeConfiguration.parserLabel.paper') },
+      { value: 'book', label: t('knowledgeConfiguration.parserLabel.book') },
+      { value: 'laws', label: t('knowledgeConfiguration.parserLabel.laws') },
+      {
+        value: 'presentation',
+        label: t('knowledgeConfiguration.parserLabel.presentation'),
+      },
+      {
+        value: 'picture',
+        label: t('knowledgeConfiguration.parserLabel.picture'),
+      },
+      { value: 'one', label: t('knowledgeConfiguration.parserLabel.one') },
+      { value: 'audio', label: t('knowledgeConfiguration.parserLabel.audio') },
+      { value: 'email', label: t('knowledgeConfiguration.parserLabel.email') },
+      { value: 'tag', label: t('knowledgeConfiguration.parserLabel.tag') },
+    ],
+    [i18n.language, t],
+  );
 
   const parserList = useMemo(() => {
     const parserArray: Array<string> = tenantInfo?.parser_ids?.split(',') ?? [];
     const filteredArray = parserArray.filter((x) => x.trim() !== '');
 
     if (filteredArray.length === 0) {
-      return DEFAULT_PARSERS;
+      return defaultParsers;
     }
 
     return filteredArray.map((x) => {
       const arr = x.split(':');
       return { value: arr[0], label: arr[1] };
     });
-  }, [tenantInfo]);
+  }, [tenantInfo, defaultParsers]);
 
   return parserList;
 };

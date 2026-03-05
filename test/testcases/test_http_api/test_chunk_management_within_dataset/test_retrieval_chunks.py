@@ -272,7 +272,7 @@ class TestChunksRetrieval:
         [
             ({"highlight": True}, 0, True, ""),
             ({"highlight": "True"}, 0, True, ""),
-            pytest.param({"highlight": False}, 0, False, "", marks=pytest.mark.skip(reason="issues/6648")),
+            ({"highlight": False}, 0, False, ""),
             ({"highlight": "False"}, 0, False, ""),
             pytest.param({"highlight": None}, 0, False, "", marks=pytest.mark.skip(reason="issues/6648")),
         ],

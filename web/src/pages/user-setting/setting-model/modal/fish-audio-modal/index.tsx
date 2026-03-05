@@ -8,16 +8,25 @@ import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
+import { memo, useCallback } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
+import VerifyButton from '../../modal/verify-button';
 
 const FishAudioModal = ({
   visible,
   hideModal,
   onOk,
+  onVerify,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
+}: IModalProps<IAddLlmRequestBody> & {
+  llmFactory: string;
+  onVerify?: (
+    postBody: any,
+  ) => Promise<boolean | void | VerifyResult | undefined>;
+}) => {
   const { t } = useTranslate('setting');
   const { t: tc } = useCommonTranslation();
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
@@ -85,6 +94,14 @@ const FishAudioModal = ({
     await onOk?.(data as IAddLlmRequestBody);
   };
 
+  const handleVerify = useCallback(
+    async (params: any) => {
+      const res = await onVerify?.({ ...params, llm_factory: llmFactory });
+      return (res || { isValid: null, logs: '' }) as VerifyResult;
+    },
+    [llmFactory, onVerify],
+  );
+
   return (
     <Modal
       title={<LLMHeader name={llmFactory} />}
@@ -100,6 +117,9 @@ const FishAudioModal = ({
         defaultValues={{ model_type: 'tts' }}
         labelClassName="font-normal"
       >
+        {onVerify && (
+          <VerifyButton onVerify={handleVerify} isAbsolute={false} />
+        )}
         <div className="flex items-center justify-between w-full">
           <a
             href="https://fish.audio"
@@ -123,4 +143,4 @@ const FishAudioModal = ({
   );
 };
 
-export default FishAudioModal;
+export default memo(FishAudioModal);

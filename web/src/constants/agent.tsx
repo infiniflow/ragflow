@@ -1,5 +1,10 @@
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
-import { Circle, CircleSlash2 } from 'lucide-react';
+import {
+  Circle,
+  CircleDashed,
+  CircleDotDashed,
+  CircleSlash2,
+} from 'lucide-react';
 import { ChatVariableEnabledField, variableEnabledFieldMap } from './chat';
 
 export enum ProgrammingLanguage {
@@ -27,6 +32,7 @@ export enum AgentGlobals {
   SysUserId = 'sys.user_id',
   SysConversationTurns = 'sys.conversation_turns',
   SysFiles = 'sys.files',
+  SysHistory = 'sys.history',
 }
 
 export const AgentGlobalsSysQueryWithBrace = `{${AgentGlobals.SysQuery}}`;
@@ -172,12 +178,12 @@ export const SwitchOperatorOptions = [
   {
     value: ComparisonOperator.In,
     label: 'in',
-    icon: <CircleSlash2 className="size-4" />,
+    icon: <CircleDotDashed className="size-4" />,
   },
   {
     value: ComparisonOperator.NotIn,
     label: 'notIn',
-    icon: <CircleSlash2 className="size-4" />,
+    icon: <CircleDashed className="size-4" />,
   },
 ];
 
@@ -221,4 +227,50 @@ export enum AgentDialogueMode {
 export const initialBeginValues = {
   mode: AgentDialogueMode.Conversational,
   prologue: `Hi! I'm your assistant. What can I do for you?`,
+};
+
+export const BeginId = 'begin';
+
+export const EmptyDsl = {
+  graph: {
+    nodes: [
+      {
+        id: BeginId,
+        type: 'beginNode',
+        position: {
+          x: 50,
+          y: 200,
+        },
+        data: {
+          label: 'Begin',
+          name: 'begin',
+          form: initialBeginValues,
+        },
+        sourcePosition: 'left',
+        targetPosition: 'right',
+      },
+    ],
+    edges: [],
+  },
+  components: {
+    begin: {
+      obj: {
+        component_name: 'Begin',
+        params: {},
+      },
+      downstream: [], // other edge target is downstream, edge source is current node id
+      upstream: [], // edge source is upstream, edge target is current node id
+    },
+  },
+  retrieval: [], // reference
+  history: [],
+  path: [],
+  variables: [],
+  globals: {
+    [AgentGlobals.SysQuery]: '',
+    [AgentGlobals.SysUserId]: '',
+    [AgentGlobals.SysConversationTurns]: 0,
+    [AgentGlobals.SysFiles]: [],
+    [AgentGlobals.SysHistory]: [],
+  },
 };

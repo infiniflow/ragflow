@@ -17,6 +17,7 @@ import {
 export {
   AgentDialogueMode,
   AgentStructuredOutputField,
+  BeginId,
   JsonSchemaDataType,
   Operator,
   initialBeginValues,
@@ -46,8 +47,6 @@ import {
   ToggleLeft,
   WrapText,
 } from 'lucide-react';
-
-export const BeginId = 'begin';
 
 export const CommonOperatorList = Object.values(Operator).filter(
   (x) => x !== Operator.Note,
@@ -390,6 +389,7 @@ export const initialEmailValues = {
   smtp_server: '',
   smtp_port: 465,
   email: '',
+  smtp_username: '',
   password: '',
   sender_name: '',
   to_email: '',
@@ -637,7 +637,7 @@ export const CategorizeAnchorPointPositions = [
 // no connection lines are allowed between key and value
 export const RestrictedUpstreamMap = {
   [Operator.Begin]: [Operator.Begin],
-  [Operator.Categorize]: [Operator.Begin, Operator.Categorize],
+  [Operator.Categorize]: [Operator.Begin],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
   [Operator.Message]: [
     Operator.Begin,
@@ -1085,3 +1085,5 @@ export const BeginQueryTypeMap = {
   [BeginQueryType.Integer]: TypesWithArray.Number,
   [BeginQueryType.Boolean]: TypesWithArray.Boolean,
 };
+
+export const VariableRegex = /{([^{}]*)}/g;

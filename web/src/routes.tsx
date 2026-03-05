@@ -1,7 +1,13 @@
-import { lazy } from 'react';
-import { createBrowserRouter, Navigate } from 'react-router';
+import { lazy, memo, Suspense } from 'react';
+import {
+  createBrowserRouter,
+  Navigate,
+  redirect,
+  type RouteObject,
+} from 'react-router';
 import FallbackComponent from './components/fallback-component';
 import { IS_ENTERPRISE } from './pages/admin/utils';
+import authorizationUtil from './utils/authorization-util';
 
 export enum Routes {
   Root = '/',
@@ -14,16 +20,18 @@ export enum Routes {
   Agent = '/agent',
   AgentTemplates = '/agent-templates',
   Agents = '/agents',
+  Explore = '/explore',
+  AgentExplore = `${Routes.Agent}/:id/explore`,
   Memories = '/memories',
   Memory = '/memory',
   MemoryMessage = '/memory-message',
   MemorySetting = '/memory-setting',
   AgentList = '/agent-list',
-  Searches = '/next-searches',
-  Search = '/next-search',
-  SearchShare = '/next-search/share',
-  Chats = '/next-chats',
-  Chat = '/next-chat',
+  Searches = '/searches',
+  Search = '/search',
+  SearchShare = '/search/share',
+  Chats = '/chats',
+  Chat = '/chat',
   Files = '/files',
   ProfileSetting = '/profile-setting',
   Profile = '/profile',
@@ -60,257 +68,275 @@ export enum Routes {
   Admin = '/admin',
   AdminServices = `${Admin}/services`,
   AdminUserManagement = `${Admin}/users`,
+  AdminSandboxSettings = `${Admin}/sandbox-settings`,
   AdminWhitelist = `${Admin}/whitelist`,
   AdminRoles = `${Admin}/roles`,
   AdminMonitoring = `${Admin}/monitoring`,
 }
 
-const routeConfig = [
+const defaultRouteFallback = (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-[1px]">
+    <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
+  </div>
+);
+
+type LazyRouteConfig = Omit<RouteObject, 'Component' | 'children'> & {
+  Component?: () => Promise<{ default: React.ComponentType<any> }>;
+  children?: LazyRouteConfig[];
+};
+
+const withLazyRoute = (
+  importer: () => Promise<{ default: React.ComponentType<any> }>,
+  fallback: React.ReactNode = defaultRouteFallback,
+) => {
+  const LazyComponent = lazy(importer);
+  const Wrapped: React.FC<any> = (props) => (
+    <Suspense fallback={fallback}>
+      <LazyComponent {...props} />
+    </Suspense>
+  );
+  Wrapped.displayName = `LazyRoute(${
+    (LazyComponent as unknown as React.ComponentType<any>).displayName ||
+    LazyComponent.name ||
+    'Component'
+  })`;
+  return process.env.NODE_ENV === 'development' ? LazyComponent : memo(Wrapped);
+};
+
+const routeConfigOptions = [
   {
     path: '/login',
-    Component: lazy(() => import('@/pages/login-next')),
+    Component: () => import('@/pages/login-next'),
     layout: false,
-    errorElement: <FallbackComponent />,
   },
   {
     path: '/login-next',
-    Component: lazy(() => import('@/pages/login-next')),
+    Component: () => import('@/pages/login-next'),
     layout: false,
-    errorElement: <FallbackComponent />,
   },
   {
     path: Routes.ChatShare,
-    Component: lazy(() => import('@/pages/next-chats/share')),
+    Component: () => import('@/pages/next-chats/share'),
     layout: false,
-    errorElement: <FallbackComponent />,
   },
   {
     path: Routes.AgentShare,
-    Component: lazy(() => import('@/pages/agent/share')),
+    Component: () => import('@/pages/agent/share'),
     layout: false,
-    errorElement: <FallbackComponent />,
   },
   {
     path: Routes.ChatWidget,
-    Component: lazy(() => import('@/pages/next-chats/widget')),
+    Component: () => import('@/pages/next-chats/widget'),
     layout: false,
-    errorElement: <FallbackComponent />,
   },
   {
     path: Routes.AgentList,
-    Component: lazy(() => import('@/pages/agents')),
-    errorElement: <FallbackComponent />,
+    Component: () => import('@/pages/agents'),
   },
   {
     path: '/document/:id',
-    Component: lazy(() => import('@/pages/document-viewer')),
+    Component: () => import('@/pages/document-viewer'),
     layout: false,
-    errorElement: <FallbackComponent />,
   },
   {
     path: '/*',
-    Component: lazy(() => import('@/pages/404')),
+    Component: () => import('@/pages/404'),
     layout: false,
-    errorElement: <FallbackComponent />,
   },
   {
     path: Routes.Root,
     layout: false,
-    Component: lazy(() => import('@/layouts/next')),
-    wrappers: ['@/wrappers/auth'],
+    Component: () => import('@/layouts/next'),
+    loader: ({ request }) => {
+      const url = new URL(request.url);
+      const auth = url.searchParams.get('auth');
+      if (auth) {
+        authorizationUtil.setAuthorization(auth);
+        url.searchParams.delete('auth');
+        return redirect(`${url.pathname}${url.search}`);
+      }
+      return null;
+    },
     children: [
       {
         path: Routes.Root,
-        Component: lazy(() => import('@/pages/home')),
+        Component: () => import('@/pages/home'),
       },
     ],
-    errorElement: <FallbackComponent />,
   },
   {
     path: Routes.Datasets,
     layout: false,
-    Component: lazy(() => import('@/layouts/next')),
+    Component: () => import('@/layouts/next'),
     children: [
       {
         path: Routes.Datasets,
-        Component: lazy(() => import('@/pages/datasets')),
+        Component: () => import('@/pages/datasets'),
       },
     ],
-    errorElement: <FallbackComponent />,
   },
   {
     path: Routes.Chats,
     layout: false,
-    Component: lazy(() => import('@/layouts/next')),
+    Component: () => import('@/layouts/next'),
     children: [
       {
         path: Routes.Chats,
-        Component: lazy(() => import('@/pages/next-chats')),
+        Component: () => import('@/pages/next-chats'),
       },
     ],
-    errorElement: <FallbackComponent />,
   },
   {
     path: Routes.Chat + '/:id',
     layout: false,
-    Component: lazy(() => import('@/pages/next-chats/chat')),
-    errorElement: <FallbackComponent />,
+    Component: () => import('@/pages/next-chats/chat'),
   },
   {
     path: Routes.Searches,
     layout: false,
-    Component: lazy(() => import('@/layouts/next')),
+    Component: () => import('@/layouts/next'),
     children: [
       {
         path: Routes.Searches,
-        Component: lazy(() => import('@/pages/next-searches')),
+        Component: () => import('@/pages/next-searches'),
       },
     ],
-    errorElement: <FallbackComponent />,
   },
   {
     path: Routes.Memories,
     layout: false,
-    Component: lazy(() => import('@/layouts/next')),
+    Component: () => import('@/layouts/next'),
     children: [
       {
         path: Routes.Memories,
-        Component: lazy(() => import('@/pages/memories')),
+        Component: () => import('@/pages/memories'),
       },
     ],
-    errorElement: <FallbackComponent />,
   },
   {
     path: `${Routes.Memory}`,
     layout: false,
-    Component: lazy(() => import('@/layouts/next')),
+    Component: () => import('@/layouts/next'),
     children: [
       {
         path: `${Routes.Memory}`,
         layout: false,
-        Component: lazy(() => import('@/pages/memory')),
+        Component: () => import('@/pages/memory'),
         children: [
           {
             path: `${Routes.Memory}/${Routes.MemoryMessage}/:id`,
-            Component: lazy(() => import('@/pages/memory/memory-message')),
+            Component: () => import('@/pages/memory/memory-message'),
           },
           {
             path: `${Routes.Memory}/${Routes.MemorySetting}/:id`,
-            Component: lazy(() => import('@/pages/memory/memory-setting')),
+            Component: () => import('@/pages/memory/memory-setting'),
           },
         ],
       },
     ],
-    errorElement: <FallbackComponent />,
   },
   {
     path: `${Routes.Search}/:id`,
     layout: false,
-    Component: lazy(() => import('@/pages/next-search')),
-    errorElement: <FallbackComponent />,
+    Component: () => import('@/pages/next-search'),
   },
   {
     path: `${Routes.SearchShare}`,
     layout: false,
-    Component: lazy(() => import('@/pages/next-search/share')),
-    errorElement: <FallbackComponent />,
+    Component: () => import('@/pages/next-search/share'),
   },
   {
     path: Routes.Agents,
     layout: false,
-    Component: lazy(() => import('@/layouts/next')),
+    Component: () => import('@/layouts/next'),
     children: [
       {
         path: Routes.Agents,
-        Component: lazy(() => import('@/pages/agents')),
+        Component: () => import('@/pages/agents'),
       },
     ],
-    errorElement: <FallbackComponent />,
   },
   {
     path: `${Routes.AgentLogPage}/:id`,
     layout: false,
-    Component: lazy(() => import('@/pages/agents/agent-log-page')),
-    errorElement: <FallbackComponent />,
+    Component: () => import('@/pages/agents/agent-log-page'),
   },
   {
     path: `${Routes.Agent}/:id`,
     layout: false,
-    Component: lazy(() => import('@/pages/agent')),
+    Component: () => import('@/pages/agent'),
+  },
+  {
+    path: Routes.AgentExplore,
+    layout: false,
+    Component: () => import('@/pages/agent/explore'),
     errorElement: <FallbackComponent />,
   },
   {
     path: Routes.AgentTemplates,
     layout: false,
-    Component: lazy(() => import('@/pages/agents/agent-templates')),
-    errorElement: <FallbackComponent />,
+    Component: () => import('@/pages/agents/agent-templates'),
   },
+
   {
     path: Routes.Files,
     layout: false,
-    Component: lazy(() => import('@/layouts/next')),
+    Component: () => import('@/layouts/next'),
     children: [
       {
         path: Routes.Files,
-        Component: lazy(() => import('@/pages/files')),
+        Component: () => import('@/pages/files'),
       },
     ],
-    errorElement: <FallbackComponent />,
   },
   {
     path: Routes.DatasetBase,
     layout: false,
-    Component: lazy(() => import('@/layouts/next')),
+    Component: () => import('@/layouts/next'),
     children: [
       {
         path: Routes.DatasetBase,
         element: <Navigate to={Routes.Dataset} replace />,
       },
     ],
-    errorElement: <FallbackComponent />,
   },
   {
     path: Routes.DatasetBase,
     layout: false,
-    Component: lazy(() => import('@/pages/dataset')),
+    Component: () => import('@/pages/dataset'),
     children: [
       {
         path: `${Routes.Dataset}/:id`,
-        Component: lazy(() => import('@/pages/dataset/dataset')),
+        Component: () => import('@/pages/dataset/dataset'),
       },
       {
         path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
-        Component: lazy(() => import('@/pages/dataset/testing')),
+        Component: () => import('@/pages/dataset/testing'),
       },
       {
         path: `${Routes.DatasetBase}${Routes.KnowledgeGraph}/:id`,
-        Component: lazy(() => import('@/pages/dataset/knowledge-graph')),
+        Component: () => import('@/pages/dataset/knowledge-graph'),
       },
       {
         path: `${Routes.DatasetBase}${Routes.DataSetOverview}/:id`,
-        Component: lazy(() => import('@/pages/dataset/dataset-overview')),
+        Component: () => import('@/pages/dataset/dataset-overview'),
       },
       {
         path: `${Routes.DatasetBase}${Routes.DataSetSetting}/:id`,
-        Component: lazy(() => import('@/pages/dataset/dataset-setting')),
+        Component: () => import('@/pages/dataset/dataset-setting'),
       },
     ],
-    errorElement: <FallbackComponent />,
   },
   {
     path: `${Routes.DataflowResult}`,
     layout: false,
-    Component: lazy(() => import('@/pages/dataflow-result')),
-    errorElement: <FallbackComponent />,
+    Component: () => import('@/pages/dataflow-result'),
   },
   {
     path: `${Routes.ParsedResult}/chunks`,
     layout: false,
-    Component: lazy(
-      () =>
-        import('@/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk'),
-    ),
-    errorElement: <FallbackComponent />,
+    Component: () =>
+      import('@/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk'),
   },
   {
     path: Routes.Chunk,
@@ -318,30 +344,28 @@ const routeConfig = [
     children: [
       {
         path: Routes.Chunk,
-        Component: lazy(() => import('@/pages/chunk')),
+        Component: () => import('@/pages/chunk'),
         children: [
           {
             path: `${Routes.ChunkResult}/:id`,
-            Component: lazy(() => import('@/pages/chunk/chunk-result')),
+            Component: () => import('@/pages/chunk/chunk-result'),
           },
           {
             path: `${Routes.ResultView}/:id`,
-            Component: lazy(() => import('@/pages/chunk/result-view')),
+            Component: () => import('@/pages/chunk/result-view'),
           },
         ],
       },
     ],
-    errorElement: <FallbackComponent />,
   },
   {
     path: Routes.Chunk,
     layout: false,
-    Component: lazy(() => import('@/pages/chunk')),
-    errorElement: <FallbackComponent />,
+    Component: () => import('@/pages/chunk'),
   },
   {
     path: '/user-setting',
-    Component: lazy(() => import('@/pages/user-setting')),
+    Component: () => import('@/pages/user-setting'),
     layout: false,
     children: [
       {
@@ -350,89 +374,112 @@ const routeConfig = [
       },
       {
         path: '/user-setting/profile',
-        Component: lazy(() => import('@/pages/user-setting/profile')),
+        Component: () => import('@/pages/user-setting/profile'),
       },
       {
         path: '/user-setting/locale',
-        Component: lazy(() => import('@/pages/user-setting/setting-locale')),
+        Component: () => import('@/pages/user-setting/setting-locale'),
       },
       {
         path: '/user-setting/model',
-        Component: lazy(() => import('@/pages/user-setting/setting-model')),
+        Component: () => import('@/pages/user-setting/setting-model'),
       },
       {
         path: '/user-setting/team',
-        Component: lazy(() => import('@/pages/user-setting/setting-team')),
+        Component: () => import('@/pages/user-setting/setting-team'),
       },
       {
         path: `/user-setting${Routes.Api}`,
-        Component: lazy(() => import('@/pages/user-setting/setting-api')),
+        Component: () => import('@/pages/user-setting/setting-api'),
       },
       {
         path: `/user-setting${Routes.Mcp}`,
-        Component: lazy(() => import('@/pages/user-setting/mcp')),
+        Component: () => import('@/pages/user-setting/mcp'),
       },
       {
         path: `/user-setting${Routes.DataSource}`,
-        Component: lazy(() => import('@/pages/user-setting/data-source')),
+        Component: () => import('@/pages/user-setting/data-source'),
       },
     ],
-    errorElement: <FallbackComponent />,
   },
   {
     path: `/user-setting${Routes.DataSource}${Routes.DataSourceDetailPage}`,
-    Component: lazy(
-      () => import('@/pages/user-setting/data-source/data-source-detail-page'),
-    ),
+    Component: () =>
+      import('@/pages/user-setting/data-source/data-source-detail-page'),
+
     layout: false,
-    errorElement: <FallbackComponent />,
   },
   {
     path: Routes.Admin,
-    layout: false,
-    Component: lazy(() => import('@/pages/admin/layouts/root-layout')),
+    Component: () => import('@/pages/admin/layouts/root-layout'),
     children: [
       {
-        path: '',
-        Component: lazy(() => import('@/pages/admin/login')),
+        path: Routes.Admin,
+        Component: () => import('@/pages/admin/login'),
       },
       {
         path: Routes.Admin,
-        Component: lazy(
-          () => import('@/pages/admin/layouts/navigation-layout'),
-        ),
-        wrappers: ['@/pages/admin/wrappers/authorized'],
+        Component: () => import('@/pages/admin/layouts/authorized-layout'),
+
         children: [
           {
-            path: Routes.AdminServices,
-            Component: lazy(() => import('@/pages/admin/service-status')),
+            path: `${Routes.AdminUserManagement}/:id`,
+            Component: () => import('@/pages/admin/user-detail'),
           },
           {
-            path: Routes.AdminUserManagement,
-            Component: lazy(() => import('@/pages/admin/users')),
+            Component: () => import('@/pages/admin/layouts/navigation-layout'),
+
+            children: [
+              {
+                path: Routes.AdminServices,
+                Component: () => import('@/pages/admin/service-status'),
+              },
+              {
+                path: Routes.AdminUserManagement,
+                Component: () => import('@/pages/admin/users'),
+              },
+              {
+                path: Routes.AdminSandboxSettings,
+                Component: () => import('@/pages/admin/sandbox-settings'),
+              },
+              ...(IS_ENTERPRISE
+                ? [
+                    {
+                      path: Routes.AdminWhitelist,
+                      Component: () => import('@/pages/admin/whitelist'),
+                    },
+                    {
+                      path: Routes.AdminRoles,
+                      Component: () => import('@/pages/admin/roles'),
+                    },
+                    {
+                      path: Routes.AdminMonitoring,
+                      Component: () => import('@/pages/admin/monitoring'),
+                    },
+                  ]
+                : []),
+            ],
           },
-          ...(IS_ENTERPRISE
-            ? [
-                {
-                  path: Routes.AdminWhitelist,
-                  Component: lazy(() => import('@/pages/admin/whitelist')),
-                },
-                {
-                  path: Routes.AdminRoles,
-                  Component: lazy(() => import('@/pages/admin/roles')),
-                },
-                {
-                  path: Routes.AdminMonitoring,
-                  Component: lazy(() => import('@/pages/admin/monitoring')),
-                },
-              ]
-            : []),
         ],
       },
     ],
-    errorElement: <FallbackComponent />,
-  },
+  } satisfies LazyRouteConfig,
 ];
+
+const wrapRoutes = (routes: LazyRouteConfig[]): RouteObject[] =>
+  routes.map((item) => {
+    const { Component, children, ...rest } = item;
+    const next: RouteObject = { ...rest, errorElement: <FallbackComponent /> };
+    if (Component) {
+      next.Component = withLazyRoute(Component);
+    }
+    if (children) {
+      next.children = wrapRoutes(children);
+    }
+    return next;
+  });
+
+const routeConfig = wrapRoutes(routeConfigOptions);
 
 const routers = createBrowserRouter(routeConfig, {
   basename: import.meta.env.VITE_BASE_URL || '/',

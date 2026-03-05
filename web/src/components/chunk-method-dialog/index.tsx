@@ -18,7 +18,7 @@ import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-reques
 import { IModalProps } from '@/interfaces/common';
 import { IParserConfig } from '@/interfaces/database/document';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
-import { MetadataType } from '@/pages/dataset/components/metedata/hooks/use-manage-modal';
+import { MetadataType } from '@/pages/dataset/components/metedata/constant';
 import {
   AutoMetadata,
   ChunkMethodItem,
@@ -144,15 +144,13 @@ export function ChunkMethodDialog({
         pages: z
           .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
           .optional(),
-        metadata: z
+        metadata: z.any().optional(),
+        built_in_metadata: z
           .array(
-            z
-              .object({
-                key: z.string().optional(),
-                description: z.string().optional(),
-                enum: z.array(z.string().optional()).optional(),
-              })
-              .optional(),
+            z.object({
+              key: z.string().optional(),
+              type: z.string().optional(),
+            }),
           )
           .optional(),
         enable_metadata: z.boolean().optional(),

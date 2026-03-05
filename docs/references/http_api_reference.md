@@ -65,6 +65,10 @@ curl --request POST \
         "stream": true,
         "extra_body": {
           "reference": true,
+          "reference_metadata": {
+            "include": true,
+            "fields": ["author", "year", "source"]
+          },
           "metadata_condition": {
             "logic": "and",
             "conditions": [
@@ -93,6 +97,9 @@ curl --request POST \
 - `extra_body` (*Body parameter*) `object`  
   Extra request parameters:  
   - `reference`: `boolean` - include reference in the final chunk (stream) or in the final message (non-stream).
+  - `reference_metadata`: `object` - include document metadata in each reference chunk.
+    - `include`: `boolean` - enable document metadata in reference chunks.
+    - `fields`: `list[string]` - optional allowlist of metadata keys. Omit to include all. Use an empty list to include none.
   - `metadata_condition`: `object` - metadata filter conditions applied to retrieval results.
 
 #### Response
@@ -275,6 +282,11 @@ data: {
                             "content": "```cd /usr/ports/editors/neovim/ && make install```## Android[Termux](https://github.com/termux/termux-app) offers a Neovim package.",
                             "document_id": "4bdd2ff65e1511f0907f09f583941b45",
                             "document_name": "INSTALL22.md",
+                            "document_metadata": {
+                                "author": "bob",
+                                "year": "2023",
+                                "source": "internal"
+                            },
                             "dataset_id": "456ce60c5e1511f0907f09f583941b45",
                             "image_id": "",
                             "positions": [
@@ -345,6 +357,11 @@ Non-stream:
                             "doc_type": "",
                             "document_id": "4bdd2ff65e1511f0907f09f583941b45",
                             "document_name": "INSTALL22.md",
+                            "document_metadata": {
+                                "author": "bob",
+                                "year": "2023",
+                                "source": "internal"
+                            },
                             "id": "4b8935ac0a22deb1",
                             "image_id": "",
                             "positions": [
@@ -621,7 +638,7 @@ Failure:
 ```json
 {
     "code": 101,
-    "message": "Dataset name 'RAGFlow example' already exists"
+    "message": "Field: <name> - Message: <String should have at least 1 character> - Value: <>"
 }
 ```
 
@@ -677,9 +694,10 @@ Failure:
 
 ```json
 {
-    "code": 102,
-    "message": "You don't own the dataset."
+    "code":108,
+    "message":"User '<tenant_id>' lacks permission for datasets: '<dataset_ids>'"
 }
+
 ```
 
 ---
@@ -896,7 +914,7 @@ Success:
             "vector_similarity_weight": 0.3
         }
     ],
-    "total": 1
+    "total_datasets": 1
 }
 ```
 
@@ -2221,8 +2239,14 @@ Success:
   "code": 0,
   "data": {
     "summary": {
-      "tags": [["bar", 2], ["foo", 1], ["baz", 1]],
-      "author": [["alice", 2], ["bob", 1]]
+      "tags": {
+        "type": "string",
+        "values": [["bar", 2], ["foo", 1], ["baz", 1]]
+      },
+      "author": {
+        "type": "string",
+        "values": [["alice", 2], ["bob", 1]]
+      }
     }
   }
 }
@@ -2412,7 +2436,7 @@ curl --request POST \
 - `"top_k"`: (*Body parameter*), `integer`  
   The number of chunks engaged in vector cosine computation. Defaults to `1024`.
 - `"use_kg"`: (*Body parameter*), `boolean`  
-  Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](https://ragflow.io/docs/dev/construct_knowledge_graph) for details.
+  Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/dataset/advanced/construct_knowledge_graph.md) for details.
 - `"toc_enhance"`: (*Body parameter*), `boolean`  
   Whether to search chunks with extracted table of content. Defaults to `False`. Before enabling this, ensure you have enabled `TOC_Enhance` and successfully extracted table of contents for the specified datasets. See [here](https://ragflow.io/docs/dev/enable_table_of_contents) for details.
 - `"rerank_id"`: (*Body parameter*), `integer`  
@@ -3940,6 +3964,8 @@ data: {
 
 data:[DONE]
 ```
+
+When `extra_body.reference_metadata.include` is `true`, each reference chunk may include a `document_metadata` object.
 
 Non-stream:
 
@@ -6093,6 +6119,69 @@ Failure:
 {
     "code": 400,
     "message": "No file part!"
+}
+```
+
+---
+
+### Upload document
+
+**POST** `/api/v1/file/upload_info`
+
+Uploads a file and creates the respective document
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/upload_info`
+- Headers:
+  - `'Content-Type: multipart/form-data`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Form:
+  - `'file=@{FILE_PATH}'`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/upload_info \
+     --header 'Content-Type: multipart/form-data' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --form 'file=@./test1.pdf'
+```
+
+##### Request parameters
+
+- `'file'`: (*Form parameter*), `file`, *Required*  
+  The file to upload.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+      "created_at": 1772451421.7924063,
+      "created by": "be951084066611f18f5f00155d2f98f4",
+      "extension": "pdf",
+      "id": "2143a03d162c11f1b80f00155d334d02",
+      "mime_type": "application/pdf",
+      "name": "test1.pdf",
+      "preview_url": null,
+      "size": 49705
+    },
+    "message": "success"
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 400,
+    "message": "Provide either multipart file(s) or ?url=...!"
 }
 ```
 

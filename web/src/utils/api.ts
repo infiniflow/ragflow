@@ -1,7 +1,7 @@
 let api_host = `/v1`;
 const ExternalApi = `/api`;
 
-export { api_host };
+export { ExternalApi, api_host };
 
 export default {
   // user
@@ -201,6 +201,8 @@ export default {
   uploadAgentFile: (id?: string) => `${api_host}/canvas/upload/${id}`,
   fetchAgentLogs: (canvasId: string) =>
     `${api_host}/canvas/${canvasId}/sessions`,
+  fetchAgentLogsById: (canvasId: string, sessionId: string) =>
+    `${api_host}/canvas/${canvasId}/sessions/${sessionId}`,
   fetchExternalAgentInputs: (canvasId: string) =>
     `${ExternalApi}${api_host}/agentbots/${canvasId}/inputs`,
   prompt: `${api_host}/canvas/prompts`,
@@ -209,6 +211,11 @@ export default {
   testWebhook: (id: string) => `${ExternalApi}${api_host}/webhook_test/${id}`,
   fetchWebhookTrace: (id: string) =>
     `${ExternalApi}${api_host}/webhook_trace/${id}`,
+
+  // explore
+
+  runCanvasExplore: (canvasId: string) =>
+    `${api_host}/canvas/${canvasId}/completion`,
 
   // mcp server
   listMcpServer: `${api_host}/mcp_server/list`,
@@ -263,6 +270,8 @@ export default {
   adminLogout: `${ExternalApi}${api_host}/admin/logout`,
   adminListUsers: `${ExternalApi}${api_host}/admin/users`,
   adminCreateUser: `${ExternalApi}${api_host}/admin/users`,
+  adminSetSuperuser: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}/admin`,
   adminGetUserDetails: (username: string) =>
     `${ExternalApi}${api_host}/admin/users/${username}`,
   adminUpdateUserStatus: (username: string) =>
@@ -310,4 +319,12 @@ export default {
   adminImportWhitelist: `${ExternalApi}${api_host}/admin/whitelist/batch`,
 
   adminGetSystemVersion: `${ExternalApi}${api_host}/admin/version`,
+
+  // Sandbox settings
+  adminListSandboxProviders: `${ExternalApi}${api_host}/admin/sandbox/providers`,
+  adminGetSandboxProviderSchema: (providerId: string) =>
+    `${ExternalApi}${api_host}/admin/sandbox/providers/${providerId}/schema`,
+  adminGetSandboxConfig: `${ExternalApi}${api_host}/admin/sandbox/config`,
+  adminSetSandboxConfig: `${ExternalApi}${api_host}/admin/sandbox/config`,
+  adminTestSandboxConnection: `${ExternalApi}${api_host}/admin/sandbox/test`,
 };

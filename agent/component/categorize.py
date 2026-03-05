@@ -147,7 +147,7 @@ class Categorize(LLM, ABC):
             category_counts[c] = count
 
         cpn_ids = list(self._param.category_description.items())[-1][1]["to"]
-        max_category = list(self._param.category_description.keys())[0]
+        max_category = list(self._param.category_description.keys())[-1]
         if any(category_counts.values()):
             max_category = max(category_counts.items(), key=lambda x: x[1])[0]
             cpn_ids = self._param.category_description[max_category]["to"]

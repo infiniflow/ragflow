@@ -19,10 +19,11 @@ import random
 import pytest
 from ragflow_sdk import RAGFlow, Memory
 from configs import INVALID_API_TOKEN, HOST_ADDRESS
+from utils.engine_utils import get_doc_engine
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
@@ -41,14 +42,14 @@ class TestAuthorization:
 @pytest.mark.usefixtures("add_memory_with_5_raw_message_func")
 class TestMessageList:
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_params_unset(self, client):
         memory_id = self.memory_id
         memory = Memory(client, {"id": memory_id})
         res = memory.list_memory_messages()
         assert len(res["messages"]["message_list"]) == 5, str(res)
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_params_empty(self, client):
         memory_id = self.memory_id
         memory = Memory(client, {"id": memory_id})
@@ -88,6 +89,8 @@ class TestMessageList:
     @pytest.mark.p2
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="Not support.")
     def test_search_keyword(self, client):
+        if get_doc_engine(client) == "infinity":
+            pytest.skip("Not support.")
         memory_id = self.memory_id
         session_ids = self.session_ids
         session_id = random.choice(session_ids)
