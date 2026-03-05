@@ -1070,6 +1070,8 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         "question": question,
         "sort": True,
     }
+    if "available" in req:
+        query["available_int"] = 1 if req["available"] == "true" else 0
     key_mapping = {
         "chunk_num": "chunk_count",
         "kb_id": "dataset_id",
@@ -1116,6 +1118,8 @@ async def list_chunks(tenant_id, dataset_id, document_id):
             "image_id": chunk.get("img_id", ""),
             "available": bool(chunk.get("available_int", 1)),
             "positions": chunk.get("position_int", []),
+            "tag_kwd": chunk.get("tag_kwd", []),
+            "tag_feas": chunk.get("tag_feas", {}),
         }
         res["chunks"].append(final_chunk)
         _ = Chunk(**final_chunk)
@@ -1240,6 +1244,10 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     d["kb_id"] = dataset_id
     d["docnm_kwd"] = doc.name
     d["doc_id"] = document_id
+    if "tag_kwd" in req:
+        d["tag_kwd"] = req["tag_kwd"]
+    if "tag_feas" in req:
+        d["tag_feas"] = req["tag_feas"]
     embd_id = DocumentService.get_embd_id(document_id)
     embd_mdl = TenantLLMService.model_instance(tenant_id, LLMType.EMBEDDING.value, embd_id)
     v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
@@ -1434,6 +1442,10 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         if not isinstance(req["positions"], list):
             return get_error_data_result("`positions` should be a list")
         d["position_int"] = req["positions"]
+    if "tag_kwd" in req:
+        d["tag_kwd"] = req["tag_kwd"]
+    if "tag_feas" in req:
+        d["tag_feas"] = req["tag_feas"]
     embd_id = DocumentService.get_embd_id(document_id)
     embd_mdl = TenantLLMService.model_instance(tenant_id, LLMType.EMBEDDING.value, embd_id)
     if doc.parser_id == ParserType.QA:
