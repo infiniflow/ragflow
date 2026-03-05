@@ -71,6 +71,9 @@ const errorHandler = (error: {
   return response ?? { data: { code: 1999 } };
 };
 
+// avoid duplicate 401 redirects
+let isRedirecting = false;
+
 const request = axios.create({
   //   errorHandler,
   timeout: 300000,
@@ -108,13 +111,16 @@ request.interceptors.response.use(
     if (data?.code === 100) {
       message.error(data?.message);
     } else if (data?.code === 401) {
-      notification.error({
-        message: data?.message,
-        description: data?.message,
-        duration: 3,
-      });
-      authorizationUtil.removeAll();
-      redirectToLogin();
+      if (!isRedirecting) {
+        isRedirecting = true;
+        notification.error({
+          message: data?.message,
+          description: data?.message,
+          duration: 3,
+        });
+        authorizationUtil.removeAll();
+        redirectToLogin();
+      }
     } else if (data?.code !== 0) {
       notification.error({
         message: `${i18n.t('message.hint')} : ${data?.code}`,
@@ -126,6 +132,27 @@ request.interceptors.response.use(
   },
   function (error) {
     console.log('🚀 ~ error:', error);
+
+    const status = error?.response?.status;
+
+    // Handle HTTP 401 (token expired / invalid)
+    if (status === 401) {
+      if (!isRedirecting) {
+        isRedirecting = true;
+        const messageText =
+          error?.response?.data?.message || RetcodeMessage[401];
+        notification.error({
+          message: messageText,
+          description: messageText,
+          duration: 3,
+        });
+        authorizationUtil.removeAll();
+        redirectToLogin();
+      }
+
+    return Promise.reject(error);
+  }
+
     errorHandler(error);
     return Promise.reject(error);
   },

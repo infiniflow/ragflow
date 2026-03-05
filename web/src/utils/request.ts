@@ -78,6 +78,9 @@ const request: RequestMethod = extend({
   getResponse: true,
 });
 
+// avoid duplicate 401 redirects
+let isRedirecting = false;
+
 request.interceptors.request.use((url: string, options: any) => {
   const data = convertTheKeysOfTheObjectToSnake(options.data);
   const params = convertTheKeysOfTheObjectToSnake(options.params);
@@ -104,21 +107,46 @@ request.interceptors.response.use(async (response: Response, options) => {
     message.error(RetcodeMessage[response?.status as ResultCode]);
   }
 
+  // 🔥 Handle HTTP 401 (new backend behavior)
+  if (response?.status === 401) {
+    if (!isRedirecting) {
+      isRedirecting = true;
+
+      const data = await response.clone().json().catch(() => ({}));
+
+      const messageText =
+        data?.message || RetcodeMessage[401];
+      notification.error({
+        message: messageText,
+        description: messageText,
+        duration: 3,
+      });
+      authorizationUtil.removeAll();
+      redirectToLogin();
+    }
+
+    return response;
+  }
+
   if (options.responseType === 'blob') {
     return response;
   }
 
   const data: ResponseType = await response?.clone()?.json();
+
   if (data?.code === 100) {
     message.error(data?.message);
   } else if (data?.code === 401) {
-    notification.error({
-      message: data?.message,
-      description: data?.message,
-      duration: 3,
-    });
-    authorizationUtil.removeAll();
-    redirectToLogin();
+    if (!isRedirecting) {
+      isRedirecting = true;
+      notification.error({
+        message: data?.message,
+        description: data?.message,
+        duration: 3,
+      });
+      authorizationUtil.removeAll();
+      redirectToLogin();
+    }
   } else if (data?.code !== 0) {
     notification.error({
       message: `${i18n.t('message.hint')} : ${data?.code}`,
@@ -126,6 +154,7 @@ request.interceptors.response.use(async (response: Response, options) => {
       duration: 3,
     });
   }
+
   return response;
 });
 
