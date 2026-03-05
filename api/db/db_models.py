@@ -1032,6 +1032,7 @@ class UserCanvas(DataBaseModel):
     title = CharField(max_length=255, null=True, help_text="Canvas title")
 
     permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
+    release = BooleanField(null=False, help_text="is released", default=False, index=True)
     description = TextField(null=True, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
     canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
@@ -1407,6 +1408,7 @@ def migrate_db():
     alter_db_add_column(migrator, "task", "task_type", CharField(max_length=32, null=False, default=""))
     alter_db_add_column(migrator, "task", "priority", IntegerField(default=0))
     alter_db_add_column(migrator, "user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True))
+    alter_db_add_column(migrator, "user_canvas", "release", BooleanField(null=False, help_text="is released", default=False, index=True))
     alter_db_add_column(migrator, "llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False))
     alter_db_add_column(migrator, "mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=dict))
     alter_db_rename_column(migrator, "task", "process_duation", "process_duration")
