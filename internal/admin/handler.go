@@ -674,17 +674,13 @@ func (h *Handler) GetService(c *gin.Context) {
 	}
 
 	// Get all services and find the one with matching ID
-	services, err := h.service.GetAllServices()
-	if err != nil {
-		errorResponse(c, err.Error(), 500)
-		return
-	}
+	allConfigs := server.GetAllConfigs()
 
 	var targetService map[string]interface{}
-	for _, svc := range services {
-		if id, ok := svc["id"]; ok {
+	for _, config := range allConfigs {
+		if id, ok := config["id"]; ok {
 			if strconv.Itoa(id.(int)) == serviceID {
-				targetService = svc
+				targetService = config
 				break
 			}
 		}
