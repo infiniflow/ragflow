@@ -539,6 +539,7 @@ func (s *Service) getMySQLStatus(name string) (map[string]interface{}, error) {
 	return map[string]interface{}{
 		"service_name": name,
 		"status":       "unknown",
+		"message":      "Mysql health check not implemented",
 	}, nil
 }
 
@@ -548,6 +549,7 @@ func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
 	return map[string]interface{}{
 		"service_name": name,
 		"status":       "unknown",
+		"message":      "Redis health check not implemented",
 	}, nil
 }
 
@@ -557,6 +559,7 @@ func (s *Service) getESClusterStats(name string) (map[string]interface{}, error)
 	return map[string]interface{}{
 		"service_name": name,
 		"status":       "unknown",
+		"message":      "Elasticsearch health check not implemented",
 	}, nil
 }
 
@@ -566,6 +569,7 @@ func (s *Service) getInfinityStatus(name string) (map[string]interface{}, error)
 	return map[string]interface{}{
 		"service_name": name,
 		"status":       "unknown",
+		"message":      "Infinity health check not implemented",
 	}, nil
 }
 
@@ -575,6 +579,7 @@ func (s *Service) checkRAGFlowServerAlive(name string) (map[string]interface{}, 
 	return map[string]interface{}{
 		"service_name": name,
 		"status":       "unknown",
+		"message":      "RAGFlow server health check not implemented",
 	}, nil
 }
 
@@ -584,6 +589,7 @@ func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
 	return map[string]interface{}{
 		"service_name": name,
 		"status":       "unknown",
+		"message":      "MinIO health check not implemented",
 	}, nil
 }
 
@@ -593,6 +599,7 @@ func (s *Service) checkTaskExecutorAlive(name string) (map[string]interface{}, e
 	return map[string]interface{}{
 		"service_name": name,
 		"status":       "unknown",
+		"message":      "Task executor health check not implemented",
 	}, nil
 }
 
