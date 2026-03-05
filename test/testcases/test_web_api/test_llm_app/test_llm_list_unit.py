@@ -514,6 +514,10 @@ def test_add_llm_factory_specific_key_assembly_unit(monkeypatch):
         async def async_chat(self, *_args, **_kwargs):
             return "ok", 1
 
+        async def async_chat_streamly(self, *_args, **_kwargs):
+            yield "ok"
+            yield 1
+
     class _TTSOK:
         def __init__(self, key, model_name, base_url="", **_kwargs):
             captured["tts"].append((key, model_name, base_url))
@@ -679,12 +683,20 @@ def test_add_llm_model_type_probe_and_persistence_matrix_unit(monkeypatch):
         async def async_chat(self, *_args, **_kwargs):
             return "**ERROR**: chat failed", 0
 
+        async def async_chat_streamly(self, *_args, **_kwargs):
+            yield "**ERROR**: chat failed"
+            yield 0
+
     class _ChatPass:
         def __init__(self, *_args, **_kwargs):
             pass
 
         async def async_chat(self, *_args, **_kwargs):
             return "ok", 1
+
+        async def async_chat_streamly(self, *_args, **_kwargs):
+            yield "ok"
+            yield 1
 
     class _RerankFail:
         def __init__(self, *_args, **_kwargs):
