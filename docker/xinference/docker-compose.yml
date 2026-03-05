@@ -1,0 +1,18 @@
+
+
+services:
+  xinference:
+    image: b6rkaz7f0lbhpb.xuanyuan.run/xprobe/xinference:latest-cpu
+    container_name: xinference-server
+    ports:
+      - "9997:9997"
+    volumes:
+      - ./models:/root/.xinference/cache
+      - ./logs:/root/.xinference/logs
+    environment:
+      - XINFERENCE_HOME=/root/.xinference
+      - XINFERENCE_MODEL_SRC=modelscope  # 使用 ModelScope（国内源，快）
+      - HF_ENDPOINT=https://hf-mirror.com  # HuggingFace 国内镜像
+      - MODELSCOPE_CACHE=/root/.xinference/cache
+    command: xinference-local --host 0.0.0.0 --port 9997
+    restart: unless-stopped
