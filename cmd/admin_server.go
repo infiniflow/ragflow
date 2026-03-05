@@ -49,38 +49,6 @@ type AdminServer struct {
 	port        string
 }
 
-// NewAdminServer create admin server
-func NewAdminServer(port string) *AdminServer {
-	return &AdminServer{
-		port: port,
-	}
-}
-
-// Init initialize admin server
-func (s *AdminServer) Init() error {
-	gin.SetMode(gin.ReleaseMode)
-	s.engine = gin.New()
-	s.engine.Use(gin.Recovery())
-
-	// Initialize layers
-	s.service = admin.NewService()
-	s.handler = admin.NewHandler(s.service)
-	userService := service.NewUserService()
-	s.userHandler = handler.NewUserHandler(userService)
-	s.router = admin.NewRouter(s.handler, s.userHandler)
-
-	// Setup routes
-	s.router.Setup(s.engine)
-
-	return nil
-}
-
-// Run start admin server
-func (s *AdminServer) Run() error {
-	logger.Info("Starting admin server", zap.String("port", s.port))
-	return s.engine.Run(":" + s.port)
-}
-
 func main() {
 	var configPath string
 	flag.StringVar(&configPath, "config", "", "Path to configuration file")
@@ -140,12 +108,11 @@ func main() {
 	}
 
 	adminService := admin.NewService()
-	adminHandler := admin.NewHandler(adminService)
 	userService := service.NewUserService()
-	userHandler := handler.NewUserHandler(userService)
+	adminHandler := admin.NewHandler(adminService, userService)
 
 	// Initialize router
-	r := admin.NewRouter(adminHandler, userHandler)
+	r := admin.NewRouter(adminHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

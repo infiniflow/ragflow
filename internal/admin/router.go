@@ -29,10 +29,9 @@ type Router struct {
 }
 
 // NewRouter create admin router
-func NewRouter(handler *Handler, userHandler *handler.UserHandler) *Router {
+func NewRouter(handler *Handler) *Router {
 	return &Router{
-		handler:     handler,
-		userHandler: userHandler,
+		handler: handler,
 	}
 }
 
@@ -46,7 +45,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	{
 		// Public routes
 		admin.GET("/ping", r.handler.Ping)
-		admin.POST("/login", r.userHandler.LoginByEmail)
+		admin.POST("/login", r.handler.Login)
 
 		// Protected routes
 		protected := admin.Group("")

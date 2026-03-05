@@ -19,6 +19,9 @@ package admin
 import (
 	"errors"
 	"net/http"
+	"ragflow/internal/server"
+	"ragflow/internal/service"
+	"ragflow/internal/utility"
 
 	"github.com/gin-gonic/gin"
 )
@@ -32,12 +35,13 @@ var (
 
 // Handler admin handler
 type Handler struct {
-	service *Service
+	service     *Service
+	userService *service.UserService
 }
 
 // NewHandler create admin handler
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, userService *service.UserService) *Handler {
+	return &Handler{service: service, userService: userService}
 }
 
 // SuccessResponse success response
@@ -97,35 +101,42 @@ type LoginHTTPRequest struct {
 
 // Login handle admin login
 func (h *Handler) Login(c *gin.Context) {
-	var req LoginHTTPRequest
+	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, err.Error(), 400)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
 		return
 	}
 
-	svcReq := &LoginRequest{
-		Email:    req.Email,
-		Password: req.Password,
-	}
-
-	resp, err := h.service.Login(svcReq)
+	user, err := h.userService.LoginByEmail(&req)
 	if err != nil {
-		if errors.Is(err, ErrInvalidCredentials) {
-			errorResponse(c, "Authorize admin failed.", 401)
-			return
-		}
-		errorResponse(c, err.Error(), 500)
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": err.Error(),
+		})
 		return
 	}
 
-	success(c, gin.H{
-		"token": resp.Token,
-		"user": gin.H{
-			"id":       resp.UserID,
-			"email":    resp.Email,
-			"nickname": resp.Nickname,
-		},
-	}, "Login successful")
+	variables := server.GetVariables()
+	secretKey := variables.SecretKey
+	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+
+	// Set Authorization header with access_token
+	if user.AccessToken != nil {
+		c.Header("Authorization", authToken)
+	}
+	// Set CORS headers
+	c.Header("Access-Control-Allow-Origin", "*")
+	c.Header("Access-Control-Allow-Methods", "*")
+	c.Header("Access-Control-Allow-Headers", "*")
+	c.Header("Access-Control-Expose-Headers", "Authorization")
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "Login successful",
+	})
 }
 
 // Logout handle logout
