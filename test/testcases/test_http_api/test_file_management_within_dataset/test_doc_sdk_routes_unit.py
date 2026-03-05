@@ -905,6 +905,7 @@ class TestDocRoutesUnit:
         monkeypatch.setattr(module.rag_tokenizer, "fine_grained_tokenize", lambda text: text or "")
         monkeypatch.setattr(module.rag_tokenizer, "is_chinese", lambda _text: False)
         monkeypatch.setattr(module.DocumentService, "get_embd_id", lambda _doc_id: "embd")
+        monkeypatch.setattr(module.DocumentService, "get_tenant_embd_id", lambda _doc_id: 1)
 
         class _EmbedModel:
             def encode(self, _texts):
