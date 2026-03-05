@@ -7,6 +7,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Modal } from '@/components/ui/modal/modal';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { toFixed } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
@@ -25,6 +30,7 @@ import {
   useTraceGenerate,
   useUnBindTask,
 } from './hook';
+
 export enum GenerateType {
   KnowledgeGraph = 'KnowledgeGraph',
   Raptor = 'Raptor',
@@ -191,45 +197,46 @@ const Generate: React.FC<GenerateProps> = (props) => {
   };
 
   return (
-    <div className="generate">
-      <DropdownMenu open={open} onOpenChange={handleOpenChange}>
-        <DropdownMenuTrigger asChild disabled={disabled}>
-          <div className={cn({ 'cursor-not-allowed': disabled })}>
+    <DropdownMenu open={open} onOpenChange={handleOpenChange}>
+      <DropdownMenuTrigger asChild disabled={disabled}>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <Button
               disabled={disabled}
-              variant={'transparent'}
+              className={cn(disabled && '!cursor-not-allowed')}
+              variant="transparent"
+              size="icon"
               onClick={() => {
                 if (!disabled) {
                   handleOpenChange(!open);
                 }
               }}
             >
-              <WandSparkles className="mr-2 size-4" />
-              {t('knowledgeDetails.generate')}
+              <WandSparkles />
             </Button>
-          </div>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-[380px] p-5 flex flex-col gap-2 ">
-          {Object.values(GenerateType).map((name) => {
-            const data = (
-              name === GenerateType.KnowledgeGraph
-                ? graphRunData
-                : raptorRunData
-            ) as ITraceInfo;
-            return (
-              <div key={name}>
-                <MenuItem
-                  name={name}
-                  runGenerate={runGenerate}
-                  data={data}
-                  pauseGenerate={pauseGenerate}
-                />
-              </div>
-            );
-          })}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+          </TooltipTrigger>
+
+          <TooltipContent>{t('knowledgeDetails.generate')}</TooltipContent>
+        </Tooltip>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-[380px] p-5 flex flex-col gap-2 ">
+        {Object.values(GenerateType).map((name) => {
+          const data = (
+            name === GenerateType.KnowledgeGraph ? graphRunData : raptorRunData
+          ) as ITraceInfo;
+          return (
+            <div key={name}>
+              <MenuItem
+                name={name}
+                runGenerate={runGenerate}
+                data={data}
+                pauseGenerate={pauseGenerate}
+              />
+            </div>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 };
 
