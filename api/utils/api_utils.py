@@ -274,17 +274,28 @@ def token_required(func):
     async def wrapper(*args, **kwargs):
         # Validate the token (API Key)
         if os.environ.get("DISABLE_SDK"):
-            raise WerkzeugUnauthorized(description="`Authorization` can't be empty")
+            err = WerkzeugUnauthorized(description="`Authorization` can't be empty")
+            err.code = RetCode.SUCCESS
+            raise err
+
         authorization_str = request.headers.get("Authorization")
         if not authorization_str:
-            raise WerkzeugUnauthorized(description="`Authorization` can't be empty")
+            err = WerkzeugUnauthorized(description="`Authorization` can't be empty")
+            err.code = RetCode.AUTHENTICATION_ERROR
+            raise err
+
         authorization_list = authorization_str.split()
         if len(authorization_list) < 2:
-            raise WerkzeugUnauthorized(description="Please check your authorization format.")
+            err = WerkzeugUnauthorized(description="Please check your authorization format.")
+            err.code = RetCode.AUTHENTICATION_ERROR
+            raise err
+
         token = authorization_list[1]
         objs = APIToken.query(token=token)
         if not objs:
-            raise WerkzeugUnauthorized(description="Authentication error: API key is invalid!")
+            err = WerkzeugUnauthorized(description="Authentication error: API key is invalid!")
+            err.code = RetCode.AUTHENTICATION_ERROR
+            raise err
 
         # On success, inject tenant_id into the route function's kwargs
         kwargs["tenant_id"] = objs[0].tenant_id

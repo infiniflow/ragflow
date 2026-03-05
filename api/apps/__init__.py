@@ -317,7 +317,8 @@ async def unauthorized_quart_auth(error):
 @app.errorhandler(WerkzeugUnauthorized)
 async def unauthorized_werkzeug(error):
     logging.warning("Unauthorized request (werkzeug)")
-    return get_json_result(code=RetCode.UNAUTHORIZED, message=_unauthorized_message(error)), RetCode.UNAUTHORIZED
+    return get_json_result(code=error.code, message=error.description), RetCode.UNAUTHORIZED
+
 
 @app.teardown_request
 def _db_close(exception):
