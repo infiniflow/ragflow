@@ -22,6 +22,7 @@ import random
 import re
 import sys
 import threading
+import unicodedata
 from collections import Counter, defaultdict
 from copy import deepcopy
 from io import BytesIO
@@ -196,6 +197,82 @@ class RAGFlowPdfParser:
                 if re.match(r"[a-zT_\[\]\(\)-]+", o.get("text", "")):
                     return False
         return True
+
+    # CID pattern regex for unmapped font characters from pdfminer
+    _CID_PATTERN = re.compile(r"\(cid\s*:\s*\d+\s*\)")
+
+    @staticmethod
+    def _is_garbled_char(ch):
+        """Check if a single character is garbled (unmappable from PDF font encoding).
+
+        A character is considered garbled if it falls into Unicode Private Use Areas
+        or certain replacement/control character ranges that typically indicate
+        pdfminer failed to map a CID to a valid Unicode codepoint.
+
+        Args:
+            ch: A single character string.
+
+        Returns:
+            True if the character appears to be garbled.
+        """
+        if not ch:
+            return False
+        cp = ord(ch)
+        # Unicode Private Use Areas (PUA) — commonly used when ToUnicode mapping is missing
+        if 0xE000 <= cp <= 0xF8FF:
+            return True
+        # Supplementary Private Use Area-A
+        if 0xF0000 <= cp <= 0xFFFFF:
+            return True
+        # Supplementary Private Use Area-B
+        if 0x100000 <= cp <= 0x10FFFF:
+            return True
+        # Unicode replacement character
+        if cp == 0xFFFD:
+            return True
+        # C0/C1 control characters (except common whitespace)
+        if cp < 0x20 and ch not in ('\t', '\n', '\r'):
+            return True
+        if 0x80 <= cp <= 0x9F:
+            return True
+        # Check for Unicode category "unassigned" (Cn) or "surrogate" (Cs)
+        cat = unicodedata.category(ch)
+        if cat in ("Cn", "Cs"):
+            return True
+        return False
+
+    @classmethod
+    def _is_garbled_text(cls, text, threshold=0.5):
+        """Check if a text string contains too many garbled characters.
+
+        Examines each character in the text and determines if the overall
+        proportion of garbled characters exceeds the given threshold.
+        Also detects pdfminer's CID placeholder patterns like '(cid:123)'.
+
+        Args:
+            text: The text string to check.
+            threshold: The ratio of garbled characters above which the text
+                is considered garbled. Defaults to 0.5.
+
+        Returns:
+            True if the text is considered garbled.
+        """
+        if not text or not text.strip():
+            return False
+        # Check for CID patterns from pdfminer
+        if cls._CID_PATTERN.search(text):
+            return True
+        garbled_count = 0
+        total = 0
+        for ch in text:
+            if ch.isspace():
+                continue
+            total += 1
+            if cls._is_garbled_char(ch):
+                garbled_count += 1
+        if total == 0:
+            return False
+        return garbled_count / total >= threshold
 
     def _evaluate_table_orientation(self, table_img, sample_ratio=0.3):
         """
@@ -619,13 +696,28 @@ class RAGFlowPdfParser:
                 del b["chars"]
                 continue
             m_ht = np.mean([c["height"] for c in b["chars"]])
+            garbled_count = 0
+            total_count = 0
             for c in Recognizer.sort_Y_firstly(b["chars"], m_ht):
                 if c["text"] == " " and b["text"]:
                     if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", b["text"][-1]):
                         b["text"] += " "
                 else:
                     b["text"] += c["text"]
+                    for ch in c["text"]:
+                        if not ch.isspace():
+                            total_count += 1
+                            if self._is_garbled_char(ch):
+                                garbled_count += 1
             del b["chars"]
+            # If the majority of characters from pdfplumber are garbled,
+            # clear the text so OCR recognition will be used as fallback.
+            if total_count > 0 and garbled_count / total_count >= 0.5:
+                logging.info(
+                    "Page %d: detected garbled pdfplumber text (garbled=%d/%d), falling back to OCR for box at (%.1f, %.1f)",
+                    pagenum, garbled_count, total_count, b["x0"], b["top"],
+                )
+                b["text"] = ""
 
         logging.info(f"__ocr sorting {len(chars)} chars cost {timer() - start}s")
         start = timer()
@@ -1399,6 +1491,22 @@ class RAGFlowPdfParser:
                     except Exception as e:
                         logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
                         self.page_chars = [[] for _ in range(page_to - page_from)]  # If failed to extract, using empty list instead.
+
+                    # Detect garbled pages: if a page's extracted characters are mostly
+                    # garbled (PUA / unmapped CID), clear that page's chars so the OCR
+                    # path will be used instead.
+                    for pi, page_ch in enumerate(self.page_chars):
+                        if not page_ch:
+                            continue
+                        sample = page_ch if len(page_ch) <= 200 else random.sample(page_ch, 200)
+                        sample_text = "".join(c.get("text", "") for c in sample)
+                        if self._is_garbled_text(sample_text, threshold=0.3):
+                            logging.warning(
+                                "Page %d: pdfplumber extracted mostly garbled characters (%d chars), "
+                                "clearing to use OCR fallback.",
+                                page_from + pi + 1, len(page_ch),
+                            )
+                            self.page_chars[pi] = []
 
                     self.total_page = len(self.pdf.pages)
 
