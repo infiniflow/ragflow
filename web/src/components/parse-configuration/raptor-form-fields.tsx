@@ -227,7 +227,10 @@ const RaptorFormFields = ({
             render={({ field }) => (
               <FormItem className=" items-center space-y-0 ">
                 <div className="flex items-center">
-                  <FormLabel className="text-sm  whitespace-wrap w-1/4">
+                  <FormLabel
+                    className="text-sm  whitespace-wrap w-1/4"
+                    tooltip={t('randomSeedTip')}
+                  >
                     {t('randomSeed')}
                   </FormLabel>
                   <div className="w-3/4">
