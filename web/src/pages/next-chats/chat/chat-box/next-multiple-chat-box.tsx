@@ -181,7 +181,7 @@ const ChatCard = forwardRef(function ChatCard(
           </div>
           <div className="space-x-2">
             <Tooltip>
-              <TooltipTrigger>
+              <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
