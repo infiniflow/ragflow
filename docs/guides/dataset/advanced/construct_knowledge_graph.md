@@ -1,5 +1,5 @@
 ---
-sidebar_position: 8
+sidebar_position: 1
 slug: /construct_knowledge_graph
 sidebar_custom_props: {
   categoryIcon: LucideWandSparkles
