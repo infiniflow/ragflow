@@ -41,8 +41,8 @@ export const formSchema = z
         mineru_table_enable: z.boolean().optional(),
         mineru_lang: z.string().optional(),
         mineru_batch_size: z.number().optional(),
-        mineru_start_page: z.number().optional(),
-        mineru_end_page: z.number().optional(),
+        mineru_start_page: z.number().nullable().optional(),
+        mineru_end_page: z.number().nullable().optional(),
         mineru_strict_mode: z.boolean().optional(),
         raptor: z
           .object({
