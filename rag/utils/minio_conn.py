@@ -198,12 +198,26 @@ class RAGFlowMinio:
             return False
 
     @use_default_bucket
-    def bucket_exists(self, bucket):
+    def bucket_exists(self, bucket, _orig_bucket=None):
         try:
-            if not self.conn.bucket_exists(bucket):
+            if self.bucket:
+                # single bucket mode
+                prefix = ""
+                if self.prefix_path:
+                    prefix = f"{self.prefix_path}/"
+                if _orig_bucket:
+                    prefix += f"{_orig_bucket}/"
+
+                if not self.conn.bucket_exists(bucket):
+                    return False
+
+                for _ in self.conn.list_objects(bucket, prefix=prefix, recursive=False):
+                    # return True if there is at least one object with the specified prefix
+                    return True
+
                 return False
             else:
-                return True
+                return self.conn.bucket_exists(bucket)
         except S3Error as e:
             if e.code in ["NoSuchKey", "NoSuchBucket", "ResourceNotFound"]:
                 return False

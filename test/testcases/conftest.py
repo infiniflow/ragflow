@@ -13,10 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
 import importlib
+from pathlib import Path
 import sys
 import types
+from urllib.parse import urlsplit
 
 
 def _make_stub_getattr(module_name):
@@ -93,6 +94,7 @@ _install_scholarly_stub()
 
 import pytest
 import requests
+
 from configs import EMAIL, HOST_ADDRESS, PASSWORD, VERSION, ZHIPU_AI_API_KEY
 
 MARKER_EXPRESSIONS = {
@@ -228,3 +230,45 @@ def set_tenant_info(auth):
     res = response.json()
     if res.get("code") != 0:
         raise Exception(res.get("message"))
+
+
+@pytest.fixture(scope="session")
+def storage_impl():
+    project_root = Path(__file__).parents[2]
+    saved_modules = dict(sys.modules)
+
+    try:
+        common_stub = types.ModuleType("common")
+        common_stub.__path__ = [str(project_root / "common")]
+        common_stub.__package__ = "common"
+        common_stub.__file__ = str(project_root / "common" / "__init__.py")
+        sys.modules["common"] = common_stub
+
+        from common import settings, config_utils, constants
+    finally:
+        sys.modules.clear()
+        sys.modules.update(saved_modules)
+
+    # already initialized
+    if settings.STORAGE_IMPL:
+        return settings.STORAGE_IMPL
+
+    if settings.STORAGE_IMPL_TYPE == "AWS_S3":
+        settings.S3 = config_utils.get_base_config("s3", {})
+    elif settings.STORAGE_IMPL_TYPE == "MINIO":
+        settings.MINIO = config_utils.decrypt_database_config(name="minio")
+        # settings are read from conf/service_conf.yaml and MinIO host address is not correct when running in the CI pipeline
+        # difference between RAGFlow server port and MinIO port is always 380 (RAGFlow default: 9380, MinIO default: 9000)
+        try:
+            parsed_ragflow_addr = urlsplit(HOST_ADDRESS)
+            port = parsed_ragflow_addr.port - 380 if parsed_ragflow_addr.port else 9000
+            settings.MINIO["host"] = f"{parsed_ragflow_addr.hostname}:{port}"
+        except (ValueError, TypeError):
+            # cannot convert RAGFlow to MinIO host address -> take default MinIO address (tests might fail)
+            pass
+    else:
+        return None
+
+    settings.STORAGE_IMPL = settings.StorageFactory.create(constants.Storage[settings.STORAGE_IMPL_TYPE])
+
+    return settings.STORAGE_IMPL

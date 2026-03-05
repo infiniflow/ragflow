@@ -21,9 +21,11 @@ from common import (
     batch_create_datasets,
     delete_datasets,
     list_datasets,
+    upload_documents,
 )
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
+from utils.file_utils import create_txt_file
 
 
 class TestAuthorization:
@@ -218,3 +220,38 @@ class TestDatasetsDelete:
 
         res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 1, res
+
+
+class TestStorageDeletion:
+    """
+    Test that dataset deletion removes files from storage.
+
+    Currently only works for MinIO and S3.
+    """
+
+    @pytest.mark.p2
+    def test_delete_dataset_removes_storage_files(self, HttpApiAuth, tmp_path, storage_impl):
+        # check storage contains bucket and uploaded document
+        if not storage_impl:
+            pytest.skip("Using unsupported storage backend. Currently only MinIO and S3 are supported by this testcase.")
+
+        # create a dataset
+        dataset_ids = batch_create_datasets(HttpApiAuth, 1)
+        dataset_id: str = dataset_ids[0]
+
+        # upload file to dataset
+        test_file = create_txt_file(tmp_path / "ragflow_test.txt")
+        upload_response = upload_documents(HttpApiAuth, dataset_id, [test_file])
+        assert upload_response["code"] == 0, upload_response
+        assert len(upload_response["data"]) == 1, upload_response
+        filename: str = upload_response["data"][0]["location"]
+
+        assert storage_impl.bucket_exists(dataset_id), f"Storage should have bucket for dataset {dataset_id}"
+        assert storage_impl.obj_exist(dataset_id, filename), f"Storage should have file {filename} in bucket of dataset {dataset_id}"
+
+        # delete the dataset
+        delete_datasets_response = delete_datasets(HttpApiAuth, {"ids": [dataset_id]})
+        assert delete_datasets_response["code"] == 0, delete_datasets_response
+
+        # verify bucket got deleted
+        assert not storage_impl.bucket_exists(dataset_id), f"Storage should not contain bucket for dataset {dataset_id} after deletion"
