@@ -19,12 +19,10 @@ import importlib.util
 import inspect
 import json
 import sys
-from enum import Enum, IntEnum
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
-from strenum import StrEnum
 
 
 class _DummyManager:
