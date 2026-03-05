@@ -120,3 +120,36 @@ class TestChatCompletions:
         )
         assert res["code"] == 102, res
         assert "metadata_condition" in res.get("message", ""), res
+
+    @pytest.mark.p2
+    def test_chat_completion_returns_token_usage(self, HttpApiAuth, add_dataset_func, tmp_path, request):
+        """Test that chat completions return token usage information"""
+        dataset_id = add_dataset_func
+        document_ids = bulk_upload_documents(HttpApiAuth, dataset_id, 1, tmp_path)
+        res = parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
+        assert res["code"] == 0, res
+        _parse_done(HttpApiAuth, dataset_id, document_ids)
+
+        res = create_chat_assistant(HttpApiAuth, {"name": "chat_completion_usage_test", "dataset_ids": [dataset_id]})
+        assert res["code"] == 0, res
+        chat_id = res["data"]["id"]
+        request.addfinalizer(lambda: delete_session_with_chat_assistants(HttpApiAuth, chat_id))
+        request.addfinalizer(lambda: delete_chat_assistants(HttpApiAuth))
+
+        res = create_session_with_chat_assistant(HttpApiAuth, chat_id, {"name": "session_for_usage_test"})
+        assert res["code"] == 0, res
+        session_id = res["data"]["id"]
+
+        res = chat_completions(
+            HttpApiAuth,
+            chat_id,
+            {"question": "hello", "stream": False, "session_id": session_id},
+        )
+        assert res["code"] == 0, res
+        assert isinstance(res["data"], dict), res
+        # Verify token usage is present in response
+        assert "usage" in res["data"], f"Response should contain 'usage' field: {res}"
+        usage = res["data"]["usage"]
+        assert isinstance(usage, dict), f"'usage' should be a dict: {usage}"
+        assert "total_tokens" in usage, f"'usage' should contain 'total_tokens': {usage}"
+        assert usage["total_tokens"] > 0, f"'total_tokens' should be greater than 0: {usage}"

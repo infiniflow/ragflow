@@ -37,7 +37,7 @@ class KGSearch(Dealer):
         response = get_llm_cache(llm_bdl.llm_name, system, history, gen_conf)
         if response:
             return response
-        response = await llm_bdl.async_chat(system, history, gen_conf)
+        response, _ = await llm_bdl.async_chat(system, history, gen_conf)
         if response.find("**ERROR**") >= 0:
             raise Exception(response)
         set_llm_cache(llm_bdl.llm_name, system, response, history, gen_conf)
