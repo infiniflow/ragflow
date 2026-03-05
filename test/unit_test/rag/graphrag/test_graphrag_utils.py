@@ -17,7 +17,7 @@
 import networkx as nx
 import pytest
 
-from graphrag.utils import (
+from rag.graphrag.utils import (
     GRAPH_FIELD_SEP,
     GraphChange,
     clean_str,
