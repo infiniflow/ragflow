@@ -578,7 +578,8 @@ class OSConnection(DocStoreConnection):
         for doc in self._get_source(res):
             message = self.get_message_from_os_doc(doc)
             m = {n: v for n, v in message.items() if n in fields}
-            if m: res_fields[doc["id"]] = m
+            if m:
+                res_fields[doc["id"]] = m
         return res_fields
 
     def get_doc_ids(self, res):
