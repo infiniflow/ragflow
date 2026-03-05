@@ -334,6 +334,7 @@ export default function DatasetSettings() {
                 <Button
                   type="reset"
                   className="bg-transparent text-color-white hover:bg-transparent border-gray-500 border-[1px]"
+                  data-testid="ds-settings-page-cancel-btn"
                   onClick={() => {
                     form.reset();
                   }}

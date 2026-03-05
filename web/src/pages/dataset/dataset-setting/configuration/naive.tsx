@@ -22,8 +22,12 @@ export function NaiveConfiguration() {
   return (
     <MainContainer>
       <ConfigurationFormContainer>
-        <LayoutRecognizeFormField></LayoutRecognizeFormField>
-        <MaxTokenNumberFormField initialValue={512}></MaxTokenNumberFormField>
+        <LayoutRecognizeFormField testId="ds-settings-parser-pdf-parser-select"></LayoutRecognizeFormField>
+        <MaxTokenNumberFormField
+          initialValue={512}
+          sliderTestId="ds-settings-parser-recommended-chunk-size-slider"
+          numberInputTestId="ds-settings-parser-recommended-chunk-size-input"
+        ></MaxTokenNumberFormField>
         <DelimiterFormField></DelimiterFormField>
         <ChildrenDelimiterForm />
         <EnableTocToggle />
