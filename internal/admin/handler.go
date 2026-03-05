@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -672,13 +673,35 @@ func (h *Handler) GetService(c *gin.Context) {
 		return
 	}
 
-	service, err := h.service.GetServiceDetails(serviceID)
+	// Get all services and find the one with matching ID
+	services, err := h.service.GetAllServices()
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
 	}
 
-	success(c, service, "")
+	var targetService map[string]interface{}
+	for _, svc := range services {
+		if id, ok := svc["id"]; ok {
+			if strconv.Itoa(id.(int)) == serviceID {
+				targetService = svc
+				break
+			}
+		}
+	}
+
+	if targetService == nil {
+		errorResponse(c, "Service not found", 404)
+		return
+	}
+
+	serviceStatus, err := h.service.GetServiceDetails(targetService)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, serviceStatus, "")
 }
 
 // ShutdownService handle shutdown service

@@ -464,7 +464,7 @@ func (s *Service) GetAllServices() ([]map[string]interface{}, error) {
 		}
 
 		// Get service details to check status
-		serviceDetail, err := s.GetServiceDetails(strconv.Itoa(id))
+		serviceDetail, err := s.GetServiceDetails(configDict)
 		if err == nil {
 			if status, ok := serviceDetail["status"]; ok {
 				configDict["status"] = status
@@ -498,114 +498,37 @@ func (s *Service) GetServicesByType(serviceType string) ([]map[string]interface{
 }
 
 // GetServiceDetails get service details
-func (s *Service) GetServiceDetails(serviceID string) (map[string]interface{}, error) {
-	id, err := strconv.Atoi(serviceID)
-	if err != nil {
-		return nil, errors.New("invalid service_id")
-	}
+func (s *Service) GetServiceDetails(configDict map[string]interface{}) (map[string]interface{}, error) {
+	serviceType, _ := configDict["service_type"].(string)
+	name, _ := configDict["name"].(string)
 
-	rawConfig := server.GetGlobalViperConfig()
-	if rawConfig == nil {
-		return nil, errors.New("configuration not initialized")
-	}
-
-	docEngine := os.Getenv("DOC_ENGINE")
-	if docEngine == "" {
-		docEngine = "elasticsearch"
-	}
-
-	// Build service list to find by index (same logic as GetAllServices)
-	var serviceList []struct {
-		key         string
-		name        string
-		serviceType string
-	}
-
-	for k := range rawConfig.AllSettings() {
-		switch k {
-		case "ragflow":
-			serviceList = append(serviceList, struct {
-				key         string
-				name        string
-				serviceType string
-			}{"ragflow", "ragflow_0", "ragflow_server"})
-		case "es":
-			if docEngine == "elasticsearch" {
-				serviceList = append(serviceList, struct {
-					key         string
-					name        string
-					serviceType string
-				}{"es", "elasticsearch", "retrieval"})
+	// Call detail function based on service type
+	switch serviceType {
+	case "meta_data":
+		return s.getMySQLStatus(name)
+	case "message_queue":
+		return s.getRedisInfo(name)
+	case "retrieval":
+		// Check the extra.retrieval_type to determine which retrieval service
+		if extra, ok := configDict["extra"].(map[string]interface{}); ok {
+			if retrievalType, ok := extra["retrieval_type"].(string); ok {
+				if retrievalType == "infinity" {
+					return s.getInfinityStatus(name)
+				}
 			}
-		case "infinity":
-			if docEngine == "infinity" {
-				serviceList = append(serviceList, struct {
-					key         string
-					name        string
-					serviceType string
-				}{"infinity", "infinity", "retrieval"})
-			}
-		case "minio":
-			serviceList = append(serviceList, struct {
-				key         string
-				name        string
-				serviceType string
-			}{"minio", "minio", "file_store"})
-		case "redis":
-			serviceList = append(serviceList, struct {
-				key         string
-				name        string
-				serviceType string
-			}{"redis", "redis", "message_queue"})
-		case "mysql":
-			serviceList = append(serviceList, struct {
-				key         string
-				name        string
-				serviceType string
-			}{"mysql", "mysql", "meta_data"})
-		case "task_executor":
-			serviceList = append(serviceList, struct {
-				key         string
-				name        string
-				serviceType string
-			}{"task_executor", "task_executor", "task_executor"})
 		}
-	}
-
-	if id < 0 || id >= len(serviceList) {
-		return nil, fmt.Errorf("invalid service_index: %d", id)
-	}
-
-	svc := serviceList[id]
-
-	// Check if retrieval service type matches doc_engine
-	if svc.serviceType == "retrieval" {
-		if (svc.key == "es" && docEngine != "elasticsearch") ||
-			(svc.key == "infinity" && docEngine != "infinity") {
-			return nil, fmt.Errorf("invalid service_index: %d", id)
-		}
-	}
-
-	// Call detail function based on service key
-	switch svc.key {
-	case "mysql":
-		return s.getMySQLStatus(svc.name)
-	case "redis":
-		return s.getRedisInfo(svc.name)
-	case "es":
-		return s.getESClusterStats(svc.name)
-	case "infinity":
-		return s.getInfinityStatus(svc.name)
-	case "ragflow":
-		return s.checkRAGFlowServerAlive(svc.name)
-	case "minio":
-		return s.checkMinioAlive(svc.name)
+		return s.getESClusterStats(name)
+	case "ragflow_server":
+		return s.checkRAGFlowServerAlive(name)
+	case "file_store":
+		return s.checkMinioAlive(name)
 	case "task_executor":
-		return s.checkTaskExecutorAlive(svc.name)
+		return s.checkTaskExecutorAlive(name)
 	default:
 		return map[string]interface{}{
-			"service_name": svc.name,
+			"service_name": name,
 			"status":       "unknown",
+			"message":      "Service type not supported",
 		}, nil
 	}
 }
