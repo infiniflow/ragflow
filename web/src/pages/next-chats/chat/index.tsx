@@ -70,7 +70,7 @@ export default function Chat() {
   if (isDebugMode) {
     return (
       <section
-        className="pt-5 pb-16 h-[100vh] flex flex-col"
+        className="pt-5 pb-14 h-[100vh] flex flex-col"
         data-testid="chat-detail-multimodel-root"
       >
         <header className="px-10 pb-5">
