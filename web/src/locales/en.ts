@@ -73,6 +73,7 @@ export default {
       },
       selected: 'Selected',
       seeAll: 'See all',
+      bulkOperate: 'Bulk operate',
     },
     login: {
       loginTitle: 'Sign in to your account',
@@ -514,7 +515,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       buildItFromScratch: 'Build it from scratch',
       dataFlow: 'Pipeline',
       parseType: 'Parse type',
-      manualSetup: 'Choose pipeline',
+      manualSetup: 'Pipeline',
       builtIn: 'Built-in',
       titleDescription:
         'Update your memory configuration here, particularly the LLM and prompts.',
