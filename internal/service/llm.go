@@ -114,18 +114,18 @@ func (s *LLMService) GetMyLLMs(tenantID string, includeDetails bool) (map[string
 
 // LLMListItem represents a single LLM item in the list response
 type LLMListItem struct {
-	LLMName   string     `json:"llm_name"`
-	ModelType string     `json:"model_type"`
-	FID       string     `json:"fid"`
-	Available bool       `json:"available"`
-	Status    string     `json:"status"`
-	MaxTokens int64      `json:"max_tokens,omitempty"`
-	CreateDate *string   `json:"create_date,omitempty"`
-	CreateTime int64      `json:"create_time,omitempty"`
-	UpdateDate *string   `json:"update_date,omitempty"`
-	UpdateTime *int64    `json:"update_time,omitempty"`
-	IsTools   bool       `json:"is_tools"`
-	Tags      string     `json:"tags,omitempty"`
+	LLMName    string  `json:"llm_name"`
+	ModelType  string  `json:"model_type"`
+	FID        string  `json:"fid"`
+	Available  bool    `json:"available"`
+	Status     string  `json:"status"`
+	MaxTokens  int64   `json:"max_tokens,omitempty"`
+	CreateDate *string `json:"create_date,omitempty"`
+	CreateTime *int64  `json:"create_time,omitempty"`
+	UpdateDate *string `json:"update_date,omitempty"`
+	UpdateTime *int64  `json:"update_time,omitempty"`
+	IsTools    bool    `json:"is_tools"`
+	Tags       string  `json:"tags,omitempty"`
 }
 
 // ListLLMsResponse represents the response for list LLMs
@@ -153,10 +153,14 @@ func (s *LLMService) ListLLMs(tenantID string, modelType string) (ListLLMsRespon
 	// Build set of valid LLM names@factories
 	status := make(map[string]bool)
 	for _, tl := range tenantLLMs {
-		if tl.APIKey != "" && tl.Status == "1" {
+		if tl.APIKey != nil && *tl.APIKey != "" && tl.Status == "1" {
 			facts[tl.LLMFactory] = true
 		}
-		key := tl.LLMName + "@" + tl.LLMFactory
+		llmName := ""
+		if tl.LLMName != nil {
+			llmName = *tl.LLMName
+		}
+		key := llmName + "@" + tl.LLMFactory
 		if tl.Status == "1" {
 			status[key] = true
 		}
@@ -223,19 +227,27 @@ func (s *LLMService) ListLLMs(tenantID string, modelType string) (ListLLMsRespon
 
 	// Add tenant LLMs that are not in the global list
 	for _, tl := range tenantLLMs {
-		key := tl.LLMName + "@" + tl.LLMFactory
+		llmName := ""
+		if tl.LLMName != nil {
+			llmName = *tl.LLMName
+		}
+		key := llmName + "@" + tl.LLMFactory
 		if llmSet[key] {
 			continue
 		}
 
 		// Filter by model type if specified
-		if modelType != "" && !strings.Contains(tl.ModelType, modelType) {
+		modelTypeValue := ""
+		if tl.ModelType != nil {
+			modelTypeValue = *tl.ModelType
+		}
+		if modelType != "" && !strings.Contains(modelTypeValue, modelType) {
 			continue
 		}
 
 		item := LLMListItem{
-			LLMName:   tl.LLMName,
-			ModelType: tl.ModelType,
+			LLMName:   llmName,
+			ModelType: modelTypeValue,
 			FID:       tl.LLMFactory,
 			Available: true,
 			Status:    tl.Status,

@@ -111,10 +111,10 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	user, err := h.userService.LoginByEmail(&req)
+	user, code, err := h.userService.LoginByEmail(&req)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
+			"code":    code,
 			"message": err.Error(),
 		})
 		return
@@ -920,10 +920,10 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Get user by access token
-		user, err := h.userService.GetUserByToken(token)
+		user, code, err := h.userService.GetUserByToken(token)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{
-				"code":    401,
+				"code":    code,
 				"message": "Invalid access token",
 			})
 			return

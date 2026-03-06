@@ -148,16 +148,21 @@ func main() {
 	// Print RAGFlow version
 	logger.Info("RAGFlow version", zap.String("version", utility.GetRAGFlowVersion()))
 
+	// Print all configuration settings
+	server.PrintAll()
+
+	// Print RAGFlow Admin logo
 	logger.Info("" +
 		"\n        ____  ___   ______________                 ___       __          _     \n" +
 		"       / __ \\/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___ \n" +
 		"      / /_/ / /| |/ / __/ /_  / / __ \\ | /| / /  / /| |/ __  / __ `__ \\/ / __ \\ \n" +
-		"     / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / / /\n" +
+		"     / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / /\n" +
 		"    /_/ |_/_/  |_\\____/_/   /_/\\____/|__/|__/  /_/  |_\\__,_/_/ /_/ /_/_/_/ /_/ \n")
 
 	// Start server in a goroutine
 	go func() {
-		logger.Info(fmt.Sprintf("Server starting on port: %d", cfg.Server.Port))
+		logger.Info(fmt.Sprintf("Version: %s", utility.GetRAGFlowVersion()))
+		logger.Info(fmt.Sprintf("Starting RAGFlow admin server on port: 9381"))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatal("Failed to start server", zap.Error(err))
 		}

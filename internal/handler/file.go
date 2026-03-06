@@ -65,11 +65,11 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	}
 
 	// Get user by access token
-	user, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
+			"code":    code,
+			"message": err.Error(),
 		})
 		return
 	}
@@ -141,11 +141,11 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 	}
 
 	// Get user by access token
-	user, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
+			"code":    code,
+			"message": err.Error(),
 		})
 		return
 	}
@@ -189,11 +189,11 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 	}
 
 	// Get user by access token (for validation)
-	_, err := h.userService.GetUserByToken(token)
+	_, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
+			"code":    code,
+			"message": err.Error(),
 		})
 		return
 	}
@@ -246,11 +246,11 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 	}
 
 	// Get user by access token (for validation)
-	_, err := h.userService.GetUserByToken(token)
+	_, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
+			"code":    code,
+			"message": err.Error(),
 		})
 		return
 	}

@@ -103,8 +103,6 @@ func generateRandomHex(n int) string {
 	return hex.EncodeToString(bytes)
 }
 
-// User management methods
-
 // ListUsers list all users
 func (s *Service) ListUsers() ([]map[string]interface{}, error) {
 	users, _, err := s.userDAO.List(0, 0)
