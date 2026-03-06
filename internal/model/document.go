@@ -25,7 +25,7 @@ type Document struct {
 	KbID            string     `gorm:"column:kb_id;size:256;not null;index" json:"kb_id"`
 	ParserID        string     `gorm:"column:parser_id;size:32;not null;index" json:"parser_id"`
 	PipelineID      *string    `gorm:"column:pipeline_id;size:32;index" json:"pipeline_id,omitempty"`
-	ParserConfig    JSONMap    `gorm:"column:parser_config;type:json;not null;default:'{\"pages\":[[1,1000000]],\"table_context_size\":0,\"image_context_size\":0}'" json:"parser_config"`
+	ParserConfig    JSONMap    `gorm:"column:parser_config;type:longtext;not null" json:"parser_config"`
 	SourceType      string     `gorm:"column:source_type;size:128;not null;default:local;index" json:"source_type"`
 	Type            string     `gorm:"column:type;size:32;not null;index" json:"type"`
 	CreatedBy       string     `gorm:"column:created_by;size:32;not null;index" json:"created_by"`
@@ -39,7 +39,7 @@ type Document struct {
 	ProcessBeginAt  *time.Time `gorm:"column:process_begin_at;index" json:"process_begin_at,omitempty"`
 	ProcessDuration float64    `gorm:"column:process_duration;default:0" json:"process_duration"`
 	ContentHash     *string    `gorm:"column:content_hash;size:32;index" json:"content_hash,omitempty"`
-	MetaFields      *JSONMap   `gorm:"column:meta_fields;type:json" json:"meta_fields,omitempty"`
+	MetaFields      *JSONMap   `gorm:"column:meta_fields;type:longtext" json:"meta_fields,omitempty"`
 	Suffix          string     `gorm:"column:suffix;size:32;not null;index" json:"suffix"`
 	Run             *string    `gorm:"column:run;size:1;index" json:"run,omitempty"`
 	Status          *string    `gorm:"column:status;size:1;index" json:"status,omitempty"`

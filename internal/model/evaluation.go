@@ -23,7 +23,7 @@ type EvaluationDataset struct {
 	TenantID    string `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	Name        string `gorm:"column:name;size:255;not null;index" json:"name"`
 	Description *string `gorm:"column:description;type:longtext" json:"description,omitempty"`
-	KbIDs       JSONMap `gorm:"column:kb_ids;type:json;not null" json:"kb_ids"`
+	KbIDs       JSONMap `gorm:"column:kb_ids;type:longtext;not null" json:"kb_ids"`
 	CreatedBy   string `gorm:"column:created_by;size:32;not null;index" json:"created_by"`
 	// Custom time fields (not null) to match Python
 	CreateTime int64 `gorm:"column:create_time;not null;index" json:"create_time"`
@@ -43,9 +43,9 @@ type EvaluationCase struct {
 	DatasetID        string   `gorm:"column:dataset_id;size:32;not null;index" json:"dataset_id"`
 	Question         string   `gorm:"column:question;type:longtext;not null" json:"question"`
 	ReferenceAnswer  *string  `gorm:"column:reference_answer;type:longtext" json:"reference_answer,omitempty"`
-	RelevantDocIDs   *JSONMap `gorm:"column:relevant_doc_ids;type:json" json:"relevant_doc_ids,omitempty"`
-	RelevantChunkIDs *JSONMap `gorm:"column:relevant_chunk_ids;type:json" json:"relevant_chunk_ids,omitempty"`
-	Metadata         *JSONMap `gorm:"column:metadata;type:json" json:"metadata,omitempty"`
+	RelevantDocIDs   *JSONMap `gorm:"column:relevant_doc_ids;type:longtext" json:"relevant_doc_ids,omitempty"`
+	RelevantChunkIDs *JSONMap `gorm:"column:relevant_chunk_ids;type:longtext" json:"relevant_chunk_ids,omitempty"`
+	Metadata         *JSONMap `gorm:"column:metadata;type:longtext" json:"metadata,omitempty"`
 	// Custom time field (not null) to match Python
 	CreateTime int64 `gorm:"column:create_time;not null" json:"create_time"`
 }
@@ -62,8 +62,8 @@ type EvaluationRun struct {
 	DatasetID      string   `gorm:"column:dataset_id;size:32;not null;index" json:"dataset_id"`
 	DialogID       string   `gorm:"column:dialog_id;size:32;not null;index" json:"dialog_id"`
 	Name           string   `gorm:"column:name;size:255;not null" json:"name"`
-	ConfigSnapshot JSONMap  `gorm:"column:config_snapshot;type:json;not null" json:"config_snapshot"`
-	MetricsSummary *JSONMap `gorm:"column:metrics_summary;type:json" json:"metrics_summary,omitempty"`
+	ConfigSnapshot JSONMap  `gorm:"column:config_snapshot;type:longtext;not null" json:"config_snapshot"`
+	MetricsSummary *JSONMap `gorm:"column:metrics_summary;type:longtext" json:"metrics_summary,omitempty"`
 	Status         string   `gorm:"column:status;size:32;not null;default:PENDING" json:"status"`
 	CreatedBy      string   `gorm:"column:created_by;size:32;not null;index" json:"created_by"`
 	// Custom time fields to match Python
@@ -83,10 +83,10 @@ type EvaluationResult struct {
 	RunID           string   `gorm:"column:run_id;size:32;not null;index" json:"run_id"`
 	CaseID          string   `gorm:"column:case_id;size:32;not null;index" json:"case_id"`
 	GeneratedAnswer string   `gorm:"column:generated_answer;type:longtext;not null" json:"generated_answer"`
-	RetrievedChunks JSONMap  `gorm:"column:retrieved_chunks;type:json;not null" json:"retrieved_chunks"`
-	Metrics         JSONMap  `gorm:"column:metrics;type:json;not null" json:"metrics"`
+	RetrievedChunks JSONMap  `gorm:"column:retrieved_chunks;type:longtext;not null" json:"retrieved_chunks"`
+	Metrics         JSONMap  `gorm:"column:metrics;type:longtext;not null" json:"metrics"`
 	ExecutionTime   float64  `gorm:"column:execution_time;not null" json:"execution_time"`
-	TokenUsage      *JSONMap `gorm:"column:token_usage;type:json" json:"token_usage,omitempty"`
+	TokenUsage      *JSONMap `gorm:"column:token_usage;type:longtext" json:"token_usage,omitempty"`
 	// Custom time field to match Python
 	CreateTime int64 `gorm:"column:create_time;not null" json:"create_time"`
 }

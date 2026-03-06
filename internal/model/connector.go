@@ -25,7 +25,7 @@ type Connector struct {
 	Name          string     `gorm:"column:name;size:128;not null" json:"name"`
 	Source        string     `gorm:"column:source;size:128;not null;index" json:"source"`
 	InputType     string     `gorm:"column:input_type;size:128;not null;index" json:"input_type"`
-	Config        JSONMap    `gorm:"column:config;type:json;not null;default:'{}'" json:"config"`
+	Config        JSONMap    `gorm:"column:config;type:longtext;not null" json:"config"`
 	RefreshFreq   int64      `gorm:"column:refresh_freq;default:0" json:"refresh_freq"`
 	PruneFreq     int64      `gorm:"column:prune_freq;default:0" json:"prune_freq"`
 	TimeoutSecs   int64      `gorm:"column:timeout_secs;default:3600" json:"timeout_secs"`
