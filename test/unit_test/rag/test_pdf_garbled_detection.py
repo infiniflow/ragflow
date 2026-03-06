@@ -17,8 +17,8 @@
 """Unit tests for PDF garbled text detection and layout garbage filtering.
 
 Tests cover:
-- garbled_detection module: is_garbled_char, is_garbled_text,
-  has_subset_font_prefix, is_garbled_by_font_encoding
+- RAGFlowPdfParser static methods: _is_garbled_char, _is_garbled_text,
+  _has_subset_font_prefix, _is_garbled_by_font_encoding
 - layout_recognizer.__is_garbage: CID pattern filtering
 """
 
@@ -26,23 +26,41 @@ import re
 import sys
 import os
 import importlib.util
+from unittest import mock
 
 import pytest
 
-# Import the garbled_detection module directly by file path to avoid
-# triggering deepdoc/parser/__init__.py which pulls in heavy dependencies
+# Import RAGFlowPdfParser directly by file path to avoid triggering
+# deepdoc/parser/__init__.py which pulls in heavy dependencies
 # (pdfplumber, xgboost, etc.) that may not be available in test environments.
+#
+# We mock the heavy third-party modules so that pdf_parser.py can be loaded
+# purely for its static detection methods.
+_MOCK_MODULES = [
+    "numpy", "np", "pdfplumber", "xgboost", "xgb",
+    "huggingface_hub", "PIL", "PIL.Image", "pypdf",
+    "sklearn", "sklearn.cluster", "sklearn.metrics",
+    "common", "common.file_utils", "common.misc_utils", "common.settings",
+    "common.token_utils",
+    "deepdoc", "deepdoc.vision", "deepdoc.parser",
+    "rag", "rag.nlp", "rag.prompts", "rag.prompts.generator",
+]
+for _m in _MOCK_MODULES:
+    if _m not in sys.modules:
+        sys.modules[_m] = mock.MagicMock()
+
 _MODULE_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "deepdoc", "parser", "garbled_detection.py")
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "deepdoc", "parser", "pdf_parser.py")
 )
-_spec = importlib.util.spec_from_file_location("garbled_detection", _MODULE_PATH)
+_spec = importlib.util.spec_from_file_location("pdf_parser", _MODULE_PATH)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
-is_garbled_char = _mod.is_garbled_char
-is_garbled_text = _mod.is_garbled_text
-has_subset_font_prefix = _mod.has_subset_font_prefix
-is_garbled_by_font_encoding = _mod.is_garbled_by_font_encoding
+_Parser = _mod.RAGFlowPdfParser
+is_garbled_char = _Parser._is_garbled_char
+is_garbled_text = _Parser._is_garbled_text
+has_subset_font_prefix = _Parser._has_subset_font_prefix
+is_garbled_by_font_encoding = _Parser._is_garbled_by_font_encoding
 
 
 # ---------------------------------------------------------------------------
