@@ -54,6 +54,8 @@ from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 from api.apps import login_required, current_user
 
+"""
+Deprecated, todo delete 
 @manager.route('/create', methods=['post'])  # noqa: F821
 @login_required
 @validate_request("name")
@@ -186,7 +188,7 @@ async def update():
         return get_json_result(data=kb)
     except Exception as e:
         return server_error_response(e)
-
+"""
 
 @manager.route('/update_metadata_setting', methods=['post'])  # noqa: F821
 @login_required
@@ -234,7 +236,8 @@ def detail():
     except Exception as e:
         return server_error_response(e)
 
-
+"""
+Deprecated, todo delete
 @manager.route('/list', methods=['POST'])  # noqa: F821
 @login_required
 async def list_kbs():
@@ -329,7 +332,7 @@ async def rm():
         return await thread_pool_exec(_rm_sync)
     except Exception as e:
         return server_error_response(e)
-
+"""
 
 @manager.route('/<kb_id>/tags', methods=['GET'])  # noqa: F821
 @login_required
@@ -405,7 +408,8 @@ async def rename_tags(kb_id):
                                      kb_id)
     return get_json_result(data=True)
 
-
+"""
+Deprecated, todo delete
 @manager.route('/<kb_id>/knowledge_graph', methods=['GET'])  # noqa: F821
 @login_required
 async def knowledge_graph(kb_id):
@@ -459,7 +463,7 @@ def delete_knowledge_graph(kb_id):
     settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
 
     return get_json_result(data=True)
-
+"""
 
 @manager.route("/get_meta", methods=["GET"])  # noqa: F821
 @login_required
@@ -598,6 +602,8 @@ def pipeline_log_detail():
     return get_json_result(data=log.to_dict())
 
 
+"""
+Deprecated, todo delete
 @manager.route("/run_graphrag", methods=["POST"])  # noqa: F821
 @login_required
 async def run_graphrag():
@@ -734,7 +740,7 @@ def trace_raptor():
         return get_error_data_result(message="RAPTOR Task Not Found or Error Occurred")
 
     return get_json_result(data=task.to_dict())
-
+"""
 
 @manager.route("/run_mindmap", methods=["POST"])  # noqa: F821
 @login_required

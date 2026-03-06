@@ -388,6 +388,7 @@ class CreateDatasetReq(Base):
     pipeline_id: Annotated[str | None, Field(default=None, min_length=32, max_length=32, serialization_alias="pipeline_id")]
     parser_config: Annotated[ParserConfig | None, Field(default=None)]
     auto_metadata_config: Annotated[AutoMetadataConfig | None, Field(default=None)]
+    ext: Annotated[dict, Field(default={})]
 
     @field_validator("avatar", mode="after")
     @classmethod
@@ -742,4 +743,6 @@ class BaseListReq(BaseModel):
         return validate_uuid1_hex(v)
 
 
-class ListDatasetReq(BaseListReq): ...
+class ListDatasetReq(BaseListReq):
+
+    ext: Annotated[dict, Field(default={})]
