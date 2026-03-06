@@ -29,7 +29,7 @@ import (
 func main() {
 	// Initialize logger with default level
 	// logger.Init("info"); // set debug log level
-	if err := logger.Init("debug"); err != nil {
+	if err := logger.Init("info"); err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 
@@ -44,27 +44,20 @@ func main() {
 	}
 	logger.Info("Model providers loaded", zap.Int("count", len(server.GetModelProviders())))
 
-	cfg := server.GetConfig()
+	config := server.GetConfig()
 
 	// Reinitialize logger with configured level if different
-	if cfg.Log.Level != "" && cfg.Log.Level != "info" {
-		if err := logger.Init(cfg.Log.Level); err != nil {
+	if config.Log.Level != "" && config.Log.Level != "info" {
+		if err := logger.Init(config.Log.Level); err != nil {
 			logger.Error("Failed to reinitialize logger with configured level", err)
 		}
 	}
 	server.SetLogger(logger.Logger)
 
-	logger.Info("Server mode", zap.String("mode", cfg.Server.Mode))
+	logger.Info("Server mode", zap.String("mode", config.Server.Mode))
 
 	// Print all configuration settings
 	server.PrintAll()
-
-	// Set Gin mode
-	if cfg.Server.Mode == "release" {
-		gin.SetMode(gin.ReleaseMode)
-	} else {
-		gin.SetMode(gin.DebugMode)
-	}
 
 	// Initialize database
 	if err := dao.InitDB(); err != nil {
@@ -72,13 +65,13 @@ func main() {
 	}
 
 	// Initialize doc engine
-	if err := engine.Init(&cfg.DocEngine); err != nil {
+	if err := engine.Init(&config.DocEngine); err != nil {
 		logger.Fatal("Failed to initialize doc engine", zap.Error(err))
 	}
 	defer engine.Close()
 
 	// Initialize Redis cache
-	if err := cache.Init(&cfg.Redis); err != nil {
+	if err := cache.Init(&config.Redis); err != nil {
 		logger.Fatal("Failed to initialize Redis", zap.Error(err))
 	}
 	defer cache.Close()
@@ -102,6 +95,20 @@ func main() {
 	// This ensures the Synonym uses the same wordnet directory as tokenizer
 	if err := nlp.InitQueryBuilderFromTokenizer(tokenizerCfg.DictPath); err != nil {
 		logger.Fatal("Failed to initialize query builder", zap.Error(err))
+	}
+
+	startServer(config)
+
+	logger.Info("Server exited")
+}
+
+func startServer(config *server.Config) {
+
+	// Set Gin mode
+	if config.Server.Mode == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	} else {
+		gin.SetMode(gin.DebugMode)
 	}
 
 	// Initialize service layer
@@ -139,7 +146,7 @@ func main() {
 	ginEngine := gin.New()
 
 	// Middleware
-	if cfg.Server.Mode == "debug" {
+	if config.Server.Mode == "debug" {
 		ginEngine.Use(gin.Logger())
 	}
 	ginEngine.Use(gin.Recovery())
@@ -148,7 +155,7 @@ func main() {
 	r.Setup(ginEngine)
 
 	// Create HTTP server
-	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+	addr := fmt.Sprintf(":%d", config.Server.Port)
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: ginEngine,
@@ -164,11 +171,20 @@ func main() {
 				"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
 		)
 		logger.Info(fmt.Sprintf("Version: %s", utility.GetRAGFlowVersion()))
-		logger.Info(fmt.Sprintf("Server starting on port: %d", cfg.Server.Port))
+		logger.Info(fmt.Sprintf("Server starting on port: %d", config.Server.Port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatal("Failed to start server", zap.Error(err))
 		}
 	}()
+
+	// Notify task to submit status to admin server
+	statusReporter := utility.NewScheduledTask("Status reporter", 2*time.Second, func() {
+		logger.Info("Task started\n")
+		time.Sleep(3 * time.Second)
+		logger.Info("Task finished\n")
+	})
+
+	statusReporter.Start()
 
 	// Wait for interrupt signal to gracefully shutdown
 	quit := make(chan os.Signal, 1)
@@ -178,6 +194,8 @@ func main() {
 	logger.Info(fmt.Sprintf("Receives %s signal to shutdown server", strings.ToUpper(sig.String())))
 	logger.Info("Shutting down server...")
 
+	statusReporter.Stop()
+
 	// Create context with timeout for graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -186,6 +204,4 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Fatal("Server forced to shutdown", zap.Error(err))
 	}
-
-	logger.Info("Server exited")
 }
