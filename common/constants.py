@@ -138,6 +138,7 @@ class FileSource(StrEnum):
     SEAFILE = "seafile"
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"
+    FIRECRAWL = "firecrawl"
 
 
 class PipelineTaskType(StrEnum):
