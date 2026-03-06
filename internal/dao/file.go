@@ -195,6 +195,11 @@ func (dao *FileDAO) GetAllParentFolders(startID string) ([]*model.File, error) {
 	return parentFolders, nil
 }
 
+// Create creates a new file
+func (dao *FileDAO) Create(file *model.File) error {
+	return DB.Create(file).Error
+}
+
 // generateUUID generates a UUID
 func generateUUID() string {
 	id := uuid.New().String()

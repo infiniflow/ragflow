@@ -24,6 +24,7 @@ from sqlalchemy import Column, String, Integer
 from sqlalchemy.dialects.mysql import LONGTEXT
 
 from common.decorator import singleton
+from memory.utils.aggregation_utils import aggregate_by_field
 from common.doc_store.doc_store_base import MatchExpr, OrderByExpr, FusionExpr, MatchTextExpr, MatchDenseExpr
 from common.doc_store.ob_conn_base import OBConnectionBase, get_value_str, vector_search_template
 from common.float_utils import get_float
@@ -609,5 +610,10 @@ class OBConnection(OBConnectionBase):
 
     def get_aggregation(self, res, field_name: str):
         """Get aggregation for search results."""
-        # TODO: Implement aggregation functionality for OceanBase memory
-        return []
+        if isinstance(res, tuple):
+            res_obj = res[0]
+        else:
+            res_obj = res
+
+        messages = getattr(res_obj, "messages", None)
+        return aggregate_by_field(messages, field_name)

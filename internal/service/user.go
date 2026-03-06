@@ -25,7 +25,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"ragflow/internal/common"
 	"ragflow/internal/server"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -52,9 +54,8 @@ func NewUserService() *UserService {
 
 // RegisterRequest registration request
 type RegisterRequest struct {
-	Username string `json:"username" binding:"required,min=3,max=50"`
-	Password string `json:"password" binding:"required,min=6"`
 	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=6"`
 	Nickname string `json:"nickname"`
 }
 
@@ -96,125 +97,220 @@ type UserResponse struct {
 }
 
 // Register user registration
-func (s *UserService) Register(req *RegisterRequest) (*model.User, error) {
-	// Check if email exists
+func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorCode, error) {
+	cfg := server.GetConfig()
+	if cfg.RegisterEnabled == 0 {
+		return nil, common.CodeOperatingError, fmt.Errorf("User registration is disabled!")
+	}
+
+	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
+	if !emailRegex.MatchString(req.Email) {
+		return nil, common.CodeOperatingError, fmt.Errorf("Invalid email address: %s!", req.Email)
+	}
+
 	existUser, _ := s.userDAO.GetByEmail(req.Email)
 	if existUser != nil {
-		return nil, errors.New("email already exists")
+		return nil, common.CodeOperatingError, fmt.Errorf("Email: %s has already registered!", req.Email)
 	}
 
-	// Generate password hash
-	hashedPassword, err := s.HashPassword(req.Password)
+	decryptedPassword, err := s.decryptPassword(req.Password)
 	if err != nil {
-		return nil, fmt.Errorf("failed to hash password: %w", err)
+		return nil, common.CodeServerError, fmt.Errorf("Fail to decrypt password")
 	}
 
-	// Create user
-	status := "1"
-	user := &model.User{
-		Password: &hashedPassword,
-		Email:    req.Email,
-		Nickname: req.Nickname,
-		Status:   &status,
+	hashedPassword, err := s.HashPassword(decryptedPassword)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to hash password: %w", err)
 	}
+
+	userID := s.GenerateToken()
+	accessToken := s.GenerateToken()
+	status := "1"
+	loginChannel := "password"
+	isSuperuser := false
+
+	user := &model.User{
+		ID:              userID,
+		AccessToken:     &accessToken,
+		Email:           req.Email,
+		Nickname:        req.Nickname,
+		Password:        &hashedPassword,
+		Status:          &status,
+		IsActive:        "1",
+		IsAuthenticated: "1",
+		IsAnonymous:     "0",
+		LoginChannel:    &loginChannel,
+		IsSuperuser:     &isSuperuser,
+	}
+
+	now := time.Now().Unix()
+	user.CreateTime = now
+	user.UpdateTime = &now
+	now_date := time.Now()
+	user.CreateDate = &now_date
+	user.UpdateDate = &now_date
+	user.LastLoginTime = &now_date
+
+	tenantName := req.Nickname + "'s Kingdom"
+	tenant := &model.Tenant{
+		ID:        userID,
+		Name:      &tenantName,
+		LLMID:     cfg.Server.Mode,
+		EmbDID:    cfg.Server.Mode,
+		ASRID:     cfg.Server.Mode,
+		Img2TxtID: cfg.Server.Mode,
+		RerankID:  cfg.Server.Mode,
+		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
+	}
+	tenant.CreateTime = now
+	tenant.UpdateTime = &now
+	tenant.CreateDate = &now_date
+	tenant.UpdateDate = &now_date
+
+	userTenantID := s.GenerateToken()
+	userTenant := &model.UserTenant{
+		ID:        userTenantID,
+		UserID:    userID,
+		TenantID:  userID,
+		Role:      "owner",
+		InvitedBy: userID,
+		Status:    &status,
+	}
+	userTenant.CreateTime = now
+	userTenant.UpdateTime = &now
+	userTenant.CreateDate = &now_date
+	userTenant.UpdateDate = &now_date
+
+	fileID := s.GenerateToken()
+	rootFile := &model.File{
+		ID:        fileID,
+		ParentID:  fileID,
+		TenantID:  userID,
+		CreatedBy: userID,
+		Name:      "/",
+		Type:      "folder",
+		Size:      0,
+	}
+	rootFile.CreateTime = now
+	rootFile.UpdateTime = &now
+	rootFile.CreateDate = &now_date
+	rootFile.UpdateDate = &now_date
+
+	tenantDAO := dao.NewTenantDAO()
+	userTenantDAO := dao.NewUserTenantDAO()
+	fileDAO := dao.NewFileDAO()
 
 	if err := s.userDAO.Create(user); err != nil {
-		return nil, fmt.Errorf("failed to create user: %w", err)
+		return nil, common.CodeServerError, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	return user, nil
+	if err := tenantDAO.Create(tenant); err != nil {
+		s.userDAO.DeleteByID(userID)
+		return nil, common.CodeServerError, fmt.Errorf("failed to create tenant: %w", err)
+	}
+
+	if err := userTenantDAO.Create(userTenant); err != nil {
+		s.userDAO.DeleteByID(userID)
+		tenantDAO.Delete(userID)
+		return nil, common.CodeServerError, fmt.Errorf("failed to create user tenant relation: %w", err)
+	}
+
+	if err := fileDAO.Create(rootFile); err != nil {
+		s.userDAO.DeleteByID(userID)
+		tenantDAO.Delete(userID)
+		userTenantDAO.Delete(userTenantID)
+		return nil, common.CodeServerError, fmt.Errorf("failed to create root folder: %w", err)
+	}
+
+	return user, common.CodeSuccess, nil
 }
 
 // Login user login
-func (s *UserService) Login(req *LoginRequest) (*model.User, error) {
+func (s *UserService) Login(req *LoginRequest) (*model.User, common.ErrorCode, error) {
 	// Get user by email (using username field as email)
 	user, err := s.userDAO.GetByEmail(req.Username)
 	if err != nil {
-		return nil, errors.New("invalid email or password")
+		return nil, common.CodeAuthenticationError, fmt.Errorf("invalid email or password")
 	}
 
 	// Decrypt password using RSA
 	decryptedPassword, err := s.decryptPassword(req.Password)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt password: %w", err)
+		return nil, common.CodeServerError, fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
 	// Verify password
 	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
-		return nil, errors.New("invalid username or password")
+		return nil, common.CodeAuthenticationError, fmt.Errorf("invalid username or password")
 	}
 
-	// Check user status
 	if user.Status == nil || *user.Status != "1" {
-		return nil, errors.New("user is disabled")
+		return nil, common.CodeForbidden, fmt.Errorf("user is disabled")
 	}
 
 	// Generate new access token
 	token := s.GenerateToken()
 	if err := s.UpdateUserAccessToken(user, token); err != nil {
-		return nil, fmt.Errorf("failed to update access token: %w", err)
+		return nil, common.CodeServerError, fmt.Errorf("failed to update access token: %w", err)
 	}
 
 	// Update timestamp
 	now := time.Now().Unix()
 	user.UpdateTime = &now
 	if err := s.userDAO.Update(user); err != nil {
-		return nil, fmt.Errorf("failed to update user: %w", err)
+		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}
 
-	return user, nil
+	return user, common.CodeSuccess, nil
 }
 
 // LoginByEmail user login by email
-func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, error) {
-	// Check for default admin account
+// Returns user on success, or error with specific code:
+// - CodeAuthenticationError (109): Email not registered or password mismatch
+// - CodeServerError (500): Password decryption failure
+// - CodeForbidden (403): Account disabled
+func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, common.ErrorCode, error) {
 	if req.Email == "admin@ragflow.io" {
-		return nil, errors.New("default admin account cannot be used to login normal services")
+		return nil, common.CodeAuthenticationError, fmt.Errorf("default admin account cannot be used to login normal services")
 	}
 
-	// Get user by email
 	user, err := s.userDAO.GetByEmail(req.Email)
 	if err != nil {
-		return nil, errors.New("invalid email or password")
+		return nil, common.CodeAuthenticationError, fmt.Errorf("Email: %s is not registered!", req.Email)
 	}
 
-	// Decrypt password using RSA
 	decryptedPassword, err := s.decryptPassword(req.Password)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt password: %w", err)
+		return nil, common.CodeServerError, fmt.Errorf("Fail to crypt password")
 	}
 
-	// Verify password
 	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
-		return nil, errors.New("invalid email or password")
+		return nil, common.CodeAuthenticationError, fmt.Errorf("Email and password do not match!")
 	}
 
-	// Check user status
-	if user.Status == nil || *user.Status != "1" {
-		return nil, errors.New("user is disabled")
+	if user.IsActive == "0" {
+		return nil, common.CodeForbidden, fmt.Errorf("This account has been disabled, please contact the administrator!")
 	}
 
-	// Generate new access token
 	token := s.GenerateToken()
 	user.AccessToken = &token
 
-	// Update timestamp
 	now := time.Now().Unix()
 	user.UpdateTime = &now
 	now_date := time.Now()
 	user.UpdateDate = &now_date
 	if err := s.userDAO.Update(user); err != nil {
-		return nil, fmt.Errorf("failed to update user: %w", err)
+		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}
 
-	return user, nil
+	return user, common.CodeSuccess, nil
 }
 
 // GetUserByID get user by ID
-func (s *UserService) GetUserByID(id uint) (*UserResponse, error) {
+func (s *UserService) GetUserByID(id uint) (*UserResponse, common.ErrorCode, error) {
 	user, err := s.userDAO.GetByID(id)
 	if err != nil {
-		return nil, err
+		return nil, common.CodeNotFound, err
 	}
 
 	return &UserResponse{
@@ -223,15 +319,15 @@ func (s *UserService) GetUserByID(id uint) (*UserResponse, error) {
 		Nickname:  user.Nickname,
 		Status:    user.Status,
 		CreatedAt: time.Unix(user.CreateTime, 0).Format("2006-01-02 15:04:05"),
-	}, nil
+	}, common.CodeSuccess, nil
 }
 
 // ListUsers list users
-func (s *UserService) ListUsers(page, pageSize int) ([]*UserResponse, int64, error) {
+func (s *UserService) ListUsers(page, pageSize int) ([]*UserResponse, int64, common.ErrorCode, error) {
 	offset := (page - 1) * pageSize
 	users, total, err := s.userDAO.List(offset, pageSize)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, common.CodeServerError, err
 	}
 
 	responses := make([]*UserResponse, len(users))
@@ -245,7 +341,7 @@ func (s *UserService) ListUsers(page, pageSize int) ([]*UserResponse, int64, err
 		}
 	}
 
-	return responses, total, nil
+	return responses, total, common.CodeSuccess, nil
 }
 
 // HashPassword generate password hash
@@ -399,7 +495,7 @@ func (s *UserService) GenerateToken() string {
 // GetUserByToken gets user by authorization header
 // The token parameter is the authorization header value, which needs to be decrypted
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
-func (s *UserService) GetUserByToken(authorization string) (*model.User, error) {
+func (s *UserService) GetUserByToken(authorization string) (*model.User, common.ErrorCode, error) {
 	// Get secret key from config
 	variables := server.GetVariables()
 	secretKey := variables.SecretKey
@@ -408,16 +504,21 @@ func (s *UserService) GetUserByToken(authorization string) (*model.User, error) 
 	// Equivalent to: access_token = str(jwt.loads(authorization)) in Python
 	accessToken, err := utility.ExtractAccessToken(authorization, secretKey)
 	if err != nil {
-		return nil, fmt.Errorf("invalid authorization token: %w", err)
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization token: %w", err)
 	}
 
 	// Validate token format (should be at least 32 chars, UUID format)
 	if len(accessToken) < 32 {
-		return nil, errors.New("invalid access token format")
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token format")
 	}
 
 	// Get user by access token
-	return s.userDAO.GetByAccessToken(accessToken)
+	user, err := s.userDAO.GetByAccessToken(accessToken)
+	if err != nil {
+		return nil, common.CodeUnauthorized, err
+	}
+
+	return user, common.CodeSuccess, nil
 }
 
 // UpdateUserAccessToken updates user's access token
@@ -426,11 +527,15 @@ func (s *UserService) UpdateUserAccessToken(user *model.User, token string) erro
 }
 
 // Logout invalidates user's access token
-func (s *UserService) Logout(user *model.User) error {
+func (s *UserService) Logout(user *model.User) (common.ErrorCode, error) {
 	// Invalidate token by setting it to an invalid value
 	// Similar to Python implementation: "INVALID_" + secrets.token_hex(16)
 	invalidToken := "INVALID_" + s.GenerateToken()
-	return s.UpdateUserAccessToken(user, invalidToken)
+	err := s.UpdateUserAccessToken(user, invalidToken)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
 }
 
 // GetUserProfile returns user profile information
@@ -539,7 +644,7 @@ func (s *UserService) GetUserProfile(user *model.User) map[string]interface{} {
 }
 
 // UpdateUserSettings updates user settings
-func (s *UserService) UpdateUserSettings(user *model.User, req *UpdateSettingsRequest) error {
+func (s *UserService) UpdateUserSettings(user *model.User, req *UpdateSettingsRequest) (common.ErrorCode, error) {
 	// Update fields if provided
 	if req.Nickname != nil {
 		user.Nickname = *req.Nickname
@@ -562,15 +667,18 @@ func (s *UserService) UpdateUserSettings(user *model.User, req *UpdateSettingsRe
 	}
 
 	// Save updated user
-	return s.userDAO.Update(user)
+	if err := s.userDAO.Update(user); err != nil {
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
 }
 
 // ChangePassword changes user password
-func (s *UserService) ChangePassword(user *model.User, req *ChangePasswordRequest) error {
+func (s *UserService) ChangePassword(user *model.User, req *ChangePasswordRequest) (common.ErrorCode, error) {
 	// If password is provided, verify current password
 	if req.Password != nil {
 		if user.Password == nil || !s.VerifyPassword(*user.Password, *req.Password) {
-			return errors.New("current password is incorrect")
+			return common.CodeBadRequest, fmt.Errorf("current password is incorrect")
 		}
 	}
 
@@ -578,13 +686,16 @@ func (s *UserService) ChangePassword(user *model.User, req *ChangePasswordReques
 	if req.NewPassword != nil {
 		hashedPassword, err := s.HashPassword(*req.NewPassword)
 		if err != nil {
-			return fmt.Errorf("failed to hash new password: %w", err)
+			return common.CodeServerError, fmt.Errorf("failed to hash new password: %w", err)
 		}
 		user.Password = &hashedPassword
 	}
 
 	// Save updated user
-	return s.userDAO.Update(user)
+	if err := s.userDAO.Update(user); err != nil {
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
 }
 
 // LoginChannel represents a login channel response
@@ -595,7 +706,7 @@ type LoginChannel struct {
 }
 
 // GetLoginChannels gets all supported authentication channels
-func (s *UserService) GetLoginChannels() ([]*LoginChannel, error) {
+func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, error) {
 	cfg := server.GetConfig()
 	channels := make([]*LoginChannel, 0)
 
@@ -617,5 +728,5 @@ func (s *UserService) GetLoginChannels() ([]*LoginChannel, error) {
 		})
 	}
 
-	return channels, nil
+	return channels, common.CodeSuccess, nil
 }
