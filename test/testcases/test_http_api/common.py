@@ -116,7 +116,8 @@ def download_document(auth, dataset_id, document_id, save_path):
     url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
     res = requests.get(url=url, auth=auth, stream=True)
     try:
-        if res.status_code == 200:
+        # available for unauthed downloads
+        if res.status_code in (200, 401):
             with open(save_path, "wb") as f:
                 for chunk in res.iter_content(chunk_size=8192):
                     f.write(chunk)
