@@ -37,11 +37,14 @@ async def create_dataset(tenant_id: str, req: dict):
     :param req: dataset creation request
     :return: (success, result) or (success, error_message)
     """
+    # Extract ext field for additional parameters
+    ext_fields = req.pop("ext", {})
+
     e, req = KnowledgebaseService.create_with_name(
         name=req.pop("name", None),
         tenant_id=tenant_id,
         parser_id=req.pop("parser_id", None),
-        **req
+        **ext_fields
     )
 
     if not e:
@@ -148,6 +151,12 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     if kb is None:
         return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
 
+    # Extract ext field for additional parameters
+    ext_fields = req.pop("ext", {})
+    
+    # Merge ext fields with req
+    req.update(ext_fields)
+
     if req.get("parser_config"):
         req["parser_config"] = deep_merge(kb.parser_config, req["parser_config"])
 
@@ -207,10 +216,11 @@ def list_datasets(tenant_id: str, args: dict):
     """
     kb_id = args.get("id")
     name = args.get("name")
-    keywords = args.get("keywords", "")
     page = int(args.get("page", 1))
     page_size = int(args.get("page_size", 30))
-    parser_id = args.get("parser_id")
+    ext_fields = args.get("ext", {})
+    parser_id = ext_fields.get("parser_id")
+    keywords = ext_fields.get("keywords", "")
     orderby = args.get("orderby", "create_time")
     desc_arg = args.get("desc", "true")
     if isinstance(desc_arg, str):
@@ -229,8 +239,8 @@ def list_datasets(tenant_id: str, args: dict):
         kbs = KnowledgebaseService.get_kb_by_name(name, tenant_id)
         if not kbs:
             return False, f"User '{tenant_id}' lacks permission for dataset '{name}'"
-    if args.get("owner_ids", []):
-        tenant_ids = args["owner_ids"]
+    if ext_fields.get("owner_ids", []):
+        tenant_ids = ext_fields["owner_ids"]
     else:
         tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
         tenant_ids = [m["tenant_id"] for m in tenants]
@@ -259,21 +269,31 @@ def list_datasets(tenant_id: str, args: dict):
     return True, {"data": response_data_list, "total": total}
 
 
-async def get_knowledge_graph(dataset_id: str, tenant_id: str):
+async def get_knowledge_graph(dataset_id: str, tenant_id: str, args: dict = None):
     """
     Get knowledge graph for a dataset.
 
     :param dataset_id: dataset ID
     :param tenant_id: tenant ID
+    :param args: query arguments (for future extension via ext field)
     :return: (success, result) or (success, error_message)
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, "No authorization."
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
+    
+    # Extract ext field from query parameters for future extension
+    ext_fields = {}
+    if args:
+        ext_fields = json.loads(args.get("ext", "{}"))
+    
     req = {
         "kb_id": [dataset_id],
         "knowledge_graph_kwd": ["graph"]
     }
+    
+    # Merge ext fields with request for future use
+    req.update(ext_fields)
 
     obj = {"graph": {}, "mind_map": {}}
     from rag.nlp import search
@@ -320,18 +340,24 @@ def delete_knowledge_graph(dataset_id: str, tenant_id: str):
     return True, True
 
 
-def run_graphrag(dataset_id: str, tenant_id: str):
+def run_graphrag(dataset_id: str, tenant_id: str, req: dict = None):
     """
     Run GraphRAG for a dataset.
 
     :param dataset_id: dataset ID
     :param tenant_id: tenant ID
+    :param req: request body containing optional ext field for additional parameters
     :return: (success, result) or (success, error_message)
     """
     if not dataset_id:
         return False, 'Lack of "Dataset ID"'
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, "No authorization."
+
+    # Extract ext field for additional parameters
+    ext_fields = {}
+    if req:
+        ext_fields = req.get("ext", {})
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
@@ -345,6 +371,10 @@ def run_graphrag(dataset_id: str, tenant_id: str):
 
         if task and task.progress not in [-1, 1]:
             return False, f"Task {task_id} in progress with status {task.progress}. A Graph Task is already running."
+
+    # Extract parameters from ext field
+    priority = ext_fields.get("priority", 0)
+    doc_ids = ext_fields.get("doc_ids")
 
     documents, _ = DocumentService.get_by_kb_id(
         kb_id=dataset_id,
@@ -361,9 +391,9 @@ def run_graphrag(dataset_id: str, tenant_id: str):
         return False, f"No documents in Dataset {dataset_id}"
 
     sample_document = documents[0]
-    document_ids = [document["id"] for document in documents]
+    document_ids = doc_ids if doc_ids else [document["id"] for document in documents]
 
-    task_id = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="graphrag", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+    task_id = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="graphrag", priority=priority, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
 
     if not KnowledgebaseService.update_by_id(kb.id, {"graphrag_task_id": task_id}):
         logging.warning(f"Cannot save graphrag_task_id for Dataset {dataset_id}")
@@ -399,18 +429,24 @@ def trace_graphrag(dataset_id: str, tenant_id: str):
     return True, task.to_dict()
 
 
-def run_raptor(dataset_id: str, tenant_id: str):
+def run_raptor(dataset_id: str, tenant_id: str, req: dict = None):
     """
     Run RAPTOR for a dataset.
 
     :param dataset_id: dataset ID
     :param tenant_id: tenant ID
+    :param req: request body containing optional ext field for additional parameters
     :return: (success, result) or (success, error_message)
     """
     if not dataset_id:
         return False, 'Lack of "Dataset ID"'
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, "No authorization."
+
+    # Extract ext field for additional parameters
+    ext_fields = {}
+    if req:
+        ext_fields = req.get("ext", {})
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
@@ -424,6 +460,10 @@ def run_raptor(dataset_id: str, tenant_id: str):
 
         if task and task.progress not in [-1, 1]:
             return False, f"Task {task_id} in progress with status {task.progress}. A RAPTOR Task is already running."
+
+    # Extract parameters from ext field
+    priority = ext_fields.get("priority", 0)
+    doc_ids = ext_fields.get("doc_ids")
 
     documents, _ = DocumentService.get_by_kb_id(
         kb_id=dataset_id,
@@ -440,9 +480,9 @@ def run_raptor(dataset_id: str, tenant_id: str):
         return False, f"No documents in Dataset {dataset_id}"
 
     sample_document = documents[0]
-    document_ids = [document["id"] for document in documents]
+    document_ids = doc_ids if doc_ids else [document["id"] for document in documents]
 
-    task_id = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="raptor", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+    task_id = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="raptor", priority=priority, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
 
     if not KnowledgebaseService.update_by_id(kb.id, {"raptor_task_id": task_id}):
         logging.warning(f"Cannot save raptor_task_id for Dataset {dataset_id}")

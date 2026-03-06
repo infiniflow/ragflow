@@ -335,7 +335,9 @@ def list_datasets(tenant_id):
 @add_tenant_id_to_kwargs
 async def knowledge_graph(tenant_id, dataset_id):
     try:
-        success, result = await dataset_api_service.get_knowledge_graph(dataset_id, tenant_id)
+        # Parse query parameters
+        args = request.args.to_dict()
+        success, result = await dataset_api_service.get_knowledge_graph(dataset_id, tenant_id, args)
         if success:
             return get_result(data=result)
         else:
@@ -371,9 +373,13 @@ def delete_knowledge_graph(tenant_id, dataset_id):
 @manager.route("/datasets/<dataset_id>/run_graphrag", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def run_graphrag(tenant_id, dataset_id):
+async def run_graphrag(tenant_id, dataset_id):
     try:
-        success, result = dataset_api_service.run_graphrag(dataset_id, tenant_id)
+        req, err = await validate_and_parse_json_request(request, None, extras={}, exclude_unset=False)
+        if err is not None:
+            return get_error_argument_result(err)
+        
+        success, result = await dataset_api_service.run_graphrag(dataset_id, tenant_id, req)
         if success:
             return get_result(data=result)
         else:
@@ -401,9 +407,13 @@ def trace_graphrag(tenant_id, dataset_id):
 @manager.route("/datasets/<dataset_id>/run_raptor", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def run_raptor(tenant_id, dataset_id):
+async def run_raptor(tenant_id, dataset_id):
     try:
-        success, result = dataset_api_service.run_raptor(dataset_id, tenant_id)
+        req, err = await validate_and_parse_json_request(request, None, extras={}, exclude_unset=False)
+        if err is not None:
+            return get_error_argument_result(err)
+        
+        success, result = await dataset_api_service.run_raptor(dataset_id, tenant_id, req)
         if success:
             return get_result(data=result)
         else:

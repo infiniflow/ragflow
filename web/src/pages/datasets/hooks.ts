@@ -16,8 +16,14 @@ export const useSearchKnowledge = () => {
 
 export interface Iknowledge {
   name: string;
-  embd_id: string;
-  parser_id: string;
+  embd_id?: string;
+  parser_id?: string;
+  parseType?: number;
+  pipeline_id?: string;
+  ext?: {
+    language?: string;
+    [key: string]: any;
+  };
 }
 export const useSaveKnowledge = () => {
   const { visible: visible, hideModal, showModal } = useSetModalState();

@@ -142,16 +142,14 @@ export const useFetchNextKnowledgeListByPage = () => {
     },
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await listDataset(
-        {
+      const { data } = await listDataset({
+        page_size: pagination.pageSize,
+        page: pagination.current,
+        ext: {
           keywords: debouncedSearchString,
-          page_size: pagination.pageSize,
-          page: pagination.current,
-        },
-        {
           owner_ids: filterValue.owner,
         },
-      );
+      });
 
       return { kbs: data?.data, total: data?.total };
     },
@@ -185,7 +183,18 @@ export const useCreateKnowledge = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: [KnowledgeApiAction.CreateKnowledge],
-    mutationFn: async (params: { id?: string; name: string }) => {
+    mutationFn: async (params: {
+      id?: string;
+      name: string;
+      embd_id?: string;
+      parser_id?: string;
+      parseType?: number;
+      pipeline_id?: string;
+      ext?: {
+        language?: string;
+        [key: string]: any;
+      };
+    }) => {
       const { data = {} } = await kbService.createKb(params);
       if (data.code === 0) {
         message.success(
