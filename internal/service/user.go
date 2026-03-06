@@ -22,10 +22,10 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"os"
-	"ragflow/internal/errors"
+	"ragflow/internal/apperror"
 	"ragflow/internal/server"
 	"regexp"
 	"strconv"
@@ -100,22 +100,22 @@ type UserResponse struct {
 func (s *UserService) Register(req *RegisterRequest) (*model.User, error) {
 	cfg := server.GetConfig()
 	if cfg.RegisterEnabled == 0 {
-		return nil, errors.ErrOperating("User registration is disabled!")
+		return nil, apperror.ErrOperating("User registration is disabled!")
 	}
 
 	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
 	if !emailRegex.MatchString(req.Email) {
-		return nil, errors.ErrOperating(fmt.Sprintf("Invalid email address: %s!", req.Email))
+		return nil, apperror.ErrOperating(fmt.Sprintf("Invalid email address: %s!", req.Email))
 	}
 
 	existUser, _ := s.userDAO.GetByEmail(req.Email)
 	if existUser != nil {
-		return nil, errors.ErrOperating(fmt.Sprintf("Email: %s has already registered!", req.Email))
+		return nil, apperror.ErrOperating(fmt.Sprintf("Email: %s has already registered!", req.Email))
 	}
 
 	decryptedPassword, err := s.decryptPassword(req.Password)
 	if err != nil {
-		return nil, errors.ErrServer("Fail to decrypt password")
+		return nil, apperror.ErrServer("Fail to decrypt password")
 	}
 
 	hashedPassword, err := s.HashPassword(decryptedPassword)
@@ -230,7 +230,7 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, error) {
 	// Get user by email (using username field as email)
 	user, err := s.userDAO.GetByEmail(req.Username)
 	if err != nil {
-		return nil, stderrors.New("invalid email or password")
+		return nil, errors.New("invalid email or password")
 	}
 
 	// Decrypt password using RSA
@@ -241,11 +241,11 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, error) {
 
 	// Verify password
 	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
-		return nil, stderrors.New("invalid username or password")
+		return nil, errors.New("invalid username or password")
 	}
 
 	if user.Status == nil || *user.Status != "1" {
-		return nil, stderrors.New("user is disabled")
+		return nil, errors.New("user is disabled")
 	}
 
 	// Generate new access token
@@ -271,25 +271,25 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, error) {
 // - ErrForbidden (403): Account disabled
 func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, error) {
 	if req.Email == "admin@ragflow.io" {
-		return nil, errors.ErrAuthentication("default admin account cannot be used to login normal services")
+		return nil, apperror.ErrAuthentication("default admin account cannot be used to login normal services")
 	}
 
 	user, err := s.userDAO.GetByEmail(req.Email)
 	if err != nil {
-		return nil, errors.ErrAuthentication(fmt.Sprintf("Email: %s is not registered!", req.Email))
+		return nil, apperror.ErrAuthentication(fmt.Sprintf("Email: %s is not registered!", req.Email))
 	}
 
 	decryptedPassword, err := s.decryptPassword(req.Password)
 	if err != nil {
-		return nil, errors.ErrServer("Fail to crypt password")
+		return nil, apperror.ErrServer("Fail to crypt password")
 	}
 
 	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
-		return nil, errors.ErrAuthentication("Email and password do not match!")
+		return nil, apperror.ErrAuthentication("Email and password do not match!")
 	}
 
 	if user.IsActive == "0" {
-		return nil, errors.ErrForbidden("This account has been disabled, please contact the administrator!")
+		return nil, apperror.ErrForbidden("This account has been disabled, please contact the administrator!")
 	}
 
 	token := s.GenerateToken()
@@ -428,7 +428,7 @@ func (s *UserService) loadPrivateKey() (*rsa.PrivateKey, error) {
 	// Parse PEM block
 	block, _ := pem.Decode(keyData)
 	if block == nil {
-		return nil, stderrors.New("failed to decode PEM block")
+		return nil, errors.New("failed to decode PEM block")
 	}
 
 	// Decrypt the PEM block if it's encrypted
@@ -456,7 +456,7 @@ func (s *UserService) loadPrivateKey() (*rsa.PrivateKey, error) {
 
 	rsaPrivateKey, ok := privateKey.(*rsa.PrivateKey)
 	if !ok {
-		return nil, stderrors.New("not an RSA private key")
+		return nil, errors.New("not an RSA private key")
 	}
 
 	return rsaPrivateKey, nil
@@ -509,7 +509,7 @@ func (s *UserService) GetUserByToken(authorization string) (*model.User, error) 
 
 	// Validate token format (should be at least 32 chars, UUID format)
 	if len(accessToken) < 32 {
-		return nil, stderrors.New("invalid access token format")
+		return nil, errors.New("invalid access token format")
 	}
 
 	// Get user by access token
@@ -666,7 +666,7 @@ func (s *UserService) ChangePassword(user *model.User, req *ChangePasswordReques
 	// If password is provided, verify current password
 	if req.Password != nil {
 		if user.Password == nil || !s.VerifyPassword(*user.Password, *req.Password) {
-			return stderrors.New("current password is incorrect")
+			return errors.New("current password is incorrect")
 		}
 	}
 

@@ -19,7 +19,7 @@ package handler
 import (
 	"fmt"
 	"net/http"
-	"ragflow/internal/errors"
+	"ragflow/internal/apperror"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"strconv"
@@ -63,7 +63,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	user, err := h.userService.Register(&req)
 	if err != nil {
-		if appErr, ok := errors.GetAppError(err); ok {
+		if appErr, ok := apperror.GetAppError(err); ok {
 			c.JSON(http.StatusOK, gin.H{
 				"code":    appErr.Code,
 				"message": appErr.Message,
@@ -172,7 +172,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 
 	user, err := h.userService.LoginByEmail(&req)
 	if err != nil {
-		if appErr, ok := errors.GetAppError(err); ok {
+		if appErr, ok := apperror.GetAppError(err); ok {
 			c.JSON(http.StatusOK, gin.H{
 				"code":    appErr.Code,
 				"message": appErr.Message,
