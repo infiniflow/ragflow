@@ -36,6 +36,7 @@ import { z } from 'zod';
 
 const FormSchema = z.object({
   visibleAvatar: z.boolean(),
+  publishAvatar: z.boolean(),
   locale: z.string(),
   embedType: z.enum(['fullscreen', 'widget']),
   enableStreaming: z.boolean(),
@@ -62,6 +63,7 @@ function EmbedDialog({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       visibleAvatar: false,
+      publishAvatar: false,
       locale: '',
       embedType: 'fullscreen' as const,
       enableStreaming: false,
@@ -79,7 +81,14 @@ function EmbedDialog({
   }, []);
 
   const generateIframeSrc = useCallback(() => {
-    const { visibleAvatar, locale, embedType, enableStreaming, theme } = values;
+    const {
+      visibleAvatar,
+      publishAvatar,
+      locale,
+      embedType,
+      enableStreaming,
+      theme,
+    } = values;
     const baseRoute =
       embedType === 'widget'
         ? Routes.ChatWidget
@@ -87,6 +96,9 @@ function EmbedDialog({
           ? Routes.AgentShare
           : Routes.ChatShare;
     let src = `${location.origin}${baseRoute}?shared_id=${token}&from=${from}&auth=${beta}`;
+    if (publishAvatar) {
+      src += '&release=true';
+    }
     if (visibleAvatar) {
       src += '&visible_avatar=1';
     }
@@ -235,6 +247,22 @@ function EmbedDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t('avatarHidden')}</FormLabel>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      ></Switch>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="publishAvatar"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Publish Avatar</FormLabel>
                     <FormControl>
                       <Switch
                         checked={field.value}

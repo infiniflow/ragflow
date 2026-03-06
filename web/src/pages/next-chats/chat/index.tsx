@@ -95,10 +95,17 @@ export default function Chat() {
 
   if (isDebugMode) {
     return (
-      <section className="pt-5 pb-16 h-[100vh] flex flex-col">
+      <section
+        className="pt-5 pb-16 h-[100vh] flex flex-col"
+        data-testid="chat-detail-multimodel-root"
+      >
         <header className="px-10 pb-5">
           <div className="mb-5">
-            <Button variant="outline" onClick={switchDebugMode}>
+            <Button
+              variant="outline"
+              onClick={switchDebugMode}
+              data-testid="chat-detail-multimodel-back"
+            >
               <LucideArrowBigLeft />
               <span>{t('common.back')}</span>
             </Button>
@@ -141,7 +148,7 @@ export default function Chat() {
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        <Button onClick={showEmbedModal}>
+        <Button onClick={showEmbedModal} data-testid="chat-detail-embed-open">
           <LucideSend />
           {t('common.embedIntoSite')}
         </Button>
@@ -160,7 +167,11 @@ export default function Chat() {
               >
                 <CardTitle className="flex justify-between items-center text-base gap-2">
                   <div className="truncate">{currentConversationName}</div>
-                  <Button variant={'ghost'} onClick={switchDebugMode}>
+                  <Button
+                    variant={'ghost'}
+                    onClick={switchDebugMode}
+                    data-testid="chat-detail-multimodel-toggle"
+                  >
                     <LucideArrowUpRight /> {t('chat.multipleModels')}
                   </Button>
                 </CardTitle>

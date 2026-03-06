@@ -4,7 +4,7 @@ export default {
       confirm: 'Confirm',
       back: 'Back',
       noResults: 'No results found',
-      selectPlaceholder: 'select value',
+      selectPlaceholder: 'Select value',
       selectAll: 'Select all',
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete it ?',
@@ -172,6 +172,7 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         action: 'Action',
       },
       config: {
+        descriptionPlaceholder: 'Describe your memory',
         memorySizeTooltip: `Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes).
 Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.`,
         avatar: 'Avatar',
@@ -390,7 +391,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       cancel: 'Cancel',
       close: 'Close',
       rerankModel: 'Rerank model',
-      rerankPlaceholder: 'Please select',
+      rerankPlaceholder: 'Select value',
       rerankTip: `Optional. If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time. If you wish to use a rerank model, ensure you use a SaaS reranker; if you prefer a locally deployed rerank model, ensure you start RAGFlow with docker-compose-gpu.yml.`,
       topK: 'Top-K',
       topKTip: `Used together with the Rerank model, this setting defines the number of text chunks to be sent to the specified reranking model.`,
@@ -437,6 +438,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      randomSeedTip:
+        'Seed is the starting point for a pseudo-random algorithm that ensures reproducibility of the same output across different runs.',
+      datasetDescription: 'Describe your dataset',
+      overlappedPercentTip: 'The overlapped percent between two nearby chunks',
       globalIndexModelTip:
         'Used to generate Knowledge graphs, RAPTOR, auto-metadata, auto-keyword and auto-question. Model performance will affects generation quality.',
       globalIndexModel: 'Indexing model',
@@ -774,15 +779,25 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       emptyResponse: 'Empty response',
       emptyResponseTip: `Set this as a response if no results are retrieved from the datasets for your query, or leave this field blank to allow the LLM to improvise when nothing is found.`,
       emptyResponseMessage: `Empty response will be triggered when nothing relevant is retrieved from datasets. You must clear the 'Empty response' field if no dataset is selected.`,
+      emptyResponsePlaceholder:
+        'The answer you are looking for is not found in the dataset!',
       setAnOpener: 'Opening greeting',
       setAnOpenerInitial: `Hi! I'm your assistant. What can I do for you?`,
       setAnOpenerTip: 'Set an opening greeting for users.',
       knowledgeBases: 'Datasets',
+      knowledgeBasesPlaceholder: 'Select value',
       knowledgeBasesMessage: 'Please select',
       knowledgeBasesTip:
         'Select the datasets to associate with this chat assistant. An empty dataset will not appear in the dropdown list.',
       system: 'System prompt',
-      systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided dataset.
+      systemPlaceholder: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+
+**Essential Rules:**
+  - Your answer must be derived **solely** from this dataset: {knowledge}.
+  - **When information is available**: Summarize the content to give a detailed answer.
+  - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the knowledge base!"
+  - **Always consider** the entire conversation history.`,
+      systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
 
       **Essential Rules:**
         - Your answer must be derived **solely** from this dataset: \`{knowledge}\`.
@@ -879,7 +894,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'This optimizes user queries using context in a multi-round conversation. When enabled, it will consume additional LLM tokens.',
       howUseId: 'How to use chat ID?',
       description: 'Description of assistant',
-      descriptionPlaceholder: 'e.g. A chat assistant for resume.',
+      descriptionPlaceholder: "I'm a chat assistant.",
       useKnowledgeGraph: 'Use knowledge graph',
       useKnowledgeGraphTip:
         'Whether to use knowledge graph(s) in the specified dataset(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.',
@@ -897,6 +912,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tavilyApiKeyMessage: 'Please enter your Tavily API Key',
       tavilyApiKeyHelp: 'How to get it?',
       crossLanguage: 'Cross-language search',
+      crossLanguagePlaceholder: 'Select value',
       crossLanguageTip: `Select one or more languages for cross‑language search. If no language is selected, the system searches with the original query.`,
       createChat: 'Create chat',
       metadata: 'Meta data',

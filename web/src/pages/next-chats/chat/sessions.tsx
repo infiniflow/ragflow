@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useChatUrlParams } from '../hooks/use-chat-url';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { useSelectDerivedConversationList } from '../hooks/use-select-conversation-list';
 import { ConversationDropdown } from './conversation-dropdown';
@@ -40,6 +41,8 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
   const { data } = useFetchDialog();
   const { visible, switchVisible } = useSetModalState(true);
   const { removeConversation } = useRemoveConversation();
+  const { setConversationBoth } = useChatUrlParams();
+  const { conversationId } = useGetChatSearchParams();
 
   // Selection mode state
   const [selectionMode, setSelectionMode] = useState(false);
@@ -82,14 +85,52 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
 
   // Batch delete
   const handleBatchDelete = useCallback(async () => {
-    if (selectedIds.size > 0) {
-      await removeConversation(Array.from(selectedIds));
-      exitSelectionMode();
+    if (selectedIds.size === 0) {
+      return;
     }
-  }, [selectedIds, removeConversation, exitSelectionMode]);
+
+    const selectedIdList = Array.from(selectedIds);
+    const currentConversationDeleted = conversationId
+      ? selectedIdList.includes(conversationId)
+      : false;
+    const temporaryIdSet = new Set(
+      conversationList.filter((item) => item.is_new).map((item) => item.id),
+    );
+    const persistedIds: string[] = [];
+
+    selectedIdList.forEach((id) => {
+      if (temporaryIdSet.has(id)) {
+        removeTemporaryConversation(id);
+      } else {
+        persistedIds.push(id);
+      }
+    });
+
+    let removeCode = -1;
+    if (persistedIds.length > 0) {
+      removeCode = await removeConversation(persistedIds);
+    }
+
+    if (currentConversationDeleted && conversationId) {
+      const currentIsTemporary = temporaryIdSet.has(conversationId);
+      const currentPersistedDeleted =
+        persistedIds.includes(conversationId) && removeCode === 0;
+      if (currentIsTemporary || currentPersistedDeleted) {
+        setConversationBoth('', '');
+      }
+    }
+    exitSelectionMode();
+  }, [
+    selectedIds,
+    conversationId,
+    conversationList,
+    setConversationBoth,
+    removeTemporaryConversation,
+    removeConversation,
+    exitSelectionMode,
+  ]);
 
   const selectedCount = useMemo(() => selectedIds.size, [selectedIds]);
-  const { conversationId } = useGetChatSearchParams();
 
   if (!visible) {
     return (
@@ -99,6 +140,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
           size="icon-sm"
           className="border-0"
           onClick={switchVisible}
+          data-testid="chat-detail-sessions-open"
         >
           <RAGFlowAvatar
             avatar={data.icon}
@@ -111,7 +153,11 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
   }
 
   return (
-    <aside className="p-5 w-[296px] flex flex-col" role="complementary">
+    <aside
+      className="p-5 w-[296px] flex flex-col"
+      role="complementary"
+      data-testid="chat-detail-sessions"
+    >
       <header className="flex items-center text-base justify-between gap-2">
         <div className="flex gap-3 items-center min-w-0">
           <RAGFlowAvatar
@@ -128,6 +174,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
           size="icon-sm"
           className="border-0"
           onClick={switchVisible}
+          data-testid="chat-detail-sessions-close"
         >
           <LucidePanelLeftClose />
         </Button>
@@ -147,7 +194,12 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
         <div className="flex items-center gap-2">
           {selectionMode ? (
             // Exit selection mode
-            <Button variant="ghost" size="icon-xs" onClick={exitSelectionMode}>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={exitSelectionMode}
+              data-testid="chat-detail-session-selection-exit"
+            >
               <LucideUndo2 size={16} />
             </Button>
           ) : (
@@ -156,6 +208,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
               variant="ghost"
               size="icon-xs"
               onClick={addTemporaryConversation}
+              data-testid="chat-detail-session-new"
             >
               <LucidePlus className="h-4 w-4" />
             </Button>
@@ -171,8 +224,15 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
                   count: selectedCount,
                 }),
               }}
+              testId="chat-detail-session-batch-delete-dialog"
+              confirmButtonTestId="chat-detail-session-batch-delete-confirm"
+              cancelButtonTestId="chat-detail-session-batch-delete-cancel"
             >
-              <Button variant="delete" size="icon-xs">
+              <Button
+                variant="delete"
+                size="icon-xs"
+                data-testid="chat-detail-session-batch-delete"
+              >
                 <LucideTrash2 />
               </Button>
             </ConfirmDeleteDialog>
@@ -181,6 +241,11 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
               variant="ghost"
               size="icon-xs"
               onClick={selectionMode ? toggleSelectAll : toggleSelectionMode}
+              data-testid={
+                selectionMode
+                  ? 'chat-detail-session-select-all'
+                  : 'chat-detail-session-selection-enable'
+              }
             >
               {selectionMode ? <LucideListChecks /> : <LucideCopyX />}
             </Button>
@@ -192,6 +257,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
         <SearchInput
           onChange={handleInputChange}
           value={searchString}
+          data-testid="chat-detail-session-search"
         ></SearchInput>
       </div>
 
@@ -204,11 +270,14 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
                 className="py-2"
                 role="option"
                 aria-selected={selectedIds.has(x.id)}
+                data-session-id={x.id}
               >
                 <label className="flex items-center gap-2">
                   <Checkbox
                     checked={selectedIds.has(x.id)}
                     onCheckedChange={() => toggleSelection(x.id)}
+                    data-testid="chat-detail-session-checkbox"
+                    data-session-id={x.id}
                   />
 
                   <span className="truncate">{x.name}</span>
@@ -232,6 +301,8 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
                     type="button"
                     className="focus-visible:outline-none px-3 py-2 text-left flex-1 truncate"
                     onClick={() => handleConversationCardClick(x.id, x.is_new)}
+                    data-testid="chat-detail-session-item"
+                    data-session-id={x.id}
                   >
                     {x.name}
                   </button>
@@ -240,7 +311,10 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
                     conversation={x}
                     removeTemporaryConversation={removeTemporaryConversation}
                   >
-                    <MoreButton></MoreButton>
+                    <MoreButton
+                      data-testid="chat-detail-session-actions"
+                      data-session-id={x.id}
+                    ></MoreButton>
                   </ConversationDropdown>
                 </li>
               ))}

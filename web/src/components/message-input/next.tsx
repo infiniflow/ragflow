@@ -235,6 +235,7 @@ export function NextMessageInput({
                   variant="transparent"
                   className="rounded-sm border-0"
                   disabled={isUploading || sendLoading}
+                  data-testid="chat-detail-attach"
                 >
                   <Paperclip className="size-3.5" />
                   <span className="sr-only">Attach file</span>
@@ -251,6 +252,7 @@ export function NextMessageInput({
                   'bg-text-primary text-bg-base': enableThinking,
                 })}
                 onClick={handleThinkingToggle}
+                data-testid="chat-detail-thinking-toggle"
               >
                 <Atom />
                 <span>Thinking</span>
@@ -264,6 +266,7 @@ export function NextMessageInput({
                 size="icon-xs"
                 className="border-0"
                 onClick={handleInternetToggle}
+                data-testid="chat-detail-internet-toggle"
               >
                 <Globe />
               </Button>
@@ -284,6 +287,7 @@ export function NextMessageInput({
                 onOk={(value) => {
                   setAudioInputValue(value);
                 }}
+                testId="chat-detail-audio-toggle"
               />
 
               <Button
@@ -291,6 +295,7 @@ export function NextMessageInput({
                 disabled={
                   sendDisabled || isUploading || sendLoading || !value.trim()
                 }
+                data-testid="chat-detail-send"
               >
                 <Send />
                 <span className="sr-only">Send message</span>
