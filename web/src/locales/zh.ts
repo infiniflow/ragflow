@@ -1200,6 +1200,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       hint: '提示',
     },
     fileManager: {
+      uploadFolderTitle: '上传文件夹',
+      folder: '文件夹',
       files: '文件',
       name: '名称',
       uploadDate: '上传日期',
