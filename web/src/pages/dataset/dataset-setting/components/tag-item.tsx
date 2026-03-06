@@ -60,7 +60,7 @@ export const TagSetItem = () => {
                 <MultiSelect
                   options={knowledgeOptions}
                   onValueChange={field.onChange}
-                  placeholder={t('chat.knowledgeBasesMessage')}
+                  // placeholder={t('chat.knowledgeBasesMessage')}
                   variant="inverted"
                   maxCount={10}
                   {...field}

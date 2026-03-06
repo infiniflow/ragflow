@@ -44,9 +44,10 @@ class _AwaitableValue:
 
 
 class _DummyKB:
-    def __init__(self, embd_id="embd@factory", chunk_num=1):
+    def __init__(self, embd_id="embd@factory", chunk_num=1, tenant_embd_id=1):
         self.embd_id = embd_id
         self.chunk_num = chunk_num
+        self.tenant_embd_id = tenant_embd_id
 
     def to_json(self):
         return {"id": "kb-1"}

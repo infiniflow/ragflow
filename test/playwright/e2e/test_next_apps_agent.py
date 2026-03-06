@@ -269,25 +269,31 @@ def step_06_run_agent(
         else:
             run_button = run_root
         expect(run_button).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-        try:
-            auth_click(run_button, "agent_run")
-        except Exception:
-            page.wait_for_timeout(500)
-            auth_click(run_button, "agent_run_retry")
+        run_attempts = max(1, int(os.getenv("PW_AGENT_RUN_ATTEMPTS", "2")))
+        last_error = None
+        for attempt in range(run_attempts):
+            if attempt > 0:
+                page.wait_for_timeout(500)
+            try:
+                auth_click(run_button, f"agent_run_attempt_{attempt + 1}")
+            except Exception as exc:
+                last_error = exc
+                continue
+            try:
+                run_ui_locator.first.wait_for(state="visible", timeout=run_ui_timeout_ms)
+                flow_state["agent_running"] = True
+                snap("agent_run_started")
+                return
+            except Exception as exc:
+                last_error = exc
 
-        try:
-            run_ui_locator.first.wait_for(state="visible", timeout=run_ui_timeout_ms)
-        except Exception:
-            _raise_with_diagnostics(
-                page,
-                "Agent run UI did not open after clicking Run.",
-                snap=snap,
-                snap_name="agent_run_missing",
-            )
-
-        flow_state["agent_running"] = True
-        snap("agent_run_started")
-        return
+        suffix = f" last_error={last_error}" if last_error else ""
+        _raise_with_diagnostics(
+            page,
+            f"Agent run UI did not open after clicking Run ({run_attempts} attempts).{suffix}",
+            snap=snap,
+            snap_name="agent_run_missing",
+        )
 
 
 def step_07_send_chat(
@@ -378,6 +384,7 @@ def test_agent_create_then_import_json_then_run_and_wait_idle_flow(
     flow_state,
     base_url,
     login_url,
+    ensure_dataset_ready,
     active_auth_context,
     step,
     snap,

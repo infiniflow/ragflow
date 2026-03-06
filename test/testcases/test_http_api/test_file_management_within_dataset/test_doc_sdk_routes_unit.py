@@ -151,6 +151,149 @@ def _load_doc_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "deepdoc.parser.utils", deepdoc_parser_utils)
     monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
 
+    # Mock tenant_llm_service for TenantLLMService and TenantService
+    tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
+    
+    class _MockModelConfig:
+        def __init__(self, tenant_id, model_name):
+            self.tenant_id = tenant_id
+            self.llm_name = model_name
+            self.llm_factory = "Builtin"
+            self.api_key = "fake-api-key"
+            self.api_base = "https://api.example.com"
+            self.model_type = "embedding"
+            self.max_tokens = 8192
+            self.used_tokens = 0
+            self.status = 1
+            self.id = 1
+        
+        def to_dict(self):
+            return {
+                "tenant_id": self.tenant_id,
+                "llm_name": self.llm_name,
+                "llm_factory": self.llm_factory,
+                "api_key": self.api_key,
+                "api_base": self.api_base,
+                "model_type": self.model_type,
+                "max_tokens": self.max_tokens,
+                "used_tokens": self.used_tokens,
+                "status": self.status,
+                "id": self.id
+            }
+    
+    class _StubTenantService:
+        @staticmethod
+        def get_by_id(tenant_id):
+            return True, SimpleNamespace(
+                id=tenant_id,
+                llm_id="chat-model",
+                embd_id="embd-model",
+                asr_id="asr-model",
+                img2txt_id="img2txt-model",
+                rerank_id="rerank-model",
+                tts_id="tts-model"
+            )
+    
+    class _StubTenantLLMService:
+        @staticmethod
+        def get_api_key(tenant_id, model_name):
+            return _MockModelConfig(tenant_id, model_name)
+        
+        @staticmethod
+        def split_model_name_and_factory(model_name):
+            if "@" in model_name:
+                parts = model_name.split("@")
+                return parts[0], parts[1]
+            return model_name, None
+        
+        @staticmethod
+        def get_by_id(tenant_model_id):
+            return True, _MockModelConfig("tenant-1", "model-1")
+        
+        @staticmethod
+        def model_instance(model_config):
+            class _EmbedModel:
+                def encode(self, texts):
+                    import numpy as np
+                    return [np.array([0.2, 0.8]), np.array([0.3, 0.7])], 1
+            return _EmbedModel()
+    
+    tenant_llm_service_mod.TenantService = _StubTenantService
+    tenant_llm_service_mod.TenantLLMService = _StubTenantLLMService
+    monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_service_mod)
+
+    # Mock LLMService
+    llm_service_mod = ModuleType("api.db.services.llm_service")
+    
+    class _StubLLM:
+        def __init__(self, llm_name):
+            self.llm_name = llm_name
+            self.is_tools = False
+    
+    class _StubLLMBundle:
+        def __init__(self, tenant_id: str, model_config: dict, lang="Chinese", **kwargs):
+            self.tenant_id = tenant_id
+            self.model_config = model_config
+            self.lang = lang
+        
+        def encode(self, texts: list):
+            import numpy as np
+            # Return mock embeddings and token usage
+            return [np.array([0.2, 0.8]), np.array([0.3, 0.7])], len(texts) * 10
+    
+    llm_service_mod.LLMService = SimpleNamespace(
+        query=lambda llm_name: [_StubLLM(llm_name)] if llm_name else []
+    )
+    llm_service_mod.LLMBundle = _StubLLMBundle
+    monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
+
+    # Mock tenant_model_service to ensure it uses mocked services
+    tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
+    
+    class _MockModelConfig2:
+        def __init__(self, tenant_id, model_name):
+            self.tenant_id = tenant_id
+            self.llm_name = model_name
+            self.llm_factory = "Builtin"
+            self.api_key = "fake-api-key"
+            self.api_base = "https://api.example.com"
+            self.model_type = "embedding"
+            self.max_tokens = 8192
+            self.used_tokens = 0
+            self.status = 1
+            self.id = 1
+        
+        def to_dict(self):
+            return {
+                "tenant_id": self.tenant_id,
+                "llm_name": self.llm_name,
+                "llm_factory": self.llm_factory,
+                "api_key": self.api_key,
+                "api_base": self.api_base,
+                "model_type": self.model_type,
+                "max_tokens": self.max_tokens,
+                "used_tokens": self.used_tokens,
+                "status": self.status,
+                "id": self.id
+            }
+    
+    def _get_model_config_by_id(tenant_model_id: int) -> dict:
+        return _MockModelConfig2("tenant-1", "model-1").to_dict()
+    
+    def _get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_name: str):
+        if not model_name:
+            raise Exception("Model Name is required")
+        return _MockModelConfig2(tenant_id, model_name).to_dict()
+    
+    def _get_tenant_default_model_by_type(tenant_id: str, model_type):
+        # Return mock tenant with default model configurations
+        return _MockModelConfig2(tenant_id, "chat-model").to_dict()
+    
+    tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
+    tenant_model_service_mod.get_model_config_by_type_and_name = _get_model_config_by_type_and_name
+    tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
+    monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
+
     module_path = repo_root / "api" / "apps" / "sdk" / "doc.py"
     spec = importlib.util.spec_from_file_location("test_doc_sdk_routes_unit", module_path)
     module = importlib.util.module_from_spec(spec)
@@ -762,6 +905,7 @@ class TestDocRoutesUnit:
         monkeypatch.setattr(module.rag_tokenizer, "fine_grained_tokenize", lambda text: text or "")
         monkeypatch.setattr(module.rag_tokenizer, "is_chinese", lambda _text: False)
         monkeypatch.setattr(module.DocumentService, "get_embd_id", lambda _doc_id: "embd")
+        monkeypatch.setattr(module.DocumentService, "get_tenant_embd_id", lambda _doc_id: 1)
 
         class _EmbedModel:
             def encode(self, _texts):
@@ -851,8 +995,8 @@ class TestDocRoutesUnit:
             "get_request_json",
             lambda: _AwaitableValue({"dataset_ids": ["ds-1"], "question": "q", "highlight": "True"}),
         )
-        monkeypatch.setattr(module.KnowledgebaseService, "get_by_ids", lambda _ids: [SimpleNamespace(embd_id="m1", tenant_id="tenant-1")])
-        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, SimpleNamespace(tenant_id="tenant-1", embd_id="m1")))
+        monkeypatch.setattr(module.KnowledgebaseService, "get_by_ids", lambda _ids: [SimpleNamespace(embd_id="m1", tenant_id="tenant-1", tenant_embd_id=1)])
+        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, SimpleNamespace(tenant_id="tenant-1", embd_id="m1", tenant_embd_id=1)))
 
         class _Retriever:
             async def retrieval(self, *_args, **_kwargs):
@@ -865,7 +1009,7 @@ class TestDocRoutesUnit:
         monkeypatch.setattr(module, "label_question", lambda *_args, **_kwargs: {})
         monkeypatch.setattr(module.settings, "retriever", _Retriever())
         res = _run(module.retrieval_test.__wrapped__("tenant-1"))
-        assert res["code"] == 0
+        assert res["code"] == 0, res["message"]
         assert res["data"]["chunks"] == []
 
         monkeypatch.setattr(
@@ -974,7 +1118,7 @@ class TestDocRoutesUnit:
                 }
             ),
         )
-        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, SimpleNamespace(tenant_id="tenant-1", embd_id="m1")))
+        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, SimpleNamespace(tenant_id="tenant-1", embd_id="m1", tenant_embd_id=1)))
         monkeypatch.setattr(module, "cross_languages", _cross_languages)
         monkeypatch.setattr(module, "keyword_extraction", _keyword_extraction)
         monkeypatch.setattr(module.settings, "retriever", _FeatureRetriever())
@@ -982,7 +1126,7 @@ class TestDocRoutesUnit:
         monkeypatch.setattr(module, "label_question", lambda *_args, **_kwargs: {})
         monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: SimpleNamespace())
         res = _run(module.retrieval_test.__wrapped__("tenant-1"))
-        assert res["code"] == 0
+        assert res["code"] == 0, res["message"]
         assert feature_calls["cross"] == ("fr",)
         assert feature_calls["keyword"] == "q-xl"
         assert feature_calls["retrieval_question"] == "q-xl-kw"

@@ -127,7 +127,7 @@ export function KnowledgeBaseFormField({
               onValueChange={(value) => {
                 handleDatasetSelectChange(value, field.onChange);
               }}
-              placeholder={t('chat.knowledgeBasesMessage')}
+              placeholder={t('chat.knowledgeBasesPlaceholder')}
               variant="inverted"
               maxCount={100}
               defaultValue={field.value}

@@ -71,43 +71,24 @@ function LoginFormContent({
       </div>
       <div className=" w-full max-w-[540px] bg-bg-component backdrop-blur-sm rounded-2xl shadow-xl pt-14 pl-10 pr-10 pb-2 border border-border-button ">
         {!disablePasswordLogin && (
-        <Form {...form}>
-          <form
-            className="flex flex-col gap-8 text-text-primary "
-            data-testid="auth-form"
-            data-active={isActiveFace ? 'true' : undefined}
-            onSubmit={form.handleSubmit(onCheck)}
-          >
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel required>{t('emailLabel')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      data-testid="auth-email"
-                      placeholder={t('emailPlaceholder')}
-                      autoComplete="email"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {title === 'register' && (
+          <Form {...form}>
+            <form
+              className="flex flex-col gap-8 text-text-primary "
+              data-testid="auth-form"
+              data-active={isActiveFace ? 'true' : undefined}
+              onSubmit={form.handleSubmit(onCheck)}
+            >
               <FormField
                 control={form.control}
-                name="nickname"
+                name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel required>{t('nicknameLabel')}</FormLabel>
+                    <FormLabel required>{t('emailLabel')}</FormLabel>
                     <FormControl>
                       <Input
-                        data-testid="auth-nickname"
-                        placeholder={t('nicknamePlaceholder')}
-                        autoComplete="username"
+                        data-testid="auth-email"
+                        placeholder={t('emailPlaceholder')}
+                        autoComplete="email"
                         {...field}
                       />
                     </FormControl>
@@ -115,73 +96,92 @@ function LoginFormContent({
                   </FormItem>
                 )}
               />
-            )}
-
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel required>{t('passwordLabel')}</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <Input
-                        data-testid="auth-password"
-                        type={'password'}
-                        placeholder={t('passwordPlaceholder')}
-                        autoComplete={
-                          title === 'login'
-                            ? 'current-password'
-                            : 'new-password'
-                        }
-                        {...field}
-                      />
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+              {title === 'register' && (
+                <FormField
+                  control={form.control}
+                  name="nickname"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t('nicknameLabel')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          data-testid="auth-nickname"
+                          placeholder={t('nicknamePlaceholder')}
+                          autoComplete="username"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               )}
-            />
 
-            {title === 'login' && (
               <FormField
                 control={form.control}
-                name="remember"
+                name="password"
                 render={({ field }) => (
                   <FormItem>
+                    <FormLabel required>{t('passwordLabel')}</FormLabel>
                     <FormControl>
-                      <div className="flex gap-2">
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={(checked) => {
-                            field.onChange(checked);
-                          }}
+                      <div className="relative">
+                        <Input
+                          data-testid="auth-password"
+                          type={'password'}
+                          placeholder={t('passwordPlaceholder')}
+                          autoComplete={
+                            title === 'login'
+                              ? 'current-password'
+                              : 'new-password'
+                          }
+                          {...field}
                         />
-                        <FormLabel
-                          className={cn(' hover:text-text-primary', {
-                            'text-text-disabled': !field.value,
-                            'text-text-primary': field.value,
-                          })}
-                        >
-                          {t('rememberMe')}
-                        </FormLabel>
                       </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-            )}
-            <ButtonLoading
-              data-testid="auth-submit"
-              type="submit"
-              loading={loading}
-              className="bg-metallic-gradient border-b-[#00BEB4] border-b-2 hover:bg-metallic-gradient hover:border-b-[#02bcdd] w-full my-8"
-            >
-              {title === 'login' ? t('login') : t('continue')}
-            </ButtonLoading>
-          </form>
-        </Form>
+
+              {title === 'login' && (
+                <FormField
+                  control={form.control}
+                  name="remember"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <div className="flex gap-2">
+                          <Checkbox
+                            checked={field.value}
+                            onCheckedChange={(checked) => {
+                              field.onChange(checked);
+                            }}
+                          />
+                          <FormLabel
+                            className={cn(' hover:text-text-primary', {
+                              'text-text-disabled': !field.value,
+                              'text-text-primary': field.value,
+                            })}
+                          >
+                            {t('rememberMe')}
+                          </FormLabel>
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+              <ButtonLoading
+                data-testid="auth-submit"
+                type="submit"
+                loading={loading}
+                className="bg-metallic-gradient border-b-[#00BEB4] border-b-2 hover:bg-metallic-gradient hover:border-b-[#02bcdd] w-full my-8"
+              >
+                {title === 'login' ? t('login') : t('continue')}
+              </ButtonLoading>
+            </form>
+          </Form>
         )}
 
         {title === 'login' && channels && channels.length > 0 && (
@@ -361,7 +361,7 @@ const Login = () => {
       <div className=" h-[inherit] relative overflow-auto">
         <BgSvg isPaused />
 
-        <div className="absolute top-3 flex flex-col items-center mb-12 w-full text-text-primary">
+        <div className="z-20 absolute top-3 flex flex-col items-center mb-12 w-full text-text-primary">
           <div className="flex items-center mb-4 w-full pl-10 pt-10 ">
             <div className="w-12 h-12 p-2 rounded-lg flex items-center justify-center mr-3">
               <img

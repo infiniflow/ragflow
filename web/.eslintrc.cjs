@@ -14,6 +14,9 @@ module.exports = {
       jsx: true,
     },
   },
+  includes: [
+    './src',
+  ],
   settings: {
     react: {
       version: 'detect',

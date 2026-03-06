@@ -19,8 +19,10 @@ import { useIsDarkTheme } from '../theme-provider';
 import styles from './index.module.less';
 
 const HighLightMarkdown = ({
+  className,
   children,
 }: {
+  className?: string;
   children: string | null | undefined;
 }) => {
   const isDarkTheme = useIsDarkTheme();

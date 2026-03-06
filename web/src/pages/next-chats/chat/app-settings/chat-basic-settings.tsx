@@ -66,6 +66,7 @@ export default function ChatBasicSetting() {
             <FormControl>
               <Textarea
                 {...field}
+                placeholder={t('descriptionPlaceholder')}
                 dir={getDirAttribute(descriptionValue || '')}
               ></Textarea>
             </FormControl>
@@ -84,6 +85,7 @@ export default function ChatBasicSetting() {
             <FormControl>
               <Textarea
                 {...field}
+                placeholder={t('emptyResponsePlaceholder')}
                 dir={getDirAttribute(emptyResponseValue || '')}
               ></Textarea>
             </FormControl>

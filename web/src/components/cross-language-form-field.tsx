@@ -60,7 +60,7 @@ export const CrossLanguageFormField = ({
           <FormControl>
             <MultiSelect
               options={crossLanguageOptions}
-              placeholder={t('fileManager.pleaseSelect')}
+              placeholder={t('chat.crossLanguagePlaceholder')}
               maxCount={100}
               {...field}
               onValueChange={field.onChange}

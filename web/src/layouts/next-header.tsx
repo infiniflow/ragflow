@@ -1,6 +1,5 @@
 import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import { useTheme } from '@/components/theme-provider';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -8,213 +7,143 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Segmented, SegmentedValue } from '@/components/ui/segmented';
-import { LanguageList, LanguageMap, ThemeEnum } from '@/constants/common';
+import { LanguageList, LanguageMap } from '@/constants/common';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useNavigateWithFromState } from '@/hooks/route-hook';
-import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
+import {
+  useFetchUserInfo,
+  useListTenant,
+} from '@/hooks/use-user-setting-request';
+import { cn } from '@/lib/utils';
+import { TenantRole } from '@/pages/user-setting/constants';
 import { Routes } from '@/routes';
 import { camelCase } from 'lodash';
-import {
-  ChevronDown,
-  CircleHelp,
-  Cpu,
-  File,
-  House,
-  Library,
-  MessageSquareText,
-  Moon,
-  Search,
-  Sun,
-} from 'lucide-react';
-import React, { useCallback, useMemo } from 'react';
+import { LucideChevronDown, LucideCircleHelp } from 'lucide-react';
+import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import { BellButton } from './bell-button';
+import GlobalNavbar from './global-navbar';
+import ThemeButton from './theme-button';
 
-const handleDocHelpCLick = () => {
-  window.open('https://ragflow.io/docs/dev/category/guides', 'target');
-};
-
-const PathMap = {
-  [Routes.Datasets]: [Routes.Datasets],
-  [Routes.Chats]: [Routes.Chats],
-  [Routes.Searches]: [Routes.Searches],
-  [Routes.Agents]: [Routes.Agents],
-  [Routes.Memories]: [Routes.Memories, Routes.Memory, Routes.MemoryMessage],
-  [Routes.Files]: [Routes.Files],
-} as const;
-
-export function Header() {
+export function Header({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLElement>) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
-  const navigate = useNavigateWithFromState();
-  const { navigateToOldProfile } = useNavigatePage();
 
   const changeLanguage = useChangeLanguage();
-  const { setTheme, theme } = useTheme();
 
   const {
     data: { language = 'English', avatar, nickname },
   } = useFetchUserInfo();
 
-  const handleItemClick = (key: string) => () => {
-    changeLanguage(key);
-  };
+  const { data: tenantData } = useListTenant();
+  const hasNotification = useMemo(
+    () => tenantData?.some((x) => x.role === TenantRole.Invite),
+    [tenantData],
+  );
 
-  const items = LanguageList.map((x) => ({
+  const langItems = LanguageList.map((x) => ({
     key: x,
     label: <span>{LanguageMap[x as keyof typeof LanguageMap]}</span>,
   }));
 
-  const onThemeClick = React.useCallback(() => {
-    setTheme(theme === ThemeEnum.Dark ? ThemeEnum.Light : ThemeEnum.Dark);
-  }, [setTheme, theme]);
-
-  const tagsData = useMemo(
-    () => [
-      { path: Routes.Root, name: t('header.Root'), icon: House },
-      { path: Routes.Datasets, name: t('header.dataset'), icon: Library },
-      { path: Routes.Chats, name: t('header.chat'), icon: MessageSquareText },
-      { path: Routes.Searches, name: t('header.search'), icon: Search },
-      { path: Routes.Agents, name: t('header.flow'), icon: Cpu },
-      { path: Routes.Memories, name: t('header.memories'), icon: Cpu },
-      { path: Routes.Files, name: t('header.fileManager'), icon: File },
-    ],
-    [t],
-  );
-
-  const options = useMemo(() => {
-    return tagsData.map((tag) => {
-      const HeaderIcon = tag.icon;
-
-      return {
-        label:
-          tag.path === Routes.Root ? (
-            <HeaderIcon className="size-6"></HeaderIcon>
-          ) : (
-            <span
-              data-testid={
-                tag.path === Routes.Chats
-                  ? 'nav-chat'
-                  : tag.path === Routes.Searches
-                    ? 'nav-search'
-                    : tag.path === Routes.Agents
-                      ? 'nav-agent'
-                      : undefined
-              }
-            >
-              {tag.name}
-            </span>
-          ),
-        value: tag.path,
-      };
-    });
-  }, [tagsData]);
-
-  // const currentPath = useMemo(() => {
-  //   return (
-  //     tagsData.find((x) => pathname.startsWith(x.path))?.path || Routes.Root
-  //   );
-  // }, [pathname, tagsData]);
-
-  const handleChange = (path: SegmentedValue) => {
-    navigate(path as Routes);
-  };
-
-  const handleLogoClick = useCallback(() => {
-    navigate(Routes.Root);
-  }, [navigate]);
-
-  const activePathName = useMemo(() => {
-    const name = Object.keys(PathMap).find((x: string) => {
-      const pathList = PathMap[x as keyof typeof PathMap];
-      return pathList.some((y: string) => pathname.indexOf(y) > -1);
-    });
-    if (name) {
-      return name;
-    } else {
-      return pathname;
-    }
-  }, [pathname]);
-
   return (
-    <section
-      className="py-5 px-10 flex justify-between items-center "
-      data-testid="top-nav"
+    <header
+      key="app-navbar"
+      className={cn(
+        'w-full grid grid-cols-[1fr_auto_1fr] grid-rows-1 items-center gap-8',
+        className,
+      )}
+      {...props}
     >
-      <div className="flex items-center gap-4">
-        <img
-          src={'/logo.svg'}
-          alt="logo"
-          className="size-10 mr-[12] cursor-pointer"
-          onClick={handleLogoClick}
-        />
+      <div className="inline-flex items-center">
+        <Link
+          to={Routes.Root}
+          aria-current={pathname === Routes.Root ? 'page' : undefined}
+        >
+          <img src={'/logo.svg'} alt="RAGFlow logo" className="size-10" />
+        </Link>
       </div>
-      <Segmented
-        rounded="xxxl"
-        sizeType="xl"
-        buttonSize="xl"
-        options={options}
-        value={activePathName}
-        onChange={handleChange}
-        activeClassName="text-bg-base bg-metallic-gradient border-b-[#00BEB4] border-b-2"
-      ></Segmented>
+
+      <GlobalNavbar />
+
       <div
-        className="flex items-center gap-5 text-text-badge"
+        className="flex items-center justify-end gap-4 text-text-badge"
         data-testid="auth-status"
       >
         <a
+          className="p-2 text-text-secondary hover:text-text-primary focus-visible:text-text-primary"
           target="_blank"
           href="https://discord.com/invite/NjYzJD3GM3"
-          rel="noreferrer"
+          rel="noreferrer noopener"
         >
-          <IconFontFill name="a-DiscordIconSVGVectorIcon"></IconFontFill>
+          <IconFontFill name="a-DiscordIconSVGVectorIcon" />
         </a>
+
         <a
+          className="p-2 text-text-secondary hover:text-text-primary focus-visible:text-text-primary"
           target="_blank"
           href="https://github.com/infiniflow/ragflow"
-          rel="noreferrer"
+          rel="noreferrer noopener"
         >
-          <IconFontFill name="GitHub"></IconFontFill>
+          <IconFontFill name="GitHub" />
         </a>
+
         <DropdownMenu>
-          <DropdownMenuTrigger>
-            <div className="flex items-center gap-1">
+          <DropdownMenuTrigger asChild>
+            <Button className="flex items-center gap-1" variant="ghost">
               {t(`common.${camelCase(language)}`)}
-              <ChevronDown className="size-4" />
-            </div>
+
+              <LucideChevronDown className="size-4" />
+            </Button>
           </DropdownMenuTrigger>
+
           <DropdownMenuContent>
-            {items.map((x) => (
-              <DropdownMenuItem key={x.key} onClick={handleItemClick(x.key)}>
+            {langItems.map((x) => (
+              <DropdownMenuItem
+                key={x.key}
+                onClick={() => changeLanguage(x.key)}
+              >
                 {x.label}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button variant={'ghost'} onClick={handleDocHelpCLick}>
-          <CircleHelp />
+
+        <Button
+          asLink
+          variant="ghost"
+          size="icon"
+          to="https://ragflow.io/docs/dev/category/user-guides"
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          <LucideCircleHelp className="size-[1em]" />
         </Button>
-        <Button variant={'ghost'} onClick={onThemeClick}>
-          {theme === 'light' ? <Sun /> : <Moon />}
-        </Button>
-        <BellButton></BellButton>
-        <div className="relative" data-testid="settings-entrypoint">
+
+        <ThemeButton />
+
+        {hasNotification && <BellButton />}
+
+        <Link
+          to={Routes.UserSetting}
+          className="relative ms-3"
+          data-testid="settings-entrypoint"
+        >
           <RAGFlowAvatar
             name={nickname}
             avatar={avatar}
             isPerson
-            className="size-8 cursor-pointer"
-            onClick={navigateToOldProfile}
-          ></RAGFlowAvatar>
+            className="size-8"
+          />
           {/* Temporarily hidden */}
           {/* <Badge className="h-5 w-8 absolute font-normal p-0 justify-center -right-8 -top-2 text-bg-base bg-gradient-to-l from-[#42D7E7] to-[#478AF5]">
             Pro
           </Badge> */}
-        </div>
+        </Link>
       </div>
-    </section>
+    </header>
   );
 }

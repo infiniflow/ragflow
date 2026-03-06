@@ -2125,7 +2125,7 @@ def _build_chunk_document(filename: str, resume: dict,
     # Extract key identity fields, redundantly written to each chunk
     # These fields are small in size but high in information density; once retrieved, the candidate can be immediately identified
     _IDENTITY_FIELDS = ("name_kwd", "phone_kwd", "email_tks", "gender_kwd",
-                        "highest_degree_kwd", "work_exp_flt", "corporation_name_tks")
+                        "highest_degree_kwd", "work_exp_flt")
     identity_meta = {}
     for ik in _IDENTITY_FIELDS:
         iv = resume.get(ik)

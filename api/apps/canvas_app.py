@@ -75,6 +75,7 @@ async def rm():
 @login_required
 async def save():
     req = await get_request_json()
+    req['release'] = bool(req.get("release", ""))
     try:
         req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
     except ValueError as e:

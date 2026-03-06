@@ -30,8 +30,10 @@ def ensure_authed(
     if seeded_user_credentials:
         email, password = seeded_user_credentials
     else:
-        email = os.getenv("SEEDED_USER_EMAIL")
-        password = os.getenv("SEEDED_USER_PASSWORD")
+        email = os.getenv("SEEDED_USER_EMAIL") or os.getenv("E2E_ADMIN_EMAIL")
+        password = os.getenv("SEEDED_USER_PASSWORD") or os.getenv(
+            "E2E_ADMIN_PASSWORD"
+        )
     if not email or not password:
         pytest.skip("SEEDED_USER_EMAIL/SEEDED_USER_PASSWORD not set.")
 
@@ -45,21 +47,15 @@ def ensure_authed(
 
     try:
         if "/login" not in page.url:
-            if (
-                page.locator(
-                    "input[data-testid='auth-email'], [data-testid='auth-email'] input"
-                ).count()
-                == 0
-            ):
-                try:
-                    page.wait_for_function(token_wait_js, timeout=2000)
-                    return
-                except Exception:
-                    pass
+            page.wait_for_function(token_wait_js, timeout=2000)
+            return
     except Exception:
         pass
 
     page.goto(login_url, wait_until="domcontentloaded")
+
+    if "/login" not in page.url:
+        return
 
     form, _ = active_auth_context()
     email_input = form.locator(

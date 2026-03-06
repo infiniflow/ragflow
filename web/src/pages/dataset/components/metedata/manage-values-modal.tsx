@@ -123,6 +123,9 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
     isVerticalShowValue,
     isShowType,
     type: metadataType,
+    testId,
+    okButtonTestId,
+    addValueButtonTestId,
   } = props;
   const {
     metaData,
@@ -251,6 +254,8 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
       onOk={() => formRef.current?.submit(handleSubmit)}
       maskClosable={false}
       footer={null}
+      testId={testId}
+      okButtonTestId={okButtonTestId}
     >
       <div className="flex flex-col gap-4">
         {!isEditField && (
@@ -281,6 +286,7 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
                       variant={'ghost'}
                       className="border border-border-button"
                       onClick={handleAddValue}
+                      data-testid={addValueButtonTestId}
                     >
                       <Plus />
                     </Button>

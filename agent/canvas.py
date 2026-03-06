@@ -31,6 +31,7 @@ from agent.component.base import ComponentBase
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from common.constants import LLMType
 from common.misc_utils import get_uuid, hash_str2int
 from common.exceptions import TaskCanceledException
@@ -386,10 +387,16 @@ class Canvas(Graph):
                             continue
                         self.components[k]["obj"].set_output(kk, vv)
 
+        layout_recognize = None
+        for cpn in self.components.values():
+            if cpn["obj"].component_name.lower() == "begin":
+                layout_recognize = getattr(cpn["obj"]._param, "layout_recognize", None)
+                break
+
         for k in kwargs.keys():
             if k in ["query", "user_id", "files"] and kwargs[k]:
                 if k == "files":
-                    self.globals[f"sys.{k}"] = await self.get_files_async(kwargs[k])
+                    self.globals[f"sys.{k}"] = await self.get_files_async(kwargs[k], layout_recognize)
                 else:
                     self.globals[f"sys.{k}"] = kwargs[k]
         if not self.globals["sys.conversation_turns"] :
@@ -502,7 +509,8 @@ class Canvas(Graph):
                 cpn_obj = self.get_component_obj(self.path[i])
                 if cpn_obj.component_name.lower() == "message":
                     if cpn_obj.get_param("auto_play"):
-                        tts_mdl = LLMBundle(self._tenant_id, LLMType.TTS)
+                        tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
+                        tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
                     if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
                         buff_m = ""
@@ -740,7 +748,7 @@ class Canvas(Graph):
     def get_component_input_elements(self, cpnnm):
         return self.components[cpnnm]["obj"].get_input_elements()
 
-    async def get_files_async(self, files: Union[None, list[dict]]) -> list[str]:
+    async def get_files_async(self, files: Union[None, list[dict]], layout_recognize: str = None) -> list[str]:
         if not files:
             return  []
         def image_to_base64(file):
@@ -748,7 +756,7 @@ class Canvas(Graph):
                                         base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
         def parse_file(file):
             blob = FileService.get_blob(file["created_by"], file["id"])
-            return FileService.parse(file["name"], blob, True, file["created_by"])
+            return FileService.parse(file["name"], blob, True, file["created_by"], layout_recognize)
         loop = asyncio.get_running_loop()
         tasks = []
         for file in files:
@@ -758,15 +766,15 @@ class Canvas(Graph):
             tasks.append(loop.run_in_executor(self._thread_pool, parse_file, file))
         return await asyncio.gather(*tasks)
 
-    def get_files(self, files: Union[None, list[dict]]) -> list[str]:
+    def get_files(self, files: Union[None, list[dict]], layout_recognize: str = None) -> list[str]:
         """
         Synchronous wrapper for get_files_async, used by sync component invoke paths.
         """
         loop = getattr(self, "_loop", None)
         if loop and loop.is_running():
-            return asyncio.run_coroutine_threadsafe(self.get_files_async(files), loop).result()
+            return asyncio.run_coroutine_threadsafe(self.get_files_async(files, layout_recognize), loop).result()
 
-        return asyncio.run(self.get_files_async(files))
+        return asyncio.run(self.get_files_async(files, layout_recognize))
 
     def tool_use_callback(self, agent_id: str, func_name: str, params: dict, result: Any, elapsed_time=None):
         agent_ids = agent_id.split("-->")

@@ -108,6 +108,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
           disabled={!hasSingleChatBox}
           variant={'ghost'}
           size="icon-sm"
+          data-testid="chat-settings"
         >
           <LucideSettings />
         </Button>
@@ -116,7 +117,10 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   }
 
   return (
-    <section className="w-[440px] flex flex-col">
+    <section
+      className="w-[440px] flex flex-col"
+      data-testid="chat-detail-settings"
+    >
       <div className="p-5 pb-2 flex justify-between items-center text-base">
         {t('chat.chatSetting')}
 
@@ -125,6 +129,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
           size="icon-sm"
           className="border-0"
           onClick={switchSettingVisible}
+          data-testid="chat-detail-settings-close"
         >
           <LucidePanelRightClose
             className="size-4 cursor-pointer"
@@ -149,7 +154,11 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
           </ScrollArea>
 
           <div className="p-5 pt-4 space-x-5 text-right">
-            <Button variant={'outline'} onClick={switchSettingVisible}>
+            <Button
+              variant={'outline'}
+              onClick={switchSettingVisible}
+              data-testid="chat-detail-settings-cancel"
+            >
               {t('chat.cancel')}
             </Button>
             <SavingButton loading={loading}></SavingButton>

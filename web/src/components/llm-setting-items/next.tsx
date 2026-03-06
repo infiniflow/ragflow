@@ -29,6 +29,8 @@ interface LlmSettingFieldItemsProps {
   prefix?: string;
   options?: any[];
   llmId?: string;
+  llmSelectTestId?: string;
+  llmOptionTestIdPrefix?: string;
   showFields?: Array<
     | 'temperature'
     | 'top_p'
@@ -67,6 +69,8 @@ export const LlmSettingSchema = {
 export function LlmSettingFieldItems({
   prefix,
   options,
+  llmSelectTestId,
+  llmOptionTestIdPrefix,
   showFields = [
     'temperature',
     'top_p',
@@ -134,6 +138,8 @@ export function LlmSettingFieldItems({
       <LLMFormField
         options={options}
         name={llmId ?? getFieldWithPrefix('llm_id')}
+        testId={llmSelectTestId}
+        optionTestIdPrefix={llmOptionTestIdPrefix}
       ></LLMFormField>
       <FormField
         control={form.control}

@@ -24,16 +24,19 @@ from copy import deepcopy
 from peewee import IntegrityError
 
 from api.db import UserTenantRole
-from api.db.db_models import init_database_tables as init_web_db, LLMFactories, LLM, TenantLLM
+from api.db.db_models import init_database_tables as init_web_db, LLMFactories, LLM, TenantLLM, Knowledgebase, Dialog, Memory
 from api.db.services import UserService
 from api.db.services.canvas_service import CanvasTemplateService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.memory_service import MemoryService
 from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMService
 from api.db.services.llm_service import LLMService, LLMBundle, get_init_tenant_llm
 from api.db.services.user_service import TenantService, UserTenantService
 from api.db.services.system_settings_service import SystemSettingsService
+from api.db.services.dialog_service import DialogService
 from api.db.joint_services.memory_message_service import init_message_id_sequence, init_memory_size_cache, fix_missing_tokenized_memory
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from common.constants import LLMType
 from common.file_utils import get_project_base_directory
 from common import settings
@@ -90,13 +93,15 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
         f"Super user initialized. email: {email},A default password has been set; changing the password after login is strongly recommended.")
 
     if tenant["llm_id"]:
-        chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
+        chat_model_config = get_tenant_default_model_by_type(tenant["id"], LLMType.CHAT)
+        chat_mdl = LLMBundle(tenant["id"], chat_model_config)
         msg = asyncio.run(chat_mdl.async_chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={}))
         if msg.find("ERROR: ") == 0:
             logging.error("'{}' doesn't work. {}".format( tenant["llm_id"], msg))
 
     if tenant["embd_id"]:
-        embd_mdl = LLMBundle(tenant["id"], LLMType.EMBEDDING, tenant["embd_id"])
+        embd_model_config = get_tenant_default_model_by_type(tenant["id"], LLMType.EMBEDDING)
+        embd_mdl = LLMBundle(tenant["id"], embd_model_config)
         v, c = embd_mdl.encode(["Hello!"])
         if c == 0:
             logging.error("'{}' doesn't work!".format(tenant["embd_id"]))
@@ -185,6 +190,7 @@ def init_web_data():
     init_message_id_sequence()
     init_memory_size_cache()
     fix_missing_tokenized_memory()
+    fix_empty_tenant_model_id()
     logging.info("init web data success:{}".format(time.time() - start_time))
 
 def init_table():
@@ -212,6 +218,105 @@ def init_table():
             logging.exception("System settings init error: {}".format(e))
             raise e
 
+
+def fix_empty_tenant_model_id():
+    # knowledgebase
+    empty_tenant_embd_id_kbs = KnowledgebaseService.get_null_tenant_embd_id_row()
+    if empty_tenant_embd_id_kbs:
+        logging.info(f"Found {len(empty_tenant_embd_id_kbs)} empty tenant_embd_id knowledgebase.")
+        kb_groups: dict = {}
+        for obj in empty_tenant_embd_id_kbs:
+            if kb_groups.get((obj.tenant_id, obj.embd_id)):
+                kb_groups[(obj.tenant_id, obj.embd_id)].append(obj.id)
+            else:
+                kb_groups[(obj.tenant_id, obj.embd_id)] = [obj.id]
+        update_cnt = 0
+        for k, v in kb_groups.items():
+            tenant_llm = TenantLLMService.get_api_key(k[0], k[1])
+            if tenant_llm:
+                update_cnt += KnowledgebaseService.filter_update([Knowledgebase.id.in_(v)], {"tenant_embd_id": tenant_llm.id})
+        logging.info(f"Update {update_cnt} tenant_embd_id in table knowledgebase.")
+    # dialog
+    empty_tenant_llm_id_dialog = DialogService.get_null_tenant_llm_id_row()
+    if empty_tenant_llm_id_dialog:
+        logging.info(f"Found {len(empty_tenant_llm_id_dialog)} empty tenant_llm_id dialogs.")
+        dialog_groups: dict = {}
+        for obj in empty_tenant_llm_id_dialog:
+            if dialog_groups.get((obj.tenant_id, obj.llm_id)):
+                dialog_groups[(obj.tenant_id, obj.llm_id)].append(obj.id)
+            else:
+                dialog_groups[(obj.tenant_id, obj.llm_id)] = [obj.id]
+        update_cnt = 0
+        for k, v in dialog_groups.items():
+            tenant_llm = TenantLLMService.get_api_key(k[0], k[1])
+            if tenant_llm:
+                update_cnt += DialogService.filter_update([Dialog.id.in_(v)], {"tenant_llm_id": tenant_llm.id})
+        logging.info(f"Update {update_cnt} tenant_llm_id in table dialog.")
+
+    empty_tenant_rerank_id_dialog = DialogService.get_null_tenant_rerank_id_row()
+    if empty_tenant_rerank_id_dialog:
+        logging.info(f"Found {len(empty_tenant_rerank_id_dialog)} empty tenant_rerank_id dialogs.")
+        dialog_groups: dict = {}
+        for obj in empty_tenant_rerank_id_dialog:
+            if dialog_groups.get((obj.tenant_id, obj.rerank_id)):
+                dialog_groups[(obj.tenant_id, obj.rerank_id)].append(obj.id)
+            else:
+                dialog_groups[(obj.tenant_id, obj.rerank_id)] = [obj.id]
+        update_cnt = 0
+        for k, v in dialog_groups.items():
+            tenant_llm = TenantLLMService.get_api_key(k[0], k[1])
+            if tenant_llm:
+                update_cnt += DialogService.filter_update([Dialog.id.in_(v)], {"tenant_rerank_id": tenant_llm.id})
+        logging.info(f"Update {update_cnt} tenant_rerank_id in table dialog.")
+    # memory
+    empty_tenant_embd_id_memories = MemoryService.get_null_tenant_embd_id_row()
+    if empty_tenant_embd_id_memories:
+        logging.info(f"Found {len(empty_tenant_embd_id_memories)} empty tenant_embd_id memories.")
+        memory_groups: dict = {}
+        for obj in empty_tenant_embd_id_memories:
+            if memory_groups.get((obj.tenant_id, obj.embd_id)):
+                memory_groups[(obj.tenant_id, obj.embd_id)].append(obj.id)
+            else:
+                memory_groups[(obj.tenant_id, obj.embd_id)] = [obj.id]
+        update_cnt = 0
+        for k, v in memory_groups.items():
+            tenant_llm = TenantLLMService.get_api_key(k[0], k[1])
+            if tenant_llm:
+                update_cnt += MemoryService.filter_update([Memory.id.in_(v)], {"tenant_embd_id": tenant_llm.id})
+        logging.info(f"Update {update_cnt} tenant_embd_id in table memory.")
+
+    empty_tenant_llm_id_memories = MemoryService.get_null_tenant_llm_id_row()
+    if empty_tenant_llm_id_memories:
+        logging.info(f"Found {len(empty_tenant_llm_id_memories)} empty tenant_llm_id memories.")
+        memory_groups: dict = {}
+        for obj in empty_tenant_llm_id_memories:
+            if memory_groups.get((obj.tenant_id, obj.llm_id)):
+                memory_groups[(obj.tenant_id, obj.llm_id)].append(obj.id)
+            else:
+                memory_groups[(obj.tenant_id, obj.llm_id)] = [obj.id]
+        update_cnt = 0
+        for k, v in memory_groups.items():
+            tenant_llm = TenantLLMService.get_api_key(k[0], k[1])
+            if tenant_llm:
+                update_cnt += MemoryService.filter_update([Memory.id.in_(v)], {"tenant_llm_id": tenant_llm.id})
+        logging.info(f"Update {update_cnt} tenant_llm_id in table memory.")
+    # tenant
+    empty_tenant_model_id_tenants = TenantService.get_null_tenant_model_id_rows()
+    if empty_tenant_model_id_tenants:
+        logging.info(f"Found {len(empty_tenant_model_id_tenants)} empty tenant_model_id tenants.")
+        update_cnt = 0
+        for obj in empty_tenant_model_id_tenants:
+            tenant_dict = obj.to_dict()
+            update_dict = {}
+            for key in ["llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id"]:
+                if tenant_dict.get(key) and not tenant_dict.get(f"tenant_{key}"):
+                    tenant_model = TenantLLMService.get_api_key(tenant_dict["id"], tenant_dict[key])
+                    if tenant_model:
+                        update_dict.update({f"tenant_{key}": tenant_model.id})
+            if update_dict:
+                update_dict += TenantService.update_by_id(tenant_dict["id"], update_dict)
+        logging.info(f"Update {update_cnt} tenant_model_id in table tenant.")
+    logging.info("Fix empty tenant_model_id done.")
 
 if __name__ == '__main__':
     init_web_db()
