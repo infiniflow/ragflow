@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import batch_create_chat_assistants, delete_chat_assistants, list_chat_assistants, list_documents, parse_documents
+from common import batch_create_chat_assistants, delete_all_chat_assistants, list_chat_assistants, list_documents, parse_documents
 from utils import wait_for
 
 
@@ -30,7 +30,7 @@ def condition(_auth, _dataset_id):
 @pytest.fixture(scope="function")
 def add_chat_assistants_func(request, HttpApiAuth, add_document):
     def cleanup():
-        delete_chat_assistants(HttpApiAuth)
+        delete_all_chat_assistants(HttpApiAuth)
 
     request.addfinalizer(cleanup)
 

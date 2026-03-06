@@ -58,6 +58,23 @@ def delete_datasets(auth, payload=None, *, headers=HEADERS, data=None):
     return res.json()
 
 
+def delete_all_datasets(auth, *, page_size=1000):
+    # Dataset DELETE now treats null/empty ids as a no-op, so cleanup must enumerate explicit ids.
+    page = 1
+    dataset_ids = []
+    while True:
+        res = list_datasets(auth, {"page": page, "page_size": page_size})
+        data = res.get("data") or []
+        dataset_ids.extend(dataset["id"] for dataset in data)
+        if len(data) < page_size:
+            break
+        page += 1
+
+    if not dataset_ids:
+        return {"code": 0, "message": ""}
+    return delete_datasets(auth, {"ids": dataset_ids})
+
+
 def batch_create_datasets(auth, num):
     ids = []
     for i in range(num):
@@ -99,7 +116,8 @@ def download_document(auth, dataset_id, document_id, save_path):
     url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
     res = requests.get(url=url, auth=auth, stream=True)
     try:
-        if res.status_code == 200:
+        # available for unauthed downloads
+        if res.status_code in (200, 401):
             with open(save_path, "wb") as f:
                 for chunk in res.iter_content(chunk_size=8192):
                     f.write(chunk)
@@ -125,6 +143,23 @@ def delete_documents(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def delete_all_documents(auth, dataset_id, *, page_size=1000):
+    # Document DELETE now treats missing/null/empty ids as a no-op, so cleanup must enumerate explicit ids.
+    page = 1
+    document_ids = []
+    while True:
+        res = list_documents(auth, dataset_id, {"page": page, "page_size": page_size})
+        docs = (res.get("data") or {}).get("docs") or []
+        document_ids.extend(doc["id"] for doc in docs)
+        if len(docs) < page_size:
+            break
+        page += 1
+
+    if not document_ids:
+        return {"code": 0, "message": ""}
+    return delete_documents(auth, dataset_id, {"ids": document_ids})
 
 
 def parse_documents(auth, dataset_id, payload=None):
@@ -176,6 +211,23 @@ def delete_chunks(auth, dataset_id, document_id, payload=None):
     return res.json()
 
 
+def delete_all_chunks(auth, dataset_id, document_id, *, page_size=1000):
+    # Chunk DELETE now treats missing/null/empty ids as a no-op, so cleanup must enumerate explicit ids.
+    page = 1
+    chunk_ids = []
+    while True:
+        res = list_chunks(auth, dataset_id, document_id, {"page": page, "page_size": page_size})
+        chunks = (res.get("data") or {}).get("chunks") or []
+        chunk_ids.extend(chunk["id"] for chunk in chunks)
+        if len(chunks) < page_size:
+            break
+        page += 1
+
+    if not chunk_ids:
+        return {"code": 0, "message": ""}
+    return delete_chunks(auth, dataset_id, document_id, {"chunk_ids": chunk_ids})
+
+
 def retrieval_chunks(auth, payload=None):
     url = f"{HOST_ADDRESS}{RETRIEVAL_API_URL}"
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
@@ -215,6 +267,23 @@ def delete_chat_assistants(auth, payload=None):
     return res.json()
 
 
+def delete_all_chat_assistants(auth, *, page_size=1000):
+    # Chat DELETE now treats null/empty ids as a no-op, so cleanup must enumerate explicit ids.
+    page = 1
+    chat_ids = []
+    while True:
+        res = list_chat_assistants(auth, {"page": page, "page_size": page_size})
+        data = res.get("data") or []
+        chat_ids.extend(chat["id"] for chat in data)
+        if len(data) < page_size:
+            break
+        page += 1
+
+    if not chat_ids:
+        return {"code": 0, "message": ""}
+    return delete_chat_assistants(auth, {"ids": chat_ids})
+
+
 def batch_create_chat_assistants(auth, num):
     chat_assistant_ids = []
     for i in range(num):
@@ -244,10 +313,25 @@ def update_session_with_chat_assistant(auth, chat_assistant_id, session_id, payl
 
 def delete_session_with_chat_assistants(auth, chat_assistant_id, payload=None):
     url = f"{HOST_ADDRESS}{SESSION_WITH_CHAT_ASSISTANT_API_URL}".format(chat_id=chat_assistant_id)
-    if payload is None:
-        payload = {}
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def delete_all_sessions_with_chat_assistant(auth, chat_assistant_id, *, page_size=1000):
+    # Session DELETE now treats missing/null/empty ids as a no-op, so cleanup must enumerate explicit ids.
+    page = 1
+    session_ids = []
+    while True:
+        res = list_session_with_chat_assistants(auth, chat_assistant_id, {"page": page, "page_size": page_size})
+        data = res.get("data") or []
+        session_ids.extend(session["id"] for session in data)
+        if len(data) < page_size:
+            break
+        page += 1
+
+    if not session_ids:
+        return {"code": 0, "message": ""}
+    return delete_session_with_chat_assistants(auth, chat_assistant_id, {"ids": session_ids})
 
 
 def batch_add_sessions_with_chat_assistant(auth, chat_assistant_id, num):
@@ -304,6 +388,12 @@ def metadata_summary(auth, dataset_id, params=None):
     return res.json()
 
 
+def metadata_batch_update(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/metadata/update"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
 # CHAT COMPLETIONS AND RELATED QUESTIONS
 def related_questions(auth, payload=None):
     url = f"{HOST_ADDRESS}/api/{VERSION}/sessions/related_questions"
@@ -344,10 +434,25 @@ def list_agent_sessions(auth, agent_id, params=None):
 
 def delete_agent_sessions(auth, agent_id, payload=None):
     url = f"{HOST_ADDRESS}{SESSION_WITH_AGENT_API_URL}".format(agent_id=agent_id)
-    if payload is None:
-        payload = {}
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def delete_all_agent_sessions(auth, agent_id, *, page_size=1000):
+    # Agent session DELETE now treats missing/null/empty ids as a no-op, so cleanup must enumerate explicit ids.
+    page = 1
+    session_ids = []
+    while True:
+        res = list_agent_sessions(auth, agent_id, {"page": page, "page_size": page_size})
+        data = res.get("data") or []
+        session_ids.extend(session["id"] for session in data)
+        if len(data) < page_size:
+            break
+        page += 1
+
+    if not session_ids:
+        return {"code": 0, "message": ""}
+    return delete_agent_sessions(auth, agent_id, {"ids": session_ids})
 
 
 def agent_completions(auth, agent_id, payload=None):

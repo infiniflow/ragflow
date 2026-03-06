@@ -1210,15 +1210,12 @@ class GoogleCV(AnthropicCV, GeminiCV):
             else:
                 self.client = AnthropicVertex(region=region, project_id=project_id)
         else:
-            import vertexai.generative_models as glm
-            from google.cloud import aiplatform
-
+            from google import genai
             if access_token:
-                credits = service_account.Credentials.from_service_account_info(access_token)
-                aiplatform.init(credentials=credits, project=project_id, location=region)
+                credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
+                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
             else:
-                aiplatform.init(project=project_id, location=region)
-            self.client = glm.GenerativeModel(model_name=self.model_name)
+                self.client = genai.Client(vertexai=True, project=project_id, location=region)
         Base.__init__(self, **kwargs)
 
     def describe(self, image):
@@ -1255,3 +1252,26 @@ class MoonshotCV(GptV4):
         if not base_url:
             base_url = "https://api.moonshot.cn/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+
+
+class RAGconCV(GptV4):
+    """
+    RAGcon CV Provider - routes through LiteLLM proxy
+    
+    Supports vision models through LiteLLM.
+    Default Base URL: https://connect.ragcon.ai/v1
+    """
+    _FACTORY_NAME = "RAGcon"
+    
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+        
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+        
+        # Initialize client
+        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name
+        self.lang = lang
+        
+        Base.__init__(self, **kwargs)

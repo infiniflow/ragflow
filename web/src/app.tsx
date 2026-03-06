@@ -1,10 +1,11 @@
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { Toaster } from '@/components/ui/toaster';
-import i18n from '@/locales/config';
+import i18n, { changeLanguageAsync } from '@/locales/config';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { configResponsive } from 'ahooks';
-import { App, ConfigProvider, ConfigProviderProps, theme } from 'antd';
+import { ConfigProvider, ConfigProviderProps, theme } from 'antd';
 import pt_BR from 'antd/lib/locale/pt_BR';
+import arEG from 'antd/locale/ar_EG';
 import deDE from 'antd/locale/de_DE';
 import enUS from 'antd/locale/en_US';
 import ru_RU from 'antd/locale/ru_RU';
@@ -21,10 +22,8 @@ import weekday from 'dayjs/plugin/weekday';
 import React, { useEffect, useState } from 'react';
 import { RouterProvider } from 'react-router';
 import { ThemeProvider, useTheme } from './components/theme-provider';
-import { SidebarProvider } from './components/ui/sidebar';
 import { TooltipProvider } from './components/ui/tooltip';
 import { ThemeEnum } from './constants/common';
-// import { getRouter } from './routes';
 import { routers } from './routes';
 import storage from './utils/authorization-util';
 
@@ -55,16 +54,9 @@ const AntLanguageMap = {
   vi: vi_VN,
   'pt-BR': pt_BR,
   de: deDE,
+  ar: arEG,
 };
 
-// if (process.env.NODE_ENV === 'development') {
-//   const whyDidYouRender = require('@welldone-software/why-did-you-render');
-//   whyDidYouRender(React, {
-//     trackAllPureComponents: true,
-//     trackExtraHooks: [],
-//     logOnDifferentValues: true,
-//   });
-// }
 if (process.env.NODE_ENV === 'development') {
   import('@welldone-software/why-did-you-render').then(
     (whyDidYouRenderModule) => {
@@ -78,6 +70,7 @@ if (process.env.NODE_ENV === 'development') {
     },
   );
 }
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -93,22 +86,36 @@ function Root({ children }: React.PropsWithChildren) {
   const { theme: themeragflow } = useTheme();
   const getLocale = (lng: string) =>
     AntLanguageMap[lng as keyof typeof AntLanguageMap] ?? enUS;
+  const updateDocumentLocale = (lng: string) => {
+    document.documentElement.lang = lng;
+    document.documentElement.dir = lng.toLowerCase().startsWith('ar')
+      ? 'rtl'
+      : 'ltr';
+  };
 
   const [locale, setLocal] = useState<Locale>(getLocale(storage.getLanguage()));
 
-  i18n.on('languageChanged', function (lng: string) {
-    storage.setLanguage(lng);
-    setLocal(getLocale(lng));
-    // Should reflect to <html lang="...">
-    document.documentElement.lang = lng;
-  });
+  useEffect(() => {
+    const handleLanguageChanged = (lng: string) => {
+      storage.setLanguage(lng);
+      setLocal(getLocale(lng));
+      updateDocumentLocale(lng);
+    };
 
+    updateDocumentLocale(storage.getLanguage() || i18n.language || 'en');
+    i18n.on('languageChanged', handleLanguageChanged);
+
+    return () => {
+      i18n.off('languageChanged', handleLanguageChanged);
+    };
+  }, []);
   return (
     <>
       <ConfigProvider
         theme={{
           token: {
-            fontFamily: 'Inter',
+            fontFamily:
+              "'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif",
           },
           algorithm:
             themeragflow === 'dark'
@@ -117,23 +124,21 @@ function Root({ children }: React.PropsWithChildren) {
         }}
         locale={locale}
       >
-        <SidebarProvider className="h-full">
-          <App className="w-full h-dvh relative">{children}</App>
-        </SidebarProvider>
-        <Sonner position={'top-right'} expand richColors closeButton></Sonner>
+        {children}
+
+        <Sonner position="top-right" expand richColors closeButton />
+
         <Toaster />
       </ConfigProvider>
-      {/* <ReactQueryDevtools buttonPosition={'top-left'} initialIsOpen={false} /> */}
     </>
   );
 }
 
 const RootProvider = ({ children }: React.PropsWithChildren) => {
   useEffect(() => {
-    // Because the language is saved in the backend, a token is required to obtain the api. However, the login page cannot obtain the language through the getUserInfo api, so the language needs to be saved in localstorage.
     const lng = storage.getLanguage();
     if (lng) {
-      i18n.changeLanguage(lng);
+      void changeLanguageAsync(lng);
     }
   }, []);
 
@@ -159,16 +164,6 @@ const RouterProviderWrapper: React.FC<{ router: typeof routers }> = ({
 RouterProviderWrapper.whyDidYouRender = false;
 
 export default function AppContainer() {
-  // const [router, setRouter] = useState<any>(null);
-
-  // useEffect(() => {
-  //   getRouter().then(setRouter);
-  // }, []);
-
-  // if (!router) {
-  //   return <div>Loading...</div>;
-  // }
-
   return (
     <RootProvider>
       <RouterProviderWrapper router={routers} />

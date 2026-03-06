@@ -28,7 +28,7 @@ from api.db import FileType
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
 from api.utils.file_utils import filename_type
-from api.utils.web_utils import CONTENT_TYPE_MAP
+from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers
 from common import settings
 from common.constants import RetCode
 
@@ -144,6 +144,62 @@ async def upload(tenant_id):
             settings.STORAGE_IMPL.put(last_folder.id, location, blob)
             file_res.append(file.to_json())
         return get_json_result(data=file_res)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/file/upload_info", methods=["POST"])  # noqa: F821
+@token_required
+async def upload_info(tenant_id):
+    """
+    Upload runtime file metadata for SDK chat completions.
+    ---
+    tags:
+      - File
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: formData
+        name: file
+        type: file
+        required: false
+        description: File(s) to upload as runtime attachments.
+      - in: query
+        name: url
+        type: string
+        required: false
+        description: Optional URL to fetch and convert into a runtime attachment.
+    responses:
+      200:
+        description: Runtime attachment descriptor(s) for the `files` field in completions requests.
+    """
+    files = await request.files
+    file_objs = files.getlist("file") if files and files.get("file") else []
+    url = request.args.get("url")
+
+    if file_objs and url:
+        return get_json_result(
+            data=False,
+            message="Provide either multipart file(s) or ?url=..., not both.",
+            code=RetCode.BAD_REQUEST,
+        )
+
+    if not file_objs and not url:
+        return get_json_result(
+            data=False,
+            message="Missing input: provide multipart file(s) or url",
+            code=RetCode.BAD_REQUEST,
+        )
+
+    try:
+        if url and not file_objs:
+            return get_json_result(data=FileService.upload_info(tenant_id, None, url))
+
+        if len(file_objs) == 1:
+            return get_json_result(data=FileService.upload_info(tenant_id, file_objs[0], None))
+
+        results = [FileService.upload_info(tenant_id, f) for f in file_objs]
+        return get_json_result(data=results)
     except Exception as e:
         return server_error_response(e)
 
@@ -623,11 +679,12 @@ async def get(tenant_id, file_id):
 
         response = await make_response(blob)
         ext = re.search(r"\.([^.]+)$", file.name)
-        if ext:
-            if file.type == FileType.VISUAL.value:
-                response.headers.set('Content-Type', 'image/%s' % ext.group(1))
-            else:
-                response.headers.set('Content-Type', 'application/%s' % ext.group(1))
+        extension = ext.group(1).lower() if ext else None
+        content_type = None
+        if extension:
+            fallback_prefix = "image" if file.type == FileType.VISUAL.value else "application"
+            content_type = CONTENT_TYPE_MAP.get(extension, f"{fallback_prefix}/{extension}")
+        apply_safe_file_response_headers(response, content_type, extension)
         return response
     except Exception as e:
         return server_error_response(e)
@@ -640,7 +697,8 @@ async def download_attachment(tenant_id, attachment_id):
         ext = request.args.get("ext", "markdown")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
         response = await make_response(data)
-        response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
+        content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
+        apply_safe_file_response_headers(response, content_type, ext)
 
         return response
 

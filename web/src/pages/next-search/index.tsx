@@ -1,20 +1,12 @@
 import { useFetchTokenListBeforeOtherStep } from '@/components/embed-dialog/use-show-embed-dialog';
-import { PageHeader } from '@/components/page-header';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
+
 import { Button } from '@/components/ui/button';
 import { SharedFrom } from '@/constants/chat';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useFetchTenantInfo,
   useFetchUserInfo,
 } from '@/hooks/use-user-setting-request';
+import { Routes } from '@/routes';
 import { Send, Settings } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -30,7 +22,6 @@ import { SearchSetting } from './search-setting';
 import SearchingPage from './searching';
 
 export default function SearchPage() {
-  const { navigateToSearchList } = useNavigatePage();
   const [isSearching, setIsSearching] = useState(false);
   const { data: SearchData } = useFetchSearchDetail();
   const { beta, handleOperate } = useFetchTokenListBeforeOtherStep();
@@ -56,22 +47,7 @@ export default function SearchPage() {
   }, [isSearching]);
 
   return (
-    <section>
-      <PageHeader>
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink onClick={navigateToSearchList}>
-                {t('header.search')}
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>{SearchData?.name}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-      </PageHeader>
+    <section className="size-full relative" data-testid="search-detail">
       <div className="flex gap-3 w-full bg-bg-base">
         <div className="flex-1">
           {!isSearching && (
@@ -99,7 +75,7 @@ export default function SearchPage() {
         </div>
         {openSetting && (
           <SearchSetting
-            className="mt-20 mr-2"
+            className="mt-20 me-2"
             open={openSetting}
             setOpen={setOpenSetting}
             data={SearchData as ISearchAppDetailProps}
@@ -109,7 +85,7 @@ export default function SearchPage() {
           <EmbedAppModal
             open={openEmbed}
             setOpen={setOpenEmbed}
-            url="/next-search/share"
+            url={Routes.SearchShare}
             token={SearchData?.id as string}
             from={SharedFrom.Search}
             tenantId={tenantId}
@@ -127,9 +103,8 @@ export default function SearchPage() {
           // ></EmbedDialog>
         }
       </div>
-      <div className="absolute right-5 top-4 ">
+      <div className="absolute end-5 top-4">
         <Button
-          className="bg-text-primary  text-bg-base border-b-accent-primary border-b-2"
           onClick={() => {
             handleOperate().then((res) => {
               console.log(res, 'res');
@@ -144,7 +119,7 @@ export default function SearchPage() {
         </Button>
       </div>
       {!isSearching && (
-        <div className="absolute left-5 bottom-12 ">
+        <div className="absolute start-5 bottom-12 ">
           <Button
             variant="transparent"
             className="bg-bg-card"

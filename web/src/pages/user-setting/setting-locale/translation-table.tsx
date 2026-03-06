@@ -120,11 +120,11 @@ const TranslationTable: React.FC<TranslationTableProps> = ({
     const sortOrder = colState?.sortOrder;
 
     if (sortOrder === 'asc') {
-      return <ArrowUp className="ml-1 h-4 w-4" />;
+      return <ArrowUp className="ms-1 h-4 w-4" />;
     } else if (sortOrder === 'desc') {
-      return <ArrowDown className="ml-1 h-4 w-4" />;
+      return <ArrowDown className="ms-1 h-4 w-4" />;
     } else {
-      return <ArrowUpDown className="ml-1 h-4 w-4" />;
+      return <ArrowUpDown className="ms-1 h-4 w-4" />;
     }
   };
 
@@ -140,7 +140,7 @@ const TranslationTable: React.FC<TranslationTableProps> = ({
           <TableHeader className="bg-bg-title">
             <TableRow className="hover:bg-bg-title">
               <TableHead
-                className="h-12 px-4 cursor-pointer sticky left-0 bg-bg-title"
+                className="h-12 px-4 cursor-pointer sticky start-0 bg-bg-title"
                 onClick={() => handleSort('key')}
               >
                 <div className="flex items-center min-w-[200px]">
@@ -202,7 +202,7 @@ const TranslationTable: React.FC<TranslationTableProps> = ({
             {paginatedData.length > 0 ? (
               paginatedData.map((record) => (
                 <TableRow key={record.key} className="hover:bg-bg-card">
-                  <TableCell className="p-4 font-medium sticky left-0 bg-bg-base hover:bg-bg-card">
+                  <TableCell className="p-4 font-medium sticky start-0 bg-bg-base hover:bg-bg-card">
                     {record.key}
                   </TableCell>
                   {languages.map((lang) => (
