@@ -840,6 +840,8 @@ Quanto sopra è il contenuto che devi riassumere.`,
       configuration: 'Configurazione',
       view: 'Visualizza',
       mcp: 'MCP',
+      dingtalkAITableDescription:
+        'Connettiti a Dingtalk AI Table e sincronizza i record da una tabella specificata.',
     },
     message: {
       registered: 'Registrato!',
