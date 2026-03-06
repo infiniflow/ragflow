@@ -22,10 +22,12 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
-	"errors"
+	stderrors "errors"
 	"fmt"
 	"os"
+	"ragflow/internal/errors"
 	"ragflow/internal/server"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -52,9 +54,8 @@ func NewUserService() *UserService {
 
 // RegisterRequest registration request
 type RegisterRequest struct {
-	Username string `json:"username" binding:"required,min=3,max=50"`
-	Password string `json:"password" binding:"required,min=6"`
 	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=6"`
 	Nickname string `json:"nickname"`
 }
 
@@ -97,29 +98,128 @@ type UserResponse struct {
 
 // Register user registration
 func (s *UserService) Register(req *RegisterRequest) (*model.User, error) {
-	// Check if email exists
-	existUser, _ := s.userDAO.GetByEmail(req.Email)
-	if existUser != nil {
-		return nil, errors.New("email already exists")
+	cfg := server.GetConfig()
+	if cfg.RegisterEnabled == 0 {
+		return nil, errors.ErrOperating("User registration is disabled!")
 	}
 
-	// Generate password hash
-	hashedPassword, err := s.HashPassword(req.Password)
+	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
+	if !emailRegex.MatchString(req.Email) {
+		return nil, errors.ErrOperating(fmt.Sprintf("Invalid email address: %s!", req.Email))
+	}
+
+	existUser, _ := s.userDAO.GetByEmail(req.Email)
+	if existUser != nil {
+		return nil, errors.ErrOperating(fmt.Sprintf("Email: %s has already registered!", req.Email))
+	}
+
+	decryptedPassword, err := s.decryptPassword(req.Password)
+	if err != nil {
+		return nil, errors.ErrServer("Fail to decrypt password")
+	}
+
+	hashedPassword, err := s.HashPassword(decryptedPassword)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	// Create user
+	userID := s.GenerateToken()
+	accessToken := s.GenerateToken()
 	status := "1"
+	loginChannel := "password"
+	isSuperuser := false
+
 	user := &model.User{
-		Password: &hashedPassword,
-		Email:    req.Email,
-		Nickname: req.Nickname,
-		Status:   &status,
+		ID:              userID,
+		AccessToken:     &accessToken,
+		Email:           req.Email,
+		Nickname:        req.Nickname,
+		Password:        &hashedPassword,
+		Status:          &status,
+		IsActive:        "1",
+		IsAuthenticated: "1",
+		IsAnonymous:     "0",
+		LoginChannel:    &loginChannel,
+		IsSuperuser:     &isSuperuser,
 	}
+
+	now := time.Now().Unix()
+	user.CreateTime = now
+	user.UpdateTime = &now
+	now_date := time.Now()
+	user.CreateDate = &now_date
+	user.UpdateDate = &now_date
+	user.LastLoginTime = &now_date
+
+	tenantName := req.Nickname + "'s Kingdom"
+	tenant := &model.Tenant{
+		ID:        userID,
+		Name:      &tenantName,
+		LLMID:     cfg.Server.Mode,
+		EmbDID:    cfg.Server.Mode,
+		ASRID:     cfg.Server.Mode,
+		Img2TxtID: cfg.Server.Mode,
+		RerankID:  cfg.Server.Mode,
+		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
+	}
+	tenant.CreateTime = now
+	tenant.UpdateTime = &now
+	tenant.CreateDate = &now_date
+	tenant.UpdateDate = &now_date
+
+	userTenantID := s.GenerateToken()
+	userTenant := &model.UserTenant{
+		ID:        userTenantID,
+		UserID:    userID,
+		TenantID:  userID,
+		Role:      "owner",
+		InvitedBy: userID,
+		Status:    &status,
+	}
+	userTenant.CreateTime = now
+	userTenant.UpdateTime = &now
+	userTenant.CreateDate = &now_date
+	userTenant.UpdateDate = &now_date
+
+	fileID := s.GenerateToken()
+	rootFile := &model.File{
+		ID:        fileID,
+		ParentID:  fileID,
+		TenantID:  userID,
+		CreatedBy: userID,
+		Name:      "/",
+		Type:      "folder",
+		Size:      0,
+	}
+	rootFile.CreateTime = now
+	rootFile.UpdateTime = &now
+	rootFile.CreateDate = &now_date
+	rootFile.UpdateDate = &now_date
+
+	tenantDAO := dao.NewTenantDAO()
+	userTenantDAO := dao.NewUserTenantDAO()
+	fileDAO := dao.NewFileDAO()
 
 	if err := s.userDAO.Create(user); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	if err := tenantDAO.Create(tenant); err != nil {
+		s.userDAO.DeleteByID(userID)
+		return nil, fmt.Errorf("failed to create tenant: %w", err)
+	}
+
+	if err := userTenantDAO.Create(userTenant); err != nil {
+		s.userDAO.DeleteByID(userID)
+		tenantDAO.Delete(userID)
+		return nil, fmt.Errorf("failed to create user tenant relation: %w", err)
+	}
+
+	if err := fileDAO.Create(rootFile); err != nil {
+		s.userDAO.DeleteByID(userID)
+		tenantDAO.Delete(userID)
+		userTenantDAO.Delete(userTenantID)
+		return nil, fmt.Errorf("failed to create root folder: %w", err)
 	}
 
 	return user, nil
@@ -130,7 +230,7 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, error) {
 	// Get user by email (using username field as email)
 	user, err := s.userDAO.GetByEmail(req.Username)
 	if err != nil {
-		return nil, errors.New("invalid email or password")
+		return nil, stderrors.New("invalid email or password")
 	}
 
 	// Decrypt password using RSA
@@ -141,12 +241,11 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, error) {
 
 	// Verify password
 	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
-		return nil, errors.New("invalid username or password")
+		return nil, stderrors.New("invalid username or password")
 	}
 
-	// Check user status
 	if user.Status == nil || *user.Status != "1" {
-		return nil, errors.New("user is disabled")
+		return nil, stderrors.New("user is disabled")
 	}
 
 	// Generate new access token
@@ -166,39 +265,36 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, error) {
 }
 
 // LoginByEmail user login by email
+// Returns user on success, or error with specific code:
+// - ErrAuthentication (109): Email not registered or password mismatch
+// - ErrServer (500): Password decryption failure
+// - ErrForbidden (403): Account disabled
 func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, error) {
-	// Check for default admin account
 	if req.Email == "admin@ragflow.io" {
-		return nil, errors.New("default admin account cannot be used to login normal services")
+		return nil, errors.ErrAuthentication("default admin account cannot be used to login normal services")
 	}
 
-	// Get user by email
 	user, err := s.userDAO.GetByEmail(req.Email)
 	if err != nil {
-		return nil, errors.New("invalid email or password")
+		return nil, errors.ErrAuthentication(fmt.Sprintf("Email: %s is not registered!", req.Email))
 	}
 
-	// Decrypt password using RSA
 	decryptedPassword, err := s.decryptPassword(req.Password)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt password: %w", err)
+		return nil, errors.ErrServer("Fail to crypt password")
 	}
 
-	// Verify password
 	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
-		return nil, errors.New("invalid email or password")
+		return nil, errors.ErrAuthentication("Email and password do not match!")
 	}
 
-	// Check user status
-	if user.Status == nil || *user.Status != "1" {
-		return nil, errors.New("user is disabled")
+	if user.IsActive == "0" {
+		return nil, errors.ErrForbidden("This account has been disabled, please contact the administrator!")
 	}
 
-	// Generate new access token
 	token := s.GenerateToken()
 	user.AccessToken = &token
 
-	// Update timestamp
 	now := time.Now().Unix()
 	user.UpdateTime = &now
 	now_date := time.Now()
@@ -332,7 +428,7 @@ func (s *UserService) loadPrivateKey() (*rsa.PrivateKey, error) {
 	// Parse PEM block
 	block, _ := pem.Decode(keyData)
 	if block == nil {
-		return nil, errors.New("failed to decode PEM block")
+		return nil, stderrors.New("failed to decode PEM block")
 	}
 
 	// Decrypt the PEM block if it's encrypted
@@ -360,7 +456,7 @@ func (s *UserService) loadPrivateKey() (*rsa.PrivateKey, error) {
 
 	rsaPrivateKey, ok := privateKey.(*rsa.PrivateKey)
 	if !ok {
-		return nil, errors.New("not an RSA private key")
+		return nil, stderrors.New("not an RSA private key")
 	}
 
 	return rsaPrivateKey, nil
@@ -413,7 +509,7 @@ func (s *UserService) GetUserByToken(authorization string) (*model.User, error) 
 
 	// Validate token format (should be at least 32 chars, UUID format)
 	if len(accessToken) < 32 {
-		return nil, errors.New("invalid access token format")
+		return nil, stderrors.New("invalid access token format")
 	}
 
 	// Get user by access token
@@ -570,7 +666,7 @@ func (s *UserService) ChangePassword(user *model.User, req *ChangePasswordReques
 	// If password is provided, verify current password
 	if req.Password != nil {
 		if user.Password == nil || !s.VerifyPassword(*user.Password, *req.Password) {
-			return errors.New("current password is incorrect")
+			return stderrors.New("current password is incorrect")
 		}
 	}
 

@@ -17,7 +17,9 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
+	"ragflow/internal/errors"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"strconv"
@@ -47,31 +49,59 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 // @Produce json
 // @Param request body service.RegisterRequest true "registration info"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/users/register [post]
+// @Router /v1/user/register [post]
 func (h *UserHandler) Register(c *gin.Context) {
 	var req service.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		c.JSON(http.StatusOK, gin.H{
+			"code":    400,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
 	user, err := h.userService.Register(&req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		if appErr, ok := errors.GetAppError(err); ok {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    appErr.Code,
+				"message": appErr.Message,
+				"data":    false,
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
+	variables := server.GetVariables()
+	secretKey := variables.SecretKey
+	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
+			"message": "Failed to generate auth token",
+			"data":    false,
+		})
+		return
+	}
+
+	c.Header("Authorization", authToken)
+	c.Header("Access-Control-Allow-Origin", "*")
+	c.Header("Access-Control-Allow-Methods", "*")
+	c.Header("Access-Control-Allow-Headers", "*")
+	c.Header("Access-Control-Expose-Headers", "Authorization")
+
+	profile := h.userService.GetUserProfile(user)
 	c.JSON(http.StatusOK, gin.H{
-		"message": "registration successful",
-		"data": gin.H{
-			"id":       user.ID,
-			"nickname": user.Nickname,
-			"email":    user.Email,
-		},
+		"code":    0,
+		"message": fmt.Sprintf("%s, welcome aboard!", req.Nickname),
+		"data":    profile,
 	})
 }
 
@@ -132,18 +162,28 @@ func (h *UserHandler) Login(c *gin.Context) {
 func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusOK, gin.H{
 			"code":    400,
 			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
 	user, err := h.userService.LoginByEmail(&req)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
+		if appErr, ok := errors.GetAppError(err); ok {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    appErr.Code,
+				"message": appErr.Message,
+				"data":    false,
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
 			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
@@ -151,21 +191,26 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	variables := server.GetVariables()
 	secretKey := variables.SecretKey
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
-
-	// Set Authorization header with access_token
-	if user.AccessToken != nil {
-		c.Header("Authorization", authToken)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
+			"message": "Failed to generate auth token",
+			"data":    false,
+		})
+		return
 	}
-	// Set CORS headers
+
+	c.Header("Authorization", authToken)
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Methods", "*")
 	c.Header("Access-Control-Allow-Headers", "*")
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
+	profile := h.userService.GetUserProfile(user)
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "Welcome back!",
-		"data":    user,
+		"data":    profile,
 	})
 }
 

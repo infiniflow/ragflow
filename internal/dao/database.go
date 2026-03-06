@@ -18,6 +18,7 @@ package dao
 
 import (
 	"fmt"
+	"ragflow/internal/model"
 	"ragflow/internal/server"
 	"time"
 
@@ -77,9 +78,15 @@ func InitDB() error {
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	// Auto migrate
-	//if err := DB.AutoMigrate(&model.User{}, &model.Document{}); err != nil {
-	//	return fmt.Errorf("failed to migrate database: %w", err)
-	//}
+	if err := DB.AutoMigrate(
+		&model.User{},
+		&model.Tenant{},
+		&model.UserTenant{},
+		&model.File{},
+		&model.File2Document{},
+	); err != nil {
+		return fmt.Errorf("failed to migrate database: %w", err)
+	}
 
 	logger.Info("Database connected and migrated successfully")
 	return nil
