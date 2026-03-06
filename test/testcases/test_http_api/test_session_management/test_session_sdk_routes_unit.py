@@ -985,6 +985,10 @@ def test_delete_routes_partial_duplicate_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
 
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
+    res = _run(inspect.unwrap(module.delete)("tenant-1", "chat-1"))
+    assert res["code"] == 0
+
     monkeypatch.setattr(module.ConversationService, "delete_by_id", lambda *_args, **_kwargs: True)
 
     def _conversation_query(**kwargs):
@@ -1016,6 +1020,10 @@ def test_delete_routes_partial_duplicate_unit(monkeypatch):
     assert res["data"]["errors"] == ["Duplicate session ids: ok"]
 
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [SimpleNamespace(id="agent-1")])
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
+    res = _run(inspect.unwrap(module.delete_agent_session)("tenant-1", "agent-1"))
+    assert res["code"] == 0
+
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"ids": ["session-1"]}))
     monkeypatch.setattr(module, "check_duplicate_ids", lambda ids, _kind: (ids, []))
 

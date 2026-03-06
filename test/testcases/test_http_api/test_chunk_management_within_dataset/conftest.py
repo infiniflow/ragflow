@@ -18,7 +18,7 @@
 from time import sleep
 
 import pytest
-from common import batch_add_chunks, delete_chunks, list_documents, parse_documents
+from common import batch_add_chunks, delete_all_chunks, list_documents, parse_documents
 from utils import wait_for
 
 
@@ -34,7 +34,7 @@ def condition(_auth, _dataset_id):
 @pytest.fixture(scope="function")
 def add_chunks_func(request, HttpApiAuth, add_document):
     def cleanup():
-        delete_chunks(HttpApiAuth, dataset_id, document_id, {"chunk_ids": []})
+        delete_all_chunks(HttpApiAuth, dataset_id, document_id)
 
     request.addfinalizer(cleanup)
 

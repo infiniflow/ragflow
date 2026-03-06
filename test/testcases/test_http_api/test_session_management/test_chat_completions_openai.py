@@ -18,7 +18,7 @@ from common import (
     bulk_upload_documents,
     chat_completions_openai,
     create_chat_assistant,
-    delete_chat_assistants,
+    delete_all_chat_assistants,
     list_documents,
     parse_documents,
 )
@@ -53,7 +53,7 @@ class TestChatCompletionsOpenAI:
         res = create_chat_assistant(HttpApiAuth, {"name": "openai_endpoint_test", "dataset_ids": [dataset_id]})
         assert res["code"] == 0, res
         chat_id = res["data"]["id"]
-        request.addfinalizer(lambda: delete_chat_assistants(HttpApiAuth))
+        request.addfinalizer(lambda: delete_all_chat_assistants(HttpApiAuth))
 
         res = chat_completions_openai(
             HttpApiAuth,
@@ -92,7 +92,7 @@ class TestChatCompletionsOpenAI:
         res = create_chat_assistant(HttpApiAuth, {"name": "openai_token_count_test", "dataset_ids": [dataset_id]})
         assert res["code"] == 0, res
         chat_id = res["data"]["id"]
-        request.addfinalizer(lambda: delete_chat_assistants(HttpApiAuth))
+        request.addfinalizer(lambda: delete_all_chat_assistants(HttpApiAuth))
 
         # Use a message with known token count
         # "hello" is 1 token in cl100k_base encoding
@@ -202,7 +202,7 @@ class TestChatCompletionsOpenAI:
             res = create_chat_assistant(HttpApiAuth, {"name": "openai_validation_case", "dataset_ids": []})
             assert res["code"] == 0, res
             chat_id = res["data"]["id"]
-            request.addfinalizer(lambda: delete_chat_assistants(HttpApiAuth))
+            request.addfinalizer(lambda: delete_all_chat_assistants(HttpApiAuth))
 
         res = chat_completions_openai(HttpApiAuth, chat_id, payload)
         assert res.get("code") != 0, res

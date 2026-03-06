@@ -240,7 +240,7 @@ Deletes datasets by ID.
 ##### ids: `list[str]` or `None`, *Required*
 
 The IDs of the datasets to delete. Defaults to `None`.
-  - If `None`, all datasets will be deleted.
+  - If `None`, no datasets will be deleted.
   - If an array of IDs, only the specified datasets will be deleted.
   - If an empty array, no datasets will be deleted.
 
@@ -661,9 +661,12 @@ Deletes documents by ID.
 
 #### Parameters
 
-##### ids: `list[list]`
+##### ids: `list[str]` or `None`
 
-The IDs of the documents to delete. Defaults to `None`. If it is not specified, all documents in the dataset will be deleted.
+The IDs of the documents to delete. Defaults to `None`.
+  - If omitted or `None`, no documents will be deleted.
+  - If an array of IDs, only the specified documents will be deleted.
+  - If an empty array, no documents will be deleted.
 
 #### Returns
 
@@ -931,7 +934,10 @@ Deletes chunks by ID.
 
 ##### chunk_ids: `list[str]`
 
-The IDs of the chunks to delete. Defaults to `None`. If it is not specified, all chunks of the current document will be deleted.
+The IDs of the chunks to delete. Defaults to `None`.
+  - If omitted or `None`, no chunks will be deleted.
+  - If an array of IDs is provided, only the specified chunks will be deleted.
+  - If an empty array is provided, no chunks will be deleted.
 
 #### Returns
 
@@ -1234,7 +1240,10 @@ Deletes chat assistants by ID.
 
 ##### ids: `list[str]`
 
-The IDs of the chat assistants to delete. Defaults to `None`. If it is empty or not specified, all chat assistants in the system will be deleted.
+The IDs of the chat assistants to delete. Defaults to `None`.
+  - If omitted or `None`, no chat assistants will be deleted.
+  - If an array of IDs is provided, only the specified chat assistants will be deleted.
+  - If an empty array is provided, no chat assistants will be deleted.
 
 #### Returns
 
@@ -1463,7 +1472,10 @@ Deletes sessions of the current chat assistant by ID.
 
 ##### ids: `list[str]`
 
-The IDs of the sessions to delete. Defaults to `None`. If it is not specified, all sessions associated with the current chat assistant will be deleted.
+The IDs of the sessions to delete. Defaults to `None`.
+  - If omitted or `None`, no sessions will be deleted.
+  - If an array of IDs is provided, only the specified sessions will be deleted.
+  - If an empty array is provided, no sessions will be deleted.
 
 #### Returns
 
@@ -1781,7 +1793,10 @@ Deletes sessions of an agent by ID.
 
 ##### ids: `list[str]`
 
-The IDs of the sessions to delete. Defaults to `None`. If it is not specified, all sessions associated with the agent will be deleted.
+The IDs of the sessions to delete. Defaults to `None`.
+  - If omitted or `None`, no sessions will be deleted.
+  - If an array of IDs is provided, only the specified sessions will be deleted.
+  - If an empty array is provided, no sessions will be deleted.
 
 #### Returns
 
