@@ -25,7 +25,12 @@ export const FilterButton = React.forwardRef<
   ButtonProps & { count?: number }
 >(({ count = 0, ...props }, ref) => {
   return (
-    <Button variant="secondary" {...props} ref={ref}>
+    <Button
+      variant="outline"
+      size={count > 0 ? 'default' : 'icon'}
+      {...props}
+      ref={ref}
+    >
       {/* <span
         className={cn({
           'text-text-primary': count > 0,
@@ -34,12 +39,13 @@ export const FilterButton = React.forwardRef<
       >
         Filter
       </span> */}
+      <Funnel />
+
       {count > 0 && (
-        <span className="rounded-full bg-text-badge px-1 text-xs ">
+        <span className="rounded bg-text-badge px-1 py-0.5 text-xs leading-none text-text-primary">
           {count}
         </span>
       )}
-      <Funnel />
     </Button>
   );
 });

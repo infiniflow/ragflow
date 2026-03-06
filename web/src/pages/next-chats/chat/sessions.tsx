@@ -1,9 +1,17 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import EmbedDialog from '@/components/embed-dialog';
+import { useShowEmbedModal } from '@/components/embed-dialog/use-show-embed-dialog';
 import { MoreButton } from '@/components/more-button';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SearchInput } from '@/components/ui/input';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useFetchDialog,
@@ -15,11 +23,13 @@ import {
   LucideListChecks,
   LucidePanelLeftClose,
   LucidePlus,
+  LucideSend,
   LucideTrash2,
   LucideUndo2,
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import { useChatUrlParams } from '../hooks/use-chat-url';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { useSelectDerivedConversationList } from '../hooks/use-select-conversation-list';
@@ -132,6 +142,10 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
 
   const selectedCount = useMemo(() => selectedIds.size, [selectedIds]);
 
+  const { id } = useParams();
+  const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
+    useShowEmbedModal();
+
   if (!visible) {
     return (
       <div className="p-5">
@@ -169,10 +183,32 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
           <span className="flex-1 truncate">{data.name}</span>
         </div>
 
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              onClick={showEmbedModal}
+              size="icon-xs"
+              data-testid="chat-detail-embed-open"
+            >
+              <LucideSend />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('common.embedIntoSite')}</TooltipContent>
+        </Tooltip>
+
+        <EmbedDialog
+          visible={embedVisible}
+          hideModal={hideEmbedModal}
+          token={id!}
+          from={SharedFrom.Chat}
+          beta={beta}
+          isAgent={false}
+        />
+
         <Button
           variant="transparent"
           size="icon-sm"
-          className="border-0"
+          className="border-0 ml-auto"
           onClick={switchVisible}
           data-testid="chat-detail-sessions-close"
         >
