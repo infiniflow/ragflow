@@ -42,6 +42,7 @@ from rag.nlp import search
 import memory.utils.es_conn as memory_es_conn
 import memory.utils.infinity_conn as memory_infinity_conn
 import memory.utils.ob_conn as memory_ob_conn
+import memory.utils.opensearch_conn as memory_os_conn
 
 LLM = None
 LLM_FACTORY = None
@@ -81,6 +82,7 @@ OAUTH_CONFIG = None
 DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
 DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
 DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
+DOC_ENGINE_OPENSEARCH = (DOC_ENGINE.lower() == "opensearch")
 
 
 docStoreConn = None
@@ -296,6 +298,9 @@ def init_settings():
             "db_name": "default_db"
         })
         msgStoreConn = memory_infinity_conn.InfinityConnection()
+    elif lower_case_doc_engine == "opensearch":
+        OS = get_base_config("os", {})
+        msgStoreConn = memory_os_conn.OSConnection()
     elif lower_case_doc_engine in ["oceanbase", "seekdb"]:
         msgStoreConn = memory_ob_conn.OBConnection()
 

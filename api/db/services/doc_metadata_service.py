@@ -382,14 +382,18 @@ class DocMetadataService:
             if result:
                 logging.error(f"Failed to insert metadata for document {doc_id}: {result}")
                 return False
-            # Force ES refresh to make metadata immediately available for search
+            # Force ES/OS refresh to make metadata immediately available for search
             if not settings.DOC_ENGINE_INFINITY:
                 try:
-                    settings.docStoreConn.es.indices.refresh(index=index_name)
+                    # Handle both Elasticsearch and OpenSearch
+                    if settings.DOC_ENGINE_OPENSEARCH:
+                        settings.docStoreConn.os.indices.refresh(index=index_name)
+                    else:
+                        settings.docStoreConn.es.indices.refresh(index=index_name)
                     logging.debug(f"Refreshed metadata index: {index_name}")
                 except Exception as e:
                     logging.warning(f"Failed to refresh metadata index {index_name}: {e}")
-            
+
             logging.debug(f"Successfully inserted metadata for document {doc_id}")
             return True
 
@@ -403,7 +407,7 @@ class DocMetadataService:
         """
         Update document metadata in ES/Infinity.
 
-        For Elasticsearch: Uses partial update to directly update the meta_fields field.
+        For Elasticsearch/OpenSearch: Uses partial update to directly update the meta_fields field.
         For Infinity: Falls back to delete+insert (Infinity doesn't support partial updates well).
 
         Args:
@@ -457,13 +461,21 @@ class DocMetadataService:
                     )
                     if doc_exists:
                         # Document exists - use partial update
-                        settings.docStoreConn.es.update(
-                            index=index_name,
-                            id=doc_id,
-                            refresh=True,
-                            doc={"meta_fields": processed_meta}
-                        )
-                        logging.debug(f"Successfully updated metadata for document {doc_id} using ES partial update")
+                        # Handle both Elasticsearch and OpenSearch
+                        if settings.DOC_ENGINE_OPENSEARCH:
+                            settings.docStoreConn.update_doc_metadata_field(
+                                index_name=index_name,
+                                doc_id=doc_id,
+                                data={"meta_fields": processed_meta}
+                            )
+                        else:
+                            settings.docStoreConn.es.update(
+                                index=index_name,
+                                id=doc_id,
+                                refresh=True,
+                                doc={"meta_fields": processed_meta}
+                            )
+                        logging.debug(f"Successfully updated metadata for document {doc_id} using partial update")
                         return True
                 except Exception as e:
                     logging.debug(f"Document {doc_id} not found in index, will insert: {e}")
@@ -472,7 +484,7 @@ class DocMetadataService:
                 logging.debug(f"[update_document_metadata] Document {doc_id} not found, inserting new")
                 return cls.insert_document_metadata(doc_id, processed_meta)
 
-            # For Infinity or as fallback: use delete+insert
+            # For Infinity, missing docs, or as fallback: use delete+insert
             logging.debug(f"[update_document_metadata] Using delete+insert method for doc_id: {doc_id}")
             cls.delete_document_metadata(doc_id, skip_empty_check=True)
             return cls.insert_document_metadata(doc_id, processed_meta)
@@ -584,12 +596,16 @@ class DocMetadataService:
 
             logging.debug(f"[DROP EMPTY TABLE] Table {index_name} exists, checking if empty...")
 
-            # Use ES count API for accurate count
+            # Use ES/OS count API for accurate count
             # Note: No need to refresh since delete operation already uses refresh=True
             try:
-                count_response = settings.docStoreConn.es.count(index=index_name)
+                # Handle both Elasticsearch and OpenSearch
+                if settings.DOC_ENGINE_OPENSEARCH:
+                    count_response = settings.docStoreConn.os.count(index=index_name)
+                else:
+                    count_response = settings.docStoreConn.es.count(index=index_name)
                 total_count = count_response['count']
-                logging.debug(f"[DROP EMPTY TABLE] ES count API result: {total_count} documents")
+                logging.debug(f"[DROP EMPTY TABLE] Count API result: {total_count} documents")
                 is_empty = (total_count == 0)
             except Exception as e:
                 logging.warning(f"[DROP EMPTY TABLE] Count API failed, falling back to search: {e}")
