@@ -186,10 +186,10 @@ export const useCreateKnowledge = () => {
     mutationFn: async (params: {
       id?: string;
       name: string;
-      embd_id?: string;
+      embedding_model?: string;
       parser_id?: string;
       parseType?: number;
-      pipeline_id?: string;
+      pipeline_id?: string | null;
       ext?: {
         language?: string;
         [key: string]: any;

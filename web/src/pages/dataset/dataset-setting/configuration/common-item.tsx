@@ -119,7 +119,7 @@ export const EmbeddingSelect = ({
   const { handleChange } = useHandleKbEmbedding();
 
   const oldValue = useMemo(() => {
-    const embdStr = form.getValues(name || 'embd_id');
+    const embdStr = form.getValues(name || 'embedding_model');
     return embdStr || '';
   }, [form]);
   const [loading, setLoading] = useState(false);
@@ -162,7 +162,7 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
     <>
       <FormField
         control={form.control}
-        name={'embd_id'}
+        name={'embedding_model'}
         render={({ field }) => (
           <FormItem className={cn(' items-center space-y-0 ')}>
             <div
