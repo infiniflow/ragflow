@@ -55,6 +55,8 @@ const buttonVariants = cva(
           focus-visible:text-text-primary focus-visible:bg-border-button focus-visible:border-border-button
         `,
 
+        icon: 'bg-transparent text-foreground hover:bg-transparent/80',
+
         transparent: `
           text-text-secondary bg-transparent border-0.5 border-border-button
           hover:text-text-primary hover:bg-border-button

@@ -40,8 +40,11 @@ export default function Chat() {
   const { data: dialogList } = useFetchConversationList();
 
   const currentConversationName = useMemo(() => {
-    return dialogList.find((x) => x.id === conversationId)?.name;
-  }, [conversationId, dialogList]);
+    return (
+      dialogList.find((x) => x.id === conversationId)?.name ||
+      t('chat.newConversation')
+    );
+  }, [conversationId, dialogList, t]);
 
   const fetchConversation: typeof handleConversationCardClick = useCallback(
     async (conversationId, isNew) => {
