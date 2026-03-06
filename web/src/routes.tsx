@@ -146,7 +146,7 @@ const routeConfigOptions = [
   {
     path: Routes.Root,
     layout: false,
-    Component: () => import('@/layouts/next'),
+    Component: () => import('@/layouts/root-layout'),
     loader: ({ request }) => {
       const url = new URL(request.url);
       const auth = url.searchParams.get('auth');
@@ -170,7 +170,7 @@ const routeConfigOptions = [
   },
   {
     path: Routes.Root,
-    Component: () => import('@/layouts/next'),
+    Component: () => import('@/layouts/root-layout'),
     children: [
       {
         path: Routes.Datasets,

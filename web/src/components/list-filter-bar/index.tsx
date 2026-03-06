@@ -91,7 +91,7 @@ export default function ListFilterBar({
   }, [value]);
 
   return (
-    <div className={cn('flex justify-between mb-5 items-center', className)}>
+    <div className={cn('flex justify-between items-center', className)}>
       <div className="text-2xl font-semibold flex items-center gap-2.5">
         {typeof icon === 'string' ? (
           // <IconFont name={icon} className="size-6"></IconFont>
@@ -101,7 +101,8 @@ export default function ListFilterBar({
         )}
         {leftPanel || title}
       </div>
-      <div className="flex gap-5 items-center">
+
+      <div className="flex gap-4 items-center" role="toolbar">
         {preChildren}
         {showFilter && (
           <FilterPopover
@@ -119,6 +120,7 @@ export default function ListFilterBar({
           value={searchString}
           onChange={onSearchChange}
           className="w-32"
+          role="searchbox"
         ></SearchInput>
         {children}
       </div>
