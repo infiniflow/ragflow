@@ -274,6 +274,87 @@ class RAGFlowPdfParser:
             return False
         return garbled_count / total >= threshold
 
+    @staticmethod
+    def _has_subset_font_prefix(fontname):
+        """Check if a font name has a subset prefix (e.g. 'DY1+ZLQDm1-1').
+
+        PDF subset fonts use a 6-letter uppercase tag followed by '+' before
+        the actual font name. Some tools use shorter tags (e.g. 'DY1+').
+        """
+        if not fontname:
+            return False
+        return bool(re.match(r"^[A-Z0-9]{2,6}\+", fontname))
+
+    @classmethod
+    def _is_garbled_by_font_encoding(cls, page_chars, min_chars=20):
+        """Detect garbled text caused by broken font encoding mappings.
+
+        Some PDFs (especially older Chinese standards) embed custom fonts that
+        map CJK glyphs to ASCII codepoints. The extracted text appears as
+        random ASCII punctuation/symbols instead of actual CJK characters.
+
+        Detection strategy: if all subset-embedded fonts on a page produce
+        characters that are overwhelmingly ASCII (punctuation, digits, symbols)
+        with virtually no CJK/Hangul/Kana characters, the page is likely
+        garbled due to broken font encoding.
+
+        Args:
+            page_chars: List of pdfplumber character dicts with 'text' and
+                'fontname' keys.
+            min_chars: Minimum number of non-space chars required to trigger
+                detection. Pages with fewer chars are not flagged.
+
+        Returns:
+            True if the page appears to have font-encoding garbled text.
+        """
+        if not page_chars or len(page_chars) < min_chars:
+            return False
+
+        has_subset_font = False
+        total_non_space = 0
+        ascii_punct_sym = 0
+        cjk_like = 0
+
+        for c in page_chars:
+            text = c.get("text", "")
+            fontname = c.get("fontname", "")
+            if not text or text.isspace():
+                continue
+            total_non_space += 1
+
+            if cls._has_subset_font_prefix(fontname):
+                has_subset_font = True
+
+            cp = ord(text[0])
+            # Count CJK Unified Ideographs + Extensions, Hangul, Kana
+            if (0x2E80 <= cp <= 0x9FFF or 0xF900 <= cp <= 0xFAFF
+                    or 0x20000 <= cp <= 0x2FA1F
+                    or 0xAC00 <= cp <= 0xD7AF
+                    or 0x3040 <= cp <= 0x30FF):
+                cjk_like += 1
+            # Count ASCII punctuation and symbols (0x21-0x2F, 0x3A-0x40,
+            # 0x5B-0x60, 0x7B-0x7E)
+            elif (0x21 <= cp <= 0x2F or 0x3A <= cp <= 0x40
+                    or 0x5B <= cp <= 0x60 or 0x7B <= cp <= 0x7E):
+                ascii_punct_sym += 1
+
+        if total_non_space < min_chars:
+            return False
+
+        # Must have at least one subset-embedded font
+        if not has_subset_font:
+            return False
+
+        # If there are essentially no CJK characters and the majority of
+        # characters are ASCII punctuation/symbols, this is likely garbled
+        # text from broken font encoding.
+        cjk_ratio = cjk_like / total_non_space
+        punct_ratio = ascii_punct_sym / total_non_space
+        if cjk_ratio < 0.05 and punct_ratio > 0.4:
+            return True
+
+        return False
+
     def _evaluate_table_orientation(self, table_img, sample_ratio=0.3):
         """
         Evaluate the best rotation orientation for a table image.
@@ -695,10 +776,11 @@ class RAGFlowPdfParser:
             if not b["chars"]:
                 del b["chars"]
                 continue
-            m_ht = np.mean([c["height"] for c in b["chars"]])
+            box_chars = b["chars"]
+            m_ht = np.mean([c["height"] for c in box_chars])
             garbled_count = 0
             total_count = 0
-            for c in Recognizer.sort_Y_firstly(b["chars"], m_ht):
+            for c in Recognizer.sort_Y_firstly(box_chars, m_ht):
                 if c["text"] == " " and b["text"]:
                     if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", b["text"][-1]):
                         b["text"] += " "
@@ -712,10 +794,20 @@ class RAGFlowPdfParser:
             del b["chars"]
             # If the majority of characters from pdfplumber are garbled,
             # clear the text so OCR recognition will be used as fallback.
+            # Strategy 1: PUA / unmapped CID characters
             if total_count > 0 and garbled_count / total_count >= 0.5:
                 logging.info(
                     "Page %d: detected garbled pdfplumber text (garbled=%d/%d), falling back to OCR for box at (%.1f, %.1f)",
                     pagenum, garbled_count, total_count, b["x0"], b["top"],
+                )
+                b["text"] = ""
+                continue
+            # Strategy 2: font-encoding garbling — all chars are ASCII
+            # punctuation from subset fonts (no CJK output)
+            if total_count > 0 and self._is_garbled_by_font_encoding(box_chars, min_chars=5):
+                logging.info(
+                    "Page %d: detected font-encoding garbled text (%d chars), falling back to OCR for box at (%.1f, %.1f)",
+                    pagenum, total_count, b["x0"], b["top"],
                 )
                 b["text"] = ""
 
@@ -1492,17 +1584,29 @@ class RAGFlowPdfParser:
                         logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
                         self.page_chars = [[] for _ in range(page_to - page_from)]  # If failed to extract, using empty list instead.
 
-                    # Detect garbled pages: if a page's extracted characters are mostly
-                    # garbled (PUA / unmapped CID), clear that page's chars so the OCR
-                    # path will be used instead.
+                    # Detect garbled pages and clear their chars so the OCR
+                    # path will be used instead. Two detection strategies:
+                    # 1) PUA / unmapped CID characters (threshold=0.3)
+                    # 2) Font-encoding garbling: subset fonts mapping CJK to ASCII
                     for pi, page_ch in enumerate(self.page_chars):
                         if not page_ch:
                             continue
+                        # Strategy 1: PUA / CID garbling
                         sample = page_ch if len(page_ch) <= 200 else random.sample(page_ch, 200)
                         sample_text = "".join(c.get("text", "") for c in sample)
                         if self._is_garbled_text(sample_text, threshold=0.3):
                             logging.warning(
                                 "Page %d: pdfplumber extracted mostly garbled characters (%d chars), "
+                                "clearing to use OCR fallback.",
+                                page_from + pi + 1, len(page_ch),
+                            )
+                            self.page_chars[pi] = []
+                            continue
+                        # Strategy 2: font-encoding garbling (CJK mapped to ASCII)
+                        if self._is_garbled_by_font_encoding(page_ch):
+                            logging.warning(
+                                "Page %d: detected font-encoding garbled text "
+                                "(subset fonts with no CJK output, %d chars), "
                                 "clearing to use OCR fallback.",
                                 page_from + pi + 1, len(page_ch),
                             )
