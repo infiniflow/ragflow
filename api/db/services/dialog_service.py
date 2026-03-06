@@ -34,6 +34,7 @@ from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
 from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from common.time_utils import current_timestamp, datetime_format
 from common.text_utils import normalize_arabic_digits
 from rag.graphrag.general.mind_map_extractor import MindMapExtractor
@@ -179,6 +180,28 @@ class DialogService(CommonService):
             offset += limit
         return res
 
+    @classmethod
+    @DB.connection_context()
+    def get_null_tenant_llm_id_row(cls):
+        fields = [
+            cls.model.id,
+            cls.model.tenant_id,
+            cls.model.llm_id
+        ]
+        objs = cls.model.select(*fields).where(cls.model.tenant_llm_id.is_null())
+        return list(objs)
+
+    @classmethod
+    @DB.connection_context()
+    def get_null_tenant_rerank_id_row(cls):
+        fields = [
+            cls.model.id,
+            cls.model.tenant_id,
+            cls.model.rerank_id
+        ]
+        objs = cls.model.select(*fields).where(cls.model.tenant_rerank_id.is_null())
+        return list(objs)
+
 
 async def async_chat_solo(dialog, messages, stream=True):
     llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
@@ -191,22 +214,15 @@ async def async_chat_solo(dialog, messages, stream=True):
         else:
             text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
         attachments = "\n\n".join(text_attachments)
-
-    if llm_type == "image2text":
-        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
-    else:
-        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
-    factory = llm_model_config.get("llm_factory", "") if llm_model_config else ""
-
-    if llm_type == "image2text":
-        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
-    else:
-        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+    model_config = get_model_config_by_id(dialog.tenant_llm_id)
+    chat_mdl = LLMBundle(dialog.tenant_id, model_config)
+    factory = model_config.get("llm_factory", "") if model_config else ""
 
     prompt_config = dialog.prompt_config
     tts_mdl = None
     if prompt_config.get("tts"):
-        tts_mdl = LLMBundle(dialog.tenant_id, LLMType.TTS)
+        default_tts_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.TTS)
+        tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model)
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"]
     if attachments and msg:
         msg[-1]["content"] += attachments
@@ -241,20 +257,27 @@ def get_models(dialog):
         raise Exception("**ERROR**: Knowledge bases use different embedding models.")
 
     if embedding_list:
-        embd_mdl = LLMBundle(dialog.tenant_id, LLMType.EMBEDDING, embedding_list[0])
+        embd_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.EMBEDDING, embedding_list[0])
+        embd_mdl = LLMBundle(dialog.tenant_id, embd_model_config)
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
-    if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
-        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+    if dialog.tenant_llm_id:
+        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
+    elif dialog.llm_id:
+        chat_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
     else:
-        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        chat_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
+
+    chat_mdl = LLMBundle(dialog.tenant_id, chat_model_config)
 
     if dialog.rerank_id:
-        rerank_mdl = LLMBundle(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
+        rerank_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
+        rerank_mdl = LLMBundle(dialog.tenant_id, rerank_model_config)
 
     if dialog.prompt_config.get("tts"):
-        tts_mdl = LLMBundle(dialog.tenant_id, LLMType.TTS)
+        default_tts_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.TTS)
+        tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model_config)
     return kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl
 
 
@@ -603,8 +626,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 kbinfos["chunks"].extend(tav_res["chunks"])
                 kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
             if prompt_config.get("use_kg"):
+                default_chat_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
                 ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
-                                                       LLMBundle(dialog.tenant_id, LLMType.CHAT))
+                                                       LLMBundle(dialog.tenant_id, default_chat_model))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
@@ -778,6 +802,47 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         table_name = base_table
         logging.debug(f"use_sql: Using ES/OS table name: {table_name}")
 
+    expected_doc_name_column = "docnm" if doc_engine == "infinity" else "docnm_kwd"
+
+    def has_source_columns(columns):
+        normalized_names = {str(col.get("name", "")).lower() for col in columns}
+        return "doc_id" in normalized_names and bool({"docnm_kwd", "docnm"} & normalized_names)
+
+    def is_aggregate_sql(sql_text):
+        return bool(re.search(r"(count|sum|avg|max|min|distinct)\s*\(", (sql_text or "").lower()))
+
+    def normalize_sql(sql):
+        logging.debug(f"use_sql: Raw SQL from LLM: {repr(sql[:500])}")
+        # Remove think blocks if present (format: </think>...)
+        sql = re.sub(r"</think>\n.*?\n\s*", "", sql, flags=re.DOTALL)
+        sql = re.sub(r"思考\n.*?\n", "", sql, flags=re.DOTALL)
+        # Remove markdown code blocks (```sql ... ```)
+        sql = re.sub(r"```(?:sql)?\s*", "", sql, flags=re.IGNORECASE)
+        sql = re.sub(r"```\s*$", "", sql, flags=re.IGNORECASE)
+        # Remove trailing semicolon that ES SQL parser doesn't like
+        return sql.rstrip().rstrip(';').strip()
+
+    def add_kb_filter(sql):
+        # Add kb_id filter for ES/OS only (Infinity already has it in table name)
+        if doc_engine == "infinity" or not kb_ids:
+            return sql
+
+        # Build kb_filter: single KB or multiple KBs with OR
+        if len(kb_ids) == 1:
+            kb_filter = f"kb_id = '{kb_ids[0]}'"
+        else:
+            kb_filter = "(" + " OR ".join([f"kb_id = '{kb_id}'" for kb_id in kb_ids]) + ")"
+
+        if "where " not in sql.lower():
+            o = sql.lower().split("order by")
+            if len(o) > 1:
+                sql = o[0] + f" WHERE {kb_filter}  order by " + o[1]
+            else:
+                sql += f" WHERE {kb_filter}"
+        elif "kb_id =" not in sql.lower() and "kb_id=" not in sql.lower():
+            sql = re.sub(r"\bwhere\b ", f"where {kb_filter} and ", sql, flags=re.IGNORECASE)
+        return sql
+
     def is_row_count_question(q: str) -> bool:
         q = (q or "").lower()
         if not re.search(r"\bhow many rows\b|\bnumber of rows\b|\brow count\b", q):
@@ -881,38 +946,15 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
 
     tried_times = 0
 
-    async def get_table():
+    async def get_table(custom_user_prompt=None):
         nonlocal sys_prompt, user_prompt, question, tried_times, row_count_override
-        if row_count_override:
+        if row_count_override and custom_user_prompt is None:
             sql = row_count_override
         else:
-            sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
-        logging.debug(f"use_sql: Raw SQL from LLM: {repr(sql[:500])}")
-        # Remove think blocks if present (format: </think>...)
-        sql = re.sub(r"</think>\n.*?\n\s*", "", sql, flags=re.DOTALL)
-        sql = re.sub(r"思考\n.*?\n", "", sql, flags=re.DOTALL)
-        # Remove markdown code blocks (```sql ... ```)
-        sql = re.sub(r"```(?:sql)?\s*", "", sql, flags=re.IGNORECASE)
-        sql = re.sub(r"```\s*$", "", sql, flags=re.IGNORECASE)
-        # Remove trailing semicolon that ES SQL parser doesn't like
-        sql = sql.rstrip().rstrip(';').strip()
-
-        # Add kb_id filter for ES/OS only (Infinity already has it in table name)
-        if doc_engine != "infinity" and kb_ids:
-            # Build kb_filter: single KB or multiple KBs with OR
-            if len(kb_ids) == 1:
-                kb_filter = f"kb_id = '{kb_ids[0]}'"
-            else:
-                kb_filter = "(" + " OR ".join([f"kb_id = '{kb_id}'" for kb_id in kb_ids]) + ")"
-
-            if "where " not in sql.lower():
-                o = sql.lower().split("order by")
-                if len(o) > 1:
-                    sql = o[0] + f" WHERE {kb_filter}  order by " + o[1]
-                else:
-                    sql += f" WHERE {kb_filter}"
-            elif "kb_id =" not in sql.lower() and "kb_id=" not in sql.lower():
-                sql = re.sub(r"\bwhere\b ", f"where {kb_filter} and ", sql, flags=re.IGNORECASE)
+            prompt = custom_user_prompt if custom_user_prompt is not None else user_prompt
+            sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": prompt}], {"temperature": 0.06})
+        sql = normalize_sql(sql)
+        sql = add_kb_filter(sql)
 
         logging.debug(f"{question} get SQL(refined): {sql}")
         tried_times += 1
@@ -923,6 +965,46 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
             return None, sql
         logging.debug(f"use_sql: SQL retrieval completed, got {len(tbl.get('rows', []))} rows")
         return tbl, sql
+
+    async def repair_table_for_missing_source_columns(previous_sql):
+        if doc_engine in ("infinity", "oceanbase"):
+            json_field_names = list(field_map.keys())
+            repair_prompt = """Table name: {};
+JSON fields available in 'chunk_data' column (use exact names):
+{}
+
+Question: {}
+Previous SQL:
+{}
+
+The previous SQL result is missing required source columns for citations.
+Rewrite SQL to keep the same query intent and include doc_id and {} in the SELECT list.
+For extracted JSON fields, use json_extract_string(chunk_data, '$.field_name').
+Return ONLY SQL.""".format(
+                table_name,
+                "\n".join([f"  - {field}" for field in json_field_names]),
+                question,
+                previous_sql,
+                expected_doc_name_column
+            )
+        else:
+            repair_prompt = """Table name: {}
+Available fields:
+{}
+
+Question: {}
+Previous SQL:
+{}
+
+The previous SQL result is missing required source columns for citations.
+Rewrite SQL to keep the same query intent and include doc_id and docnm_kwd in the SELECT list.
+Return ONLY SQL.""".format(
+                table_name,
+                "\n".join([f"  - {k} ({v})" for k, v in field_map.items()]),
+                question,
+                previous_sql
+            )
+        return await get_table(custom_user_prompt=repair_prompt)
 
     try:
         tbl, sql = await get_table()
@@ -976,6 +1058,22 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
     if len(tbl["rows"]) == 0:
         logging.warning(f"use_sql: No rows returned from SQL query, returning None. SQL: {sql}")
         return None
+
+    if not is_aggregate_sql(sql) and not has_source_columns(tbl.get("columns", [])):
+        logging.warning(f"use_sql: Non-aggregate SQL missing required source columns; retrying once. SQL: {sql}")
+        try:
+            repaired_tbl, repaired_sql = await repair_table_for_missing_source_columns(sql)
+            if (
+                repaired_tbl
+                and len(repaired_tbl.get("rows", [])) > 0
+                and has_source_columns(repaired_tbl.get("columns", []))
+            ):
+                tbl, sql = repaired_tbl, repaired_sql
+                logging.info(f"use_sql: Source-column SQL repair succeeded. SQL: {sql}")
+            else:
+                logging.warning(f"use_sql: Source-column SQL repair did not provide required columns. Repaired SQL: {repaired_sql}")
+        except Exception as e:
+            logging.warning(f"use_sql: Source-column SQL repair failed, returning best-effort answer. Error: {e}")
 
     logging.debug(f"use_sql: Proceeding with {len(tbl['rows'])} rows to build answer")
 
@@ -1072,7 +1170,7 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
         logging.warning(f"use_sql: SQL missing required doc_id or docnm_kwd field. docid_idx={docid_idx}, doc_name_idx={doc_name_idx}. SQL: {sql}")
         # For aggregate queries (COUNT, SUM, AVG, MAX, MIN, DISTINCT), fetch doc_id, docnm_kwd separately
         # to provide source chunks, but keep the original table format answer
-        if re.search(r"(count|sum|avg|max|min|distinct)\s*\(", sql.lower()):
+        if is_aggregate_sql(sql):
             # Keep original table format as answer
             answer = "\n".join([columns, line, rows])
 
@@ -1267,11 +1365,13 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
 
     is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
     retriever = settings.retriever if not is_knowledge_graph else settings.kg_retriever
-
-    embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embedding_list[0])
-    chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, chat_llm_name)
+    embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embedding_list[0])
+    embd_mdl = LLMBundle(tenant_id, embd_model_config)
+    chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_llm_name)
+    chat_mdl = LLMBundle(tenant_id, chat_model_config)
     if rerank_id:
-        rerank_mdl = LLMBundle(tenant_id, LLMType.RERANK, rerank_id)
+        rerank_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.RERANK, rerank_id)
+        rerank_mdl = LLMBundle(tenant_id, rerank_model_config)
     max_tokens = chat_mdl.max_length
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
 
@@ -1343,13 +1443,22 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     if not kbs:
         return {"error": "No KB selected"}
-    embedding_list = list(set([kb.embd_id for kb in kbs]))
+    tenant_embedding_list = list(set([kb.tenant_embd_id for kb in kbs]))
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
-
-    embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, llm_name=embedding_list[0])
-    chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
+    if tenant_embedding_list[0]:
+        embd_model_config = get_model_config_by_id(tenant_embedding_list[0])
+    else:
+        embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
+    embd_mdl = LLMBundle(tenant_id, embd_model_config)
+    chat_id = search_config.get("chat_id", "")
+    if chat_id:
+        chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_id)
+    else:
+        chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+    chat_mdl = LLMBundle(tenant_id, chat_model_config)
     if rerank_id:
-        rerank_mdl = LLMBundle(tenant_id, LLMType.RERANK, rerank_id)
+        rerank_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.RERANK, rerank_id)
+        rerank_mdl = LLMBundle(tenant_id, rerank_model_config)
 
     if meta_data_filter:
         metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)

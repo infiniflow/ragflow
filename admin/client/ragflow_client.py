@@ -583,6 +583,42 @@ class RAGFlowClient:
         else:
             print(f"Fail to list variables, code: {res_json['code']}, message: {res_json['message']}")
 
+    def list_server_configs(self, command):
+        """List server configs by calling /system/configs API and flattening the JSON response."""
+        response = self.http_client.request("GET", "/system/configs", use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if res_json.get("code") != 0:
+            print(f"Fail to list server configs, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            return
+
+        data = res_json.get("data", {})
+        if not data:
+            print("No server configs found")
+            return
+
+        # Flatten nested JSON with a.b.c notation
+        def flatten(obj, parent_key=""):
+            items = []
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    new_key = f"{parent_key}.{k}" if parent_key else k
+                    if isinstance(v, (dict, list)) and v:
+                        items.extend(flatten(v, new_key))
+                    else:
+                        items.append({"name": new_key, "value": v})
+            elif isinstance(obj, list):
+                for i, v in enumerate(obj):
+                    new_key = f"{parent_key}[{i}]"
+                    if isinstance(v, (dict, list)) and v:
+                        items.extend(flatten(v, new_key))
+                    else:
+                        items.append({"name": new_key, "value": v})
+            return items
+
+        # Reconstruct flattened data and print using _print_table_simple
+        flattened = flatten(data)
+        self._print_table_simple(flattened)
+
     def handle_list_datasets(self, command):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
@@ -1478,6 +1514,8 @@ def run_command(client: RAGFlowClient, command_dict: dict):
             client.list_configs(command_dict)
         case "list_environments":
             client.list_environments(command_dict)
+        case "list_server_configs":
+            client.list_server_configs(command_dict)
         case "create_model_provider":
             client.create_model_provider(command_dict)
         case "drop_model_provider":

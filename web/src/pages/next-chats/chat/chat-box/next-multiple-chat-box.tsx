@@ -162,23 +162,33 @@ const ChatCard = forwardRef(function ChatCard(
   }, [id, sendLoading, setLoading]);
 
   return (
-    <Card className="bg-transparent border flex-1 flex flex-col">
+    <Card
+      className="bg-transparent border flex-1 flex flex-col"
+      data-testid="chat-detail-multimodel-card"
+      data-card-index={idx}
+      data-card-key={id}
+    >
       <CardHeader className="border-b-0.5 px-5 py-3">
         <CardTitle className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             <span className="text-base">{idx + 1}</span>
             <Form {...form}>
-              <LargeModelFormFieldWithoutFilter></LargeModelFormFieldWithoutFilter>
+              <LargeModelFormFieldWithoutFilter
+                triggerTestId="chat-detail-multimodel-card-model-select"
+                optionTestIdPrefix="chat-detail-llm-option-"
+              ></LargeModelFormFieldWithoutFilter>
             </Form>
           </div>
           <div className="space-x-2">
             <Tooltip>
-              <TooltipTrigger>
+              <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   disabled={isEmpty(llmId)}
                   onClick={handleApplyConfig}
+                  data-testid="chat-detail-multimodel-card-apply"
+                  data-card-index={idx}
                 >
                   <ListCheck />
                 </Button>
@@ -192,11 +202,18 @@ const ChatCard = forwardRef(function ChatCard(
                 variant="ghost"
                 size="icon-sm"
                 onClick={handleRemoveChatBox}
+                data-testid="chat-detail-multimodel-card-remove"
+                data-card-index={idx}
               >
                 <Trash2 />
               </Button>
             ) : (
-              <Button variant="ghost" size="icon-sm" onClick={addChatBox}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={addChatBox}
+                data-testid="chat-detail-multimodel-add-card"
+              >
                 <Plus />
               </Button>
             )}
@@ -314,7 +331,10 @@ export function MultipleChatBox({
 
   return (
     <section className="h-full flex flex-col px-5">
-      <div className="flex gap-4 flex-1 px-5 pb-14 min-h-0">
+      <div
+        className="flex gap-4 flex-1 px-5 pb-14 min-h-0"
+        data-testid="chat-detail-multimodel-grid"
+      >
         {chatBoxIds.map((id, idx) => (
           <ChatCard
             key={id}

@@ -1,0 +1,127 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package dao
+
+import (
+	"strings"
+
+	"ragflow/internal/model"
+)
+
+// SearchDAO search data access object
+type SearchDAO struct{}
+
+// NewSearchDAO create search DAO
+func NewSearchDAO() *SearchDAO {
+	return &SearchDAO{}
+}
+
+// ListByTenantIDs list searches by tenant IDs with pagination and filtering
+func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*model.Search, int64, error) {
+	var searches []*model.Search
+	var total int64
+
+	// Build query with join to user table for nickname and avatar
+	query := DB.Model(&model.Search{}).
+		Select(`
+			search.*,
+			user.nickname,
+			user.avatar as tenant_avatar
+		`).
+		Joins("LEFT JOIN user ON search.tenant_id = user.id").
+		Where("(search.tenant_id IN ? OR search.tenant_id = ?) AND search.status = ?", tenantIDs, userID, "1")
+
+	// Apply keyword filter
+	if keywords != "" {
+		query = query.Where("LOWER(search.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
+	}
+
+	// Apply ordering
+	orderDirection := "ASC"
+	if desc {
+		orderDirection = "DESC"
+	}
+	query = query.Order(orderby + " " + orderDirection)
+
+	// Count total
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// Apply pagination
+	if page > 0 && pageSize > 0 {
+		offset := (page - 1) * pageSize
+		if err := query.Offset(offset).Limit(pageSize).Find(&searches).Error; err != nil {
+			return nil, 0, err
+		}
+	} else {
+		if err := query.Find(&searches).Error; err != nil {
+			return nil, 0, err
+		}
+	}
+
+	return searches, total, nil
+}
+
+// ListByOwnerIDs list searches by owner IDs with filtering (manual pagination)
+func (dao *SearchDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*model.Search, int64, error) {
+	var searches []*model.Search
+
+	// Build query with join to user table
+	query := DB.Model(&model.Search{}).
+		Select(`
+			search.*,
+			user.nickname,
+			user.avatar as tenant_avatar
+		`).
+		Joins("LEFT JOIN user ON search.tenant_id = user.id").
+		Where("(search.tenant_id IN ? OR search.tenant_id = ?) AND search.status = ?", ownerIDs, userID, "1")
+
+	// Apply keyword filter
+	if keywords != "" {
+		query = query.Where("LOWER(search.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
+	}
+
+	// Filter by owner IDs (additional filter to ensure tenant_id is in ownerIDs)
+	query = query.Where("search.tenant_id IN ?", ownerIDs)
+
+	// Apply ordering
+	orderDirection := "ASC"
+	if desc {
+		orderDirection = "DESC"
+	}
+	query = query.Order(orderby + " " + orderDirection)
+
+	// Get all matching records
+	if err := query.Find(&searches).Error; err != nil {
+		return nil, 0, err
+	}
+
+	total := int64(len(searches))
+
+	return searches, total, nil
+}
+
+// GetByID gets search by ID
+func (dao *SearchDAO) GetByID(id string) (*model.Search, error) {
+	var search model.Search
+	err := DB.Where("id = ?", id).First(&search).Error
+	if err != nil {
+		return nil, err
+	}
+	return &search, nil
+}
