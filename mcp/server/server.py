@@ -127,6 +127,48 @@ class RAGFlowConnector:
         self._document_metadata_cache[dataset_id] = (doc_id_meta_list, self._get_expiry_timestamp())
         self._document_metadata_cache.move_to_end(dataset_id)
 
+    @staticmethod
+    def _normalize_dataset_item(item: dict) -> dict:
+        return {
+            "id": item["id"],
+            "name": item.get("name", ""),
+            "description": item.get("description", ""),
+            "document_count": item.get("document_count") or item.get("doc_num", 0),
+            "chunk_count": item.get("chunk_count") or item.get("chunk_num", 0),
+            "embedding_model": item.get("embedding_model", ""),
+            "language": item.get("language", ""),
+        }
+
+    async def _fetch_datasets_raw(
+        self,
+        *,
+        api_key: str,
+        page: int = 1,
+        page_size: int = 1000,
+        orderby: str = "create_time",
+        desc: bool = True,
+        id: str | None = None,
+        name: str | None = None,
+    ) -> list[dict]:
+        """Fetch and normalize dataset metadata from API. Returns [] on error."""
+        params: dict = {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc}
+        if id:
+            params["id"] = id
+        if name:
+            params["name"] = name
+        res = await self._get("/datasets", params, api_key=api_key)
+        if not res or res.status_code != 200:
+            return []
+        data = res.json()
+        if data.get("code") != 0:
+            return []
+        datasets = [self._normalize_dataset_item(item) for item in data.get("data", [])]
+        # Populate cache as side effect so downstream code benefits
+        for ds in datasets:
+            if not self._get_cached_dataset_metadata(ds["id"]):
+                self._set_cached_dataset_metadata(ds["id"], {"name": ds["name"], "description": ds["description"]})
+        return datasets
+
     async def list_datasets(
         self,
         *,
@@ -138,24 +180,15 @@ class RAGFlowConnector:
         id: str | None = None,
         name: str | None = None,
     ):
-        params = {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc}
-        if id:
-            params['id'] = id
-        if name :
-            params['name'] = name
-            
-        res = await self._get("/datasets", params, api_key=api_key)
-        if not res or res.status_code != 200:
-            raise Exception([types.TextContent(type="text", text="Cannot process this operation.")])
+        datasets = await self._fetch_datasets_raw(
+            api_key=api_key, page=page, page_size=page_size,
+            orderby=orderby, desc=desc, id=id, name=name,
+        )
+        return "\n".join(json.dumps(d, ensure_ascii=False) for d in datasets)
 
-        res = res.json()
-        if res.get("code") == 0:
-            result_list = []
-            for data in res["data"]:
-                d = {"description": data["description"], "id": data["id"]}
-                result_list.append(json.dumps(d, ensure_ascii=False))
-            return "\n".join(result_list)
-        return ""
+    async def _build_kb_snapshot(self, api_key: str) -> list[dict]:
+        """Return structured list of KB metadata for prompt assembly."""
+        return await self._fetch_datasets_raw(api_key=api_key)
 
     async def retrieval(
         self,
@@ -436,6 +469,11 @@ async def list_tools(*, connector: RAGFlowConnector, api_key: str) -> list[types
 
     return [
         types.Tool(
+            name="ragflow_list_datasets",
+            description="List all available datasets/knowledge bases with their metadata (id, name, description, document_count, chunk_count, embedding_model, language). Call this first to discover which knowledge bases are available before searching.",
+            inputSchema={"type": "object", "properties": {}, "required": []},
+        ),
+        types.Tool(
             name="ragflow_retrieval",
             description="Retrieve relevant chunks from the RAGFlow retrieve interface based on the question. You can optionally specify dataset_ids to search only specific datasets, or omit dataset_ids entirely to search across ALL available datasets. You can also optionally specify document_ids to search within specific documents. When dataset_ids is not provided or is empty, the system will automatically search across all available datasets. Below is the list of all available datasets, including their descriptions and IDs:"
             + dataset_description,
@@ -509,6 +547,10 @@ async def call_tool(
     connector: RAGFlowConnector,
     api_key: str,
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    if name == "ragflow_list_datasets":
+        kb_list = await connector._build_kb_snapshot(api_key=api_key)
+        return [types.TextContent(type="text", text=json.dumps(kb_list, ensure_ascii=False, indent=2))]
+
     if name == "ragflow_retrieval":
         document_ids = arguments.get("document_ids", [])
         dataset_ids = arguments.get("dataset_ids", [])
@@ -553,6 +595,123 @@ async def call_tool(
             force_refresh=force_refresh,
         )
     raise ValueError(f"Tool not found: {name}")
+
+
+_PARAM_TUNING_TEMPLATE = """\
+## Parameter Tuning Guide
+
+RAGFlow uses a hybrid retrieval mechanism combining Dense vector search, BM25 keyword matching, and optional Reranking (RRF fusion).
+
+| Parameter | Default | Guidance |
+|---|---|---|
+| similarity_threshold | 0.2 | Precise queries: ≥0.4; Exploratory queries: keep 0.2; Set as low as 0.05 for broad recall |
+| vector_similarity_weight | 0.3 | Semantic/conceptual queries: 0.7; Exact keyword/code queries: 0.1; Balanced: 0.3–0.5 |
+| keyword | false | Set `true` when query contains code snippets, product codes, or domain-specific proper nouns |
+| page_size | 10 | Increase to 20–30 for comprehensive research; keep 5–10 for focused QA |
+| top_k | 1024 | Rarely needs adjustment; higher values improve recall at cost of latency |
+| rerank_id | null | Specify a reranking model ID to improve result ordering when precision matters |
+"""
+
+_ROUTING_RULES_TEMPLATE = """\
+## Routing Decision Rules
+
+1. **Discover first**: If you are unsure which knowledge base to use, call `ragflow_list_datasets` first to get the current KB list with metadata.
+2. **Prefer precise routing**: When a question clearly belongs to a specific domain, pass only the matching `dataset_ids` to `ragflow_retrieval`. This reduces noise and improves precision.
+3. **Multi-domain queries**: For questions spanning multiple domains, pass multiple `dataset_ids` in a single call rather than running separate queries.
+4. **Global search as fallback**: Only omit `dataset_ids` (triggering a search across ALL KBs) when the domain is genuinely unknown or the query is cross-cutting.
+5. **Re-route on poor results**: If results are irrelevant, reconsider the target KB and try a different `dataset_ids` selection.
+"""
+
+_SELF_HEALING_RULES_TEMPLATE = """\
+## Self-Healing Rules
+
+| Condition | Action |
+|---|---|
+| Returned 0 chunks | Lower `similarity_threshold` by 0.1 (minimum: 0.05) and retry |
+| Results are off-topic | Try different `dataset_ids` or broaden to all KBs |
+| HTTP 401 Unauthorized | Stop and inform the user to check their RAGFlow API key |
+| HTTP 500 Server Error | Wait 1 second and retry once; if still failing, report the error |
+| Chunks lack context | Increase `page_size` or lower `similarity_threshold` |
+"""
+
+
+def _assemble_sop_prompt(kb_snapshot: list[dict], intent: str) -> str:
+    """Assemble the 4-module SOP prompt for RAGFlow retrieval."""
+    # Module 1: Dynamic KB overview
+    if kb_snapshot:
+        kb_rows = "\n".join(
+            f"- **{kb['name']}** (id: `{kb['id']}`): {kb['description'] or '(no description)'} "
+            f"[docs: {kb['document_count']}, chunks: {kb['chunk_count']}, model: {kb['embedding_model'] or 'default'}]"
+            for kb in kb_snapshot
+        )
+        kb_section = f"## Available Knowledge Bases ({len(kb_snapshot)} total)\n\n{kb_rows}\n"
+    else:
+        kb_section = "## Available Knowledge Bases\n\n_(No knowledge bases found — call `ragflow_list_datasets` to refresh.)_\n"
+
+    # Module 2: Parameter tuning — adjust recommendations by intent
+    if intent == "precise":
+        param_note = "\n> **Intent: PRECISE** — Prefer `similarity_threshold ≥ 0.4` and route to specific `dataset_ids`.\n"
+    elif intent == "broad":
+        param_note = "\n> **Intent: BROAD** — Prefer lower `similarity_threshold` (0.1–0.2) and consider searching all KBs.\n"
+    else:
+        param_note = ""
+
+    return f"""\
+# RAGFlow Retrieval Expert SOP
+
+You are an expert at retrieving information from RAGFlow knowledge bases. Follow this SOP to maximize retrieval quality.
+
+{kb_section}
+{_PARAM_TUNING_TEMPLATE}{param_note}
+{_ROUTING_RULES_TEMPLATE}
+{_SELF_HEALING_RULES_TEMPLATE}
+"""
+
+
+@app.list_prompts()
+@with_api_key(required=True)
+async def list_prompts(*, connector: RAGFlowConnector, api_key: str) -> list[types.Prompt]:
+    return [
+        types.Prompt(
+            name="ragflow_retrieval_skill",
+            description=(
+                "Injects a complete RAGFlow retrieval expert SOP including: "
+                "current KB list, parameter tuning guide, routing decision rules, and self-healing rules. "
+                "Use this prompt to guide the LLM toward precise, adaptive, and robust retrieval."
+            ),
+            arguments=[
+                types.PromptArgument(
+                    name="intent",
+                    description="Query intent hint: 'precise' (high precision, specific KB), 'broad' (wide recall), or 'auto' (default balanced)",
+                    required=False,
+                )
+            ],
+        )
+    ]
+
+
+@app.get_prompt()
+@with_api_key(required=True)
+async def get_prompt(name: str, arguments: dict | None, *, connector: RAGFlowConnector, api_key: str) -> types.GetPromptResult:
+    if name != "ragflow_retrieval_skill":
+        raise ValueError(f"Prompt not found: {name}")
+
+    intent = (arguments or {}).get("intent", "auto")
+    if intent not in ("precise", "broad", "auto"):
+        intent = "auto"
+
+    kb_snapshot = await connector._build_kb_snapshot(api_key=api_key)
+    sop_text = _assemble_sop_prompt(kb_snapshot, intent)
+
+    return types.GetPromptResult(
+        description="RAGFlow retrieval expert SOP with live KB snapshot",
+        messages=[
+            types.PromptMessage(
+                role="user",
+                content=types.TextContent(type="text", text=sop_text),
+            )
+        ],
+    )
 
 
 def create_starlette_app():
