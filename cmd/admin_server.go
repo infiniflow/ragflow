@@ -18,6 +18,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -65,7 +66,6 @@ func (s *AdminServer) Init() error {
 
 // Run start admin server
 func (s *AdminServer) Run() error {
-	logger.Info("Starting admin server", zap.String("port", s.port))
 	return s.engine.Run(":" + s.port)
 }
 
@@ -107,21 +107,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Print all configuration settings
+	server.PrintAll()
+
 	// Print RAGFlow Admin logo
 	logger.Info("" +
 		"\n        ____  ___   ______________                 ___       __          _     \n" +
 		"       / __ \\/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___ \n" +
 		"      / /_/ / /| |/ / __/ /_  / / __ \\ | /| / /  / /| |/ __  / __ `__ \\/ / __ \\ \n" +
-		"     / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / / /\n" +
+		"     / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / /\n" +
 		"    /_/ |_/_/  |_\\____/_/   /_/\\____/|__/|__/  /_/  |_\\__,_/_/ /_/ /_/_/_/ /_/ \n")
 
 	// Print RAGFlow version
-	logger.Info("RAGFlow version", zap.String("version", utility.GetRAGFlowVersion()))
-
-	// Print all configuration settings
-	server.PrintAll()
-
-	logger.Info("Starting RAGFlow Admin Server", zap.String("port", "9381"))
+	logger.Info(fmt.Sprintf("Version: %s", utility.GetRAGFlowVersion()))
+	logger.Info(fmt.Sprintf("Starting RAGFlow admin server on port: 9381"))
 	if err := adminServer.Run(); err != nil {
 		logger.Error("Admin server error", err)
 		os.Exit(1)

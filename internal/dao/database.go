@@ -77,15 +77,51 @@ func InitDB() error {
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
-	// Auto migrate
-	if err := DB.AutoMigrate(
+	// Auto migrate all models
+	models := []interface{}{
 		&model.User{},
 		&model.Tenant{},
 		&model.UserTenant{},
 		&model.File{},
 		&model.File2Document{},
-	); err != nil {
-		return fmt.Errorf("failed to migrate database: %w", err)
+		&model.TenantLLM{},
+		&model.Chat{},
+		&model.ChatSession{},
+		&model.Task{},
+		&model.APIToken{},
+		&model.API4Conversation{},
+		&model.Knowledgebase{},
+		&model.InvitationCode{},
+		&model.Document{},
+		&model.UserCanvas{},
+		&model.CanvasTemplate{},
+		&model.UserCanvasVersion{},
+		&model.LLMFactories{},
+		&model.LLM{},
+		&model.TenantLangfuse{},
+		&model.SystemSettings{},
+		&model.Connector{},
+		&model.Connector2Kb{},
+		&model.SyncLogs{},
+		&model.MCPServer{},
+		&model.Memory{},
+		&model.Search{},
+		&model.PipelineOperationLog{},
+		&model.EvaluationDataset{},
+		&model.EvaluationCase{},
+		&model.EvaluationRun{},
+		&model.EvaluationResult{},
+	}
+
+	for _, m := range models {
+		if err := DB.AutoMigrate(m); err != nil {
+			return fmt.Errorf("failed to migrate model %T: %w", m, err)
+		}
+	}
+
+	// Run manual migrations for complex schema changes
+	if err := RunMigrations(DB); err != nil {
+		return fmt.Errorf("failed to run manual migrations: %w", err)
 	}
 
 	logger.Info("Database connected and migrated successfully")
