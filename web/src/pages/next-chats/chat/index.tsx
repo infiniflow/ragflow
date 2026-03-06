@@ -106,46 +106,77 @@ export default function Chat() {
   }
 
   return (
-    <NextLayoutContainer>
-      <section className="h-full flex flex-col" data-testid="chat-detail">
-        <article className="flex flex-1 min-h-0 pb-9">
-          <Sessions handleConversationCardClick={handleSessionClick}></Sessions>
+    <section className="h-full flex flex-col" data-testid="chat-detail">
+      <PageHeader>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink
+                // Not friendly for keyboard navigation
+                // onClick={navigateToChatList}
+                href={Routes.Chats}
+              >
+                {t('chat.chat')}
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{data.name}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        <Button onClick={showEmbedModal} data-testid="chat-detail-embed-open">
+          <LucideSend />
+          {t('common.embedIntoSite')}
+        </Button>
+      </PageHeader>
 
-          <Card className="flex-1 min-w-0 bg-transparent border-none shadow-none h-full">
-            <CardContent className="flex p-0 h-full">
-              <Card className="flex flex-col flex-1 bg-transparent min-w-0">
-                <CardHeader
-                  className={cn('p-5', {
-                    'border-b-0.5 border-border-button': hasSingleChatBox,
-                  })}
-                >
-                  <CardTitle className="flex justify-between items-center text-base gap-2">
-                    <div className="truncate">{currentConversationName}</div>
+      <article className="flex flex-1 min-h-0 pb-9">
+        <Sessions handleConversationCardClick={handleSessionClick}></Sessions>
 
-                    <Button
-                      variant="ghost"
-                      onClick={switchDebugMode}
-                      data-testid="chat-detail-multimodel-toggle"
-                    >
-                      <LucideArrowUpRight />
-                      {t('chat.multipleModels')}
-                    </Button>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex-1 p-0 min-h-0">
-                  <SingleChatBox
-                    controller={controller}
-                    stopOutputMessage={stopOutputMessage}
-                    conversation={currentConversation}
-                  />
-                </CardContent>
-              </Card>
+        <Card className="flex-1 min-w-0 bg-transparent border-none shadow-none h-full">
+          <CardContent className="flex p-0 h-full">
+            <Card className="flex flex-col flex-1 bg-transparent min-w-0">
+              <CardHeader
+                className={cn('p-5', {
+                  'border-b-0.5 border-border-button': hasSingleChatBox,
+                })}
+              >
+                <CardTitle className="flex justify-between items-center text-base gap-2">
+                  <div className="truncate">{currentConversationName}</div>
+                  <Button
+                    variant={'ghost'}
+                    onClick={switchDebugMode}
+                    data-testid="chat-detail-multimodel-toggle"
+                  >
+                    <LucideArrowUpRight /> {t('chat.multipleModels')}
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1 p-0 min-h-0">
+                <SingleChatBox
+                  controller={controller}
+                  stopOutputMessage={stopOutputMessage}
+                  conversation={currentConversation}
+                />
+              </CardContent>
+            </Card>
 
-              <ChatSettings hasSingleChatBox={hasSingleChatBox}></ChatSettings>
-            </CardContent>
-          </Card>
-        </article>
-      </section>
-    </NextLayoutContainer>
+            <ChatSettings hasSingleChatBox={hasSingleChatBox}></ChatSettings>
+          </CardContent>
+        </Card>
+      </article>
+
+      {embedVisible && (
+        <EmbedDialog
+          visible={embedVisible}
+          hideModal={hideEmbedModal}
+          token={id!}
+          from={SharedFrom.Chat}
+          beta={beta}
+          isAgent={false}
+        ></EmbedDialog>
+      )}
+    </section>
   );
 }
