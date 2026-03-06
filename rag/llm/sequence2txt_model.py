@@ -170,7 +170,16 @@ class XinferenceSeq2txt(Base):
             audio_data = audio
             audio_file_name = "audio.wav"
 
-        payload = {"model": self.model_name, "language": language, "prompt": prompt, "response_format": response_format, "temperature": temperature}
+        # Base payload with model and language
+        payload = {"model": self.model_name, "language": language}
+        
+        # Only add whisper-specific parameters for whisper models
+        # FunASR-based models (like SenseVoiceSmall) don't support these parameters
+        if "whisper" in self.model_name.lower():
+            if prompt is not None:
+                payload["prompt"] = prompt
+            payload["response_format"] = response_format
+            payload["temperature"] = temperature
 
         files = {"file": (audio_file_name, audio_data, "audio/wav")}
 
