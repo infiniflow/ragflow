@@ -506,3 +506,47 @@ class JiekouAIRerank(JinaRerank):
         if not base_url:
             base_url = "https://api.jiekou.ai/openai/v1/rerank"
         super().__init__(key, model_name, base_url)
+
+class RAGconRerank(Base):
+    """
+    RAGcon Rerank Provider - routes through LiteLLM proxy
+    
+    Assumes LiteLLM proxy supports /rerank endpoint.
+    Default Base URL: https://connect.ragcon.ai/v1
+    """
+    _FACTORY_NAME = "RAGcon"
+    
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+        
+        self._api_key = key
+        self._base_url = base_url
+        
+        self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
+        self.model_name = model_name
+        
+    
+    def similarity(self, query: str, texts: list):
+        # noway to config Ragflow , use fix setting
+        texts = [truncate(t, 500) for t in texts]
+        data = {
+            "model": self.model_name,
+            "query": query,
+            "documents": texts,
+            "top_n": len(texts),
+        }
+        token_count = 0
+        for t in texts:
+            token_count += num_tokens_from_string(t)
+        res = requests.post(self._base_url + "/rerank", headers=self.headers, json=data).json()
+        rank = np.zeros(len(texts), dtype=float)
+        try:
+            for d in res["results"]:
+                rank[d["index"]] = d["relevance_score"]
+        except Exception as _e:
+            log_exception(_e, res)
+
+        rank = Base._normalize_rank(rank)
+
+        return rank, token_count

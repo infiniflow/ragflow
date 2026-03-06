@@ -1080,3 +1080,17 @@ class JiekouAIEmbed(OpenAIEmbed):
         if not base_url:
             base_url = "https://api.jiekou.ai/openai/v1/embeddings"
         super().__init__(key, model_name, base_url)
+
+class RAGconEmbed(OpenAIEmbed):
+    """
+    RAGcon Embedding Provider - routes through LiteLLM proxy
+    
+    Default Base URL: https://connect.ragcon.ai/v1
+    """
+    _FACTORY_NAME = "RAGcon"
+    
+    def __init__(self, key, model_name="text-embedding-3-small", base_url=None):
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+        
+        super().__init__(key, model_name, base_url)

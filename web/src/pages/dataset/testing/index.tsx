@@ -1,7 +1,13 @@
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
 import { t } from 'i18next';
 import { useState } from 'react';
-import { TopTitle } from '../dataset-title';
 import TestingForm from './testing-form';
 import { TestingResult } from './testing-result';
 
@@ -21,79 +27,92 @@ export default function RetrievalTesting() {
   const [count] = useState(1);
 
   return (
-    <div className="p-5">
-      <section className="flex justify-between items-center">
-        <TopTitle
-          title={t('knowledgeDetails.retrievalTesting')}
-          description={t('knowledgeDetails.testingDescription')}
-        ></TopTitle>
-        {/* <Button>Save as Preset</Button> */}
-      </section>
-      {count === 1 ? (
-        <section className="flex divide-x h-full">
-          <div className="p-4 flex-1">
-            <div className="flex justify-between pb-2.5">
-              <span className="text-text-primary font-semibold text-2xl">
-                {t('knowledgeDetails.testSetting')}
-              </span>
-              {/* <Button variant={'outline'} onClick={addCount}>
-                <Plus /> Add New Test
-              </Button> */}
+    <div className="pr-5 pb-5">
+      <Card className="size-full bg-transparent shadow-none flex flex-col">
+        <CardHeader className="p-5 border-b-0.5 border-border-button">
+          <header>
+            <CardTitle as="h1">
+              {t('knowledgeDetails.retrievalTesting')}
+            </CardTitle>
+
+            <CardDescription>
+              {t('knowledgeDetails.testingDescription')}
+            </CardDescription>
+
+            {/* <Button>Save as Preset</Button> */}
+          </header>
+        </CardHeader>
+
+        {count === 1 ? (
+          <CardContent className="flex-1 overflow-hidden p-0 grid grid-rows-1 grid-cols-2 divide-x-0.5">
+            <article className="size-full flex-1 flex flex-col">
+              <header className="px-5 py-3">
+                <h2 className="font-semibold text-base leading-8">
+                  {t('knowledgeDetails.testSetting')}
+                </h2>
+                {/* <Button variant={'outline'} onClick={addCount}>
+                  <Plus /> Add New Test
+                </Button> */}
+              </header>
+
+              <div className="flex-1 h-0">
+                <TestingForm
+                  loading={loading}
+                  setValues={setValues}
+                  refetch={refetch}
+                />
+              </div>
+            </article>
+
+            <div className="flex-1">
+              <TestingResult
+                data={data}
+                page={page}
+                loading={loading}
+                pageSize={pageSize}
+                filterValue={filterValue}
+                handleFilterSubmit={handleFilterSubmit}
+                onPaginationChange={onPaginationChange}
+              />
             </div>
-            <div className="h-[calc(100vh-241px)] overflow-auto scrollbar-thin px-1">
+          </CardContent>
+        ) : (
+          <CardContent className="p-0 flex gap-2">
+            <div className="flex-1">
               <TestingForm
                 loading={loading}
                 setValues={setValues}
                 refetch={refetch}
               ></TestingForm>
+              <TestingResult
+                data={data}
+                page={page}
+                loading={loading}
+                pageSize={pageSize}
+                filterValue={filterValue}
+                handleFilterSubmit={handleFilterSubmit}
+                onPaginationChange={onPaginationChange}
+              ></TestingResult>
             </div>
-          </div>
-          <TestingResult
-            data={data}
-            page={page}
-            loading={loading}
-            pageSize={pageSize}
-            filterValue={filterValue}
-            handleFilterSubmit={handleFilterSubmit}
-            onPaginationChange={onPaginationChange}
-          ></TestingResult>
-        </section>
-      ) : (
-        <section className="flex gap-2">
-          <div className="flex-1">
-            <TestingForm
-              loading={loading}
-              setValues={setValues}
-              refetch={refetch}
-            ></TestingForm>
-            <TestingResult
-              data={data}
-              page={page}
-              loading={loading}
-              pageSize={pageSize}
-              filterValue={filterValue}
-              handleFilterSubmit={handleFilterSubmit}
-              onPaginationChange={onPaginationChange}
-            ></TestingResult>
-          </div>
-          <div className="flex-1">
-            <TestingForm
-              loading={loading}
-              setValues={setValues}
-              refetch={refetch}
-            ></TestingForm>
-            <TestingResult
-              data={data}
-              page={page}
-              loading={loading}
-              pageSize={pageSize}
-              filterValue={filterValue}
-              handleFilterSubmit={handleFilterSubmit}
-              onPaginationChange={onPaginationChange}
-            ></TestingResult>
-          </div>
-        </section>
-      )}
+            <div className="flex-1">
+              <TestingForm
+                loading={loading}
+                setValues={setValues}
+                refetch={refetch}
+              ></TestingForm>
+              <TestingResult
+                data={data}
+                page={page}
+                loading={loading}
+                pageSize={pageSize}
+                filterValue={filterValue}
+                handleFilterSubmit={handleFilterSubmit}
+                onPaginationChange={onPaginationChange}
+              ></TestingResult>
+            </div>
+          </CardContent>
+        )}
+      </Card>
     </div>
   );
 }

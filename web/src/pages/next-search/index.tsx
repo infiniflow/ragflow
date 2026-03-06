@@ -1,16 +1,7 @@
 import { useFetchTokenListBeforeOtherStep } from '@/components/embed-dialog/use-show-embed-dialog';
-import { PageHeader } from '@/components/page-header';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
+
 import { Button } from '@/components/ui/button';
 import { SharedFrom } from '@/constants/chat';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useFetchTenantInfo,
   useFetchUserInfo,
@@ -31,7 +22,6 @@ import { SearchSetting } from './search-setting';
 import SearchingPage from './searching';
 
 export default function SearchPage() {
-  const { navigateToSearchList } = useNavigatePage();
   const [isSearching, setIsSearching] = useState(false);
   const { data: SearchData } = useFetchSearchDetail();
   const { beta, handleOperate } = useFetchTokenListBeforeOtherStep();
@@ -57,22 +47,7 @@ export default function SearchPage() {
   }, [isSearching]);
 
   return (
-    <section data-testid="search-detail">
-      <PageHeader>
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink onClick={navigateToSearchList}>
-                {t('header.search')}
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>{SearchData?.name}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-      </PageHeader>
+    <section className="size-full relative" data-testid="search-detail">
       <div className="flex gap-3 w-full bg-bg-base">
         <div className="flex-1">
           {!isSearching && (
@@ -128,9 +103,8 @@ export default function SearchPage() {
           // ></EmbedDialog>
         }
       </div>
-      <div className="absolute end-5 top-4 ">
+      <div className="absolute end-5 top-4">
         <Button
-          className="bg-text-primary  text-bg-base border-b-accent-primary border-b-2"
           onClick={() => {
             handleOperate().then((res) => {
               console.log(res, 'res');
