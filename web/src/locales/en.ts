@@ -2180,6 +2180,10 @@ This process aggregates variables from multiple branches into a single variable 
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
       frameworkPrompts: 'Framework',
       release: 'Publish',
+      confirmPublish: 'Confirm Publish',
+      publishDescription: 'You are about to publish this data pipeline.',
+      linkedDataset: 'Linked dataset',
+      lastPublished: 'Last published',
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
@@ -2554,6 +2558,7 @@ Important structured information may include: names, dates, locations, events, k
       import: 'Import',
       description: 'Description',
       noDescription: 'No description',
+      none: 'None',
 
       resourceType: {
         dataset: 'Dataset',

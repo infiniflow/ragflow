@@ -306,6 +306,7 @@ export const useSetAgent = (showMessage: boolean = true) => {
       dsl?: Record<string, any>;
       avatar?: string;
       canvas_category?: string;
+      release?: string;
     }) => {
       const { data = {} } = await agentService.setCanvas(params);
       if (data.code === 0) {
