@@ -669,6 +669,8 @@ export default {
       apiVersionMessage: 'Silakan masukkan versi API',
       modelsToBeAddedTooltip:
         'Jika penyedia model Anda tidak tercantum tetapi mengklaim kompatibel dengan OpenAI, pilih kartu OpenAI-API-compatible untuk menambahkan model yang relevan.',
+      dingtalkAITableDescription:
+        'Hubungkan ke Dingtalk AI Table dan sinkronkan catatan dari tabel yang ditentukan.',
     },
     message: {
       registered: 'Terdaftar!',

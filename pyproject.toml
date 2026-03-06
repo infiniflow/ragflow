@@ -156,6 +156,7 @@ dependencies = [
     "pygithub>=2.8.1",
     "asana>=5.2.2",
     "python-gitlab>=7.0.0",
+    "alibabacloud-dingtalk>=2.0.0",
     "quart-schema==0.23.0",
 ]
 

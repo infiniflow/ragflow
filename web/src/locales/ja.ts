@@ -691,6 +691,8 @@ export default {
       sureQuit: '参加したチームから退出してもよろしいですか？',
       modelsToBeAddedTooltip:
         'モデルプロバイダーがリストにないが「OpenAI互換」を謳っている場合は、OpenAI-API-compatible カードを選択して関連モデルを追加してください。',
+      dingtalkAITableDescription:
+        'Dingtalk AI Table に接続し、指定されたテーブルからレコードを同期します。',
     },
     message: {
       registered: '登録完了！',

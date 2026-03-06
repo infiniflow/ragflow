@@ -998,6 +998,8 @@ The above is the content you need to summarize.`,
         'Свържете GitHub за синхронизиране на pull requests и issues за извличане.',
       airtableDescription:
         'Свържете се с Airtable и синхронизирайте файлове от определена таблица в определено работно пространство.',
+      dingtalkAITableDescription:
+        'Свържете се с Dingtalk AI Table и синхронизирайте записи от определена таблица.',
       gitlabDescription:
         'Свържете GitLab за синхронизиране на хранилища, issues, merge requests и свързана документация.',
       asanaDescription:

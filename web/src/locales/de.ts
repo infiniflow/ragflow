@@ -1016,6 +1016,8 @@ Beispiel: Virtual Hosted Style`,
         'Verbinden Sie GitHub, um Pull Requests und Issues zur Recherche zu synchronisieren.',
       airtableDescription:
         'Verbinden Sie sich mit Airtable und synchronisieren Sie Dateien aus einer bestimmten Tabelle in einem vorgesehenen Arbeitsbereich.',
+      dingtalkAITableDescription:
+        'Verbinden Sie sich mit Dingtalk AI Table und synchronisieren Sie Datensätze aus einer bestimmten Tabelle.',
       asanaDescription:
         'Verbinden Sie sich mit Asana und synchronisieren Sie Dateien aus einem bestimmten Arbeitsbereich.',
       imapDescription:
