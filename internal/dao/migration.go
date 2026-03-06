@@ -62,8 +62,17 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 		return nil
 	}
 
-	// Check if 'id' column already exists
-	if db.Migrator().HasColumn("tenant_llm", "id") {
+	// Check if 'id' column already exists using raw SQL
+	var idColumnExists int64
+	err := db.Raw(`
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+		WHERE TABLE_NAME = 'tenant_llm' AND COLUMN_NAME = 'id'
+	`).Scan(&idColumnExists).Error
+	if err != nil {
+		return err
+	}
+
+	if idColumnExists > 0 {
 		// Check if id is already a primary key with auto_increment
 		var count int64
 		err := db.Raw(`
@@ -86,14 +95,17 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 	// Start transaction
 	return db.Transaction(func(tx *gorm.DB) error {
 		// Check for temp_id column and drop it if exists
-		if tx.Migrator().HasColumn("tenant_llm", "temp_id") {
+		var tempIdExists int64
+		tx.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+			WHERE TABLE_NAME = 'tenant_llm' AND COLUMN_NAME = 'temp_id'`).Scan(&tempIdExists)
+		if tempIdExists > 0 {
 			if err := tx.Exec("ALTER TABLE tenant_llm DROP COLUMN temp_id").Error; err != nil {
 				logger.Warn("Failed to drop temp_id column", zap.Error(err))
 			}
 		}
 
 		// Check if there's already an 'id' column
-		if tx.Migrator().HasColumn("tenant_llm", "id") {
+		if idColumnExists > 0 {
 			// Modify existing id column to be auto_increment primary key
 			if err := tx.Exec(`
 				ALTER TABLE tenant_llm 
@@ -112,7 +124,10 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 		}
 
 		// Add unique index on (tenant_id, llm_factory, llm_name)
-		if !tx.Migrator().HasIndex("tenant_llm", "idx_tenant_llm_unique") {
+		var idxExists int64
+		tx.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+			WHERE TABLE_NAME = 'tenant_llm' AND INDEX_NAME = 'idx_tenant_llm_unique'`).Scan(&idxExists)
+		if idxExists == 0 {
 			if err := tx.Exec(`
 				ALTER TABLE tenant_llm 
 				ADD UNIQUE INDEX idx_tenant_llm_unique (tenant_id, llm_factory, llm_name)
@@ -132,8 +147,11 @@ func migrateAddUniqueEmail(db *gorm.DB) error {
 		return nil
 	}
 
-	// Check if unique index already exists
-	if db.Migrator().HasIndex("user", "idx_user_email_unique") {
+	// Check if unique index already exists using raw SQL
+	var count int64
+	db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+		WHERE TABLE_NAME = 'user' AND INDEX_NAME = 'idx_user_email_unique'`).Scan(&count)
+	if count > 0 {
 		return nil
 	}
 
@@ -163,57 +181,66 @@ func migrateAddUniqueEmail(db *gorm.DB) error {
 
 // modifyColumnTypes modifies column types that need explicit ALTER statements
 func modifyColumnTypes(db *gorm.DB) error {
+	// Helper function to check if column exists
+	columnExists := func(table, column string) bool {
+		var count int64
+		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+			WHERE TABLE_NAME = ? AND COLUMN_NAME = ?`, table, column).Scan(&count)
+		return count > 0
+	}
+
 	// dialog.top_k: ensure it's INTEGER with default 1024
-	if db.Migrator().HasTable("dialog") && db.Migrator().HasColumn("dialog", "top_k") {
+	if db.Migrator().HasTable("dialog") && columnExists("dialog", "top_k") {
 		if err := db.Exec(`ALTER TABLE dialog MODIFY COLUMN top_k BIGINT NOT NULL DEFAULT 1024`).Error; err != nil {
 			logger.Warn("Failed to modify dialog.top_k", zap.Error(err))
 		}
 	}
 
 	// tenant_llm.api_key: ensure it's TEXT type
-	if db.Migrator().HasTable("tenant_llm") && db.Migrator().HasColumn("tenant_llm", "api_key") {
+	if db.Migrator().HasTable("tenant_llm") && columnExists("tenant_llm", "api_key") {
 		if err := db.Exec(`ALTER TABLE tenant_llm MODIFY COLUMN api_key LONGTEXT`).Error; err != nil {
 			logger.Warn("Failed to modify tenant_llm.api_key", zap.Error(err))
 		}
 	}
 
 	// api_token.dialog_id: ensure it's varchar(32)
-	if db.Migrator().HasTable("api_token") && db.Migrator().HasColumn("api_token", "dialog_id") {
+	if db.Migrator().HasTable("api_token") && columnExists("api_token", "dialog_id") {
 		if err := db.Exec(`ALTER TABLE api_token MODIFY COLUMN dialog_id VARCHAR(32)`).Error; err != nil {
 			logger.Warn("Failed to modify api_token.dialog_id", zap.Error(err))
 		}
 	}
 
-	// canvas_template.title and description: ensure they're JSON type
+	// canvas_template.title and description: ensure they're LONGTEXT type (same as Python JSONField)
+	// Note: Python's JSONField uses null=True with application-level default, not database DEFAULT
 	if db.Migrator().HasTable("canvas_template") {
-		if db.Migrator().HasColumn("canvas_template", "title") {
-			if err := db.Exec(`ALTER TABLE canvas_template MODIFY COLUMN title JSON DEFAULT '{}'`).Error; err != nil {
+		if columnExists("canvas_template", "title") {
+			if err := db.Exec(`ALTER TABLE canvas_template MODIFY COLUMN title LONGTEXT NULL`).Error; err != nil {
 				logger.Warn("Failed to modify canvas_template.title", zap.Error(err))
 			}
 		}
-		if db.Migrator().HasColumn("canvas_template", "description") {
-			if err := db.Exec(`ALTER TABLE canvas_template MODIFY COLUMN description JSON DEFAULT '{}'`).Error; err != nil {
+		if columnExists("canvas_template", "description") {
+			if err := db.Exec(`ALTER TABLE canvas_template MODIFY COLUMN description LONGTEXT NULL`).Error; err != nil {
 				logger.Warn("Failed to modify canvas_template.description", zap.Error(err))
 			}
 		}
 	}
 
 	// system_settings.value: ensure it's LONGTEXT
-	if db.Migrator().HasTable("system_settings") && db.Migrator().HasColumn("system_settings", "value") {
+	if db.Migrator().HasTable("system_settings") && columnExists("system_settings", "value") {
 		if err := db.Exec(`ALTER TABLE system_settings MODIFY COLUMN value LONGTEXT NOT NULL`).Error; err != nil {
 			logger.Warn("Failed to modify system_settings.value", zap.Error(err))
 		}
 	}
 
 	// knowledgebase.raptor_task_finish_at: ensure it's DateTime
-	if db.Migrator().HasTable("knowledgebase") && db.Migrator().HasColumn("knowledgebase", "raptor_task_finish_at") {
+	if db.Migrator().HasTable("knowledgebase") && columnExists("knowledgebase", "raptor_task_finish_at") {
 		if err := db.Exec(`ALTER TABLE knowledgebase MODIFY COLUMN raptor_task_finish_at DATETIME`).Error; err != nil {
 			logger.Warn("Failed to modify knowledgebase.raptor_task_finish_at", zap.Error(err))
 		}
 	}
 
 	// knowledgebase.mindmap_task_finish_at: ensure it's DateTime
-	if db.Migrator().HasTable("knowledgebase") && db.Migrator().HasColumn("knowledgebase", "mindmap_task_finish_at") {
+	if db.Migrator().HasTable("knowledgebase") && columnExists("knowledgebase", "mindmap_task_finish_at") {
 		if err := db.Exec(`ALTER TABLE knowledgebase MODIFY COLUMN mindmap_task_finish_at DATETIME`).Error; err != nil {
 			logger.Warn("Failed to modify knowledgebase.mindmap_task_finish_at", zap.Error(err))
 		}
@@ -228,13 +255,21 @@ func renameColumnIfExists(db *gorm.DB, tableName, oldName, newName string) error
 		return nil
 	}
 
+	// Helper to check if column exists
+	columnExists := func(column string) bool {
+		var count int64
+		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+			WHERE TABLE_NAME = ? AND COLUMN_NAME = ?`, tableName, column).Scan(&count)
+		return count > 0
+	}
+
 	// Check if old column exists
-	if !db.Migrator().HasColumn(tableName, oldName) {
+	if !columnExists(oldName) {
 		return nil
 	}
 
 	// Check if new column already exists
-	if db.Migrator().HasColumn(tableName, newName) {
+	if columnExists(newName) {
 		// Both exist, drop the old one
 		logger.Warn("Both old and new columns exist, dropping old one",
 			zap.String("table", tableName),
@@ -256,7 +291,11 @@ func addColumnIfNotExists(db *gorm.DB, tableName, columnName, columnDef string) 
 		return nil
 	}
 
-	if db.Migrator().HasColumn(tableName, columnName) {
+	// Check if column exists using raw SQL
+	var count int64
+	db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+		WHERE TABLE_NAME = ? AND COLUMN_NAME = ?`, tableName, columnName).Scan(&count)
+	if count > 0 {
 		return nil
 	}
 

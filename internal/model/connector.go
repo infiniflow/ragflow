@@ -62,7 +62,7 @@ type SyncLogs struct {
 	NewDocsIndexed       int64      `gorm:"column:new_docs_indexed;default:0" json:"new_docs_indexed"`
 	TotalDocsIndexed     int64      `gorm:"column:total_docs_indexed;default:0" json:"total_docs_indexed"`
 	DocsRemovedFromIndex int64      `gorm:"column:docs_removed_from_index;default:0" json:"docs_removed_from_index"`
-	ErrorMsg             string     `gorm:"column:error_msg;type:longtext;not null;default:''" json:"error_msg"`
+	ErrorMsg             string     `gorm:"column:error_msg;type:longtext;not null" json:"error_msg"`
 	ErrorCount           int64      `gorm:"column:error_count;default:0" json:"error_count"`
 	FullExceptionTrace   *string    `gorm:"column:full_exception_trace;type:longtext" json:"full_exception_trace,omitempty"`
 	TimeStarted          *time.Time `gorm:"column:time_started;index" json:"time_started,omitempty"`
