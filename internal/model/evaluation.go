@@ -17,15 +17,18 @@
 package model
 
 // EvaluationDataset evaluation dataset model
+// Note: Python defines custom create_time/update_time (not null) instead of using BaseModel's
 type EvaluationDataset struct {
-	ID          string  `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TenantID    string  `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	Name        string  `gorm:"column:name;size:255;not null;index" json:"name"`
+	ID          string `gorm:"column:id;primaryKey;size:32" json:"id"`
+	TenantID    string `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
+	Name        string `gorm:"column:name;size:255;not null;index" json:"name"`
 	Description *string `gorm:"column:description;type:longtext" json:"description,omitempty"`
 	KbIDs       JSONMap `gorm:"column:kb_ids;type:json;not null" json:"kb_ids"`
-	CreatedBy   string  `gorm:"column:created_by;size:32;not null;index" json:"created_by"`
-	Status      int64   `gorm:"column:status;default:1;index" json:"status"`
-	BaseModel
+	CreatedBy   string `gorm:"column:created_by;size:32;not null;index" json:"created_by"`
+	// Custom time fields (not null) to match Python
+	CreateTime int64 `gorm:"column:create_time;not null;index" json:"create_time"`
+	UpdateTime int64 `gorm:"column:update_time;not null" json:"update_time"`
+	Status     int64 `gorm:"column:status;default:1;index" json:"status"`
 }
 
 // TableName specify table name
@@ -34,6 +37,7 @@ func (EvaluationDataset) TableName() string {
 }
 
 // EvaluationCase evaluation case model
+// Note: Python defines custom create_time (not null) instead of using BaseModel's
 type EvaluationCase struct {
 	ID               string   `gorm:"column:id;primaryKey;size:32" json:"id"`
 	DatasetID        string   `gorm:"column:dataset_id;size:32;not null;index" json:"dataset_id"`
@@ -42,7 +46,8 @@ type EvaluationCase struct {
 	RelevantDocIDs   *JSONMap `gorm:"column:relevant_doc_ids;type:json" json:"relevant_doc_ids,omitempty"`
 	RelevantChunkIDs *JSONMap `gorm:"column:relevant_chunk_ids;type:json" json:"relevant_chunk_ids,omitempty"`
 	Metadata         *JSONMap `gorm:"column:metadata;type:json" json:"metadata,omitempty"`
-	BaseModel
+	// Custom time field (not null) to match Python
+	CreateTime int64 `gorm:"column:create_time;not null" json:"create_time"`
 }
 
 // TableName specify table name
@@ -51,6 +56,7 @@ func (EvaluationCase) TableName() string {
 }
 
 // EvaluationRun evaluation run model
+// Note: Python defines custom create_time/complete_time instead of using BaseModel's
 type EvaluationRun struct {
 	ID             string   `gorm:"column:id;primaryKey;size:32" json:"id"`
 	DatasetID      string   `gorm:"column:dataset_id;size:32;not null;index" json:"dataset_id"`
@@ -60,7 +66,9 @@ type EvaluationRun struct {
 	MetricsSummary *JSONMap `gorm:"column:metrics_summary;type:json" json:"metrics_summary,omitempty"`
 	Status         string   `gorm:"column:status;size:32;not null;default:PENDING" json:"status"`
 	CreatedBy      string   `gorm:"column:created_by;size:32;not null;index" json:"created_by"`
-	BaseModel
+	// Custom time fields to match Python
+	CreateTime   int64  `gorm:"column:create_time;not null;index" json:"create_time"`
+	CompleteTime *int64 `gorm:"column:complete_time" json:"complete_time,omitempty"`
 }
 
 // TableName specify table name
@@ -69,6 +77,7 @@ func (EvaluationRun) TableName() string {
 }
 
 // EvaluationResult evaluation result model
+// Note: Python defines custom create_time (not null) instead of using BaseModel's
 type EvaluationResult struct {
 	ID              string   `gorm:"column:id;primaryKey;size:32" json:"id"`
 	RunID           string   `gorm:"column:run_id;size:32;not null;index" json:"run_id"`
@@ -78,7 +87,8 @@ type EvaluationResult struct {
 	Metrics         JSONMap  `gorm:"column:metrics;type:json;not null" json:"metrics"`
 	ExecutionTime   float64  `gorm:"column:execution_time;not null" json:"execution_time"`
 	TokenUsage      *JSONMap `gorm:"column:token_usage;type:json" json:"token_usage,omitempty"`
-	BaseModel
+	// Custom time field to match Python
+	CreateTime int64 `gorm:"column:create_time;not null" json:"create_time"`
 }
 
 // TableName specify table name

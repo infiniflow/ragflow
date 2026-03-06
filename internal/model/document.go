@@ -38,6 +38,7 @@ type Document struct {
 	ProgressMsg     *string    `gorm:"column:progress_msg;type:longtext" json:"progress_msg,omitempty"`
 	ProcessBeginAt  *time.Time `gorm:"column:process_begin_at;index" json:"process_begin_at,omitempty"`
 	ProcessDuration float64    `gorm:"column:process_duration;default:0" json:"process_duration"`
+	ContentHash     *string    `gorm:"column:content_hash;size:32;index" json:"content_hash,omitempty"`
 	MetaFields      *JSONMap   `gorm:"column:meta_fields;type:json" json:"meta_fields,omitempty"`
 	Suffix          string     `gorm:"column:suffix;size:32;not null;index" json:"suffix"`
 	Run             *string    `gorm:"column:run;size:1;index" json:"run,omitempty"`

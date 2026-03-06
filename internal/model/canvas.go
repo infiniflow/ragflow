@@ -23,6 +23,7 @@ type UserCanvas struct {
 	UserID         string  `gorm:"column:user_id;size:255;not null;index" json:"user_id"`
 	Title          *string `gorm:"column:title;size:255" json:"title,omitempty"`
 	Permission     string  `gorm:"column:permission;size:16;not null;default:me;index" json:"permission"`
+	Release        bool    `gorm:"column:release;not null;default:false;index" json:"release"`
 	Description    *string `gorm:"column:description;type:longtext" json:"description,omitempty"`
 	CanvasType     *string `gorm:"column:canvas_type;size:32;index" json:"canvas_type,omitempty"`
 	CanvasCategory string  `gorm:"column:canvas_category;size:32;not null;default:agent_canvas;index" json:"canvas_category"`

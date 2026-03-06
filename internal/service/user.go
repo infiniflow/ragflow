@@ -144,7 +144,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	}
 
 	now := time.Now().Unix()
-	user.CreateTime = now
+	user.CreateTime = &now
 	user.UpdateTime = &now
 	now_date := time.Now()
 	user.CreateDate = &now_date
@@ -156,13 +156,13 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 		ID:        userID,
 		Name:      &tenantName,
 		LLMID:     cfg.Server.Mode,
-		EmbDID:    cfg.Server.Mode,
+		EmbdID:    cfg.Server.Mode,
 		ASRID:     cfg.Server.Mode,
 		Img2TxtID: cfg.Server.Mode,
 		RerankID:  cfg.Server.Mode,
 		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 	}
-	tenant.CreateTime = now
+	tenant.CreateTime = &now
 	tenant.UpdateTime = &now
 	tenant.CreateDate = &now_date
 	tenant.UpdateDate = &now_date
@@ -176,7 +176,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 		InvitedBy: userID,
 		Status:    &status,
 	}
-	userTenant.CreateTime = now
+	userTenant.CreateTime = &now
 	userTenant.UpdateTime = &now
 	userTenant.CreateDate = &now_date
 	userTenant.UpdateDate = &now_date
@@ -191,7 +191,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 		Type:      "folder",
 		Size:      0,
 	}
-	rootFile.CreateTime = now
+	rootFile.CreateTime = &now
 	rootFile.UpdateTime = &now
 	rootFile.CreateDate = &now_date
 	rootFile.UpdateDate = &now_date
@@ -205,20 +205,38 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	}
 
 	if err := tenantDAO.Create(tenant); err != nil {
-		s.userDAO.DeleteByID(userID)
+		err := s.userDAO.DeleteByID(userID)
+		if err != nil {
+			return nil, 0, err
+		}
 		return nil, common.CodeServerError, fmt.Errorf("failed to create tenant: %w", err)
 	}
 
 	if err := userTenantDAO.Create(userTenant); err != nil {
-		s.userDAO.DeleteByID(userID)
-		tenantDAO.Delete(userID)
+		err := s.userDAO.DeleteByID(userID)
+		if err != nil {
+			return nil, 0, err
+		}
+		err = tenantDAO.Delete(userID)
+		if err != nil {
+			return nil, 0, err
+		}
 		return nil, common.CodeServerError, fmt.Errorf("failed to create user tenant relation: %w", err)
 	}
 
 	if err := fileDAO.Create(rootFile); err != nil {
-		s.userDAO.DeleteByID(userID)
-		tenantDAO.Delete(userID)
-		userTenantDAO.Delete(userTenantID)
+		err := s.userDAO.DeleteByID(userID)
+		if err != nil {
+			return nil, 0, err
+		}
+		err = tenantDAO.Delete(userID)
+		if err != nil {
+			return nil, 0, err
+		}
+		err = userTenantDAO.Delete(userTenantID)
+		if err != nil {
+			return nil, 0, err
+		}
 		return nil, common.CodeServerError, fmt.Errorf("failed to create root folder: %w", err)
 	}
 
@@ -314,11 +332,16 @@ func (s *UserService) GetUserByID(id uint) (*UserResponse, common.ErrorCode, err
 	}
 
 	return &UserResponse{
-		ID:        user.ID,
-		Email:     user.Email,
-		Nickname:  user.Nickname,
-		Status:    user.Status,
-		CreatedAt: time.Unix(user.CreateTime, 0).Format("2006-01-02 15:04:05"),
+		ID:       user.ID,
+		Email:    user.Email,
+		Nickname: user.Nickname,
+		Status:   user.Status,
+		CreatedAt: func() string {
+			if user.CreateTime != nil {
+				return time.Unix(*user.CreateTime, 0).Format("2006-01-02 15:04:05")
+			}
+			return ""
+		}(),
 	}, common.CodeSuccess, nil
 }
 
@@ -333,11 +356,16 @@ func (s *UserService) ListUsers(page, pageSize int) ([]*UserResponse, int64, com
 	responses := make([]*UserResponse, len(users))
 	for i, user := range users {
 		responses[i] = &UserResponse{
-			ID:        user.ID,
-			Email:     user.Email,
-			Nickname:  user.Nickname,
-			Status:    user.Status,
-			CreatedAt: time.Unix(user.CreateTime, 0).Format("2006-01-02 15:04:05"),
+			ID:       user.ID,
+			Email:    user.Email,
+			Nickname: user.Nickname,
+			Status:   user.Status,
+			CreatedAt: func() string {
+				if user.CreateTime != nil {
+					return time.Unix(*user.CreateTime, 0).Format("2006-01-02 15:04:05")
+				}
+				return ""
+			}(),
 		}
 	}
 

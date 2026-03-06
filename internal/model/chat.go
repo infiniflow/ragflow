@@ -27,6 +27,7 @@ type Chat struct {
 	Icon                   *string   `gorm:"column:icon;type:longtext" json:"icon,omitempty"`
 	Language               *string   `gorm:"column:language;size:32;index" json:"language,omitempty"`
 	LLMID                  string    `gorm:"column:llm_id;size:128;not null" json:"llm_id"`
+	TenantLLMID            *int64    `gorm:"column:tenant_llm_id;index" json:"tenant_llm_id,omitempty"`
 	LLMSetting             JSONMap   `gorm:"column:llm_setting;type:json;not null;default:'{\"temperature\":0.1,\"top_p\":0.3,\"frequency_penalty\":0.7,\"presence_penalty\":0.4,\"max_tokens\":512}'" json:"llm_setting"`
 	PromptType             string    `gorm:"column:prompt_type;size:16;not null;default:simple;index" json:"prompt_type"`
 	PromptConfig           JSONMap   `gorm:"column:prompt_config;type:json;not null;default:'{\"system\":\"\",\"prologue\":\"Hi! I'm your assistant. What can I do for you?\",\"parameters\":[],\"empty_response\":\"Sorry! No relevant content was found in the knowledge base!\"}'" json:"prompt_config"`
@@ -37,6 +38,7 @@ type Chat struct {
 	TopK                   int64     `gorm:"column:top_k;default:1024" json:"top_k"`
 	DoRefer                string    `gorm:"column:do_refer;size:1;not null;default:1" json:"do_refer"`
 	RerankID               string    `gorm:"column:rerank_id;size:128;not null;default:''" json:"rerank_id"`
+	TenantRerankID         *int64    `gorm:"column:tenant_rerank_id;index" json:"tenant_rerank_id,omitempty"`
 	KBIDs                  JSONSlice `gorm:"column:kb_ids;type:json;not null;default:'[]'" json:"kb_ids"`
 	Status                 *string   `gorm:"column:status;size:1;index" json:"status,omitempty"`
 	BaseModel
