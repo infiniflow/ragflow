@@ -64,6 +64,7 @@ export enum LLMFactory {
   PaddleOCR = 'PaddleOCR',
   N1n = 'n1n',
   Avian = 'Avian',
+  RAGcon = 'RAGcon',
 }
 
 // Please lowercase the file name
@@ -133,6 +134,7 @@ export const IconMap = {
   [LLMFactory.PaddleOCR]: 'paddleocr',
   [LLMFactory.N1n]: 'n1n',
   [LLMFactory.Avian]: 'avian',
+  [LLMFactory.RAGcon]: 'ragcon',
 };
 
 export const APIMapUrl = {
