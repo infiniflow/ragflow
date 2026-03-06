@@ -138,7 +138,7 @@ export const useFetchNextKnowledgeListByPage = () => {
     ],
     initialData: {
       kbs: [],
-      total: 0,
+      total_datasets: 0,
     },
     gcTime: 0,
     queryFn: async () => {
@@ -151,7 +151,7 @@ export const useFetchNextKnowledgeListByPage = () => {
         },
       });
 
-      return { kbs: data?.data, total: data?.total };
+      return { kbs: data?.data, total_datasets: data?.total_datasets };
     },
   });
 
@@ -167,7 +167,7 @@ export const useFetchNextKnowledgeListByPage = () => {
     ...data,
     searchString,
     handleInputChange: onInputChange,
-    pagination: { ...pagination, total: data?.total },
+    pagination: { ...pagination, total: data?.total_datasets },
     setPagination,
     loading,
     filterValue,
@@ -218,7 +218,7 @@ export const useDeleteKnowledge = () => {
   } = useMutation({
     mutationKey: [KnowledgeApiAction.DeleteKnowledge],
     mutationFn: async (id: string) => {
-      const { data } = await kbService.rmKb({ kb_id: id });
+      const { data } = await kbService.rmKb({ ids: [id] });
       if (data.code === 0) {
         message.success(i18n.t(`message.deleted`));
         queryClient.invalidateQueries({
@@ -371,7 +371,7 @@ export const useFetchKnowledgeList = (
       const { data } = await listDataset();
       const list = data?.data ?? [];
       return shouldFilterListWithoutDocument
-        ? list.filter((x: IKnowledge) => x.chunk_num > 0)
+        ? list.filter((x: IKnowledge) => x.chunk_count > 0)
         : list;
     },
   });

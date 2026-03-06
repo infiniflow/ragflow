@@ -138,7 +138,7 @@ export default function Dataset() {
   return (
     <>
       <div className="absolute top-4 right-5">
-        <Generate disabled={!(dataSetData.chunk_num > 0)} />
+        <Generate disabled={!(dataSetData.chunk_count > 0)} />
       </div>
       <section className="p-5 min-w-[880px]">
         <ListFilterBar

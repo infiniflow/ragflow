@@ -30,7 +30,7 @@ export default function Datasets() {
 
   const {
     kbs,
-    total,
+    total_datasets,
     pagination,
     setPagination,
     handleInputChange,
@@ -127,7 +127,7 @@ export default function Datasets() {
             <div className="mt-8 px-8">
               <RAGFlowPagination
                 {...pick(pagination, 'current', 'pageSize')}
-                total={total}
+                total={total_datasets}
                 onChange={handlePageChange}
               ></RAGFlowPagination>
             </div>

@@ -24,7 +24,7 @@ export interface IFetchKnowledgeListRequestBody {
 }
 
 export interface IFetchKnowledgeListRequestParams {
-  kb_id?: string;
+  id?: string;
   page?: number;
   page_size?: number;
   ext?: {

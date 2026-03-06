@@ -160,6 +160,15 @@ def validate_and_parse_request_args(request: Request, validator: type[BaseModel]
         - Preserves type conversion from Pydantic validation
     """
     args = request.args.to_dict(flat=True)
+    
+    # Handle ext parameter: parse JSON string to dict if it's a string
+    if 'ext' in args and isinstance(args['ext'], str):
+        import json
+        try:
+            args['ext'] = json.loads(args['ext'])
+        except json.JSONDecodeError:
+            pass  # Keep the string and let validation handle the error
+    
     try:
         if extras is not None:
             args.update(extras)
