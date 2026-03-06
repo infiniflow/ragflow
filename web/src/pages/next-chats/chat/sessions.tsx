@@ -172,7 +172,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
       role="complementary"
       data-testid="chat-detail-sessions"
     >
-      <header className="flex items-center text-base justify-between gap-2">
+      <header className="flex items-center text-base justify-between gap-4">
         <div className="flex gap-3 items-center min-w-0">
           <RAGFlowAvatar
             avatar={data.icon}
