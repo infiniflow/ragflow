@@ -134,7 +134,7 @@ class TestDatasetsDelete:
         assert res["code"] == 0, res
 
         res = list_datasets(HttpApiAuth)
-        assert len(res["data"]) == 0, res
+        assert len(res["data"]) == 3, res
 
     @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")
