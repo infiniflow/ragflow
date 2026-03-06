@@ -19,7 +19,7 @@ package handler
 import (
 	"fmt"
 	"net/http"
-	"ragflow/internal/apperror"
+	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"strconv"
@@ -54,25 +54,17 @@ func (h *UserHandler) Register(c *gin.Context) {
 	var req service.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
+			"code":    common.CodeBadRequest,
 			"message": err.Error(),
 			"data":    false,
 		})
 		return
 	}
 
-	user, err := h.userService.Register(&req)
+	user, code, err := h.userService.Register(&req)
 	if err != nil {
-		if appErr, ok := apperror.GetAppError(err); ok {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    appErr.Code,
-				"message": appErr.Message,
-				"data":    false,
-			})
-			return
-		}
 		c.JSON(http.StatusOK, gin.H{
-			"code":    500,
+			"code":    code,
 			"message": err.Error(),
 			"data":    false,
 		})
@@ -84,7 +76,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    500,
+			"code":    common.CodeServerError,
 			"message": "Failed to generate auth token",
 			"data":    false,
 		})
@@ -99,7 +91,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	profile := h.userService.GetUserProfile(user)
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
+		"code":    common.CodeSuccess,
 		"message": fmt.Sprintf("%s, welcome aboard!", req.Nickname),
 		"data":    profile,
 	})
@@ -117,18 +109,20 @@ func (h *UserHandler) Register(c *gin.Context) {
 func (h *UserHandler) Login(c *gin.Context) {
 	var req service.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
 			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
-	user, err := h.userService.Login(&req)
+	user, code, err := h.userService.Login(&req)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
 			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
@@ -144,7 +138,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
+		"code":    common.CodeSuccess,
 		"message": "Welcome back!",
 		"data":    user,
 	})
@@ -163,25 +157,17 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
+			"code":    common.CodeBadRequest,
 			"message": err.Error(),
 			"data":    false,
 		})
 		return
 	}
 
-	user, err := h.userService.LoginByEmail(&req)
+	user, code, err := h.userService.LoginByEmail(&req)
 	if err != nil {
-		if appErr, ok := apperror.GetAppError(err); ok {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    appErr.Code,
-				"message": appErr.Message,
-				"data":    false,
-			})
-			return
-		}
 		c.JSON(http.StatusOK, gin.H{
-			"code":    500,
+			"code":    code,
 			"message": err.Error(),
 			"data":    false,
 		})
@@ -193,7 +179,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    500,
+			"code":    common.CodeServerError,
 			"message": "Failed to generate auth token",
 			"data":    false,
 		})
@@ -208,7 +194,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 
 	profile := h.userService.GetUserProfile(user)
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
+		"code":    common.CodeSuccess,
 		"message": "Welcome back!",
 		"data":    profile,
 	})
@@ -227,22 +213,28 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid user id",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "invalid user id",
+			"data":    false,
 		})
 		return
 	}
 
-	user, err := h.userService.GetUserByID(uint(id))
+	user, code, err := h.userService.GetUserByID(uint(id))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "user not found",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"data": user,
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    user,
 	})
 }
 
@@ -267,15 +259,19 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 		pageSize = 10
 	}
 
-	users, total, err := h.userService.ListUsers(page, pageSize)
+	users, total, code, err := h.userService.ListUsers(page, pageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to get users",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
 		"data": gin.H{
 			"items":     users,
 			"total":     total,
@@ -298,34 +294,38 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	// Extract token from request
 	token := c.GetHeader("Authorization")
 	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeUnauthorized,
 			"message": "Missing Authorization header",
+			"data":    false,
 		})
 		return
 	}
 
 	// Get user by token
-	user, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
 	// Logout user
-	if err := h.userService.Logout(user); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
+	code, err = h.userService.Logout(user)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
 			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
+		"code":    common.CodeSuccess,
 		"data":    true,
 		"message": "success",
 	})
@@ -344,19 +344,21 @@ func (h *UserHandler) Info(c *gin.Context) {
 	// Extract token from request
 	token := c.GetHeader("Authorization")
 	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeUnauthorized,
 			"message": "Missing Authorization header",
+			"data":    false,
 		})
 		return
 	}
 
 	// Get user by token
-	user, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":  401,
-			"error": "Invalid access token",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
@@ -365,8 +367,9 @@ func (h *UserHandler) Info(c *gin.Context) {
 	profile := h.userService.GetUserProfile(user)
 
 	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"data": profile,
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    profile,
 	})
 }
 
@@ -384,18 +387,21 @@ func (h *UserHandler) Setting(c *gin.Context) {
 	// Extract token from request
 	token := c.GetHeader("Authorization")
 	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeUnauthorized,
 			"message": "Missing Authorization header",
+			"data":    false,
 		})
 		return
 	}
 
 	// Get user by token
-	user, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Invalid access token",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
@@ -403,22 +409,29 @@ func (h *UserHandler) Setting(c *gin.Context) {
 	// Parse request
 	var req service.UpdateSettingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
 	// Update user settings
-	if err := h.userService.UpdateUserSettings(user, &req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
+	code, err = h.userService.UpdateUserSettings(user, &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
 		"message": "settings updated successfully",
+		"data":    true,
 	})
 }
 
@@ -436,18 +449,21 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 	// Extract token from request
 	token := c.GetHeader("Authorization")
 	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeUnauthorized,
 			"message": "Missing Authorization header",
+			"data":    false,
 		})
 		return
 	}
 
 	// Get user by token
-	user, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Invalid access token",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
@@ -455,22 +471,29 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 	// Parse request
 	var req service.ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
 	// Change password
-	if err := h.userService.ChangePassword(user, &req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
+	code, err = h.userService.ChangePassword(user, &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
 		"message": "password changed successfully",
+		"data":    true,
 	})
 }
 
@@ -483,10 +506,10 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/login/channels [get]
 func (h *UserHandler) GetLoginChannels(c *gin.Context) {
-	channels, err := h.userService.GetLoginChannels()
+	channels, code, err := h.userService.GetLoginChannels()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
 			"message": "Load channels failure, error: " + err.Error(),
 			"data":    []interface{}{},
 		})
@@ -494,7 +517,7 @@ func (h *UserHandler) GetLoginChannels(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
+		"code":    common.CodeSuccess,
 		"message": "success",
 		"data":    channels,
 	})
