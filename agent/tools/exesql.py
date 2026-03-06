@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import contextlib
 import json
 import os
 import re
@@ -230,7 +231,8 @@ class ExeSQL(ToolBase, ABC):
                     sql_res.append(convert_decimals(df.to_dict(orient="records")))
                     formalized_content.append(df.to_markdown(index=False, floatfmt=".6f"))
             finally:
-                ibm_db.close(conn)
+                with contextlib.suppress(Exception):
+                    ibm_db.close(conn)
 
             self.set_output("json", sql_res)
             self.set_output("formalized_content", "\n\n".join(formalized_content))
@@ -238,7 +240,8 @@ class ExeSQL(ToolBase, ABC):
         try:
             cursor = db.cursor()
         except Exception as e:
-            db.close()
+            with contextlib.suppress(Exception):
+                db.close()
             raise Exception("Database Connection Failed! \n" + str(e))
 
         try:
@@ -272,8 +275,10 @@ class ExeSQL(ToolBase, ABC):
                 sql_res.append(convert_decimals(single_res.to_dict(orient='records')))
                 formalized_content.append(single_res.to_markdown(index=False, floatfmt=".6f"))
         finally:
-            cursor.close()
-            db.close()
+            with contextlib.suppress(Exception):
+                cursor.close()
+            with contextlib.suppress(Exception):
+                db.close()
 
         self.set_output("json", sql_res)
         self.set_output("formalized_content", "\n\n".join(formalized_content))
