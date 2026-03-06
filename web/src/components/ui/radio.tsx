@@ -13,9 +13,17 @@ type RadioProps = {
   disabled?: boolean;
   onChange?: (checked: boolean) => void;
   children?: React.ReactNode;
+  testId?: string;
 };
 
-function Radio({ value, checked, disabled, onChange, children }: RadioProps) {
+function Radio({
+  value,
+  checked,
+  disabled,
+  onChange,
+  children,
+  testId,
+}: RadioProps) {
   const groupContext = useContext(RadioGroupContext);
   const isControlled = checked !== undefined;
   // const [internalChecked, setInternalChecked] = useState(false);
@@ -54,6 +62,7 @@ function Radio({ value, checked, disabled, onChange, children }: RadioProps) {
           mergedDisabled && 'border-muted',
         )}
         onClick={handleClick}
+        data-testid={testId}
       >
         {isChecked && (
           <div className="h-3 w-3 fill-primary text-primary bg-text-primary rounded-full" />
@@ -74,59 +83,66 @@ type RadioGroupProps = {
   direction?: 'horizontal' | 'vertical';
 };
 
-function Group({
-  value,
-  defaultValue,
-  onChange,
-  disabled,
-  children,
-  className,
-  direction = 'horizontal',
-}: RadioGroupProps) {
-  const [internalValue, setInternalValue] = useState(defaultValue || '');
+const Group = React.forwardRef<HTMLDivElement, RadioGroupProps>(
+  (
+    {
+      value,
+      defaultValue,
+      onChange,
+      disabled,
+      children,
+      className,
+      direction = 'horizontal',
+    },
+    ref,
+  ) => {
+    const [internalValue, setInternalValue] = useState(defaultValue || '');
 
-  const isControlled = value !== undefined;
-  const mergedValue = isControlled ? value : internalValue;
+    const isControlled = value !== undefined;
+    const mergedValue = isControlled ? value : internalValue;
 
-  const handleChange = (val: string | number) => {
-    if (disabled) return;
+    const handleChange = (val: string | number) => {
+      if (disabled) return;
 
-    if (!isControlled) {
-      setInternalValue(val);
-    }
+      if (!isControlled) {
+        setInternalValue(val);
+      }
 
-    if (onChange) {
-      onChange(val);
-    }
-  };
+      if (onChange) {
+        onChange(val);
+      }
+    };
 
-  return (
-    <RadioGroupContext.Provider
-      value={{
-        value: mergedValue,
-        onChange: handleChange,
-        disabled,
-      }}
-    >
-      <div
-        className={cn(
-          'flex gap-4',
-          direction === 'vertical' ? 'flex-col' : 'flex-row',
-          className,
-        )}
+    return (
+      <RadioGroupContext.Provider
+        value={{
+          value: mergedValue,
+          onChange: handleChange,
+          disabled,
+        }}
       >
-        {React.Children.map(children, (child) =>
-          React.cloneElement(child as React.ReactElement, {
-            disabled: disabled || child?.props?.disabled,
-          }),
-        )}
-      </div>
-    </RadioGroupContext.Provider>
-  );
-}
+        <div
+          ref={ref}
+          className={cn(
+            'flex gap-4',
+            direction === 'vertical' ? 'flex-col' : 'flex-row',
+            className,
+          )}
+        >
+          {React.Children.map(children, (child) =>
+            React.cloneElement(child as React.ReactElement, {
+              disabled: disabled || child?.props?.disabled,
+            }),
+          )}
+        </div>
+      </RadioGroupContext.Provider>
+    );
+  },
+);
 
 const RadioComponent = Object.assign(Radio, {
   Group,
 });
 
+Group.displayName = 'RadioGroup';
 export { RadioComponent as Radio };

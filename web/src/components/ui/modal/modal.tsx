@@ -33,6 +33,8 @@ export interface ModalProps {
   onCancel?: () => void;
   okButtonClassName?: string;
   cancelButtonClassName?: string;
+  testId?: string;
+  okButtonTestId?: string;
   disabled?: boolean;
   style?: React.CSSProperties;
   zIndex?: number;
@@ -87,6 +89,8 @@ const Modal: ModalType = ({
   style,
   zIndex = 50,
   type,
+  testId,
+  okButtonTestId,
 }) => {
   const sizeClasses = {
     small: 'max-w-md',
@@ -152,6 +156,7 @@ const Modal: ModalType = ({
             type="button"
             disabled={confirmLoading || disabled}
             onClick={() => handleOk()}
+            data-testid={okButtonTestId}
             className={cn(
               'px-2 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90',
               { 'cursor-not-allowed': disabled },
@@ -159,7 +164,7 @@ const Modal: ModalType = ({
             )}
           >
             {confirmLoading && (
-              <Loader className="inline-block mr-2 h-4 w-4 animate-spin" />
+              <Loader className="inline-block me-2 h-4 w-4 animate-spin" />
             )}
             {okText ?? t('modal.okText')}
           </button>
@@ -190,6 +195,7 @@ const Modal: ModalType = ({
     okButtonClassName,
     cancelButtonClassName,
     showCancel,
+    okButtonTestId,
   ]);
 
   const contentEl = useMemo(() => {
@@ -224,6 +230,7 @@ const Modal: ModalType = ({
               `relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-bg-base rounded-lg shadow-lg border border-border-default transition-all focus-visible:!outline-none`,
               { 'pt-10': closable && !title && !type },
             )}
+            data-testid={testId}
             style={style}
             onClick={(e) => e.stopPropagation()}
           >
@@ -246,7 +253,7 @@ const Modal: ModalType = ({
               <DialogPrimitive.Close asChild>
                 <button
                   type="button"
-                  className="flex absolute right-5 top-5 h-7 w-7 items-center justify-center text-text-secondary rounded-full hover:text-text-primary focus-visible:outline-none"
+                  className="flex absolute end-5 top-5 h-7 w-7 items-center justify-center text-text-secondary rounded-full hover:text-text-primary focus-visible:outline-none"
                   onClick={handleCancel}
                 >
                   {closeIcon}

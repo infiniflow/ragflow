@@ -32,6 +32,7 @@ from common.token_utils import num_tokens_from_string
 
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
+from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
 from rag.utils.lazy_image import LazyDocxImage
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
@@ -41,6 +42,7 @@ from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.float_utils import normalize_overlapped_percent
 from common.parser_config_utils import normalize_layout_recognizer
+from common.text_utils import normalize_arabic_presentation_forms
 from rag.nlp import (
     concat_img,
     find_codec,
@@ -54,6 +56,33 @@ from rag.nlp import (
     append_context2table_image4pdf,
     tokenize_chunks_with_images,
 )  # noqa: F401
+
+
+def _normalize_section_text_for_rtl_presentation_forms(sections):
+    if not sections:
+        return sections
+
+    normalized_sections = []
+    for section in sections:
+        if isinstance(section, tuple):
+            if not section:
+                normalized_sections.append(section)
+                continue
+            text = section[0]
+            normalized_text = normalize_arabic_presentation_forms(text)
+            normalized_sections.append((normalized_text, *section[1:]))
+            continue
+        if isinstance(section, list):
+            if not section:
+                normalized_sections.append(section)
+                continue
+            text = section[0]
+            normalized_text = normalize_arabic_presentation_forms(text)
+            normalized_sections.append([normalized_text, *section[1:]])
+            continue
+        normalized_sections.append(normalize_arabic_presentation_forms(section))
+
+    return normalized_sections
 
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
@@ -101,7 +130,8 @@ def by_mineru(
 
         if mineru_llm_name:
             try:
-                ocr_model = LLMBundle(tenant_id=tenant_id, llm_type=LLMType.OCR, llm_name=mineru_llm_name, lang=lang)
+                ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, mineru_llm_name)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
@@ -180,7 +210,8 @@ def by_paddleocr(
 
         if paddleocr_llm_name:
             try:
-                ocr_model = LLMBundle(tenant_id=tenant_id, llm_type=LLMType.OCR, llm_name=paddleocr_llm_name, lang=lang)
+                ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, paddleocr_llm_name)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
@@ -208,10 +239,10 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=No
         tenant_id = kwargs.get("tenant_id")
         if not tenant_id:
             raise ValueError("tenant_id is required when using vision layout recognizer")
+        vision_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.IMAGE2TEXT, layout_recognizer)
         vision_model = LLMBundle(
             tenant_id,
-            LLMType.IMAGE2TEXT,
-            llm_name=layout_recognizer,
+            model_config=vision_model_config,
             lang=kwargs.get("lang", "Chinese"),
         )
         pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
@@ -224,7 +255,7 @@ PARSERS = {
     "deepdoc": by_deepdoc,
     "mineru": by_mineru,
     "docling": by_docling,
-    "tcadp": by_tcadp,
+    "tcadp parser": by_tcadp,
     "paddleocr": by_paddleocr,
     "plaintext": by_plaintext,  # default
 }
@@ -802,6 +833,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         # sections = (text, image, tables)
         sections = Docx()(filename, binary)
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
 
         # chunks list[dict]
         # images list - index of image chunk in chunks
@@ -825,7 +857,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             urls = extract_links_from_pdf(binary)
 
         if isinstance(layout_recognizer, bool):
-            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
+            layout_recognizer = "DeepDOC" if layout_recognizer else "PlainText"
 
         name = layout_recognizer.strip().lower()
         parser = PARSERS.get(name, by_plaintext)
@@ -843,6 +875,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             paddleocr_llm_name=parser_model_name,
             **kwargs,
         )
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
 
         if not sections and not tables:
             return []
@@ -851,7 +884,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             tables = append_context2table_image4pdf(sections, tables, image_context_size)
 
         if name in ["tcadp", "docling", "mineru", "paddleocr"]:
-            parser_config["chunk_token_num"] = 0
+            if int(parser_config.get("chunk_token_num", 0)) <= 0:
+                parser_config["chunk_token_num"] = 0
 
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
@@ -873,6 +907,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             file_type = "XLSX" if re.search(r"\.xlsx?$", filename, re.IGNORECASE) else "CSV"
 
             sections, tables = tcadp_parser.parse_pdf(filepath=filename, binary=binary, callback=callback, output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""), file_type=file_type)
+            sections = _normalize_section_text_for_rtl_presentation_forms(sections)
             parser_config["chunk_token_num"] = 0
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")
@@ -884,10 +919,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 parser_config["chunk_token_num"] = 0
             else:
                 sections = [(_, "") for _ in excel_parser(binary) if _]
+            sections = _normalize_section_text_for_rtl_presentation_forms(sections)
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?;。；！？"))
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(md|markdown|mdx)$", filename, re.IGNORECASE):
@@ -900,11 +937,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
             return_section_images=True,
         )
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
 
         is_markdown = True
 
         try:
-            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
             callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
         except Exception as e:
             logging.warning(f"Failed to detect figure extraction: {e}")
@@ -945,6 +984,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         chunk_token_num = int(parser_config.get("chunk_token_num", 128))
         sections = HtmlParser()(filename, binary, chunk_token_num)
         sections = [(_, "") for _ in sections if _]
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(json|jsonl|ldjson)$", filename, re.IGNORECASE):
@@ -952,6 +992,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         chunk_token_num = int(parser_config.get("chunk_token_num", 128))
         sections = JsonParser(chunk_token_num)(binary)
         sections = [(_, "") for _ in sections if _]
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
@@ -969,6 +1010,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         if doc_parsed.get("content", None) is not None:
             sections = doc_parsed["content"].split("\n")
             sections = [(_, "") for _ in sections if _]
+            sections = _normalize_section_text_for_rtl_presentation_forms(sections)
             callback(0.8, "Finish parsing.")
         else:
             error_msg = f"tika.parser got empty content from {filename}."

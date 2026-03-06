@@ -18,10 +18,25 @@ type AvatarUploadProps = {
   value?: string;
   onChange?: (value: string) => void;
   tips?: string;
+  uploadInputTestId?: string;
+  removeButtonTestId?: string;
+  cropModalTestId?: string;
+  cropModalOkButtonTestId?: string;
 };
 
 export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
-  function AvatarUpload({ value, onChange, tips }, ref) {
+  function AvatarUpload(
+    {
+      value,
+      onChange,
+      tips,
+      uploadInputTestId,
+      removeButtonTestId,
+      cropModalTestId,
+      cropModalOkButtonTestId,
+    },
+    ref,
+  ) {
     const { t } = useTranslation();
     const [avatarBase64Str, setAvatarBase64Str] = useState(''); // Avatar Image base64
     const [isCropModalOpen, setIsCropModalOpen] = useState(false);
@@ -285,6 +300,7 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
                 className="border-background focus-visible:border-background absolute -top-2 -right-2 size-6 rounded-full border-2 shadow-none z-10"
                 aria-label="Remove image"
                 type="button"
+                data-testid={removeButtonTestId}
               >
                 <LucideX className="size-3" />
               </Button>
@@ -299,6 +315,7 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
             className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
             onChange={handleChange}
             ref={ref}
+            data-testid={uploadInputTestId}
           />
         </div>
         <div className="margin-1 text-sm text-text-secondary">
@@ -318,6 +335,8 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
           size="small"
           onCancel={handleCancelCrop}
           onOk={handleCrop}
+          testId={cropModalTestId}
+          okButtonTestId={cropModalOkButtonTestId}
           // footer={
           //   <div className="flex justify-end space-x-2">
           //     <Button variant="secondary" onClick={handleCancelCrop}>

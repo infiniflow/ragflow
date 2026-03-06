@@ -9,11 +9,11 @@ sidebar_custom_props: {
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-Deploy and run local models using Ollama, Xinference, VLLM ，SGLANG or other frameworks.
+Deploy and run local models using Ollama, Xinference, Vllm ，Sglang , Gpustack or other frameworks.
 
 ---
 
-RAGFlow supports deploying models locally using Ollama, Xinference, IPEX-LLM, or jina. If you have locally deployed models to leverage or wish to enable GPU or CUDA for inference acceleration, you can bind Ollama or Xinference into RAGFlow and use either of them as a local "server" for interacting with your local models.
+RAGFlow supports deploying models locally using Ollama, Xinference, IPEX-LLM, Vllm ，Sglang , Gpustack or jina. If you have locally deployed models to leverage or wish to enable GPU or CUDA for inference acceleration, you can bind Ollama or Xinference into RAGFlow and use either of them as a local "server" for interacting with your local models.
 
 RAGFlow seamlessly integrates with Ollama and Xinference, without the need for further environment configurations. You can use them to deploy two types of local models in RAGFlow: chat models and embedding models.
 
@@ -350,6 +350,38 @@ select vllm chat model as default llm model as follow:
 create chat->create conversations-chat as follow:
 ![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm2.png)
 
+### 6. Deploy Gpustack 
+
+ubuntu 22.04/24.04
+
+### 6.1 RUN Gpustack WITH BEST PRACTISE
+
+```bash
+sudo docker run -d --name gpustack \
+    --restart unless-stopped \
+    -p 80:80 \
+    -p 10161:10161 \
+    --volume gpustack-data:/var/lib/gpustack \
+    gpustack/gpustack
+  ```
+you can get docker info
+```bash
+ docker ps
+  ```
+when see the follow ,it means vllm engine is ready for access
+```bash
+root@gpustack-prod:~# docker ps
+CONTAINER ID   IMAGE               COMMAND                  CREATED       STATUS       PORTS                                                                                  NAMES
+abf59be84b1a   gpustack/gpustack   "/usr/bin/entrypoint…"   6 hours ago   Up 6 hours   0.0.0.0:80->80/tcp, [::]:80->80/tcp, 0.0.0.0:10161->10161/tcp, [::]:10161->10161/tcp   gpustack
+ ```
+### 6.2 INTERGRATEING RAGFLOW WITH GPUSTACK CHAT/EM/RERANK LLM WITH WEBUI
+
+setting->model providers->search->gpustack->add ,configure as follow:
+
+![add vllm](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow-gpustack11.png)
+
+select gpustack chat model as default llm model as follow:
+![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow-gpustack22.png)
 
 
 

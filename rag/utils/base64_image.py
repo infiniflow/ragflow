@@ -64,17 +64,17 @@ async def image2id(d: dict, storage_put_func: partial, objname: str, bucket: str
 
             try:
                 img.save(buf, format="JPEG")
+                buf.seek(0)
+                return buf.getvalue()
             except OSError as e:
                 logging.warning(f"Saving image exception: {e}")
                 return None
-
-            buf.seek(0)
-            if close_after:
-                try:
-                    img.close()
-                except Exception:
-                    pass
-            return buf.getvalue()
+            finally:
+                if close_after:
+                    try:
+                        img.close()
+                    except Exception:
+                        pass
 
     jpeg_binary = await thread_pool_exec(encode_image)
     if jpeg_binary is None:

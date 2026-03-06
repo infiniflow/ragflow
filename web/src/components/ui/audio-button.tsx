@@ -217,8 +217,10 @@ const VoiceInputBox = ({
 };
 export const AudioButton = ({
   onOk,
+  testId,
 }: {
   onOk?: (transcript: string) => void;
+  testId?: string;
 }) => {
   // const [showInputBox, setShowInputBox] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -389,7 +391,7 @@ export const AudioButton = ({
           <div
             className="
             absolute inset-0 rounded-full border-2 border-state-success
-            animate-ping duration-[4s] opacity-75 pointer-events-none"
+            animate-ping opacity-75 pointer-events-none"
           />
         )}
 
@@ -415,6 +417,7 @@ export const AudioButton = ({
               'animate-pulse !bg-state-success/20 text-state-success rounded-full',
           )}
           disabled={isProcessing}
+          data-testid={testId}
         >
           {isProcessing ? (
             <Loader2 size={16} className=" animate-spin" />

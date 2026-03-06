@@ -68,6 +68,11 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     success,
     documentIds,
     secondTitle,
+    testId,
+    okButtonTestId,
+    addButtonTestId,
+    nestedModalTestId,
+    nestedModalOkButtonTestId,
   } = props;
   const { t } = useTranslation();
   const [valueData, setValueData] = useState<IMetaDataTableData>({
@@ -304,6 +309,8 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
         onCancel={hideModal}
         maskClosable={false}
         okText={t('common.save')}
+        testId={testId}
+        okButtonTestId={okButtonTestId}
         onOk={async () => {
           const res = await handleSave({
             callback: hideModal,
@@ -337,6 +344,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                     className="border border-border-button"
                     type="button"
                     onClick={handAddValueRow}
+                    data-testid={addButtonTestId}
                   >
                     <Plus />
                     {t('common.add')}
@@ -426,7 +434,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                         <TableHead>
                           {t('knowledgeDetails.metadata.description')}
                         </TableHead>
-                        <TableHead className="text-right">
+                        <TableHead className="[text-align:end]">
                           {t('knowledgeDetails.metadata.action')}
                         </TableHead>
                       </TableRow>
@@ -451,7 +459,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                               {row.description}
                             </div>
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="[text-align:end]">
                             <Switch
                               checked={builtInSelectionKeys.has(row.field)}
                               onCheckedChange={(checked) => {
@@ -539,7 +547,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
             )}
           </div>
           {metadataType === MetadataType.Manage && (
-            <div className=" absolute bottom-6 left-5 text-text-secondary text-sm">
+            <div className=" absolute bottom-6 start-5 text-text-secondary text-sm">
               {t('knowledgeDetails.metadata.toMetadataSettingTip')}
             </div>
           )}
@@ -571,6 +579,9 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
           isShowValueSwitch={isShowValueSwitch}
           isShowType={true}
           isVerticalShowValue={isVerticalShowValue}
+          testId={nestedModalTestId}
+          okButtonTestId={nestedModalOkButtonTestId}
+          addValueButtonTestId="ds-settings-metadata-add-modal-add-value-btn"
           //   handleDeleteSingleValue={handleDeleteSingleValue}
           //   handleDeleteSingleRow={handleDeleteSingleRow}
         />
