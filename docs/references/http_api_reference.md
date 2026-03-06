@@ -676,9 +676,8 @@ curl --request DELETE \
 
 - `"ids"`: (*Body parameter*), `list[string]` or `null`,   *Required*  
   Specifies the datasets to delete:
-  - If `null`, no datasets will be deleted.
-  - If an array of IDs, only the specified datasets will be deleted.
-  - If an empty array, no datasets will be deleted.
+  - If omitted, or set to `null` or an empty array, no datasets are deleted.
+  - If an array of IDs is provided, only the datasets matching those IDs are deleted.
 
 #### Response
 
@@ -1765,8 +1764,8 @@ curl --request DELETE \
   The associated dataset ID.
 - `"ids"`: (*Body parameter*), `list[string]`  
   The IDs of the documents to delete.
-  - If omitted, `null`, or an empty array, no documents will be deleted.
-  - If an array of IDs is provided, only the specified documents will be deleted.
+  - If omitted, or set to `null` or an empty array, no documents are deleted.
+  - If an array of IDs is provided, only the documents matching those IDs are deleted.
 
 #### Response
 
@@ -2127,8 +2126,8 @@ curl --request DELETE \
   The associated document ID.
 - `"chunk_ids"`: (*Body parameter*), `list[string]`  
   The IDs of the chunks to delete.
-  - If omitted, `null`, or an empty array, no chunks will be deleted.
-  - If an array of IDs is provided, only the specified chunks will be deleted.
+  - If omitted, or set to `null` or an empty array, no chunks are deleted.
+  - If an array of IDs is provided, only the chunks matching those IDs are deleted.
 
 #### Response
 
@@ -2801,8 +2800,8 @@ curl --request DELETE \
 
 - `"ids"`: (*Body parameter*), `list[string]`  
   The IDs of the chat assistants to delete.
-  - If omitted, `null`, or an empty array, no chat assistants will be deleted.
-  - If an array of IDs is provided, only the specified chat assistants will be deleted.
+  - If omitted, or set to `null` or an empty array, no chat assistants are deleted.
+  - If an array of IDs is provided, only the chat assistants matching those IDs are deleted.
 
 #### Response
 
@@ -3181,8 +3180,8 @@ curl --request DELETE \
   The ID of the associated chat assistant.
 - `"ids"`: (*Body Parameter*), `list[string]`  
   The IDs of the sessions to delete.
-  - If omitted, `null`, or an empty array, no sessions will be deleted.
-  - If an array of IDs is provided, only the specified sessions will be deleted.
+  - If omitted, or set to `null` or an empty array, no sessions are deleted.
+  - If an array of IDs is provided, only the sessions matching those IDs are deleted.
 
 #### Response
 
@@ -4547,8 +4546,8 @@ curl --request DELETE \
   The ID of the associated agent.
 - `"ids"`: (*Body Parameter*), `list[string]`  
   The IDs of the sessions to delete.
-  - If omitted, `null`, or an empty array, no sessions will be deleted.
-  - If an array of IDs is provided, only the specified sessions will be deleted.
+  - If omitted, or set to `null` or an empty array, no sessions are deleted.
+  - If an array of IDs is provided, only the sessions matching those IDs are deleted.
 
 #### Response
 
