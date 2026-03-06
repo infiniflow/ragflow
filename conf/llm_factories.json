@@ -6267,6 +6267,14 @@
                     "is_tools": true
                 }
             ]
+        },
+        {
+            "name": "RAGcon",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,TTS,TEXT RE-RANK,SPEECH2TEXT,IMAGE2TEXT",
+            "status": "1",
+            "rank": "100",
+            "llm": []
         }
     ]
 }
