@@ -24,6 +24,13 @@ import sys
 import threading
 import unicodedata
 from collections import Counter, defaultdict
+from deepdoc.parser.garbled_detection import (
+    CID_PATTERN as _CID_PATTERN_MODULE,
+    is_garbled_char as _is_garbled_char_func,
+    is_garbled_text as _is_garbled_text_func,
+    has_subset_font_prefix as _has_subset_font_prefix_func,
+    is_garbled_by_font_encoding as _is_garbled_by_font_encoding_func,
+)
 from copy import deepcopy
 from io import BytesIO
 from timeit import default_timer as timer
@@ -199,161 +206,15 @@ class RAGFlowPdfParser:
         return True
 
     # CID pattern regex for unmapped font characters from pdfminer
-    _CID_PATTERN = re.compile(r"\(cid\s*:\s*\d+\s*\)")
+    _CID_PATTERN = _CID_PATTERN_MODULE
 
-    @staticmethod
-    def _is_garbled_char(ch):
-        """Check if a single character is garbled (unmappable from PDF font encoding).
-
-        A character is considered garbled if it falls into Unicode Private Use Areas
-        or certain replacement/control character ranges that typically indicate
-        pdfminer failed to map a CID to a valid Unicode codepoint.
-
-        Args:
-            ch: A single character string.
-
-        Returns:
-            True if the character appears to be garbled.
-        """
-        if not ch:
-            return False
-        cp = ord(ch)
-        # Unicode Private Use Areas (PUA) — commonly used when ToUnicode mapping is missing
-        if 0xE000 <= cp <= 0xF8FF:
-            return True
-        # Supplementary Private Use Area-A
-        if 0xF0000 <= cp <= 0xFFFFF:
-            return True
-        # Supplementary Private Use Area-B
-        if 0x100000 <= cp <= 0x10FFFF:
-            return True
-        # Unicode replacement character
-        if cp == 0xFFFD:
-            return True
-        # C0/C1 control characters (except common whitespace)
-        if cp < 0x20 and ch not in ('\t', '\n', '\r'):
-            return True
-        if 0x80 <= cp <= 0x9F:
-            return True
-        # Check for Unicode category "unassigned" (Cn) or "surrogate" (Cs)
-        cat = unicodedata.category(ch)
-        if cat in ("Cn", "Cs"):
-            return True
-        return False
-
-    @classmethod
-    def _is_garbled_text(cls, text, threshold=0.5):
-        """Check if a text string contains too many garbled characters.
-
-        Examines each character in the text and determines if the overall
-        proportion of garbled characters exceeds the given threshold.
-        Also detects pdfminer's CID placeholder patterns like '(cid:123)'.
-
-        Args:
-            text: The text string to check.
-            threshold: The ratio of garbled characters above which the text
-                is considered garbled. Defaults to 0.5.
-
-        Returns:
-            True if the text is considered garbled.
-        """
-        if not text or not text.strip():
-            return False
-        # Check for CID patterns from pdfminer
-        if cls._CID_PATTERN.search(text):
-            return True
-        garbled_count = 0
-        total = 0
-        for ch in text:
-            if ch.isspace():
-                continue
-            total += 1
-            if cls._is_garbled_char(ch):
-                garbled_count += 1
-        if total == 0:
-            return False
-        return garbled_count / total >= threshold
-
-    @staticmethod
-    def _has_subset_font_prefix(fontname):
-        """Check if a font name has a subset prefix (e.g. 'DY1+ZLQDm1-1').
-
-        PDF subset fonts use a 6-letter uppercase tag followed by '+' before
-        the actual font name. Some tools use shorter tags (e.g. 'DY1+').
-        """
-        if not fontname:
-            return False
-        return bool(re.match(r"^[A-Z0-9]{2,6}\+", fontname))
-
-    @classmethod
-    def _is_garbled_by_font_encoding(cls, page_chars, min_chars=20):
-        """Detect garbled text caused by broken font encoding mappings.
-
-        Some PDFs (especially older Chinese standards) embed custom fonts that
-        map CJK glyphs to ASCII codepoints. The extracted text appears as
-        random ASCII punctuation/symbols instead of actual CJK characters.
-
-        Detection strategy: if all subset-embedded fonts on a page produce
-        characters that are overwhelmingly ASCII (punctuation, digits, symbols)
-        with virtually no CJK/Hangul/Kana characters, the page is likely
-        garbled due to broken font encoding.
-
-        Args:
-            page_chars: List of pdfplumber character dicts with 'text' and
-                'fontname' keys.
-            min_chars: Minimum number of non-space chars required to trigger
-                detection. Pages with fewer chars are not flagged.
-
-        Returns:
-            True if the page appears to have font-encoding garbled text.
-        """
-        if not page_chars or len(page_chars) < min_chars:
-            return False
-
-        has_subset_font = False
-        total_non_space = 0
-        ascii_punct_sym = 0
-        cjk_like = 0
-
-        for c in page_chars:
-            text = c.get("text", "")
-            fontname = c.get("fontname", "")
-            if not text or text.isspace():
-                continue
-            total_non_space += 1
-
-            if cls._has_subset_font_prefix(fontname):
-                has_subset_font = True
-
-            cp = ord(text[0])
-            # Count CJK Unified Ideographs + Extensions, Hangul, Kana
-            if (0x2E80 <= cp <= 0x9FFF or 0xF900 <= cp <= 0xFAFF
-                    or 0x20000 <= cp <= 0x2FA1F
-                    or 0xAC00 <= cp <= 0xD7AF
-                    or 0x3040 <= cp <= 0x30FF):
-                cjk_like += 1
-            # Count ASCII punctuation and symbols (0x21-0x2F, 0x3A-0x40,
-            # 0x5B-0x60, 0x7B-0x7E)
-            elif (0x21 <= cp <= 0x2F or 0x3A <= cp <= 0x40
-                    or 0x5B <= cp <= 0x60 or 0x7B <= cp <= 0x7E):
-                ascii_punct_sym += 1
-
-        if total_non_space < min_chars:
-            return False
-
-        # Must have at least one subset-embedded font
-        if not has_subset_font:
-            return False
-
-        # If there are essentially no CJK characters and the majority of
-        # characters are ASCII punctuation/symbols, this is likely garbled
-        # text from broken font encoding.
-        cjk_ratio = cjk_like / total_non_space
-        punct_ratio = ascii_punct_sym / total_non_space
-        if cjk_ratio < 0.05 and punct_ratio > 0.4:
-            return True
-
-        return False
+    # Delegate garbled-text detection to the lightweight
+    # deepdoc.parser.garbled_detection module so that unit tests can
+    # import the same logic without pulling in heavy dependencies.
+    _is_garbled_char = staticmethod(_is_garbled_char_func)
+    _is_garbled_text = staticmethod(_is_garbled_text_func)
+    _has_subset_font_prefix = staticmethod(_has_subset_font_prefix_func)
+    _is_garbled_by_font_encoding = staticmethod(_is_garbled_by_font_encoding_func)
 
     def _evaluate_table_orientation(self, table_img, sample_ratio=0.3):
         """
@@ -1592,7 +1453,7 @@ class RAGFlowPdfParser:
                         if not page_ch:
                             continue
                         # Strategy 1: PUA / CID garbling
-                        sample = page_ch if len(page_ch) <= 200 else random.sample(page_ch, 200)
+                        sample = page_ch if len(page_ch) <= 200 else page_ch[:200]
                         sample_text = "".join(c.get("text", "") for c in sample)
                         if self._is_garbled_text(sample_text, threshold=0.3):
                             logging.warning(
