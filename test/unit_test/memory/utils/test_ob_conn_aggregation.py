@@ -20,8 +20,6 @@ Tests the pure aggregation logic used by OBConnection.get_aggregation,
 without requiring a real OceanBase instance or heavy dependencies.
 """
 
-import pytest
-
 from memory.utils.aggregation_utils import aggregate_by_field
 
 
