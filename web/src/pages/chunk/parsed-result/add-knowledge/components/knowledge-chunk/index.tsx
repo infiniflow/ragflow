@@ -23,14 +23,7 @@ import DocumentPreview from '@/components/document-preview';
 import DocumentHeader from '@/components/document-preview/document-header';
 import { useGetDocumentUrl } from '@/components/document-preview/hooks';
 import { PageHeader } from '@/components/page-header';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
+import { Button } from '@/components/ui/button';
 import message from '@/components/ui/message';
 import {
   RAGFlowPagination,
@@ -42,6 +35,7 @@ import {
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
+import { LucideArrowBigLeft } from 'lucide-react';
 import styles from './index.module.less';
 
 const Chunk = () => {
@@ -182,29 +176,15 @@ const Chunk = () => {
   return (
     <>
       <PageHeader>
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink onClick={navigateToDatasetList}>
-                {t('knowledgeDetails.dataset')}
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbLink
-                onClick={navigateToDataFile(
-                  getQueryString(QueryStringMap.id) as string,
-                )}
-              >
-                {dataset.name}
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>{documentInfo?.name}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+        <Button
+          variant="outline"
+          onClick={navigateToDataFile(
+            getQueryString(QueryStringMap.id) as string,
+          )}
+        >
+          <LucideArrowBigLeft />
+          {t('common.back')}
+        </Button>
       </PageHeader>
       <div className={styles.chunkPage}>
         <div className="flex flex-1 gap-8">

@@ -142,6 +142,7 @@ export default {
         action: '操作',
       },
       config: {
+        descriptionPlaceholder: '描述你的记忆',
         memorySizeTooltip: `记录每条消息的内容 + 其嵌入向量（≈ 内容 + 维度 × 8 字节）。
 例如：一条带有 1024 维嵌入的 1 KB 消息大约使用 9 KB。5 MB 的默认限制大约可容纳 500 条此类消息。`,
         avatar: '头像',
@@ -386,6 +387,10 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      randomSeedTip:
+        '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
+      datasetDescription: '你的数据集描述。',
+      overlappedPercentTip: '相邻两个块之间的重叠百分比',
       settings: '设置',
       autoMetadataTip:
         '自动生成元数据。适用于解析新文件。现有文件需要重新解析才能更新（chunk将保留）。请注意，配置中指定的索引模型将消耗额外的 Token。',
@@ -698,17 +703,26 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       assistantAvatar: '助理头像',
       language: '语言',
       emptyResponse: '空回复',
+      emptyResponsePlaceholder: '在数据集中未找到您要寻找的答案！',
       emptyResponseTip: `如果在知识库中没有检索到用户的问题，它将使用它作为答案。 如果您希望 LLM 在未检索到任何内容时提出自己的意见，请将此留空。`,
       emptyResponseMessage: `当知识库中未检索到任何相关信息时，将触发空响应。由于未选择任何知识库，因此请清除“空响应”。`,
       setAnOpener: '设置开场白',
       setAnOpenerInitial: `你好！ 我是你的助理，有什么可以帮到你的吗？`,
       setAnOpenerTip: '您想如何欢迎您的客户？',
       knowledgeBases: '知识库',
+      knowledgeBasesPlaceholder: '请选择',
       knowledgeBasesMessage: '请选择',
       knowledgeBasesTip:
         '选择关联的知识库。新建或空知识库不会在下拉菜单中显示。',
       system: '系统提示词',
-      systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
+      systemPlaceholder: `你是一个智能助手，主要功能是基于提供的知识库严格回答问题。
+
+**重要规则:**
+  - 你的回答必须**仅**来自此数据集：{knowledge}。
+  - **当信息可用时**: 总结内容以给出详细答案。
+  - **当信息不可用时**: 你的回答必须包含这句确切的话："在知识库中未找到您要的答案！"
+  - **始终考虑**整个对话历史。`,
+      systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括"知识库中未找到您要的答案！"这句话。回答需要考虑聊天历史。
         以下是知识库：
         {knowledge}
         以上是知识库。`,
@@ -802,8 +816,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '在多轮对话时，对查询问题根据上下文进行优化。会调用大模型额外消耗 token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
-      descriptionPlaceholder:
-        '例如 你是一个专业的简历助手，只能回答简历的问题。',
+      descriptionPlaceholder: '我是一个聊天助手。',
       useKnowledgeGraph: '使用知识图谱',
       useKnowledgeGraphTip:
         '是否检索与所选知识库对应的知识图谱相关文本块，以处理复杂的多跳问题？这一过程将涉及对实体、关系和社区报告文本块的多次检索，会显著延长检索时间。',
@@ -817,6 +830,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tavilyApiKeyMessage: '请输入你的 Tavily API Key',
       tavilyApiKeyHelp: '如何获取？',
       crossLanguage: '跨语言搜索',
+      crossLanguagePlaceholder: '请选择',
       crossLanguageTip: `选择一种或多种语言进行跨语言搜索。如果未选择任何语言，系统将使用原始查询进行搜索。`,
       metadata: '元数据',
       metadataTip:
@@ -991,6 +1005,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL。',
       tongyiBaseUrlTip:
         '对于中国用户，不需要填写或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。对于国际用户，使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1。',
+      siliconBaseUrlTip:
+        '对于中国用户，不需要填写或使用 https://api.siliconflow.cn/v1。对于国际用户，使用 https://api.siliconflow.com/v1。',
       tongyiBaseUrlPlaceholder: '(仅国际用户需要)',
       minimaxBaseUrlTip: '仅国际用户：使用 https://api.minimax.io/v1。',
       minimaxBaseUrlPlaceholder: '(仅国际用户填写 https://api.minimax.io/v1)',
@@ -1209,6 +1225,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      preprocess: {
+        preprocess: '预处理',
+        mainContent: '主内容',
+        abstract: '摘要',
+        author: '作者',
+        sectionTitle: '章节标题',
+      },
       autoPlay: '自动播放',
       downloadFileTypeTip: '文件下载的类型',
       downloadFileType: '文件类型',

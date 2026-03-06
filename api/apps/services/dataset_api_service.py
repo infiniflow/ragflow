@@ -79,20 +79,8 @@ async def delete_datasets(tenant_id: str, ids: list = None):
     :return: (success, result) or (success, error_message)
     """
     kb_id_instance_pairs = []
-    if ids is None:
-        kbs = KnowledgebaseService.query(tenant_id=tenant_id)
-        for kb in kbs:
-            kb_id_instance_pairs.append((kb.id, kb))
-    else:
-        error_kb_ids = []
-        for kb_id in ids:
-            kb = KnowledgebaseService.get_or_none(id=kb_id, tenant_id=tenant_id)
-            if kb is None:
-                error_kb_ids.append(kb_id)
-                continue
-            kb_id_instance_pairs.append((kb_id, kb))
-        if len(error_kb_ids) > 0:
-            return False, f"User '{tenant_id}' lacks permission for datasets: '{', '.join(error_kb_ids)}'"
+    if ids is None or len(ids) == 0:
+        return True, {"success_count": 0}
 
     errors = []
     success_count = 0

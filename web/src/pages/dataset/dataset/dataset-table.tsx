@@ -151,6 +151,8 @@ export function DatasetTable({
             table.getRowModel().rows.map((row) => (
               <TableRow
                 key={row.id}
+                data-testid="document-row"
+                data-doc-name={row.original.name}
                 data-state={row.getIsSelected() && 'selected'}
                 className="group"
               >

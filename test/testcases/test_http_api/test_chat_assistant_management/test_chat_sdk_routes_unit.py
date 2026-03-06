@@ -44,9 +44,10 @@ class _AwaitableValue:
 
 
 class _DummyKB:
-    def __init__(self, embd_id="embd@factory", chunk_num=1):
+    def __init__(self, embd_id="embd@factory", chunk_num=1, tenant_embd_id=1):
         self.embd_id = embd_id
         self.chunk_num = chunk_num
+        self.tenant_embd_id = tenant_embd_id
 
     def to_json(self):
         return {"id": "kb-1"}
@@ -297,6 +298,15 @@ def test_update_internal_failure_paths(monkeypatch):
 @pytest.mark.p2
 def test_delete_duplicate_no_success_path(monkeypatch):
     module = _load_chat_module(monkeypatch)
+
+    _set_request_json(monkeypatch, module, {})
+    monkeypatch.setattr(
+        module.DialogService,
+        "query",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("query must not run for empty delete payload")),
+    )
+    res = _run(module.delete_chats.__wrapped__("tenant-1"))
+    assert res["code"] == module.RetCode.SUCCESS
 
     _set_request_json(monkeypatch, module, {"ids": ["chat-1", "chat-1"]})
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])

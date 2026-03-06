@@ -122,15 +122,18 @@ export function KnowledgeBaseFormField({
           </FormLabel>
           <FormControl>
             <MultiSelect
+              data-testid="chat-datasets-combobox"
               options={options}
               onValueChange={(value) => {
                 handleDatasetSelectChange(value, field.onChange);
               }}
-              placeholder={t('chat.knowledgeBasesMessage')}
+              placeholder={t('chat.knowledgeBasesPlaceholder')}
               variant="inverted"
               maxCount={100}
               defaultValue={field.value}
               showSelectAll={false}
+              popoverTestId="datasets-options"
+              optionTestIdPrefix="datasets"
               {...field}
             />
           </FormControl>

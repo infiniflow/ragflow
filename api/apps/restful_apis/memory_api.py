@@ -20,9 +20,10 @@ import time
 from quart import request
 from common.constants import RetCode
 from common.exceptions import ArgumentException, NotFoundException
-from api.apps import login_required
+from api.apps import login_required, current_user
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
 from api.apps.services import memory_api_service
+from api.utils.tenant_utils import ensure_tenant_model_id_for_params
 
 
 @manager.route("/memories", methods=["POST"])  # noqa: F821
@@ -32,13 +33,16 @@ async def create_memory():
     timing_enabled = os.getenv("RAGFLOW_API_TIMING")
     t_start = time.perf_counter() if timing_enabled else None
     req = await get_request_json()
+    req = ensure_tenant_model_id_for_params(current_user.id, req)
     t_parsed = time.perf_counter() if timing_enabled else None
     try:
         memory_info = {
             "name": req["name"],
             "memory_type": req["memory_type"],
             "embd_id": req["embd_id"],
-            "llm_id": req["llm_id"]
+            "llm_id": req["llm_id"],
+            "tenant_embd_id": req["tenant_embd_id"],
+            "tenant_llm_id": req["tenant_llm_id"],
         }
         success, res = await memory_api_service.create_memory(memory_info)
         if timing_enabled:
@@ -85,7 +89,7 @@ async def update_memory(memory_id):
     req = await get_request_json()
     new_settings = {k: req[k] for k in [
         "name", "permissions", "llm_id", "embd_id", "memory_type", "memory_size", "forgetting_policy", "temperature",
-        "avatar", "description", "system_prompt", "user_prompt"
+        "avatar", "description", "system_prompt", "user_prompt", "tenant_llm_id", "tenant_embd_id"
     ] if k in req}
     try:
         success, res = await memory_api_service.update_memory(memory_id, new_settings)
