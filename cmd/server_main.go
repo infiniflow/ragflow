@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/signal"
 	"ragflow/internal/server"
+	"ragflow/internal/utility"
+	"strings"
 	"syscall"
 	"time"
 
@@ -154,6 +156,14 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
+		logger.Info(
+			"\n        ____   ___    ______ ______ __\n" +
+				"       / __ \\ /   |  / ____// ____// /____  _      __\n" +
+				"      / /_/ // /| | / / __ / /_   / // __ \\| | /| / /\n" +
+				"     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /\n" +
+				"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
+		)
+		logger.Info(fmt.Sprintf("Version: %s", utility.GetRAGFlowVersion()))
 		logger.Info(fmt.Sprintf("Server starting on port: %d", cfg.Server.Port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatal("Failed to start server", zap.Error(err))
@@ -165,7 +175,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
 	sig := <-quit
 
-	logger.Info("Received signal", zap.String("signal", sig.String()))
+	logger.Info(fmt.Sprintf("Receives %s signal to shutdown server", strings.ToUpper(sig.String())))
 	logger.Info("Shutting down server...")
 
 	// Create context with timeout for graceful shutdown

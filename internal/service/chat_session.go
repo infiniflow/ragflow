@@ -139,7 +139,7 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 		UserID:    &userID,
 		Reference: referenceJSON,
 	}
-	session.CreateTime = createTime
+	session.CreateTime = &createTime
 	session.CreateDate = &now
 	session.UpdateTime = &createTime
 	session.UpdateDate = &now

@@ -141,12 +141,12 @@ class TestSessionWithChatAssistantDelete:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message, remaining",
         [
-            pytest.param(None, 0, """TypeError("argument of type \'NoneType\' is not iterable")""", 0, marks=pytest.mark.skip),
+            pytest.param(None, 0, "", 5, marks=pytest.mark.p3),
             pytest.param({"ids": ["invalid_id"]}, 102, "The chat doesn't own the session invalid_id", 5, marks=pytest.mark.p3),
             pytest.param("not json", 100, """AttributeError("\'str\' object has no attribute \'get\'")""", 5, marks=pytest.mark.skip),
             pytest.param(lambda r: {"ids": r[:1]}, 0, "", 4, marks=pytest.mark.p3),
             pytest.param(lambda r: {"ids": r}, 0, "", 0, marks=pytest.mark.p1),
-            pytest.param({"ids": []}, 0, "", 0, marks=pytest.mark.p3),
+            pytest.param({"ids": []}, 0, "", 5, marks=pytest.mark.p3),
         ],
     )
     def test_basic_scenarios(

@@ -6,7 +6,7 @@ import {
   useGetChatSearchParams,
 } from '@/hooks/use-chat-request';
 import { IClientConversation } from '@/interfaces/database/chat';
-import { NextLayoutContainer } from '@/layouts/next';
+import { RootLayoutContainer } from '@/layouts/root-layout';
 import { cn } from '@/lib/utils';
 import { useMount } from 'ahooks';
 import { isEmpty } from 'lodash';
@@ -40,8 +40,11 @@ export default function Chat() {
   const { data: dialogList } = useFetchConversationList();
 
   const currentConversationName = useMemo(() => {
-    return dialogList.find((x) => x.id === conversationId)?.name;
-  }, [conversationId, dialogList]);
+    return (
+      dialogList.find((x) => x.id === conversationId)?.name ||
+      t('chat.newConversation')
+    );
+  }, [conversationId, dialogList, t]);
 
   const fetchConversation: typeof handleConversationCardClick = useCallback(
     async (conversationId, isNew) => {
@@ -103,7 +106,7 @@ export default function Chat() {
   }
 
   return (
-    <NextLayoutContainer>
+    <RootLayoutContainer>
       <section className="h-full flex flex-col" data-testid="chat-detail">
         <article className="flex flex-1 min-h-0 pb-9">
           <Sessions handleConversationCardClick={handleSessionClick}></Sessions>
@@ -143,6 +146,6 @@ export default function Chat() {
           </Card>
         </article>
       </section>
-    </NextLayoutContainer>
+    </RootLayoutContainer>
   );
 }

@@ -727,7 +727,9 @@ async def delete(tenant_id, dataset_id):
               type: array
               items:
                 type: string
-              description: List of document IDs to delete.
+              description: |
+                List of document IDs to delete.
+                If omitted, `null`, or an empty array is provided, no documents will be deleted.
       - in: header
         name: Authorization
         type: string
@@ -743,16 +745,13 @@ async def delete(tenant_id, dataset_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
     req = await get_request_json()
     if not req:
-        doc_ids = None
-    else:
-        doc_ids = req.get("ids")
+        return get_result()
+
+    doc_ids = req.get("ids")
     if not doc_ids:
-        doc_list = []
-        docs = DocumentService.query(kb_id=dataset_id)
-        for doc in docs:
-            doc_list.append(doc.id)
-    else:
-        doc_list = doc_ids
+        return get_result()
+
+    doc_list = doc_ids
 
     unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_list, "document")
     doc_list = unique_doc_ids
@@ -1318,7 +1317,9 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
               type: array
               items:
                 type: string
-              description: List of chunk IDs to remove.
+              description: |
+                List of chunk IDs to remove.
+                If omitted, `null`, or an empty array is provided, no chunks will be deleted.
       - in: header
         name: Authorization
         type: string
@@ -1336,17 +1337,20 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     if not docs:
         raise LookupError(f"Can't find the document with ID {document_id}!")
     req = await get_request_json()
+    if not req:
+        return get_result()
+
+    chunk_ids = req.get("chunk_ids")
+    if not chunk_ids:
+        return get_result()
+
     condition = {"doc_id": document_id}
-    if "chunk_ids" in req:
-        unique_chunk_ids, duplicate_messages = check_duplicate_ids(req["chunk_ids"], "chunk")
-        condition["id"] = unique_chunk_ids
-    else:
-        unique_chunk_ids = []
-        duplicate_messages = []
+    unique_chunk_ids, duplicate_messages = check_duplicate_ids(chunk_ids, "chunk")
+    condition["id"] = unique_chunk_ids
     chunk_number = settings.docStoreConn.delete(condition, search.index_name(tenant_id), dataset_id)
     if chunk_number != 0:
         DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
-    if "chunk_ids" in req and chunk_number != len(unique_chunk_ids):
+    if chunk_number != len(unique_chunk_ids):
         if len(unique_chunk_ids) == 0:
             return get_result(message=f"deleted {chunk_number} chunks")
         return get_error_data_result(message=f"rm_chunk deleted chunks {chunk_number}, expect {len(unique_chunk_ids)}")

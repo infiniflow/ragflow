@@ -25,7 +25,7 @@ type Connector struct {
 	Name          string     `gorm:"column:name;size:128;not null" json:"name"`
 	Source        string     `gorm:"column:source;size:128;not null;index" json:"source"`
 	InputType     string     `gorm:"column:input_type;size:128;not null;index" json:"input_type"`
-	Config        JSONMap    `gorm:"column:config;type:json;not null;default:'{}'" json:"config"`
+	Config        JSONMap    `gorm:"column:config;type:longtext;not null" json:"config"`
 	RefreshFreq   int64      `gorm:"column:refresh_freq;default:0" json:"refresh_freq"`
 	PruneFreq     int64      `gorm:"column:prune_freq;default:0" json:"prune_freq"`
 	TimeoutSecs   int64      `gorm:"column:timeout_secs;default:3600" json:"timeout_secs"`
@@ -62,7 +62,7 @@ type SyncLogs struct {
 	NewDocsIndexed       int64      `gorm:"column:new_docs_indexed;default:0" json:"new_docs_indexed"`
 	TotalDocsIndexed     int64      `gorm:"column:total_docs_indexed;default:0" json:"total_docs_indexed"`
 	DocsRemovedFromIndex int64      `gorm:"column:docs_removed_from_index;default:0" json:"docs_removed_from_index"`
-	ErrorMsg             string     `gorm:"column:error_msg;type:longtext;not null;default:''" json:"error_msg"`
+	ErrorMsg             string     `gorm:"column:error_msg;type:longtext;not null" json:"error_msg"`
 	ErrorCount           int64      `gorm:"column:error_count;default:0" json:"error_count"`
 	FullExceptionTrace   *string    `gorm:"column:full_exception_trace;type:longtext" json:"full_exception_trace,omitempty"`
 	TimeStarted          *time.Time `gorm:"column:time_started;index" json:"time_started,omitempty"`

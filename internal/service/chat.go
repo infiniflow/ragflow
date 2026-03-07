@@ -460,7 +460,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 			KBIDs:                  kbIDsJSON,
 			Status:                 strPtr("1"),
 		}
-		chat.CreateTime = createTime
+		chat.CreateTime = &createTime
 		chat.CreateDate = &now
 		chat.UpdateTime = &createTime
 		chat.UpdateDate = &now

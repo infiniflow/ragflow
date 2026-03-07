@@ -95,7 +95,7 @@ class TestDatasetsDelete:
         client.delete_datasets(**payload)
 
         datasets = client.list_datasets()
-        assert len(datasets) == 0, str(datasets)
+        assert len(datasets) == 3, str(datasets)
 
     @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")

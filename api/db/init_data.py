@@ -314,7 +314,7 @@ def fix_empty_tenant_model_id():
                     if tenant_model:
                         update_dict.update({f"tenant_{key}": tenant_model.id})
             if update_dict:
-                update_dict += TenantService.update_by_id(tenant_dict["id"], update_dict)
+                update_cnt += TenantService.update_by_id(tenant_dict["id"], update_dict)
         logging.info(f"Update {update_cnt} tenant_model_id in table tenant.")
     logging.info("Fix empty tenant_model_id done.")
 

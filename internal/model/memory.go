@@ -25,7 +25,9 @@ type Memory struct {
 	MemoryType       int64   `gorm:"column:memory_type;default:1;index" json:"memory_type"`
 	StorageType      string  `gorm:"column:storage_type;size:32;not null;default:table;index" json:"storage_type"`
 	EmbdID           string  `gorm:"column:embd_id;size:128;not null" json:"embd_id"`
+	TenantEmbdID     *int64  `gorm:"column:tenant_embd_id;index" json:"tenant_embd_id,omitempty"`
 	LLMID            string  `gorm:"column:llm_id;size:128;not null" json:"llm_id"`
+	TenantLLMID      *int64  `gorm:"column:tenant_llm_id;index" json:"tenant_llm_id,omitempty"`
 	Permissions      string  `gorm:"column:permissions;size:16;not null;default:me;index" json:"permissions"`
 	Description      *string `gorm:"column:description;type:longtext" json:"description,omitempty"`
 	MemorySize       int64   `gorm:"column:memory_size;default:5242880;not null" json:"memory_size"`

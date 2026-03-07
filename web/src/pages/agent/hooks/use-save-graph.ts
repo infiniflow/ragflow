@@ -21,13 +21,22 @@ export const useSaveGraph = (showMessage: boolean = true) => {
   const saveGraph = useCallback(
     async (
       currentNodes?: RAGFlowNodeType[],
-      otherParam?: { globalVariables: Record<string, GlobalVariableType> },
+      otherParam?: {
+        globalVariables: Record<string, GlobalVariableType>;
+      },
+      release?: boolean,
     ) => {
-      return setAgent({
+      const params: Record<string, any> = {
         id,
         title: data.title,
         dsl: buildDslData(currentNodes, otherParam),
-      });
+      };
+
+      if (release) {
+        params.release = 'true';
+      }
+
+      return setAgent(params);
     },
     [setAgent, data, id, buildDslData],
   );

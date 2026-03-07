@@ -63,4 +63,4 @@ class TestMetadataBatchUpdate:
             assert doc["meta_fields"].get("status") == "processed", f"Expected status='processed', got {doc['meta_fields'].get('status')}"
 
         # Cleanup
-        delete_documents(HttpApiAuth, dataset_id, {"ids": None})
+        delete_documents(HttpApiAuth, dataset_id, {"ids": document_ids})

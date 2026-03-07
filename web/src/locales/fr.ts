@@ -680,6 +680,8 @@ export default {
       modelsToBeAddedTooltip:
         'Si votre fournisseur de modèle n\'est pas listé mais prétend être "compatible OpenAI", sélectionnez la carte compatible OpenAI-API pour ajouter le(s) modèle(s) pertinent(s).',
       mcp: 'MCP',
+      dingtalkAITableDescription:
+        'Connectez-vous à Dingtalk AI Table et synchronisez les enregistrements d\'une table spécifiée.',
     },
     message: {
       registered: 'Enregistré !',

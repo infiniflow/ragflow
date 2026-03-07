@@ -19,6 +19,7 @@ from common import (
     create_agent,
     create_agent_session,
     delete_agent,
+    delete_all_agent_sessions,
     delete_agent_sessions,
     list_agent_sessions,
     list_agents,
@@ -67,7 +68,7 @@ def agent_id(HttpApiAuth, request):
     agent_id = res["data"][0]["id"]
 
     def cleanup():
-        delete_agent_sessions(HttpApiAuth, agent_id)
+        delete_all_agent_sessions(HttpApiAuth, agent_id)
         delete_agent(HttpApiAuth, agent_id)
 
     request.addfinalizer(cleanup)
@@ -75,6 +76,19 @@ def agent_id(HttpApiAuth, request):
 
 
 class TestAgentSessions:
+    @pytest.mark.p2
+    def test_delete_agent_sessions_empty_ids_noop(self, HttpApiAuth, agent_id):
+        res = create_agent_session(HttpApiAuth, agent_id, payload={})
+        assert res["code"] == 0, res
+        session_id = res["data"]["id"]
+
+        res = delete_agent_sessions(HttpApiAuth, agent_id, {"ids": []})
+        assert res["code"] == 0, res
+
+        res = list_agent_sessions(HttpApiAuth, agent_id, params={"id": session_id})
+        assert res["code"] == 0, res
+        assert len(res["data"]) == 1, res
+
     @pytest.mark.p2
     def test_create_list_delete_agent_sessions(self, HttpApiAuth, agent_id):
         res = create_agent_session(HttpApiAuth, agent_id, payload={})

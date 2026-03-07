@@ -24,8 +24,8 @@ type MCPServer struct {
 	URL         string  `gorm:"column:url;size:2048;not null" json:"url"`
 	ServerType  string  `gorm:"column:server_type;size:32;not null" json:"server_type"`
 	Description *string `gorm:"column:description;type:longtext" json:"description,omitempty"`
-	Variables   JSONMap `gorm:"column:variables;type:json;default:'{}'" json:"variables,omitempty"`
-	Headers     JSONMap `gorm:"column:headers;type:json;default:'{}'" json:"headers,omitempty"`
+	Variables   JSONMap `gorm:"column:variables;type:longtext" json:"variables,omitempty"`
+	Headers     JSONMap `gorm:"column:headers;type:longtext" json:"headers,omitempty"`
 	BaseModel
 }
 

@@ -639,6 +639,8 @@ export default {
       sureQuit: 'Tem certeza de que deseja sair da equipe que você ingressou?',
       modelsToBeAddedTooltip:
         'Se o seu provedor de modelo não estiver listado, mas afirmar ser compatível com a OpenAI, selecione o card OpenAI-API-compatible para adicionar o(s) modelo(s) relevante(s). ',
+      dingtalkAITableDescription:
+        'Conecte-se ao Dingtalk AI Table e sincronize registros de uma tabela especificada.',
     },
     message: {
       registered: 'Registrado!',

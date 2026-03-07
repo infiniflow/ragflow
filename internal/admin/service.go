@@ -94,7 +94,7 @@ type UserInfo struct {
 	Email      string
 	Nickname   string
 	IsActive   string
-	CreateTime int64
+	CreateTime *int64
 	UpdateTime *int64
 }
 

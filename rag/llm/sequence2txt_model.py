@@ -376,3 +376,48 @@ class ZhipuSeq2txt(Base):
                     return f"**ERROR**: code: {error['code']}, message: {error['message']}", 0
             except Exception as e:
                 return "**ERROR**: " + str(e), 0
+
+
+class RAGconSeq2txt(Base):
+    """
+    RAGcon Sequence2Text Provider - routes through LiteLLM proxy
+    
+    Speech-to-text models routed through LiteLLM.
+    Default Base URL: https://connect.ragcon.com/v1
+    """
+    _FACTORY_NAME = "RAGcon"
+    
+    def __init__(self, key, model_name, base_url=None, lang="English", **kwargs):
+        # Use provided base_url or fallback to default
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+        
+        self.base_url = base_url
+        self.model_name = model_name
+        self.key = key
+        self.lang = lang
+        
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
+    
+    def transcription(self, audio_path, **kwargs):
+        """
+        Transcribe audio file using RAGcon's OpenAI-compatible API.
+        Uses Whisper's automatic language detection for German and English audio.
+        
+        Args:
+            audio_path: Path to the audio file
+            **kwargs: Additional parameters (currently unused but maintained for compatibility)
+        
+        Returns:
+            tuple: (transcribed_text, token_count)
+        """
+        with open(audio_path, "rb") as audio_file:
+            # Call RAGcon API - Whisper will auto-detect language
+            transcription = self.client.audio.transcriptions.create(
+                model=self.model_name,
+                file=audio_file
+            )
+        
+        # Return text and token count
+        text = transcription.text.strip()
+        return text, num_tokens_from_string(text)

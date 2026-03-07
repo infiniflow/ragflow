@@ -199,6 +199,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
         """Initialize PaddleOCR parser."""
         super().__init__()
 
+        self.outlines = []
         self.api_url = api_url.rstrip("/") if api_url else os.getenv("PADDLEOCR_API_URL", "")
         self.access_token = access_token or os.getenv("PADDLEOCR_ACCESS_TOKEN")
         self.algorithm = algorithm

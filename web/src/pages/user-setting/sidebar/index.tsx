@@ -1,6 +1,6 @@
 import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import ThemeToggle from '@/components/theme-toggle';
+import ThemeSwitch from '@/components/theme-switch';
 import { Button } from '@/components/ui/button';
 import { Domain } from '@/constants/common';
 import { useSecondPathName } from '@/hooks/route-hook';
@@ -103,15 +103,10 @@ export function SideBar() {
           <div className="mr-2 px-2 text-accent-primary rounded-md">
             {version}
           </div>
-          <ThemeToggle />
+          <ThemeSwitch />
         </div>
-        <Button
-          variant="ghost"
-          className="w-full gap-3 bg-bg-base border border-border-button"
-          onClick={() => {
-            logout();
-          }}
-        >
+
+        <Button block size="lg" variant="transparent" onClick={() => logout()}>
           {t('setting.logout')}
         </Button>
       </div>

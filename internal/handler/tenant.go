@@ -58,10 +58,11 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 		return
 	}
 	// Get user by token
-	user, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Invalid access token",
+			"code":    code,
+			"message": err.Error(),
 		})
 		return
 	}
@@ -109,11 +110,11 @@ func (h *TenantHandler) TenantList(c *gin.Context) {
 	}
 
 	// Get user by token
-	user, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
+			"code":    code,
+			"message": err.Error(),
 		})
 		return
 	}

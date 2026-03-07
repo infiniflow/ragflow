@@ -692,6 +692,10 @@ class TestDocRoutesUnit:
         assert "don't own the dataset" in res["message"]
 
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
+        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
+        res = _run(module.delete.__wrapped__("tenant-1", "ds-1"))
+        assert res["code"] == module.RetCode.SUCCESS
+
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"ids": ["doc-1"]}))
         monkeypatch.setattr(module, "check_duplicate_ids", lambda ids, _kind: (ids, []))
         monkeypatch.setattr(module.FileService, "get_root_folder", lambda _tenant: {"id": "pf-1"})
@@ -871,7 +875,11 @@ class TestDocRoutesUnit:
 
         monkeypatch.setattr(module.DocumentService, "get_by_ids", lambda _ids: [_DummyDoc()])
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
-        _patch_docstore(monkeypatch, module, delete=lambda *_args, **_kwargs: 2)
+        _patch_docstore(
+            monkeypatch,
+            module,
+            delete=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("delete must not run for empty chunk ids")),
+        )
         monkeypatch.setattr(module.DocumentService, "decrement_chunk_num", lambda *_args, **_kwargs: None)
         res = _run(module.rm_chunk.__wrapped__("tenant-1", "ds-1", "doc-1"))
         assert res["code"] == 0

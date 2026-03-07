@@ -44,8 +44,8 @@ class TestChatAssistantsDelete:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message, remaining",
         [
-            pytest.param(None, 0, "", 0, marks=pytest.mark.p3),
-            pytest.param({"ids": []}, 0, "", 0, marks=pytest.mark.p3),
+            pytest.param(None, 0, "", 5, marks=pytest.mark.p3),
+            pytest.param({"ids": []}, 0, "", 5, marks=pytest.mark.p3),
             pytest.param({"ids": ["invalid_id"]}, 102, "Assistant(invalid_id) not found.", 5, marks=pytest.mark.p3),
             pytest.param({"ids": ["\n!?。；！？\"'"]}, 102, """Assistant(\n!?。；！？"\') not found.""", 5, marks=pytest.mark.p3),
             pytest.param("not json", 100, "AttributeError(\"'str' object has no attribute 'get'\")", 5, marks=pytest.mark.p3),

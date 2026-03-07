@@ -8,7 +8,7 @@ dependencies = [
     "fastapi>=0.115.12",
     "httpx>=0.28.1",
     "pydantic>=2.11.4",
-    "requests>=2.32.3",
+    "requests>=2.32.4",
     "slowapi>=0.1.9",
     "uvicorn>=0.34.2",
 ]

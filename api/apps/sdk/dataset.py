@@ -202,10 +202,8 @@ async def delete(tenant_id):
               items:
                 type: string
               description: |
-                Specifies the datasets to delete:
-                - If `null`, all datasets will be deleted.
-                - If an array of IDs, only the specified datasets will be deleted.
-                - If an empty array, no datasets will be deleted.
+                List of dataset IDs to delete.
+                If `null` or an empty array is provided, no datasets will be deleted.
     responses:
       200:
         description: Successful operation.
@@ -218,22 +216,19 @@ async def delete(tenant_id):
 
     try:
         kb_id_instance_pairs = []
-        if req["ids"] is None:
-            kbs = KnowledgebaseService.query(tenant_id=tenant_id)
-            for kb in kbs:
-                kb_id_instance_pairs.append((kb.id, kb))
+        if req["ids"] is None or len(req["ids"]) == 0:
+            return get_result()
 
-        else:
-            error_kb_ids = []
-            for kb_id in req["ids"]:
-                kb = KnowledgebaseService.get_or_none(id=kb_id, tenant_id=tenant_id)
-                if kb is None:
-                    error_kb_ids.append(kb_id)
-                    continue
-                kb_id_instance_pairs.append((kb_id, kb))
-            if len(error_kb_ids) > 0:
-                return get_error_permission_result(
-                    message=f"""User '{tenant_id}' lacks permission for datasets: '{", ".join(error_kb_ids)}'""")
+        error_kb_ids = []
+        for kb_id in req["ids"]:
+            kb = KnowledgebaseService.get_or_none(id=kb_id, tenant_id=tenant_id)
+            if kb is None:
+                error_kb_ids.append(kb_id)
+                continue
+            kb_id_instance_pairs.append((kb_id, kb))
+        if len(error_kb_ids) > 0:
+            return get_error_permission_result(
+                message=f"""User '{tenant_id}' lacks permission for datasets: '{", ".join(error_kb_ids)}'""")
 
         errors = []
         success_count = 0

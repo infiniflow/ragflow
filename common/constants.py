@@ -138,6 +138,7 @@ class FileSource(StrEnum):
     SEAFILE = "seafile"
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"
+    DINGTALK_AI_TABLE = "dingtalk_ai_table"
 
 
 class PipelineTaskType(StrEnum):

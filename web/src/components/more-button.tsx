@@ -9,10 +9,10 @@ export const MoreButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <Button
         ref={ref}
         variant="ghost"
-        size={size || 'icon'}
+        size={size || 'icon-xs'}
         className={cn(
-          'invisible size-3.5 bg-transparent group-hover:bg-transparent',
-          'group-focus-within:visible group-hover:visible aria-expanded:visible',
+          'opacity-0 size-3.5 transition-all bg-transparent group-hover:bg-transparent',
+          'group-focus-within:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100',
           className,
         )}
         {...props}

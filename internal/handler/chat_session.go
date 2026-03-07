@@ -61,11 +61,11 @@ func (h *ChatSessionHandler) SetChatSession(c *gin.Context) {
 	}
 
 	// Get user by access token
-	user, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
+			"code":    code,
+			"message": err.Error(),
 		})
 		return
 	}
@@ -124,11 +124,11 @@ func (h *ChatSessionHandler) RemoveChatSessions(c *gin.Context) {
 	}
 
 	// Get user by access token
-	user, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
+			"code":    code,
+			"message": err.Error(),
 		})
 		return
 	}
@@ -190,11 +190,11 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	}
 
 	// Get user by access token
-	user, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
+			"code":    code,
+			"message": err.Error(),
 		})
 		return
 	}
@@ -270,11 +270,11 @@ func (h *ChatSessionHandler) Completion(c *gin.Context) {
 	}
 
 	// Get user by access token
-	user, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
+			"code":    code,
+			"message": err.Error(),
 		})
 		return
 	}

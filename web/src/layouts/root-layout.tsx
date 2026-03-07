@@ -1,7 +1,7 @@
 import { Outlet } from 'react-router';
-import { Header } from './next-header';
+import { Header } from './components/header';
 
-export function NextLayoutContainer({ children }: React.PropsWithChildren) {
+export function RootLayoutContainer({ children }: React.PropsWithChildren) {
   return (
     <div className="size-full grid grid-rows-[auto_1fr] grid-cols-1 grid-flow-col">
       <Header className="px-5 py-4" />
@@ -11,10 +11,10 @@ export function NextLayoutContainer({ children }: React.PropsWithChildren) {
   );
 }
 
-export default function NextLayout() {
+export default function RootLayout() {
   return (
-    <NextLayoutContainer>
+    <RootLayoutContainer>
       <Outlet />
-    </NextLayoutContainer>
+    </RootLayoutContainer>
   );
 }

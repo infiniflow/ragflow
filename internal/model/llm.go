@@ -51,8 +51,8 @@ func (LLM) TableName() string {
 // TenantLangfuse tenant langfuse model
 type TenantLangfuse struct {
 	TenantID  string `gorm:"column:tenant_id;primaryKey;size:32" json:"tenant_id"`
-	SecretKey string `gorm:"column:secret_key;size:2048;not null;index" json:"secret_key"`
-	PublicKey string `gorm:"column:public_key;size:2048;not null;index" json:"public_key"`
+	SecretKey string `gorm:"column:secret_key;size:2048;not null" json:"secret_key"`
+	PublicKey string `gorm:"column:public_key;size:2048;not null" json:"public_key"`
 	Host      string `gorm:"column:host;size:128;not null;index" json:"host"`
 	BaseModel
 }

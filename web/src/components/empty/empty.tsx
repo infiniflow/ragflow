@@ -53,22 +53,24 @@ const Empty = (props: EmptyProps) => {
 export default Empty;
 
 export const EmptyCard = (props: EmptyCardProps) => {
-  const { icon, className, children, title, description, style } = props;
+  const { icon, className, children, title, description, style, ...restProps } =
+    props;
   return (
-    <div
+    <article
       className={cn(
         'flex flex-col gap-3 items-start justify-start border border-dashed border-border-button rounded-md p-5 w-fit',
         className,
       )}
       style={style}
+      {...restProps}
     >
       {icon}
-      {title && <div className="text-text-primary text-base">{title}</div>}
+      {title && <div className="text-text-primary text-sm">{title}</div>}
       {description && (
-        <div className="text-text-secondary text-sm">{description}</div>
+        <p className="text-text-secondary text-sm">{description}</p>
       )}
       {children}
-    </div>
+    </article>
   );
 };
 
@@ -104,11 +106,14 @@ export const EmptyAppCard = (props: {
       break;
   }
   return (
-    <div onClick={isSearch ? undefined : props.onClick} data-testid={testId}>
+    <div>
       <EmptyCard
+        onClick={isSearch ? undefined : props.onClick}
+        data-testid={testId}
+        tabIndex={isSearch ? undefined : 0}
         icon={showIcon ? cardData.icon : undefined}
         title={isSearch ? notFound : title}
-        className={cn('cursor-pointer ', className)}
+        className={cn('cursor-pointer', className)}
         style={style}
         // description={EmptyCardData[type].description}
       >

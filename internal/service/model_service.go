@@ -80,7 +80,7 @@ func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID stri
 	}
 
 	apiKey := embeddingModel.APIKey
-	if apiKey == "" {
+	if apiKey == nil || *apiKey == "" {
 		return nil, fmt.Errorf("no API key found for tenant %s and model %s", tenantID, compositeModelName)
 	}
 	// Always get API base from model provider configuration
@@ -91,7 +91,7 @@ func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID stri
 	}
 	apiBase := providerConfig.DefaultEmbeddingURL
 
-	return models.CreateEmbeddingModel(provider, apiKey, apiBase, modelName, p.httpClient)
+	return models.CreateEmbeddingModel(provider, *apiKey, apiBase, modelName, p.httpClient)
 }
 
 // GetChatModel returns a chat model for the given tenant

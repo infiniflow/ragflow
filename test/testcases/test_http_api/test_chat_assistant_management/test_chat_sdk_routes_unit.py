@@ -299,6 +299,15 @@ def test_update_internal_failure_paths(monkeypatch):
 def test_delete_duplicate_no_success_path(monkeypatch):
     module = _load_chat_module(monkeypatch)
 
+    _set_request_json(monkeypatch, module, {})
+    monkeypatch.setattr(
+        module.DialogService,
+        "query",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("query must not run for empty delete payload")),
+    )
+    res = _run(module.delete_chats.__wrapped__("tenant-1"))
+    assert res["code"] == module.RetCode.SUCCESS
+
     _set_request_json(monkeypatch, module, {"ids": ["chat-1", "chat-1"]})
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
     monkeypatch.setattr(module.DialogService, "update_by_id", lambda *_args, **_kwargs: 0)

@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
 import * as React from 'react';
+import { Button, ButtonVariants } from './button';
 export declare type SegmentedValue = string | number;
 export declare type SegmentedRawOption = SegmentedValue;
 export interface SegmentedLabeledOption {
@@ -56,7 +57,7 @@ export interface SegmentedProps extends Omit<
   itemClassName?: string;
   rounded?: keyof typeof segmentedVariants.round;
   sizeType?: keyof typeof segmentedVariants.size;
-  buttonSize?: keyof typeof segmentedVariants.buttonSize;
+  buttonSize?: ButtonVariants['size'];
 }
 
 export const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
@@ -101,12 +102,12 @@ export const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
           const actualValue = isObject ? option.value : option;
 
           return (
-            <div
+            <Button
               key={actualValue}
+              type="button"
+              size={buttonSize}
+              variant="static"
               className={cn(
-                'inline-flex items-center text-base font-normal cursor-pointer',
-                segmentedVariants.round[rounded],
-                segmentedVariants.buttonSize[buttonSize],
                 {
                   'text-text-primary bg-bg-base': selectedValue === actualValue,
                 },
@@ -118,7 +119,7 @@ export const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
               onClick={() => handleOnChange(actualValue)}
             >
               {isObject ? option.label : option}
-            </div>
+            </Button>
           );
         })}
       </div>

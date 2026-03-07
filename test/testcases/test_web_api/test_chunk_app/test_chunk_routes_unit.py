@@ -673,6 +673,20 @@ def test_rm_chunk_delete_exception_partial_compensation_and_cleanup_unit(monkeyp
     res = _run(module.rm())
     assert res["message"] == "Document not found!", res
 
+    _set_request_json(monkeypatch, module, {"doc_id": "doc-1", "chunk_ids": []})
+    monkeypatch.setattr(
+        module.DocumentService,
+        "get_by_id",
+        lambda _doc_id: (_ for _ in ()).throw(AssertionError("get_by_id must not run for empty delete payload")),
+    )
+    monkeypatch.setattr(
+        module.settings.docStoreConn,
+        "delete",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("delete must not run for empty delete payload")),
+    )
+    res = _run(module.rm())
+    assert res["code"] == 0, res
+
     monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (True, _DummyDoc()))
 
     def _raise_delete(*_args, **_kwargs):

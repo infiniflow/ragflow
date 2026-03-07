@@ -101,3 +101,8 @@ func (dao *UserDAO) List(offset, limit int) ([]*model.User, int64, error) {
 func (dao *UserDAO) Delete(id uint) error {
 	return DB.Delete(&model.User{}, id).Error
 }
+
+// DeleteByID delete user by string ID
+func (dao *UserDAO) DeleteByID(id string) error {
+	return DB.Model(&model.User{}).Where("id = ?", id).Update("status", "0").Error
+}

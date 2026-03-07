@@ -23,8 +23,8 @@ class TestChatAssistantsDelete:
     @pytest.mark.parametrize(
         "payload, expected_message, remaining",
         [
-            pytest.param(None, "", 0, marks=pytest.mark.p3),
-            pytest.param({"ids": []}, "", 0, marks=pytest.mark.p3),
+            pytest.param(None, "", 5, marks=pytest.mark.p3),
+            pytest.param({"ids": []}, "", 5, marks=pytest.mark.p3),
             pytest.param({"ids": ["invalid_id"]}, "Assistant(invalid_id) not found.", 5, marks=pytest.mark.p3),
             pytest.param({"ids": ["\n!?。；！？\"'"]}, """Assistant(\n!?。；！？"\') not found.""", 5, marks=pytest.mark.p3),
             pytest.param(lambda r: {"ids": r[:1]}, "", 4, marks=pytest.mark.p3),

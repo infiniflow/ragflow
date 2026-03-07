@@ -472,14 +472,8 @@ def test_delete_route_error_summary_matrix_unit(monkeypatch):
     assert res["data"]["errors"], res
 
     req_state["ids"] = None
-    monkeypatch.setattr(
-        module.KnowledgebaseService,
-        "query",
-        lambda **_kwargs: (_ for _ in ()).throw(module.OperationalError("db down")),
-    )
     res = _run(inspect.unwrap(module.delete)("tenant-1"))
-    assert res["code"] == module.RetCode.DATA_ERROR, res
-    assert res["message"] == "Database operation failed", res
+    assert res["code"] == module.RetCode.SUCCESS, res
 
 
 @pytest.mark.p2
