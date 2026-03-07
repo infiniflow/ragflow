@@ -16,7 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import bulk_upload_documents, list_documents, parse_documents
+from common import bulk_upload_documents, delete_documents, list_chunks, list_documents, parse_documents
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 from utils import wait_for
@@ -163,6 +163,37 @@ class TestDocumentsParse:
         condition(HttpApiAuth, dataset_id)
 
         validate_document_details(HttpApiAuth, dataset_id, document_ids)
+
+    @pytest.mark.p2
+    def test_chunks_retrievable_after_parse_status_done(self, HttpApiAuth, add_dataset_func, ragflow_tmp_dir):
+        @wait_for(30, 0.1, "Document parsing timeout")
+        def wait_until_done(ids):
+            r = list_documents(HttpApiAuth, dataset_id)
+            target_ids = set(ids)
+            for doc in r["data"]["docs"]:
+                if doc["id"] in target_ids and doc.get("run") != "DONE":
+                    return False
+            return True
+
+        dataset_id = add_dataset_func
+
+        # if there is a bug it can be non-deterministic, so repeat 10 times
+        iterations = 10
+        for i in range(1, iterations + 1):
+            document_ids = bulk_upload_documents(HttpApiAuth, dataset_id, 1, ragflow_tmp_dir)
+
+            res = parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
+            assert res["code"] == 0, f"parse_documents failed: {res}"
+
+            wait_until_done(document_ids)
+
+            for document_id in document_ids:
+                res = list_chunks(HttpApiAuth, dataset_id, document_id)
+                assert res["code"] == 0, f"list_chunks failed: {res}"
+                assert res["data"]["doc"]["chunk_count"] > 0, f"Document {document_id} has run=DONE but chunk_count is 0"
+                assert len(res["data"]["chunks"]) > 0, f"Document {document_id} has run=DONE but no chunks returned"
+
+            delete_documents(HttpApiAuth, dataset_id, {"ids": document_ids})
 
 
 @pytest.mark.p3
