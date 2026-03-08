@@ -120,7 +120,9 @@ export default function ChatBasicSetting() {
                 }}
               />
             </FormControl>
-            <FormLabel>Show chunk metadata</FormLabel>
+            <FormLabel tooltip="Display document metadata (e.g., title, page number, upload date) alongside retrieved text chunks">
+              Show chunk metadata
+            </FormLabel>
           </FormItem>
         )}
       />
@@ -130,7 +132,9 @@ export default function ChatBasicSetting() {
           name={'prompt_config.reference_metadata.fields'}
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('chat.metadataKeys')}</FormLabel>
+              <FormLabel tooltip="Select which metadata fields to display with each chunk">
+                {t('chat.metadataKeys')}
+              </FormLabel>
               <FormControl className="bg-bg-input">
                 <MultiSelect
                   options={metadataFieldOptions}
