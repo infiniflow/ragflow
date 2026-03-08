@@ -37,6 +37,65 @@ from rag.prompts.generator import cross_languages, keyword_extraction
 MAXIMUM_OF_UPLOADING_FILES = 256
 
 
+def _resolve_reference_metadata(req):
+    """
+    Resolve metadata include/fields from request payload.
+    Also supports legacy flat keys: include_metadata / metadata_fields.
+    """
+    request_ref = req.get("reference_metadata", {})
+    resolved = request_ref if isinstance(request_ref, dict) else {}
+
+    if "include_metadata" in req and "include" not in resolved:
+        resolved["include"] = bool(req.get("include_metadata"))
+    if "metadata_fields" in req and "fields" not in resolved:
+        resolved["fields"] = req.get("metadata_fields")
+
+    include_metadata = bool(resolved.get("include", False))
+    fields = resolved.get("fields")
+    if fields is None:
+        return include_metadata, None
+    if not isinstance(fields, list):
+        return include_metadata, set()
+    return include_metadata, {f for f in fields if isinstance(f, str)}
+
+
+def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
+    """
+    Mutates retrieval chunk payloads in-place by attaching `document_metadata`.
+    """
+    doc_ids_by_kb = {}
+    for chunk in chunks:
+        kb_id = chunk.get("kb_id")
+        doc_id = chunk.get("doc_id")
+        if not kb_id or not doc_id:
+            continue
+        doc_ids_by_kb.setdefault(kb_id, set()).add(doc_id)
+
+    if not doc_ids_by_kb:
+        return
+
+    meta_by_doc = {}
+    for kb_id, doc_ids in doc_ids_by_kb.items():
+        meta_map = DocMetadataService.get_metadata_for_documents(list(doc_ids), kb_id)
+        if meta_map:
+            meta_by_doc.update(meta_map)
+
+    if metadata_fields is not None and not metadata_fields:
+        return
+
+    for chunk in chunks:
+        doc_id = chunk.get("doc_id")
+        if not doc_id:
+            continue
+        meta = meta_by_doc.get(doc_id)
+        if not meta:
+            continue
+        if metadata_fields is not None:
+            meta = {k: v for k, v in meta.items() if k in metadata_fields}
+        if meta:
+            chunk["document_metadata"] = meta
+
+
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @token_required
 async def download(tenant_id, dataset_id, document_id):
@@ -448,6 +507,7 @@ async def retrieval_test(tenant_id):
             return get_error_data_result("`highlight` should be a boolean")
     else:
         return get_error_data_result("`highlight` should be a boolean")
+    include_metadata, metadata_fields = _resolve_reference_metadata(req)
     try:
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
@@ -505,6 +565,9 @@ async def retrieval_test(tenant_id):
 
         for c in ranks["chunks"]:
             c.pop("vector", None)
+
+        if include_metadata:
+            _enrich_chunks_with_document_metadata(ranks["chunks"], metadata_fields)
 
         ##rename keys
         renamed_chunks = []
