@@ -251,7 +251,7 @@ class ExeSQL(ToolBase, ABC):
                 if self.check_if_canceled("ExeSQL processing"):
                     return
 
-                single_sql = single_sql.replace('```','')
+                single_sql = single_sql.replace('```', '').strip()
                 if not single_sql:
                     continue
                 single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
