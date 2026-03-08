@@ -459,7 +459,9 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                       }}
                     />
                   </FormControl>
-                  <FormLabel>Show chunk metadata</FormLabel>
+                  <FormLabel tooltip="Display document metadata (e.g., title, page number, upload date) alongside retrieved text chunks">
+                    Show chunk metadata
+                  </FormLabel>
                 </FormItem>
               )}
             />
@@ -469,7 +471,9 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 name="search_config.reference_metadata.fields"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Metadata fields</FormLabel>
+                    <FormLabel tooltip="Select which metadata fields to display with each chunk">
+                      Metadata fields
+                    </FormLabel>
                     <FormControl className="bg-bg-input">
                       <MultiSelect
                         options={metadataFieldOptions}
