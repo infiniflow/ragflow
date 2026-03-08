@@ -165,13 +165,15 @@ COPY pyproject.toml uv.lock ./
 
 # https://github.com/astral-sh/uv/issues/10462
 # uv records index url into uv.lock but doesn't failover among multiple indexes
+ENV UV_INDEX_URL=https://pypi.org/simple/
 RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
         sed -i 's|pypi.org|pypi.tuna.tsinghua.edu.cn|g' uv.lock; \
     else \
         sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
+        printf '[pip]\nindex-url = "https://pypi.org/simple"\n' > /etc/uv/uv.toml; \
     fi; \
-    uv sync --python 3.12 --frozen && \
+    uv sync --index https://pypi.org/simple/ --python 3.12 --frozen && \
     # Ensure pip is available in the venv for runtime package installation (fixes #12651)
     .venv/bin/python3 -m ensurepip --upgrade
 
