@@ -832,7 +832,17 @@ def test_retrieval_test_branch_matrix_unit(monkeypatch):
             if self.mode == "explode":
                 raise RuntimeError("retrieval boom")
             self.retrieval_questions.append(question)
-            return {"chunks": [{"id": "c1", "vector": [0.1], "content_with_weight": "chunk-content"}]}
+            return {
+                "chunks": [
+                    {
+                        "id": "c1",
+                        "vector": [0.1],
+                        "content_with_weight": "chunk-content",
+                        "doc_id": "doc-1",
+                        "kb_id": "kb-1",
+                    }
+                ]
+            }
 
         def retrieval_by_children(self, chunks, _tenant_ids):
             return list(chunks)
@@ -852,6 +862,12 @@ def test_retrieval_test_branch_matrix_unit(monkeypatch):
     monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kb_ids: [{"meta": "v"}], raising=False)
     monkeypatch.setattr(module, "apply_meta_data_filter", _apply_filter)
     monkeypatch.setattr(module.SearchService, "get_detail", lambda _sid: {"search_config": {"meta_data_filter": {"method": "auto"}, "chat_id": "chat-1"}}, raising=False)
+    monkeypatch.setattr(
+        module.DocMetadataService,
+        "get_metadata_for_documents",
+        lambda _doc_ids, _kb_id: {"doc-1": {"author": "alice", "year": "2025"}},
+        raising=False,
+    )
     monkeypatch.setattr(module, "cross_languages", _cross_languages)
     monkeypatch.setattr(module, "keyword_extraction", _keyword_extraction)
     monkeypatch.setattr(module, "label_question", lambda *_args, **_kwargs: ["lbl"])
@@ -895,6 +911,7 @@ def test_retrieval_test_branch_matrix_unit(monkeypatch):
             "rerank_id": "rerank-1",
             "keyword": True,
             "use_kg": True,
+            "reference_metadata": {"include": True, "fields": ["author"]},
         },
     )
     res = _run(module.retrieval_test())
@@ -904,6 +921,7 @@ def test_retrieval_test_branch_matrix_unit(monkeypatch):
     assert retriever.retrieval_questions[-1] == "q-xl-kw"
     assert res["data"]["chunks"][0]["id"] == "kg-1", res
     assert all("vector" not in chunk for chunk in res["data"]["chunks"])
+    assert any(chunk.get("document_metadata", {}).get("author") == "alice" for chunk in res["data"]["chunks"])
 
     monkeypatch.setattr(module.settings, "kg_retriever", _NoContentKgRetriever(), raising=False)
     _set_request_json(monkeypatch, module, {"kb_id": ["kb-1"], "question": "q", "use_kg": True})

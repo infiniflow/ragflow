@@ -49,6 +49,60 @@ from common.string_utils import remove_redundant_spaces
 from common import settings
 
 
+def _resolve_reference_metadata(config):
+    """
+    Resolve metadata include/fields from a config object containing:
+    reference_metadata = { include: bool, fields: string[] }.
+    """
+    ref = (config or {}).get("reference_metadata", {})
+    if not isinstance(ref, dict):
+        return False, None
+    include_metadata = bool(ref.get("include", False))
+    fields = ref.get("fields")
+    if fields is None:
+        return include_metadata, None
+    if not isinstance(fields, list):
+        return include_metadata, set()
+    return include_metadata, {f for f in fields if isinstance(f, str)}
+
+
+def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
+    """
+    Mutates retrieval chunks in-place by attaching `document_metadata`.
+    """
+    doc_ids_by_kb = {}
+    for chunk in chunks:
+        kb_id = chunk.get("kb_id")
+        doc_id = chunk.get("doc_id")
+        if not kb_id or not doc_id:
+            continue
+        doc_ids_by_kb.setdefault(kb_id, set()).add(doc_id)
+
+    if not doc_ids_by_kb:
+        return
+
+    meta_by_doc = {}
+    for kb_id, doc_ids in doc_ids_by_kb.items():
+        meta_map = DocMetadataService.get_metadata_for_documents(list(doc_ids), kb_id)
+        if meta_map:
+            meta_by_doc.update(meta_map)
+
+    if metadata_fields is not None and not metadata_fields:
+        return
+
+    for chunk in chunks:
+        doc_id = chunk.get("doc_id")
+        if not doc_id:
+            continue
+        meta = meta_by_doc.get(doc_id)
+        if not meta:
+            continue
+        if metadata_fields is not None:
+            meta = {k: v for k, v in meta.items() if k in metadata_fields}
+        if meta:
+            chunk["document_metadata"] = meta
+
+
 class DialogService(CommonService):
     model = Dialog
 
@@ -510,6 +564,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         attachments_ = "\n\n".join(text_attachments)
 
     prompt_config = dialog.prompt_config
+    include_reference_metadata, metadata_fields = _resolve_reference_metadata(prompt_config)
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
     logging.debug(f"field_map retrieved: {field_map}")
     # try to use sql if field mapping is good to go
@@ -633,6 +688,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                                                        LLMBundle(dialog.tenant_id, default_chat_model))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
+
+    if include_reference_metadata:
+        _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), metadata_fields)
 
     knowledges = kb_prompt(kbinfos, max_tokens)
     logging.debug("{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
@@ -1361,6 +1419,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     chat_llm_name = search_config.get("chat_id", chat_llm_name)
     rerank_id = search_config.get("rerank_id", "")
     meta_data_filter = search_config.get("meta_data_filter")
+    include_reference_metadata, metadata_fields = _resolve_reference_metadata(search_config)
 
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     embedding_list = list(set([kb.embd_id for kb in kbs]))
@@ -1396,6 +1455,8 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs)
     )
+    if include_reference_metadata:
+        _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), metadata_fields)
 
     knowledges = kb_prompt(kbinfos, max_tokens)
     sys_prompt = PROMPT_JINJA_ENV.from_string(ASK_SUMMARY).render(knowledge="\n".join(knowledges))

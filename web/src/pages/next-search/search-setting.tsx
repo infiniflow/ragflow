@@ -29,7 +29,10 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
+import {
+  useFetchKnowledgeList,
+  useFetchKnowledgeMetadata,
+} from '@/hooks/use-knowledge-request';
 import {
   useComposeLlmOptionsByModelTypes,
   useSelectLlmOptionsByModelType,
@@ -81,6 +84,12 @@ const SearchSettingFormSchema = z
       llm_setting: z.object(LlmSettingSchema),
       related_search: z.boolean(),
       query_mindmap: z.boolean(),
+      reference_metadata: z
+        .object({
+          include: z.boolean().optional(),
+          fields: z.array(z.string()).optional(),
+        })
+        .optional(),
       ...MetadataFilterSchema,
     }),
   })
@@ -160,6 +169,10 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         related_search: search_config?.related_search || false,
         query_mindmap: search_config?.query_mindmap || false,
         meta_data_filter: search_config?.meta_data_filter,
+        reference_metadata: {
+          include: search_config?.reference_metadata?.include || false,
+          fields: search_config?.reference_metadata?.fields || [],
+        },
       },
     });
   }, [data, search_config, llm_setting, formMethods, descriptionDefaultValue]);
@@ -231,6 +244,23 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
     control: formMethods.control,
     name: 'search_config.summary',
   });
+  const selectedKbIds = useWatch({
+    control: formMethods.control,
+    name: 'search_config.kb_ids',
+  });
+  const referenceMetadataEnabled = useWatch({
+    control: formMethods.control,
+    name: 'search_config.reference_metadata.include',
+  });
+  const { data: availableMetadata } = useFetchKnowledgeMetadata(
+    selectedKbIds || [],
+  );
+  const metadataFieldOptions = useMemo(() => {
+    return Object.keys(availableMetadata || {}).map((key) => ({
+      label: key,
+      value: key,
+    }));
+  }, [availableMetadata]);
 
   // Reset top_k to 1024 only when user actively disables rerank (from true to false)
   const prevRerankEnabled = useRef<boolean | undefined>(undefined);
@@ -410,6 +440,52 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               )}
             />
             <MetadataFilter prefix="search_config."></MetadataFilter>
+            <FormField
+              control={formMethods.control}
+              name="search_config.reference_metadata.include"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={(value) => {
+                        field.onChange(value);
+                        if (!value) {
+                          formMethods.setValue(
+                            'search_config.reference_metadata.fields',
+                            [],
+                          );
+                        }
+                      }}
+                    />
+                  </FormControl>
+                  <FormLabel>Show chunk metadata</FormLabel>
+                </FormItem>
+              )}
+            />
+            {referenceMetadataEnabled && (
+              <FormField
+                control={formMethods.control}
+                name="search_config.reference_metadata.fields"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Metadata fields</FormLabel>
+                    <FormControl className="bg-bg-input">
+                      <MultiSelect
+                        options={metadataFieldOptions}
+                        onValueChange={field.onChange}
+                        showSelectAll={false}
+                        placeholder="Please select"
+                        maxCount={20}
+                        defaultValue={field.value || []}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
             <SimilaritySliderFormField
               isTooltipShown
               similarityName="search_config.similarity_threshold"

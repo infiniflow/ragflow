@@ -1423,7 +1423,7 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
                 "rank_feature": rank_feature,
             }
         )
-        return {"chunks": [{"id": "chunk-1", "vector": [0.1]}]}
+        return {"chunks": [{"id": "chunk-1", "doc_id": "doc-1", "kb_id": "kb-1", "vector": [0.1]}]}
 
     async def _translate(_tenant_id, _chat_id, question, _langs):
         return question + "-translated"
@@ -1455,10 +1455,16 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
                 "vector_similarity_weight": 0.8,
                 "top_k": 7,
                 "rerank_id": "reranker-model",
+                "reference_metadata": {"include": True, "fields": ["author"]},
             }
         },
     )
     monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kb_ids: [{"id": "doc-2"}])
+    monkeypatch.setattr(
+        module.DocMetadataService,
+        "get_metadata_for_documents",
+        lambda _doc_ids, _kb_id: {"doc-1": {"author": "alice", "year": "2025"}},
+    )
     monkeypatch.setattr(module, "apply_meta_data_filter", _apply_filter)
     monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-a")])
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
@@ -1480,6 +1486,7 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
     assert retrieval_capture["local_doc_ids"] == ["doc-filtered"]
     assert retrieval_capture["rank_feature"] == ["label-1"]
     assert retrieval_capture["rerank_mdl"] is not None
+    assert res["data"]["chunks"][0]["document_metadata"]["author"] == "alice"
     assert any(call[1] == module.LLMType.EMBEDDING.value and call[2] == "embd-model" for call in llm_calls)
 
     llm_calls.clear()
