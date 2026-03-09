@@ -26,6 +26,7 @@ from deepdoc.parser.utils import get_text
 from rag.nlp import is_english, random_choices, qbullets_category, add_positions, has_qbullet, docx_question_level
 from rag.nlp import rag_tokenizer, tokenize_table, concat_img
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser
+from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper
 from docx import Document
 from PIL import Image
 from markdown import markdown
@@ -462,6 +463,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         docx_parser = Docx()
         qai_list, tbls = docx_parser(filename, binary,
                                      from_page=0, to_page=10000, callback=callback)
+        sections_for_vision = [(f"{q}\n{a}", image) for q, a, image in qai_list]
+        tbls = vision_figure_parser_docx_wrapper(sections=sections_for_vision, tbls=tbls, callback=callback, **kwargs)
         res = tokenize_table(tbls, doc, eng)
         for i, (q, a, image) in enumerate(qai_list):
             res.append(beAdocDocx(deepcopy(doc), q, a, eng, image, i))
