@@ -1356,6 +1356,7 @@ class REST_API(SyncBase):
             url=self.conf["url"],
             method=self.conf.get("method", "GET"),
             headers=self.conf.get("headers") or {},
+            query_params=self.conf.get("query_params") or {},
             auth_type=self.conf.get("auth_type", "none"),
             auth_config=self.conf.get("auth_config") or {},
             items_path=self.conf.get("items_path"),
@@ -1374,6 +1375,12 @@ class REST_API(SyncBase):
         )
 
         credentials = self.conf.get("credentials") or {}
+        logging.debug(
+            "REST_API sync: auth_type=%s, auth_config_keys=%s, credentials_keys=%s",
+            self.conf.get("auth_type"),
+            list((self.conf.get("auth_config") or {}).keys()),
+            list(credentials.keys()),
+        )
         self.connector.load_credentials(credentials)
 
         poll_start = task.get("poll_range_start")

@@ -6,13 +6,15 @@ UI-based configuration model in follow-up tickets.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, Iterable, List, Mapping, Optional
+from urllib.parse import parse_qs, urlparse, urlunparse
 
 import requests
-from pydantic import BaseModel, Field, HttpUrl, ValidationError
+from pydantic import BaseModel, Field, HttpUrl, ValidationError, field_validator
 
 from api.utils.common import hash128
 from common.data_source.config import INDEX_BATCH_SIZE, DocumentSource
@@ -57,6 +59,9 @@ class RestAPIConnectorConfig(BaseModel):
     url: HttpUrl
     method: str = "GET"
     headers: Dict[str, str] = Field(default_factory=dict)
+    # Key-value query parameters (like Postman params tab).
+    # Keeps the URL clean — put only the base path in ``url``.
+    query_params: Dict[str, str] = Field(default_factory=dict)
 
     auth_type: str = AuthType.NONE
     auth_config: Dict[str, Any] = Field(default_factory=dict)
@@ -70,18 +75,59 @@ class RestAPIConnectorConfig(BaseModel):
     pagination_config: Dict[str, Any] = Field(default_factory=dict)
 
     poll_timestamp_field: Optional[str] = None
-    # Only used for POST; for GET this is ignored.
     request_body: Optional[Dict[str, Any]] = None
 
-    # Advanced field mapping
-    # e.g. {"country.name": "string", "published_at": "date"}
     field_type_hints: Dict[str, str] = Field(default_factory=dict)
-    # e.g. {"author": "Unknown", "tags": []}
     field_default_values: Dict[str, Any] = Field(default_factory=dict)
-    # Template-based content formatting. When provided, overrides simple
-    # content field concatenation. Example:
-    #   "Title: {title}\n\nContent: {body}"
     content_template: Optional[str] = None
+
+    # ---------------- Validators to coerce UI-friendly types ---------------- #
+    @field_validator("headers", mode="before")
+    @classmethod
+    def _coerce_headers(cls, v: Any) -> Dict[str, str]:
+        return cls._text_to_dict(v)
+
+    @field_validator("query_params", mode="before")
+    @classmethod
+    def _coerce_query_params(cls, v: Any) -> Dict[str, str]:
+        return cls._text_to_dict(v)
+
+    @field_validator("content_fields", "metadata_fields", mode="before")
+    @classmethod
+    def _coerce_field_list(cls, v: Any) -> List[str]:
+        if v is None or v == "":
+            return []
+        if isinstance(v, str):
+            return [part.strip() for part in v.split(",") if part.strip()]
+        if isinstance(v, list):
+            return [str(part).strip() for part in v if str(part).strip()]
+        return v
+
+    @staticmethod
+    def _text_to_dict(v: Any) -> Dict[str, str]:
+        """Parse a dict, JSON string, or ``key=value\\n`` text into a dict."""
+        if v is None or v == "":
+            return {}
+        if isinstance(v, dict):
+            return {str(k): str(vv) for k, vv in v.items()}
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, dict):
+                    return {str(k): str(vv) for k, vv in parsed.items()}
+            except Exception:
+                pass
+            # key=value per line (like Postman bulk-edit)
+            result: Dict[str, str] = {}
+            for line in v.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    k, _, val = line.partition("=")
+                    result[k.strip()] = val.strip()
+            return result
+        return v
 
     batch_size: int = INDEX_BATCH_SIZE
     max_pages: int = 1000
@@ -134,6 +180,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
         url: str,
         method: str = "GET",
         headers: Optional[Dict[str, str]] = None,
+        query_params: Optional[Dict[str, str]] = None,
         auth_type: str = AuthType.NONE,
         auth_config: Optional[Dict[str, Any]] = None,
         items_path: Optional[str] = None,
@@ -150,7 +197,19 @@ class RestAPIConnector(LoadConnector, PollConnector):
         field_default_values: Optional[Dict[str, Any]] = None,
         content_template: Optional[str] = None,
     ) -> None:
-        self.url = url
+        # Separate the base URL from any query params already embedded in it so
+        # that pagination params don't create duplicates.
+        parsed = urlparse(str(url))
+        self._base_url = urlunparse(
+            (parsed.scheme, parsed.netloc, parsed.path, "", "", "")
+        )
+        self._url_params: Dict[str, str] = {}
+        if parsed.query:
+            for k, v_list in parse_qs(parsed.query, keep_blank_values=True).items():
+                self._url_params[k] = v_list[-1]
+
+        self._explicit_query_params: Dict[str, str] = query_params or {}
+        self.url = self._base_url
         self.method = (method or "GET").upper()
         self._base_headers = headers or {}
         self.auth_type = auth_type or AuthType.NONE
@@ -161,8 +220,6 @@ class RestAPIConnector(LoadConnector, PollConnector):
         self.metadata_fields: List[str] = metadata_fields or []
         self.pagination_type = pagination_type or PaginationType.NONE
         self.pagination_config = pagination_config or {}
-        # Allow POST body to be provided either via dedicated config field or
-        # embedded in pagination_config for backward-compat.
         if request_body is None:
             request_body = self.pagination_config.get("request_body") or {}
         self._static_request_body: Dict[str, Any] = request_body
@@ -173,7 +230,6 @@ class RestAPIConnector(LoadConnector, PollConnector):
         self.field_default_values: Dict[str, Any] = field_default_values or {}
         self.content_template = content_template
 
-        # Populated by `load_credentials`
         self._credentials: Dict[str, Any] = {}
         self._auth_headers: Dict[str, str] = {}
         self._basic_auth: Optional[requests.auth.HTTPBasicAuth] = None
@@ -182,36 +238,18 @@ class RestAPIConnector(LoadConnector, PollConnector):
     # Credentials & validation
     # --------------------------------------------------------------------- #
     def load_credentials(self, credentials: Dict[str, Any]) -> Dict[str, Any] | None:
-        """Load credentials and validate API connectivity.
+        """Apply authentication credentials (no network call).
 
-        Expected `credentials` content depends on `auth_type`:
-        - none:         no required keys
-        - api_key_header:
-              - "api_key": secret value
-              - header name provided via `auth_config["header_name"]`
-        - bearer:
-              - "token": bearer token
-        - basic:
-              - "username"
-              - "password"
+        Credential keys expected per auth_type:
+        - none:             (no keys required)
+        - api_key_header:   "api_key" — value sent in the configured header
+        - bearer:           "token"
+        - basic:            "username", "password"
+
+        Use `validate_config()` to perform a live connectivity check.
         """
         self._credentials = credentials or {}
         self._build_auth()
-
-        # Basic connectivity check – small single-page fetch.
-        try:
-            logging.info("Validating REST API connector by fetching first page")
-            _ = next(self._page_iter_for_validation())
-        except StopIteration:
-            # No items is fine; connectivity is proven by lack of exception.
-            pass
-        except ConnectorValidationError:
-            raise
-        except Exception as exc:
-            raise ConnectorValidationError(
-                f"Failed to validate REST API connector: {exc}"
-            ) from exc
-
         return None
 
     # ------------------------------------------------------------------ #
@@ -251,6 +289,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
             url=str(cfg.url),
             method=cfg.normalized_method(),
             headers=cfg.headers,
+            query_params=cfg.query_params,
             auth_type=cfg.normalized_auth_type(),
             auth_config=cfg.auth_config,
             items_path=cfg.items_path,
@@ -273,11 +312,13 @@ class RestAPIConnector(LoadConnector, PollConnector):
         else:
             connector._credentials = {}
             connector._build_auth()
-            try:
-                logging.info("Validating REST API connector via test call (no auth).")
-                _ = next(connector._page_iter_for_validation())
-            except StopIteration:
-                pass
+
+        # Live connectivity + items_path check.
+        try:
+            logging.info("Validating REST API connector by fetching first page")
+            _ = next(connector._page_iter_for_validation())
+        except StopIteration:
+            pass
 
         return cfg
 
@@ -291,7 +332,13 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
         if self.auth_type == AuthType.API_KEY_HEADER:
             header_name = self.auth_config.get("header_name")
-            api_key = self._credentials.get("api_key")
+            # Credential value may live in `credentials` dict (preferred) or
+            # directly in `auth_config` when the UI stores it there.
+            api_key = (
+                self._credentials.get("api_key")
+                or self.auth_config.get("api_key_value")
+                or self.auth_config.get("api_key")
+            )
             if not header_name or not api_key:
                 raise ConnectorMissingCredentialError(
                     "REST API (api_key_header) requires 'header_name' in auth_config "
@@ -301,7 +348,10 @@ class RestAPIConnector(LoadConnector, PollConnector):
             return
 
         if self.auth_type == AuthType.BEARER:
-            token = self._credentials.get("token")
+            token = (
+                self._credentials.get("token")
+                or self.auth_config.get("token")
+            )
             if not token:
                 raise ConnectorMissingCredentialError(
                     "REST API (bearer) requires 'token' in credentials"
@@ -310,8 +360,8 @@ class RestAPIConnector(LoadConnector, PollConnector):
             return
 
         if self.auth_type == AuthType.BASIC:
-            username = self._credentials.get("username")
-            password = self._credentials.get("password")
+            username = self._credentials.get("username") or self.auth_config.get("username")
+            password = self._credentials.get("password") or self.auth_config.get("password")
             if not username or password is None:
                 raise ConnectorMissingCredentialError(
                     "REST API (basic) requires 'username' and 'password' in credentials"
@@ -411,7 +461,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
             # query params; filtering is in-memory only.
             try:
                 response_json = self._fetch_page(params=params)
-            except ConnectorValidationError:
+            except (ConnectorValidationError, ConnectorMissingCredentialError):
                 raise
             except Exception as exc:
                 raise ConnectorValidationError(
@@ -457,13 +507,39 @@ class RestAPIConnector(LoadConnector, PollConnector):
     def _page_iter_for_validation(self) -> Iterable[Mapping[str, Any]]:
         """Single-page iterator used only for connectivity checks."""
         response_json = self._fetch_page(params={})
-        return self._extract_items(response_json)
+        items = self._extract_items(response_json)
+        for item in items:
+            yield item
 
-    @retry_builder(tries=5, delay=1, max_delay=30, backoff=2)
+    @retry_builder(
+        tries=5,
+        delay=1,
+        max_delay=30,
+        backoff=2,
+        # Only retry on transient errors; auth failures (401/403) are raised as
+        # ConnectorMissingCredentialError which is intentionally excluded here.
+        exceptions=(requests.ConnectionError, requests.Timeout, requests.HTTPError),
+    )
     def _fetch_page(self, params: Dict[str, Any]) -> Any:
         """Fetch a single page with retry + exponential backoff."""
         headers = {**self._base_headers, **self._auth_headers}
-        url, query_params = self._build_url_with_templates(params)
+
+        # Layer params: URL-embedded → explicit query_params → pagination.
+        # Later layers override earlier ones so pagination can update "page".
+        merged: Dict[str, Any] = {**self._url_params}
+        merged.update(self._explicit_query_params)
+        merged.update(params)
+
+        url, query_params = self._build_url_with_templates(merged)
+
+        _SENSITIVE = {"authorization", "apikey", "api-key", "x-api-key"}
+        logging.debug(
+            "REST API _fetch_page: %s %s | query_params=%s | headers=%s",
+            self.method,
+            url,
+            {k: ("***" if k.lower() in _SENSITIVE else v) for k, v in query_params.items()},
+            {k: ("***" if k.lower() in _SENSITIVE else v) for k, v in headers.items()},
+        )
 
         if self.method == "GET":
             resp = rl_requests.get(
@@ -538,9 +614,13 @@ class RestAPIConnector(LoadConnector, PollConnector):
         per_page: int,
     ) -> None:
         page_param = self.pagination_config.get("page_param", "page")
-        size_param = self.pagination_config.get("page_size_param", "per_page")
         params[page_param] = page
-        params[size_param] = per_page
+        # Only add a page-size param when explicitly configured, so we don't
+        # inject an unwanted "per_page" alongside a user's own size param
+        # (e.g. "story_per_page") that already lives in query_params / URL.
+        size_param = self.pagination_config.get("page_size_param")
+        if size_param:
+            params[size_param] = per_page
 
     def _apply_offset_pagination(
         self,
@@ -549,9 +629,10 @@ class RestAPIConnector(LoadConnector, PollConnector):
         limit: int,
     ) -> None:
         offset_param = self.pagination_config.get("offset_param", "offset")
-        limit_param = self.pagination_config.get("limit_param", "limit")
         params[offset_param] = offset
-        params[limit_param] = limit
+        limit_param = self.pagination_config.get("limit_param")
+        if limit_param:
+            params[limit_param] = limit
 
     def _apply_cursor_pagination(
         self,

@@ -1057,6 +1057,14 @@ export const DataSourceFormFields = {
       },
     },
     {
+      label: 'Query Parameters',
+      name: 'config.query_params',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: `lang=ar\nstory_per_page=10`,
+      tooltip: t('setting.restApiQueryParamsTip'),
+    },
+    {
       label: 'Custom Headers (JSON)',
       name: 'config.headers',
       type: FormFieldType.Textarea,
@@ -1068,15 +1076,15 @@ export const DataSourceFormFields = {
       label: 'Items JSONPath',
       name: 'config.items_path',
       type: FormFieldType.Text,
-      required: true,
-      placeholder: '$.items[*]',
+      required: false,
+      placeholder: 'stories',
       tooltip: t('setting.restApiItemsPathTip'),
     },
     {
       label: 'ID Field',
       name: 'config.id_field',
       type: FormFieldType.Text,
-      required: true,
+      required: false,
       placeholder: 'id',
       tooltip: t('setting.restApiIdFieldTip'),
     },
@@ -1115,17 +1123,15 @@ export const DataSourceFormFields = {
       type: FormFieldType.Text,
       required: false,
       defaultValue: 'page',
-      shouldRender: (values: any) =>
-        values?.config?.pagination_type === 'page',
+      shouldRender: (values: any) => values?.config?.pagination_type === 'page',
     },
     {
       label: 'Page Size Param',
       name: 'config.pagination_config.page_size_param',
       type: FormFieldType.Text,
       required: false,
-      defaultValue: 'per_page',
-      shouldRender: (values: any) =>
-        values?.config?.pagination_type === 'page',
+      placeholder: 'per_page (leave empty if already in Query Parameters)',
+      shouldRender: (values: any) => values?.config?.pagination_type === 'page',
     },
     {
       label: 'Start Page',
@@ -1133,8 +1139,7 @@ export const DataSourceFormFields = {
       type: FormFieldType.Number,
       required: false,
       defaultValue: 1,
-      shouldRender: (values: any) =>
-        values?.config?.pagination_type === 'page',
+      shouldRender: (values: any) => values?.config?.pagination_type === 'page',
     },
     {
       label: 'Offset Param',
@@ -1150,7 +1155,7 @@ export const DataSourceFormFields = {
       name: 'config.pagination_config.limit_param',
       type: FormFieldType.Text,
       required: false,
-      defaultValue: 'limit',
+      placeholder: 'limit (leave empty if already in Query Parameters)',
       shouldRender: (values: any) =>
         values?.config?.pagination_type === 'offset',
     },
@@ -1565,7 +1570,8 @@ export const DataSourceFormDefaultValues = {
     config: {
       url: '',
       method: 'GET',
-      headers: {},
+      query_params: '',
+      headers: '',
       auth_type: 'none',
       auth_config: {},
       items_path: '',

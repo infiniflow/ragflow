@@ -129,8 +129,8 @@ async def test_connector(connector_id):
     from common.data_source.rest_api_connector import RestAPIConnector
     from common.data_source.exceptions import ConnectorValidationError
 
-    err, conn = ConnectorService.get_by_id(connector_id)
-    if err:
+    ok, conn = ConnectorService.get_by_id(connector_id)
+    if not ok:
         return get_data_error_result(message="Can't find this Connector!")
 
     # Currently only REST_API is supported for explicit config validation.
