@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"ragflow/internal/init_data"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"strings"
@@ -69,6 +70,13 @@ func main() {
 	// Initialize database
 	if err := dao.InitDB(); err != nil {
 		logger.Fatal("Failed to initialize database", zap.Error(err))
+	}
+
+	// Initialize LLM factory data models from configuration file
+	if err := init_data.InitLLMFactory(); err != nil {
+		logger.Error("Failed to initialize LLM factory", err)
+	} else {
+		logger.Info("LLM factory initialized successfully")
 	}
 
 	// Initialize doc engine
