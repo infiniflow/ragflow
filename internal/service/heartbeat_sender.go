@@ -63,7 +63,7 @@ func (h *HeartbeatSender) InitHTTPClient() error {
 
 	h.client = utility.NewHTTPClientBuilder().
 		WithHost(adminConfig.Host).
-		WithPort(adminConfig.Port + 2).
+		WithPort(adminConfig.Port).
 		WithTimeout(10 * time.Second).
 		Build()
 

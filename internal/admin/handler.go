@@ -113,7 +113,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	user, code, err := h.userService.LoginByEmail(&req)
+	user, code, err := h.userService.LoginByEmail(&req, true)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"code":    code,
