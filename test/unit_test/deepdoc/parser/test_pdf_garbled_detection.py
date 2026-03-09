@@ -48,7 +48,7 @@ for _m in _MOCK_MODULES:
         sys.modules[_m] = mock.MagicMock()
 
 _MODULE_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "deepdoc", "parser", "pdf_parser.py")
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "deepdoc", "parser", "pdf_parser.py")
 )
 _spec = importlib.util.spec_from_file_location("pdf_parser", _MODULE_PATH)
 _mod = importlib.util.module_from_spec(_spec)
