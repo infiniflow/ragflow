@@ -835,3 +835,236 @@ def test_knowledge_graph_repeat_deal_matrix_unit(monkeypatch):
     assert mind_map["children"][0]["id"] == "dup", res
     assert mind_map["children"][1]["id"] == "dup(1)", res
     assert mind_map["children"][1]["children"][0]["id"] == "dup(2)", res
+
+
+@pytest.mark.p2
+def test_resolve_reference_metadata_from_request_unit(monkeypatch):
+    module = _load_chunk_module(monkeypatch)
+    
+    # Test with reference_metadata in request
+    req = {"reference_metadata": {"include": True, "fields": ["title", "page"]}}
+    include, fields = module._resolve_reference_metadata(req, None)
+    assert include is True
+    assert fields == {"title", "page"}
+    
+    # Test with empty fields
+    req = {"reference_metadata": {"include": True, "fields": []}}
+    include, fields = module._resolve_reference_metadata(req, None)
+    assert include is True
+    assert fields == set()
+    
+    # Test with no fields specified (all fields)
+    req = {"reference_metadata": {"include": True}}
+    include, fields = module._resolve_reference_metadata(req, None)
+    assert include is True
+    assert fields is None
+
+
+@pytest.mark.p2
+def test_resolve_reference_metadata_from_config_unit(monkeypatch):
+    module = _load_chunk_module(monkeypatch)
+    
+    # Test with config only
+    req = {}
+    config = {"reference_metadata": {"include": True, "fields": ["author", "date"]}}
+    include, fields = module._resolve_reference_metadata(req, config)
+    assert include is True
+    assert fields == {"author", "date"}
+    
+    # Test disabled in config
+    config = {"reference_metadata": {"include": False}}
+    include, fields = module._resolve_reference_metadata({}, config)
+    assert include is False
+
+
+@pytest.mark.p2
+def test_resolve_reference_metadata_request_precedence_unit(monkeypatch):
+    module = _load_chunk_module(monkeypatch)
+    
+    # Request overrides config
+    req = {"reference_metadata": {"include": True, "fields": ["title"]}}
+    config = {"reference_metadata": {"include": False, "fields": ["author"]}}
+    include, fields = module._resolve_reference_metadata(req, config)
+    assert include is True
+    assert fields == {"title"}
+    
+    # Partial override
+    req = {"reference_metadata": {"include": True}}
+    config = {"reference_metadata": {"fields": ["author"]}}
+    include, fields = module._resolve_reference_metadata(req, config)
+    assert include is True
+    assert fields == {"author"}
+
+
+@pytest.mark.p2
+def test_resolve_reference_metadata_legacy_keys_unit(monkeypatch):
+    module = _load_chunk_module(monkeypatch)
+    
+    # Legacy flat keys
+    req = {"include_metadata": True, "metadata_fields": ["title", "page"]}
+    include, fields = module._resolve_reference_metadata(req, None)
+    assert include is True
+    assert fields == {"title", "page"}
+    
+    # Legacy keys don't override reference_metadata
+    req = {
+        "reference_metadata": {"include": False},
+        "include_metadata": True
+    }
+    include, fields = module._resolve_reference_metadata(req, None)
+    assert include is False
+
+
+@pytest.mark.p2
+def test_resolve_reference_metadata_edge_cases_unit(monkeypatch):
+    module = _load_chunk_module(monkeypatch)
+    
+    # Non-list fields
+    req = {"reference_metadata": {"include": True, "fields": "not-a-list"}}
+    include, fields = module._resolve_reference_metadata(req, None)
+    assert include is True
+    assert fields == set()
+    
+    # Fields with non-string values
+    req = {"reference_metadata": {"include": True, "fields": ["title", 123, None, "page"]}}
+    include, fields = module._resolve_reference_metadata(req, None)
+    assert include is True
+    assert fields == {"title", "page"}
+
+
+@pytest.mark.p2
+def test_enrich_chunks_with_metadata_basic_unit(monkeypatch):
+    module = _load_chunk_module(monkeypatch)
+    
+    chunks = [
+        {"doc_id": "doc-1", "kb_id": "kb-1", "content_with_weight": "content"},
+        {"doc_id": "doc-2", "kb_id": "kb-1", "content_with_weight": "more"}
+    ]
+    
+    mock_metadata = {
+        "doc-1": {"title": "Document 1", "page": 5},
+        "doc-2": {"title": "Document 2", "page": 10}
+    }
+    
+    monkeypatch.setattr(
+        module.DocMetadataService,
+        "get_metadata_for_documents",
+        lambda doc_ids, kb_id: mock_metadata,
+        raising=False
+    )
+    
+    module._enrich_chunks_with_document_metadata(chunks, None)
+    
+    assert chunks[0]["document_metadata"] == {"title": "Document 1", "page": 5}
+    assert chunks[1]["document_metadata"] == {"title": "Document 2", "page": 10}
+
+
+@pytest.mark.p2
+def test_enrich_chunks_with_metadata_filtering_unit(monkeypatch):
+    module = _load_chunk_module(monkeypatch)
+    
+    chunks = [{"doc_id": "doc-1", "kb_id": "kb-1", "content_with_weight": "content"}]
+    
+    mock_metadata = {
+        "doc-1": {"title": "Doc", "page": 5, "author": "Alice", "date": "2024"}
+    }
+    
+    monkeypatch.setattr(
+        module.DocMetadataService,
+        "get_metadata_for_documents",
+        lambda doc_ids, kb_id: mock_metadata,
+        raising=False
+    )
+    
+    # Filter to only title and author
+    metadata_fields = {"title", "author"}
+    module._enrich_chunks_with_document_metadata(chunks, metadata_fields)
+    
+    assert chunks[0]["document_metadata"] == {"title": "Doc", "author": "Alice"}
+    assert "page" not in chunks[0]["document_metadata"]
+    assert "date" not in chunks[0]["document_metadata"]
+
+
+@pytest.mark.p2
+def test_enrich_chunks_skips_missing_doc_id_unit(monkeypatch):
+    module = _load_chunk_module(monkeypatch)
+    
+    chunks = [
+        {"kb_id": "kb-1", "content_with_weight": "no doc_id"},
+        {"doc_id": "doc-1", "content_with_weight": "no kb_id"}
+    ]
+    
+    monkeypatch.setattr(
+        module.DocMetadataService,
+        "get_metadata_for_documents",
+        lambda doc_ids, kb_id: {},
+        raising=False
+    )
+    
+    module._enrich_chunks_with_document_metadata(chunks, None)
+    
+    assert "document_metadata" not in chunks[0]
+    assert "document_metadata" not in chunks[1]
+
+
+@pytest.mark.p2
+def test_enrich_chunks_empty_metadata_fields_unit(monkeypatch):
+    module = _load_chunk_module(monkeypatch)
+    
+    chunks = [{"doc_id": "doc-1", "kb_id": "kb-1", "content_with_weight": "content"}]
+    
+    # Should return early without fetching metadata
+    module._enrich_chunks_with_document_metadata(chunks, set())
+    
+    assert "document_metadata" not in chunks[0]
+
+
+@pytest.mark.p2
+def test_enrich_chunks_no_metadata_available_unit(monkeypatch):
+    module = _load_chunk_module(monkeypatch)
+    
+    chunks = [{"doc_id": "doc-1", "kb_id": "kb-1", "content_with_weight": "content"}]
+    
+    # Service returns empty dict
+    monkeypatch.setattr(
+        module.DocMetadataService,
+        "get_metadata_for_documents",
+        lambda doc_ids, kb_id: {},
+        raising=False
+    )
+    
+    module._enrich_chunks_with_document_metadata(chunks, None)
+    
+    assert "document_metadata" not in chunks[0]
+
+
+@pytest.mark.p2
+def test_enrich_chunks_multiple_kb_ids_unit(monkeypatch):
+    module = _load_chunk_module(monkeypatch)
+    
+    chunks = [
+        {"doc_id": "doc-1", "kb_id": "kb-1", "content_with_weight": "content1"},
+        {"doc_id": "doc-2", "kb_id": "kb-2", "content_with_weight": "content2"}
+    ]
+    
+    metadata_calls = []
+    
+    def mock_get_metadata(doc_ids, kb_id):
+        metadata_calls.append((doc_ids, kb_id))
+        if kb_id == "kb-1":
+            return {"doc-1": {"title": "KB1 Doc"}}
+        return {"doc-2": {"title": "KB2 Doc"}}
+    
+    monkeypatch.setattr(
+        module.DocMetadataService,
+        "get_metadata_for_documents",
+        mock_get_metadata,
+        raising=False
+    )
+    
+    module._enrich_chunks_with_document_metadata(chunks, None)
+    
+    # Should call once per kb_id
+    assert len(metadata_calls) == 2
+    assert chunks[0]["document_metadata"] == {"title": "KB1 Doc"}
+    assert chunks[1]["document_metadata"] == {"title": "KB2 Doc"}
