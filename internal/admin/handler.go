@@ -19,10 +19,12 @@ package admin
 import (
 	"errors"
 	"net/http"
+	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -111,7 +113,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	user, code, err := h.userService.LoginByEmail(&req)
+	user, code, err := h.userService.LoginByEmail(&req, true)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"code":    code,
@@ -135,8 +137,9 @@ func (h *Handler) Login(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "Login successful",
+		"code":    common.CodeSuccess,
+		"message": "Welcome back!",
+		"data":    user,
 	})
 }
 
@@ -942,4 +945,32 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 		Code:    404,
 		Message: "The requested resource was not found",
 	})
+}
+
+// Reports handle heartbeat reports from servers
+func (h *Handler) Reports(c *gin.Context) {
+	var req common.BaseMessage
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "Invalid request body: "+err.Error(), 400)
+		return
+	}
+
+	// Set default timestamp if not provided
+	if req.Timestamp.IsZero() {
+		req.Timestamp = time.Now()
+	}
+
+	// Only process heartbeat messages for now
+	if req.MessageType != common.MessageHeartbeat {
+		errorResponse(c, "Unsupported report type: "+string(req.MessageType), 400)
+		return
+	}
+
+	// Handle the heartbeat
+	if err := h.service.HandleHeartbeat(&req); err != nil {
+		errorResponse(c, "Failed to process heartbeat: "+err.Error(), 500)
+		return
+	}
+
+	successNoData(c, "Heartbeat received successfully")
 }
