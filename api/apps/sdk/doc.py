@@ -98,6 +98,9 @@ def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
     """
     Mutates retrieval chunk payloads in-place by attaching `document_metadata`.
     """
+    if metadata_fields is not None and not metadata_fields:
+        return
+
     doc_ids_by_kb = {}
     for chunk in chunks:
         kb_id = chunk.get("kb_id")
@@ -114,9 +117,6 @@ def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
         meta_map = DocMetadataService.get_metadata_for_documents(list(doc_ids), kb_id)
         if meta_map:
             meta_by_doc.update(meta_map)
-
-    if metadata_fields is not None and not metadata_fields:
-        return
 
     for chunk in chunks:
         doc_id = chunk.get("doc_id")
