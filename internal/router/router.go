@@ -101,6 +101,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 	engine.POST("/v1/user/setting", r.userHandler.Setting)
 	// User change password endpoint
 	engine.POST("/v1/user/setting/password", r.userHandler.ChangePassword)
+	// User set tenant info endpoint
+	engine.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
 
 	// API v1 route group
 	v1 := engine.Group("/api/v1")
@@ -134,7 +136,25 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// Knowledge base routes
 	kb := engine.Group("/v1/kb")
 	{
+		kb.POST("/create", r.knowledgebaseHandler.CreateKB)
+		kb.POST("/update", r.knowledgebaseHandler.UpdateKB)
+		kb.POST("/update_metadata_setting", r.knowledgebaseHandler.UpdateMetadataSetting)
+		kb.GET("/detail", r.knowledgebaseHandler.GetDetail)
 		kb.POST("/list", r.knowledgebaseHandler.ListKbs)
+		kb.POST("/rm", r.knowledgebaseHandler.DeleteKB)
+		kb.GET("/tags", r.knowledgebaseHandler.ListTagsFromKbs)
+		kb.GET("/get_meta", r.knowledgebaseHandler.GetMeta)
+		kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
+
+		// KB ID specific routes
+		kbByID := kb.Group("/:kb_id")
+		{
+			kbByID.GET("/tags", r.knowledgebaseHandler.ListTags)
+			kbByID.POST("/rm_tags", r.knowledgebaseHandler.RemoveTags)
+			kbByID.POST("/rename_tag", r.knowledgebaseHandler.RenameTag)
+			kbByID.GET("/knowledge_graph", r.knowledgebaseHandler.KnowledgeGraph)
+			kbByID.DELETE("/knowledge_graph", r.knowledgebaseHandler.DeleteKnowledgeGraph)
+		}
 	}
 
 	// Chunk routes
@@ -149,6 +169,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
 		llm.GET("/factories", r.llmHandler.Factories)
 		llm.GET("/list", r.llmHandler.ListApp)
+		llm.POST("/set_api_key", r.llmHandler.SetAPIKey)
 	}
 
 	// Chat routes

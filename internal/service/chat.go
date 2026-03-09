@@ -82,7 +82,7 @@ func (s *ChatService) ListChats(userID string, status string) (*ListChatsRespons
 	}
 
 	// Enrich with knowledge base names
-	var chatsWithKBNames []*ChatWithKBNames
+	chatsWithKBNames := make([]*ChatWithKBNames, 0, len(chats))
 	for _, chat := range chats {
 		kbNames := s.getKBNames(chat.KBIDs)
 		chatsWithKBNames = append(chatsWithKBNames, &ChatWithKBNames{
@@ -148,7 +148,7 @@ func (s *ChatService) ListChatsNext(userID string, keywords string, page, pageSi
 	}
 
 	// Enrich with knowledge base names
-	var chatsWithKBNames []*ChatWithKBNames
+	chatsWithKBNames := make([]*ChatWithKBNames, 0, len(chats))
 	for _, chat := range chats {
 		kbNames := s.getKBNames(chat.KBIDs)
 		chatsWithKBNames = append(chatsWithKBNames, &ChatWithKBNames{
