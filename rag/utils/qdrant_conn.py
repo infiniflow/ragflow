@@ -16,8 +16,10 @@
 
 import copy
 import logging
+from numbers import Integral
 import re
 import time
+from uuid import NAMESPACE_URL, UUID, uuid5
 from typing import Any
 
 from qdrant_client import QdrantClient, models
@@ -118,9 +120,31 @@ class QdrantConnection(DocStoreConnection):
 
     @staticmethod
     def _extract_point_id(point: Any):
+        payload = QdrantConnection._extract_payload(point)
+        if isinstance(payload, dict) and payload.get("id") is not None:
+            return payload.get("id")
+        return QdrantConnection._extract_storage_point_id(point)
+
+    @staticmethod
+    def _extract_storage_point_id(point: Any):
         if isinstance(point, dict):
             return point.get("id")
         return getattr(point, "id", None)
+
+    @staticmethod
+    def _to_qdrant_point_id(external_id: Any):
+        if external_id is None:
+            raise ValueError("missing_document_id")
+        if isinstance(external_id, Integral) and not isinstance(external_id, bool):
+            if int(external_id) < 0:
+                raise ValueError(f"{external_id}:invalid_negative_id")
+            return int(external_id)
+        external_id = str(external_id).strip()
+        try:
+            UUID(external_id)
+            return external_id
+        except Exception:
+            return str(uuid5(NAMESPACE_URL, f"ragflow:{external_id}"))
 
     @staticmethod
     def _extract_point_score(point: Any) -> float:
@@ -316,7 +340,11 @@ class QdrantConnection(DocStoreConnection):
         field_value = payload.get(key)
         if key == "available_int":
             try:
-                field_value_num = float(field_value or 0)
+                # ES treats a missing availability flag as available because the
+                # `must_not range lt 1` filter does not exclude missing fields.
+                # Mirror that behavior here so legacy chunks without
+                # `available_int` remain searchable under Qdrant.
+                field_value_num = 1.0 if field_value is None else float(field_value)
                 if value == 0:
                     return field_value_num < 1
                 return field_value_num >= 1
@@ -394,7 +422,7 @@ class QdrantConnection(DocStoreConnection):
             if dataset_ids:
                 condition = {**condition, "kb_id": dataset_ids}
         for key, value in (condition or {}).items():
-            if value is None or key in {"exists", "must_not", "id"}:
+            if value is None or key in {"exists", "must_not"}:
                 continue
             if key == "available_int":
                 if value == 0:
@@ -547,7 +575,10 @@ class QdrantConnection(DocStoreConnection):
         assert "id" in row
         payload = copy.deepcopy(row)
         payload["kb_id"] = dataset_id
-        point_id = payload.pop("id")
+        if not self._is_metadata_index(collection_name):
+            payload.setdefault("available_int", 1)
+        point_id = payload.get("id")
+        storage_point_id = self._to_qdrant_point_id(point_id)
         vector_field, dense_vector = self._extract_dense_vector(payload)
         sparse_vector = self._extract_sparse_vector(payload)
         if dense_vector is None:
@@ -559,7 +590,7 @@ class QdrantConnection(DocStoreConnection):
         # extend this vector builder with page/image vectors instead of replacing
         # the primary dense text vector branch.
         vector = {DENSE_VECTOR_NAME: list(dense_vector)} if self._is_metadata_index(collection_name) else self._default_named_vectors(dense_vector, sparse_vector)
-        return point_id, vector_field, models.PointStruct(id=point_id, vector=vector, payload=payload)
+        return point_id, vector_field, models.PointStruct(id=storage_point_id, vector=vector, payload=payload)
 
     def _point_to_hit(self, point: Any, requested_vector_field: str | None, text_expr: MatchTextExpr | None, highlight_fields: list[str], rank_feature: dict | None = None):
         payload = self._extract_payload(point)
@@ -712,7 +743,7 @@ class QdrantConnection(DocStoreConnection):
             records = self._retry(
                 self.client.retrieve,
                 collection_name=index_name,
-                ids=[data_id],
+                ids=[self._to_qdrant_point_id(data_id)],
                 with_payload=True,
                 with_vectors=[DENSE_VECTOR_NAME],
             )
@@ -727,7 +758,7 @@ class QdrantConnection(DocStoreConnection):
                     vector_field = dense_vector_field_name(dense_size)
             doc = self._point_to_hit(point, vector_field, None, [])
             doc_source = doc["_source"]
-            doc_source["id"] = data_id
+            doc_source["id"] = self._extract_point_id(point)
             return doc_source
         except Exception as error:
             self.logger.exception(f"QdrantConnection.get({data_id}) got exception")
@@ -940,7 +971,7 @@ class QdrantConnection(DocStoreConnection):
                     vector[SPARSE_VECTOR_NAME] = sparse_vector if sparse_vector is not None else self._empty_sparse_vector()
                 updated_points.append(
                     models.PointStruct(
-                        id=self._extract_point_id(point),
+                        id=self._extract_storage_point_id(point),
                         vector=vector,
                         payload=payload,
                     )
@@ -963,7 +994,7 @@ class QdrantConnection(DocStoreConnection):
                 payload = self._extract_payload(point)
                 point_id = self._extract_point_id(point)
                 if self._matches_condition(point_id, payload, full_condition):
-                    point_ids.append(point_id)
+                    point_ids.append(self._extract_storage_point_id(point))
             if not point_ids:
                 return 0
             self.client.delete(collection_name=index_name, points_selector=point_ids, wait=True)
@@ -1011,6 +1042,15 @@ class QdrantConnection(DocStoreConnection):
                 res_fields[doc["id"]] = mapped
         return res_fields
 
+    @staticmethod
+    def _raw_highlight_fallback(raw_text: str) -> str:
+        if not raw_text:
+            return ""
+        raw_text = re.sub(r"[\r\n]+", " ", raw_text, flags=re.IGNORECASE | re.MULTILINE).strip()
+        if len(raw_text) <= 280:
+            return raw_text
+        return raw_text[:280].rstrip() + "..."
+
     def get_highlight(self, res, keywords: list[str], field_name: str):
         ans = {}
         for hit in res["hits"]["hits"]:
@@ -1035,7 +1075,7 @@ class QdrantConnection(DocStoreConnection):
                 if not re.search(r"<em>[^<>]+</em>", sentence, flags=re.IGNORECASE | re.MULTILINE):
                     continue
                 txt_list.append(sentence)
-            ans[hit["_id"]] = "...".join(txt_list) if txt_list else txt
+            ans[hit["_id"]] = "...".join(txt_list) if txt_list else self._raw_highlight_fallback(raw_txt) or txt
         return ans
 
     def get_aggregation(self, res, field_name: str):

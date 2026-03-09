@@ -101,6 +101,22 @@ def get_infinity_status():
         }
 
 
+def get_qdrant_status():
+    doc_engine = os.getenv('DOC_ENGINE', 'elasticsearch')
+    if doc_engine != 'qdrant':
+        raise Exception("Qdrant is not in use.")
+    try:
+        return {
+            "status": "alive",
+            "message": settings.docStoreConn.health()
+        }
+    except Exception as e:
+        return {
+            "status": "timeout",
+            "message": f"error: {str(e)}",
+        }
+
+
 def get_oceanbase_status():
     """
     Get OceanBase health status and performance metrics.

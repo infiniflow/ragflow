@@ -20,6 +20,7 @@ import sys
 import types
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 
@@ -196,6 +197,7 @@ class _FakeQdrantClient:
     def upsert(self, collection_name, points, wait=False):
         collection = self.collections[collection_name]
         for point in points:
+            self._validate_point_id(point.id)
             collection["points"][point.id] = {
                 "id": point.id,
                 "payload": copy.deepcopy(point.payload),
@@ -370,6 +372,17 @@ class _FakeQdrantClient:
             score += left_map.get(int(idx), 0.0) * float(value)
         return score
 
+    @staticmethod
+    def _validate_point_id(point_id):
+        if isinstance(point_id, int) and point_id >= 0:
+            return
+        if isinstance(point_id, str):
+            UUID(point_id)
+            return
+        raise ValueError(
+            f"{point_id} is not a valid point ID, valid values are either an unsigned integer or a UUID"
+        )
+
 
 def _load_qdrant_module(monkeypatch):
     import common
@@ -507,6 +520,94 @@ def test_insert_get_update_and_delete_document(monkeypatch):
 
     assert conn.delete({"id": "doc-1"}, "ragflow_tenant", "kb-1") == 1
     assert conn.get("doc-1", "ragflow_tenant", ["kb-1"]) is None
+
+
+@pytest.mark.p2
+def test_missing_available_flag_is_treated_as_available(monkeypatch):
+    module = _load_qdrant_module(monkeypatch)
+    conn = module.QdrantConnection()
+    conn.create_idx("ragflow_tenant", "kb-1", 3)
+
+    errors = conn.insert(
+        [
+            _make_doc(
+                "doc-1",
+                [1.0, 0.0, 0.0],
+                title_tks="alpha",
+                content_ltks="alpha content",
+            )
+        ],
+        "ragflow_tenant",
+        "kb-1",
+    )
+    assert errors == []
+
+    stored = conn.get("doc-1", "ragflow_tenant", ["kb-1"])
+    assert stored["available_int"] == 1
+
+    result = conn.search(
+        select_fields=["title_tks", "available_int"],
+        highlight_fields=[],
+        condition={"available_int": 1},
+        match_expressions=[],
+        order_by=OrderByExpr(),
+        offset=0,
+        limit=10,
+        index_names="ragflow_tenant",
+        knowledgebase_ids=["kb-1"],
+    )
+
+    assert conn.get_doc_ids(result) == ["doc-1"]
+    fields = conn.get_fields(result, ["available_int"])
+    assert fields["doc-1"]["available_int"] == 1
+
+
+@pytest.mark.p2
+def test_string_ids_are_mapped_to_qdrant_uuids(monkeypatch):
+    module = _load_qdrant_module(monkeypatch)
+    conn = module.QdrantConnection()
+    conn.create_idx("ragflow_tenant", "kb-1", 3)
+
+    raw_id = "8d6b7a4e2b9d9780"
+    errors = conn.insert([_make_doc(raw_id, [1.0, 0.0, 0.0], title_tks="alpha")], "ragflow_tenant", "kb-1")
+
+    assert errors == []
+    stored_points = conn.client.collections["ragflow_tenant"]["points"]
+    assert list(stored_points) != [raw_id]
+    stored_point_id = next(iter(stored_points))
+    UUID(str(stored_point_id))
+    assert stored_points[stored_point_id]["payload"]["id"] == raw_id
+    assert conn.get(raw_id, "ragflow_tenant", ["kb-1"])["id"] == raw_id
+
+
+@pytest.mark.p2
+def test_highlight_falls_back_to_raw_chunk_text(monkeypatch):
+    module = _load_qdrant_module(monkeypatch)
+    conn = module.QdrantConnection()
+
+    result = {
+        "hits": {
+            "hits": [
+                {
+                    "_id": "doc-1",
+                    "_source": {
+                        "content_with_weight": "Placidus conforms to our zeitgeist, which is characterized by relativity and perspectivism.",
+                    },
+                    "highlight": {
+                        "content_ltks": [
+                            "placidus conform to our zeitgeist which is character by relativ and perspectivu"
+                        ]
+                    },
+                }
+            ]
+        }
+    }
+
+    highlight = conn.get_highlight(result, ["relativ"], "content_with_weight")
+
+    assert "relativity" in highlight["doc-1"].lower()
+    assert "perspectivism" in highlight["doc-1"].lower()
+    assert "perspectivu" not in highlight["doc-1"].lower()
 
 
 @pytest.mark.p2
