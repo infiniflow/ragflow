@@ -2265,7 +2265,7 @@ curl --request POST \
   - `1`: Available,
   - `0`: Unavailable.
 - `"available"`: (*Body parameter*), `boolean` (*Optional*)  
-  Availability status of the specified chunks. Mutually exclusive with `"available_int"`. You must provide either `available_int` or `available`, *not* both.  
+  Availability status of the specified chunks. Mutually exclusive with `"available_int"`. You must provide either `available` or `available_int`, *not* both.  
   - `true`: Available,
   - `false`: Unavailable.
 
