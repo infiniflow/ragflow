@@ -1363,6 +1363,9 @@ class REST_API(SyncBase):
             batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
             max_pages=self.conf.get("max_pages", 1000),
             request_body=self.conf.get("request_body"),
+            field_type_hints=self.conf.get("field_type_hints") or {},
+            field_default_values=self.conf.get("field_default_values") or {},
+            content_template=self.conf.get("content_template"),
         )
 
         credentials = self.conf.get("credentials") or {}

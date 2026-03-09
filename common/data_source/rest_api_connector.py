@@ -73,6 +73,16 @@ class RestAPIConnectorConfig(BaseModel):
     # Only used for POST; for GET this is ignored.
     request_body: Optional[Dict[str, Any]] = None
 
+    # Advanced field mapping
+    # e.g. {"country.name": "string", "published_at": "date"}
+    field_type_hints: Dict[str, str] = Field(default_factory=dict)
+    # e.g. {"author": "Unknown", "tags": []}
+    field_default_values: Dict[str, Any] = Field(default_factory=dict)
+    # Template-based content formatting. When provided, overrides simple
+    # content field concatenation. Example:
+    #   "Title: {title}\n\nContent: {body}"
+    content_template: Optional[str] = None
+
     batch_size: int = INDEX_BATCH_SIZE
     max_pages: int = 1000
 
@@ -136,6 +146,9 @@ class RestAPIConnector(LoadConnector, PollConnector):
         batch_size: int = INDEX_BATCH_SIZE,
         max_pages: int = 1000,
         request_body: Optional[Dict[str, Any]] = None,
+        field_type_hints: Optional[Dict[str, str]] = None,
+        field_default_values: Optional[Dict[str, Any]] = None,
+        content_template: Optional[str] = None,
     ) -> None:
         self.url = url
         self.method = (method or "GET").upper()
@@ -156,6 +169,9 @@ class RestAPIConnector(LoadConnector, PollConnector):
         self.poll_timestamp_field = poll_timestamp_field
         self.batch_size = batch_size
         self.max_pages = max_pages
+        self.field_type_hints: Dict[str, str] = field_type_hints or {}
+        self.field_default_values: Dict[str, Any] = field_default_values or {}
+        self.content_template = content_template
 
         # Populated by `load_credentials`
         self._credentials: Dict[str, Any] = {}
@@ -247,6 +263,9 @@ class RestAPIConnector(LoadConnector, PollConnector):
             batch_size=cfg.batch_size,
             max_pages=min(cfg.max_pages, 10),  # cap for validation
             request_body=cfg.request_body,
+            field_type_hints=cfg.field_type_hints,
+            field_default_values=cfg.field_default_values,
+            content_template=cfg.content_template,
         )
 
         if credentials is not None:
@@ -618,7 +637,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
     def _item_to_document(self, item: Mapping[str, Any]) -> Document:
         """Map a single API item to a `Document`."""
         if self.id_field:
-            raw_id = self._extract_field(item, self.id_field)
+            raw_id = self._get_typed_field_value(self.id_field, item)
         else:
             raw_id = None
 
@@ -628,22 +647,24 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
         doc_id = hash128(f"rest_api:{raw_id}")
 
-        content_parts: List[str] = []
-        for field in self.content_fields:
-            value = self._extract_field(item, field)
-            if value is None:
-                continue
-            text = self._coerce_to_text(value)
-            text = self._strip_html(text)
-            if text:
-                content_parts.append(text)
-
-        content_text = "\n\n".join(content_parts)
+        # Build content text: either template-based or simple join.
+        if self.content_template:
+            content_text = self._render_content_template(item)
+        else:
+            content_parts: List[str] = []
+            for field in self.content_fields:
+                text_value = self._get_typed_field_value(field, item)
+                if text_value is None:
+                    continue
+                text = self._strip_html(self._coerce_to_text(text_value))
+                if text:
+                    content_parts.append(text)
+            content_text = "\n\n".join(content_parts)
         blob = content_text.encode("utf-8")
 
         metadata: Dict[str, Any] = {}
         for field in self.metadata_fields:
-            value = self._extract_field(item, field)
+            value = self._get_typed_field_value(field, item)
             if value is None:
                 continue
             metadata[field] = self._serialize_metadata_value(value)
@@ -674,18 +695,73 @@ class RestAPIConnector(LoadConnector, PollConnector):
     # Helpers
     # --------------------------------------------------------------------- #
     def _extract_field(self, item: Mapping[str, Any], path: str) -> Any:
-        """Extract a field from an item using simple dot-notation."""
-        if not path:
-            return None
+        """Extract a field from an item using dot-notation with basic array support.
 
-        current: Any = item
-        for part in path.split("."):
-            if not isinstance(current, Mapping):
-                return None
-            current = current.get(part)
-            if current is None:
-                return None
-        return current
+        Examples:
+        - "country.name"
+        - "newsType[0].name"
+        - "newsType[*].name" -> returns list of values
+        """
+        values = self._extract_field_values(item, path)
+        if not values:
+            return None
+        if len(values) == 1:
+            return values[0]
+        return values
+
+    def _extract_field_values(
+        self,
+        item: Mapping[str, Any],
+        path: str,
+    ) -> List[Any]:
+        """Return list of raw values for a field path with optional wildcards."""
+        if not path:
+            return []
+
+        segments = path.split(".")
+        current_values: List[Any] = [item]
+
+        for segment in segments:
+            if not segment:
+                return []
+
+            match = re.match(
+                r'^(?P<key>[^\[\]]+)(\[(?P<index>\d+|\*)\])?$', segment
+            )
+            key = segment
+            index: Optional[str] = None
+            if match:
+                key = match.group("key")
+                index = match.group("index")
+
+            next_values: List[Any] = []
+            for value in current_values:
+                if not isinstance(value, Mapping):
+                    continue
+                child = value.get(key)
+                if child is None:
+                    continue
+
+                if index is None:
+                    next_values.append(child)
+                else:
+                    if not isinstance(child, list):
+                        continue
+                    if index == "*":
+                        next_values.extend(child)
+                    else:
+                        try:
+                            idx = int(index)
+                        except ValueError:
+                            continue
+                        if 0 <= idx < len(child):
+                            next_values.append(child[idx])
+
+            current_values = next_values
+            if not current_values:
+                break
+
+        return current_values
 
     def _extract_timestamp(self, item: Mapping[str, Any]) -> Optional[datetime]:
         """Extract timestamp from item using `poll_timestamp_field`."""
@@ -693,6 +769,9 @@ class RestAPIConnector(LoadConnector, PollConnector):
             return None
 
         value = self._extract_field(item, self.poll_timestamp_field)
+        # If wildcard was used accidentally, collapse lists.
+        if isinstance(value, list) and value:
+            value = value[0]
         if value is None:
             return None
 
@@ -760,6 +839,95 @@ class RestAPIConnector(LoadConnector, PollConnector):
             return json.dumps(value, ensure_ascii=False)
         except Exception:
             return str(value)
+
+    def _get_typed_field_value(
+        self,
+        path: str,
+        item: Mapping[str, Any],
+    ) -> Any:
+        """Apply type hints, defaults, and array joining for a single field path."""
+        values = self._extract_field_values(item, path)
+
+        if not values:
+            if path in self.field_default_values:
+                return self.field_default_values[path]
+            return None
+
+        hint = self.field_type_hints.get(path)
+
+        def _convert(v: Any) -> Any:
+            if hint == "string":
+                return "" if v is None else str(v)
+            if hint == "number":
+                if v is None:
+                    return None
+                try:
+                    # Prefer int when exact, else float
+                    num = float(v)
+                    return int(num) if num.is_integer() else num
+                except Exception:
+                    return None
+            if hint == "date":
+                if isinstance(v, datetime):
+                    dt = v
+                else:
+                    # Best-effort parse, fall back to string
+                    if isinstance(v, str):
+                        parsed = self._extract_timestamp({"_": v})  # type: ignore[arg-type]
+                        dt = parsed or None
+                    else:
+                        dt = None
+                if dt is not None:
+                    return dt.isoformat()
+                return str(v) if v is not None else None
+            return v
+
+        converted = [_convert(v) for v in values]
+        # Collapse list: default join for arrays.
+        non_null = [v for v in converted if v is not None]
+        if not non_null:
+            return None
+        if len(non_null) == 1:
+            return non_null[0]
+        return ", ".join(self._coerce_to_text(v) for v in non_null)
+
+    def _render_content_template(self, item: Mapping[str, Any]) -> str:
+        """Render content using a user-provided template with {field} placeholders."""
+        template = self.content_template or ""
+
+        class _SafeDict(dict):
+            def __missing__(self, key: str) -> str:  # type: ignore[override]
+                return ""
+
+        values: Dict[str, str] = {}
+
+        def _logical_name(path: str) -> str:
+            # Use the last segment without index brackets as logical name.
+            segment = path.split(".")[-1]
+            segment = re.sub(r"\[\d+\]|\[\*\]", "", segment)
+            return segment or path
+
+        for field_path in set(self.content_fields + self.metadata_fields):
+            val = self._get_typed_field_value(field_path, item)
+            if val is None:
+                continue
+            name = _logical_name(field_path)
+            values[name] = self._coerce_to_text(val)
+
+        try:
+            rendered = template.format_map(_SafeDict(values))
+        except Exception as exc:
+            logging.warning("Failed to render REST API content template: %s", exc)
+            # Fallback to simple join of content fields
+            parts: list[str] = []
+            for field in self.content_fields:
+                val = self._get_typed_field_value(field, item)
+                if val is None:
+                    continue
+                parts.append(self._coerce_to_text(val))
+            rendered = "\n\n".join(parts)
+
+        return self._strip_html(rendered)
 
     @staticmethod
     def _serialize_metadata_value(value: Any) -> Any:
