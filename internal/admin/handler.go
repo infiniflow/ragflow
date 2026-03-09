@@ -19,10 +19,12 @@ package admin
 import (
 	"errors"
 	"net/http"
+	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -942,4 +944,32 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 		Code:    404,
 		Message: "The requested resource was not found",
 	})
+}
+
+// Reports handle heartbeat reports from servers
+func (h *Handler) Reports(c *gin.Context) {
+	var req common.BaseMessage
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "Invalid request body: "+err.Error(), 400)
+		return
+	}
+
+	// Set default timestamp if not provided
+	if req.Timestamp.IsZero() {
+		req.Timestamp = time.Now()
+	}
+
+	// Only process heartbeat messages for now
+	if req.MessageType != common.MessageHeartbeat {
+		errorResponse(c, "Unsupported report type: "+string(req.MessageType), 400)
+		return
+	}
+
+	// Handle the heartbeat
+	if err := h.service.HandleHeartbeat(&req); err != nil {
+		errorResponse(c, "Failed to process heartbeat: "+err.Error(), 500)
+		return
+	}
+
+	successNoData(c, "Heartbeat received successfully")
 }

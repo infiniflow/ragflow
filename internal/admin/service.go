@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"ragflow/internal/cache"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/model"
@@ -731,4 +732,19 @@ func (s *Service) TestSandboxConnection(providerType string, config map[string]i
 		"config":        config,
 		"connected":     true,
 	}, nil
+}
+
+// HandleHeartbeat handle heartbeat
+func (s *Service) HandleHeartbeat(msg *common.BaseMessage) error {
+	status := &common.BaseMessage{
+		ServerName: msg.ServerName,
+		ServerType: msg.ServerType,
+		Host:       msg.Host,
+		Port:       msg.Port,
+		Version:    msg.Version,
+		Timestamp:  msg.Timestamp,
+		Ext:        msg.Ext,
+	}
+	GlobalServerStatusStore.UpdateStatus(msg.ServerName, status)
+	return nil
 }
