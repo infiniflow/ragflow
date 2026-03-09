@@ -56,6 +56,7 @@ from common.data_source import (
     SeaFileConnector,
     RDBMSConnector,
     DingTalkAITableConnector,
+    RestAPIConnector,
 )
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
@@ -1337,6 +1338,56 @@ class PostgreSQL(SyncBase):
         return document_generator
 
 
+class REST_API(SyncBase):
+    SOURCE_NAME: str = FileSource.REST_API
+
+    async def _generate(self, task: dict):
+        """
+        Sync documents from a generic REST API using the configuration-driven
+        `RestAPIConnector`.
+        """
+        # Build connector from connector config (UI will ensure schema).
+        self.connector = RestAPIConnector(
+            url=self.conf["url"],
+            method=self.conf.get("method", "GET"),
+            headers=self.conf.get("headers") or {},
+            auth_type=self.conf.get("auth_type", "none"),
+            auth_config=self.conf.get("auth_config") or {},
+            items_path=self.conf.get("items_path"),
+            id_field=self.conf.get("id_field"),
+            content_fields=self.conf.get("content_fields") or [],
+            metadata_fields=self.conf.get("metadata_fields") or [],
+            pagination_type=self.conf.get("pagination_type", "none"),
+            pagination_config=self.conf.get("pagination_config") or {},
+            poll_timestamp_field=self.conf.get("poll_timestamp_field"),
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            max_pages=self.conf.get("max_pages", 1000),
+            request_body=self.conf.get("request_body"),
+        )
+
+        credentials = self.conf.get("credentials") or {}
+        self.connector.load_credentials(credentials)
+
+        poll_start = task.get("poll_range_start")
+        if task.get("reindex") == "1" or poll_start is None:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+            begin_info = f"from {poll_start}"
+
+        logging.info(
+            "Connect to REST API: %s %s %s",
+            self.conf.get("method", "GET"),
+            self.conf.get("url"),
+            begin_info,
+        )
+        return document_generator
+
+
 func_factory = {
     FileSource.S3: S3,
     FileSource.R2: R2,
@@ -1366,6 +1417,7 @@ func_factory = {
     FileSource.MYSQL: MySQL,
     FileSource.POSTGRESQL: PostgreSQL,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
+    FileSource.REST_API: REST_API,
 }
 
 

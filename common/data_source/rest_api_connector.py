@@ -16,7 +16,7 @@ import requests
 from pydantic import BaseModel, Field, HttpUrl, ValidationError
 
 from api.utils.common import hash128
-from common.data_source.config import INDEX_BATCH_SIZE
+from common.data_source.config import INDEX_BATCH_SIZE, DocumentSource
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
     ConnectorValidationError,
@@ -201,7 +201,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
         return None
 
     # ------------------------------------------------------------------ #
-    # Static configuration validation entrypoint (Ticket 2)
+    # Static configuration validation entrypoint 
     # ------------------------------------------------------------------ #
     @classmethod
     def validate_config(
@@ -623,7 +623,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
         return Document(
             id=doc_id,
-            source="rest_api",
+            source=DocumentSource.REST_API,
             semantic_identifier=semantic_identifier,
             extension=".txt",
             blob=blob,
