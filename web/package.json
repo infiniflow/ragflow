@@ -20,7 +20,10 @@
     ]
   },
   "overrides": {
-    "@radix-ui/react-dismissable-layer": "1.1.4"
+    "@radix-ui/react-dismissable-layer": "1.1.4",
+    "monaco-editor": {
+      "dompurify": "3.3.2"
+    }
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
@@ -76,7 +79,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.0.4",
     "dayjs": "^1.11.10",
-    "dompurify": "^3.1.6",
+    "dompurify": "^3.3.2",
     "embla-carousel-react": "^8.6.0",
     "eventsource-parser": "^1.1.2",
     "human-id": "^4.1.1",
