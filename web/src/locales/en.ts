@@ -1175,6 +1175,10 @@ Example: Virtual Hosted Style`,
         'Bearer token is required when Auth Type is Bearer Token.',
       restApiValidationBasicPasswordRequired:
         'Password is required when Auth Type is Basic Auth.',
+      restApiTestConnection: 'Test connection',
+      restApiTestSuccess: 'REST API connector validated successfully.',
+      restApiTestFailed:
+        'REST API connector validation failed. Please check your configuration and logs.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',
