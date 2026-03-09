@@ -2220,6 +2220,101 @@ Failure:
 
 ---
 
+### Switch chunks availability
+
+**POST** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/switch`
+
+Switches the availability of specified chunks (enable or disable chunks for retrieval).
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/switch`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"chunk_ids"`: `list[string]` (*Required*) List of chunk IDs to switch.
+  - `"available_int"`: `integer` (*Optional*) `1` for available, `0` for unavailable. Mutually exclusive with `"available"`.
+  - `"available"`: `boolean` (*Optional*) Availability status. Mutually exclusive with `"available_int"`. Must provide either `available_int` or `available`.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/switch \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '
+     {
+          "chunk_ids": ["chunk_id_1", "chunk_id_2"],
+          "available_int": 1
+     }'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the dataset.
+- `document_id`: (*Path parameter*)  
+  The ID of the document.
+- `"chunk_ids"`: (*Body parameter*), `list[string]`, *Required*  
+  List of chunk IDs whose availability is to be switched.
+- `"available_int"`: (*Body parameter*), `integer`  
+  `1` for available (chunk participates in retrieval), `0` for unavailable. Either this or `"available"` must be provided.
+- `"available"`: (*Body parameter*), `boolean`  
+  Availability status. `true` for available, `false` for unavailable. Alternative to `"available_int"`.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 101,
+    "message": "You don't own the dataset {dataset_id}."
+}
+```
+
+```json
+{
+    "code": 101,
+    "message": "`chunk_ids` is required."
+}
+```
+
+```json
+{
+    "code": 101,
+    "message": "`available_int` or `available` is required."
+}
+```
+
+```json
+{
+    "code": 101,
+    "message": "Document not found!"
+}
+```
+
+```json
+{
+    "code": 101,
+    "message": "Index updating failure"
+}
+```
+
+---
+
 ### Retrieve a metadata summary from a dataset
 
 **GET** `/api/v1/datasets/{dataset_id}/metadata/summary`
