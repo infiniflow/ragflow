@@ -1347,6 +1347,11 @@ class REST_API(SyncBase):
         `RestAPIConnector`.
         """
         # Build connector from connector config (UI will ensure schema).
+        def _split_csv(value: Any) -> list[str]:
+            if isinstance(value, str):
+                return [v.strip() for v in value.split(",") if v.strip()]
+            return value or []
+
         self.connector = RestAPIConnector(
             url=self.conf["url"],
             method=self.conf.get("method", "GET"),
@@ -1355,8 +1360,8 @@ class REST_API(SyncBase):
             auth_config=self.conf.get("auth_config") or {},
             items_path=self.conf.get("items_path"),
             id_field=self.conf.get("id_field"),
-            content_fields=self.conf.get("content_fields") or [],
-            metadata_fields=self.conf.get("metadata_fields") or [],
+            content_fields=_split_csv(self.conf.get("content_fields")),
+            metadata_fields=_split_csv(self.conf.get("metadata_fields")),
             pagination_type=self.conf.get("pagination_type", "none"),
             pagination_config=self.conf.get("pagination_config") or {},
             poll_timestamp_field=self.conf.get("poll_timestamp_field"),
