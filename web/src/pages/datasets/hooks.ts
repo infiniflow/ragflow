@@ -36,7 +36,7 @@ export const useSaveKnowledge = () => {
 
       if (ret?.code === 0) {
         hideModal();
-        navigateToDataset(ret.data.kb_id)();
+        navigateToDataset(ret.data.id)();
       }
     },
     [createKnowledge, hideModal, navigateToDataset],
