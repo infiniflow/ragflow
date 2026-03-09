@@ -47,9 +47,19 @@ for _m in _MOCK_MODULES:
     if _m not in sys.modules:
         sys.modules[_m] = mock.MagicMock()
 
-_MODULE_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "deepdoc", "parser", "pdf_parser.py")
-)
+def _find_project_root(marker="pyproject.toml"):
+    """Walk up from this file until a directory containing *marker* is found."""
+    cur = os.path.dirname(os.path.abspath(__file__))
+    while True:
+        if os.path.exists(os.path.join(cur, marker)):
+            return cur
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            raise FileNotFoundError(f"Could not locate project root (missing {marker})")
+        cur = parent
+
+
+_MODULE_PATH = os.path.join(_find_project_root(), "deepdoc", "parser", "pdf_parser.py")
 _spec = importlib.util.spec_from_file_location("pdf_parser", _MODULE_PATH)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
