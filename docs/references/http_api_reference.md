@@ -2220,11 +2220,11 @@ Failure:
 
 ---
 
-### Switch chunks availability
+### Update chunk availability
 
 **POST** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/switch`
 
-Switches the availability of specified chunks (enable or disable chunks for retrieval).
+Updates or switches the availability status of specified chunks, controlling whether they are available for retrieval.
 
 #### Request
 
@@ -2234,9 +2234,9 @@ Switches the availability of specified chunks (enable or disable chunks for retr
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"chunk_ids"`: `list[string]` (*Required*) List of chunk IDs to switch.
-  - `"available_int"`: `integer` (*Optional*) `1` for available, `0` for unavailable. Mutually exclusive with `"available"`.
-  - `"available"`: `boolean` (*Optional*) Availability status. Mutually exclusive with `"available_int"`. Must provide either `available_int` or `available`.
+  - `"chunk_ids"`: `list[string]` (*Required*)
+  - `"available_int"`: `integer` (*Optional*)
+  - `"available"`: `boolean` (*Optional*)
 
 ##### Request example
 
@@ -2258,12 +2258,16 @@ curl --request POST \
   The ID of the dataset.
 - `document_id`: (*Path parameter*)  
   The ID of the document.
-- `"chunk_ids"`: (*Body parameter*), `list[string]`, *Required*  
-  List of chunk IDs whose availability is to be switched.
-- `"available_int"`: (*Body parameter*), `integer`  
-  `1` for available (chunk participates in retrieval), `0` for unavailable. Either this or `"available"` must be provided.
-- `"available"`: (*Body parameter*), `boolean`  
-  Availability status. `true` for available, `false` for unavailable. Alternative to `"available_int"`.
+- `"chunk_ids"`: (*Body parameter*), `list[string]` (*Required*)  
+  IDs of the chunks whose availability status is to be updated.
+- `"available_int"`: (*Body parameter*), `integer` (*Optional*)  
+  Availability status for the specified chunks. Mutually exclusive with `"available"`. You must provide either `available_int` or `available`, *not* both.
+  - `1`: Available,
+  - `0`: Unavailable.
+- `"available"`: (*Body parameter*), `boolean` (*Optional*)  
+  Availability status of the specified chunks. Mutually exclusive with `"available_int"`. You must provide either `available_int` or `available`, *not* both.  
+  - `true`: Available,
+  - `false`: Unavailable.
 
 #### Response
 
