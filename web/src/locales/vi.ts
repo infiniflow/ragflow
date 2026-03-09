@@ -723,6 +723,8 @@ export default {
       FishAudioRefIDMessage: `Vui lòng nhập ID của model tham chiếu (để trống để sử dụng model mặc định)`,
       modelsToBeAddedTooltip:
         'Nếu nhà cung cấp mô hình của bạn không có trong danh sách nhưng tuyên bố tương thích với "OpenAI", hãy chọn thẻ OpenAI-API-compatible để thêm mô hình liên quan.',
+      dingtalkAITableDescription:
+        'Kết nối với Dingtalk AI Table và đồng bộ hóa bản ghi từ một bảng được chỉ định.',
     },
     message: {
       registered: 'Đã đăng ký!',

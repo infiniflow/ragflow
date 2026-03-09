@@ -73,6 +73,7 @@ export default {
       },
       selected: 'Selected',
       seeAll: 'See all',
+      bulkOperate: 'Bulk operate',
     },
     login: {
       loginTitle: 'Sign in to your account',
@@ -514,7 +515,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       buildItFromScratch: 'Build it from scratch',
       dataFlow: 'Pipeline',
       parseType: 'Parse type',
-      manualSetup: 'Choose pipeline',
+      manualSetup: 'Pipeline',
       builtIn: 'Built-in',
       titleDescription:
         'Update your memory configuration here, particularly the LLM and prompts.',
@@ -1033,6 +1034,8 @@ Example: Virtual Hosted Style`,
         'Connect GitHub to sync pull requests and issues for retrieval.',
       airtableDescription:
         'Connect to Airtable and synchronize files from a specified table within a designated workspace.',
+      dingtalkAITableDescription:
+        'Connect to Dingtalk AI Table and synchronize records from a specified table.',
       gitlabDescription:
         'Connect GitLab to sync repositories, issues, merge requests, and related documentation.',
       asanaDescription:
@@ -1446,6 +1449,8 @@ Example: Virtual Hosted Style`,
       hint: 'hint',
     },
     fileManager: {
+      uploadFolderTitle: 'Upload folder',
+      folder: 'Folder',
       files: 'Files',
       name: 'Name',
       uploadDate: 'Upload date',
@@ -2180,6 +2185,10 @@ This process aggregates variables from multiple branches into a single variable 
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
       frameworkPrompts: 'Framework',
       release: 'Publish',
+      confirmPublish: 'Confirm Publish',
+      publishDescription: 'You are about to publish this data pipeline.',
+      linkedDataset: 'Linked dataset',
+      lastPublished: 'Last published',
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
@@ -2554,6 +2563,7 @@ Important structured information may include: names, dates, locations, events, k
       import: 'Import',
       description: 'Description',
       noDescription: 'No description',
+      none: 'None',
 
       resourceType: {
         dataset: 'Dataset',

@@ -143,8 +143,8 @@ export const HomeIcon = ({
   imgClass,
 }: {
   name: string;
-  height?: string;
-  width?: string;
+  height?: string | number;
+  width?: string | number;
   imgClass?: string;
 }) => {
   const isDark = useIsDarkTheme();

@@ -212,7 +212,13 @@ COPY pyproject.toml uv.lock ./
 COPY mcp mcp
 COPY common common
 COPY memory memory
-COPY bin bin
+
+RUN if [ -d bin ]; then \
+        cp -r bin ./; \
+        echo "✓ bin copied"; \
+    else \
+        echo "✗ bin ignored"; \
+    fi
 
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY docker/entrypoint.sh ./
