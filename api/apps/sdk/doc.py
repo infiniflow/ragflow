@@ -38,7 +38,7 @@ from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.task_service import TaskService, queue_tasks, cancel_all_task_of
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_tenant_default_model_by_type, get_model_config_by_type_and_name
 from common.metadata_utils import meta_filter, convert_conditions
-from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required, \
+from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_json_result, get_parser_config, get_result, server_error_response, token_required, \
     get_request_json
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
