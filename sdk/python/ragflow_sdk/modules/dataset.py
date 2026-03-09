@@ -105,6 +105,9 @@ class DataSet(Base):
         raise Exception(res["message"])
 
     def delete_documents(self, ids: list[str] | None = None, delete_all: bool = False):
+        # Handle empty ID list as no-op if delete_all is False
+        if ids is not None and len(ids) == 0 and not delete_all:
+            return
         res = self.rm(f"/datasets/{self.id}/documents", {"ids": ids, "delete_all": delete_all})
         res = res.json()
         if res.get("code") != 0:
