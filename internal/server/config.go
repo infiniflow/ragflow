@@ -18,6 +18,7 @@ package server
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -134,6 +135,7 @@ var (
 	globalConfig *Config
 	globalViper  *viper.Viper
 	zapLogger    *zap.Logger
+	allConfigs   []map[string]interface{}
 )
 
 // Init initialize configuration
@@ -169,6 +171,153 @@ func Init(configPath string) error {
 
 	// Save viper instance
 	globalViper = v
+
+	docEngine := os.Getenv("DOC_ENGINE")
+	if docEngine == "" {
+		docEngine = "elasticsearch"
+	}
+	id := 0
+	for k, v := range globalViper.AllSettings() {
+		configDict, ok := v.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		switch k {
+		case "ragflow":
+			configDict["id"] = id
+			configDict["name"] = fmt.Sprintf("ragflow_%d", id)
+			configDict["service_type"] = "ragflow_server"
+			configDict["extra"] = map[string]interface{}{}
+			configDict["port"] = configDict["http_port"]
+			delete(configDict, "http_port")
+		case "es":
+			// Skip if retrieval_type doesn't match doc_engine
+			if docEngine != "elasticsearch" {
+				continue
+			}
+			hosts := getString(configDict, "hosts")
+			host, port := parseHostPort(hosts)
+			username := getString(configDict, "username")
+			password := getString(configDict, "password")
+			configDict["id"] = id
+			configDict["name"] = "elasticsearch"
+			configDict["host"] = host
+			configDict["port"] = port
+			configDict["service_type"] = "retrieval"
+			configDict["extra"] = map[string]interface{}{
+				"retrieval_type": "elasticsearch",
+				"username":       username,
+				"password":       password,
+			}
+			delete(configDict, "hosts")
+			delete(configDict, "username")
+			delete(configDict, "password")
+		case "infinity":
+			// Skip if retrieval_type doesn't match doc_engine
+			if docEngine != "infinity" {
+				continue
+			}
+			uri := getString(configDict, "uri")
+			host, port := parseHostPort(uri)
+			dbName := getString(configDict, "db_name")
+			if dbName == "" {
+				dbName = "default_db"
+			}
+			configDict["id"] = id
+			configDict["name"] = "infinity"
+			configDict["host"] = host
+			configDict["port"] = port
+			configDict["service_type"] = "retrieval"
+			configDict["extra"] = map[string]interface{}{
+				"retrieval_type": "infinity",
+				"db_name":        dbName,
+			}
+		case "minio":
+			hostPort := getString(configDict, "host")
+			host, port := parseHostPort(hostPort)
+			user := getString(configDict, "user")
+			password := getString(configDict, "password")
+			configDict["id"] = id
+			configDict["name"] = "minio"
+			configDict["host"] = host
+			configDict["port"] = port
+			configDict["service_type"] = "file_store"
+			configDict["extra"] = map[string]interface{}{
+				"store_type": "minio",
+				"user":       user,
+				"password":   password,
+			}
+			delete(configDict, "bucket")
+			delete(configDict, "user")
+			delete(configDict, "password")
+		case "redis":
+			hostPort := getString(configDict, "host")
+			host, port := parseHostPort(hostPort)
+			password := getString(configDict, "password")
+			db := getInt(configDict, "db")
+			configDict["id"] = id
+			configDict["name"] = "redis"
+			configDict["host"] = host
+			configDict["port"] = port
+			configDict["service_type"] = "message_queue"
+			configDict["extra"] = map[string]interface{}{
+				"mq_type":  "redis",
+				"database": db,
+				"password": password,
+			}
+			delete(configDict, "password")
+			delete(configDict, "db")
+		case "mysql":
+			host := getString(configDict, "host")
+			port := getInt(configDict, "port")
+			user := getString(configDict, "user")
+			password := getString(configDict, "password")
+			configDict["id"] = id
+			configDict["name"] = "mysql"
+			configDict["host"] = host
+			configDict["port"] = port
+			configDict["service_type"] = "meta_data"
+			configDict["extra"] = map[string]interface{}{
+				"meta_type": "mysql",
+				"username":  user,
+				"password":  password,
+			}
+			delete(configDict, "stale_timeout")
+			delete(configDict, "max_connections")
+			delete(configDict, "max_allowed_packet")
+			delete(configDict, "user")
+			delete(configDict, "password")
+		case "task_executor":
+			mqType := getString(configDict, "message_queue_type")
+			configDict["id"] = id
+			configDict["name"] = "task_executor"
+			configDict["service_type"] = "task_executor"
+			configDict["extra"] = map[string]interface{}{
+				"message_queue_type": mqType,
+			}
+			delete(configDict, "message_queue_type")
+		case "admin":
+			// Skip admin section
+			continue
+		default:
+			// Skip unknown sections
+			continue
+		}
+
+		// Set default values for empty host/port
+		if configDict["host"] == "" {
+			configDict["host"] = "-"
+		}
+		if configDict["port"] == 0 {
+			configDict["port"] = "-"
+		}
+
+		delete(configDict, "prefix_path")
+		delete(configDict, "username")
+		allConfigs = append(allConfigs, configDict)
+		id++
+	}
 
 	// Unmarshal configuration to globalConfig
 	// Note: This will only unmarshal fields that match the Config struct
@@ -340,6 +489,14 @@ func SetLogger(l *zap.Logger) {
 	zapLogger = l
 }
 
+func GetGlobalViperConfig() *viper.Viper {
+	return globalViper
+}
+
+func GetAllConfigs() []map[string]interface{} {
+	return allConfigs
+}
+
 // PrintAll prints all configuration settings
 func PrintAll() {
 	if globalViper == nil {
@@ -353,4 +510,47 @@ func PrintAll() {
 		zapLogger.Info("config", zap.String("key", key), zap.Any("value", value))
 	}
 	zapLogger.Info("=== End Configuration ===")
+}
+
+// parseHostPort parses host:port string and returns host and port
+func parseHostPort(hostPort string) (string, int) {
+	if hostPort == "" {
+		return "", 0
+	}
+
+	// Handle URL format like http://host:port
+	if strings.Contains(hostPort, "://") {
+		u, err := url.Parse(hostPort)
+		if err == nil {
+			hostPort = u.Host
+		}
+	}
+
+	// Split host:port
+	parts := strings.Split(hostPort, ":")
+	host := parts[0]
+	port := 0
+	if len(parts) > 1 {
+		port, _ = strconv.Atoi(parts[1])
+	}
+	return host, port
+}
+
+// getString gets string value from map
+func getString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+// getInt gets int value from map
+func getInt(m map[string]interface{}, key string) int {
+	if v, ok := m[key].(int); ok {
+		return v
+	}
+	if v, ok := m[key].(float64); ok {
+		return int(v)
+	}
+	return 0
 }
