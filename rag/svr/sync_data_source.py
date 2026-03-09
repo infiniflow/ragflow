@@ -1342,12 +1342,7 @@ class REST_API(SyncBase):
     SOURCE_NAME: str = FileSource.REST_API
 
     async def _generate(self, task: dict):
-        """
-        Sync documents from a generic REST API using the configuration-driven
-        `RestAPIConnector`.
-        """
-        # Build connector from connector config (UI will ensure schema).
-        def _split_csv(value: Any) -> list[str]:
+        def _csv_to_list(value: Any) -> list[str]:
             if isinstance(value, str):
                 return [v.strip() for v in value.split(",") if v.strip()]
             return value or []
@@ -1361,8 +1356,8 @@ class REST_API(SyncBase):
             auth_config=self.conf.get("auth_config") or {},
             items_path=self.conf.get("items_path"),
             id_field=self.conf.get("id_field"),
-            content_fields=_split_csv(self.conf.get("content_fields")),
-            metadata_fields=_split_csv(self.conf.get("metadata_fields")),
+            content_fields=_csv_to_list(self.conf.get("content_fields")),
+            metadata_fields=_csv_to_list(self.conf.get("metadata_fields")),
             pagination_type=self.conf.get("pagination_type", "none"),
             pagination_config=self.conf.get("pagination_config") or {},
             poll_timestamp_field=self.conf.get("poll_timestamp_field"),
@@ -1374,14 +1369,7 @@ class REST_API(SyncBase):
             content_template=self.conf.get("content_template"),
         )
 
-        credentials = self.conf.get("credentials") or {}
-        logging.debug(
-            "REST_API sync: auth_type=%s, auth_config_keys=%s, credentials_keys=%s",
-            self.conf.get("auth_type"),
-            list((self.conf.get("auth_config") or {}).keys()),
-            list(credentials.keys()),
-        )
-        self.connector.load_credentials(credentials)
+        self.connector.load_credentials(self.conf.get("credentials") or {})
 
         poll_start = task.get("poll_range_start")
         if task.get("reindex") == "1" or poll_start is None:
@@ -1394,12 +1382,7 @@ class REST_API(SyncBase):
             )
             begin_info = f"from {poll_start}"
 
-        logging.info(
-            "Connect to REST API: %s %s %s",
-            self.conf.get("method", "GET"),
-            self.conf.get("url"),
-            begin_info,
-        )
+        logging.info("Connect to REST API: %s %s %s", self.conf.get("method", "GET"), self.conf.get("url"), begin_info)
         return document_generator
 
 

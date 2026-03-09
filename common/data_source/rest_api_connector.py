@@ -1,7 +1,8 @@
-"""Generic REST API data source connector.
+"""Generic, configuration-driven REST API data source connector.
 
-This connector is **configuration-driven** and is intended to be wired to a
-UI-based configuration model in follow-up tickets. 
+Connect any REST API as a RAGFlow data source without code changes.
+All behaviour — URL, auth, pagination, field mapping — is controlled
+via the ``RestAPIConnectorConfig`` schema exposed by the UI.
 """
 
 from __future__ import annotations
@@ -30,37 +31,46 @@ from common.data_source.interfaces import (
 from common.data_source.models import Document
 from common.data_source.utils import rl_requests, retry_builder
 
-
 try:
-    # `jsonpath` is already present in the dependency graph (via akshare),
-    # so we don't need to introduce a new project dependency.
     from jsonpath import jsonpath as _jsonpath  # type: ignore[import]
-except Exception:  # pragma: no cover - defensive import
+except Exception:  # pragma: no cover – defensive import
     _jsonpath = None
 
+logger = logging.getLogger(__name__)
 
-class AuthType(str):
+# ===================================================================== #
+# Constants                                                             #
+# ===================================================================== #
+
+class AuthType:
     NONE = "none"
     API_KEY_HEADER = "api_key_header"
     BEARER = "bearer"
     BASIC = "basic"
 
 
-class PaginationType(str):
+class PaginationType:
     NONE = "none"
     PAGE = "page"
     OFFSET = "offset"
     CURSOR = "cursor"
 
 
+_AUTH_TYPES = {AuthType.NONE, AuthType.API_KEY_HEADER, AuthType.BEARER, AuthType.BASIC}
+_PAGINATION_TYPES = {PaginationType.NONE, PaginationType.PAGE, PaginationType.OFFSET, PaginationType.CURSOR}
+_SENSITIVE_HEADERS = {"authorization", "apikey", "api-key", "x-api-key"}
+
+
+# ===================================================================== #
+# Configuration schema (Pydantic)                                       #
+# ===================================================================== #
+
 class RestAPIConnectorConfig(BaseModel):
-    """Schema for REST API connector configuration (used by UI and backend)."""
+    """Validated schema for the REST API connector (used by UI and backend)."""
 
     url: HttpUrl
     method: str = "GET"
     headers: Dict[str, str] = Field(default_factory=dict)
-    # Key-value query parameters (like Postman params tab).
-    # Keeps the URL clean — put only the base path in ``url``.
     query_params: Dict[str, str] = Field(default_factory=dict)
 
     auth_type: str = AuthType.NONE
@@ -81,16 +91,20 @@ class RestAPIConnectorConfig(BaseModel):
     field_default_values: Dict[str, Any] = Field(default_factory=dict)
     content_template: Optional[str] = None
 
-    # ---------------- Validators to coerce UI-friendly types ---------------- #
+    batch_size: int = INDEX_BATCH_SIZE
+    max_pages: int = 1000
+
+    # ── Validators ──────────────────────────────────────────────────── #
+
     @field_validator("headers", mode="before")
     @classmethod
     def _coerce_headers(cls, v: Any) -> Dict[str, str]:
-        return cls._text_to_dict(v)
+        return _text_to_dict(v)
 
     @field_validator("query_params", mode="before")
     @classmethod
     def _coerce_query_params(cls, v: Any) -> Dict[str, str]:
-        return cls._text_to_dict(v)
+        return _text_to_dict(v)
 
     @field_validator("content_fields", "metadata_fields", mode="before")
     @classmethod
@@ -98,82 +112,107 @@ class RestAPIConnectorConfig(BaseModel):
         if v is None or v == "":
             return []
         if isinstance(v, str):
-            return [part.strip() for part in v.split(",") if part.strip()]
+            return [p.strip() for p in v.split(",") if p.strip()]
         if isinstance(v, list):
-            return [str(part).strip() for part in v if str(part).strip()]
+            return [str(p).strip() for p in v if str(p).strip()]
         return v
 
-    @staticmethod
-    def _text_to_dict(v: Any) -> Dict[str, str]:
-        """Parse a dict, JSON string, or ``key=value\\n`` text into a dict."""
-        if v is None or v == "":
-            return {}
-        if isinstance(v, dict):
-            return {str(k): str(vv) for k, vv in v.items()}
-        if isinstance(v, str):
-            try:
-                parsed = json.loads(v)
-                if isinstance(parsed, dict):
-                    return {str(k): str(vv) for k, vv in parsed.items()}
-            except Exception:
-                pass
-            # key=value per line (like Postman bulk-edit)
-            result: Dict[str, str] = {}
-            for line in v.splitlines():
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "=" in line:
-                    k, _, val = line.partition("=")
-                    result[k.strip()] = val.strip()
-            return result
-        return v
-
-    batch_size: int = INDEX_BATCH_SIZE
-    max_pages: int = 1000
+    # ── Semantic checks ─────────────────────────────────────────────── #
 
     def normalized_method(self) -> str:
-        method = (self.method or "GET").upper()
-        if method not in {"GET", "POST"}:
-            raise ConnectorValidationError(
-                f"Unsupported HTTP method '{self.method}'. Only GET and POST are allowed."
-            )
-        return method
+        m = (self.method or "GET").upper()
+        if m not in {"GET", "POST"}:
+            raise ConnectorValidationError(f"Unsupported HTTP method '{m}'. Only GET and POST are allowed.")
+        return m
 
     def normalized_auth_type(self) -> str:
-        if self.auth_type not in {
-            AuthType.NONE,
-            AuthType.API_KEY_HEADER,
-            AuthType.BEARER,
-            AuthType.BASIC,
-        }:
+        if self.auth_type not in _AUTH_TYPES:
             raise ConnectorValidationError(f"Unsupported auth_type '{self.auth_type}'.")
         return self.auth_type
 
     def normalized_pagination_type(self) -> str:
-        if self.pagination_type not in {
-            PaginationType.NONE,
-            PaginationType.PAGE,
-            PaginationType.OFFSET,
-            PaginationType.CURSOR,
-        }:
-            raise ConnectorValidationError(
-                f"Unsupported pagination_type '{self.pagination_type}'."
-            )
+        if self.pagination_type not in _PAGINATION_TYPES:
+            raise ConnectorValidationError(f"Unsupported pagination_type '{self.pagination_type}'.")
         return self.pagination_type
 
     def ensure_required_fields(self) -> None:
         if not self.content_fields:
-            raise ConnectorValidationError(
-                "At least one content field must be configured (content_fields)."
-            )
+            raise ConnectorValidationError("At least one content field must be configured (content_fields).")
 
+
+# ===================================================================== #
+# Module-level helpers                                                  #
+# ===================================================================== #
+
+def _text_to_dict(v: Any) -> Dict[str, str]:
+    """Parse a dict, JSON string, or ``key=value\\n`` text into a dict."""
+    if v is None or v == "":
+        return {}
+    if isinstance(v, dict):
+        return {str(k): str(vv) for k, vv in v.items()}
+    if isinstance(v, str):
+        try:
+            parsed = json.loads(v)
+            if isinstance(parsed, dict):
+                return {str(k): str(vv) for k, vv in parsed.items()}
+        except Exception:
+            pass
+        result: Dict[str, str] = {}
+        for line in v.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                k, _, val = line.partition("=")
+                result[k.strip()] = val.strip()
+        return result
+    return v
+
+
+def _strip_html(text: str) -> str:
+    """Remove basic HTML tags and normalise whitespace."""
+    if "<" not in text or ">" not in text:
+        return text
+    cleaned = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _coerce_to_text(value: Any) -> str:
+    """Convert any value to a plain-text string."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except Exception:
+        return str(value)
+
+
+def _serialize_metadata_value(value: Any) -> Any:
+    """Serialise a metadata value for storage."""
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+    if isinstance(value, (int, float, bool, str)):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except Exception:
+        return str(value)
+
+
+# ===================================================================== #
+# RestAPIConnector                                                      #
+# ===================================================================== #
 
 class RestAPIConnector(LoadConnector, PollConnector):
-    """Configuration-driven REST API connector.
+    """Configuration-driven REST API connector."""
 
-    Parameters here are intentionally generic so that we can pass in a config object directly into this class without changes.
-    """
+    # ── Init ────────────────────────────────────────────────────────── #
 
     def __init__(
         self,
@@ -197,12 +236,10 @@ class RestAPIConnector(LoadConnector, PollConnector):
         field_default_values: Optional[Dict[str, Any]] = None,
         content_template: Optional[str] = None,
     ) -> None:
-        # Separate the base URL from any query params already embedded in it so
-        # that pagination params don't create duplicates.
+        # Separate any query params already embedded in the URL so that
+        # pagination params don't create duplicates.
         parsed = urlparse(str(url))
-        self._base_url = urlunparse(
-            (parsed.scheme, parsed.netloc, parsed.path, "", "", "")
-        )
+        self._base_url = urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
         self._url_params: Dict[str, str] = {}
         if parsed.query:
             for k, v_list in parse_qs(parsed.query, keep_blank_values=True).items():
@@ -211,18 +248,19 @@ class RestAPIConnector(LoadConnector, PollConnector):
         self._explicit_query_params: Dict[str, str] = query_params or {}
         self.url = self._base_url
         self.method = (method or "GET").upper()
-        self._base_headers = headers or {}
+        self._base_headers: Dict[str, str] = headers or {}
         self.auth_type = auth_type or AuthType.NONE
-        self.auth_config = auth_config or {}
+        self.auth_config: Dict[str, Any] = auth_config or {}
         self.items_path = items_path
         self.id_field = id_field
         self.content_fields: List[str] = content_fields or []
         self.metadata_fields: List[str] = metadata_fields or []
         self.pagination_type = pagination_type or PaginationType.NONE
-        self.pagination_config = pagination_config or {}
-        if request_body is None:
-            request_body = self.pagination_config.get("request_body") or {}
-        self._static_request_body: Dict[str, Any] = request_body
+        self.pagination_config: Dict[str, Any] = pagination_config or {}
+        self._static_request_body: Dict[str, Any] = (
+            request_body if request_body is not None
+            else self.pagination_config.get("request_body") or {}
+        )
         self.poll_timestamp_field = poll_timestamp_field
         self.batch_size = batch_size
         self.max_pages = max_pages
@@ -234,57 +272,77 @@ class RestAPIConnector(LoadConnector, PollConnector):
         self._auth_headers: Dict[str, str] = {}
         self._basic_auth: Optional[requests.auth.HTTPBasicAuth] = None
 
-    # --------------------------------------------------------------------- #
-    # Credentials & validation
-    # --------------------------------------------------------------------- #
+    # ── Credentials ─────────────────────────────────────────────────── #
+
     def load_credentials(self, credentials: Dict[str, Any]) -> Dict[str, Any] | None:
         """Apply authentication credentials (no network call).
 
-        Credential keys expected per auth_type:
-        - none:             (no keys required)
-        - api_key_header:   "api_key" — value sent in the configured header
-        - bearer:           "token"
-        - basic:            "username", "password"
-
-        Use `validate_config()` to perform a live connectivity check.
+        Use ``validate_config()`` to perform a live connectivity check.
         """
         self._credentials = credentials or {}
         self._build_auth()
         return None
 
-    # ------------------------------------------------------------------ #
-    # Static configuration validation entrypoint 
-    # ------------------------------------------------------------------ #
+    def _build_auth(self) -> None:
+        self._auth_headers = {}
+        self._basic_auth = None
+
+        if self.auth_type == AuthType.NONE:
+            return
+
+        if self.auth_type == AuthType.API_KEY_HEADER:
+            header_name = self.auth_config.get("header_name")
+            api_key = (
+                self._credentials.get("api_key")
+                or self.auth_config.get("api_key_value")
+                or self.auth_config.get("api_key")
+            )
+            if not header_name or not api_key:
+                raise ConnectorMissingCredentialError(
+                    "REST API (api_key_header) requires 'header_name' in auth_config and 'api_key' in credentials"
+                )
+            self._auth_headers[header_name] = str(api_key)
+            return
+
+        if self.auth_type == AuthType.BEARER:
+            token = self._credentials.get("token") or self.auth_config.get("token")
+            if not token:
+                raise ConnectorMissingCredentialError("REST API (bearer) requires 'token' in credentials")
+            self._auth_headers["Authorization"] = f"Bearer {token}"
+            return
+
+        if self.auth_type == AuthType.BASIC:
+            username = self._credentials.get("username") or self.auth_config.get("username")
+            password = self._credentials.get("password") or self.auth_config.get("password")
+            if not username or password is None:
+                raise ConnectorMissingCredentialError("REST API (basic) requires 'username' and 'password'")
+            self._basic_auth = requests.auth.HTTPBasicAuth(str(username), str(password))
+            return
+
+        raise ConnectorValidationError(f"Unsupported auth_type: {self.auth_type}")
+
+    # ── Config validation (test connection) ─────────────────────────── #
+
     @classmethod
     def validate_config(
         cls,
         config: Dict[str, Any],
         credentials: Optional[Dict[str, Any]] = None,
     ) -> RestAPIConnectorConfig:
-        """Validate connector configuration and perform a test API call.
-
-        - Ensures required fields are present and values are in allowed sets.
-        - Normalizes defaults (method, auth_type, pagination_type, etc.).
-        - If `credentials` are provided (or auth_type == none), performs a
-          single-page API call and verifies that `items_path` (if any) yields
-          at least a structurally valid items list.
-        """
+        """Validate config schema and optionally perform a live API call."""
         try:
             cfg = RestAPIConnectorConfig(**config)
         except ValidationError as exc:
             raise ConnectorValidationError(f"Invalid REST API config: {exc}") from exc
 
-        # Semantic validations
         cfg.normalized_method()
         cfg.normalized_auth_type()
         cfg.normalized_pagination_type()
         cfg.ensure_required_fields()
 
-        # Short-circuit: only structural validation requested, no network.
         if credentials is None and cfg.auth_type != AuthType.NONE:
             return cfg
 
-        # Connectivity + items_path validation.
         connector = cls(
             url=str(cfg.url),
             method=cfg.normalized_method(),
@@ -300,7 +358,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
             pagination_config=cfg.pagination_config,
             poll_timestamp_field=cfg.poll_timestamp_field,
             batch_size=cfg.batch_size,
-            max_pages=min(cfg.max_pages, 10),  # cap for validation
+            max_pages=min(cfg.max_pages, 10),
             request_body=cfg.request_body,
             field_type_hints=cfg.field_type_hints,
             field_default_values=cfg.field_default_values,
@@ -313,100 +371,48 @@ class RestAPIConnector(LoadConnector, PollConnector):
             connector._credentials = {}
             connector._build_auth()
 
-        # Live connectivity + items_path check.
         try:
-            logging.info("Validating REST API connector by fetching first page")
+            logger.info("Validating REST API connector by fetching first page")
             _ = next(connector._page_iter_for_validation())
         except StopIteration:
             pass
 
         return cfg
 
-    def _build_auth(self) -> None:
-        """Derive auth headers / objects from `auth_type` and credentials."""
-        self._auth_headers = {}
-        self._basic_auth = None
+    # ── LoadConnector / PollConnector interface ─────────────────────── #
 
-        if self.auth_type == AuthType.NONE:
-            return
-
-        if self.auth_type == AuthType.API_KEY_HEADER:
-            header_name = self.auth_config.get("header_name")
-            # Credential value may live in `credentials` dict (preferred) or
-            # directly in `auth_config` when the UI stores it there.
-            api_key = (
-                self._credentials.get("api_key")
-                or self.auth_config.get("api_key_value")
-                or self.auth_config.get("api_key")
-            )
-            if not header_name or not api_key:
-                raise ConnectorMissingCredentialError(
-                    "REST API (api_key_header) requires 'header_name' in auth_config "
-                    "and 'api_key' in credentials"
-                )
-            self._auth_headers[header_name] = str(api_key)
-            return
-
-        if self.auth_type == AuthType.BEARER:
-            token = (
-                self._credentials.get("token")
-                or self.auth_config.get("token")
-            )
-            if not token:
-                raise ConnectorMissingCredentialError(
-                    "REST API (bearer) requires 'token' in credentials"
-                )
-            self._auth_headers["Authorization"] = f"Bearer {token}"
-            return
-
-        if self.auth_type == AuthType.BASIC:
-            username = self._credentials.get("username") or self.auth_config.get("username")
-            password = self._credentials.get("password") or self.auth_config.get("password")
-            if not username or password is None:
-                raise ConnectorMissingCredentialError(
-                    "REST API (basic) requires 'username' and 'password' in credentials"
-                )
-            self._basic_auth = requests.auth.HTTPBasicAuth(str(username), str(password))
-            return
-
-        raise ConnectorValidationError(f"Unsupported auth_type: {self.auth_type}")
-
-    # --------------------------------------------------------------------- #
-    # Core loading / polling
-    # --------------------------------------------------------------------- #
     def load_from_state(self) -> Generator[List[Document], None, None]:
-        """Full fetch with pagination."""
         return self._yield_documents(time_window=None)
 
     def poll_source(
         self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
     ) -> Generator[List[Document], None, None]:
-        """Incremental fetch using configured timestamp field."""
         if not self.poll_timestamp_field:
-            logging.warning(
-                "REST API connector poll_source called without poll_timestamp_field. "
-                "Falling back to full fetch and in-memory filtering by doc_updated_at."
+            logger.warning(
+                "poll_source called without poll_timestamp_field; falling back to full fetch with in-memory filtering."
             )
-        start_dt = datetime.fromtimestamp(start, tz=timezone.utc)
-        end_dt = datetime.fromtimestamp(end, tz=timezone.utc)
-        return self._yield_documents(time_window=(start_dt, end_dt))
+        return self._yield_documents(
+            time_window=(
+                datetime.fromtimestamp(start, tz=timezone.utc),
+                datetime.fromtimestamp(end, tz=timezone.utc),
+            )
+        )
+
+    # ── Document generation ─────────────────────────────────────────── #
 
     def _yield_documents(
         self,
         time_window: tuple[datetime, datetime] | None,
     ) -> Generator[List[Document], None, None]:
-        """Iterate over pages and yield `Document` batches."""
         batch: List[Document] = []
         for item in self._iter_items(time_window=time_window):
             try:
                 doc = self._item_to_document(item)
             except Exception as exc:
-                logging.warning(f"Failed to convert REST API item to Document: {exc}")
+                logger.warning("Failed to convert REST API item to Document: %s", exc)
                 continue
 
-            if time_window is not None and not self._doc_in_time_window(
-                doc, *time_window
-            ):
+            if time_window is not None and not self._doc_in_time_window(doc, *time_window):
                 continue
 
             batch.append(doc)
@@ -417,17 +423,15 @@ class RestAPIConnector(LoadConnector, PollConnector):
         if batch:
             yield batch
 
-    # --------------------------------------------------------------------- #
-    # Pagination & page fetching
-    # --------------------------------------------------------------------- #
+    # ── Pagination & page fetching ──────────────────────────────────── #
+
     def _iter_items(
         self,
         time_window: tuple[datetime, datetime] | None,
     ) -> Iterable[Mapping[str, Any]]:
-        """Iterate over raw items across all pages using pluggable strategies."""
+        """Iterate over raw items across all pages."""
         page_count = 0
 
-        # Normalized pagination state
         page = int(self.pagination_config.get("start_page", 1))
         per_page = int(self.pagination_config.get("page_size", self.batch_size))
         if per_page <= 0:
@@ -442,14 +446,10 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
         while True:
             if page_count >= self.max_pages:
-                logging.warning(
-                    "REST API connector reached max_pages=%d. Stopping pagination.",
-                    self.max_pages,
-                )
+                logger.warning("REST API connector reached max_pages=%d, stopping.", self.max_pages)
                 break
 
             params: Dict[str, Any] = {}
-
             if self.pagination_type == PaginationType.PAGE:
                 self._apply_page_pagination(params, page, per_page)
             elif self.pagination_type == PaginationType.OFFSET:
@@ -457,39 +457,26 @@ class RestAPIConnector(LoadConnector, PollConnector):
             elif self.pagination_type == PaginationType.CURSOR and cursor is not None:
                 self._apply_cursor_pagination(params, cursor)
 
-            # NOTE: We intentionally *do not* push time-window filters down as
-            # query params; filtering is in-memory only.
             try:
-                response_json = self._fetch_page(params=params)
+                response_json = self._fetch_page(params)
             except (ConnectorValidationError, ConnectorMissingCredentialError):
                 raise
             except Exception as exc:
-                raise ConnectorValidationError(
-                    f"REST API page fetch failed: {exc}"
-                ) from exc
+                raise ConnectorValidationError(f"REST API page fetch failed: {exc}") from exc
 
             items = self._extract_items(response_json)
             if not items:
-                # Auto-detect end of results: empty page.
                 break
 
             for item in items:
                 if isinstance(item, Mapping):
                     yield item
-                else:
-                    logging.debug(
-                        "Skipping non-mapping REST API item of type %s", type(item)
-                    )
 
             page_count += 1
 
-            # NoPagination – only first page is requested.
             if self.pagination_type == PaginationType.NONE:
                 break
-
-            # Strategy-specific continuation logic.
-            if self.pagination_type == PaginationType.PAGE:
-                # Fewer than requested items => end of results.
+            elif self.pagination_type == PaginationType.PAGE:
                 if len(items) < per_page:
                     break
                 page += 1
@@ -500,64 +487,42 @@ class RestAPIConnector(LoadConnector, PollConnector):
             elif self.pagination_type == PaginationType.CURSOR:
                 next_cursor = self._extract_next_cursor(response_json)
                 if not next_cursor:
-                    # No next cursor => end of results.
                     break
                 cursor = next_cursor
 
     def _page_iter_for_validation(self) -> Iterable[Mapping[str, Any]]:
         """Single-page iterator used only for connectivity checks."""
         response_json = self._fetch_page(params={})
-        items = self._extract_items(response_json)
-        for item in items:
+        for item in self._extract_items(response_json):
             yield item
 
     @retry_builder(
-        tries=5,
-        delay=1,
-        max_delay=30,
-        backoff=2,
-        # Only retry on transient errors; auth failures (401/403) are raised as
-        # ConnectorMissingCredentialError which is intentionally excluded here.
+        tries=5, delay=1, max_delay=30, backoff=2,
         exceptions=(requests.ConnectionError, requests.Timeout, requests.HTTPError),
     )
     def _fetch_page(self, params: Dict[str, Any]) -> Any:
-        """Fetch a single page with retry + exponential backoff."""
+        """Fetch a single page with retry and exponential backoff."""
         headers = {**self._base_headers, **self._auth_headers}
 
-        # Layer params: URL-embedded → explicit query_params → pagination.
-        # Later layers override earlier ones so pagination can update "page".
         merged: Dict[str, Any] = {**self._url_params}
         merged.update(self._explicit_query_params)
         merged.update(params)
 
         url, query_params = self._build_url_with_templates(merged)
 
-        _SENSITIVE = {"authorization", "apikey", "api-key", "x-api-key"}
-        logging.debug(
-            "REST API _fetch_page: %s %s | query_params=%s | headers=%s",
-            self.method,
-            url,
-            {k: ("***" if k.lower() in _SENSITIVE else v) for k, v in query_params.items()},
-            {k: ("***" if k.lower() in _SENSITIVE else v) for k, v in headers.items()},
+        logger.debug(
+            "REST API request: %s %s | params=%s | headers=%s",
+            self.method, url,
+            {k: ("***" if k.lower() in _SENSITIVE_HEADERS else v) for k, v in query_params.items()},
+            {k: ("***" if k.lower() in _SENSITIVE_HEADERS else v) for k, v in headers.items()},
         )
 
         if self.method == "GET":
-            resp = rl_requests.get(
-                url,
-                headers=headers,
-                params=query_params,
-                auth=self._basic_auth,
-                timeout=60,
-            )
+            resp = rl_requests.get(url, headers=headers, params=query_params, auth=self._basic_auth, timeout=60)
         elif self.method == "POST":
-            body = self._static_request_body or {}
             resp = rl_requests.post(
-                url,
-                headers=headers,
-                params=query_params,
-                json=body,
-                auth=self._basic_auth,
-                timeout=60,
+                url, headers=headers, params=query_params,
+                json=self._static_request_body or {}, auth=self._basic_auth, timeout=60,
             )
         else:
             raise ConnectorValidationError(f"Unsupported HTTP method: {self.method}")
@@ -575,78 +540,43 @@ class RestAPIConnector(LoadConnector, PollConnector):
         try:
             return resp.json()
         except ValueError as exc:
-            raise ConnectorValidationError(
-                "REST API response is not valid JSON"
-            ) from exc
+            raise ConnectorValidationError("REST API response is not valid JSON") from exc
 
-    def _build_url_with_templates(
-        self,
-        params: Dict[str, Any],
-    ) -> tuple[str, Dict[str, Any]]:
-        """Apply URL template variables like {page}, {offset}, {cursor}.
-
-        Any param whose name appears as a `{name}` placeholder in the base URL
-        will be substituted into the URL string and removed from the query
-        parameter dict before the request is sent.
-        """
+    def _build_url_with_templates(self, params: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+        """Substitute ``{key}`` placeholders in the URL and return remaining query params."""
         url = self.url
         query_params = dict(params)
-
         used_keys: List[str] = []
         for key, value in list(query_params.items()):
             placeholder = "{" + key + "}"
             if placeholder in url:
                 url = url.replace(placeholder, str(value))
                 used_keys.append(key)
-
         for key in used_keys:
             query_params.pop(key, None)
-
         return url, query_params
 
-    # --------------------------------------------------------------------- #
-    # Pagination helpers (strategies)
-    # --------------------------------------------------------------------- #
-    def _apply_page_pagination(
-        self,
-        params: Dict[str, Any],
-        page: int,
-        per_page: int,
-    ) -> None:
-        page_param = self.pagination_config.get("page_param", "page")
-        params[page_param] = page
-        # Only add a page-size param when explicitly configured, so we don't
-        # inject an unwanted "per_page" alongside a user's own size param
-        # (e.g. "story_per_page") that already lives in query_params / URL.
+    # ── Pagination helpers ──────────────────────────────────────────── #
+
+    def _apply_page_pagination(self, params: Dict[str, Any], page: int, per_page: int) -> None:
+        params[self.pagination_config.get("page_param", "page")] = page
         size_param = self.pagination_config.get("page_size_param")
         if size_param:
             params[size_param] = per_page
 
-    def _apply_offset_pagination(
-        self,
-        params: Dict[str, Any],
-        offset: int,
-        limit: int,
-    ) -> None:
-        offset_param = self.pagination_config.get("offset_param", "offset")
-        params[offset_param] = offset
+    def _apply_offset_pagination(self, params: Dict[str, Any], offset: int, limit: int) -> None:
+        params[self.pagination_config.get("offset_param", "offset")] = offset
         limit_param = self.pagination_config.get("limit_param")
         if limit_param:
             params[limit_param] = limit
 
-    def _apply_cursor_pagination(
-        self,
-        params: Dict[str, Any],
-        cursor: str,
-    ) -> None:
-        cursor_param = self.pagination_config.get("cursor_param", "cursor")
-        params[cursor_param] = cursor
+    def _apply_cursor_pagination(self, params: Dict[str, Any], cursor: str) -> None:
+        params[self.pagination_config.get("cursor_param", "cursor")] = cursor
 
-    # --------------------------------------------------------------------- #
-    # JSON extraction & mapping
-    # --------------------------------------------------------------------- #
+    # ── JSON extraction ─────────────────────────────────────────────── #
+
     def _extract_items(self, response_json: Any) -> List[Mapping[str, Any]]:
-        """Extract the items array from a JSON response using JSONPath."""
+        """Extract the items array from a JSON response."""
         if self.items_path and _jsonpath is not None:
             try:
                 matches = _jsonpath(response_json, self.items_path)
@@ -654,45 +584,33 @@ class RestAPIConnector(LoadConnector, PollConnector):
                 raise ConnectorValidationError(
                     f"Failed to apply items JSONPath '{self.items_path}': {exc}"
                 ) from exc
-
             if not matches:
                 return []
-
-            # Common JSONPath libraries return the array itself as the first element.
             if len(matches) == 1 and isinstance(matches[0], list):
                 items = matches[0]
             else:
                 items = matches
-        else:
-            # Fallback heuristics when no items_path is provided.
-            if isinstance(response_json, list):
-                items = response_json
-            elif isinstance(response_json, dict):
-                # Prefer "items" / "results" keys if present.
-                for key in ("items", "results", "data"):
-                    if key in response_json and isinstance(response_json[key], list):
-                        items = response_json[key]
-                        break
-                else:
-                    # Last resort: values of dict flattened if they are list-like.
-                    items = []
-                    for value in response_json.values():
-                        if isinstance(value, list):
-                            items.extend(value)
+        elif isinstance(response_json, list):
+            items = response_json
+        elif isinstance(response_json, dict):
+            items = []
+            for key in ("items", "results", "data", "records"):
+                if key in response_json and isinstance(response_json[key], list):
+                    items = response_json[key]
+                    break
             else:
-                items = []
+                for value in response_json.values():
+                    if isinstance(value, list):
+                        items = value
+                        break
+        else:
+            items = []
 
-        results: List[Mapping[str, Any]] = []
-        for it in items:
-            if isinstance(it, Mapping):
-                results.append(it)
-        return results
+        return [it for it in items if isinstance(it, Mapping)]
 
     def _extract_next_cursor(self, response_json: Any) -> Optional[str]:
-        """Extract a cursor for cursor-based pagination."""
         cursor_path = self.pagination_config.get("next_cursor_path")
         if not cursor_path:
-            # Simple top-level field name.
             field = self.pagination_config.get("next_cursor_field")
             if field and isinstance(response_json, Mapping):
                 value = response_json.get(field)
@@ -709,62 +627,49 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
         if not matches:
             return None
-        value = matches[0]
-        return str(value) if value is not None else None
+        return str(matches[0]) if matches[0] is not None else None
 
-    # --------------------------------------------------------------------- #
-    # Item → Document mapping
-    # --------------------------------------------------------------------- #
+    # ── Item → Document mapping ─────────────────────────────────────── #
+
     def _item_to_document(self, item: Mapping[str, Any]) -> Document:
-        """Map a single API item to a `Document`."""
-        if self.id_field:
-            raw_id = self._get_typed_field_value(self.id_field, item)
-        else:
-            raw_id = None
-
+        # ID
+        raw_id = self._get_typed_field_value(self.id_field, item) if self.id_field else None
         if raw_id is None:
-            # Fall back to hashing full item.
             raw_id = hash128(f"rest_api_item:{repr(item)}")
-
         doc_id = hash128(f"rest_api:{raw_id}")
 
-        # Build content text: either template-based or simple join.
+        # Content
         if self.content_template:
             content_text = self._render_content_template(item)
         else:
-            content_parts: List[str] = []
+            parts = []
             for field in self.content_fields:
-                text_value = self._get_typed_field_value(field, item)
-                if text_value is None:
-                    continue
-                text = self._strip_html(self._coerce_to_text(text_value))
-                if text:
-                    content_parts.append(text)
-            content_text = "\n\n".join(content_parts)
+                val = self._get_typed_field_value(field, item)
+                if val is not None:
+                    text = _strip_html(_coerce_to_text(val))
+                    if text:
+                        parts.append(text)
+            content_text = "\n\n".join(parts)
         blob = content_text.encode("utf-8")
 
+        # Metadata
         metadata: Dict[str, Any] = {}
         for field in self.metadata_fields:
             value = self._get_typed_field_value(field, item)
-            if value is None:
-                continue
-            metadata[field] = self._serialize_metadata_value(value)
+            if value is not None:
+                metadata[field] = _serialize_metadata_value(value)
 
+        # Timestamp
         doc_updated_at = self._extract_timestamp(item) or datetime.now(timezone.utc)
 
-        # For semantic identifier, fall back to first content field or doc_id.
-        semantic_identifier = str(
-            self._extract_field(item, self.content_fields[0])
-            if self.content_fields
-            else raw_id
-        )
-        semantic_identifier = semantic_identifier.replace("\n", " ").replace("\r", " ")
-        semantic_identifier = semantic_identifier.strip()[:100] or str(doc_id)
+        # Semantic identifier
+        sem = str(self._extract_field(item, self.content_fields[0]) if self.content_fields else raw_id)
+        sem = sem.replace("\n", " ").replace("\r", " ").strip()[:100] or str(doc_id)
 
         return Document(
             id=doc_id,
             source=DocumentSource.REST_API,
-            semantic_identifier=semantic_identifier,
+            semantic_identifier=sem,
             extension=".txt",
             blob=blob,
             doc_updated_at=doc_updated_at,
@@ -772,43 +677,28 @@ class RestAPIConnector(LoadConnector, PollConnector):
             metadata=metadata or None,
         )
 
-    # --------------------------------------------------------------------- #
-    # Helpers
-    # --------------------------------------------------------------------- #
-    def _extract_field(self, item: Mapping[str, Any], path: str) -> Any:
-        """Extract a field from an item using dot-notation with basic array support.
+    # ── Field extraction ────────────────────────────────────────────── #
 
-        Examples:
-        - "country.name"
-        - "newsType[0].name"
-        - "newsType[*].name" -> returns list of values
+    def _extract_field(self, item: Mapping[str, Any], path: str) -> Any:
+        """Extract a value using dot-notation with optional array indexing.
+
+        Examples: ``country.name``, ``tags[0].label``, ``tags[*].label``
         """
         values = self._extract_field_values(item, path)
         if not values:
             return None
-        if len(values) == 1:
-            return values[0]
-        return values
+        return values[0] if len(values) == 1 else values
 
-    def _extract_field_values(
-        self,
-        item: Mapping[str, Any],
-        path: str,
-    ) -> List[Any]:
-        """Return list of raw values for a field path with optional wildcards."""
+    def _extract_field_values(self, item: Mapping[str, Any], path: str) -> List[Any]:
         if not path:
             return []
 
-        segments = path.split(".")
         current_values: List[Any] = [item]
-
-        for segment in segments:
+        for segment in path.split("."):
             if not segment:
                 return []
 
-            match = re.match(
-                r'^(?P<key>[^\[\]]+)(\[(?P<index>\d+|\*)\])?$', segment
-            )
+            match = re.match(r'^(?P<key>[^\[\]]+)(\[(?P<index>\d+|\*)\])?$', segment)
             key = segment
             index: Optional[str] = None
             if match:
@@ -822,21 +712,19 @@ class RestAPIConnector(LoadConnector, PollConnector):
                 child = value.get(key)
                 if child is None:
                     continue
-
                 if index is None:
                     next_values.append(child)
+                elif not isinstance(child, list):
+                    continue
+                elif index == "*":
+                    next_values.extend(child)
                 else:
-                    if not isinstance(child, list):
+                    try:
+                        idx = int(index)
+                    except ValueError:
                         continue
-                    if index == "*":
-                        next_values.extend(child)
-                    else:
-                        try:
-                            idx = int(index)
-                        except ValueError:
-                            continue
-                        if 0 <= idx < len(child):
-                            next_values.append(child[idx])
+                    if 0 <= idx < len(child):
+                        next_values.append(child[idx])
 
             current_values = next_values
             if not current_values:
@@ -844,95 +732,11 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
         return current_values
 
-    def _extract_timestamp(self, item: Mapping[str, Any]) -> Optional[datetime]:
-        """Extract timestamp from item using `poll_timestamp_field`."""
-        if not self.poll_timestamp_field:
-            return None
-
-        value = self._extract_field(item, self.poll_timestamp_field)
-        # If wildcard was used accidentally, collapse lists.
-        if isinstance(value, list) and value:
-            value = value[0]
-        if value is None:
-            return None
-
-        if isinstance(value, datetime):
-            if value.tzinfo is None:
-                return value.replace(tzinfo=timezone.utc)
-            return value.astimezone(timezone.utc)
-
-        if isinstance(value, (int, float)):
-            try:
-                return datetime.fromtimestamp(float(value), tz=timezone.utc)
-            except Exception:
-                return None
-
-        if isinstance(value, str):
-            ts_str = value.strip()
-            # Accept common ISO-ish formats.
-            for fmt in (
-                "%Y-%m-%dT%H:%M:%S.%fZ",
-                "%Y-%m-%dT%H:%M:%SZ",
-                "%Y-%m-%d %H:%M:%S",
-                "%Y-%m-%d",
-            ):
-                try:
-                    dt = datetime.strptime(ts_str, fmt)
-                    return dt.replace(tzinfo=timezone.utc)
-                except Exception:
-                    continue
-            try:
-                dt = datetime.fromisoformat(
-                    ts_str.replace("Z", "+00:00").replace(" ", "T")
-                )
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                else:
-                    dt = dt.astimezone(timezone.utc)
-                return dt
-            except Exception:
-                return None
-
-        return None
-
-    @staticmethod
-    def _strip_html(text: str) -> str:
-        """Remove basic HTML tags from a string."""
-        if "<" not in text or ">" not in text:
-            return text
-        # Lightweight tag stripper; we intentionally avoid bringing in
-        # heavier HTML parsers here.
-        cleaned = re.sub(r"<[^>]+>", " ", text)
-        cleaned = re.sub(r"\s+", " ", cleaned)
-        return cleaned.strip()
-
-    @staticmethod
-    def _coerce_to_text(value: Any) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, str):
-            return value
-        if isinstance(value, (int, float, bool)):
-            return str(value)
-        try:
-            import json
-
-            return json.dumps(value, ensure_ascii=False)
-        except Exception:
-            return str(value)
-
-    def _get_typed_field_value(
-        self,
-        path: str,
-        item: Mapping[str, Any],
-    ) -> Any:
-        """Apply type hints, defaults, and array joining for a single field path."""
+    def _get_typed_field_value(self, path: str, item: Mapping[str, Any]) -> Any:
+        """Extract a field value, applying type hints, defaults, and array joining."""
         values = self._extract_field_values(item, path)
-
         if not values:
-            if path in self.field_default_values:
-                return self.field_default_values[path]
-            return None
+            return self.field_default_values.get(path)
 
         hint = self.field_type_hints.get(path)
 
@@ -943,137 +747,95 @@ class RestAPIConnector(LoadConnector, PollConnector):
                 if v is None:
                     return None
                 try:
-                    # Prefer int when exact, else float
                     num = float(v)
                     return int(num) if num.is_integer() else num
                 except Exception:
                     return None
             if hint == "date":
                 if isinstance(v, datetime):
-                    dt = v
-                else:
-                    # Best-effort parse, fall back to string
-                    if isinstance(v, str):
-                        parsed = self._extract_timestamp({"_": v})  # type: ignore[arg-type]
-                        dt = parsed or None
-                    else:
-                        dt = None
-                if dt is not None:
-                    return dt.isoformat()
+                    return v.isoformat()
+                if isinstance(v, str):
+                    dt = self._extract_timestamp({"_": v})
+                    return dt.isoformat() if dt else str(v)
                 return str(v) if v is not None else None
             return v
 
         converted = [_convert(v) for v in values]
-        # Collapse list: default join for arrays.
         non_null = [v for v in converted if v is not None]
         if not non_null:
             return None
         if len(non_null) == 1:
             return non_null[0]
-        return ", ".join(self._coerce_to_text(v) for v in non_null)
+        return ", ".join(_coerce_to_text(v) for v in non_null)
+
+    # ── Timestamp parsing ───────────────────────────────────────────── #
+
+    def _extract_timestamp(self, item: Mapping[str, Any]) -> Optional[datetime]:
+        if not self.poll_timestamp_field:
+            return None
+
+        value = self._extract_field(item, self.poll_timestamp_field)
+        if isinstance(value, list) and value:
+            value = value[0]
+        if value is None:
+            return None
+
+        if isinstance(value, datetime):
+            return (value if value.tzinfo else value.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+
+        if isinstance(value, (int, float)):
+            try:
+                return datetime.fromtimestamp(float(value), tz=timezone.utc)
+            except Exception:
+                return None
+
+        if isinstance(value, str):
+            ts = value.strip()
+            for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+                try:
+                    return datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc)
+                except Exception:
+                    continue
+            try:
+                dt = datetime.fromisoformat(ts.replace("Z", "+00:00").replace(" ", "T"))
+                return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+            except Exception:
+                return None
+
+        return None
+
+    # ── Content template rendering ──────────────────────────────────── #
 
     def _render_content_template(self, item: Mapping[str, Any]) -> str:
-        """Render content using a user-provided template with {field} placeholders."""
         template = self.content_template or ""
 
         class _SafeDict(dict):
-            def __missing__(self, key: str) -> str:  # type: ignore[override]
+            def __missing__(self, key: str) -> str:
                 return ""
 
         values: Dict[str, str] = {}
-
-        def _logical_name(path: str) -> str:
-            # Use the last segment without index brackets as logical name.
-            segment = path.split(".")[-1]
-            segment = re.sub(r"\[\d+\]|\[\*\]", "", segment)
-            return segment or path
-
         for field_path in set(self.content_fields + self.metadata_fields):
             val = self._get_typed_field_value(field_path, item)
             if val is None:
                 continue
-            name = _logical_name(field_path)
-            values[name] = self._coerce_to_text(val)
+            name = re.sub(r"\[\d+\]|\[\*\]", "", field_path.split(".")[-1]) or field_path
+            values[name] = _coerce_to_text(val)
 
         try:
             rendered = template.format_map(_SafeDict(values))
         except Exception as exc:
-            logging.warning("Failed to render REST API content template: %s", exc)
-            # Fallback to simple join of content fields
-            parts: list[str] = []
-            for field in self.content_fields:
-                val = self._get_typed_field_value(field, item)
-                if val is None:
-                    continue
-                parts.append(self._coerce_to_text(val))
-            rendered = "\n\n".join(parts)
+            logger.warning("Failed to render content template: %s", exc)
+            parts = [_coerce_to_text(self._get_typed_field_value(f, item)) for f in self.content_fields]
+            rendered = "\n\n".join(p for p in parts if p)
 
-        return self._strip_html(rendered)
+        return _strip_html(rendered)
+
+    # ── Misc helpers ────────────────────────────────────────────────── #
 
     @staticmethod
-    def _serialize_metadata_value(value: Any) -> Any:
-        if isinstance(value, datetime):
-            if value.tzinfo is None:
-                value = value.replace(tzinfo=timezone.utc)
-            return value.isoformat()
-        if isinstance(value, (int, float, bool, str)):
-            return value
-        try:
-            import json
-
-            return json.dumps(value, ensure_ascii=False)
-        except Exception:
-            return str(value)
-
-    @staticmethod
-    def _doc_in_time_window(
-        doc: Document,
-        start: datetime,
-        end: datetime,
-    ) -> bool:
+    def _doc_in_time_window(doc: Document, start: datetime, end: datetime) -> bool:
         if not doc.doc_updated_at:
             return False
         dt = doc.doc_updated_at
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        else:
-            dt = dt.astimezone(timezone.utc)
+        dt = (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
         return start <= dt < end
-
-
-if __name__ == "__main__":  # pragma: no cover - manual smoke test helper
-    logging.basicConfig(level=logging.INFO)
-    example_conf = {
-        "url": "https://example.com/api/items",
-        "method": "GET",
-        "items_path": "$.items[*]",
-        "id_field": "id",
-        "content_fields": ["title", "body"],
-        "metadata_fields": ["category"],
-        "pagination_type": PaginationType.NONE,
-    }
-    try:
-        validated = RestAPIConnector.validate_config(example_conf, credentials=None)
-        connector = RestAPIConnector(
-            url=str(validated.url),
-            method=validated.normalized_method(),
-            headers=validated.headers,
-            auth_type=validated.normalized_auth_type(),
-            auth_config=validated.auth_config,
-            items_path=validated.items_path,
-            id_field=validated.id_field,
-            content_fields=validated.content_fields,
-            metadata_fields=validated.metadata_fields,
-            pagination_type=validated.normalized_pagination_type(),
-            pagination_config=validated.pagination_config,
-            poll_timestamp_field=validated.poll_timestamp_field,
-            batch_size=validated.batch_size,
-            max_pages=validated.max_pages,
-            request_body=validated.request_body,
-        )
-        for batch in connector.load_from_state():
-            print(f"Loaded batch of {len(batch)} documents")
-            break
-    except Exception as exc:  # pragma: no cover - manual debug helper
-        logging.error("Example REST API connector validation failed: %s", exc)
-

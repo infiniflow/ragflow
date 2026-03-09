@@ -127,13 +127,12 @@ async def test_connector(connector_id):
     against the existing saved configuration.
     """
     from common.data_source.rest_api_connector import RestAPIConnector
-    from common.data_source.exceptions import ConnectorValidationError
+    from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
 
     ok, conn = ConnectorService.get_by_id(connector_id)
     if not ok:
         return get_data_error_result(message="Can't find this Connector!")
 
-    # Currently only REST_API is supported for explicit config validation.
     if conn.source != DocumentSource.REST_API:
         return get_json_result(
             code=RetCode.ARGUMENT_ERROR,
@@ -142,17 +141,17 @@ async def test_connector(connector_id):
         )
 
     config = conn.config or {}
-    credentials = (config or {}).get("credentials") or {}
+    credentials = config.get("credentials") or {}
 
     try:
         RestAPIConnector.validate_config(config=config, credentials=credentials)
-    except ConnectorValidationError as exc:
+    except (ConnectorValidationError, ConnectorMissingCredentialError) as exc:
         return get_json_result(
             code=RetCode.DATA_ERROR,
             message=str(exc),
             data=False,
         )
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as exc:
         logging.exception("REST API connector validation failed: %s", exc)
         return get_json_result(
             code=RetCode.SERVER_ERROR,

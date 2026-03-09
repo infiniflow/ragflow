@@ -1154,7 +1154,7 @@ Example: Virtual Hosted Style`,
       rest_apiDescription:
         'Connect any REST API endpoint as a data source using a flexible, configuration-driven connector.',
       restApiQueryParamsTip:
-        'Key=value pairs (one per line) sent as URL query parameters. Use this instead of putting params in the URL. Example:\nlang=ar\nstory_per_page=10',
+        'Key=value pairs (one per line) sent as URL query parameters. Use this instead of embedding params in the URL.',
       restApiHeadersTip:
         'Optional JSON object of additional HTTP headers to send with every request.',
       restApiItemsPathTip:

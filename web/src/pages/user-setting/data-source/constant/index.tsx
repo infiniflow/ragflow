@@ -969,6 +969,7 @@ export const DataSourceFormFields = {
     },
   ],
   [DataSourceKey.REST_API]: [
+    // ── Essential fields ──────────────────────────────────────────────
     {
       label: 'Base URL',
       name: 'config.url',
@@ -986,6 +987,14 @@ export const DataSourceFormFields = {
         { label: 'POST', value: 'POST' },
       ],
       defaultValue: 'GET',
+    },
+    {
+      label: 'Query Parameters',
+      name: 'config.query_params',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: `key=value\none_per_line=true`,
+      tooltip: t('setting.restApiQueryParamsTip'),
     },
     {
       label: 'Auth Type',
@@ -1057,38 +1066,6 @@ export const DataSourceFormFields = {
       },
     },
     {
-      label: 'Query Parameters',
-      name: 'config.query_params',
-      type: FormFieldType.Textarea,
-      required: false,
-      placeholder: `lang=ar\nstory_per_page=10`,
-      tooltip: t('setting.restApiQueryParamsTip'),
-    },
-    {
-      label: 'Custom Headers (JSON)',
-      name: 'config.headers',
-      type: FormFieldType.Textarea,
-      required: false,
-      placeholder: `{"X-Custom-Header": "value"}`,
-      tooltip: t('setting.restApiHeadersTip'),
-    },
-    {
-      label: 'Items JSONPath',
-      name: 'config.items_path',
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: 'stories',
-      tooltip: t('setting.restApiItemsPathTip'),
-    },
-    {
-      label: 'ID Field',
-      name: 'config.id_field',
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: 'id',
-      tooltip: t('setting.restApiIdFieldTip'),
-    },
-    {
       label: 'Content Fields',
       name: 'config.content_fields',
       type: FormFieldType.Text,
@@ -1126,14 +1103,6 @@ export const DataSourceFormFields = {
       shouldRender: (values: any) => values?.config?.pagination_type === 'page',
     },
     {
-      label: 'Page Size Param',
-      name: 'config.pagination_config.page_size_param',
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: 'per_page (leave empty if already in Query Parameters)',
-      shouldRender: (values: any) => values?.config?.pagination_type === 'page',
-    },
-    {
       label: 'Start Page',
       name: 'config.pagination_config.start_page',
       type: FormFieldType.Number,
@@ -1147,15 +1116,6 @@ export const DataSourceFormFields = {
       type: FormFieldType.Text,
       required: false,
       defaultValue: 'offset',
-      shouldRender: (values: any) =>
-        values?.config?.pagination_type === 'offset',
-    },
-    {
-      label: 'Limit Param',
-      name: 'config.pagination_config.limit_param',
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: 'limit (leave empty if already in Query Parameters)',
       shouldRender: (values: any) =>
         values?.config?.pagination_type === 'offset',
     },
@@ -1178,14 +1138,6 @@ export const DataSourceFormFields = {
         values?.config?.pagination_type === 'cursor',
     },
     {
-      label: 'Initial Cursor',
-      name: 'config.pagination_config.initial_cursor',
-      type: FormFieldType.Text,
-      required: false,
-      shouldRender: (values: any) =>
-        values?.config?.pagination_type === 'cursor',
-    },
-    {
       label: 'Next Cursor JSONPath',
       name: 'config.pagination_config.next_cursor_path',
       type: FormFieldType.Text,
@@ -1195,12 +1147,78 @@ export const DataSourceFormFields = {
         values?.config?.pagination_type === 'cursor',
       tooltip: t('setting.restApiNextCursorPathTip'),
     },
+    // ── Advanced settings toggle ──────────────────────────────────────
+    {
+      label: 'Advanced Settings',
+      name: 'config.show_advanced',
+      type: FormFieldType.Switch,
+      required: false,
+      defaultValue: false,
+    },
+    // ── Advanced fields (hidden until toggled) ────────────────────────
+    {
+      label: 'Items JSONPath',
+      name: 'config.items_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'stories (auto-detected if empty)',
+      tooltip: t('setting.restApiItemsPathTip'),
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
+    },
+    {
+      label: 'ID Field',
+      name: 'config.id_field',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id (auto-generated if empty)',
+      tooltip: t('setting.restApiIdFieldTip'),
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
+    },
+    {
+      label: 'Custom Headers (JSON)',
+      name: 'config.headers',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: `{"X-Custom-Header": "value"}`,
+      tooltip: t('setting.restApiHeadersTip'),
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
+    },
+    {
+      label: 'Page Size Param',
+      name: 'config.pagination_config.page_size_param',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'per_page (leave empty if already in Query Parameters)',
+      shouldRender: (values: any) =>
+        !!values?.config?.show_advanced &&
+        values?.config?.pagination_type === 'page',
+    },
+    {
+      label: 'Limit Param',
+      name: 'config.pagination_config.limit_param',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'limit (leave empty if already in Query Parameters)',
+      shouldRender: (values: any) =>
+        !!values?.config?.show_advanced &&
+        values?.config?.pagination_type === 'offset',
+    },
+    {
+      label: 'Initial Cursor',
+      name: 'config.pagination_config.initial_cursor',
+      type: FormFieldType.Text,
+      required: false,
+      shouldRender: (values: any) =>
+        !!values?.config?.show_advanced &&
+        values?.config?.pagination_type === 'cursor',
+    },
     {
       label: 'Max Pages',
       name: 'config.max_pages',
       type: FormFieldType.Number,
       required: false,
       defaultValue: 1000,
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
     },
     {
       label: 'Poll Timestamp Field',
@@ -1209,6 +1227,7 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'updated_at',
       tooltip: t('setting.restApiPollTimestampFieldTip'),
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
     },
     {
       label: 'Request Body (POST) JSON',
@@ -1217,7 +1236,8 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: `{"status": "published"}`,
       tooltip: t('setting.restApiRequestBodyTip'),
-      shouldRender: (values: any) => values?.config?.method === 'POST',
+      shouldRender: (values: any) =>
+        !!values?.config?.show_advanced && values?.config?.method === 'POST',
     },
   ],
 };
@@ -1582,6 +1602,7 @@ export const DataSourceFormDefaultValues = {
       pagination_config: {},
       poll_timestamp_field: '',
       request_body: '',
+      show_advanced: false,
       credentials: {
         api_key: '',
         token: '',
