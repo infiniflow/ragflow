@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from collections import Counter
 import string
 from typing import Annotated, Any, Literal
@@ -27,6 +28,7 @@ from pydantic import (
     ValidationError,
     field_validator,
     model_validator,
+    ValidationInfo
 )
 from pydantic_core import PydanticCustomError
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
@@ -398,6 +400,24 @@ class CreateDatasetReq(Base):
     parser_config: Annotated[ParserConfig | None, Field(default=None)]
     auto_metadata_config: Annotated[AutoMetadataConfig | None, Field(default=None)]
     ext: Annotated[dict, Field(default={})]
+
+    @field_validator("pipeline_id", mode="before")
+    @classmethod
+    def handle_pipeline_id(cls, v: str | None, info: ValidationInfo):
+        if v is None:
+            return v
+        if info.data.get("chunk_method") is not None and isinstance(v, str):
+            v = None
+        return v
+
+    @field_validator("parse_type", mode="before")
+    @classmethod
+    def handle_parse_type(cls, v: int | None, info: ValidationInfo):
+        if v is None:
+            return v
+        if info.data.get("chunk_method") is not None and isinstance(v, int):
+            v = None
+        return v
 
     @field_validator("avatar", mode="after")
     @classmethod
