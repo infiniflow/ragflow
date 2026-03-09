@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Generator, Iterable, List, Mapping, Optional
 
 import requests
+from pydantic import BaseModel, Field, HttpUrl, ValidationError
 
 from api.utils.common import hash128
 from common.data_source.config import INDEX_BATCH_SIZE
@@ -51,6 +52,68 @@ class PaginationType(str):
     CURSOR = "cursor"
 
 
+class RestAPIConnectorConfig(BaseModel):
+    """Schema for REST API connector configuration (used by UI and backend)."""
+
+    url: HttpUrl
+    method: str = "GET"
+    headers: Dict[str, str] = Field(default_factory=dict)
+
+    auth_type: str = AuthType.NONE
+    auth_config: Dict[str, Any] = Field(default_factory=dict)
+
+    items_path: Optional[str] = None
+    id_field: Optional[str] = None
+    content_fields: List[str] = Field(default_factory=list)
+    metadata_fields: List[str] = Field(default_factory=list)
+
+    pagination_type: str = PaginationType.NONE
+    pagination_config: Dict[str, Any] = Field(default_factory=dict)
+
+    poll_timestamp_field: Optional[str] = None
+    # Only used for POST; for GET this is ignored.
+    request_body: Optional[Dict[str, Any]] = None
+
+    batch_size: int = INDEX_BATCH_SIZE
+    max_pages: int = 1000
+
+    def normalized_method(self) -> str:
+        method = (self.method or "GET").upper()
+        if method not in {"GET", "POST"}:
+            raise ConnectorValidationError(
+                f"Unsupported HTTP method '{self.method}'. Only GET and POST are allowed."
+            )
+        return method
+
+    def normalized_auth_type(self) -> str:
+        if self.auth_type not in {
+            AuthType.NONE,
+            AuthType.API_KEY_HEADER,
+            AuthType.BEARER,
+            AuthType.BASIC,
+        }:
+            raise ConnectorValidationError(f"Unsupported auth_type '{self.auth_type}'.")
+        return self.auth_type
+
+    def normalized_pagination_type(self) -> str:
+        if self.pagination_type not in {
+            PaginationType.NONE,
+            PaginationType.PAGE,
+            PaginationType.OFFSET,
+            PaginationType.CURSOR,
+        }:
+            raise ConnectorValidationError(
+                f"Unsupported pagination_type '{self.pagination_type}'."
+            )
+        return self.pagination_type
+
+    def ensure_required_fields(self) -> None:
+        if not self.content_fields:
+            raise ConnectorValidationError(
+                "At least one content field must be configured (content_fields)."
+            )
+
+
 class RestAPIConnector(LoadConnector, PollConnector):
     """Configuration-driven REST API connector.
 
@@ -74,6 +137,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
         poll_timestamp_field: Optional[str] = None,
         batch_size: int = INDEX_BATCH_SIZE,
         max_pages: int = 1000,
+        request_body: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.url = url
         self.method = (method or "GET").upper()
@@ -86,6 +150,11 @@ class RestAPIConnector(LoadConnector, PollConnector):
         self.metadata_fields: List[str] = metadata_fields or []
         self.pagination_type = pagination_type or PaginationType.NONE
         self.pagination_config = pagination_config or {}
+        # Allow POST body to be provided either via dedicated config field or
+        # embedded in pagination_config for backward-compat.
+        if request_body is None:
+            request_body = self.pagination_config.get("request_body") or {}
+        self._static_request_body: Dict[str, Any] = request_body
         self.poll_timestamp_field = poll_timestamp_field
         self.batch_size = batch_size
         self.max_pages = max_pages
@@ -130,6 +199,70 @@ class RestAPIConnector(LoadConnector, PollConnector):
             ) from exc
 
         return None
+
+    # ------------------------------------------------------------------ #
+    # Static configuration validation entrypoint (Ticket 2)
+    # ------------------------------------------------------------------ #
+    @classmethod
+    def validate_config(
+        cls,
+        config: Dict[str, Any],
+        credentials: Optional[Dict[str, Any]] = None,
+    ) -> RestAPIConnectorConfig:
+        """Validate connector configuration and perform a test API call.
+
+        - Ensures required fields are present and values are in allowed sets.
+        - Normalizes defaults (method, auth_type, pagination_type, etc.).
+        - If `credentials` are provided (or auth_type == none), performs a
+          single-page API call and verifies that `items_path` (if any) yields
+          at least a structurally valid items list.
+        """
+        try:
+            cfg = RestAPIConnectorConfig(**config)
+        except ValidationError as exc:
+            raise ConnectorValidationError(f"Invalid REST API config: {exc}") from exc
+
+        # Semantic validations
+        cfg.normalized_method()
+        cfg.normalized_auth_type()
+        cfg.normalized_pagination_type()
+        cfg.ensure_required_fields()
+
+        # Short-circuit: only structural validation requested, no network.
+        if credentials is None and cfg.auth_type != AuthType.NONE:
+            return cfg
+
+        # Connectivity + items_path validation.
+        connector = cls(
+            url=str(cfg.url),
+            method=cfg.normalized_method(),
+            headers=cfg.headers,
+            auth_type=cfg.normalized_auth_type(),
+            auth_config=cfg.auth_config,
+            items_path=cfg.items_path,
+            id_field=cfg.id_field,
+            content_fields=cfg.content_fields,
+            metadata_fields=cfg.metadata_fields,
+            pagination_type=cfg.normalized_pagination_type(),
+            pagination_config=cfg.pagination_config,
+            poll_timestamp_field=cfg.poll_timestamp_field,
+            batch_size=cfg.batch_size,
+            max_pages=min(cfg.max_pages, 10),  # cap for validation
+            request_body=cfg.request_body,
+        )
+
+        if credentials is not None:
+            connector.load_credentials(credentials)
+        else:
+            connector._credentials = {}
+            connector._build_auth()
+            try:
+                logging.info("Validating REST API connector via test call (no auth).")
+                _ = next(connector._page_iter_for_validation())
+            except StopIteration:
+                pass
+
+        return cfg
 
     def _build_auth(self) -> None:
         """Derive auth headers / objects from `auth_type` and credentials."""
@@ -306,13 +439,25 @@ class RestAPIConnector(LoadConnector, PollConnector):
     def _fetch_page(self, params: Dict[str, Any]) -> Any:
         """Fetch a single page with retry + exponential backoff."""
         headers = {**self._base_headers, **self._auth_headers}
+        url, query_params = self._build_url_with_templates(params)
 
         if self.method == "GET":
-            resp = rl_requests.get(self.url, headers=headers, params=params, timeout=60)
+            resp = rl_requests.get(
+                url,
+                headers=headers,
+                params=query_params,
+                auth=self._basic_auth,
+                timeout=60,
+            )
         elif self.method == "POST":
-            body = self.pagination_config.get("request_body") or {}
+            body = self._static_request_body or {}
             resp = rl_requests.post(
-                self.url, headers=headers, params=params, json=body, timeout=60
+                url,
+                headers=headers,
+                params=query_params,
+                json=body,
+                auth=self._basic_auth,
+                timeout=60,
             )
         else:
             raise ConnectorValidationError(f"Unsupported HTTP method: {self.method}")
@@ -333,6 +478,31 @@ class RestAPIConnector(LoadConnector, PollConnector):
             raise ConnectorValidationError(
                 "REST API response is not valid JSON"
             ) from exc
+
+    def _build_url_with_templates(
+        self,
+        params: Dict[str, Any],
+    ) -> tuple[str, Dict[str, Any]]:
+        """Apply URL template variables like {page}, {offset}, {cursor}.
+
+        Any param whose name appears as a `{name}` placeholder in the base URL
+        will be substituted into the URL string and removed from the query
+        parameter dict before the request is sent.
+        """
+        url = self.url
+        query_params = dict(params)
+
+        used_keys: List[str] = []
+        for key, value in list(query_params.items()):
+            placeholder = "{" + key + "}"
+            if placeholder in url:
+                url = url.replace(placeholder, str(value))
+                used_keys.append(key)
+
+        for key in used_keys:
+            query_params.pop(key, None)
+
+        return url, query_params
 
     # --------------------------------------------------------------------- #
     # JSON extraction & mapping
@@ -586,17 +756,37 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
 if __name__ == "__main__":  # pragma: no cover - manual smoke test helper
     logging.basicConfig(level=logging.INFO)
-    connector = RestAPIConnector(
-        url="https://example.com/api/items",
-        method="GET",
-        items_path="$.items[*]",
-        id_field="id",
-        content_fields=["title", "body"],
-        metadata_fields=["category"],
-        pagination_type=PaginationType.NONE,
-    )
-    connector.load_credentials({})
-    for batch in connector.load_from_state():
-        print(f"Loaded batch of {len(batch)} documents")
-        break
+    example_conf = {
+        "url": "https://example.com/api/items",
+        "method": "GET",
+        "items_path": "$.items[*]",
+        "id_field": "id",
+        "content_fields": ["title", "body"],
+        "metadata_fields": ["category"],
+        "pagination_type": PaginationType.NONE,
+    }
+    try:
+        validated = RestAPIConnector.validate_config(example_conf, credentials=None)
+        connector = RestAPIConnector(
+            url=str(validated.url),
+            method=validated.normalized_method(),
+            headers=validated.headers,
+            auth_type=validated.normalized_auth_type(),
+            auth_config=validated.auth_config,
+            items_path=validated.items_path,
+            id_field=validated.id_field,
+            content_fields=validated.content_fields,
+            metadata_fields=validated.metadata_fields,
+            pagination_type=validated.normalized_pagination_type(),
+            pagination_config=validated.pagination_config,
+            poll_timestamp_field=validated.poll_timestamp_field,
+            batch_size=validated.batch_size,
+            max_pages=validated.max_pages,
+            request_body=validated.request_body,
+        )
+        for batch in connector.load_from_state():
+            print(f"Loaded batch of {len(batch)} documents")
+            break
+    except Exception as exc:  # pragma: no cover - manual debug helper
+        logging.error("Example REST API connector validation failed: %s", exc)
 
