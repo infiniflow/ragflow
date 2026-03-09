@@ -19,7 +19,7 @@ import time
 from uuid import uuid4
 from agent.canvas import Canvas
 from api.db import CanvasCategory, TenantPermission
-from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation
+from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation, UserCanvasVersion
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
 from common.misc_utils import get_uuid
@@ -173,7 +173,29 @@ class UserCanvasService(CommonService):
         count = agents.count()
         if page_number and items_per_page:
             agents = agents.paginate(page_number, items_per_page)
-        return list(agents.dicts()), count
+
+        agents_list = list(agents.dicts())
+
+        # Get latest release time for each canvas
+        if agents_list:
+            canvas_ids = [a['id'] for a in agents_list]
+            release_times = (UserCanvasVersion
+                .select(
+                    UserCanvasVersion.user_canvas_id,
+                    fn.MAX(UserCanvasVersion.create_time).alias('release_time')
+                )
+                .where(
+                    (UserCanvasVersion.user_canvas_id.in_(canvas_ids)) &
+                    (UserCanvasVersion.release == True)
+                )
+                .group_by(UserCanvasVersion.user_canvas_id)
+            )
+            release_time_map = {r.user_canvas_id: r.release_time for r in release_times}
+
+            for agent in agents_list:
+                agent['release_time'] = release_time_map.get(agent['id'])
+
+        return agents_list, count
 
     @classmethod
     @DB.connection_context()

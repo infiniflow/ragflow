@@ -45,7 +45,8 @@ class UserCanvasVersionService(CommonService):
                   cls.model.create_date,
                   cls.model.update_date,
                   cls.model.user_canvas_id,
-                  cls.model.update_time]
+                  cls.model.update_time,
+                  cls.model.release]
             ).where(cls.model.user_canvas_id == user_canvas_id)
             return user_canvas_version
         except DoesNotExist:
@@ -74,14 +75,17 @@ class UserCanvasVersionService(CommonService):
     @DB.connection_context()
     def delete_all_versions(cls, user_canvas_id):
         try:
-            user_canvas_version = cls.model.select().where(cls.model.user_canvas_id == user_canvas_id).order_by(
-                cls.model.create_time.desc())
-            if user_canvas_version.count() > 20:
-                delete_ids = []
-                for i in range(20, user_canvas_version.count()):
-                    delete_ids.append(user_canvas_version[i].id)
+            # Only get unpublished versions (False or None), keep all released versions
+            unpublished = cls.model.select().where(
+                cls.model.user_canvas_id == user_canvas_id,
+                (cls.model.release == False) | (cls.model.release.is_null(True))
+            ).order_by(cls.model.create_time.desc())
 
+            # Only delete old unpublished versions beyond the limit
+            if unpublished.count() > 20:
+                delete_ids = [v.id for v in unpublished[20:]]
                 cls.delete_by_ids(delete_ids)
+
             return True
         except DoesNotExist:
             return None
@@ -90,12 +94,15 @@ class UserCanvasVersionService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def save_or_replace_latest(cls, user_canvas_id, dsl, title=None, description=None):
+    def save_or_replace_latest(cls, user_canvas_id, dsl, title=None, description=None, release=None):
         """
         Persist a canvas snapshot into version history.
 
         If the latest version has the same DSL content, update that version in place
         instead of creating a new row.
+
+        Exception: If the latest version is released (release=True) and current save is not,
+        create a new version to protect the released version.
         """
         try:
             normalized_dsl = cls._normalize_dsl(dsl)
@@ -107,11 +114,28 @@ class UserCanvasVersionService(CommonService):
             )
 
             if latest and cls._normalize_dsl(latest.dsl) == normalized_dsl:
+                # Protect released version: if latest is released and current is not,
+                # create a new version instead of updating
+                if latest.release and not release:
+                    insert_data = {"user_canvas_id": user_canvas_id, "dsl": normalized_dsl}
+                    if title is not None:
+                        insert_data["title"] = title
+                    if description is not None:
+                        insert_data["description"] = description
+                    if release is not None:
+                        insert_data["release"] = release
+                    cls.insert(**insert_data)
+                    cls.delete_all_versions(user_canvas_id)
+                    return None, True
+
+                # Normal case: update existing version
                 update_data = {"dsl": normalized_dsl}
                 if title is not None:
                     update_data["title"] = title
                 if description is not None:
                     update_data["description"] = description
+                if release is not None:
+                    update_data["release"] = release
                 cls.update_by_id(latest.id, update_data)
                 cls.delete_all_versions(user_canvas_id)
                 return latest.id, False
@@ -121,6 +145,8 @@ class UserCanvasVersionService(CommonService):
                 insert_data["title"] = title
             if description is not None:
                 insert_data["description"] = description
+            if release is not None:
+                insert_data["release"] = release
             cls.insert(**insert_data)
             cls.delete_all_versions(user_canvas_id)
             return None, True
