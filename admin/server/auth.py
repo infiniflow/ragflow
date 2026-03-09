@@ -173,26 +173,10 @@ def login_admin(email: str, password: str):
 
 
 def check_admin(username: str, password: str):
-    users = UserService.query(email=username)
-    if not users:
-        logging.info(f"Username: {username} is not registered!")
-        user_info = {
-            "id": uuid.uuid1().hex,
-            "password": encode_to_base64("admin"),
-            "nickname": "admin",
-            "is_superuser": True,
-            "email": "admin@ragflow.io",
-            "creator": "system",
-            "status": "1",
-        }
-        if not UserService.save(**user_info):
-            raise AdminException("Can't init admin.", 500)
-
     user = UserService.query_user(username, password)
-    if user:
+    if user and user.is_superuser:
         return True
-    else:
-        return False
+    return False
 
 
 def login_verify(f):
