@@ -1137,7 +1137,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         for id in sres.ids:
             d = {
                 "id": id,
-                "content": (remove_redundant_spaces(sres.highlight[id]) if question and id in sres.highlight else sres.field[id].get("content_with_weight", "")),
+                "content": sres.field[id].get("content_with_weight", ""),
                 "document_id": sres.field[id]["doc_id"],
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
                 "important_keywords": sres.field[id].get("important_kwd", []),
@@ -1147,6 +1147,8 @@ async def list_chunks(tenant_id, dataset_id, document_id):
                 "available": bool(int(sres.field[id].get("available_int", "1"))),
                 "positions": sres.field[id].get("position_int", []),
             }
+            if question and id in sres.highlight:
+                d["highlight"] = remove_redundant_spaces(sres.highlight[id]).strip()
             res["chunks"].append(d)
             _ = Chunk(**d)  # validate the chunk
     return get_result(data=res)

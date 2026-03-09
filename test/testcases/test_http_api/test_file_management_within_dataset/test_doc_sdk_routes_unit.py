@@ -146,6 +146,9 @@ def _load_doc_module(monkeypatch):
     deepdoc_excel_module = ModuleType("deepdoc.parser.excel_parser")
     deepdoc_excel_module.RAGFlowExcelParser = _StubExcelParser
     monkeypatch.setitem(sys.modules, "deepdoc.parser.excel_parser", deepdoc_excel_module)
+    deepdoc_mineru_module = ModuleType("deepdoc.parser.mineru_parser")
+    deepdoc_mineru_module.MinerUParser = _StubPdfParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.mineru_parser", deepdoc_mineru_module)
     deepdoc_parser_utils = ModuleType("deepdoc.parser.utils")
     deepdoc_parser_utils.get_text = lambda *_args, **_kwargs: ""
     monkeypatch.setitem(sys.modules, "deepdoc.parser.utils", deepdoc_parser_utils)
@@ -217,13 +220,14 @@ def _load_doc_module(monkeypatch):
                     import numpy as np
                     return [np.array([0.2, 0.8]), np.array([0.3, 0.7])], 1
             return _EmbedModel()
-    
-    tenant_llm_service_mod.TenantService = _StubTenantService
-    tenant_llm_service_mod.TenantLLMService = _StubTenantLLMService
 
     class _StubLLMFactoriesService:
-        pass
+        @staticmethod
+        def get_all():
+            return []
 
+    tenant_llm_service_mod.TenantService = _StubTenantService
+    tenant_llm_service_mod.TenantLLMService = _StubTenantLLMService
     tenant_llm_service_mod.LLMFactoriesService = _StubLLMFactoriesService
     monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_service_mod)
 
@@ -251,6 +255,24 @@ def _load_doc_module(monkeypatch):
     )
     llm_service_mod.LLMBundle = _StubLLMBundle
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
+
+    file_service_mod = ModuleType("api.db.services.file_service")
+
+    class _StubFileService:
+        @staticmethod
+        def upload_document(*_args, **_kwargs):
+            return [], []
+
+        @staticmethod
+        def get_root_folder(_tenant):
+            return {"id": "pf-1"}
+
+        @staticmethod
+        def init_knowledgebase_docs(*_args, **_kwargs):
+            return None
+
+    file_service_mod.FileService = _StubFileService
+    monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
 
     # Mock tenant_model_service to ensure it uses mocked services
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
@@ -860,6 +882,32 @@ class TestDocRoutesUnit:
         assert res["code"] == 0
         assert res["data"]["total"] == 1
         assert res["data"]["chunks"][0]["id"] == "chunk-1"
+
+        class _SRes:
+            total = 1
+            ids = ["chunk-1"]
+            field = {
+                "chunk-1": {
+                    "content_with_weight": "raw chunk content",
+                    "doc_id": "doc-1",
+                    "docnm_kwd": "doc",
+                    "available_int": 1,
+                    "position_int": [[1, 2, 3, 4, 5]],
+                }
+            }
+            highlight = {"chunk-1": " highlighted  content "}
+
+        class _Retriever:
+            async def search(self, *_args, **_kwargs):
+                return _SRes()
+
+        monkeypatch.setattr(module, "request", SimpleNamespace(args=_DummyArgs({"keywords": "content"})))
+        _patch_docstore(monkeypatch, module, index_exist=lambda *_args, **_kwargs: True)
+        monkeypatch.setattr(module.settings, "retriever", _Retriever())
+        res = _run(module.list_chunks.__wrapped__("tenant-1", "ds-1", "doc-1"))
+        assert res["code"] == 0
+        assert res["data"]["chunks"][0]["content"] == "raw chunk content"
+        assert res["data"]["chunks"][0]["highlight"] == "highlighted content"
 
     def test_add_chunk_access_guard(self, monkeypatch):
         module = _load_doc_module(monkeypatch)

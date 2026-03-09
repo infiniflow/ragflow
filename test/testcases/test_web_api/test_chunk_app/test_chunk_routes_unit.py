@@ -260,6 +260,15 @@ def _load_chunk_module(monkeypatch):
     rag_nlp_mod.search = SimpleNamespace(index_name=lambda tenant_id: f"idx-{tenant_id}")
     monkeypatch.setitem(sys.modules, "rag.nlp", rag_nlp_mod)
 
+    rag_utils_pkg = ModuleType("rag.utils")
+    rag_utils_pkg.__path__ = []
+    monkeypatch.setitem(sys.modules, "rag.utils", rag_utils_pkg)
+
+    rag_sparse_vector_mod = ModuleType("rag.utils.sparse_vector")
+    rag_sparse_vector_mod.attach_sparse_vector = lambda *_args, **_kwargs: False
+    rag_sparse_vector_mod.build_sparse_text = lambda *parts: "\n".join(str(part) for part in parts if part is not None)
+    monkeypatch.setitem(sys.modules, "rag.utils.sparse_vector", rag_sparse_vector_mod)
+
     rag_prompts_pkg = ModuleType("rag.prompts")
     rag_prompts_pkg.__path__ = []
     monkeypatch.setitem(sys.modules, "rag.prompts", rag_prompts_pkg)
@@ -472,6 +481,8 @@ def test_list_chunk_exception_branches_unit(monkeypatch):
     assert res["code"] == 0, res
     assert res["data"]["total"] == 1, res
     assert res["data"]["chunks"][0]["available_int"] == 1, res
+    assert res["data"]["chunks"][0]["content_with_weight"] == "chunk content", res
+    assert res["data"]["chunks"][0]["highlight"] == "highlighted content", res
 
     monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _doc_id: "")
     _set_request_json(monkeypatch, module, {"doc_id": "doc-1"})
