@@ -86,6 +86,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 	// User login by email endpoint
 	engine.POST("/v1/user/login", r.userHandler.LoginByEmail)
+	engine.POST("/v1/user/register", r.userHandler.Register)
 	// User login channels endpoint
 	engine.GET("/v1/user/login/channels", r.userHandler.GetLoginChannels)
 	// User logout endpoint
@@ -128,65 +129,65 @@ func (r *Router) Setup(engine *gin.Engine) {
 		{
 			authors.GET("/:author_id/documents", r.documentHandler.GetDocumentsByAuthorID)
 		}
+	}
 
-		// Knowledge base routes
-		kb := engine.Group("/v1/kb")
-		{
-			kb.POST("/list", r.knowledgebaseHandler.ListKbs)
-		}
+	// Knowledge base routes
+	kb := engine.Group("/v1/kb")
+	{
+		kb.POST("/list", r.knowledgebaseHandler.ListKbs)
+	}
 
-		// Chunk routes
-		chunk := engine.Group("/v1/chunk")
-		{
-			chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
-		}
+	// Chunk routes
+	chunk := engine.Group("/v1/chunk")
+	{
+		chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
+	}
 
-		// LLM routes
-		llm := engine.Group("/v1/llm")
-		{
-			llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
-			llm.GET("/factories", r.llmHandler.Factories)
-			llm.GET("/list", r.llmHandler.ListApp)
-		}
+	// LLM routes
+	llm := engine.Group("/v1/llm")
+	{
+		llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
+		llm.GET("/factories", r.llmHandler.Factories)
+		llm.GET("/list", r.llmHandler.ListApp)
+	}
 
-		// Chat routes
-		chat := engine.Group("/v1/dialog")
-		{
-			chat.GET("/list", r.chatHandler.ListChats)
-			chat.POST("/next", r.chatHandler.ListChatsNext)
-			chat.POST("/set", r.chatHandler.SetDialog)
-			chat.POST("/rm", r.chatHandler.RemoveChats)
-		}
+	// Chat routes
+	chat := engine.Group("/v1/dialog")
+	{
+		chat.GET("/list", r.chatHandler.ListChats)
+		chat.POST("/next", r.chatHandler.ListChatsNext)
+		chat.POST("/set", r.chatHandler.SetDialog)
+		chat.POST("/rm", r.chatHandler.RemoveChats)
+	}
 
-		// Chat session (conversation) routes
-		session := engine.Group("/v1/conversation")
-		{
-			session.POST("/set", r.chatSessionHandler.SetChatSession)
-			session.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
-			session.GET("/list", r.chatSessionHandler.ListChatSessions)
-			session.POST("/completion", r.chatSessionHandler.Completion)
-		}
+	// Chat session (conversation) routes
+	session := engine.Group("/v1/conversation")
+	{
+		session.POST("/set", r.chatSessionHandler.SetChatSession)
+		session.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
+		session.GET("/list", r.chatSessionHandler.ListChatSessions)
+		session.POST("/completion", r.chatSessionHandler.Completion)
+	}
 
-		// Connector routes
-		connector := engine.Group("/v1/connector")
-		{
-			connector.GET("/list", r.connectorHandler.ListConnectors)
-		}
+	// Connector routes
+	connector := engine.Group("/v1/connector")
+	{
+		connector.GET("/list", r.connectorHandler.ListConnectors)
+	}
 
-		// Search routes
-		search := engine.Group("/v1/search")
-		{
-			search.POST("/list", r.searchHandler.ListSearchApps)
-		}
+	// Search routes
+	search := engine.Group("/v1/search")
+	{
+		search.POST("/list", r.searchHandler.ListSearchApps)
+	}
 
-		// File routes
-		file := engine.Group("/v1/file")
-		{
-			file.GET("/list", r.fileHandler.ListFiles)
-			file.GET("/root_folder", r.fileHandler.GetRootFolder)
-			file.GET("/parent_folder", r.fileHandler.GetParentFolder)
-			file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
-		}
+	// File routes
+	file := engine.Group("/v1/file")
+	{
+		file.GET("/list", r.fileHandler.ListFiles)
+		file.GET("/root_folder", r.fileHandler.GetRootFolder)
+		file.GET("/parent_folder", r.fileHandler.GetParentFolder)
+		file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
 	}
 
 	// Handle undefined routes

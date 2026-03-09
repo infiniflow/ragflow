@@ -33,8 +33,8 @@ import authorizationUtil from '@/utils/authorization-util';
 
 import { login } from '@/services/admin-service';
 
+import ThemeSwitch from '../../components/theme-switch';
 import { BgSvg } from '../login-next/bg';
-import ThemeSwitch from './components/theme-switch';
 
 import { CurrentUserInfoContext } from './layouts/root-layout';
 

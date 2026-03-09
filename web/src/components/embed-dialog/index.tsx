@@ -1,5 +1,4 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
-import HighLightMarkdown from '@/components/highlight-markdown';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,10 +31,17 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { ExternalLink } from 'lucide-react';
 import { memo, useCallback, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import {
+  oneDark,
+  oneLight,
+} from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { z } from 'zod';
+import { useIsDarkTheme } from '../theme-provider';
 
 const FormSchema = z.object({
   visibleAvatar: z.boolean(),
+  publishAvatar: z.boolean(),
   locale: z.string(),
   embedType: z.enum(['fullscreen', 'widget']),
   enableStreaming: z.boolean(),
@@ -55,13 +61,16 @@ function EmbedDialog({
   from,
   beta = '',
   isAgent,
+  visible,
 }: IProps) {
   const { t } = useTranslate('chat');
+  const isDarkTheme = useIsDarkTheme();
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       visibleAvatar: false,
+      publishAvatar: false,
       locale: '',
       embedType: 'fullscreen' as const,
       enableStreaming: false,
@@ -79,27 +88,44 @@ function EmbedDialog({
   }, []);
 
   const generateIframeSrc = useCallback(() => {
-    const { visibleAvatar, locale, embedType, enableStreaming, theme } = values;
+    const {
+      visibleAvatar,
+      publishAvatar,
+      locale,
+      embedType,
+      enableStreaming,
+      theme,
+    } = values;
     const baseRoute =
       embedType === 'widget'
         ? Routes.ChatWidget
         : from === SharedFrom.Agent
           ? Routes.AgentShare
           : Routes.ChatShare;
-    let src = `${location.origin}${baseRoute}?shared_id=${token}&from=${from}&auth=${beta}`;
+
+    const src = new URL(`${location.origin}${baseRoute}`);
+    src.searchParams.append('shared_id', token);
+    src.searchParams.append('from', from);
+    src.searchParams.append('auth', beta);
+
+    if (publishAvatar) {
+      src.searchParams.append('release', 'true');
+    }
     if (visibleAvatar) {
-      src += '&visible_avatar=1';
+      src.searchParams.append('visible_avatar', '1');
     }
     if (locale) {
-      src += `&locale=${locale}`;
+      src.searchParams.append('locale', locale);
     }
-    if (enableStreaming) {
-      src += '&streaming=true';
+    if (embedType === 'widget') {
+      src.searchParams.append('mode', 'master');
+      src.searchParams.append('streaming', String(enableStreaming));
     }
     if (theme && embedType === 'fullscreen') {
-      src += `&theme=${theme}`;
+      src.searchParams.append('theme', theme);
     }
-    return src;
+
+    return src.toString();
   }, [beta, from, token, values]);
 
   const text = useMemo(() => {
@@ -107,44 +133,36 @@ function EmbedDialog({
     const { embedType } = values;
 
     if (embedType === 'widget') {
-      const { enableStreaming } = values;
-      const streamingParam = enableStreaming
-        ? '&streaming=true'
-        : '&streaming=false';
-      return `
-  ~~~ html
-  <iframe src="${iframeSrc}&mode=master${streamingParam}"
-    style="position:fixed;bottom:0;right:0;width:100px;height:100px;border:none;background:transparent;z-index:9999"
-    frameborder="0" allow="microphone;camera"></iframe>
-  <script>
-  window.addEventListener('message',e=>{
-    if(e.origin!=='${location.origin.replace(/:\d+/, ':9222')}')return;
-    if(e.data.type==='CREATE_CHAT_WINDOW'){
-      if(document.getElementById('chat-win'))return;
-      const i=document.createElement('iframe');
-      i.id='chat-win';i.src=e.data.src;
-      i.style.cssText='position:fixed;bottom:104px;right:24px;width:380px;height:500px;border:none;background:transparent;z-index:9998;display:none';
-      i.frameBorder='0';i.allow='microphone;camera';
-      document.body.appendChild(i);
-    }else if(e.data.type==='TOGGLE_CHAT'){
-      const w=document.getElementById('chat-win');
-      if(w)w.style.display=e.data.isOpen?'block':'none';
-    }else if(e.data.type==='SCROLL_PASSTHROUGH')window.scrollBy(0,e.data.deltaY);
-  });
-  </script>
-~~~
-  `;
+      return `<iframe
+  src="${iframeSrc}"
+  style="position:fixed;bottom:0;right:0;width:100px;height:100px;border:none;background:transparent;z-index:9999"
+  frameborder="0"
+  allow="microphone;camera"
+></iframe>
+<script>
+window.addEventListener('message',e=>{
+  if(e.origin!=='${location.origin.replace(/:\d+/, ':9222')}')return;
+  if(e.data.type==='CREATE_CHAT_WINDOW'){
+    if(document.getElementById('chat-win'))return;
+    const i=document.createElement('iframe');
+    i.id='chat-win';i.src=e.data.src;
+    i.style.cssText='position:fixed;bottom:104px;right:24px;width:380px;height:500px;border:none;background:transparent;z-index:9998;display:none';
+    i.frameBorder='0';i.allow='microphone;camera';
+    document.body.appendChild(i);
+  }else if(e.data.type==='TOGGLE_CHAT'){
+    const w=document.getElementById('chat-win');
+    if(w)w.style.display=e.data.isOpen?'block':'none';
+  }else if(e.data.type==='SCROLL_PASSTHROUGH')window.scrollBy(0,e.data.deltaY);
+});
+</script>
+`;
     } else {
-      return `
-  ~~~ html
-  <iframe
+      return `<iframe
   src="${iframeSrc}"
   style="width: 100%; height: 100%; min-height: 600px"
   frameborder="0"
->
-</iframe>
-~~~
-  `;
+></iframe>
+`;
     }
   }, [generateIframeSrc, values]);
 
@@ -154,13 +172,14 @@ function EmbedDialog({
   }, [generateIframeSrc]);
 
   return (
-    <Dialog open onOpenChange={hideModal}>
+    <Dialog open={visible} onOpenChange={hideModal}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
             {t('embedIntoSite', { keyPrefix: 'common' })}
           </DialogTitle>
         </DialogHeader>
+
         <section className="w-full overflow-auto space-y-5 text-sm text-text-secondary">
           <Form {...form}>
             <form className="space-y-5">
@@ -245,6 +264,22 @@ function EmbedDialog({
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="publishAvatar"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Publish Avatar</FormLabel>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      ></Switch>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               {values.embedType === 'widget' && (
                 <FormField
                   control={form.control}
@@ -281,10 +316,16 @@ function EmbedDialog({
               />
             </form>
           </Form>
-          <div className="max-h-[350px] overflow-auto">
+          <div>
             <span>{t('embedCode', { keyPrefix: 'search' })}</span>
-            <div className="max-h-full overflow-y-auto">
-              <HighLightMarkdown>{text}</HighLightMarkdown>
+            <div>
+              <SyntaxHighlighter
+                className="max-h-[350px] overflow-auto scrollbar-auto"
+                language="html"
+                style={isDarkTheme ? oneDark : oneLight}
+              >
+                {text}
+              </SyntaxHighlighter>
             </div>
           </div>
           <Button
@@ -299,7 +340,7 @@ function EmbedDialog({
             {t(isAgent ? 'flow' : 'chat', { keyPrefix: 'header' })}
             <span className="ml-1 inline-block">ID</span>
           </div>
-          <div className="bg-bg-card rounded-lg flex justify-between p-2">
+          <div className="bg-bg-card rounded-lg flex items-center justify-between p-2">
             <span>{token} </span>
             <CopyToClipboard text={token}></CopyToClipboard>
           </div>

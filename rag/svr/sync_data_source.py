@@ -55,6 +55,7 @@ from common.data_source import (
     ZendeskConnector,
     SeaFileConnector,
     RDBMSConnector,
+    DingTalkAITableConnector,
 )
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
@@ -1221,6 +1222,49 @@ class SeaFile(SyncBase):
         return document_generator
 
 
+class DingTalkAITable(SyncBase):
+    SOURCE_NAME: str = FileSource.DINGTALK_AI_TABLE
+
+    async def _generate(self, task: dict):
+        """
+        Sync records from DingTalk AI Table (Notable).
+        """
+        self.connector = DingTalkAITableConnector(
+            table_id=self.conf.get("table_id"),
+            operator_id=self.conf.get("operator_id"),
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+
+        credentials = self.conf.get("credentials", {})
+        if "access_token" not in credentials:
+            raise ValueError("Missing access_token in credentials")
+
+        self.connector.load_credentials(
+            {"access_token": credentials["access_token"]}
+        )
+
+        poll_start = task.get("poll_range_start")
+
+        if task.get("reindex") == "1" or poll_start is None:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+            begin_info = f"from {poll_start}"
+
+        logging.info(
+            "Connect to DingTalk AI Table: table_id(%s), operator_id(%s) %s",
+            self.conf.get("table_id"),
+            self.conf.get("operator_id"),
+            begin_info,
+        )
+
+        return document_generator
+
+
 class MySQL(SyncBase):
     SOURCE_NAME: str = FileSource.MYSQL
 
@@ -1321,6 +1365,7 @@ func_factory = {
     FileSource.SEAFILE: SeaFile,
     FileSource.MYSQL: MySQL,
     FileSource.POSTGRESQL: PostgreSQL,
+    FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
 }
 
 

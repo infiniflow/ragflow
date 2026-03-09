@@ -195,10 +195,12 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
     inputs = kwargs.get("inputs", {})
     user_id = kwargs.get("user_id", "")
     custom_header = kwargs.get("custom_header", "")
+    release_mode = str(kwargs.get("release", "")).strip().lower()
 
     if session_id:
         e, conv = API4ConversationService.get_by_id(session_id)
-        assert e, "Session not found!"
+        if not e:
+            raise LookupError("Session not found!")
         if not conv.message:
             conv.message = []
         if not isinstance(conv.dsl, str):
@@ -206,10 +208,15 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
         canvas = Canvas(conv.dsl, tenant_id, agent_id, canvas_id=agent_id, custom_header=custom_header)
     else:
         e, cvs = UserCanvasService.get_by_id(agent_id)
-        assert e, "Agent not found."
-        assert cvs.user_id == tenant_id, "You do not own the agent."
+        if not e:
+            raise LookupError("Agent not found.")
+        if cvs.user_id != tenant_id:
+            raise PermissionError("You do not own the agent.")
+        if release_mode == "true" and not bool(cvs.release):
+            raise PermissionError("No available published version")
         if not isinstance(cvs.dsl, str):
             cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
+
         session_id=get_uuid()
         canvas = Canvas(cvs.dsl, tenant_id, agent_id, canvas_id=cvs.id, custom_header=custom_header)
         canvas.reset()

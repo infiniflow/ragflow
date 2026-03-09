@@ -25,6 +25,7 @@ from common import settings
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name
 from common.misc_utils import get_uuid
 from rag.nlp import tokenize, search
 from ranx import evaluate
@@ -42,7 +43,11 @@ class Benchmark:
         e, self.kb = KnowledgebaseService.get_by_id(kb_id)
         self.similarity_threshold = self.kb.similarity_threshold
         self.vector_similarity_weight = self.kb.vector_similarity_weight
-        self.embd_mdl = LLMBundle(self.kb.tenant_id, LLMType.EMBEDDING, llm_name=self.kb.embd_id, lang=self.kb.language)
+        if self.kb.tenant_embd_id:
+            embd_model_config = get_model_config_by_id(self.kb.tenant_embd_id)
+        else:
+            embd_model_config = get_model_config_by_type_and_name(self.kb.tenant_id, LLMType.EMBEDDING, self.kb.embd_id)
+        self.embd_mdl = LLMBundle(self.kb.tenant_id, embd_model_config, lang=self.kb.language)
         self.tenant_id = ''
         self.index_name = ''
         self.initialized_index = False
