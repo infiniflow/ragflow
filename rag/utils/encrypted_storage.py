@@ -16,7 +16,6 @@
 
 import logging
 from common.crypto_utils import CryptoUtil
-from rag.utils.storage_base import StorageBase
 
 
 # from common.decorator import singleton
@@ -24,7 +23,7 @@ from rag.utils.storage_base import StorageBase
 class EncryptedStorageWrapper:
     """Encrypted storage wrapper that wraps existing storage implementations to provide transparent encryption"""
 
-    def __init__(self, storage_impl: StorageBase, algorithm="aes-256-cbc", key=None, iv=None):
+    def __init__(self, storage_impl, algorithm="aes-256-cbc", key=None, iv=None):
         """
         Initialize encrypted storage wrapper
         
@@ -39,8 +38,9 @@ class EncryptedStorageWrapper:
         self.encryption_enabled = True
 
         # Check if storage implementation has required methods.
-        # A concrete backend is expected to implement ``StorageBase``, but we
-        # still defensively validate the minimal method set for duck-typing.
+        # We intentionally keep this as a thin duck-typed wrapper over existing
+        # storage implementations (MinIO/S3, etc.), and just validate the
+        # minimal method set we rely on.
         required_methods = ["put", "get", "rm", "obj_exist", "health"]
         for method in required_methods:
             if not hasattr(storage_impl, method):
