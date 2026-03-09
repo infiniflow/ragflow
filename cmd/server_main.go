@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"strings"
@@ -177,14 +178,32 @@ func startServer(config *server.Config) {
 		}
 	}()
 
-	// Notify task to submit status to admin server
-	statusReporter := utility.NewScheduledTask("Status reporter", 2*time.Second, func() {
-		logger.Info("Task started\n")
-		time.Sleep(3 * time.Second)
-		logger.Info("Task finished\n")
-	})
+	// Get local IP address for heartbeat reporting
+	localIP := utility.GetLocalIP()
+	if localIP == "" {
+		localIP = "127.0.0.1"
+	}
 
-	statusReporter.Start()
+	// Initialize and start heartbeat reporter to admin server
+	heartbeatService := service.NewHeartbeatSender(
+		logger.Logger,
+		common.ServerTypeAPI,
+		fmt.Sprintf("ragflow-server-%d", config.Server.Port),
+		localIP,
+		config.Server.Port,
+	)
+	if err := heartbeatService.InitHTTPClient(); err != nil {
+		logger.Warn("Failed to initialize heartbeat service", zap.Error(err))
+	} else {
+		// Start heartbeat reporter with 30 seconds interval
+		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
+			if err := heartbeatService.SendHeartbeat(); err != nil {
+				logger.Warn("Failed to send heartbeat", zap.Error(err))
+			}
+		})
+		heartbeatReporter.Start()
+		defer heartbeatReporter.Stop()
+	}
 
 	// Wait for interrupt signal to gracefully shutdown
 	quit := make(chan os.Signal, 1)
@@ -193,8 +212,6 @@ func startServer(config *server.Config) {
 
 	logger.Info(fmt.Sprintf("Receives %s signal to shutdown server", strings.ToUpper(sig.String())))
 	logger.Info("Shutting down server...")
-
-	statusReporter.Stop()
 
 	// Create context with timeout for graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
