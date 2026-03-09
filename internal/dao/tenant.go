@@ -75,7 +75,7 @@ func (dao *TenantDAO) GetInfoByUserID(userID string) ([]*TenantInfo, error) {
 		Joins("INNER JOIN user_tenant ON user_tenant.tenant_id = tenant.id").
 		Where("user_tenant.user_id = ? AND user_tenant.status = ? AND user_tenant.role = ? AND tenant.status = ?", userID, "1", "owner", "1").
 		Scan(&results).Error
-
+		
 	return results, err
 }
 
@@ -97,4 +97,9 @@ func (dao *TenantDAO) Create(tenant *model.Tenant) error {
 // Delete deletes a tenant by ID (soft delete)
 func (dao *TenantDAO) Delete(id string) error {
 	return DB.Model(&model.Tenant{}).Where("id = ?", id).Update("status", "0").Error
+}
+
+// Update updates a tenant by ID
+func (dao *TenantDAO) Update(id string, updates map[string]interface{}) error {
+	return DB.Model(&model.Tenant{}).Where("id = ?", id).Updates(updates).Error
 }

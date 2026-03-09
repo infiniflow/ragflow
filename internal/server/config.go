@@ -41,12 +41,35 @@ type Config struct {
 	RegisterEnabled int                    `mapstructure:"register_enabled"`
 	OAuth           map[string]OAuthConfig `mapstructure:"oauth"`
 	Admin           AdminConfig            `mapstructure:"admin"`
+	UserDefaultLLM  UserDefaultLLMConfig   `mapstructure:"user_default_llm"`
 }
 
 // AdminConfig admin server configuration
 type AdminConfig struct {
 	Host string `mapstructure:"host"`
 	Port int    `mapstructure:"http_port"`
+}
+
+// UserDefaultLLMConfig user default LLM configuration
+type UserDefaultLLMConfig struct {
+	DefaultModels DefaultModelsConfig `mapstructure:"default_models"`
+}
+
+// DefaultModelsConfig default models configuration
+type DefaultModelsConfig struct {
+	ChatModel       ModelConfig `mapstructure:"chat_model"`
+	EmbeddingModel  ModelConfig `mapstructure:"embedding_model"`
+	RerankModel     ModelConfig `mapstructure:"rerank_model"`
+	ASRModel        ModelConfig `mapstructure:"asr_model"`
+	Image2TextModel ModelConfig `mapstructure:"image2text_model"`
+}
+
+// ModelConfig model configuration
+type ModelConfig struct {
+	Name    string `mapstructure:"name"`
+	APIKey  string `mapstructure:"api_key"`
+	BaseURL string `mapstructure:"base_url"`
+	Factory string `mapstructure:"factory"`
 }
 
 // OAuthConfig OAuth configuration for a channel
@@ -430,6 +453,45 @@ func Init(configPath string) error {
 						PostgresPort: infConfig.GetInt("postgres_port"),
 						DBName:       infConfig.GetString("db_name"),
 					}
+				}
+			}
+		}
+	}
+
+	// Map user_default_llm section to UserDefaultLLMConfig
+	if v.IsSet("user_default_llm") {
+		userDefaultLLMConfig := v.Sub("user_default_llm")
+		if userDefaultLLMConfig != nil {
+			if defaultModels := userDefaultLLMConfig.Sub("default_models"); defaultModels != nil {
+				globalConfig.UserDefaultLLM.DefaultModels.ChatModel = ModelConfig{
+					Name:    defaultModels.GetString("chat_model.name"),
+					APIKey:  defaultModels.GetString("chat_model.api_key"),
+					BaseURL: defaultModels.GetString("chat_model.base_url"),
+					Factory: defaultModels.GetString("chat_model.factory"),
+				}
+				globalConfig.UserDefaultLLM.DefaultModels.EmbeddingModel = ModelConfig{
+					Name:    defaultModels.GetString("embedding_model.name"),
+					APIKey:  defaultModels.GetString("embedding_model.api_key"),
+					BaseURL: defaultModels.GetString("embedding_model.base_url"),
+					Factory: defaultModels.GetString("embedding_model.factory"),
+				}
+				globalConfig.UserDefaultLLM.DefaultModels.RerankModel = ModelConfig{
+					Name:    defaultModels.GetString("rerank_model.name"),
+					APIKey:  defaultModels.GetString("rerank_model.api_key"),
+					BaseURL: defaultModels.GetString("rerank_model.base_url"),
+					Factory: defaultModels.GetString("rerank_model.factory"),
+				}
+				globalConfig.UserDefaultLLM.DefaultModels.ASRModel = ModelConfig{
+					Name:    defaultModels.GetString("asr_model.name"),
+					APIKey:  defaultModels.GetString("asr_model.api_key"),
+					BaseURL: defaultModels.GetString("asr_model.base_url"),
+					Factory: defaultModels.GetString("asr_model.factory"),
+				}
+				globalConfig.UserDefaultLLM.DefaultModels.Image2TextModel = ModelConfig{
+					Name:    defaultModels.GetString("image2text_model.name"),
+					APIKey:  defaultModels.GetString("image2text_model.api_key"),
+					BaseURL: defaultModels.GetString("image2text_model.base_url"),
+					Factory: defaultModels.GetString("image2text_model.factory"),
 				}
 			}
 		}

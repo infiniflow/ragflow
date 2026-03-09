@@ -55,16 +55,16 @@ test_go: c_api
 
 # Run memory test
 test_memory: c_api
-	cd go_bindings/example && go run memory_leak_check.go
+	cd bindings/example && go run memory_leak_check.go
 
 # Run with valgrind
 valgrind: c_api
-	cd go_bindings/example && bash run_valgrind.sh
+	cd bindings/example && bash run_valgrind.sh
 
 # Run with AddressSanitizer
 asan: c_api_asan
 	@echo "Running with AddressSanitizer..."
-	cd go_bindings/example && \
+	cd bindings/example && \
 	ASAN_OPTIONS=detect_leaks=1:print_stats=1:verbosity=0 \
 	go run memory_leak_check.go
 
@@ -77,5 +77,5 @@ install: c_api
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -rf $(ASAN_BUILD_DIR)
-	rm -f go_bindings/example/valgrind.log
-	rm -f go_bindings/example/memory_test_bin
+	rm -f bindings/example/valgrind.log
+	rm -f bindings/example/memory_test_bin
