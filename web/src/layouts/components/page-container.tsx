@@ -12,7 +12,7 @@ export function PageContainer({
 }: React.PropsWithChildren<React.HTMLAttributes<HTMLDivElement>>) {
   return (
     <div
-      className={cn('size-full px-10 py-3 overflow-auto', className)}
+      className={cn('size-full px-5 py-3 overflow-auto', className)}
       {...props}
     />
   );

@@ -71,10 +71,11 @@ func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 	}
 
 	// Get user by token
-	user, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Invalid access token",
+			"code":    code,
+			"message": err.Error(),
 		})
 		return
 	}
@@ -127,10 +128,11 @@ func (h *LLMHandler) Factories(c *gin.Context) {
 	}
 
 	// Get user by token
-	_, err := h.userService.GetUserByToken(token)
+	_, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Invalid access token",
+			"code":    code,
+			"message": err.Error(),
 		})
 		return
 	}
@@ -207,11 +209,11 @@ func (h *LLMHandler) ListApp(c *gin.Context) {
 	}
 
 	// Get user by token
-	user, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
+			"code":    code,
+			"message": err.Error(),
 		})
 		return
 	}

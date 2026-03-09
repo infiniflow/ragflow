@@ -88,3 +88,13 @@ func (dao *TenantDAO) GetByID(id string) (*model.Tenant, error) {
 	}
 	return &tenant, nil
 }
+
+// Create creates a new tenant
+func (dao *TenantDAO) Create(tenant *model.Tenant) error {
+	return DB.Create(tenant).Error
+}
+
+// Delete deletes a tenant by ID (soft delete)
+func (dao *TenantDAO) Delete(id string) error {
+	return DB.Model(&model.Tenant{}).Where("id = ?", id).Update("status", "0").Error
+}
