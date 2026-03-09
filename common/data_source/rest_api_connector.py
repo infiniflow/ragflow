@@ -1,8 +1,7 @@
 """Generic REST API data source connector.
 
 This connector is **configuration-driven** and is intended to be wired to a
-UI-based configuration model in follow-up tickets. For Ticket 1 the focus is
-on the core load / poll behavior and mapping to `Document` objects.
+UI-based configuration model in follow-up tickets. 
 """
 
 from __future__ import annotations
@@ -117,8 +116,7 @@ class RestAPIConnectorConfig(BaseModel):
 class RestAPIConnector(LoadConnector, PollConnector):
     """Configuration-driven REST API connector.
 
-    Parameters here are intentionally generic so that Ticket 2 can plug a
-    validated config object directly into this class without changes.
+    Parameters here are intentionally generic so that we can pass in a config object directly into this class without changes.
     """
 
     def __init__(
@@ -357,12 +355,20 @@ class RestAPIConnector(LoadConnector, PollConnector):
         self,
         time_window: tuple[datetime, datetime] | None,
     ) -> Iterable[Mapping[str, Any]]:
-        """Iterate over raw items across all pages."""
+        """Iterate over raw items across all pages using pluggable strategies."""
         page_count = 0
+
+        # Normalized pagination state
         page = int(self.pagination_config.get("start_page", 1))
         per_page = int(self.pagination_config.get("page_size", self.batch_size))
+        if per_page <= 0:
+            per_page = self.batch_size
+
         offset = int(self.pagination_config.get("start_offset", 0))
         limit = int(self.pagination_config.get("limit", per_page))
+        if limit <= 0:
+            limit = per_page
+
         cursor: Optional[str] = self.pagination_config.get("initial_cursor")
 
         while True:
@@ -376,21 +382,14 @@ class RestAPIConnector(LoadConnector, PollConnector):
             params: Dict[str, Any] = {}
 
             if self.pagination_type == PaginationType.PAGE:
-                page_param = self.pagination_config.get("page_param", "page")
-                size_param = self.pagination_config.get("page_size_param", "per_page")
-                params[page_param] = page
-                params[size_param] = per_page
+                self._apply_page_pagination(params, page, per_page)
             elif self.pagination_type == PaginationType.OFFSET:
-                offset_param = self.pagination_config.get("offset_param", "offset")
-                limit_param = self.pagination_config.get("limit_param", "limit")
-                params[offset_param] = offset
-                params[limit_param] = limit
+                self._apply_offset_pagination(params, offset, limit)
             elif self.pagination_type == PaginationType.CURSOR and cursor is not None:
-                cursor_param = self.pagination_config.get("cursor_param", "cursor")
-                params[cursor_param] = cursor
+                self._apply_cursor_pagination(params, cursor)
 
-            # NOTE: For Ticket 1 we intentionally *do not* push time-window
-            # filters down as query params; filtering is in-memory only.
+            # NOTE: We intentionally *do not* push time-window filters down as
+            # query params; filtering is in-memory only.
             try:
                 response_json = self._fetch_page(params=params)
             except ConnectorValidationError:
@@ -402,6 +401,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
             items = self._extract_items(response_json)
             if not items:
+                # Auto-detect end of results: empty page.
                 break
 
             for item in items:
@@ -414,21 +414,26 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
             page_count += 1
 
+            # NoPagination – only first page is requested.
             if self.pagination_type == PaginationType.NONE:
                 break
 
+            # Strategy-specific continuation logic.
             if self.pagination_type == PaginationType.PAGE:
-                page += 1
+                # Fewer than requested items => end of results.
                 if len(items) < per_page:
                     break
+                page += 1
             elif self.pagination_type == PaginationType.OFFSET:
-                offset += limit
                 if len(items) < limit:
                     break
+                offset += limit
             elif self.pagination_type == PaginationType.CURSOR:
-                cursor = self._extract_next_cursor(response_json)
-                if not cursor:
+                next_cursor = self._extract_next_cursor(response_json)
+                if not next_cursor:
+                    # No next cursor => end of results.
                     break
+                cursor = next_cursor
 
     def _page_iter_for_validation(self) -> Iterable[Mapping[str, Any]]:
         """Single-page iterator used only for connectivity checks."""
@@ -503,6 +508,39 @@ class RestAPIConnector(LoadConnector, PollConnector):
             query_params.pop(key, None)
 
         return url, query_params
+
+    # --------------------------------------------------------------------- #
+    # Pagination helpers (strategies)
+    # --------------------------------------------------------------------- #
+    def _apply_page_pagination(
+        self,
+        params: Dict[str, Any],
+        page: int,
+        per_page: int,
+    ) -> None:
+        page_param = self.pagination_config.get("page_param", "page")
+        size_param = self.pagination_config.get("page_size_param", "per_page")
+        params[page_param] = page
+        params[size_param] = per_page
+
+    def _apply_offset_pagination(
+        self,
+        params: Dict[str, Any],
+        offset: int,
+        limit: int,
+    ) -> None:
+        offset_param = self.pagination_config.get("offset_param", "offset")
+        limit_param = self.pagination_config.get("limit_param", "limit")
+        params[offset_param] = offset
+        params[limit_param] = limit
+
+    def _apply_cursor_pagination(
+        self,
+        params: Dict[str, Any],
+        cursor: str,
+    ) -> None:
+        cursor_param = self.pagination_config.get("cursor_param", "cursor")
+        params[cursor_param] = cursor
 
     # --------------------------------------------------------------------- #
     # JSON extraction & mapping
