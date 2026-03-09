@@ -276,8 +276,8 @@ func (s *Service) GetUserPermission(username string) ([]map[string]interface{}, 
 	return []map[string]interface{}{}, nil
 }
 
-// GetAllServices get all services
-func (s *Service) GetAllServices() ([]map[string]interface{}, error) {
+// ListServices get all services
+func (s *Service) ListServices() ([]map[string]interface{}, error) {
 	allConfigs := server.GetAllConfigs()
 
 	var result []map[string]interface{}
