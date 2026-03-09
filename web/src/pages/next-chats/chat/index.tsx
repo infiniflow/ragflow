@@ -6,7 +6,6 @@ import {
   useGetChatSearchParams,
 } from '@/hooks/use-chat-request';
 import { IClientConversation } from '@/interfaces/database/chat';
-import { RootLayoutContainer } from '@/layouts/root-layout';
 import { cn } from '@/lib/utils';
 import { useMount } from 'ahooks';
 import { isEmpty } from 'lodash';
@@ -107,30 +106,6 @@ export default function Chat() {
 
   return (
     <section className="h-full flex flex-col" data-testid="chat-detail">
-      <PageHeader>
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink
-                // Not friendly for keyboard navigation
-                // onClick={navigateToChatList}
-                href={Routes.Chats}
-              >
-                {t('chat.chat')}
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>{data.name}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-        <Button onClick={showEmbedModal} data-testid="chat-detail-embed-open">
-          <LucideSend />
-          {t('common.embedIntoSite')}
-        </Button>
-      </PageHeader>
-
       <article className="flex flex-1 min-h-0 pb-9">
         <Sessions handleConversationCardClick={handleSessionClick}></Sessions>
 
@@ -144,12 +119,14 @@ export default function Chat() {
               >
                 <CardTitle className="flex justify-between items-center text-base gap-2">
                   <div className="truncate">{currentConversationName}</div>
+
                   <Button
-                    variant={'ghost'}
+                    variant="ghost"
                     onClick={switchDebugMode}
                     data-testid="chat-detail-multimodel-toggle"
                   >
-                    <LucideArrowUpRight /> {t('chat.multipleModels')}
+                    <LucideArrowUpRight />
+                    {t('chat.multipleModels')}
                   </Button>
                 </CardTitle>
               </CardHeader>
@@ -166,17 +143,6 @@ export default function Chat() {
           </CardContent>
         </Card>
       </article>
-
-      {embedVisible && (
-        <EmbedDialog
-          visible={embedVisible}
-          hideModal={hideEmbedModal}
-          token={id!}
-          from={SharedFrom.Chat}
-          beta={beta}
-          isAgent={false}
-        ></EmbedDialog>
-      )}
     </section>
   );
 }

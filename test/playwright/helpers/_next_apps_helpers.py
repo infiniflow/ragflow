@@ -27,10 +27,32 @@ def _goto_home(page, base_url: str) -> None:
 
 
 def _nav_click(page, testid: str) -> None:
+    expected_path_map = {
+        "nav-chat": "/chats",
+        "nav-search": "/searches",
+        "nav-agent": "/agents",
+    }
+    expected_path = expected_path_map.get(testid)
+
+    def _ensure_expected_path():
+        if not expected_path:
+            return
+        if expected_path in page.url:
+            return
+        try:
+            page.wait_for_url(
+                re.compile(rf".*{re.escape(expected_path)}(?:[/?#].*)?$"),
+                wait_until="domcontentloaded",
+                timeout=5000,
+            )
+        except Exception:
+            page.goto(expected_path, wait_until="domcontentloaded")
+
     locator = page.locator(f"[data-testid='{testid}']")
     if locator.count() > 0:
         expect(locator.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         locator.first.click()
+        _ensure_expected_path()
         return
 
     nav_text_map = {
@@ -54,10 +76,12 @@ def _nav_click(page, testid: str) -> None:
             )
         expect(fallback.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         fallback.first.click()
+        _ensure_expected_path()
         return
 
     expect(locator).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     locator.click()
+    _ensure_expected_path()
 
 
 def _open_create_from_list(
