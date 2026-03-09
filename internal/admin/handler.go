@@ -137,8 +137,9 @@ func (h *Handler) Login(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "Login successful",
+		"code":    common.CodeSuccess,
+		"message": "Welcome back!",
+		"data":    user,
 	})
 }
 
