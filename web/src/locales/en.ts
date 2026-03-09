@@ -1151,6 +1151,30 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       postgresqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      rest_apiDescription:
+        'Connect any REST API endpoint as a data source using a flexible, configuration-driven connector.',
+      rest_apiHeadersTip:
+        'Optional JSON object of additional HTTP headers to send with every request.',
+      rest_apiItemsPathTip:
+        'JSONPath expression to the array of items in the API response, e.g. $.items[*].',
+      rest_apiIdFieldTip:
+        'Field path within each item used to build a stable document ID.',
+      rest_apiContentFieldsTip:
+        'Comma-separated list of item fields to concatenate into the document content.',
+      rest_apiMetadataFieldsTip:
+        'Comma-separated list of item fields to store as metadata.',
+      rest_apiNextCursorPathTip:
+        'JSONPath expression that resolves to the next-page cursor in the API response.',
+      rest_apiPollTimestampFieldTip:
+        'Field path in each item that represents the last updated time, used for incremental sync.',
+      rest_apiRequestBodyTip:
+        'Optional JSON body to send for POST requests. Used together with query params and pagination.',
+      restApiValidationApiKeyRequired:
+        'API key is required when Auth Type is API Key (Header).',
+      restApiValidationBearerTokenRequired:
+        'Bearer token is required when Auth Type is Bearer Token.',
+      restApiValidationBasicPasswordRequired:
+        'Password is required when Auth Type is Basic Auth.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',
