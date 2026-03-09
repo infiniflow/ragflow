@@ -8,7 +8,7 @@ import { Link, LinkProps } from 'react-router';
 
 const buttonVariants = cva(
   cn(
-    'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors outline-0',
+    'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm transition-colors outline-0',
     'disabled:pointer-events-none disabled:opacity-50 rounded border-0.5 border-transparent',
     '[&_svg]:pointer-events-none [&_svg:not([class*="size-"])]:size-4 shrink-0 [&_svg]:shrink-0',
   ),
@@ -83,9 +83,13 @@ const buttonVariants = cva(
         `,
 
         link: 'text-primary underline-offset-4 hover:underline',
+
+        // Static
+        // Button has no interaction transitions
+        static: '',
       },
       size: {
-        auto: 'h-full px-1',
+        auto: '',
 
         xl: 'h-12 rounded-xl px-5',
         lg: 'h-10 rounded-lg px-4',
@@ -107,6 +111,8 @@ const buttonVariants = cva(
   },
 );
 
+export type ButtonVariants = VariantProps<typeof buttonVariants>;
+
 export type ButtonProps<IsAnchor extends boolean = false> = {
   asChild?: boolean;
   asLink?: boolean;
@@ -114,7 +120,7 @@ export type ButtonProps<IsAnchor extends boolean = false> = {
   block?: boolean;
   disabled?: boolean;
   dot?: boolean;
-} & VariantProps<typeof buttonVariants> &
+} & ButtonVariants &
   (IsAnchor extends true
     ? LinkProps
     : React.ButtonHTMLAttributes<HTMLButtonElement>);
@@ -144,7 +150,7 @@ const Button = React.forwardRef(
       <Comp
         className={cn(
           buttonVariants({ variant, size, className }),
-          { 'block w-full': block },
+          { 'w-full': block },
           { relative: dot },
         )}
         // @ts-ignore

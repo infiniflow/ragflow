@@ -108,15 +108,14 @@ def test_module_init_and_unauthorized_message_variants(monkeypatch):
         def __repr__(self):
             return "Unauthorized 401 from upstream"
 
-    class _OtherRepr:
-        def __repr__(self):
-            return "Forbidden 403"
+    class _WithDescription:
+        description = "Custom description"
 
     assert apps_module._unauthorized_message(None) == apps_module.UNAUTHORIZED_MESSAGE
     assert apps_module._unauthorized_message(_BrokenRepr()) == apps_module.UNAUTHORIZED_MESSAGE
     assert apps_module._unauthorized_message(_ExactUnauthorizedRepr()) == apps_module.UNAUTHORIZED_MESSAGE
     assert apps_module._unauthorized_message(_Unauthorized401Repr()) == "Unauthorized 401 from upstream"
-    assert apps_module._unauthorized_message(_OtherRepr()) == apps_module.UNAUTHORIZED_MESSAGE
+    assert apps_module._unauthorized_message(_WithDescription()) == "Custom description"
 
 
 @pytest.mark.p2

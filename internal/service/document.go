@@ -178,7 +178,10 @@ func (s *DocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) (
 
 // toResponse convert model.Document to DocumentResponse
 func (s *DocumentService) toResponse(doc *model.Document) *DocumentResponse {
-	createdAt := time.Unix(doc.CreateTime, 0).Format("2006-01-02 15:04:05")
+	createdAt := ""
+	if doc.CreateTime != nil {
+		createdAt = time.Unix(*doc.CreateTime, 0).Format("2006-01-02 15:04:05")
+	}
 	updatedAt := ""
 	if doc.UpdateTime != nil {
 		updatedAt = time.Unix(*doc.UpdateTime, 0).Format("2006-01-02 15:04:05")

@@ -676,9 +676,8 @@ curl --request DELETE \
 
 - `"ids"`: (*Body parameter*), `list[string]` or `null`,   *Required*  
   Specifies the datasets to delete:
-  - If `null`, all datasets will be deleted.
-  - If an array of IDs, only the specified datasets will be deleted.
-  - If an empty array, no datasets will be deleted.
+  - If omitted, or set to `null` or an empty array, no datasets are deleted.
+  - If an array of IDs is provided, only the datasets matching those IDs are deleted.
 
 #### Response
 
@@ -1764,7 +1763,9 @@ curl --request DELETE \
 - `dataset_id`: (*Path parameter*)  
   The associated dataset ID.
 - `"ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the documents to delete. If it is not specified, all documents in the specified dataset will be deleted.
+  The IDs of the documents to delete.
+  - If omitted, or set to `null` or an empty array, no documents are deleted.
+  - If an array of IDs is provided, only the documents matching those IDs are deleted.
 
 #### Response
 
@@ -2124,7 +2125,9 @@ curl --request DELETE \
 - `document_ids`: (*Path parameter*)  
   The associated document ID.
 - `"chunk_ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the chunks to delete. If it is not specified, all chunks of the specified document will be deleted.
+  The IDs of the chunks to delete.
+  - If omitted, or set to `null` or an empty array, no chunks are deleted.
+  - If an array of IDs is provided, only the chunks matching those IDs are deleted.
 
 #### Response
 
@@ -2212,6 +2215,101 @@ Failure:
 {
     "code": 102,
     "message": "Can't find this chunk 29a2d9987e16ba331fb4d7d30d99b71d2"
+}
+```
+
+---
+
+### Switch chunks availability
+
+**POST** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/switch`
+
+Switches the availability of specified chunks (enable or disable chunks for retrieval).
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/switch`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"chunk_ids"`: `list[string]` (*Required*) List of chunk IDs to switch.
+  - `"available_int"`: `integer` (*Optional*) `1` for available, `0` for unavailable. Mutually exclusive with `"available"`.
+  - `"available"`: `boolean` (*Optional*) Availability status. Mutually exclusive with `"available_int"`. Must provide either `available_int` or `available`.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/switch \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '
+     {
+          "chunk_ids": ["chunk_id_1", "chunk_id_2"],
+          "available_int": 1
+     }'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the dataset.
+- `document_id`: (*Path parameter*)  
+  The ID of the document.
+- `"chunk_ids"`: (*Body parameter*), `list[string]`, *Required*  
+  List of chunk IDs whose availability is to be switched.
+- `"available_int"`: (*Body parameter*), `integer`  
+  `1` for available (chunk participates in retrieval), `0` for unavailable. Either this or `"available"` must be provided.
+- `"available"`: (*Body parameter*), `boolean`  
+  Availability status. `true` for available, `false` for unavailable. Alternative to `"available_int"`.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 101,
+    "message": "You don't own the dataset {dataset_id}."
+}
+```
+
+```json
+{
+    "code": 101,
+    "message": "`chunk_ids` is required."
+}
+```
+
+```json
+{
+    "code": 101,
+    "message": "`available_int` or `available` is required."
+}
+```
+
+```json
+{
+    "code": 101,
+    "message": "Document not found!"
+}
+```
+
+```json
+{
+    "code": 101,
+    "message": "Index updating failure"
 }
 ```
 
@@ -2796,7 +2894,9 @@ curl --request DELETE \
 ##### Request parameters
 
 - `"ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the chat assistants to delete. If it is not specified, all chat assistants in the system will be deleted.
+  The IDs of the chat assistants to delete.
+  - If omitted, or set to `null` or an empty array, no chat assistants are deleted.
+  - If an array of IDs is provided, only the chat assistants matching those IDs are deleted.
 
 #### Response
 
@@ -3174,7 +3274,9 @@ curl --request DELETE \
 - `chat_id`: (*Path parameter*)  
   The ID of the associated chat assistant.
 - `"ids"`: (*Body Parameter*), `list[string]`  
-  The IDs of the sessions to delete. If it is not specified, all sessions associated with the specified chat assistant will be deleted.
+  The IDs of the sessions to delete.
+  - If omitted, or set to `null` or an empty array, no sessions are deleted.
+  - If an array of IDs is provided, only the sessions matching those IDs are deleted.
 
 #### Response
 
@@ -4538,7 +4640,9 @@ curl --request DELETE \
 - `agent_id`: (*Path parameter*)  
   The ID of the associated agent.
 - `"ids"`: (*Body Parameter*), `list[string]`  
-  The IDs of the sessions to delete. If it is not specified, all sessions associated with the specified agent will be deleted.
+  The IDs of the sessions to delete.
+  - If omitted, or set to `null` or an empty array, no sessions are deleted.
+  - If an array of IDs is provided, only the sessions matching those IDs are deleted.
 
 #### Response
 

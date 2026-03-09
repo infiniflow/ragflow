@@ -18,7 +18,7 @@
 from time import sleep
 
 import pytest
-from common import batch_add_chunks
+from common import batch_add_chunks, delete_all_chunks
 from pytest import FixtureRequest
 from ragflow_sdk import Chunk, DataSet, Document
 from utils import wait_for
@@ -37,7 +37,7 @@ def condition(_dataset: DataSet):
 def add_chunks_func(request: FixtureRequest, add_document: tuple[DataSet, Document]) -> tuple[DataSet, Document, list[Chunk]]:
     def cleanup():
         try:
-            document.delete_chunks(ids=[])
+            delete_all_chunks(document)
         except Exception:
             pass
 

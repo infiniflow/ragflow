@@ -320,10 +320,37 @@ wheels = [
 ]
 
 [[package]]
+name = "alibabacloud-dingtalk"
+version = "2.2.38"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "alibabacloud-endpoint-util" },
+    { name = "alibabacloud-gateway-dingtalk" },
+    { name = "alibabacloud-gateway-spi" },
+    { name = "alibabacloud-openapi-util" },
+    { name = "alibabacloud-tea-openapi" },
+    { name = "alibabacloud-tea-util" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/1c/95/ad71f7cb1a2814d17f3a731b37c27eb71df0895daa912e2436d2f0dd06d4/alibabacloud_dingtalk-2.2.38.tar.gz", hash = "sha256:39cba6ff3accf0a5c7fe7de651a65a5a784c4ef63e442750fd822c19864ed6f1", size = 1954698, upload-time = "2026-01-08T11:38:04.913Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a6/77/f6679f78becf73bfbf3468367ffa6fe694120e0cd677eacbc454dbb379a1/alibabacloud_dingtalk-2.2.38-py3-none-any.whl", hash = "sha256:c3dfc918c45f49fe61469230c0808fd6f316341594a2895564511b5542f50019", size = 2074155, upload-time = "2026-01-08T11:38:03.395Z" },
+]
+
+[[package]]
 name = "alibabacloud-endpoint-util"
 version = "0.0.4"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/92/7d/8cc92a95c920e344835b005af6ea45a0db98763ad6ad19299d26892e6c8d/alibabacloud_endpoint_util-0.0.4.tar.gz", hash = "sha256:a593eb8ddd8168d5dc2216cd33111b144f9189fcd6e9ca20e48f358a739bbf90", size = 2813, upload-time = "2025-06-12T07:20:52.572Z" }
+
+[[package]]
+name = "alibabacloud-gateway-dingtalk"
+version = "1.0.2"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "alibabacloud-gateway-spi" },
+    { name = "alibabacloud-tea-util" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d2/40/751d8bdf133d7fcf053f10c98e8e506810e7bee06458a02eaaa14d30ac26/alibabacloud_gateway_dingtalk-1.0.2.tar.gz", hash = "sha256:acea8b0b1d11e0394913f0b0899ddd19c0bfceab716060449b57fcc250ceb300", size = 2938, upload-time = "2023-04-25T09:48:42.249Z" }
 
 [[package]]
 name = "alibabacloud-gateway-spi"
@@ -5733,20 +5760,11 @@ wheels = [
 
 [[package]]
 name = "pypdf"
-version = "6.7.4"
+version = "6.7.5"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/09/dc/f52deef12797ad58b88e4663f097a343f53b9361338aef6573f135ac302f/pypdf-6.7.4.tar.gz", hash = "sha256:9edd1cd47938bb35ec87795f61225fd58a07cfaf0c5699018ae1a47d6f8ab0e3", size = 5304821, upload-time = "2026-02-27T10:44:39.395Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f6/52/37cc0aa9e9d1bf7729a737a0d83f8b3f851c8eb137373d9f71eafb0a3405/pypdf-6.7.5.tar.gz", hash = "sha256:40bb2e2e872078655f12b9b89e2f900888bb505e88a82150b64f9f34fa25651d", size = 5304278, upload-time = "2026-03-02T09:05:21.464Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c1/be/cded021305f5c81b47265b8c5292b99388615a4391c21ff00fd538d34a56/pypdf-6.7.4-py3-none-any.whl", hash = "sha256:527d6da23274a6c70a9cb59d1986d93946ba8e36a6bc17f3f7cce86331492dda", size = 331496, upload-time = "2026-02-27T10:44:37.527Z" },
-]
-
-[[package]]
-name = "pypdf2"
-version = "3.0.1"
-source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/9f/bb/18dc3062d37db6c491392007dfd1a7f524bb95886eb956569ac38a23a784/PyPDF2-3.0.1.tar.gz", hash = "sha256:a74408f69ba6271f71b9352ef4ed03dc53a31aa404d29b5d31f53bfecfee1440", size = 227419, upload-time = "2022-12-31T10:36:13.13Z" }
-wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/8e/5e/c86a5643653825d3c913719e788e41386bee415c2b87b4f955432f2de6b2/pypdf2-3.0.1-py3-none-any.whl", hash = "sha256:d16e4205cfee272fbdc0568b68d82be796540b1537508cef59388f839c191928", size = 232572, upload-time = "2022-12-31T10:36:10.327Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/05/89/336673efd0a88956562658aba4f0bbef7cb92a6fbcbcaf94926dbc82b408/pypdf-6.7.5-py3-none-any.whl", hash = "sha256:07ba7f1d6e6d9aa2a17f5452e320a84718d4ce863367f7ede2fd72280349ab13", size = 331421, upload-time = "2026-03-02T09:05:19.722Z" },
 ]
 
 [[package]]
@@ -6218,6 +6236,7 @@ dependencies = [
     { name = "agentrun-sdk" },
     { name = "aiosmtplib" },
     { name = "akshare" },
+    { name = "alibabacloud-dingtalk" },
     { name = "anthropic" },
     { name = "arxiv" },
     { name = "asana" },
@@ -6295,7 +6314,6 @@ dependencies = [
     { name = "pyodbc" },
     { name = "pypandoc" },
     { name = "pypdf" },
-    { name = "pypdf2" },
     { name = "python-calamine" },
     { name = "python-docx" },
     { name = "python-gitlab" },
@@ -6357,6 +6375,7 @@ requires-dist = [
     { name = "agentrun-sdk", specifier = ">=0.0.16,<1.0.0" },
     { name = "aiosmtplib", specifier = ">=5.0.0" },
     { name = "akshare", specifier = ">=1.15.78,<2.0.0" },
+    { name = "alibabacloud-dingtalk", specifier = ">=2.0.0" },
     { name = "anthropic", specifier = "==0.34.1" },
     { name = "arxiv", specifier = "==2.1.3" },
     { name = "asana", specifier = ">=5.2.2" },
@@ -6433,8 +6452,7 @@ requires-dist = [
     { name = "pyobvector", specifier = "==0.2.22" },
     { name = "pyodbc", specifier = ">=5.2.0,<6.0.0" },
     { name = "pypandoc", specifier = ">=1.16" },
-    { name = "pypdf", specifier = ">=6.6.2" },
-    { name = "pypdf2", specifier = ">=3.0.1,<4.0.0" },
+    { name = "pypdf", specifier = ">=6.7.5" },
     { name = "python-calamine", specifier = ">=0.4.0" },
     { name = "python-docx", specifier = ">=1.1.2,<2.0.0" },
     { name = "python-gitlab", specifier = ">=7.0.0" },

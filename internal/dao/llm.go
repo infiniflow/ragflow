@@ -67,3 +67,31 @@ func (dao *LLMDAO) GetByFactoryAndName(factory, name string) (*model.LLM, error)
 	}
 	return &llm, nil
 }
+
+// LLMFactoryDAO LLM factory data access object
+type LLMFactoryDAO struct{}
+
+// NewLLMFactoryDAO create LLM factory DAO
+func NewLLMFactoryDAO() *LLMFactoryDAO {
+	return &LLMFactoryDAO{}
+}
+
+// GetAllValid gets all valid LLM factories
+func (dao *LLMFactoryDAO) GetAllValid() ([]*model.LLMFactories, error) {
+	var factories []*model.LLMFactories
+	err := DB.Where("status = ?", "1").Find(&factories).Error
+	if err != nil {
+		return nil, err
+	}
+	return factories, nil
+}
+
+// GetByName gets LLM factory by name
+func (dao *LLMFactoryDAO) GetByName(name string) (*model.LLMFactories, error) {
+	var factory model.LLMFactories
+	err := DB.Where("name = ?", name).First(&factory).Error
+	if err != nil {
+		return nil, err
+	}
+	return &factory, nil
+}

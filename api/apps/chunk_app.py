@@ -240,6 +240,16 @@ async def rm():
     req = await get_request_json()
     try:
         def _rm_sync():
+            deleted_chunk_ids = req["chunk_ids"]
+            if isinstance(deleted_chunk_ids, list):
+                unique_chunk_ids = list(dict.fromkeys(deleted_chunk_ids))
+                has_ids = len(unique_chunk_ids) > 0
+            else:
+                unique_chunk_ids = [deleted_chunk_ids]
+                has_ids = deleted_chunk_ids not in (None, "")
+            if not has_ids:
+                return get_json_result(data=True)
+
             e, doc = DocumentService.get_by_id(req["doc_id"])
             if not e:
                 return get_data_error_result(message="Document not found!")
@@ -250,13 +260,6 @@ async def rm():
                                                              doc.kb_id)
             except Exception:
                 return get_data_error_result(message="Chunk deleting failure")
-            deleted_chunk_ids = req["chunk_ids"]
-            if isinstance(deleted_chunk_ids, list):
-                unique_chunk_ids = list(dict.fromkeys(deleted_chunk_ids))
-                has_ids = len(unique_chunk_ids) > 0
-            else:
-                unique_chunk_ids = [deleted_chunk_ids]
-                has_ids = deleted_chunk_ids not in (None, "")
             if has_ids and deleted_count == 0:
                 return get_data_error_result(message="Index updating failure")
             if deleted_count > 0 and deleted_count < len(unique_chunk_ids):

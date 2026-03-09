@@ -45,6 +45,7 @@ from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
 from common.string_utils import remove_redundant_spaces
+from common.misc_utils import thread_pool_exec
 from common.constants import RetCode, LLMType, ParserType, TaskStatus, FileSource
 from common import settings
 
@@ -727,7 +728,9 @@ async def delete(tenant_id, dataset_id):
               type: array
               items:
                 type: string
-              description: List of document IDs to delete.
+              description: |
+                List of document IDs to delete.
+                If omitted, `null`, or an empty array is provided, no documents will be deleted.
       - in: header
         name: Authorization
         type: string
@@ -743,16 +746,13 @@ async def delete(tenant_id, dataset_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
     req = await get_request_json()
     if not req:
-        doc_ids = None
-    else:
-        doc_ids = req.get("ids")
+        return get_result()
+
+    doc_ids = req.get("ids")
     if not doc_ids:
-        doc_list = []
-        docs = DocumentService.query(kb_id=dataset_id)
-        for doc in docs:
-            doc_list.append(doc.id)
-    else:
-        doc_list = doc_ids
+        return get_result()
+
+    doc_list = doc_ids
 
     unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_list, "document")
     doc_list = unique_doc_ids
@@ -1318,7 +1318,9 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
               type: array
               items:
                 type: string
-              description: List of chunk IDs to remove.
+              description: |
+                List of chunk IDs to remove.
+                If omitted, `null`, or an empty array is provided, no chunks will be deleted.
       - in: header
         name: Authorization
         type: string
@@ -1336,17 +1338,20 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     if not docs:
         raise LookupError(f"Can't find the document with ID {document_id}!")
     req = await get_request_json()
+    if not req:
+        return get_result()
+
+    chunk_ids = req.get("chunk_ids")
+    if not chunk_ids:
+        return get_result()
+
     condition = {"doc_id": document_id}
-    if "chunk_ids" in req:
-        unique_chunk_ids, duplicate_messages = check_duplicate_ids(req["chunk_ids"], "chunk")
-        condition["id"] = unique_chunk_ids
-    else:
-        unique_chunk_ids = []
-        duplicate_messages = []
+    unique_chunk_ids, duplicate_messages = check_duplicate_ids(chunk_ids, "chunk")
+    condition["id"] = unique_chunk_ids
     chunk_number = settings.docStoreConn.delete(condition, search.index_name(tenant_id), dataset_id)
     if chunk_number != 0:
         DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
-    if "chunk_ids" in req and chunk_number != len(unique_chunk_ids):
+    if chunk_number != len(unique_chunk_ids):
         if len(unique_chunk_ids) == 0:
             return get_result(message=f"deleted {chunk_number} chunks")
         return get_error_data_result(message=f"rm_chunk deleted chunks {chunk_number}, expect {len(unique_chunk_ids)}")
@@ -1471,6 +1476,86 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     d["q_%d_vec" % len(v)] = v.tolist()
     settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(tenant_id), dataset_id)
     return get_result()
+
+
+@manager.route(  # noqa: F821
+    "/datasets/<dataset_id>/documents/<document_id>/chunks/switch", methods=["POST"]
+)
+@token_required
+async def switch_chunks(tenant_id, dataset_id, document_id):
+    """
+    Switch availability of specified chunks (same as chunk_app switch).
+    ---
+    tags:
+      - Chunks
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: path
+        name: document_id
+        type: string
+        required: true
+        description: ID of the document.
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            chunk_ids:
+              type: array
+              items:
+                type: string
+              description: List of chunk IDs to switch.
+            available_int:
+              type: integer
+              description: 1 for available, 0 for unavailable.
+            available:
+              type: boolean
+              description: Availability status (alternative to available_int).
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Chunks availability switched successfully.
+    """
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    req = await get_request_json()
+    if not req.get("chunk_ids"):
+        return get_error_data_result(message="`chunk_ids` is required.")
+    if "available_int" not in req and "available" not in req:
+        return get_error_data_result(message="`available_int` or `available` is required.")
+    available_int = int(req["available_int"]) if "available_int" in req else (1 if req.get("available") else 0)
+    try:
+
+        def _switch_sync():
+            e, doc = DocumentService.get_by_id(document_id)
+            if not e:
+                return get_error_data_result(message="Document not found!")
+            if not doc or str(doc.kb_id) != str(dataset_id):
+                return get_error_data_result(message="Document not found!")
+            for cid in req["chunk_ids"]:
+                if not settings.docStoreConn.update(
+                    {"id": cid},
+                    {"available_int": available_int},
+                    search.index_name(tenant_id),
+                    doc.kb_id,
+                ):
+                    return get_error_data_result(message="Index updating failure")
+            return get_result(data=True)
+
+        return await thread_pool_exec(_switch_sync)
+    except Exception as e:
+        return server_error_response(e)
 
 
 @manager.route("/retrieval", methods=["POST"])  # noqa: F821

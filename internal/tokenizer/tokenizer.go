@@ -26,7 +26,7 @@ import (
 
 	"go.uber.org/zap"
 
-	rag "ragflow/internal/go_binding"
+	rag "ragflow/internal/binding"
 	"ragflow/internal/logger"
 )
 
@@ -347,8 +347,7 @@ func (p *analyzerPool) Close() {
 		p.baseAnalyzer = nil
 	}
 
-	logger.Info("Analyzer pool closed",
-		zap.Int32("final_size", atomic.LoadInt32(&p.currentSize)))
+	logger.Info(fmt.Sprintf("Analyzer pool closed, final_size: %d", atomic.LoadInt32(&p.currentSize)))
 }
 
 // GetPoolStats returns current pool statistics

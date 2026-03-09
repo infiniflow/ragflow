@@ -199,25 +199,27 @@ const Generate: React.FC<GenerateProps> = (props) => {
   return (
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild disabled={disabled}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              disabled={disabled}
-              className={cn(disabled && '!cursor-not-allowed')}
-              variant="transparent"
-              size="icon"
-              onClick={() => {
-                if (!disabled) {
-                  handleOpenChange(!open);
-                }
-              }}
-            >
-              <WandSparkles />
-            </Button>
-          </TooltipTrigger>
+        <div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                disabled={disabled}
+                className={cn(disabled && '!cursor-not-allowed')}
+                variant="transparent"
+                size="icon"
+                onClick={() => {
+                  if (!disabled) {
+                    handleOpenChange(!open);
+                  }
+                }}
+              >
+                <WandSparkles />
+              </Button>
+            </TooltipTrigger>
 
-          <TooltipContent>{t('knowledgeDetails.generate')}</TooltipContent>
-        </Tooltip>
+            <TooltipContent>{t('knowledgeDetails.generate')}</TooltipContent>
+          </Tooltip>
+        </div>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-[380px] p-5 flex flex-col gap-2 ">
         {Object.values(GenerateType).map((name) => {
