@@ -133,6 +133,19 @@ class LLMBundle(LLM4Tenant):
 
         return emd, used_tokens
 
+    def supports_sparse(self) -> bool:
+        return hasattr(self.mdl, "supports_sparse") and self.mdl.supports_sparse()
+
+    def encode_sparse(self, texts: list):
+        if not self.supports_sparse():
+            return [], 0
+        return self.mdl.encode_sparse(texts)
+
+    def encode_sparse_queries(self, query: str):
+        if not self.supports_sparse():
+            return None, 0
+        return self.mdl.encode_sparse_queries(query)
+
     def similarity(self, query: str, texts: list):
         if self.langfuse:
             generation = self.langfuse.start_generation(trace_context=self.trace_context, name="similarity", model=self.model_config["llm_name"], input={"query": query, "texts": texts})

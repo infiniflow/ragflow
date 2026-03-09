@@ -788,6 +788,9 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         doc_engine = "infinity"
     elif settings.DOC_ENGINE_OCEANBASE:
         doc_engine = "oceanbase"
+    elif settings.DOC_ENGINE.strip().lower() == "qdrant":
+        logging.info("use_sql: Qdrant backend does not support SQL retrieval.")
+        return None
     else:
         doc_engine = "es"
 

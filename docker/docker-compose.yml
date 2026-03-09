@@ -1,6 +1,7 @@
 include:
   - ./docker-compose-base.yml
 # To ensure that the container processes the locally modified `service_conf.yaml.template` instead of the one included in its image, you need to mount the local `service_conf.yaml.template` to the container.
+# Set `DOC_ENGINE=qdrant` to activate the Qdrant profile declared in `docker-compose-base.yml`.
 services:
   ragflow-cpu:
     depends_on:

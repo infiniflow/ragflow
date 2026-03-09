@@ -314,3 +314,23 @@ def test_async_chat_uses_all_docs_when_no_doc_ids_selected(monkeypatch):
     assert retriever.calls[0]["kwargs"]["doc_ids"] is None
     assert "Chunk text from dataset." in chat_model.calls[0]["system_prompt"]
     assert result[0]["answer"] == "stub answer"
+
+
+@pytest.mark.p2
+def test_use_sql_returns_none_for_qdrant(monkeypatch, force_es_engine):
+    chat_model = _StubChatModel([])
+    monkeypatch.setattr(dialog_service.settings, "DOC_ENGINE", "qdrant", raising=False)
+
+    result = asyncio.run(
+        dialog_service.use_sql(
+            question="show me column of product",
+            field_map={"product_tks": "product"},
+            tenant_id="tenant-id",
+            chat_mdl=chat_model,
+            quota=True,
+            kb_ids=None,
+        )
+    )
+
+    assert result is None
+    assert chat_model.calls == []
