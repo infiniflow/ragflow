@@ -211,6 +211,37 @@ def _mm_dismiss_open_popovers(page) -> None:
         page.wait_for_timeout(120)
 
 
+def _mm_open_model_options(page, card, option_prefix: str):
+    options = page.locator(f"[data-testid^='{option_prefix}']")
+    deadline = monotonic() + 12
+    while monotonic() < deadline:
+        card.get_by_test_id("chat-detail-multimodel-card-model-select").click()
+        try:
+            expect(options.first).to_be_visible(timeout=1200)
+            return options
+        except AssertionError:
+            pass
+
+        popover_root = page.locator("[data-radix-popper-content-wrapper]").last
+        if popover_root.count() > 0:
+            popover_model_select = popover_root.locator("button[role='combobox']").first
+            if popover_model_select.count() > 0:
+                try:
+                    popover_model_select.click(timeout=1200)
+                except Exception:
+                    pass
+                try:
+                    expect(options.first).to_be_visible(timeout=1200)
+                    return options
+                except AssertionError:
+                    pass
+        page.wait_for_timeout(120)
+
+    raise AssertionError(
+        f"no model options rendered for prefix={option_prefix!r} in multi-model selector"
+    )
+
+
 def mm_step_01_ensure_authed_and_open_chat_list(ctx: FlowContext, step, snap):
     page = ctx.page
     with step("ensure logged in and open chat list"):
@@ -555,17 +586,7 @@ def mm_step_10_select_models_for_two_cards(ctx: FlowContext, step, snap):
                 f"[data-testid='chat-detail-multimodel-card'][data-card-index='{card_index}']"
             ).first
             expect(card).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-            card.get_by_test_id("chat-detail-multimodel-card-model-select").click()
-
-            options = page.locator(f"[data-testid^='{option_prefix}']")
-            if options.count() == 0:
-                popover_root = page.locator("[data-radix-popper-content-wrapper]").last
-                expect(popover_root).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-                popover_model_select = popover_root.locator("button[role='combobox']").first
-                expect(popover_model_select).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-                popover_model_select.click()
-
-            expect(options.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+            options = _mm_open_model_options(page, card, option_prefix)
             option_testids = [
                 tid
                 for tid in options.evaluate_all(
