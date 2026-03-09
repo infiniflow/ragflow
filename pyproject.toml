@@ -218,6 +218,7 @@ markers = [
     "p3: low priority test cases",
     "smoke: smoke test cases",
     "auth: authentication UI tests",
+    "asyncio: mark test as async",
 ]
 
 # Test collection and runtime configuration
