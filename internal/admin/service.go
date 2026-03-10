@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/model"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
+	"strconv"
 	"time"
 )
 
@@ -282,20 +283,37 @@ func (s *Service) GetAllServices() ([]map[string]interface{}, error) {
 
 	var result []map[string]interface{}
 	for _, configDict := range allConfigs {
-		// Get service details to check status
-		serviceDetail, err := s.GetServiceDetails(configDict)
-		if err == nil {
-			if status, ok := serviceDetail["status"]; ok {
-				configDict["status"] = status
+		serviceType := configDict["service_type"]
+		if serviceType != "ragflow_server" {
+			// Get service details to check status
+			serviceDetail, err := s.GetServiceDetails(configDict)
+			if err == nil {
+				if status, ok := serviceDetail["status"]; ok {
+					configDict["status"] = status
+				} else {
+					configDict["status"] = "timeout"
+				}
 			} else {
 				configDict["status"] = "timeout"
 			}
-		} else {
-			configDict["status"] = "timeout"
+			result = append(result, configDict)
 		}
-		result = append(result, configDict)
+
 	}
 
+	id := len(result)
+	serverList := GlobalServerStatusStore.GetAllStatuses()
+	for _, serverStatus := range serverList {
+		serverItem := make(map[string]interface{})
+		serverItem["name"] = serverStatus.ServerName
+		serverItem["service_type"] = serverStatus.ServerType
+		serverItem["id"] = id
+		id++
+		serverItem["host"] = serverStatus.Host
+		serverItem["port"] = serverStatus.Port
+		serverItem["status"] = "alive"
+		result = append(result, serverItem)
+	}
 	return result, nil
 }
 
@@ -540,6 +558,7 @@ func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
 
 	// Get minio config from allConfigs
 	var host string
+	var port int
 	var secure bool
 	var verify bool = true
 
@@ -549,6 +568,16 @@ func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
 			// Get host from config
 			if h, ok := config["host"].(string); ok {
 				host = h
+			}
+
+			if p, ok := config["port"].(int); ok {
+				port = p
+			} else if p, ok := config["port"].(float64); ok {
+				port = int(p)
+			} else if p, ok := config["port"].(string); ok {
+				if parsedPort, err := strconv.Atoi(p); err == nil {
+					port = parsedPort
+				}
 			}
 			// Get secure from extra config
 			if extra, ok := config["extra"].(map[string]interface{}); ok {
@@ -569,7 +598,10 @@ func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
 
 	// Default host
 	if host == "" {
-		host = "localhost:9000"
+		host = "localhost"
+	}
+	if port == 0 {
+		port = 9000
 	}
 
 	// Determine scheme
@@ -578,7 +610,7 @@ func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
 		scheme = "https"
 	}
 
-	url := fmt.Sprintf("%s://%s/minio/health/live", scheme, host)
+	url := fmt.Sprintf("%s://%s:%d/minio/health/live", scheme, host, port)
 
 	// Create HTTP client with timeout
 	client := &http.Client{

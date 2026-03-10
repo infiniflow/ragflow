@@ -18,17 +18,17 @@ var GlobalServerStatusStore = &ServerStatusStore{
 }
 
 // UpdateStatus updates or adds a server status
-func (s *ServerStatusStore) UpdateStatus(serverID string, status *common.BaseMessage) {
+func (s *ServerStatusStore) UpdateStatus(serverName string, status *common.BaseMessage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.servers[serverID] = status
+	s.servers[serverName] = status
 }
 
 // GetStatus gets a single server status
-func (s *ServerStatusStore) GetStatus(serverID string) (*common.BaseMessage, bool) {
+func (s *ServerStatusStore) GetStatus(serverName string) (*common.BaseMessage, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	status, ok := s.servers[serverID]
+	status, ok := s.servers[serverName]
 	return status, ok
 }
 
