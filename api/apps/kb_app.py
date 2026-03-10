@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import json
 import logging
 import random
 import re
@@ -26,30 +25,23 @@ from api.db.services.connector_service import Connector2KbService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
 from api.db.services.doc_metadata_service import DocMetadataService
-from api.db.services.file2document_service import File2DocumentService
-from api.db.services.file_service import FileService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
-from api.db.services.user_service import TenantService, UserTenantService
+from api.db.services.user_service import UserTenantService
 from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_model_config_by_id
 from api.utils.api_utils import (
     get_error_data_result,
     server_error_response,
     get_data_error_result,
     validate_request,
-    not_allowed_parameters,
     get_request_json,
 )
-from common.misc_utils import thread_pool_exec
 from api.db import VALID_FILE_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.db_models import File
 from api.utils.api_utils import get_json_result
-from api.utils.tenant_utils import ensure_tenant_model_id_for_params
 from rag.nlp import search
-from api.constants import DATASET_NAME_LIMIT
 from rag.utils.redis_conn import REDIS_CONN
-from common.constants import RetCode, PipelineTaskType, StatusEnum, VALID_TASK_STATUS, FileSource, LLMType, PAGERANK_FLD
+from common.constants import RetCode, PipelineTaskType, VALID_TASK_STATUS, LLMType
 from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 from api.apps import login_required, current_user
