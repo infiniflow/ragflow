@@ -46,15 +46,15 @@ UNAUTHORIZED_MESSAGE = "<Unauthorized '401: Unauthorized'>"
 def _unauthorized_message(error):
     if error is None:
         return UNAUTHORIZED_MESSAGE
+
+    description = getattr(error, "description", None)
+    if description:
+        return description
+
     try:
-        msg = repr(error)
+        return repr(error)
     except Exception:
         return UNAUTHORIZED_MESSAGE
-    if msg == UNAUTHORIZED_MESSAGE:
-        return msg
-    if "Unauthorized" in msg and "401" in msg:
-        return msg
-    return UNAUTHORIZED_MESSAGE
 
 app = Quart(__name__)
 app = cors(app, allow_origin="*")
@@ -316,7 +316,7 @@ async def unauthorized_quart_auth(error):
 @app.errorhandler(WerkzeugUnauthorized)
 async def unauthorized_werkzeug(error):
     logging.warning("Unauthorized request (werkzeug)")
-    return get_json_result(code=RetCode.UNAUTHORIZED, message=_unauthorized_message(error)), RetCode.UNAUTHORIZED
+    return get_json_result(code=error.code, message=error.description), RetCode.UNAUTHORIZED
 
 @app.teardown_request
 def _db_close(exception):

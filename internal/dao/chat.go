@@ -62,8 +62,13 @@ func (dao *ChatDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pag
 			user.nickname,
 			user.avatar as tenant_avatar
 		`).
-		Joins("LEFT JOIN user ON dialog.tenant_id = user.id").
-		Where("(dialog.tenant_id IN ? OR dialog.tenant_id = ?) AND dialog.status = ?", tenantIDs, userID, "1")
+		Joins("LEFT JOIN user ON dialog.tenant_id = user.id")
+
+	if len(tenantIDs) > 0 {
+		query = query.Where("(dialog.tenant_id IN ? OR dialog.tenant_id = ?) AND dialog.status = ?", tenantIDs, userID, "1")
+	} else {
+		query = query.Where("dialog.tenant_id = ? AND dialog.status = ?", userID, "1")
+	}
 
 	// Apply keyword filter
 	if keywords != "" {

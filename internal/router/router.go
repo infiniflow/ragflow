@@ -86,6 +86,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 	// User login by email endpoint
 	engine.POST("/v1/user/login", r.userHandler.LoginByEmail)
+	engine.POST("/v1/user/register", r.userHandler.Register)
 	// User login channels endpoint
 	engine.GET("/v1/user/login/channels", r.userHandler.GetLoginChannels)
 	// User logout endpoint
@@ -100,6 +101,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 	engine.POST("/v1/user/setting", r.userHandler.Setting)
 	// User change password endpoint
 	engine.POST("/v1/user/setting/password", r.userHandler.ChangePassword)
+	// User set tenant info endpoint
+	engine.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
 
 	// API v1 route group
 	v1 := engine.Group("/api/v1")
@@ -128,65 +131,84 @@ func (r *Router) Setup(engine *gin.Engine) {
 		{
 			authors.GET("/:author_id/documents", r.documentHandler.GetDocumentsByAuthorID)
 		}
+	}
 
-		// Knowledge base routes
-		kb := engine.Group("/v1/kb")
-		{
-			kb.POST("/list", r.knowledgebaseHandler.ListKbs)
-		}
+	// Knowledge base routes
+	kb := engine.Group("/v1/kb")
+	{
+		kb.POST("/create", r.knowledgebaseHandler.CreateKB)
+		kb.POST("/update", r.knowledgebaseHandler.UpdateKB)
+		kb.POST("/update_metadata_setting", r.knowledgebaseHandler.UpdateMetadataSetting)
+		kb.GET("/detail", r.knowledgebaseHandler.GetDetail)
+		kb.POST("/list", r.knowledgebaseHandler.ListKbs)
+		kb.POST("/rm", r.knowledgebaseHandler.DeleteKB)
+		kb.GET("/tags", r.knowledgebaseHandler.ListTagsFromKbs)
+		kb.GET("/get_meta", r.knowledgebaseHandler.GetMeta)
+		kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
 
-		// Chunk routes
-		chunk := engine.Group("/v1/chunk")
+		// KB ID specific routes
+		kbByID := kb.Group("/:kb_id")
 		{
-			chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
+			kbByID.GET("/tags", r.knowledgebaseHandler.ListTags)
+			kbByID.POST("/rm_tags", r.knowledgebaseHandler.RemoveTags)
+			kbByID.POST("/rename_tag", r.knowledgebaseHandler.RenameTag)
+			kbByID.GET("/knowledge_graph", r.knowledgebaseHandler.KnowledgeGraph)
+			kbByID.DELETE("/knowledge_graph", r.knowledgebaseHandler.DeleteKnowledgeGraph)
 		}
+	}
 
-		// LLM routes
-		llm := engine.Group("/v1/llm")
-		{
-			llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
-			llm.GET("/factories", r.llmHandler.Factories)
-			llm.GET("/list", r.llmHandler.ListApp)
-		}
+	// Chunk routes
+	chunk := engine.Group("/v1/chunk")
+	{
+		chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
+	}
 
-		// Chat routes
-		chat := engine.Group("/v1/dialog")
-		{
-			chat.GET("/list", r.chatHandler.ListChats)
-			chat.POST("/next", r.chatHandler.ListChatsNext)
-			chat.POST("/set", r.chatHandler.SetDialog)
-			chat.POST("/rm", r.chatHandler.RemoveChats)
-		}
+	// LLM routes
+	llm := engine.Group("/v1/llm")
+	{
+		llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
+		llm.GET("/factories", r.llmHandler.Factories)
+		llm.GET("/list", r.llmHandler.ListApp)
+		llm.POST("/set_api_key", r.llmHandler.SetAPIKey)
+	}
 
-		// Chat session (conversation) routes
-		session := engine.Group("/v1/conversation")
-		{
-			session.POST("/set", r.chatSessionHandler.SetChatSession)
-			session.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
-			session.GET("/list", r.chatSessionHandler.ListChatSessions)
-			session.POST("/completion", r.chatSessionHandler.Completion)
-		}
+	// Chat routes
+	chat := engine.Group("/v1/dialog")
+	{
+		chat.GET("/list", r.chatHandler.ListChats)
+		chat.POST("/next", r.chatHandler.ListChatsNext)
+		chat.POST("/set", r.chatHandler.SetDialog)
+		chat.POST("/rm", r.chatHandler.RemoveChats)
+	}
 
-		// Connector routes
-		connector := engine.Group("/v1/connector")
-		{
-			connector.GET("/list", r.connectorHandler.ListConnectors)
-		}
+	// Chat session (conversation) routes
+	session := engine.Group("/v1/conversation")
+	{
+		session.POST("/set", r.chatSessionHandler.SetChatSession)
+		session.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
+		session.GET("/list", r.chatSessionHandler.ListChatSessions)
+		session.POST("/completion", r.chatSessionHandler.Completion)
+	}
 
-		// Search routes
-		search := engine.Group("/v1/search")
-		{
-			search.POST("/list", r.searchHandler.ListSearchApps)
-		}
+	// Connector routes
+	connector := engine.Group("/v1/connector")
+	{
+		connector.GET("/list", r.connectorHandler.ListConnectors)
+	}
 
-		// File routes
-		file := engine.Group("/v1/file")
-		{
-			file.GET("/list", r.fileHandler.ListFiles)
-			file.GET("/root_folder", r.fileHandler.GetRootFolder)
-			file.GET("/parent_folder", r.fileHandler.GetParentFolder)
-			file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
-		}
+	// Search routes
+	search := engine.Group("/v1/search")
+	{
+		search.POST("/list", r.searchHandler.ListSearchApps)
+	}
+
+	// File routes
+	file := engine.Group("/v1/file")
+	{
+		file.GET("/list", r.fileHandler.ListFiles)
+		file.GET("/root_folder", r.fileHandler.GetRootFolder)
+		file.GET("/parent_folder", r.fileHandler.GetParentFolder)
+		file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
 	}
 
 	// Handle undefined routes

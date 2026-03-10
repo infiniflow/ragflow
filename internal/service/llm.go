@@ -17,10 +17,15 @@
 package service
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/model"
 )
+
+var DB = dao.DB
 
 // LLMService LLM service
 type LLMService struct {
@@ -38,6 +43,7 @@ func NewLLMService() *LLMService {
 
 // MyLLMItem represents a single LLM item in the response
 type MyLLMItem struct {
+	ID        string `json:"id"`
 	Type      string `json:"type"`
 	Name      string `json:"name"`
 	UsedToken int64  `json:"used_token"`
@@ -46,67 +52,89 @@ type MyLLMItem struct {
 	MaxTokens int64  `json:"max_tokens,omitempty"`
 }
 
-// MyLLMResponse represents the response structure for my LLMs
-type MyLLMResponse struct {
+// MyLLMFactory represents the response structure for a factory in my LLMs
+type MyLLMFactory struct {
 	Tags string      `json:"tags"`
 	LLM  []MyLLMItem `json:"llm"`
 }
 
 // GetMyLLMs get my LLMs for a tenant
-func (s *LLMService) GetMyLLMs(tenantID string, includeDetails bool) (map[string]MyLLMResponse, error) {
-	// Get LLM list from database
-	myLLMs, err := s.tenantLLMDAO.GetMyLLMs(tenantID, includeDetails)
-	if err != nil {
-		return nil, err
-	}
+func (s *LLMService) GetMyLLMs(tenantID string, includeDetails bool) (map[string]MyLLMFactory, error) {
+	result := make(map[string]MyLLMFactory)
 
-	// Group by factory
-	result := make(map[string]MyLLMResponse)
-	providerDAO := dao.NewModelProviderDAO()
-	for _, llm := range myLLMs {
-		// Get or create factory entry
-		resp, exists := result[llm.LLMFactory]
-		if !exists {
-			resp = MyLLMResponse{
-				Tags: llm.Tags,
-				LLM:  []MyLLMItem{},
+	if includeDetails {
+		objs, err := s.tenantLLMDAO.ListAllByTenant(tenantID)
+		if err != nil {
+			return nil, err
+		}
+
+		factoryDAO := dao.NewLLMFactoryDAO()
+		factories, err := factoryDAO.GetAllValid()
+		if err != nil {
+			return nil, err
+		}
+
+		factoryTagsMap := make(map[string]string)
+		for _, f := range factories {
+			if f.Tags != "" {
+				factoryTagsMap[f.Name] = f.Tags
 			}
 		}
 
-		// Create LLM item
-		item := MyLLMItem{
-			Type:      llm.ModelType,
-			Name:      llm.LLMName,
-			UsedToken: llm.UsedTokens,
-			Status:    llm.Status,
-		}
-
-		// Add detailed fields if requested
-		if includeDetails {
-			item.APIBase = llm.APIBase
-			item.MaxTokens = llm.MaxTokens
-
-			// If APIBase is empty, try to get from model provider configuration
-			if item.APIBase == "" {
-				provider := providerDAO.GetProviderByName(llm.LLMFactory)
-				if provider != nil {
-					// Determine appropriate API base URL based on model type
-					switch llm.ModelType {
-					case "embedding":
-						if provider.DefaultEmbeddingURL != "" {
-							item.APIBase = provider.DefaultEmbeddingURL
-						}
-						// Add other model types here if needed
-						// case "chat":
-						// case "rerank":
-						// etc.
-					}
+		for _, o := range objs {
+			llmFactory := o.LLMFactory
+			if _, exists := result[llmFactory]; !exists {
+				tags := factoryTagsMap[llmFactory]
+				result[llmFactory] = MyLLMFactory{
+					Tags: tags,
+					LLM:  []MyLLMItem{},
 				}
 			}
+
+			item := MyLLMItem{
+				ID:        int64ToString(o.ID),
+				Type:      getStringValue(o.ModelType),
+				Name:      getStringValue(o.LLMName),
+				UsedToken: o.UsedTokens,
+				Status:    getValidStatus(o.Status),
+			}
+
+			if includeDetails {
+				item.APIBase = getStringValueDefault(o.APIBase, "")
+				item.MaxTokens = o.MaxTokens
+			}
+
+			factory := result[llmFactory]
+			factory.LLM = append(factory.LLM, item)
+			result[llmFactory] = factory
+		}
+	} else {
+		objs, err := s.tenantLLMDAO.GetMyLLMs(tenantID)
+		if err != nil {
+			return nil, err
 		}
 
-		resp.LLM = append(resp.LLM, item)
-		result[llm.LLMFactory] = resp
+		for _, o := range objs {
+			llmFactory := o.LLMFactory
+			if _, exists := result[llmFactory]; !exists {
+				result[llmFactory] = MyLLMFactory{
+					Tags: getStringValue(o.Tags),
+					LLM:  []MyLLMItem{},
+				}
+			}
+
+			item := MyLLMItem{
+				ID:        o.ID,
+				Type:      getStringValue(o.ModelType),
+				Name:      getStringValue(o.LLMName),
+				UsedToken: getInt64Value(o.UsedTokens),
+				Status:    getStringValueDefault(o.Status, "1"),
+			}
+
+			factory := result[llmFactory]
+			factory.LLM = append(factory.LLM, item)
+			result[llmFactory] = factory
+		}
 	}
 
 	return result, nil
@@ -114,18 +142,19 @@ func (s *LLMService) GetMyLLMs(tenantID string, includeDetails bool) (map[string
 
 // LLMListItem represents a single LLM item in the list response
 type LLMListItem struct {
-	LLMName   string     `json:"llm_name"`
-	ModelType string     `json:"model_type"`
-	FID       string     `json:"fid"`
-	Available bool       `json:"available"`
-	Status    string     `json:"status"`
-	MaxTokens int64      `json:"max_tokens,omitempty"`
-	CreateDate *string   `json:"create_date,omitempty"`
-	CreateTime int64      `json:"create_time,omitempty"`
-	UpdateDate *string   `json:"update_date,omitempty"`
-	UpdateTime *int64    `json:"update_time,omitempty"`
-	IsTools   bool       `json:"is_tools"`
-	Tags      string     `json:"tags,omitempty"`
+	ID         string  `json:"id"`
+	LLMName    string  `json:"llm_name"`
+	ModelType  string  `json:"model_type"`
+	FID        string  `json:"fid"`
+	Available  bool    `json:"available"`
+	Status     string  `json:"status"`
+	MaxTokens  int64   `json:"max_tokens,omitempty"`
+	CreateDate *string `json:"create_date,omitempty"`
+	CreateTime *int64  `json:"create_time,omitempty"`
+	UpdateDate *string `json:"update_date,omitempty"`
+	UpdateTime *int64  `json:"update_time,omitempty"`
+	IsTools    bool    `json:"is_tools"`
+	Tags       string  `json:"tags,omitempty"`
 }
 
 // ListLLMsResponse represents the response for list LLMs
@@ -142,33 +171,32 @@ func (s *LLMService) ListLLMs(tenantID string, modelType string) (ListLLMsRespon
 		"GPUStack":   true,
 	}
 
-	// Get tenant LLMs
-	tenantLLMs, err := s.tenantLLMDAO.ListAllByTenant(tenantID)
+	objs, err := s.tenantLLMDAO.ListAllByTenant(tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Build set of factories with valid API keys
 	facts := make(map[string]bool)
-	// Build set of valid LLM names@factories
 	status := make(map[string]bool)
-	for _, tl := range tenantLLMs {
-		if tl.APIKey != "" && tl.Status == "1" {
-			facts[tl.LLMFactory] = true
+	tenantLLMMapping := make(map[string]string)
+
+	for _, o := range objs {
+		if o.APIKey != nil && *o.APIKey != "" && getValidStatus(o.Status) == "1" {
+			facts[o.LLMFactory] = true
 		}
-		key := tl.LLMName + "@" + tl.LLMFactory
-		if tl.Status == "1" {
+		llmName := getStringValue(o.LLMName)
+		key := llmName + "@" + o.LLMFactory
+		if getValidStatus(o.Status) == "1" {
 			status[key] = true
 		}
+		tenantLLMMapping[key] = int64ToString(o.ID)
 	}
 
-	// Get all valid LLMs
 	allLLMs, err := s.llmDAO.GetAllValid()
 	if err != nil {
 		return nil, err
 	}
 
-	// Filter and build result
 	llmSet := make(map[string]bool)
 	result := make(ListLLMsResponse)
 
@@ -179,20 +207,18 @@ func (s *LLMService) ListLLMs(tenantID string, modelType string) (ListLLMsRespon
 
 		key := llm.LLMName + "@" + llm.FID
 
-		// Check if valid (Builtin factory or in status set)
 		if llm.FID != "Builtin" && !status[key] {
 			continue
 		}
 
-		// Filter by model type if specified
 		if modelType != "" && !strings.Contains(llm.ModelType, modelType) {
 			continue
 		}
 
-		// Determine availability
-		available := facts[llm.FID] || selfDeployed[llm.FID] || llm.LLMName == "flag-embedding"
+		available := facts[llm.FID] || selfDeployed[llm.FID] || strings.ToLower(llm.LLMName) == "flag-embedding"
 
 		item := LLMListItem{
+			ID:        tenantLLMMapping[key],
 			LLMName:   llm.LLMName,
 			ModelType: llm.ModelType,
 			FID:       llm.FID,
@@ -203,7 +229,6 @@ func (s *LLMService) ListLLMs(tenantID string, modelType string) (ListLLMsRespon
 			Tags:      llm.Tags,
 		}
 
-		// Add BaseModel fields
 		if llm.CreateDate != nil {
 			createDateStr := llm.CreateDate.Format("2006-01-02T15:04:05")
 			item.CreateDate = &createDateStr
@@ -221,28 +246,160 @@ func (s *LLMService) ListLLMs(tenantID string, modelType string) (ListLLMsRespon
 		llmSet[key] = true
 	}
 
-	// Add tenant LLMs that are not in the global list
-	for _, tl := range tenantLLMs {
-		key := tl.LLMName + "@" + tl.LLMFactory
+	for _, o := range objs {
+		llmName := getStringValue(o.LLMName)
+		key := llmName + "@" + o.LLMFactory
 		if llmSet[key] {
 			continue
 		}
 
-		// Filter by model type if specified
-		if modelType != "" && !strings.Contains(tl.ModelType, modelType) {
+		modelTypeValue := getStringValue(o.ModelType)
+		if modelType != "" && !strings.Contains(modelTypeValue, modelType) {
 			continue
 		}
 
 		item := LLMListItem{
-			LLMName:   tl.LLMName,
-			ModelType: tl.ModelType,
-			FID:       tl.LLMFactory,
+			ID:        int64ToString(o.ID),
+			LLMName:   llmName,
+			ModelType: modelTypeValue,
+			FID:       o.LLMFactory,
 			Available: true,
-			Status:    tl.Status,
+			Status:    getValidStatus(o.Status),
 		}
 
-		result[tl.LLMFactory] = append(result[tl.LLMFactory], item)
+		result[o.LLMFactory] = append(result[o.LLMFactory], item)
 	}
 
 	return result, nil
+}
+
+func getStringValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func getStringValueDefault(s *string, defaultVal string) string {
+	if s == nil || *s == "" {
+		return defaultVal
+	}
+	return *s
+}
+
+func getValidStatus(status string) string {
+	if status == "" {
+		return "1"
+	}
+	return status
+}
+
+func getInt64Value(i *int64) int64 {
+	if i == nil {
+		return 0
+	}
+	return *i
+}
+
+func getInt64ValueDefault(i *int64, defaultVal int64) int64 {
+	if i == nil || *i == 0 {
+		return defaultVal
+	}
+	return *i
+}
+
+func getBoolValue(b *bool) bool {
+	if b == nil {
+		return false
+	}
+	return *b
+}
+
+func int64ToString(n int64) string {
+	return strconv.FormatInt(n, 10)
+}
+
+// SetAPIKeyRequest represents the request for setting API key
+type SetAPIKeyRequest struct {
+	LLMFactory string `json:"llm_factory"`
+	APIKey     string `json:"api_key"`
+	BaseURL    string `json:"base_url"`
+	SourceFID  string `json:"source_fid"`
+	ModelType  string `json:"model_type"`
+	LLMName    string `json:"llm_name"`
+	Verify     bool   `json:"verify"`
+	MaxTokens  int64  `json:"max_tokens"`
+}
+
+// SetAPIKeyResult represents the result of setting API key
+type SetAPIKeyResult struct {
+	Message string `json:"message"`
+	Success bool   `json:"success"`
+}
+
+// SetAPIKey sets API key for a LLM factory
+func (s *LLMService) SetAPIKey(tenantID string, req *SetAPIKeyRequest) (*SetAPIKeyResult, error) {
+	factory := req.LLMFactory
+	baseURL := req.BaseURL
+	sourceFactory := req.SourceFID
+	if sourceFactory == "" {
+		sourceFactory = factory
+	}
+
+	sourceLLMs, err := s.llmDAO.GetByFactory(sourceFactory)
+	if err != nil || len(sourceLLMs) == 0 {
+		msg := "No models configured for " + factory + " (source: " + sourceFactory + ")."
+		if req.Verify {
+			return &SetAPIKeyResult{Message: msg, Success: false}, nil
+		}
+		return nil, fmt.Errorf(msg)
+	}
+
+	llmConfig := map[string]interface{}{
+		"api_key":  req.APIKey,
+		"api_base": baseURL,
+	}
+
+	if req.ModelType != "" {
+		llmConfig["model_type"] = req.ModelType
+	}
+	if req.LLMName != "" {
+		llmConfig["llm_name"] = req.LLMName
+	}
+
+	for _, llm := range sourceLLMs {
+		maxTokens := llm.MaxTokens
+		if maxTokens == 0 {
+			maxTokens = 8192
+		}
+		llmConfig["max_tokens"] = maxTokens
+
+		existingLLM, _ := s.tenantLLMDAO.GetByTenantFactoryAndModelName(tenantID, factory, llm.LLMName)
+		if existingLLM != nil {
+			updates := map[string]interface{}{
+				"api_key":    req.APIKey,
+				"api_base":   baseURL,
+				"max_tokens": maxTokens,
+			}
+			DB.Model(&model.TenantLLM{}).
+				Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?", tenantID, factory, llm.LLMName).
+				Updates(updates)
+		} else {
+			modelType := llm.ModelType
+			llmName := llm.LLMName
+			tenantLLM := &model.TenantLLM{
+				TenantID:   tenantID,
+				LLMFactory: factory,
+				ModelType:  &modelType,
+				LLMName:    &llmName,
+				APIKey:     &req.APIKey,
+				APIBase:    &baseURL,
+				MaxTokens:  maxTokens,
+				Status:     "1",
+			}
+			s.tenantLLMDAO.Create(tenantLLM)
+		}
+	}
+
+	return &SetAPIKeyResult{Message: "", Success: true}, nil
 }

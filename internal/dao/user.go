@@ -93,11 +93,23 @@ func (dao *UserDAO) List(offset, limit int) ([]*model.User, int64, error) {
 		return nil, 0, err
 	}
 
-	err := DB.Offset(offset).Limit(limit).Find(&users).Error
+	query := DB.Model(&model.User{})
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	err := query.Find(&users).Error
 	return users, total, err
 }
 
 // Delete delete user
 func (dao *UserDAO) Delete(id uint) error {
 	return DB.Delete(&model.User{}, id).Error
+}
+
+// DeleteByID delete user by string ID
+func (dao *UserDAO) DeleteByID(id string) error {
+	return DB.Model(&model.User{}).Where("id = ?", id).Update("status", "0").Error
 }

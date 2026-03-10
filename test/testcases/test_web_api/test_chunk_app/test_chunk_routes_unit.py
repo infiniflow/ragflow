@@ -207,6 +207,10 @@ def _load_chunk_module(monkeypatch):
         EMBEDDING = SimpleNamespace(value="embedding")
         CHAT = SimpleNamespace(value="chat")
         RERANK = SimpleNamespace(value="rerank")
+        SPEECH2TEXT = SimpleNamespace(value="speech2text")
+        IMAGE2TEXT = SimpleNamespace(value="image2text")
+        TTS = SimpleNamespace(value="tts")
+        OCR = SimpleNamespace(value="ocr")
 
     constants_mod.RetCode = _DummyRetCode
     constants_mod.LLMType = _DummyLLMType
@@ -302,6 +306,10 @@ def _load_chunk_module(monkeypatch):
             return "embed-1"
 
         @staticmethod
+        def get_tenant_embd_id(_doc_id):
+            return 1
+
+        @staticmethod
         def decrement_chunk_num(*args):
             _DocumentService.decrement_calls.append(args)
 
@@ -327,13 +335,24 @@ def _load_chunk_module(monkeypatch):
 
         @staticmethod
         def get_by_id(_kb_id):
-            return True, SimpleNamespace(pagerank=0.6)
+            return True, SimpleNamespace(pagerank=0.6, tenant_embd_id=2, tenant_llm_id=1)
 
     kb_service_mod.KnowledgebaseService = _KnowledgebaseService
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
     services_pkg.knowledgebase_service = kb_service_mod
 
+    class _DummyLLMService:
+        @staticmethod
+        def query(**_kwargs):
+            return [SimpleNamespace(
+                llm_name="gpt-3.5-turbo",
+                model_type="chat",
+                max_tokens=8192,
+                is_tools=True
+            )]
+
     llm_service_mod = ModuleType("api.db.services.llm_service")
+    llm_service_mod.LLMService = _DummyLLMService
     llm_service_mod.LLMBundle = _DummyLLMBundle
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
     services_pkg.llm_service = llm_service_mod
@@ -342,6 +361,77 @@ def _load_chunk_module(monkeypatch):
     search_service_mod.SearchService = type("SearchService", (), {})
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", search_service_mod)
     services_pkg.search_service = search_service_mod
+
+    tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
+
+    class _MockTableObject:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+        def to_dict(self):
+            return {k: v for k, v in self.__dict__.items()}
+
+    class _TenantLLMService:
+        @staticmethod
+        def get_by_id(tenant_model_id):
+            return True, _MockTableObject(
+                id=tenant_model_id,
+                tenant_id="tenant-1",
+                llm_factory="",
+                model_type="chat",
+                llm_name="gpt-3.5-turbo",
+                api_key="fake-api-key",
+                api_base="https://api.example.com",
+                max_tokens=8192,
+                used_tokens=0,
+                status=1
+            )
+
+        @staticmethod
+        def get_api_key(tenant_id, model_name):
+            return _MockTableObject(
+                id=1,
+                tenant_id=tenant_id,
+                llm_factory="",
+                model_type="chat",
+                llm_name=model_name,
+                api_key="fake-api-key",
+                api_base="https://api.example.com",
+                max_tokens=8192,
+                used_tokens=0,
+                status=1
+            )
+
+        @staticmethod
+        def split_model_name_and_factory(model_name):
+            if "@" in model_name:
+                parts = model_name.rsplit("@", 1)
+                return parts[0], parts[1]
+            return model_name, None
+
+        @staticmethod
+        def increase_usage_by_id(model_id, used_tokens):
+            return True
+
+    class _TenantService:
+        @staticmethod
+        def get_by_id(tenant_id):
+            return True, SimpleNamespace(
+                llm_id="gpt-3.5-turbo",
+                tenant_llm_id=1,
+                embd_id="text-embedding-ada-002",
+                tenant_embd_id=2,
+                asr_id="whisper-1",
+                img2txt_id="gpt-4-vision-preview",
+                rerank_id="bge-reranker",
+                tts_id="tts-1"
+            )
+
+    tenant_llm_service_mod.TenantLLMService = _TenantLLMService
+    tenant_llm_service_mod.TenantService = _TenantService
+    monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_service_mod)
+    services_pkg.tenant_llm_service = tenant_llm_service_mod
 
     user_service_mod = ModuleType("api.db.services.user_service")
 
@@ -583,6 +673,20 @@ def test_rm_chunk_delete_exception_partial_compensation_and_cleanup_unit(monkeyp
     res = _run(module.rm())
     assert res["message"] == "Document not found!", res
 
+    _set_request_json(monkeypatch, module, {"doc_id": "doc-1", "chunk_ids": []})
+    monkeypatch.setattr(
+        module.DocumentService,
+        "get_by_id",
+        lambda _doc_id: (_ for _ in ()).throw(AssertionError("get_by_id must not run for empty delete payload")),
+    )
+    monkeypatch.setattr(
+        module.settings.docStoreConn,
+        "delete",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("delete must not run for empty delete payload")),
+    )
+    res = _run(module.rm())
+    assert res["code"] == 0, res
+
     monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (True, _DummyDoc()))
 
     def _raise_delete(*_args, **_kwargs):
@@ -775,7 +879,7 @@ def test_retrieval_test_branch_matrix_unit(monkeypatch):
     assert "Knowledgebase not found!" in res["message"], res
 
     retriever = _Retriever(mode="ok")
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, SimpleNamespace(tenant_id="tenant-kb", embd_id="embd-1")), raising=False)
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, SimpleNamespace(tenant_id="tenant-kb", embd_id="embd-1", tenant_embd_id=2)), raising=False)
     monkeypatch.setattr(module.settings, "retriever", retriever)
     monkeypatch.setattr(module.settings, "kg_retriever", _KgRetriever(), raising=False)
     _set_request_json(

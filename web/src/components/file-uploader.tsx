@@ -2,7 +2,7 @@
 
 'use client';
 
-import { FileText, Upload, X } from 'lucide-react';
+import { FileText, FolderUp, Upload, X } from 'lucide-react';
 import * as React from 'react';
 import Dropzone, {
   type DropzoneProps,
@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useControllableState } from '@/hooks/use-controllable-state';
 import { cn, formatBytes } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
@@ -202,9 +203,11 @@ export function FileUploader(props: FileUploaderProps) {
     onChange: onValueChange,
   });
 
+  const folderInputRef = React.useRef<HTMLInputElement>(null);
+
   const reachesMaxFileCount = (files?.length ?? 0) >= maxFileCount;
 
-  const onDrop = React.useCallback(
+  const processFiles = React.useCallback(
     (acceptedFiles: File[], rejectedFiles: FileRejection[]) => {
       if (!multiple && maxFileCount === 1 && acceptedFiles.length > 1) {
         toast.error('Cannot upload more than 1 file at a time');
@@ -216,11 +219,16 @@ export function FileUploader(props: FileUploaderProps) {
         return;
       }
 
-      const newFiles = acceptedFiles.map((file) =>
-        Object.assign(file, {
-          preview: URL.createObjectURL(file),
-        }),
-      );
+      const newFiles = acceptedFiles.map((file) => {
+        const enhancedFile = file as File & { preview?: string };
+        Object.defineProperty(enhancedFile, 'preview', {
+          value: URL.createObjectURL(file),
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+        return enhancedFile;
+      });
 
       const updatedFiles = files ? [...files, ...newFiles] : newFiles;
 
@@ -250,8 +258,24 @@ export function FileUploader(props: FileUploaderProps) {
         });
       }
     },
-
     [files, maxFileCount, multiple, onUpload, setFiles],
+  );
+
+  const onDrop = React.useCallback(
+    (acceptedFiles: File[], rejectedFiles: FileRejection[]) => {
+      processFiles(acceptedFiles, rejectedFiles);
+    },
+    [processFiles],
+  );
+
+  const handleFolderSelect = React.useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!e.target.files) return;
+      const fileList = Array.from(e.target.files);
+      processFiles(fileList, []);
+      e.target.value = '';
+    },
+    [processFiles],
   );
 
   function onRemove(index: number) {
@@ -276,68 +300,120 @@ export function FileUploader(props: FileUploaderProps) {
 
   const isDisabled = disabled || (files?.length ?? 0) >= maxFileCount;
 
-  return (
-    <div className="relative flex flex-col gap-6 overflow-hidden">
-      {!(hideDropzoneOnMaxFileCount && reachesMaxFileCount) && (
-        <Dropzone
-          onDrop={onDrop}
-          accept={accept}
-          maxSize={maxSize}
-          maxFiles={maxFileCount}
-          multiple={maxFileCount > 1 || multiple}
-          disabled={isDisabled}
+  const renderDropzone = (isFolderMode: boolean = false) => (
+    <Dropzone
+      onDrop={onDrop}
+      accept={isFolderMode ? undefined : accept}
+      maxSize={maxSize}
+      maxFiles={maxFileCount}
+      multiple={maxFileCount > 1 || multiple}
+      disabled={isDisabled}
+      noClick={isFolderMode}
+      noDrag={isFolderMode}
+    >
+      {({ getRootProps, getInputProps, isDragActive }) => (
+        <div
+          {...getRootProps()}
+          className={cn(
+            'group relative grid h-72 w-full cursor-pointer place-items-center rounded-lg border border-dashed border-border-default px-5 py-2.5 text-center transition hover:bg-border-button bg-bg-card',
+            'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            isDragActive && 'border-border-button',
+            isDisabled && 'pointer-events-none opacity-60',
+            className,
+          )}
+          {...dropzoneProps}
         >
-          {({ getRootProps, getInputProps, isDragActive }) => (
+          {!isFolderMode && <input {...getInputProps()} />}
+          {isDragActive && !isFolderMode ? (
+            <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
+              <div className="rounded-full border border-dashed p-3">
+                <Upload
+                  className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
+                  aria-hidden="true"
+                />
+              </div>
+              <p className="font-medium text-text-secondary">
+                {t('fileManager.dropFilesHere', 'Drop the files here')}
+              </p>
+            </div>
+          ) : (
             <div
-              {...getRootProps()}
-              className={cn(
-                'group relative grid h-72 w-full cursor-pointer place-items-center rounded-lg border border-dashed border-border-default px-5 py-2.5 text-center transition hover:bg-border-button bg-bg-card',
-                'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                isDragActive && 'border-border-button',
-                isDisabled && 'pointer-events-none opacity-60',
-                className,
-              )}
-              {...dropzoneProps}
+              className="flex flex-col items-center justify-center gap-4 sm:px-5"
+              onClick={() => {
+                if (isFolderMode && !isDisabled) {
+                  folderInputRef.current?.click();
+                }
+              }}
             >
-              <input {...getInputProps()} />
-              {isDragActive ? (
-                <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
-                  <div className="rounded-full border border-dashed p-3">
-                    <Upload
-                      className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
-                      aria-hidden="true"
-                    />
-                  </div>
-                  <p className="font-medium text-text-secondary">
-                    Drop the files here
-                  </p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
-                  <div className="rounded-full border border-dashed p-3">
-                    <Upload
-                      className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
-                      aria-hidden="true"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-px">
-                    <p className="font-medium text-text-secondary ">
-                      {title || t('knowledgeDetails.uploadTitle')}
-                    </p>
-                    <p className="text-sm text-text-disabled">
-                      {description || t('knowledgeDetails.uploadDescription')}
-                      {/* You can upload
-                      {maxFileCount > 1
-                        ? ` ${maxFileCount === Infinity ? 'multiple' : maxFileCount}
-                        files (up to ${formatBytes(maxSize)} each)`
-                        : ` a file with ${formatBytes(maxSize)}`} */}
-                    </p>
-                  </div>
-                </div>
-              )}
+              <div className="rounded-full border border-dashed p-3">
+                {isFolderMode ? (
+                  <FolderUp
+                    className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Upload
+                    className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
+                    aria-hidden="true"
+                  />
+                )}
+              </div>
+              <div className="flex flex-col gap-px">
+                <p className="font-medium text-text-secondary ">
+                  {title ||
+                    (isFolderMode
+                      ? t('fileManager.uploadFolderTitle', 'Upload Folder')
+                      : t('knowledgeDetails.uploadTitle'))}
+                </p>
+                <p className="text-sm text-text-disabled">
+                  {description ||
+                    (isFolderMode
+                      ? t(
+                          'knowledgeDetails.uploadDescription',
+                          'Select a folder to upload all files inside',
+                        )
+                      : t('knowledgeDetails.uploadDescription'))}
+                </p>
+              </div>
             </div>
           )}
-        </Dropzone>
+        </div>
+      )}
+    </Dropzone>
+  );
+
+  return (
+    <div className="relative flex flex-col gap-4 overflow-hidden">
+      {!(hideDropzoneOnMaxFileCount && reachesMaxFileCount) && (
+        <Tabs defaultValue="file" className="w-full">
+          <TabsList className="w-full justify-start">
+            <TabsTrigger value="file" className="gap-2">
+              <FileText className="size-4" />
+              {t('fileManager.files', 'Files')}
+            </TabsTrigger>
+            <TabsTrigger value="folder" className="gap-2">
+              <FolderUp className="size-4" />
+              {t('fileManager.folder', 'Folder')}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="file" className="mt-1">
+            {renderDropzone(false)}
+          </TabsContent>
+          <TabsContent value="folder" className="mt-1">
+            {renderDropzone(true)}
+            <input
+              ref={folderInputRef}
+              type="file"
+              className="hidden"
+              multiple
+              onChange={handleFolderSelect}
+              {...{
+                webkitdirectory: '',
+                directory: '',
+              }}
+            />
+          </TabsContent>
+        </Tabs>
       )}
 
       {files?.length ? (
