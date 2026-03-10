@@ -1075,6 +1075,7 @@ class UserCanvasVersion(DataBaseModel):
 
     title = CharField(max_length=255, null=True, help_text="Canvas title")
     description = TextField(null=True, help_text="Canvas description")
+    release = BooleanField(null=False, help_text="is released", default=False, index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
@@ -1538,6 +1539,7 @@ def migrate_db():
     alter_db_add_column(migrator, "dialog", "tenant_rerank_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "memory", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "memory", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
+    alter_db_add_column(migrator, "user_canvas_version", "release", BooleanField(null=False, help_text="is released", default=False, index=True))
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)

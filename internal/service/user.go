@@ -18,12 +18,15 @@ package service
 
 import (
 	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"hash"
 	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/server"
@@ -32,7 +35,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/crypto/scrypt"
 
 	"ragflow/internal/dao"
@@ -123,8 +126,8 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 		return nil, common.CodeServerError, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	userID := s.GenerateToken()
-	accessToken := s.GenerateToken()
+	userID := utility.GenerateToken()
+	accessToken := utility.GenerateToken()
 	status := "1"
 	loginChannel := "password"
 	isSuperuser := false
@@ -152,22 +155,45 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	user.LastLoginTime = &now_date
 
 	tenantName := req.Nickname + "'s Kingdom"
+
+	llmID := cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
+	if llmID == "" {
+		llmID = ""
+	}
+	embdID := cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name
+	if embdID == "" {
+		embdID = ""
+	}
+	asrID := cfg.UserDefaultLLM.DefaultModels.ASRModel.Name
+	if asrID == "" {
+		asrID = ""
+	}
+	img2txtID := cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name
+	if img2txtID == "" {
+		img2txtID = ""
+	}
+	rerankID := cfg.UserDefaultLLM.DefaultModels.RerankModel.Name
+	if rerankID == "" {
+		rerankID = ""
+	}
+
 	tenant := &model.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
-		LLMID:     cfg.Server.Mode,
-		EmbdID:    cfg.Server.Mode,
-		ASRID:     cfg.Server.Mode,
-		Img2TxtID: cfg.Server.Mode,
-		RerankID:  cfg.Server.Mode,
+		LLMID:     llmID,
+		EmbdID:    embdID,
+		ASRID:     asrID,
+		Img2TxtID: img2txtID,
+		RerankID:  rerankID,
 		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
+		Status:    &status,
 	}
 	tenant.CreateTime = &now
 	tenant.UpdateTime = &now
 	tenant.CreateDate = &now_date
 	tenant.UpdateDate = &now_date
 
-	userTenantID := s.GenerateToken()
+	userTenantID := utility.GenerateToken()
 	userTenant := &model.UserTenant{
 		ID:        userTenantID,
 		UserID:    userID,
@@ -181,7 +207,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	userTenant.CreateDate = &now_date
 	userTenant.UpdateDate = &now_date
 
-	fileID := s.GenerateToken()
+	fileID := utility.GenerateToken()
 	rootFile := &model.File{
 		ID:        fileID,
 		ParentID:  fileID,
@@ -267,7 +293,7 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, common.ErrorCode, e
 	}
 
 	// Generate new access token
-	token := s.GenerateToken()
+	token := utility.GenerateToken()
 	if err := s.UpdateUserAccessToken(user, token); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update access token: %w", err)
 	}
@@ -287,8 +313,8 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, common.ErrorCode, e
 // - CodeAuthenticationError (109): Email not registered or password mismatch
 // - CodeServerError (500): Password decryption failure
 // - CodeForbidden (403): Account disabled
-func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, common.ErrorCode, error) {
-	if req.Email == "admin@ragflow.io" {
+func (s *UserService) LoginByEmail(req *EmailLoginRequest, adminLogin bool) (*model.User, common.ErrorCode, error) {
+	if !adminLogin && req.Email == "admin@ragflow.io" {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("default admin account cannot be used to login normal services")
 	}
 
@@ -310,7 +336,8 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, common.
 		return nil, common.CodeForbidden, fmt.Errorf("This account has been disabled, please contact the administrator!")
 	}
 
-	token := s.GenerateToken()
+	// Generate new access token
+	token := utility.GenerateToken()
 	user.AccessToken = &token
 
 	now := time.Now().Unix()
@@ -385,7 +412,77 @@ func (s *UserService) HashPassword(password string) (string, error) {
 }
 
 // VerifyPassword verify password
+// Supports both werkzeug pbkdf2 format (pbkdf2:sha256:iterations$salt$hash) and scrypt format
 func (s *UserService) VerifyPassword(hashedPassword, password string) bool {
+	// Check if it's pbkdf2 format (werkzeug)
+	if strings.HasPrefix(hashedPassword, "pbkdf2:") {
+		return s.verifyPBKDF2Password(hashedPassword, password)
+	}
+
+	// Check if it's scrypt format
+	if strings.HasPrefix(hashedPassword, "scrypt:") {
+		return s.verifyScryptPassword(hashedPassword, password)
+	}
+
+	return false
+}
+
+// verifyPBKDF2Password verifies password using PBKDF2 (werkzeug format)
+// Format: pbkdf2:sha256:iterations$salt$hash
+func (s *UserService) verifyPBKDF2Password(hashedPassword, password string) bool {
+	parts := strings.Split(hashedPassword, "$")
+	if len(parts) != 3 {
+		return false
+	}
+
+	// Parse method (e.g., "pbkdf2:sha256:150000")
+	methodParts := strings.Split(parts[0], ":")
+	if len(methodParts) != 3 {
+		return false
+	}
+
+	if methodParts[0] != "pbkdf2" {
+		return false
+	}
+
+	var hashFunc func() hash.Hash
+	switch methodParts[1] {
+	case "sha256":
+		hashFunc = sha256.New
+	case "sha512":
+		hashFunc = sha512.New
+	default:
+		return false
+	}
+
+	iterations, err := strconv.Atoi(methodParts[2])
+	if err != nil {
+		return false
+	}
+
+	salt := parts[1]
+	expectedHash := parts[2]
+
+	// Decode salt from base64
+	saltBytes, err := base64.StdEncoding.DecodeString(salt)
+	if err != nil {
+		// Try hex encoding
+		saltBytes, err = hex.DecodeString(salt)
+		if err != nil {
+			return false
+		}
+	}
+
+	// Generate hash using PBKDF2
+	key := pbkdf2.Key([]byte(password), saltBytes, iterations, 32, hashFunc)
+	computedHash := base64.StdEncoding.EncodeToString(key)
+
+	return computedHash == expectedHash
+}
+
+// verifyScryptPassword verifies password using scrypt format
+// Format: scrypt:n:r:p$salt$hash
+func (s *UserService) verifyScryptPassword(hashedPassword, password string) bool {
 	// Parse hash format: scrypt:n:r:p$salt$hash
 	parts := strings.Split(hashedPassword, "$")
 	if len(parts) != 3 {
@@ -515,11 +612,6 @@ func (s *UserService) decryptPassword(encryptedPassword string) (string, error) 
 	return string(plaintext), nil
 }
 
-// GenerateToken generates a new access token
-func (s *UserService) GenerateToken() string {
-	return strings.ReplaceAll(uuid.New().String(), "-", "")
-}
-
 // GetUserByToken gets user by authorization header
 // The token parameter is the authorization header value, which needs to be decrypted
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
@@ -558,7 +650,7 @@ func (s *UserService) UpdateUserAccessToken(user *model.User, token string) erro
 func (s *UserService) Logout(user *model.User) (common.ErrorCode, error) {
 	// Invalidate token by setting it to an invalid value
 	// Similar to Python implementation: "INVALID_" + secrets.token_hex(16)
-	invalidToken := "INVALID_" + s.GenerateToken()
+	invalidToken := "INVALID_" + utility.GenerateToken()
 	err := s.UpdateUserAccessToken(user, invalidToken)
 	if err != nil {
 		return common.CodeServerError, err
@@ -757,4 +849,53 @@ func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, err
 	}
 
 	return channels, common.CodeSuccess, nil
+}
+
+// SetTenantInfoRequest represents the request for setting tenant info
+type SetTenantInfoRequest struct {
+	TenantID  string `json:"tenant_id"`
+	ASRID     string `json:"asr_id"`
+	EmbdID    string `json:"embd_id"`
+	Img2TxtID string `json:"img2txt_id"`
+	LLMID     string `json:"llm_id"`
+	RerankID  string `json:"rerank_id"`
+	TTSID     string `json:"tts_id"`
+}
+
+// SetTenantInfo updates tenant model configuration
+func (s *UserService) SetTenantInfo(userID string, req *SetTenantInfoRequest) error {
+	tenantDAO := dao.NewTenantDAO()
+
+	_, err := tenantDAO.GetByID(req.TenantID)
+	if err != nil {
+		return fmt.Errorf("tenant not found: %w", err)
+	}
+
+	updates := make(map[string]interface{})
+	if req.LLMID != "" {
+		updates["llm_id"] = req.LLMID
+	}
+	if req.EmbdID != "" {
+		updates["embd_id"] = req.EmbdID
+	}
+	if req.ASRID != "" {
+		updates["asr_id"] = req.ASRID
+	}
+	if req.Img2TxtID != "" {
+		updates["img2txt_id"] = req.Img2TxtID
+	}
+	if req.RerankID != "" {
+		updates["rerank_id"] = req.RerankID
+	}
+	if req.TTSID != "" {
+		updates["tts_id"] = req.TTSID
+	}
+
+	if len(updates) > 0 {
+		if err := tenantDAO.Update(req.TenantID, updates); err != nil {
+			return fmt.Errorf("failed to update tenant: %w", err)
+		}
+	}
+
+	return nil
 }

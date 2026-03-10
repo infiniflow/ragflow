@@ -164,7 +164,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		return
 	}
 
-	user, code, err := h.userService.LoginByEmail(&req)
+	user, code, err := h.userService.LoginByEmail(&req, false)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
@@ -520,5 +520,63 @@ func (h *UserHandler) GetLoginChannels(c *gin.Context) {
 		"code":    common.CodeSuccess,
 		"message": "success",
 		"data":    channels,
+	})
+}
+
+// SetTenantInfo update tenant information
+// @Summary Set Tenant Info
+// @Description Update tenant model configuration
+// @Tags users
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body service.SetTenantInfoRequest true "tenant info"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/user/set_tenant_info [post]
+func (h *UserHandler) SetTenantInfo(c *gin.Context) {
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeUnauthorized,
+			"message": "Unauthorized!",
+			"data":    false,
+		})
+		return
+	}
+
+	user, code, err := h.userService.GetUserByToken(token)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+
+	var req service.SetTenantInfoRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+
+	err = h.userService.SetTenantInfo(user.ID, &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    true,
 	})
 }
