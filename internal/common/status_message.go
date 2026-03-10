@@ -21,13 +21,13 @@ const (
 )
 
 type BaseMessage struct {
-	MessageID   int64                  `json:"report_id"`
-	MessageType MessageType            `json:"report_type"`
-	ServerName  string                 `json:"server_id"`
-	ServerType  ServerType             `json:"server_type"`
-	Host        string                 `json:"host"`
-	Port        int                    `json:"port"`
-	Version     string                 `json:"version"`
-	Timestamp   time.Time              `json:"timestamp"`
-	Ext         map[string]interface{} `json:"ext,omitempty"`
+	MessageID   int64       `json:"report_id"`
+	MessageType MessageType `json:"report_type"`
+	ServerName  string      `json:"server_id"`
+	ServerType  ServerType  `json:"server_type"`
+	Host        string      `json:"host"`
+	Port        int         `json:"port"`
+	Version     string      `json:"version"`
+	Timestamp   time.Time   `json:"timestamp"`
+	Ext         interface{} `json:"ext,omitempty"`
 }
