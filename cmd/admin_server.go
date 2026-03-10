@@ -111,6 +111,11 @@ func main() {
 	adminService := admin.NewService()
 	adminHandler := admin.NewHandler(adminService)
 
+	// Initialize default admin user
+	if err := adminService.InitDefaultAdmin(); err != nil {
+		logger.Error("Failed to initialize default admin user", err)
+	}
+
 	// Initialize router
 	r := admin.NewRouter(adminHandler)
 

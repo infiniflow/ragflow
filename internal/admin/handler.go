@@ -117,25 +117,6 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	// Get admin config for default superuser email
-	adminConfig := server.GetAdminConfig()
-	defaultSuperuserEmail := "admin@ragflow.io"
-	if adminConfig != nil && adminConfig.SuperuserEmail != "" {
-		defaultSuperuserEmail = adminConfig.SuperuserEmail
-	}
-
-	// Check if this is default admin account login and user doesn't exist
-	// If so, auto-create the default admin account
-	if req.Email == defaultSuperuserEmail {
-		if err := h.service.InitDefaultAdmin(); err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeServerError,
-				"message": fmt.Sprintf("Failed to init default admin: %s", err.Error()),
-			})
-			return
-		}
-	}
-
 	// Use userService.LoginByEmail with adminLogin=true
 	// This allows default admin account to login admin system
 	user, code, err := h.userService.LoginByEmail(&req, true)
@@ -160,7 +141,11 @@ func (h *Handler) Login(c *gin.Context) {
 	secretKey := variables.SecretKey
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
-		authToken = *user.AccessToken
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": fmt.Sprintf("Failed to generate auth token: %s", err.Error()),
+		})
+		return
 	}
 
 	// Set Authorization header with access_token
@@ -174,12 +159,7 @@ func (h *Handler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"message": "Welcome back!",
-		"data": gin.H{
-			"id":           user.ID,
-			"email":        user.Email,
-			"nickname":     user.Nickname,
-			"access_token": *user.AccessToken,
-		},
+		"data":    user,
 	})
 }
 

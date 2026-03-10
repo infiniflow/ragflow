@@ -4,9 +4,6 @@ ragflow:
 admin:
   host: 0.0.0.0
   http_port: 9381
-  superuser_nickname: 'admin'
-  superuser_email: 'admin@ragflow.io'
-  superuser_password: 'admin'
 mysql:
   name: 'rag_flow'
   user: 'root'

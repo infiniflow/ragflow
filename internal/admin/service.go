@@ -769,23 +769,10 @@ func (s *Service) HandleHeartbeat(msg *common.BaseMessage) error {
 // InitDefaultAdmin initialize default admin user
 // This matches Python's init_default_admin behavior
 func (s *Service) InitDefaultAdmin() error {
-	// Get admin config for default superuser settings
-	adminConfig := server.GetAdminConfig()
+	// Default superuser settings (matching Python's DEFAULT_SUPERUSER_* defaults)
 	defaultNickname := "admin"
 	defaultEmail := "admin@ragflow.io"
 	defaultPassword := "admin"
-
-	if adminConfig != nil {
-		if adminConfig.SuperuserNickname != "" {
-			defaultNickname = adminConfig.SuperuserNickname
-		}
-		if adminConfig.SuperuserEmail != "" {
-			defaultEmail = adminConfig.SuperuserEmail
-		}
-		if adminConfig.SuperuserPassword != "" {
-			defaultPassword = adminConfig.SuperuserPassword
-		}
-	}
 
 	// Query superusers
 	var users []*model.User
