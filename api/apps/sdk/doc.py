@@ -1682,7 +1682,7 @@ async def retrieval_test(tenant_id):
     if not doc_ids:
         metadata_condition = req.get("metadata_condition")
         if metadata_condition:
-            metas = DocMetadataService.get_meta_by_kbs(kb_ids)
+            metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
             doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
             # If metadata_condition has conditions but no docs match, return empty result
             if not doc_ids and metadata_condition.get("conditions"):
