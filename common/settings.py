@@ -289,7 +289,7 @@ def init_settings():
         OS = get_base_config("os", {})
         docStoreConn = rag.utils.opensearch_conn.OSConnection()
     elif lower_case_doc_engine == "qdrant":
-        import rag.utils.qdrant_conn
+        from rag.utils import qdrant_conn as qdrant_conn_module
 
         QDRANT = get_base_config("qdrant", {
             "host": "qdrant",
@@ -302,7 +302,7 @@ def init_settings():
             "sparse_vocab_size": 131072,
             "text_index_tokenizer": "multilingual",
         })
-        docStoreConn = rag.utils.qdrant_conn.QdrantConnection()
+        docStoreConn = qdrant_conn_module.QdrantConnection()
     elif lower_case_doc_engine == "oceanbase":
         OB = get_base_config("oceanbase", {})
         docStoreConn = rag.utils.ob_conn.OBConnection()
