@@ -19,6 +19,7 @@ package admin
 import (
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -35,6 +36,13 @@ import (
 	"time"
 )
 
+// Service errors
+var (
+	ErrInvalidToken = errors.New("invalid token")
+	ErrNotAdmin     = errors.New("user is not admin")
+	ErrUserInactive = errors.New("user is inactive")
+)
+
 // Service admin service layer
 type Service struct {
 	userDAO *dao.UserDAO
@@ -47,47 +55,6 @@ func NewService() *Service {
 	}
 }
 
-// LoginRequest login request
-type LoginRequest struct {
-	Email    string
-	Password string
-}
-
-// LoginResponse login response
-type LoginResponse struct {
-	Token    string
-	UserID   string
-	Email    string
-	Nickname string
-}
-
-// Login admin login
-func (s *Service) Login(req *LoginRequest) (*LoginResponse, error) {
-	// Get user by email
-	user, err := s.userDAO.GetByEmail(req.Email)
-	if err != nil {
-		return nil, ErrInvalidCredentials
-	}
-
-	// Check if user is active
-	if user.IsActive != "1" {
-		return nil, errors.New("user is not active")
-	}
-
-	// Generate access token
-	token := utility.GenerateToken()
-	if err := s.userDAO.UpdateAccessToken(user, token); err != nil {
-		return nil, err
-	}
-
-	return &LoginResponse{
-		Token:    token,
-		UserID:   user.ID,
-		Email:    user.Email,
-		Nickname: user.Nickname,
-	}, nil
-}
-
 // Logout user logout
 func (s *Service) Logout(user interface{}) error {
 	// Invalidate token by setting it to INVALID_ prefix
@@ -96,6 +63,24 @@ func (s *Service) Logout(user interface{}) error {
 		return s.userDAO.UpdateAccessToken(u, invalidToken)
 	}
 	return nil
+}
+
+// GetUserByToken get user by access token
+func (s *Service) GetUserByToken(token string) (*model.User, error) {
+	user, err := s.userDAO.GetByAccessToken(token)
+	if err != nil {
+		return nil, ErrInvalidToken
+	}
+
+	if user.IsSuperuser == nil || !*user.IsSuperuser {
+		return nil, ErrNotAdmin
+	}
+
+	if user.IsActive != "1" {
+		return nil, fmt.Errorf("user inactive")
+	}
+
+	return user, nil
 }
 
 // generateRandomHex generate random hex string
@@ -779,4 +764,134 @@ func (s *Service) HandleHeartbeat(msg *common.BaseMessage) error {
 	}
 	GlobalServerStatusStore.UpdateStatus(msg.ServerName, status)
 	return nil
+}
+
+// InitDefaultAdmin initialize default admin user
+// This matches Python's init_default_admin behavior
+func (s *Service) InitDefaultAdmin() error {
+	// Default superuser settings (matching Python's DEFAULT_SUPERUSER_* defaults)
+	defaultNickname := "admin"
+	defaultEmail := "admin@ragflow.io"
+	defaultPassword := "admin"
+
+	// Query superusers
+	var users []*model.User
+	err := dao.DB.Where("is_superuser = ? AND status = ?", true, "1").Find(&users).Error
+	if err != nil {
+		return fmt.Errorf("failed to query superusers: %w", err)
+	}
+
+	if len(users) == 0 {
+		now := time.Now().Unix()
+		nowDate := time.Now()
+		userID := utility.GenerateToken()
+		accessToken := utility.GenerateToken()
+		status := "1"
+		loginChannel := "password"
+		isSuperuser := true
+
+		// Python: password = encode_to_base64(password) = base64.b64encode(password)
+		// Then: generate_password_hash(base64_password) creates werkzeug hash
+		password := base64.StdEncoding.EncodeToString([]byte(defaultPassword))
+		hashedPassword, err := GenerateWerkzeugPasswordHash(password, 150000)
+		if err != nil {
+			return fmt.Errorf("failed to hash password: %w", err)
+		}
+
+		user := &model.User{
+			ID:              userID,
+			Email:           defaultEmail,
+			Nickname:        defaultNickname,
+			Password:        &hashedPassword,
+			AccessToken:     &accessToken,
+			Status:          &status,
+			IsActive:        "1",
+			IsAuthenticated: "1",
+			IsAnonymous:     "0",
+			LoginChannel:    &loginChannel,
+			IsSuperuser:     &isSuperuser,
+			BaseModel: model.BaseModel{
+				CreateTime: &now,
+				CreateDate: &nowDate,
+				UpdateTime: &now,
+				UpdateDate: &nowDate,
+			},
+		}
+
+		if err := dao.DB.Create(user).Error; err != nil {
+			return fmt.Errorf("can't init admin: %w", err)
+		}
+
+		if err := s.addTenantForAdmin(userID, defaultNickname); err != nil {
+			return fmt.Errorf("failed to add tenant for admin: %w", err)
+		}
+
+		return nil
+	}
+
+	for _, user := range users {
+		if user.IsActive != "1" {
+			return fmt.Errorf("no active admin. Please update 'is_active' in db manually")
+		}
+	}
+
+	for _, user := range users {
+		if user.Email == defaultEmail {
+			// Check if tenant exists
+			var count int64
+			dao.DB.Model(&model.UserTenant{}).Where("user_id = ? AND status = ?", user.ID, "1").Count(&count)
+			if count == 0 {
+				nickname := defaultNickname
+				if user.Nickname != "" {
+					nickname = user.Nickname
+				}
+				if err := s.addTenantForAdmin(user.ID, nickname); err != nil {
+					return err
+				}
+			}
+			break
+		}
+	}
+
+	return nil
+}
+
+// addTenantForAdmin add tenant for admin user
+func (s *Service) addTenantForAdmin(userID, nickname string) error {
+	now := time.Now().Unix()
+	nowDate := time.Now()
+	status := "1"
+	role := "owner"
+	tenantName := nickname + "'s Kingdom"
+
+	tenant := &model.Tenant{
+		ID:   userID,
+		Name: &tenantName,
+		BaseModel: model.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
+	}
+
+	if err := dao.DB.Create(tenant).Error; err != nil {
+		return err
+	}
+
+	userTenant := &model.UserTenant{
+		TenantID:  userID,
+		UserID:    userID,
+		InvitedBy: userID,
+		Role:      role,
+		Status:    &status,
+		BaseModel: model.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
+	}
+
+	return dao.DB.Create(userTenant).Error
 }
