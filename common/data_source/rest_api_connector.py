@@ -36,6 +36,8 @@ try:
 except Exception:  # pragma: no cover
     _jsonpath = None
 
+_FIELD_SEGMENT_RE = re.compile(r'^(?P<key>[^\[\]]+)(\[(?P<index>\d+|\*)\])?$')
+
 
 class AuthType:
     NONE = "none"
@@ -128,7 +130,7 @@ class RestAPIConnectorConfig(BaseModel):
             return [p.strip() for p in v.split(",") if p.strip()]
         if isinstance(v, list):
             return [str(p).strip() for p in v if str(p).strip()]
-        return v
+        return []
 
     def normalized_method(self) -> str:
         m = (self.method or "GET").upper()
@@ -368,7 +370,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
         time_window: tuple[datetime, datetime] | None,
     ) -> Generator[List[Document], None, None]:
         batch: List[Document] = []
-        for item in self._iter_items(time_window=time_window):
+        for item in self._iter_items():
             try:
                 doc = self._item_to_document(item)
             except Exception as exc:
@@ -388,10 +390,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
     # -- Pagination & page fetching -----------------------------------------
 
-    def _iter_items(
-        self,
-        time_window: tuple[datetime, datetime] | None,
-    ) -> Iterable[Mapping[str, Any]]:
+    def _iter_items(self) -> Iterable[Mapping[str, Any]]:
         """Iterate over raw items across all pages."""
         page_count = 0
 
@@ -625,7 +624,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
         doc_updated_at = self._extract_timestamp(item) or datetime.now(timezone.utc)
 
         sem = str(self._extract_field(item, self.content_fields[0]) if self.content_fields else raw_id)
-        sem = sem.replace("\n", " ").replace("\r", " ").strip()[:100] or str(doc_id)
+        sem = self._strip_html(sem).replace("\n", " ").replace("\r", " ").strip()[:100] or str(doc_id)
 
         return Document(
             id=doc_id,
@@ -660,7 +659,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
             if not segment:
                 return []
 
-            match = re.match(r'^(?P<key>[^\[\]]+)(\[(?P<index>\d+|\*)\])?$', segment)
+            match = _FIELD_SEGMENT_RE.match(segment)
             key = segment
             index: Optional[str] = None
             if match:
@@ -716,9 +715,9 @@ class RestAPIConnector(LoadConnector, PollConnector):
             if hint == "date":
                 if isinstance(v, datetime):
                     return v.isoformat()
-                if isinstance(v, str):
-                    dt = self._extract_timestamp({"_": v})
-                    return dt.isoformat() if dt else str(v)
+                dt = self._parse_datetime(v)
+                if dt is not None:
+                    return dt.isoformat()
                 return str(v) if v is not None else None
             return v
 
@@ -740,6 +739,11 @@ class RestAPIConnector(LoadConnector, PollConnector):
         value = self._extract_field(item, self.poll_timestamp_field)
         if isinstance(value, list) and value:
             value = value[0]
+        return self._parse_datetime(value)
+
+    @staticmethod
+    def _parse_datetime(value: Any) -> Optional[datetime]:
+        """Parse a raw value into a UTC datetime, or return None."""
         if value is None:
             return None
 
@@ -769,14 +773,14 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
     # -- Content template rendering -----------------------------------------
 
+    class _SafeDict(dict):
+        """Dict subclass that returns empty string for missing keys in format_map."""
+        def __missing__(self, key: str) -> str:
+            return ""
+
     def _render_content_template(self, item: Mapping[str, Any]) -> str:
         """Render content using a user-provided template with ``{field}`` placeholders."""
         template = self.content_template or ""
-
-        class _SafeDict(dict):
-            def __missing__(self, key: str) -> str:
-                return ""
-
         values: Dict[str, str] = {}
         for field_path in set(self.content_fields + self.metadata_fields):
             val = self._get_typed_field_value(field_path, item)
@@ -786,7 +790,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
             values[name] = self._coerce_to_text(val)
 
         try:
-            rendered = template.format_map(_SafeDict(values))
+            rendered = template.format_map(self._SafeDict(values))
         except Exception as exc:
             logging.warning("Failed to render content template: %s", exc)
             parts = [self._coerce_to_text(self._get_typed_field_value(f, item)) for f in self.content_fields]
