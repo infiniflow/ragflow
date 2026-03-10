@@ -217,11 +217,6 @@ def _load_doc_module(monkeypatch):
                     import numpy as np
                     return [np.array([0.2, 0.8]), np.array([0.3, 0.7])], 1
             return _EmbedModel()
-
-    class _StubLLMFactoriesService:
-        @staticmethod
-        def get_all(*_args, **_kwargs):
-            return []
     
     tenant_llm_service_mod.TenantService = _StubTenantService
     tenant_llm_service_mod.TenantLLMService = _StubTenantLLMService
