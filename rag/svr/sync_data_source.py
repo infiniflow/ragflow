@@ -58,6 +58,7 @@ from common.data_source import (
     DingTalkAITableConnector,
     RestAPIConnector,
 )
+from common.data_source.rest_api_connector import _DEFAULT_MAX_PAGES
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.models import ConnectorFailure, SeafileSyncScope
@@ -1363,7 +1364,7 @@ class REST_API(SyncBase):
             pagination_config=self.conf.get("pagination_config") or {},
             poll_timestamp_field=self.conf.get("poll_timestamp_field"),
             batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
-            max_pages=self.conf.get("max_pages", 1000),
+            max_pages=self.conf.get("max_pages", _DEFAULT_MAX_PAGES),
             request_body=self.conf.get("request_body"),
             field_type_hints=self.conf.get("field_type_hints") or {},
             field_default_values=self.conf.get("field_default_values") or {},
