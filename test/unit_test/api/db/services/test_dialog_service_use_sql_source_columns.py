@@ -18,7 +18,6 @@ import sys
 import types
 import warnings
 from types import SimpleNamespace
-from types import SimpleNamespace
 
 import pytest
 
@@ -101,19 +100,6 @@ class _StubRetriever:
             raise AssertionError("sql_retrieval called more times than expected")
         self.sql_calls.append(sql)
         return self._results[idx]
-
-
-class _StubAsyncRetriever:
-    def __init__(self, result):
-        self.result = result
-        self.calls = []
-
-    async def retrieval(self, *args, **kwargs):
-        self.calls.append({"args": args, "kwargs": kwargs})
-        return self.result
-
-    def retrieval_by_children(self, chunks, tenant_ids):
-        return chunks
 
 
 class _StubAsyncRetriever:
@@ -328,107 +314,3 @@ def test_async_chat_uses_all_docs_when_no_doc_ids_selected(monkeypatch):
     assert retriever.calls[0]["kwargs"]["doc_ids"] is None
     assert "Chunk text from dataset." in chat_model.calls[0]["system_prompt"]
     assert result[0]["answer"] == "stub answer"
-<<<<<<< ours
-=======
-
-
-@pytest.mark.p2
-def test_use_sql_returns_none_for_qdrant(monkeypatch, force_es_engine):
-    chat_model = _StubChatModel([])
-    monkeypatch.setattr(dialog_service.settings, "DOC_ENGINE", "qdrant", raising=False)
-
-    result = asyncio.run(
-        dialog_service.use_sql(
-            question="show me column of product",
-            field_map={"product_tks": "product"},
-            tenant_id="tenant-id",
-            chat_mdl=chat_model,
-            quota=True,
-            kb_ids=None,
-        )
-    )
-
-    assert result is None
-    assert chat_model.calls == []
-
-
-@pytest.mark.p2
-def test_async_chat_uses_all_docs_when_no_doc_ids_selected(monkeypatch):
-    retriever = _StubAsyncRetriever(
-        {
-            "total": 1,
-            "chunks": [
-                {
-                    "chunk_id": "chunk-1",
-                    "content_ltks": "chunk text",
-                    "content_with_weight": "Chunk text from dataset.",
-                    "doc_id": "doc-1",
-                    "docnm_kwd": "doc.txt",
-                    "kb_id": "kb-1",
-                    "important_kwd": [],
-                    "positions": [],
-                    "vector": [0.1, 0.2],
-                }
-            ],
-            "doc_aggs": [],
-        }
-    )
-    chat_model = _StubChatModel(["stub answer"])
-    dialog = SimpleNamespace(
-        kb_ids=["kb-1"],
-        llm_id="chat-model",
-        tenant_id="tenant-id",
-        llm_setting={},
-        similarity_threshold=0.1,
-        vector_similarity_weight=0.2,
-        top_n=8,
-        top_k=32,
-        meta_data_filter=None,
-        prompt_config={
-            "quote": False,
-            "keyword": False,
-            "tts": False,
-            "empty_response": "",
-            "system": "Use only this knowledge: {knowledge}",
-            "parameters": [{"key": "knowledge", "optional": False}],
-            "reasoning": False,
-            "toc_enhance": False,
-            "use_kg": False,
-        },
-    )
-
-    monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
-    monkeypatch.setattr(dialog_service.TenantLLMService, "llm_id2llm_type", lambda _llm_id: "chat")
-    monkeypatch.setattr(
-        dialog_service.TenantLLMService,
-        "get_model_config",
-        lambda *_args, **_kwargs: {"llm_factory": "unit", "max_tokens": 4096},
-    )
-    monkeypatch.setattr(dialog_service.TenantLangfuseService, "filter_by_tenant", lambda **_kwargs: None)
-    monkeypatch.setattr(
-        dialog_service,
-        "get_models",
-        lambda _dialog: ([SimpleNamespace(tenant_id="tenant-id")], object(), None, chat_model, None),
-    )
-    monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {})
-    monkeypatch.setattr(dialog_service, "label_question", lambda _question, _kbs: None)
-    monkeypatch.setattr(
-        dialog_service,
-        "kb_prompt",
-        lambda kbinfos, _max_tokens: ["Chunk text from dataset."] if kbinfos["chunks"] else [],
-    )
-    monkeypatch.setattr(dialog_service, "message_fit_in", lambda msg, _max_tokens: (0, msg))
-
-    async def _collect():
-        items = []
-        async for item in dialog_service.async_chat(dialog, [{"role": "user", "content": "What does the dataset say?"}], stream=False):
-            items.append(item)
-        return items
-
-    result = asyncio.run(_collect())
-
-    assert len(retriever.calls) == 1
-    assert retriever.calls[0]["kwargs"]["doc_ids"] is None
-    assert "Chunk text from dataset." in chat_model.calls[0]["system_prompt"]
-    assert result[0]["answer"] == "stub answer"
->>>>>>> theirs
