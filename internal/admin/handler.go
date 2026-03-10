@@ -18,6 +18,7 @@ package admin
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/server"
@@ -31,9 +32,7 @@ import (
 
 // Common errors
 var (
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrUserNotFound       = errors.New("user not found")
-	ErrInvalidToken       = errors.New("invalid token")
+	ErrUserNotFound = errors.New("user not found")
 )
 
 // Handler admin handler
@@ -43,8 +42,11 @@ type Handler struct {
 }
 
 // NewHandler create admin handler
-func NewHandler(service *Service, userService *service.UserService) *Handler {
-	return &Handler{service: service, userService: userService}
+func NewHandler(svc *Service) *Handler {
+	return &Handler{
+		service:     svc,
+		userService: service.NewUserService(),
+	}
 }
 
 // SuccessResponse success response
@@ -96,28 +98,60 @@ func (h *Handler) Ping(c *gin.Context) {
 	successNoData(c, "PONG")
 }
 
-// LoginHTTPRequest login request body
-type LoginHTTPRequest struct {
-	Email    string `json:"email" binding:"required"`
-	Password string `json:"password" binding:"required"`
-}
-
 // Login handle admin login
+// @Summary Admin Login
+// @Description Admin login verification using email, only superuser can login
+// @Tags admin
+// @Accept json
+// @Produce json
+// @Param request body service.EmailLoginRequest true "login info with email"
+// @Success 200 {object} map[string]interface{}
+// @Router /admin/login [post]
 func (h *Handler) Login(c *gin.Context) {
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
+			"code":    common.CodeBadRequest,
 			"message": err.Error(),
 		})
 		return
 	}
 
+	// Get admin config for default superuser email
+	adminConfig := server.GetAdminConfig()
+	defaultSuperuserEmail := "admin@ragflow.io"
+	if adminConfig != nil && adminConfig.SuperuserEmail != "" {
+		defaultSuperuserEmail = adminConfig.SuperuserEmail
+	}
+
+	// Check if this is default admin account login and user doesn't exist
+	// If so, auto-create the default admin account
+	if req.Email == defaultSuperuserEmail {
+		if err := h.service.InitDefaultAdmin(); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeServerError,
+				"message": fmt.Sprintf("Failed to init default admin: %s", err.Error()),
+			})
+			return
+		}
+	}
+
+	// Use userService.LoginByEmail with adminLogin=true
+	// This allows default admin account to login admin system
 	user, code, err := h.userService.LoginByEmail(&req, true)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
+		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
 			"message": err.Error(),
+		})
+		return
+	}
+
+	// Check if user is superuser (admin)
+	if user.IsSuperuser == nil || !*user.IsSuperuser {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeForbidden,
+			"message": "Only superuser can login admin system",
 		})
 		return
 	}
@@ -125,11 +159,12 @@ func (h *Handler) Login(c *gin.Context) {
 	variables := server.GetVariables()
 	secretKey := variables.SecretKey
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	if err != nil {
+		authToken = *user.AccessToken
+	}
 
 	// Set Authorization header with access_token
-	if user.AccessToken != nil {
-		c.Header("Authorization", authToken)
-	}
+	c.Header("Authorization", authToken)
 	// Set CORS headers
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Methods", "*")
@@ -139,7 +174,12 @@ func (h *Handler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"message": "Welcome back!",
-		"data":    user,
+		"data": gin.H{
+			"id":           user.ID,
+			"email":        user.Email,
+			"nickname":     user.Nickname,
+			"access_token": *user.AccessToken,
+		},
 	})
 }
 
@@ -913,6 +953,7 @@ func (h *Handler) TestSandboxConnection(c *gin.Context) {
 }
 
 // AuthMiddleware JWT auth middleware
+// Validates that the user is authenticated and is a superuser (admin)
 func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader("Authorization")
@@ -929,6 +970,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 				"code":    code,
 				"message": "Invalid access token",
 			})
+			c.Abort()
 			return
 		}
 

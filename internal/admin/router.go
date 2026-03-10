@@ -18,14 +18,11 @@ package admin
 
 import (
 	"github.com/gin-gonic/gin"
-
-	"ragflow/internal/handler"
 )
 
 // Router admin router
 type Router struct {
-	handler     *Handler
-	userHandler *handler.UserHandler
+	handler *Handler
 }
 
 // NewRouter create admin router

@@ -46,8 +46,11 @@ type Config struct {
 
 // AdminConfig admin server configuration
 type AdminConfig struct {
-	Host string `mapstructure:"host"`
-	Port int    `mapstructure:"http_port"`
+	Host               string `mapstructure:"host"`
+	Port               int    `mapstructure:"http_port"`
+	SuperuserNickname  string `mapstructure:"superuser_nickname"`
+	SuperuserEmail     string `mapstructure:"superuser_email"`
+	SuperuserPassword  string `mapstructure:"superuser_password"`
 }
 
 // UserDefaultLLMConfig user default LLM configuration
