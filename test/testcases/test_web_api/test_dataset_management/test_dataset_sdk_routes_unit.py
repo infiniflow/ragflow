@@ -409,7 +409,7 @@ def _load_dataset_module(monkeypatch):
     rag_nlp_pkg.search = search_mod
 
     module_name = "test_dataset_sdk_routes_unit_module"
-    module_path = repo_root / "api" / "apps" / "sdk" / "dataset.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "dataset_api.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()

@@ -35,7 +35,9 @@ from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 from api.constants import DATASET_NAME_LIMIT
 
 
-async def validate_and_parse_json_request(request: Request, validator: type[BaseModel], *, extras: dict[str, Any] | None = None, exclude_unset: bool = False) -> tuple[dict[str, Any] | None, str | None]:
+async def validate_and_parse_json_request(
+    request: Request, validator: type[BaseModel], *, extras: dict[str, Any] | None = None, exclude_unset: bool = False
+) -> tuple[dict[str, Any] | None, str | None]:
     """
     Validates and parses JSON requests through a multi-stage validation pipeline.
 
@@ -161,7 +163,7 @@ def validate_and_parse_request_args(request: Request, validator: type[BaseModel]
         - Preserves type conversion from Pydantic validation
     """
     args = request.args.to_dict(flat=True)
-    
+
     # Handle ext parameter: parse JSON string to dict if it's a string
     if 'ext' in args and isinstance(args['ext'], str):
         import json
@@ -169,7 +171,7 @@ def validate_and_parse_request_args(request: Request, validator: type[BaseModel]
             args['ext'] = json.loads(args['ext'])
         except json.JSONDecodeError:
             pass  # Keep the string and let validation handle the error
-    
+
     try:
         if extras is not None:
             args.update(extras)
@@ -774,5 +776,5 @@ class BaseListReq(BaseModel):
 
 
 class ListDatasetReq(BaseListReq):
-
+    include_parsing_status: Annotated[bool, Field(default=False)]
     ext: Annotated[dict, Field(default={})]
