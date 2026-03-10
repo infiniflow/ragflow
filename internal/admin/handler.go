@@ -642,9 +642,12 @@ func (h *Handler) GetUserPermission(c *gin.Context) {
 
 // GetServices handle get all services
 func (h *Handler) GetServices(c *gin.Context) {
-	services, err := h.service.GetAllServices()
+	services, err := h.service.ListServices()
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    common.CodeServerError,
+			"message": err.Error(),
+		})
 		return
 	}
 
@@ -905,7 +908,10 @@ func (h *Handler) TestSandboxConnection(c *gin.Context) {
 
 	result, err := h.service.TestSandboxConnection(req.ProviderType, req.Config)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "Invalid access token",
+		})
 		return
 	}
 
@@ -932,6 +938,14 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		if !*user.IsSuperuser {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    common.CodeForbidden,
+				"message": "Permission denied",
+			})
+			return
+		}
+
 		c.Set("user", user)
 		c.Set("user_id", user.ID)
 		c.Set("email", user.Email)
@@ -951,7 +965,10 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 func (h *Handler) Reports(c *gin.Context) {
 	var req common.BaseMessage
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "Invalid request body: "+err.Error(), 400)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "Invalid request body: " + err.Error(),
+		})
 		return
 	}
 
@@ -962,7 +979,10 @@ func (h *Handler) Reports(c *gin.Context) {
 
 	// Only process heartbeat messages for now
 	if req.MessageType != common.MessageHeartbeat {
-		errorResponse(c, "Unsupported report type: "+string(req.MessageType), 400)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "Unsupported report type: " + string(req.MessageType),
+		})
 		return
 	}
 
