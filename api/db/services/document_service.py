@@ -831,6 +831,8 @@ class DocumentService(CommonService):
                 elif finished:
                     prg = 1
                     status = TaskStatus.DONE.value
+                elif not finished:
+                    status = TaskStatus.RUNNING.value
 
                 # only for special task and parsed docs and unfinished
                 freeze_progress = special_task_running and doc_progress >= 1 and not finished
@@ -844,7 +846,7 @@ class DocumentService(CommonService):
                 info = {
                     "process_duration": max(datetime.timestamp(datetime.now()) - begin_at.timestamp(), 0),
                     "run": status}
-                if prg != 0 and not freeze_progress:
+                if (prg != 0 or doc_progress < 0) and not freeze_progress:
                     info["progress"] = prg
                 if msg:
                     info["progress_msg"] = msg
