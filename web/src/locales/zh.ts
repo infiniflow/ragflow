@@ -27,6 +27,7 @@ export default {
       chinese: '简体中文',
       traditionalChinese: '繁体中文',
       bulgarian: '保加利亚语',
+      arabic: '阿拉伯语',
       language: '语言',
       languageMessage: '请输入语言',
       languagePlaceholder: '请选择语言',
@@ -919,8 +920,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       githubDescription:
         '连接 GitHub，可同步 Pull Request 与 Issue 内容用于检索。',
       airtableDescription: '连接 Airtable，同步指定工作区下指定表格中的文件。',
-      dingtalkAITableDescription:
-        '连接钉钉AI表格，同步指定表格中的记录。',
+      dingtalkAITableDescription: '连接钉钉AI表格，同步指定表格中的记录。',
       gitlabDescription:
         '连接 GitLab，同步仓库、Issue、合并请求（MR）及相关文档内容。',
       asanaDescription: '连接 Asana，同步工作区中的文件。',
@@ -2139,6 +2139,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       korean: '韩语',
       vietnamese: '越南语',
       bulgarian: '保加利亚语',
+      arabic: '阿拉伯语',
     },
     pagination: {
       total: '总共 {{total}} 条',

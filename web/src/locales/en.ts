@@ -2467,6 +2467,7 @@ Important structured information may include: names, dates, locations, events, k
       vietnamese: 'Vietnamese',
       russian: 'Russian',
       bulgarian: 'Bulgarian',
+      arabic: 'Arabic',
     },
     pagination: {
       total: 'Total {{total}}',
