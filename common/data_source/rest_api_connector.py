@@ -245,10 +245,10 @@ class RestAPIConnector(LoadConnector, PollConnector):
             for k, v_list in parse_qs(parsed.query, keep_blank_values=True).items():
                 self._url_params[k] = v_list[-1]
 
-        self._explicit_query_params: Dict[str, str] = query_params or {}
+        self._explicit_query_params: Dict[str, str] = _text_to_dict(query_params) if isinstance(query_params, str) else (query_params or {})
         self.url = self._base_url
         self.method = (method or "GET").upper()
-        self._base_headers: Dict[str, str] = headers or {}
+        self._base_headers: Dict[str, str] = _text_to_dict(headers) if isinstance(headers, str) else (headers or {})
         self.auth_type = auth_type or AuthType.NONE
         self.auth_config: Dict[str, Any] = auth_config or {}
         self.items_path = items_path
