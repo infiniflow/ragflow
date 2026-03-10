@@ -115,9 +115,9 @@ var (
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/create [post]
 func (h *KnowledgebaseHandler) CreateKB(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -127,7 +127,7 @@ func (h *KnowledgebaseHandler) CreateKB(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.kbService.CreateKB(&req, userID)
+	result, code, err := h.kbService.CreateKB(&req, user.ID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
@@ -251,9 +251,9 @@ func (h *KnowledgebaseHandler) GetDetail(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/list [post]
 func (h *KnowledgebaseHandler) ListKbs(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -317,7 +317,7 @@ func (h *KnowledgebaseHandler) ListKbs(c *gin.Context) {
 		ownerIDs = *req.OwnerIDs
 	}
 
-	result, code, err := h.kbService.ListKbs(keywords, page, pageSize, parserID, orderby, desc, ownerIDs, userID)
+	result, code, err := h.kbService.ListKbs(keywords, page, pageSize, parserID, orderby, desc, ownerIDs, user.ID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
