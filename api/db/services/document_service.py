@@ -311,7 +311,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_all_doc_ids_by_kb_ids(cls, kb_ids):
-        fields = [cls.model.id]
+        fields = [cls.model.id, cls.model.kb_id]
         docs = cls.model.select(*fields).where(cls.model.kb_id.in_(kb_ids))
         docs.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later
@@ -399,7 +399,7 @@ class DocumentService(CommonService):
 
         # Delete document metadata (non-critical, log and continue)
         try:
-            DocMetadataService.delete_document_metadata(doc.id)
+            DocMetadataService.delete_document_metadata(doc.id, doc.kb_id, tenant_id)
         except Exception as e:
             logging.warning(f"Failed to delete metadata for document {doc.id}: {e}")
 
