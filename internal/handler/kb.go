@@ -60,6 +60,10 @@ func (h *KnowledgebaseHandler) getUserID(c *gin.Context) (string, common.ErrorCo
 		return "", code, err
 	}
 
+	if *user.IsSuperuser {
+		return "", common.CodeForbidden, ErrForbidden
+	}
+
 	return user.ID, common.CodeSuccess, nil
 }
 
@@ -97,6 +101,7 @@ var (
 	ErrMissingAuth = &HTTPError{Code: common.CodeUnauthorized, Message: "Missing Authorization header"}
 	// ErrInvalidToken indicates invalid access token
 	ErrInvalidToken = &HTTPError{Code: common.CodeUnauthorized, Message: "Invalid access token"}
+	ErrForbidden    = &HTTPError{Code: common.CodeForbidden, Message: "Forbidden user"}
 )
 
 // CreateKB handles the create knowledge base request

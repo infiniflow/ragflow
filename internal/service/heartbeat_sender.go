@@ -103,7 +103,7 @@ func (h *HeartbeatSender) SendHeartbeat() error {
 		Port:        h.port,
 		Version:     h.version,
 		Timestamp:   time.Now(),
-		Ext:         make(map[string]interface{}),
+		Ext:         nil,
 	}
 
 	jsonData, err := json.Marshal(message)
