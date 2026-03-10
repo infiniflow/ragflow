@@ -248,6 +248,5 @@ func InitLLMFactory() error {
 		}
 	}
 
-	log.Println("LLM factories initialized successfully")
 	return nil
 }
