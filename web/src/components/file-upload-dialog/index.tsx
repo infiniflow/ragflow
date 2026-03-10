@@ -20,8 +20,16 @@ import { Switch } from '../ui/switch';
 function buildUploadFormSchema(t: TFunction) {
   const FormSchema = z.object({
     parseOnCreation: z.boolean().optional(),
+    // Update schema to allow files with path property to handle folder uploads
     fileList: z
-      .array(z.instanceof(File))
+      .array(
+        z.instanceof(File).or(
+          z.object({
+            file: z.instanceof(File),
+            path: z.string(), // Store the relative path for files in folders
+          }),
+        ),
+      )
       .min(1, { message: t('fileManager.pleaseUploadAtLeastOneFile') }),
   });
 
@@ -72,7 +80,7 @@ function UploadForm({ submit, showParseOnCreation }: UploadFormProps) {
             )}
           </RAGFlowFormItem>
         )}
-        <RAGFlowFormItem name="fileList" label={t('fileManager.file')}>
+        <RAGFlowFormItem name="fileList" label={''}>
           {(field) => (
             <FileUploader
               value={field.value}

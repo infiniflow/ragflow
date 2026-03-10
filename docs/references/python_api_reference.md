@@ -240,9 +240,9 @@ Deletes datasets by ID.
 ##### ids: `list[str]` or `None`, *Required*
 
 The IDs of the datasets to delete. Defaults to `None`.
-  - If `None`, all datasets will be deleted.
-  - If an array of IDs, only the specified datasets will be deleted.
-  - If an empty array, no datasets will be deleted.
+
+- If omitted, or set to `null` or an empty array, no datasets are deleted.
+- If an array of IDs is provided, only the datasets matching those IDs are deleted.
 
 #### Returns
 
@@ -661,9 +661,12 @@ Deletes documents by ID.
 
 #### Parameters
 
-##### ids: `list[list]`
+##### ids: `list[str]` or `None`
 
-The IDs of the documents to delete. Defaults to `None`. If it is not specified, all documents in the dataset will be deleted.
+The IDs of the documents to delete. Defaults to `None`.
+
+- If omitted, or set to `null` or an empty array, no documents are deleted.
+- If an array of IDs is provided, only the documents matching those IDs are deleted.
 
 #### Returns
 
@@ -931,7 +934,10 @@ Deletes chunks by ID.
 
 ##### chunk_ids: `list[str]`
 
-The IDs of the chunks to delete. Defaults to `None`. If it is not specified, all chunks of the current document will be deleted.
+The IDs of the chunks to delete. Defaults to `None`.
+
+- If omitted, or set to `null` or an empty array, no chunks are deleted.
+- If an array of IDs is provided, only the chunks matching those IDs are deleted.
 
 #### Returns
 
@@ -1234,7 +1240,10 @@ Deletes chat assistants by ID.
 
 ##### ids: `list[str]`
 
-The IDs of the chat assistants to delete. Defaults to `None`. If it is empty or not specified, all chat assistants in the system will be deleted.
+The IDs of the chat assistants to delete. Defaults to `None`.
+
+- If omitted, or set to `null` or an empty array, no chat assistants are deleted.
+- If an array of IDs is provided, only the chat assistants matching those IDs are deleted.
 
 #### Returns
 
@@ -1463,7 +1472,10 @@ Deletes sessions of the current chat assistant by ID.
 
 ##### ids: `list[str]`
 
-The IDs of the sessions to delete. Defaults to `None`. If it is not specified, all sessions associated with the current chat assistant will be deleted.
+The IDs of the sessions to delete. Defaults to `None`.
+
+- If omitted, or set to `null` or an empty array, no sessions are deleted.
+- If an array of IDs is provided, only the sessions matching those IDs are deleted.
 
 #### Returns
 
@@ -1593,6 +1605,10 @@ Creates a session with the current agent.
 
 The parameters in `begin` component.
 
+Also supports:
+
+- `release` (`bool | str`, optional): Set to `True` (or `"true"`) to create the session in release mode (published version only).
+
 #### Returns
 
 - Success: A `Session` object containing the following attributes:
@@ -1610,6 +1626,8 @@ rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:
 agent_id = "AGENT_ID"
 agent = rag_object.list_agents(id = agent_id)[0]
 session = agent.create_session()
+# Or create in release mode:
+# session = agent.create_session(release=True)
 ```
 
 ---
@@ -1775,7 +1793,10 @@ Deletes sessions of an agent by ID.
 
 ##### ids: `list[str]`
 
-The IDs of the sessions to delete. Defaults to `None`. If it is not specified, all sessions associated with the agent will be deleted.
+The IDs of the sessions to delete. Defaults to `None`.
+
+- If omitted, or set to `null` or an empty array, no sessions are deleted.
+- If an array of IDs is provided, only the sessions matching those IDs are deleted.
 
 #### Returns
 

@@ -465,6 +465,31 @@ def open_create_dataset_modal(page, expect, timeout_ms: int):
 
 def delete_uploaded_file(page, expect, filename: str, timeout_ms: int) -> None:
     """Delete a document row by filename and confirm the modal."""
+
+    def visible_confirm_dialog():
+        confirm = page.locator("[data-testid='confirm-delete-dialog']:visible")
+        if confirm.count() > 0:
+            return confirm.last
+
+        confirm = page.locator("[role='alertdialog']:visible")
+        if confirm.count() > 0:
+            return confirm.last
+
+        return page.locator("[role='alertdialog']").last
+
+    def confirm_delete_button(confirm):
+        by_testid = confirm.get_by_test_id("confirm-delete-dialog-confirm-btn")
+        if by_testid.count() > 0:
+            return by_testid.first
+
+        by_label = confirm.locator(
+            "button:visible", has_text=re.compile("^delete$", re.I)
+        )
+        if by_label.count() > 0:
+            return by_label.first
+
+        return confirm.locator("button:visible").last
+
     row = page.locator(
         f"[data-testid='document-row'][data-doc-name={json.dumps(filename)}]"
     )
@@ -472,18 +497,31 @@ def delete_uploaded_file(page, expect, filename: str, timeout_ms: int) -> None:
     delete_button = row.locator("[data-testid='document-delete']")
     expect(delete_button).to_be_visible(timeout=timeout_ms)
     delete_button.click()
-    confirm = page.locator("[role='alertdialog']")
-    expect(confirm).to_be_visible()
-    confirm_delete = confirm.locator(
-        "button", has_text=re.compile("^delete$", re.I)
-    ).first
+
+    confirm = visible_confirm_dialog()
+    expect(confirm).to_be_visible(timeout=timeout_ms)
+    confirm_delete = confirm_delete_button(confirm)
     expect(confirm_delete).to_be_visible(timeout=timeout_ms)
     try:
-        confirm_delete.click(timeout=timeout_ms)
-    except Exception:
-        # The confirm button can rerender during open/animation; reacquire and force.
-        confirm_delete = confirm.locator(
-            "button", has_text=re.compile("^delete$", re.I)
-        ).first
         confirm_delete.click(timeout=timeout_ms, force=True)
+    except Exception:
+        # The confirm action can rerender/detach during click. If delete already
+        # happened, avoid reopening flows and continue.
+        try:
+            expect(row).not_to_be_visible(timeout=2000)
+            return
+        except AssertionError:
+            pass
+
+        confirm = visible_confirm_dialog()
+        if confirm.count() == 0:
+            # Re-open delete confirmation only when needed.
+            delete_button = row.locator("[data-testid='document-delete']")
+            if delete_button.count() > 0:
+                delete_button.first.click()
+            confirm = visible_confirm_dialog()
+
+        if confirm.count() > 0:
+            confirm_delete = confirm_delete_button(confirm)
+            confirm_delete.click(timeout=timeout_ms, force=True)
     expect(row).not_to_be_visible(timeout=timeout_ms)

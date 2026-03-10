@@ -676,9 +676,8 @@ curl --request DELETE \
 
 - `"ids"`: (*Body parameter*), `list[string]` or `null`,   *Required*  
   Specifies the datasets to delete:
-  - If `null`, all datasets will be deleted.
-  - If an array of IDs, only the specified datasets will be deleted.
-  - If an empty array, no datasets will be deleted.
+  - If omitted, or set to `null` or an empty array, no datasets are deleted.
+  - If an array of IDs is provided, only the datasets matching those IDs are deleted.
 
 #### Response
 
@@ -1764,7 +1763,9 @@ curl --request DELETE \
 - `dataset_id`: (*Path parameter*)  
   The associated dataset ID.
 - `"ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the documents to delete. If it is not specified, all documents in the specified dataset will be deleted.
+  The IDs of the documents to delete.
+  - If omitted, or set to `null` or an empty array, no documents are deleted.
+  - If an array of IDs is provided, only the documents matching those IDs are deleted.
 
 #### Response
 
@@ -2124,7 +2125,9 @@ curl --request DELETE \
 - `document_ids`: (*Path parameter*)  
   The associated document ID.
 - `"chunk_ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the chunks to delete. If it is not specified, all chunks of the specified document will be deleted.
+  The IDs of the chunks to delete.
+  - If omitted, or set to `null` or an empty array, no chunks are deleted.
+  - If an array of IDs is provided, only the chunks matching those IDs are deleted.
 
 #### Response
 
@@ -2212,6 +2215,105 @@ Failure:
 {
     "code": 102,
     "message": "Can't find this chunk 29a2d9987e16ba331fb4d7d30d99b71d2"
+}
+```
+
+---
+
+### Update chunk availability
+
+**POST** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/switch`
+
+Updates or switches the availability status of specified chunks, controlling whether they are available for retrieval.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/switch`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"chunk_ids"`: `list[string]` (*Required*)
+  - `"available_int"`: `integer` (*Optional*)
+  - `"available"`: `boolean` (*Optional*)
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/switch \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '
+     {
+          "chunk_ids": ["chunk_id_1", "chunk_id_2"],
+          "available_int": 1
+     }'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the dataset.
+- `document_id`: (*Path parameter*)  
+  The ID of the document.
+- `"chunk_ids"`: (*Body parameter*), `list[string]` (*Required*)  
+  IDs of the chunks whose availability status is to be updated.
+- `"available_int"`: (*Body parameter*), `integer` (*Optional*)  
+  Availability status for the specified chunks. Mutually exclusive with `"available"`. You must provide either `available_int` or `available`, *not* both.
+  - `1`: Available,
+  - `0`: Unavailable.
+- `"available"`: (*Body parameter*), `boolean` (*Optional*)  
+  Availability status of the specified chunks. Mutually exclusive with `"available_int"`. You must provide either `available` or `available_int`, *not* both.  
+  - `true`: Available,
+  - `false`: Unavailable.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 101,
+    "message": "You don't own the dataset {dataset_id}."
+}
+```
+
+```json
+{
+    "code": 101,
+    "message": "`chunk_ids` is required."
+}
+```
+
+```json
+{
+    "code": 101,
+    "message": "`available_int` or `available` is required."
+}
+```
+
+```json
+{
+    "code": 101,
+    "message": "Document not found!"
+}
+```
+
+```json
+{
+    "code": 101,
+    "message": "Index updating failure"
 }
 ```
 
@@ -2436,7 +2538,7 @@ curl --request POST \
 - `"top_k"`: (*Body parameter*), `integer`  
   The number of chunks engaged in vector cosine computation. Defaults to `1024`.
 - `"use_kg"`: (*Body parameter*), `boolean`  
-  Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](https://ragflow.io/docs/dev/construct_knowledge_graph) for details.
+  Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/dataset/advanced/construct_knowledge_graph.md) for details.
 - `"toc_enhance"`: (*Body parameter*), `boolean`  
   Whether to search chunks with extracted table of content. Defaults to `False`. Before enabling this, ensure you have enabled `TOC_Enhance` and successfully extracted table of contents for the specified datasets. See [here](https://ragflow.io/docs/dev/enable_table_of_contents) for details.
 - `"rerank_id"`: (*Body parameter*), `integer`  
@@ -2796,7 +2898,9 @@ curl --request DELETE \
 ##### Request parameters
 
 - `"ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the chat assistants to delete. If it is not specified, all chat assistants in the system will be deleted.
+  The IDs of the chat assistants to delete.
+  - If omitted, or set to `null` or an empty array, no chat assistants are deleted.
+  - If an array of IDs is provided, only the chat assistants matching those IDs are deleted.
 
 #### Response
 
@@ -3174,7 +3278,9 @@ curl --request DELETE \
 - `chat_id`: (*Path parameter*)  
   The ID of the associated chat assistant.
 - `"ids"`: (*Body Parameter*), `list[string]`  
-  The IDs of the sessions to delete. If it is not specified, all sessions associated with the specified chat assistant will be deleted.
+  The IDs of the sessions to delete.
+  - If omitted, or set to `null` or an empty array, no sessions are deleted.
+  - If an array of IDs is provided, only the sessions matching those IDs are deleted.
 
 #### Response
 
@@ -3682,6 +3788,7 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"inputs"`: `object` (optional)
   - `"user_id"`: `string` (optional)
   - `"return_trace"`: `boolean` (optional, default `false`) — include execution trace logs.
+  - `"release"`: `boolean` (optional, default `false`) - whether to visit the latest published canvas.
 
 #### Streaming events to handle
 
@@ -4537,7 +4644,9 @@ curl --request DELETE \
 - `agent_id`: (*Path parameter*)  
   The ID of the associated agent.
 - `"ids"`: (*Body Parameter*), `list[string]`  
-  The IDs of the sessions to delete. If it is not specified, all sessions associated with the specified agent will be deleted.
+  The IDs of the sessions to delete.
+  - If omitted, or set to `null` or an empty array, no sessions are deleted.
+  - If an array of IDs is provided, only the sessions matching those IDs are deleted.
 
 #### Response
 
@@ -6119,6 +6228,69 @@ Failure:
 {
     "code": 400,
     "message": "No file part!"
+}
+```
+
+---
+
+### Upload document
+
+**POST** `/api/v1/file/upload_info`
+
+Uploads a file and creates the respective document
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/upload_info`
+- Headers:
+  - `'Content-Type: multipart/form-data`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Form:
+  - `'file=@{FILE_PATH}'`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/upload_info \
+     --header 'Content-Type: multipart/form-data' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --form 'file=@./test1.pdf'
+```
+
+##### Request parameters
+
+- `'file'`: (*Form parameter*), `file`, *Required*  
+  The file to upload.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+      "created_at": 1772451421.7924063,
+      "created by": "be951084066611f18f5f00155d2f98f4",
+      "extension": "pdf",
+      "id": "2143a03d162c11f1b80f00155d334d02",
+      "mime_type": "application/pdf",
+      "name": "test1.pdf",
+      "preview_url": null,
+      "size": 49705
+    },
+    "message": "success"
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 400,
+    "message": "Provide either multipart file(s) or ?url=...!"
 }
 ```
 

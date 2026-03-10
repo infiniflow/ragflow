@@ -24,7 +24,7 @@ from common.constants import LLMType
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api.db.services.user_service import TenantService
+from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from rag.graphrag.general.index import update_graph
 from rag.graphrag.light.graph_extractor import GraphExtractor
 from common import settings
@@ -72,10 +72,14 @@ async def main():
         )
     ]
 
-    _, tenant = TenantService.get_by_id(args.tenant_id)
-    llm_bdl = LLMBundle(args.tenant_id, LLMType.CHAT, tenant.llm_id)
+    llm_config = get_tenant_default_model_by_type(args.tenant_id, LLMType.CHAT)
+    llm_bdl = LLMBundle(args.tenant_id, llm_config)
     _, kb = KnowledgebaseService.get_by_id(kb_id)
-    embed_bdl = LLMBundle(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+    if kb.tenant_embd_id:
+        embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+    else:
+        embd_model_config = get_model_config_by_type_and_name(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+    embed_bdl = LLMBundle(args.tenant_id, embd_model_config)
 
     graph, doc_ids = await update_graph(
         GraphExtractor,
