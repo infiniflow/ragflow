@@ -134,9 +134,7 @@ class Dealer:
 
                 matchExprs = [matchText, matchDense]
                 if settings.DOC_ENGINE_QDRANT and hasattr(emb_mdl, "supports_sparse") and emb_mdl.supports_sparse():
-                    # ColPali/ColQwen PR hook:
-                    # add the visual query object here and mark the result as a
-                    # backend-ranked multimodal retrieval instead of text hybrid.
+                    # Future multivector retrieval should add the visual query object here.
                     q_sparse_vec, _ = await thread_pool_exec(emb_mdl.encode_sparse_queries, qst)
                     if q_sparse_vec is not None and getattr(q_sparse_vec, "indices", None):
                         matchExprs.append(MatchSparseExpr(SPARSE_VECTOR_NAME, q_sparse_vec, "dot", topk))
@@ -509,10 +507,7 @@ class Dealer:
                 "similarity": float(sim_np[i]),
                 "vector_similarity": float(vsim[i]),
                 "term_similarity": float(tsim[i]),
-                # ColPali/ColQwen PR hook:
-                # visual retrieval may not expose a single dense vector here.
-                # populate a page/image result payload alongside or instead of
-                # this field once the multimodal response contract is defined.
+                # Future multivector retrieval may replace this single dense vector field.
                 "vector": chunk.get(vector_column, zero_vector) if vector_column else zero_vector,
                 "positions": position_int,
                 "doc_type_kwd": chunk.get("doc_type_kwd", ""),

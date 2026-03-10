@@ -14,130 +14,18 @@
 #  limitations under the License.
 #
 import copy
-import importlib.util
 import math
-import sys
-import types
-from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
+from qdrant_client import models
 
 from common.doc_store.doc_store_base import FusionExpr, MatchDenseExpr, MatchSparseExpr, OrderByExpr, SparseVector
+from rag.utils import qdrant_conn
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-MODULE_PATH = REPO_ROOT / "rag" / "utils" / "qdrant_conn.py"
-
-
-class _Distance:
-    COSINE = "cosine"
-
-
-class _VectorParams:
-    def __init__(self, size, distance):
-        self.size = size
-        self.distance = distance
-
-
-class _SparseIndexParams:
-    def __init__(self, on_disk=None, full_scan_threshold=None, datatype=None):
-        self.on_disk = on_disk
-        self.full_scan_threshold = full_scan_threshold
-        self.datatype = datatype
-
-
-class _Modifier:
-    IDF = "idf"
-
-
-class _SparseVectorParams:
-    def __init__(self, index=None, modifier=None):
-        self.index = index
-        self.modifier = modifier
-
-
-class _SparseVector:
-    def __init__(self, indices, values):
-        self.indices = list(indices)
-        self.values = list(values)
-
-
-class _Range:
-    def __init__(self, lt=None):
-        self.lt = lt
-
-
-class _MatchAny:
-    def __init__(self, any):
-        self.any = any
-
-
-class _MatchValue:
-    def __init__(self, value):
-        self.value = value
-
-
-class _FieldCondition:
-    def __init__(self, key, match=None, range=None):
-        self.key = key
-        self.match = match
-        self.range = range
-
-
-class _Filter:
-    def __init__(self, must=None, must_not=None, should=None):
-        self.must = must or []
-        self.must_not = must_not or []
-        self.should = should or []
-
-
-class _PointStruct:
-    def __init__(self, id, vector, payload):
-        self.id = id
-        self.vector = vector
-        self.payload = payload
-
-
-class _Prefetch:
-    def __init__(self, query=None, using=None, filter=None, score_threshold=None, limit=None, **_kwargs):
-        self.query = query
-        self.using = using
-        self.filter = filter
-        self.score_threshold = score_threshold
-        self.limit = limit
-
-
-class _Fusion:
-    RRF = "rrf"
-
-
-class _FusionQuery:
-    def __init__(self, fusion):
-        self.fusion = fusion
-
-
-class _TextIndexType:
-    TEXT = "text"
-
-
-class _TokenizerType:
-    PREFIX = "prefix"
-    WHITESPACE = "whitespace"
-    WORD = "word"
-    MULTILINGUAL = "multilingual"
-
-
-class _TextIndexParams:
-    def __init__(self, type, tokenizer=None, lowercase=None, on_disk=None, **_kwargs):
-        self.type = type
-        self.tokenizer = tokenizer
-        self.lowercase = lowercase
-        self.on_disk = on_disk
-
-
-class _FakeQdrantClient:
+class FakeQdrantClient:
     def __init__(self, **kwargs):
         self.url = kwargs.get("url")
         self.collections = {}
@@ -146,7 +34,7 @@ class _FakeQdrantClient:
         return SimpleNamespace(collections=[SimpleNamespace(name=name) for name in self.collections])
 
     def create_collection(self, collection_name, vectors_config, sparse_vectors_config=None, on_disk_payload=True):
-        dense_cfg = vectors_config["dense"]
+        dense_cfg = vectors_config[qdrant_conn.DENSE_VECTOR_NAME]
         self.collections[collection_name] = {
             "size": dense_cfg.size,
             "distance": dense_cfg.distance,
@@ -174,9 +62,18 @@ class _FakeQdrantClient:
 
     def get_collection(self, collection_name):
         collection = self.collections[collection_name]
-        vectors = {"dense": _VectorParams(collection["size"], collection["distance"])}
+        vectors = {
+            qdrant_conn.DENSE_VECTOR_NAME: models.VectorParams(
+                size=collection["size"],
+                distance=collection["distance"],
+            )
+        }
         sparse_vectors = copy.deepcopy(collection["sparse_vectors"])
-        return SimpleNamespace(config=SimpleNamespace(params=SimpleNamespace(vectors=vectors, sparse_vectors=sparse_vectors)))
+        return SimpleNamespace(
+            config=SimpleNamespace(
+                params=SimpleNamespace(vectors=vectors, sparse_vectors=sparse_vectors)
+            )
+        )
 
     def retrieve(self, collection_name, ids, with_payload=True, with_vectors=False):
         collection = self.collections[collection_name]
@@ -234,7 +131,7 @@ class _FakeQdrantClient:
 
     def search(self, collection_name, query_vector, query_filter=None, limit=10, with_payload=True, with_vectors=False, score_threshold=None):
         vector_name, query = query_vector
-        result = self._vector_search(
+        return self._vector_search(
             collection_name,
             vector_name,
             query,
@@ -244,13 +141,12 @@ class _FakeQdrantClient:
             with_vectors,
             score_threshold,
         )
-        return result
 
     def query_points(self, collection_name, query, prefetch=None, limit=10, with_payload=True, with_vectors=False, **_kwargs):
-        assert query.fusion == _Fusion.RRF
+        assert query.fusion == models.Fusion.RRF
         rankings = []
         for current in prefetch or []:
-            if current.using == "dense":
+            if current.using == qdrant_conn.DENSE_VECTOR_NAME:
                 ranking = self._vector_search(
                     collection_name,
                     current.using,
@@ -280,6 +176,7 @@ class _FakeQdrantClient:
                 point_id = point.id
                 fused_scores[point_id] = fused_scores.get(point_id, 0.0) + 1.0 / (60 + idx + 1)
                 points_by_id[point_id] = point
+
         points = []
         for point_id, score in sorted(fused_scores.items(), key=lambda item: item[1], reverse=True)[:limit]:
             point = points_by_id[point_id]
@@ -300,7 +197,7 @@ class _FakeQdrantClient:
             if not self._matches_filter(stored["payload"], query_filter):
                 continue
             vector = stored["vector"].get(vector_name)
-            if vector_name == "dense":
+            if vector_name == qdrant_conn.DENSE_VECTOR_NAME:
                 score = self._cosine_similarity(query, vector)
             else:
                 score = self._sparse_similarity(query, vector)
@@ -334,7 +231,7 @@ class _FakeQdrantClient:
     @staticmethod
     def _matches_condition(payload, condition):
         if condition.match is not None:
-            if hasattr(condition.match, "any"):
+            if isinstance(condition.match, models.MatchAny):
                 return payload.get(condition.key) in condition.match.any
             return payload.get(condition.key) == condition.match.value
         if condition.range is not None:
@@ -345,10 +242,10 @@ class _FakeQdrantClient:
     def _matches_filter(self, payload, query_filter):
         if query_filter is None:
             return True
-        for condition in query_filter.must:
+        for condition in query_filter.must or []:
             if not self._matches_condition(payload, condition):
                 return False
-        for condition in query_filter.must_not:
+        for condition in query_filter.must_not or []:
             if self._matches_condition(payload, condition):
                 return False
         return True
@@ -384,76 +281,24 @@ class _FakeQdrantClient:
         )
 
 
-def _load_qdrant_module(monkeypatch):
-    import common
-
-    fake_settings = types.ModuleType("common.settings")
-    fake_settings.QDRANT = {
-        "host": "qdrant",
-        "http_port": 6333,
-        "grpc_port": 6334,
-        "https": False,
-        "prefer_grpc": False,
-        "timeout": 10,
-        "text_index_tokenizer": "multilingual",
-    }
-    monkeypatch.setitem(sys.modules, "common.settings", fake_settings)
-    monkeypatch.setattr(common, "settings", fake_settings, raising=False)
-
-    rag_pkg = types.ModuleType("rag")
-    rag_pkg.__path__ = []
-    utils_pkg = types.ModuleType("rag.utils")
-    utils_pkg.__path__ = []
-    sparse_mod = types.ModuleType("rag.utils.sparse_vector")
-    sparse_mod.DENSE_VECTOR_NAME = "dense"
-    sparse_mod.MULTIVECTOR_PLACEHOLDER_NAME = "colpali"
-    sparse_mod.SPARSE_VECTOR_FIELD = "q_sparse_vec"
-    sparse_mod.SPARSE_VECTOR_NAME = "sparse"
-    sparse_mod.dense_vector_field_name = lambda size: f"q_{int(size)}_vec"
-    nlp_mod = types.ModuleType("rag.nlp")
-    nlp_mod.is_english = lambda _tokens: True
-    nlp_mod.rag_tokenizer = SimpleNamespace(
-        tokenize=lambda text: " ".join(str(text).lower().split()),
-        fine_grained_tokenize=lambda text: " ".join(str(text).lower().split()),
+@pytest.fixture
+def qdrant_connection(monkeypatch):
+    monkeypatch.setattr(qdrant_conn, "QdrantClient", FakeQdrantClient)
+    monkeypatch.setattr(
+        qdrant_conn.settings,
+        "QDRANT",
+        {
+            "host": "qdrant",
+            "http_port": 6333,
+            "grpc_port": 6334,
+            "https": False,
+            "prefer_grpc": False,
+            "timeout": 10,
+            "text_index_tokenizer": "multilingual",
+        },
+        raising=False,
     )
-    monkeypatch.setitem(sys.modules, "rag", rag_pkg)
-    monkeypatch.setitem(sys.modules, "rag.utils", utils_pkg)
-    monkeypatch.setitem(sys.modules, "rag.utils.sparse_vector", sparse_mod)
-    monkeypatch.setitem(sys.modules, "rag.nlp", nlp_mod)
-
-    fake_models = SimpleNamespace(
-        Distance=_Distance,
-        VectorParams=_VectorParams,
-        SparseVectorParams=_SparseVectorParams,
-        SparseIndexParams=_SparseIndexParams,
-        Modifier=_Modifier,
-        SparseVector=_SparseVector,
-        Range=_Range,
-        MatchAny=_MatchAny,
-        MatchValue=_MatchValue,
-        FieldCondition=_FieldCondition,
-        Filter=_Filter,
-        PointStruct=_PointStruct,
-        Prefetch=_Prefetch,
-        FusionQuery=_FusionQuery,
-        Fusion=_Fusion,
-        TextIndexParams=_TextIndexParams,
-        TextIndexType=_TextIndexType,
-        TokenizerType=_TokenizerType,
-    )
-    fake_qdrant_client = types.ModuleType("qdrant_client")
-    fake_qdrant_client.QdrantClient = _FakeQdrantClient
-    fake_qdrant_client.models = fake_models
-    monkeypatch.setitem(sys.modules, "qdrant_client", fake_qdrant_client)
-
-    module_name = "test_qdrant_conn_under_test"
-    sys.modules.pop(module_name, None)
-    spec = importlib.util.spec_from_file_location(module_name, MODULE_PATH)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+    return qdrant_conn.QdrantConnection()
 
 
 def _make_doc(doc_id, vector, sparse=None, **payload):
@@ -463,20 +308,19 @@ def _make_doc(doc_id, vector, sparse=None, **payload):
         **payload,
     }
     if sparse is not None:
-        doc["q_sparse_vec"] = sparse
+        doc[qdrant_conn.SPARSE_VECTOR_FIELD] = sparse
     return doc
 
 
 @pytest.mark.p2
-def test_collection_crud_and_health(monkeypatch):
-    module = _load_qdrant_module(monkeypatch)
-    conn = module.QdrantConnection()
+def test_collection_crud_and_health(qdrant_connection):
+    conn = qdrant_connection
 
     assert conn.db_type() == "qdrant"
     assert conn.health()["status"] == "green"
     assert conn.create_idx("ragflow_tenant", "kb-1", 3) is True
     assert conn.index_exist("ragflow_tenant", "kb-1") is True
-    assert conn.client.collections["ragflow_tenant"]["sparse_vectors"]["sparse"].modifier == _Modifier.IDF
+    assert conn.client.collections["ragflow_tenant"]["sparse_vectors"][qdrant_conn.SPARSE_VECTOR_NAME].modifier == models.Modifier.IDF
     assert "content_with_weight" in conn.client.collections["ragflow_tenant"]["payload_indexes"]
     assert conn.create_doc_meta_idx("ragflow_doc_meta_tenant") is True
     assert conn.index_exist("ragflow_doc_meta_tenant", "") is True
@@ -486,9 +330,8 @@ def test_collection_crud_and_health(monkeypatch):
 
 
 @pytest.mark.p2
-def test_insert_get_update_and_delete_document(monkeypatch):
-    module = _load_qdrant_module(monkeypatch)
-    conn = module.QdrantConnection()
+def test_insert_get_update_and_delete_document(qdrant_connection):
+    conn = qdrant_connection
     conn.create_idx("ragflow_tenant", "kb-1", 3)
 
     errors = conn.insert(
@@ -523,9 +366,8 @@ def test_insert_get_update_and_delete_document(monkeypatch):
 
 
 @pytest.mark.p2
-def test_missing_available_flag_is_treated_as_available(monkeypatch):
-    module = _load_qdrant_module(monkeypatch)
-    conn = module.QdrantConnection()
+def test_missing_available_flag_is_treated_as_available(qdrant_connection):
+    conn = qdrant_connection
     conn.create_idx("ragflow_tenant", "kb-1", 3)
 
     errors = conn.insert(
@@ -563,9 +405,8 @@ def test_missing_available_flag_is_treated_as_available(monkeypatch):
 
 
 @pytest.mark.p2
-def test_string_ids_are_mapped_to_qdrant_uuids(monkeypatch):
-    module = _load_qdrant_module(monkeypatch)
-    conn = module.QdrantConnection()
+def test_string_ids_are_mapped_to_qdrant_uuids(qdrant_connection):
+    conn = qdrant_connection
     conn.create_idx("ragflow_tenant", "kb-1", 3)
 
     raw_id = "8d6b7a4e2b9d9780"
@@ -581,9 +422,9 @@ def test_string_ids_are_mapped_to_qdrant_uuids(monkeypatch):
 
 
 @pytest.mark.p2
-def test_highlight_falls_back_to_raw_chunk_text(monkeypatch):
-    module = _load_qdrant_module(monkeypatch)
-    conn = module.QdrantConnection()
+def test_highlight_falls_back_to_raw_chunk_text(monkeypatch, qdrant_connection):
+    conn = qdrant_connection
+    monkeypatch.setattr(qdrant_conn, "is_english", lambda _tokens: True)
 
     result = {
         "hits": {
@@ -611,9 +452,8 @@ def test_highlight_falls_back_to_raw_chunk_text(monkeypatch):
 
 
 @pytest.mark.p2
-def test_dense_retrieval_returns_ranked_hits(monkeypatch):
-    module = _load_qdrant_module(monkeypatch)
-    conn = module.QdrantConnection()
+def test_dense_retrieval_returns_ranked_hits(qdrant_connection):
+    conn = qdrant_connection
     conn.create_idx("ragflow_tenant", "kb-1", 3)
     conn.insert(
         [
@@ -646,9 +486,8 @@ def test_dense_retrieval_returns_ranked_hits(monkeypatch):
 
 
 @pytest.mark.p2
-def test_hybrid_retrieval_uses_rrf(monkeypatch):
-    module = _load_qdrant_module(monkeypatch)
-    conn = module.QdrantConnection()
+def test_hybrid_retrieval_uses_rrf(qdrant_connection):
+    conn = qdrant_connection
     conn.create_idx("ragflow_tenant", "kb-1", 3)
     conn.insert(
         [
@@ -680,9 +519,8 @@ def test_hybrid_retrieval_uses_rrf(monkeypatch):
 
 
 @pytest.mark.p2
-def test_tenant_isolation_filters_by_kb_id(monkeypatch):
-    module = _load_qdrant_module(monkeypatch)
-    conn = module.QdrantConnection()
+def test_tenant_isolation_filters_by_kb_id(qdrant_connection):
+    conn = qdrant_connection
     conn.create_idx("ragflow_tenant", "kb-1", 3)
     conn.insert([_make_doc("doc-1", [1.0, 0.0, 0.0], title_tks="tenant-one")], "ragflow_tenant", "kb-1")
     conn.insert([_make_doc("doc-2", [1.0, 0.0, 0.0], title_tks="tenant-two")], "ragflow_tenant", "kb-2")
@@ -704,9 +542,8 @@ def test_tenant_isolation_filters_by_kb_id(monkeypatch):
 
 
 @pytest.mark.p2
-def test_scroll_pagination_works_past_batch_boundary(monkeypatch):
-    module = _load_qdrant_module(monkeypatch)
-    conn = module.QdrantConnection()
+def test_scroll_pagination_works_past_batch_boundary(qdrant_connection):
+    conn = qdrant_connection
     conn.create_idx("ragflow_tenant", "kb-1", 3)
     conn.insert(
         [_make_doc(f"doc-{idx}", [1.0, 0.0, 0.0], sort_int=idx) for idx in range(300)],
@@ -734,9 +571,8 @@ def test_scroll_pagination_works_past_batch_boundary(monkeypatch):
 
 
 @pytest.mark.p2
-def test_bulk_upsert_overwrites_existing_documents(monkeypatch):
-    module = _load_qdrant_module(monkeypatch)
-    conn = module.QdrantConnection()
+def test_bulk_upsert_overwrites_existing_documents(qdrant_connection):
+    conn = qdrant_connection
     conn.create_idx("ragflow_tenant", "kb-1", 3)
     conn.insert(
         [
@@ -774,10 +610,9 @@ def test_bulk_upsert_overwrites_existing_documents(monkeypatch):
 
 
 @pytest.mark.p2
-def test_error_handling_matches_stage1_expectations(monkeypatch):
-    module = _load_qdrant_module(monkeypatch)
-    monkeypatch.setattr(module.time, "sleep", lambda *_args, **_kwargs: None)
-    conn = module.QdrantConnection()
+def test_error_handling_matches_stage1_expectations(monkeypatch, qdrant_connection):
+    monkeypatch.setattr(qdrant_conn.time, "sleep", lambda *_args, **_kwargs: None)
+    conn = qdrant_connection
     conn.create_idx("ragflow_tenant", "kb-1", 3)
 
     with pytest.raises(Exception, match="dense size 3"):

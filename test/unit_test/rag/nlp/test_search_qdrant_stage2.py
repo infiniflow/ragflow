@@ -15,8 +15,6 @@
 #
 import asyncio
 
-import pytest
-
 from common.doc_store.doc_store_base import MatchSparseExpr, MatchTextExpr, SparseVector
 from rag.nlp import search as search_module
 

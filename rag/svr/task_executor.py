@@ -631,9 +631,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         v = vects[i].tolist()
         vector_size = len(v)
         d["q_%d_vec" % len(v)] = v
-        # ColPali/ColQwen PR hook:
-        # attach page/image vectors here before insert so the adapter can store
-        # both textual and visual retrieval features for the same chunk/page.
+        # Future multivector ingestion should attach page/image vectors here alongside text vectors.
         if sparse_vectors:
             attach_sparse_vector(d, sparse_vectors[i])
     return tk_count, vector_size
@@ -717,9 +715,7 @@ async def run_dataflow(task: dict):
             for i, ck in enumerate(chunks):
                 v = vects[i].tolist()
                 ck["q_%d_vec" % len(v)] = v
-                # ColPali/ColQwen PR hook:
-                # dataflow outputs will need to add visual vectors here once page
-                # rendering or image-region embeddings are available.
+                # Future multivector ingestion should add visual vectors here for dataflow outputs.
                 if sparse_vectors:
                     attach_sparse_vector(ck, sparse_vectors[i])
         except TaskCanceledException:

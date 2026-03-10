@@ -25,7 +25,7 @@ from rag.nlp import rag_tokenizer
 SPARSE_VECTOR_NAME = "sparse"
 SPARSE_VECTOR_FIELD = "q_sparse_vec"
 DENSE_VECTOR_NAME = "dense"
-MULTIVECTOR_PLACEHOLDER_NAME = "colpali"
+MULTIVECTOR_VECTOR_NAME = "colpali"
 DEFAULT_SPARSE_MODEL = ""
 DEFAULT_SPARSE_VOCAB_SIZE = 131072
 ENABLED_SPARSE_MODELS = {"token", "builtin"}
@@ -121,9 +121,7 @@ def attach_sparse_vector(row: dict, sparse_vector: SparseVector | dict | None):
 
 
 def build_sparse_text(*parts: Any) -> str:
-    # ColPali/ColQwen PR hook:
-    # keep visual/page embeddings on a separate path instead of overloading this
-    # text-only sparse helper.
+    # Future multivector extension should keep visual/page inputs separate from this text-only sparse helper.
     values = []
     for part in parts:
         if part is None:

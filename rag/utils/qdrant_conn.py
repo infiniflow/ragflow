@@ -29,7 +29,6 @@ from common.constants import PAGERANK_FLD, TAG_FLD
 from common.doc_store.doc_store_base import DocStoreConnection, FusionExpr, MatchDenseExpr, MatchExpr, MatchSparseExpr, MatchTextExpr, OrderByExpr, SparseVector
 from rag.utils.sparse_vector import (
     DENSE_VECTOR_NAME,
-    MULTIVECTOR_PLACEHOLDER_NAME,
     SPARSE_VECTOR_FIELD,
     SPARSE_VECTOR_NAME,
     dense_vector_field_name,
@@ -188,15 +187,7 @@ class QdrantConnection(DocStoreConnection):
         vectors_config = {
             DENSE_VECTOR_NAME: models.VectorParams(size=vector_size, distance=models.Distance.COSINE),
         }
-        # ColPali/ColQwen PR hook:
-        # add a second named vector or switch to a multivector config here, e.g.
-        # vectors_config[MULTIVECTOR_PLACEHOLDER_NAME] = models.VectorParams(
-        #     size=page_vector_size,
-        #     distance=models.Distance.COSINE,
-        #     multivector_config=models.MultiVectorConfig(
-        #         comparator=models.MultiVectorComparator.MAX_SIM,
-        #     ),
-        # )
+        # Future multivector extension point for ColPali/ColQwen-style page vectors.
         return vectors_config
 
     @staticmethod
@@ -476,9 +467,7 @@ class QdrantConnection(DocStoreConnection):
         query_filter = self._build_filter(condition, dataset_ids, collection_name)
         dense_options = dense_expr.extra_options or {}
         dense_similarity = dense_options.get("similarity")
-        # ColPali/ColQwen PR hook:
-        # route visual late-interaction retrieval through a sibling helper that
-        # swaps this dense+sparse RRF prefetch for the multivector query path.
+        # Future multivector retrieval should branch here instead of dense+sparse RRF.
         prefetch = [
             models.Prefetch(
                 query=list(dense_expr.embedding_data),
@@ -586,9 +575,7 @@ class QdrantConnection(DocStoreConnection):
                 dense_vector = self._metadata_vector()
             else:
                 raise ValueError(f"{point_id}:missing_dense_vector")
-        # ColPali/ColQwen PR hook:
-        # extend this vector builder with page/image vectors instead of replacing
-        # the primary dense text vector branch.
+        # Future multivector ingestion should add page/image vectors alongside the primary dense text vector.
         vector = {DENSE_VECTOR_NAME: list(dense_vector)} if self._is_metadata_index(collection_name) else self._default_named_vectors(dense_vector, sparse_vector)
         return point_id, vector_field, models.PointStruct(id=storage_point_id, vector=vector, payload=payload)
 
@@ -601,9 +588,7 @@ class QdrantConnection(DocStoreConnection):
             dense_vector = vectors.get(DENSE_VECTOR_NAME)
         elif vectors is not None:
             dense_vector = vectors
-        # ColPali/ColQwen PR hook:
-        # map additional named vectors or page-level multivector summaries back
-        # into response fields here when visual retrieval starts returning them.
+        # Future multivector retrieval should map page/image vectors back into response fields here.
         score = self._extract_point_score(point)
         score += self._rank_feature_score(payload, rank_feature)
         source = self._payload_with_vector_alias(payload, requested_vector_field, dense_vector, score)
@@ -750,7 +735,6 @@ class QdrantConnection(DocStoreConnection):
             if not records:
                 return None
             point = records[0]
-            payload = self._extract_payload(point)
             vector_field = None
             if not self._is_metadata_index(index_name):
                 dense_size = len((self._extract_vectors(point) or {}).get(DENSE_VECTOR_NAME, [])) if isinstance(self._extract_vectors(point), dict) else None
@@ -965,9 +949,7 @@ class QdrantConnection(DocStoreConnection):
                     payload[key] = value
                 vector = {DENSE_VECTOR_NAME: list(dense_vector or self._metadata_vector())}
                 if not self._is_metadata_index(index_name):
-                    # ColPali/ColQwen PR hook:
-                    # preserve any future page/image vectors here on partial
-                    # updates so text edits do not drop visual retrieval state.
+                    # Future multivector updates should preserve page/image vectors on partial updates.
                     vector[SPARSE_VECTOR_NAME] = sparse_vector if sparse_vector is not None else self._empty_sparse_vector()
                 updated_points.append(
                     models.PointStruct(
