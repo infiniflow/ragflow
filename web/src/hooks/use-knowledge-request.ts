@@ -235,6 +235,73 @@ export const useDeleteKnowledge = () => {
 export const useUpdateKnowledge = (shouldFetchList = false) => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const queryClient = useQueryClient();
+
+  const extractRaptorConfigExt = (
+    raptorConfig: Record<string, any> | undefined,
+  ) => {
+    if (!raptorConfig) return raptorConfig;
+    const {
+      use_raptor,
+      prompt,
+      max_token,
+      threshold,
+      max_cluster,
+      random_seed,
+      auto_disable_for_structured_data,
+      ext,
+      ...raptorExt
+    } = raptorConfig;
+    return {
+      use_raptor,
+      prompt,
+      max_token,
+      threshold,
+      max_cluster,
+      random_seed,
+      auto_disable_for_structured_data,
+      ext: { ...ext, ...raptorExt },
+    };
+  };
+
+  const extractParserConfigExt = (
+    parserConfig: Record<string, any> | undefined,
+  ) => {
+    if (!parserConfig) return parserConfig;
+    const {
+      auto_keywords,
+      auto_questions,
+      chunk_token_num,
+      delimiter,
+      graphrag,
+      html4excel,
+      layout_recognize,
+      raptor,
+      tag_kb_ids,
+      topn_tags,
+      filename_embd_weight,
+      task_page_size,
+      pages,
+      ext,
+      ...parserExt
+    } = parserConfig;
+    return {
+      auto_keywords,
+      auto_questions,
+      chunk_token_num,
+      delimiter,
+      graphrag,
+      html4excel,
+      layout_recognize,
+      raptor: extractRaptorConfigExt(raptor),
+      tag_kb_ids,
+      topn_tags,
+      filename_embd_weight,
+      task_page_size,
+      pages,
+      ext: { ...ext, ...parserExt },
+    };
+  };
+
   const {
     data,
     isPending: loading,
@@ -277,7 +344,7 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
         description,
         permission,
         pagerank,
-        parser_config,
+        parser_config: extractParserConfigExt(parser_config),
         ext,
       };
       const { data = {} } = await updateKb(kbId, requestBody);

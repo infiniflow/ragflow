@@ -23,6 +23,7 @@ from api.db.services.document_service import DocumentService, queue_raptor_o_gra
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.connector_service import Connector2KbService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from api.db.services.user_service import TenantService, UserService
 from common.constants import FileSource, StatusEnum
@@ -145,8 +146,17 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     # Merge ext fields with req
     req.update(ext_fields)
 
+    # Extract connectors from request
+    connectors = []
+    if "connectors" in req:
+        connectors = req["connectors"]
+        del req["connectors"]
+
     if req.get("parser_config"):
-        req["parser_config"] = deep_merge(kb.parser_config, req["parser_config"])
+        parser_config = req["parser_config"]
+        req_ext_fields = parser_config.pop("ext", {})
+        parser_config.update(req_ext_fields)
+        req["parser_config"] = deep_merge(kb.parser_config, parser_config)
 
     if (chunk_method := req.get("parser_id")) and chunk_method != kb.parser_id:
         if not req.get("parser_config"):
@@ -190,7 +200,13 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     if not ok:
         return False, "Dataset updated failed"
 
+    # Link connectors to the dataset
+    errors = Connector2KbService.link_connectors(kb.id, [conn for conn in connectors], tenant_id)
+    if errors:
+        logging.error("Link KB errors: %s", errors)
+
     response_data = remap_dictionary_keys(k.to_dict())
+    response_data["connectors"] = connectors
     return True, response_data
 
 
