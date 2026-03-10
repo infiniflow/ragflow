@@ -644,7 +644,10 @@ func (h *Handler) GetUserPermission(c *gin.Context) {
 func (h *Handler) GetServices(c *gin.Context) {
 	services, err := h.service.GetAllServices()
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    common.CodeServerError,
+			"message": err.Error(),
+		})
 		return
 	}
 
@@ -928,6 +931,14 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"code":    code,
 				"message": "Invalid access token",
+			})
+			return
+		}
+
+		if !*user.IsSuperuser {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    common.CodeForbidden,
+				"message": "Permission denied",
 			})
 			return
 		}
