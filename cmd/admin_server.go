@@ -80,9 +80,6 @@ func main() {
 
 	logger.Info("Server mode", zap.String("mode", cfg.Server.Mode))
 
-	// Print all configuration settings
-	server.PrintAll()
-
 	// Set Gin mode
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)

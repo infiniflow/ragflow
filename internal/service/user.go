@@ -151,15 +151,38 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	user.LastLoginTime = &now_date
 
 	tenantName := req.Nickname + "'s Kingdom"
+
+	llmID := cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
+	if llmID == "" {
+		llmID = ""
+	}
+	embdID := cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name
+	if embdID == "" {
+		embdID = ""
+	}
+	asrID := cfg.UserDefaultLLM.DefaultModels.ASRModel.Name
+	if asrID == "" {
+		asrID = ""
+	}
+	img2txtID := cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name
+	if img2txtID == "" {
+		img2txtID = ""
+	}
+	rerankID := cfg.UserDefaultLLM.DefaultModels.RerankModel.Name
+	if rerankID == "" {
+		rerankID = ""
+	}
+
 	tenant := &model.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
-		LLMID:     cfg.Server.Mode,
-		EmbdID:    cfg.Server.Mode,
-		ASRID:     cfg.Server.Mode,
-		Img2TxtID: cfg.Server.Mode,
-		RerankID:  cfg.Server.Mode,
+		LLMID:     llmID,
+		EmbdID:    embdID,
+		ASRID:     asrID,
+		Img2TxtID: img2txtID,
+		RerankID:  rerankID,
 		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
+		Status:    &status,
 	}
 	tenant.CreateTime = &now
 	tenant.UpdateTime = &now
@@ -286,8 +309,8 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, common.ErrorCode, e
 // - CodeAuthenticationError (109): Email not registered or password mismatch
 // - CodeServerError (500): Password decryption failure
 // - CodeForbidden (403): Account disabled
-func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, common.ErrorCode, error) {
-	if req.Email == "admin@ragflow.io" {
+func (s *UserService) LoginByEmail(req *EmailLoginRequest, adminLogin bool) (*model.User, common.ErrorCode, error) {
+	if !adminLogin && req.Email == "admin@ragflow.io" {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("default admin account cannot be used to login normal services")
 	}
 
@@ -752,4 +775,53 @@ func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, err
 	}
 
 	return channels, common.CodeSuccess, nil
+}
+
+// SetTenantInfoRequest represents the request for setting tenant info
+type SetTenantInfoRequest struct {
+	TenantID  string `json:"tenant_id"`
+	ASRID     string `json:"asr_id"`
+	EmbdID    string `json:"embd_id"`
+	Img2TxtID string `json:"img2txt_id"`
+	LLMID     string `json:"llm_id"`
+	RerankID  string `json:"rerank_id"`
+	TTSID     string `json:"tts_id"`
+}
+
+// SetTenantInfo updates tenant model configuration
+func (s *UserService) SetTenantInfo(userID string, req *SetTenantInfoRequest) error {
+	tenantDAO := dao.NewTenantDAO()
+
+	_, err := tenantDAO.GetByID(req.TenantID)
+	if err != nil {
+		return fmt.Errorf("tenant not found: %w", err)
+	}
+
+	updates := make(map[string]interface{})
+	if req.LLMID != "" {
+		updates["llm_id"] = req.LLMID
+	}
+	if req.EmbdID != "" {
+		updates["embd_id"] = req.EmbdID
+	}
+	if req.ASRID != "" {
+		updates["asr_id"] = req.ASRID
+	}
+	if req.Img2TxtID != "" {
+		updates["img2txt_id"] = req.Img2TxtID
+	}
+	if req.RerankID != "" {
+		updates["rerank_id"] = req.RerankID
+	}
+	if req.TTSID != "" {
+		updates["tts_id"] = req.TTSID
+	}
+
+	if len(updates) > 0 {
+		if err := tenantDAO.Update(req.TenantID, updates); err != nil {
+			return fmt.Errorf("failed to update tenant: %w", err)
+		}
+	}
+
+	return nil
 }
