@@ -25,11 +25,13 @@ import (
 	"net/http"
 	"os"
 	"ragflow/internal/cache"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/model"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
+	"strconv"
 	"time"
 )
 
@@ -275,26 +277,43 @@ func (s *Service) GetUserPermission(username string) ([]map[string]interface{}, 
 	return []map[string]interface{}{}, nil
 }
 
-// GetAllServices get all services
-func (s *Service) GetAllServices() ([]map[string]interface{}, error) {
+// ListServices get all services
+func (s *Service) ListServices() ([]map[string]interface{}, error) {
 	allConfigs := server.GetAllConfigs()
 
 	var result []map[string]interface{}
 	for _, configDict := range allConfigs {
-		// Get service details to check status
-		serviceDetail, err := s.GetServiceDetails(configDict)
-		if err == nil {
-			if status, ok := serviceDetail["status"]; ok {
-				configDict["status"] = status
+		serviceType := configDict["service_type"]
+		if serviceType != "ragflow_server" {
+			// Get service details to check status
+			serviceDetail, err := s.GetServiceDetails(configDict)
+			if err == nil {
+				if status, ok := serviceDetail["status"]; ok {
+					configDict["status"] = status
+				} else {
+					configDict["status"] = "timeout"
+				}
 			} else {
 				configDict["status"] = "timeout"
 			}
-		} else {
-			configDict["status"] = "timeout"
+			result = append(result, configDict)
 		}
-		result = append(result, configDict)
+
 	}
 
+	id := len(result)
+	serverList := GlobalServerStatusStore.GetAllStatuses()
+	for _, serverStatus := range serverList {
+		serverItem := make(map[string]interface{})
+		serverItem["name"] = serverStatus.ServerName
+		serverItem["service_type"] = serverStatus.ServerType
+		serverItem["id"] = id
+		id++
+		serverItem["host"] = serverStatus.Host
+		serverItem["port"] = serverStatus.Port
+		serverItem["status"] = "alive"
+		result = append(result, serverItem)
+	}
 	return result, nil
 }
 
@@ -539,6 +558,7 @@ func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
 
 	// Get minio config from allConfigs
 	var host string
+	var port int
 	var secure bool
 	var verify bool = true
 
@@ -548,6 +568,16 @@ func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
 			// Get host from config
 			if h, ok := config["host"].(string); ok {
 				host = h
+			}
+
+			if p, ok := config["port"].(int); ok {
+				port = p
+			} else if p, ok := config["port"].(float64); ok {
+				port = int(p)
+			} else if p, ok := config["port"].(string); ok {
+				if parsedPort, err := strconv.Atoi(p); err == nil {
+					port = parsedPort
+				}
 			}
 			// Get secure from extra config
 			if extra, ok := config["extra"].(map[string]interface{}); ok {
@@ -568,7 +598,10 @@ func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
 
 	// Default host
 	if host == "" {
-		host = "localhost:9000"
+		host = "localhost"
+	}
+	if port == 0 {
+		port = 9000
 	}
 
 	// Determine scheme
@@ -577,7 +610,7 @@ func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
 		scheme = "https"
 	}
 
-	url := fmt.Sprintf("%s://%s/minio/health/live", scheme, host)
+	url := fmt.Sprintf("%s://%s:%d/minio/health/live", scheme, host, port)
 
 	// Create HTTP client with timeout
 	client := &http.Client{
@@ -731,4 +764,19 @@ func (s *Service) TestSandboxConnection(providerType string, config map[string]i
 		"config":        config,
 		"connected":     true,
 	}, nil
+}
+
+// HandleHeartbeat handle heartbeat
+func (s *Service) HandleHeartbeat(msg *common.BaseMessage) error {
+	status := &common.BaseMessage{
+		ServerName: msg.ServerName,
+		ServerType: msg.ServerType,
+		Host:       msg.Host,
+		Port:       msg.Port,
+		Version:    msg.Version,
+		Timestamp:  msg.Timestamp,
+		Ext:        msg.Ext,
+	}
+	GlobalServerStatusStore.UpdateStatus(msg.ServerName, status)
+	return nil
 }

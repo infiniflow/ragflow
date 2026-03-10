@@ -225,6 +225,10 @@ def _load_doc_module(monkeypatch):
     
     tenant_llm_service_mod.TenantService = _StubTenantService
     tenant_llm_service_mod.TenantLLMService = _StubTenantLLMService
+
+    class _StubLLMFactoriesService:
+        pass
+
     tenant_llm_service_mod.LLMFactoriesService = _StubLLMFactoriesService
     monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_service_mod)
 
@@ -999,7 +1003,7 @@ class TestDocRoutesUnit:
             "get_request_json",
             lambda: _AwaitableValue({"dataset_ids": ["ds-1"], "question": "q", "metadata_condition": {"logic": "and"}}),
         )
-        monkeypatch.setattr(module.DocMetadataService, "get_meta_by_kbs", lambda _ids: [])
+        monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kbs: [])
         monkeypatch.setattr(module, "meta_filter", lambda *_args, **_kwargs: [])
         res = _run(module.retrieval_test.__wrapped__("tenant-1"))
         assert "code" in res

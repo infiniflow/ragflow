@@ -19,10 +19,12 @@ package admin
 import (
 	"errors"
 	"net/http"
+	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -111,7 +113,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	user, code, err := h.userService.LoginByEmail(&req)
+	user, code, err := h.userService.LoginByEmail(&req, true)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"code":    code,
@@ -135,8 +137,9 @@ func (h *Handler) Login(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "Login successful",
+		"code":    common.CodeSuccess,
+		"message": "Welcome back!",
+		"data":    user,
 	})
 }
 
@@ -639,9 +642,12 @@ func (h *Handler) GetUserPermission(c *gin.Context) {
 
 // GetServices handle get all services
 func (h *Handler) GetServices(c *gin.Context) {
-	services, err := h.service.GetAllServices()
+	services, err := h.service.ListServices()
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    common.CodeServerError,
+			"message": err.Error(),
+		})
 		return
 	}
 
@@ -902,7 +908,10 @@ func (h *Handler) TestSandboxConnection(c *gin.Context) {
 
 	result, err := h.service.TestSandboxConnection(req.ProviderType, req.Config)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "Invalid access token",
+		})
 		return
 	}
 
@@ -929,6 +938,14 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		if !*user.IsSuperuser {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    common.CodeForbidden,
+				"message": "Permission denied",
+			})
+			return
+		}
+
 		c.Set("user", user)
 		c.Set("user_id", user.ID)
 		c.Set("email", user.Email)
@@ -942,4 +959,38 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 		Code:    404,
 		Message: "The requested resource was not found",
 	})
+}
+
+// Reports handle heartbeat reports from servers
+func (h *Handler) Reports(c *gin.Context) {
+	var req common.BaseMessage
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	// Set default timestamp if not provided
+	if req.Timestamp.IsZero() {
+		req.Timestamp = time.Now()
+	}
+
+	// Only process heartbeat messages for now
+	if req.MessageType != common.MessageHeartbeat {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "Unsupported report type: " + string(req.MessageType),
+		})
+		return
+	}
+
+	// Handle the heartbeat
+	if err := h.service.HandleHeartbeat(&req); err != nil {
+		errorResponse(c, "Failed to process heartbeat: "+err.Error(), 500)
+		return
+	}
+
+	successNoData(c, "Heartbeat received successfully")
 }

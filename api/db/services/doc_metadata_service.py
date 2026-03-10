@@ -474,7 +474,7 @@ class DocMetadataService:
 
             # For Infinity or as fallback: use delete+insert
             logging.debug(f"[update_document_metadata] Using delete+insert method for doc_id: {doc_id}")
-            cls.delete_document_metadata(doc_id, skip_empty_check=True)
+            cls.delete_document_metadata(doc_id, kb_id, tenant_id, skip_empty_check=True)
             return cls.insert_document_metadata(doc_id, processed_meta)
 
         except Exception as e:
@@ -483,7 +483,7 @@ class DocMetadataService:
 
     @classmethod
     @DB.connection_context()
-    def delete_document_metadata(cls, doc_id: str, skip_empty_check: bool = False) -> bool:
+    def delete_document_metadata(cls, doc_id: str, kb_id: str, tenant_id: str = None, skip_empty_check: bool = False) -> bool:
         """
         Delete document metadata from ES/Infinity.
         Also drops the metadata table if it becomes empty (efficiently).
@@ -491,6 +491,8 @@ class DocMetadataService:
 
         Args:
             doc_id: Document ID
+            kb_id: Knowledge base ID
+            tenant_id: Tenant ID, if not provided, get it from kb_id
             skip_empty_check: If True, skip checking/dropping empty table (for bulk deletions)
 
         Returns:
@@ -498,18 +500,15 @@ class DocMetadataService:
         """
         try:
             logging.debug(f"[METADATA DELETE] Starting metadata deletion for document: {doc_id}")
-            # Get document with tenant_id
-            doc_query = Document.select(Document, Knowledgebase.tenant_id).join(
-                Knowledgebase, on=(Knowledgebase.id == Document.kb_id)
-            ).where(Document.id == doc_id)
 
-            doc = doc_query.first()
-            if not doc:
-                logging.warning(f"Document {doc_id} not found for metadata deletion")
-                return False
+            # Get tenant_id from kb_id if not provided
+            if tenant_id is None:
+                kb = Knowledgebase.get_or_none(Knowledgebase.id == kb_id)
+                if not kb:
+                    logging.warning(f"Knowledgebase {kb_id} not found for metadata deletion")
+                    return False
+                tenant_id = kb.tenant_id
 
-            tenant_id = doc.knowledgebase.tenant_id
-            kb_id = doc.kb_id
             index_name = cls._get_doc_meta_index_name(tenant_id)
             logging.debug(f"[delete_document_metadata] Deleting doc_id: {doc_id}, kb_id: {kb_id}, index: {index_name}")
 
@@ -1143,7 +1142,7 @@ class DocMetadataService:
                     logging.debug(f"[batch_update_metadata] Updating doc_id: {doc_id}, meta: {meta}")
                     # If metadata is empty, delete the row entirely instead of keeping empty metadata
                     if not meta:
-                        cls.delete_document_metadata(doc_id, skip_empty_check=True)
+                        cls.delete_document_metadata(doc_id, kb_id, tenant_id=None, skip_empty_check=True)
                     else:
                         cls.update_document_metadata(doc_id, meta)
                     updated_docs += 1
