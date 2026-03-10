@@ -241,11 +241,46 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
     mutateAsync,
   } = useMutation({
     mutationKey: [KnowledgeApiAction.SaveKnowledge],
-    mutationFn: async (params: Record<string, any>) => {
-      const kbId = params?.id ? params?.id : knowledgeBaseId;
-      const { data = {} } = await updateKb(kbId, {
-        ...params,
-      });
+    mutationFn: async (params: {
+      kb_id?: string;
+      name?: string;
+      embedding_model?: string;
+      chunk_method?: string;
+      pipeline_id?: string | null;
+      avatar?: string | null;
+      description?: string;
+      permission?: string;
+      pagerank?: number;
+      parser_config?: Record<string, any>;
+      [key: string]: any;
+    }) => {
+      const kbId = params?.kb_id || knowledgeBaseId;
+      const {
+        kb_id,
+        name,
+        embedding_model,
+        chunk_method,
+        pipeline_id,
+        avatar,
+        description,
+        permission,
+        pagerank,
+        parser_config,
+        ...ext
+      } = params;
+      const requestBody: Record<string, any> = {
+        name,
+        embedding_model,
+        chunk_method,
+        pipeline_id,
+        avatar,
+        description,
+        permission,
+        pagerank,
+        parser_config,
+        ext,
+      };
+      const { data = {} } = await updateKb(kbId, requestBody);
       if (data.code === 0) {
         message.success(i18n.t(`message.updated`));
         if (shouldFetchList) {

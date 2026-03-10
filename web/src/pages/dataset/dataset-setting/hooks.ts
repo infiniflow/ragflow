@@ -66,8 +66,8 @@ export const useFetchKnowledgeConfigurationOnMount = (
         'pagerank',
         'avatar',
       ]),
-      embd_id: knowledgeDetails.embedding_model,
-      parser_id: knowledgeDetails.chunk_method,
+      embedding_model: knowledgeDetails.embd_id,
+      chunk_method: knowledgeDetails.parser_id,
     } as z.infer<typeof formSchema>;
     form.reset(formValues);
   }, [form, knowledgeDetails]);
