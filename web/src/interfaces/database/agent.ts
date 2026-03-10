@@ -79,6 +79,7 @@ export declare interface IFlow {
   canvas_category: string;
   release?: boolean;
   release_time?: number;
+  last_publish_time?: number;
 }
 
 export interface IFlowTemplate {
