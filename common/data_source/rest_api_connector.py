@@ -37,6 +37,7 @@ except Exception:  # pragma: no cover
     _jsonpath = None
 
 _FIELD_SEGMENT_RE = re.compile(r'^(?P<key>[^\[\]]+)(\[(?P<index>\d+|\*)\])?$')
+_DEFAULT_MAX_PAGES = 1000
 
 
 class AuthType:
@@ -109,7 +110,7 @@ class RestAPIConnectorConfig(BaseModel):
     content_template: Optional[str] = None
 
     batch_size: int = INDEX_BATCH_SIZE
-    max_pages: int = 1000
+    max_pages: int = _DEFAULT_MAX_PAGES
 
     @field_validator("headers", mode="before")
     @classmethod
@@ -177,7 +178,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
         pagination_config: Optional[Dict[str, Any]] = None,
         poll_timestamp_field: Optional[str] = None,
         batch_size: int = INDEX_BATCH_SIZE,
-        max_pages: int = 1000,
+        max_pages: int = _DEFAULT_MAX_PAGES,
         request_body: Optional[Dict[str, Any]] = None,
         field_type_hints: Optional[Dict[str, str]] = None,
         field_default_values: Optional[Dict[str, Any]] = None,
