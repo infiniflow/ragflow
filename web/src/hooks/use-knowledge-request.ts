@@ -242,7 +242,7 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
   } = useMutation({
     mutationKey: [KnowledgeApiAction.SaveKnowledge],
     mutationFn: async (params: Record<string, any>) => {
-      const kbId = params?.kb_id ? params?.kb_id : knowledgeBaseId;
+      const kbId = params?.id ? params?.id : knowledgeBaseId;
       const { data = {} } = await updateKb(kbId, {
         ...params,
       });
