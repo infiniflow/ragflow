@@ -103,23 +103,21 @@ def thumbnail_img(filename, blob):
     if re.match(r".*\.pdf$", filename):
         try:
             with sys.modules[LOCK_KEY_pdfplumber]:
-                pdf = pdfplumber.open(BytesIO(blob))
-                if not pdf.pages:
-                    pdf.close()
-                    return None
-                buffered = BytesIO()
-                resolution = 32
-                img = None
-                for _ in range(10):
-                    pdf.pages[0].to_image(resolution=resolution).annotated.save(buffered, format="png")
-                    img = buffered.getvalue()
-                    if len(img) >= 64000 and resolution >= 2:
-                        resolution = resolution / 2
-                        buffered = BytesIO()
-                    else:
-                        break
-                pdf.close()
-                return img
+                with pdfplumber.open(BytesIO(blob)) as pdf:
+                    if not pdf.pages:
+                        return None
+                    buffered = BytesIO()
+                    resolution = 32
+                    img = None
+                    for _ in range(10):
+                        pdf.pages[0].to_image(resolution=resolution).annotated.save(buffered, format="png")
+                        img = buffered.getvalue()
+                        if len(img) >= 64000 and resolution >= 2:
+                            resolution = resolution / 2
+                            buffered = BytesIO()
+                        else:
+                            break
+                    return img
         except Exception:
             return None
 
