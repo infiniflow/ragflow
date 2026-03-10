@@ -111,7 +111,8 @@ class DocumentService(CommonService):
         docs = docs.paginate(page_number, items_per_page)
 
         docs_list = list(docs.dicts())
-        metadata_map = DocMetadataService.get_metadata_for_documents(None, kb_id)
+        doc_ids_on_page = [doc["id"] for doc in docs_list]
+        metadata_map = DocMetadataService.get_metadata_for_documents(doc_ids_on_page, kb_id) if doc_ids_on_page else {}
         for doc in docs_list:
             doc["meta_fields"] = metadata_map.get(doc["id"], {})
         return docs_list, count
@@ -159,10 +160,12 @@ class DocumentService(CommonService):
         if suffix:
             docs = docs.where(cls.model.suffix.in_(suffix))
 
-        metadata_map = DocMetadataService.get_metadata_for_documents(None, kb_id)
-        doc_ids_with_metadata = set(metadata_map.keys())
-        if return_empty_metadata and doc_ids_with_metadata:
-            docs = docs.where(cls.model.id.not_in(doc_ids_with_metadata))
+        metadata_map = {}
+        if return_empty_metadata:
+            metadata_map = DocMetadataService.get_metadata_for_documents(None, kb_id)
+            doc_ids_with_metadata = set(metadata_map.keys())
+            if doc_ids_with_metadata:
+                docs = docs.where(cls.model.id.not_in(doc_ids_with_metadata))
 
         count = docs.count()
         if desc:
@@ -178,6 +181,8 @@ class DocumentService(CommonService):
             for doc in docs_list:
                 doc["meta_fields"] = {}
         else:
+            doc_ids_on_page = [doc["id"] for doc in docs_list]
+            metadata_map = DocMetadataService.get_metadata_for_documents(doc_ids_on_page, kb_id) if doc_ids_on_page else {}
             for doc in docs_list:
                 doc["meta_fields"] = metadata_map.get(doc["id"], {})
         return docs_list, count
