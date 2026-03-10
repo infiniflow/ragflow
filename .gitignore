@@ -229,4 +229,5 @@ internal/cpp/cmake-build-debug/
 .trae/
 
 # Go server build output
-bin/server_main
+bin/*
+!bin/.gitkeep
