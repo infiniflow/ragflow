@@ -442,6 +442,46 @@ def test_openai_nonstream_branch_unit(monkeypatch):
 
 
 @pytest.mark.p2
+def test_openai_nonstream_reference_chunks_skip_malformed_items_unit(monkeypatch):
+    module = _load_session_module(monkeypatch)
+
+    monkeypatch.setattr(module, "jsonify", lambda payload: payload)
+    monkeypatch.setattr(module, "num_tokens_from_string", lambda text: len(text or ""))
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(kb_ids=[])])
+
+    async def fake_async_chat(_dia, _msg, _stream, **_kwargs):
+        yield {
+            "answer": "world",
+            "reference": {
+                "chunks": [
+                    ["bad-chunk"],
+                    {"doc_id": "doc-1", "docnm_kwd": "Doc 1", "content_with_weight": "chunk text"},
+                ]
+            },
+        }
+
+    monkeypatch.setattr(module, "async_chat", fake_async_chat)
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue(
+            {
+                "model": "model",
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": False,
+                "extra_body": {"reference": True},
+            }
+        ),
+    )
+
+    res = _run(inspect.unwrap(module.chat_completion_openai_like)("tenant-1", "chat-1"))
+    reference = res["choices"][0]["message"]["reference"]
+    assert len(reference) == 1
+    assert reference[0]["document_id"] == "doc-1"
+    assert reference[0]["document_name"] == "Doc 1"
+
+
+@pytest.mark.p2
 def test_agents_openai_compatibility_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
 
