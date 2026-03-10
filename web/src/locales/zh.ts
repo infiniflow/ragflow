@@ -851,7 +851,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tocEnhance: 'PageIndex',
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
-      deleteSelectedConfirm: '删除选中的 {count} 个会话？',
+      deleteSelectedConfirm: '删除选中的 {{count}} 个会话？',
     },
     setting: {
       Verify: '验证',
@@ -919,8 +919,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       githubDescription:
         '连接 GitHub，可同步 Pull Request 与 Issue 内容用于检索。',
       airtableDescription: '连接 Airtable，同步指定工作区下指定表格中的文件。',
-      dingtalkAITableDescription:
-        '连接钉钉AI表格，同步指定表格中的记录。',
+      dingtalkAITableDescription: '连接钉钉AI表格，同步指定表格中的记录。',
       gitlabDescription:
         '连接 GitLab，同步仓库、Issue、合并请求（MR）及相关文档内容。',
       asanaDescription: '连接 Asana，同步工作区中的文件。',
