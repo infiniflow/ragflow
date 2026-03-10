@@ -1599,6 +1599,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       dbType: '数据库类型',
       database: '数据库',
       username: '用户名',
+      userId: '用户 ID',
       host: '主机',
       port: '端口',
       password: '密码',
