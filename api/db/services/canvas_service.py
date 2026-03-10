@@ -179,15 +179,9 @@ class UserCanvasService(CommonService):
         # Get latest release time for each canvas
         if agents_list:
             canvas_ids = [a['id'] for a in agents_list]
-            release_times = (UserCanvasVersion
-                .select(
-                    UserCanvasVersion.user_canvas_id,
-                    fn.MAX(UserCanvasVersion.create_time).alias('release_time')
-                )
-                .where(
-                    (UserCanvasVersion.user_canvas_id.in_(canvas_ids)) &
-                    (UserCanvasVersion.release == True)
-                )
+            release_times = (
+                UserCanvasVersion.select(UserCanvasVersion.user_canvas_id, fn.MAX(UserCanvasVersion.create_time).alias("release_time"))
+                .where((UserCanvasVersion.user_canvas_id.in_(canvas_ids)) & (UserCanvasVersion.release))
                 .group_by(UserCanvasVersion.user_canvas_id)
             )
             release_time_map = {r.user_canvas_id: r.release_time for r in release_times}

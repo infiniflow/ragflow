@@ -76,10 +76,7 @@ class UserCanvasVersionService(CommonService):
     def delete_all_versions(cls, user_canvas_id):
         try:
             # Only get unpublished versions (False or None), keep all released versions
-            unpublished = cls.model.select().where(
-                cls.model.user_canvas_id == user_canvas_id,
-                (cls.model.release == False) | (cls.model.release.is_null(True))
-            ).order_by(cls.model.create_time.desc())
+            unpublished = cls.model.select().where(cls.model.user_canvas_id == user_canvas_id, (~cls.model.release) | (cls.model.release.is_null(True))).order_by(cls.model.create_time.desc())
 
             # Only delete old unpublished versions beyond the limit
             if unpublished.count() > 20:
