@@ -919,8 +919,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       githubDescription:
         '连接 GitHub，可同步 Pull Request 与 Issue 内容用于检索。',
       airtableDescription: '连接 Airtable，同步指定工作区下指定表格中的文件。',
-      dingtalkAITableDescription:
-        '连接钉钉AI表格，同步指定表格中的记录。',
+      dingtalkAITableDescription: '连接钉钉AI表格，同步指定表格中的记录。',
       gitlabDescription:
         '连接 GitLab，同步仓库、Issue、合并请求（MR）及相关文档内容。',
       asanaDescription: '连接 Asana，同步工作区中的文件。',
@@ -1250,6 +1249,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       consumerApp: '消费者应用',
       other: '其他',
       agents: '智能体',
+      publishedAt: '发布于',
       beginInput: '开始输入',
       seconds: '秒',
       ref: '引用变量',
@@ -1345,6 +1345,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       cite: '引用',
       citeTip: '引用',
       nameMessage: '请输入名称',
+      lastSavedAt: '上次保存于',
       description: '描述',
       examples: '示例',
       to: '下一步',
@@ -1888,6 +1889,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '在此处编写您的 SQL 查询。您可以使用变量、原始 SQL，或使用变量语法混合使用两者。',
       frameworkPrompts: '框架',
       release: '发布',
+      production: '正式版',
+      productionTooltip: '此版本已发布到生产环境。可通过 API 或嵌入页面访问。',
       createFromBlank: '从空白创建',
       createFromTemplate: '从模板创建',
       importJsonFile: '导入 JSON 文件',
