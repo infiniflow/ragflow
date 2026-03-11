@@ -27,6 +27,7 @@ export default {
       traditionalChinese: 'Китайский традиционный',
       russian: 'Русский',
       bulgarian: 'Болгарский',
+      arabic: 'Арабский',
       language: 'Язык',
       languageMessage: 'Пожалуйста, укажите ваш язык!',
       languagePlaceholder: 'выберите ваш язык',
@@ -2044,6 +2045,7 @@ export default {
       vietnamese: 'Вьетнамский',
       russian: 'Русский',
       bulgarian: 'Болгарский',
+      arabic: 'Арабский',
     },
     pagination: {
       total: 'Всего {{total}}',
