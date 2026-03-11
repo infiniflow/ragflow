@@ -406,9 +406,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
         page_count = 0
 
         page = int(self.pagination_config.get("start_page", 1))
-        per_page = int(self.pagination_config.get("page_size", self.batch_size))
-        if per_page <= 0:
-            per_page = self.batch_size
+        per_page = self._resolve_page_size()
 
         offset = int(self.pagination_config.get("start_offset", 0))
         limit = int(self.pagination_config.get("limit", per_page))
@@ -540,6 +538,31 @@ class RestAPIConnector(LoadConnector, PollConnector):
         return url, query_params
 
     # -- Pagination helpers -------------------------------------------------
+
+    def _resolve_page_size(self) -> int:
+        """Determine per-page size from config, query params, or batch_size fallback.
+
+        Priority: explicit ``page_size`` in pagination_config > value already
+        present in user query params for the same param name > batch_size.
+        """
+        explicit = self.pagination_config.get("page_size")
+        if explicit is not None:
+            val = int(explicit)
+            if val > 0:
+                return val
+
+        size_param = self.pagination_config.get("page_size_param") or self.pagination_config.get("limit_param")
+        if size_param:
+            for source in (self._explicit_query_params, self._url_params):
+                if size_param in source:
+                    try:
+                        val = int(source[size_param])
+                        if val > 0:
+                            return val
+                    except (ValueError, TypeError):
+                        pass
+
+        return self.batch_size
 
     def _apply_page_pagination(self, params: Dict[str, Any], page: int, per_page: int) -> None:
         params[self.pagination_config.get("page_param", "page")] = page
