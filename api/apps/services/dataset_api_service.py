@@ -61,7 +61,7 @@ async def create_dataset(tenant_id: str, req: dict):
         req["parser_config"] = parser_cfg
     req.update(ext_fields)
 
-    e, req = KnowledgebaseService.create_with_name(
+    e, create_dict = KnowledgebaseService.create_with_name(
         name=req.pop("name", None),
         tenant_id=tenant_id,
         parser_id=req.pop("parser_id", None),
@@ -69,22 +69,24 @@ async def create_dataset(tenant_id: str, req: dict):
     )
 
     if not e:
-        return False, req
+        return False, create_dict
+
+    logging.info("try to create dataset, create_dict: %s", create_dict)
 
     # Insert embedding model(embd id)
     ok, t = TenantService.get_by_id(tenant_id)
     if not ok:
         return False, "Tenant not found"
-    if not req.get("embd_id"):
-        req["embd_id"] = t.embd_id
+    if not create_dict.get("embd_id"):
+        create_dict["embd_id"] = t.embd_id
     else:
-        ok, err = verify_embedding_availability(req["embd_id"], tenant_id)
+        ok, err = verify_embedding_availability(create_dict["embd_id"], tenant_id)
         if not ok:
             return False, err
 
-    if not KnowledgebaseService.save(**req):
+    if not KnowledgebaseService.save(**create_dict):
         return False, "Failed to save dataset"
-    ok, k = KnowledgebaseService.get_by_id(req["id"])
+    ok, k = KnowledgebaseService.get_by_id(create_dict["id"])
     if not ok:
         return False, "Dataset created failed"
     response_data = remap_dictionary_keys(k.to_dict())
@@ -102,6 +104,16 @@ async def delete_datasets(tenant_id: str, ids: list = None):
     kb_id_instance_pairs = []
     if ids is None or len(ids) == 0:
         return True, {"success_count": 0}
+
+    error_kb_ids = []
+    for kb_id in ids:
+        kb = KnowledgebaseService.get_or_none(id=kb_id, tenant_id=tenant_id)
+        if kb is None:
+            error_kb_ids.append(kb_id)
+            continue
+        kb_id_instance_pairs.append((kb_id, kb))
+    if len(error_kb_ids) > 0:
+        return False, f"""User '{tenant_id}' lacks permission for datasets: '{", ".join(error_kb_ids)}'"""
 
     errors = []
     success_count = 0
