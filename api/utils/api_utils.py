@@ -28,7 +28,6 @@ from typing import Any
 
 import requests
 from quart import (
-    Response,
     jsonify,
     request,
     has_app_context,
