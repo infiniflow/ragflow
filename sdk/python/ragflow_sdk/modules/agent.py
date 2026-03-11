@@ -88,7 +88,10 @@ class Agent(Base):
         raise Exception(res.get("message"))
     
     def delete_sessions(self, ids: list[str] | None = None, delete_all: bool = False):
-        res = self.rm(f"/agents/{self.id}/sessions", {"ids": ids, "delete_all": delete_all})
+        payload = {"ids": ids}
+        if delete_all:
+            payload["delete_all"] = True
+        res = self.rm(f"/agents/{self.id}/sessions", payload)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))
