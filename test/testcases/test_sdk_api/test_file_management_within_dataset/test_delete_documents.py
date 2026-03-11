@@ -20,7 +20,7 @@ from common import bulk_upload_documents
 
 
 class TestDocumentsDeletion:
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_message, remaining",
         [

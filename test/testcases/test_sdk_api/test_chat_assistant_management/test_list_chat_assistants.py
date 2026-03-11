@@ -154,7 +154,7 @@ class TestChatAssistantsList:
             else:
                 assert assistants[0].name == params["name"]
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "chat_assistant_id, expected_num, expected_message",
         [
