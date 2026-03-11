@@ -21,6 +21,7 @@ from functools import reduce
 from io import BytesIO
 from timeit import default_timer as timer
 from docx import Document
+from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
 from docx.opc.pkgreader import _SerializedRelationships, _SerializedRelationship
 from docx.table import Table as DocxTable
 from docx.text.paragraph import Paragraph
@@ -33,6 +34,7 @@ from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
+from rag.utils.lazy_image import LazyDocxImage
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
@@ -262,6 +264,40 @@ PARSERS = {
 class Docx(DocxParser):
     def __init__(self):
         pass
+
+    def get_picture(self, document, paragraph):
+        imgs = paragraph._element.xpath(".//pic:pic")
+        if not imgs:
+            return None
+        image_blobs = []
+        for img in imgs:
+            embed = img.xpath(".//a:blip/@r:embed")
+            if not embed:
+                continue
+            embed = embed[0]
+            try:
+                related_part = document.part.related_parts[embed]
+                image_blob = related_part.image.blob
+            except UnrecognizedImageError:
+                logging.info("Unrecognized image format. Skipping image.")
+                continue
+            except UnexpectedEndOfFileError:
+                logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
+                continue
+            except InvalidImageStreamError:
+                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+                continue
+            except UnicodeDecodeError:
+                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+                continue
+            except Exception as e:
+                logging.warning(f"The recognized image stream appears to be corrupted. Skipping image, exception: {e}")
+                continue
+            image_blobs.append(image_blob)
+
+        if not image_blobs:
+            return None
+        return LazyDocxImage(image_blobs)
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
