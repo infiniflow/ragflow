@@ -289,7 +289,7 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 
 // UpdateActivateStatusHTTPRequest update activate status request
 type UpdateActivateStatusHTTPRequest struct {
-	ActivateStatus bool `json:"activate_status" binding:"required"`
+	ActivateStatus string `json:"activate_status" binding:"required"`
 }
 
 // UpdateUserActivateStatus handle update user activate status
@@ -306,7 +306,13 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.UpdateUserActivateStatus(username, req.ActivateStatus); err != nil {
+	if req.ActivateStatus != "on" && req.ActivateStatus != "off" {
+		errorResponse(c, "Activation status must be 'on' or 'off'", 400)
+		return
+	}
+
+	isActive := req.ActivateStatus == "on"
+	if err := h.service.UpdateUserActivateStatus(username, isActive); err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
 	}
@@ -322,9 +328,9 @@ func (h *Handler) GrantAdmin(c *gin.Context) {
 		return
 	}
 
-	// Get current user from context
-	currentUser, _ := c.Get("user")
-	if currentUser != nil && currentUser.(string) == username {
+	// Get current user email from context
+	email, _ := c.Get("email")
+	if email != nil && email.(string) == username {
 		errorResponse(c, "can't grant current user: "+username, 409)
 		return
 	}
@@ -345,9 +351,9 @@ func (h *Handler) RevokeAdmin(c *gin.Context) {
 		return
 	}
 
-	// Get current user from context
-	currentUser, _ := c.Get("user")
-	if currentUser != nil && currentUser.(string) == username {
+	// Get current user email from context
+	email, _ := c.Get("email")
+	if email != nil && email.(string) == username {
 		errorResponse(c, "can't revoke current user: "+username, 409)
 		return
 	}
