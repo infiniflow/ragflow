@@ -596,11 +596,12 @@ async def agent_completions(tenant_id, agent_id):
                 reference.update(ans["data"]["reference"])
 
             if ans.get("event") == "node_finished":
-                node_out = ans.get("data", {}).get("outputs", {})
-                if node_out.get("structured"):
-                    structured_output = node_out["structured"]
+                data = ans.get("data", {})
+                node_out = data.get("outputs", {})
+                component_id = data.get("component_id")
+                if component_id is not None and "structured" in node_out:
+                    structured_output[component_id] = copy.deepcopy(node_out["structured"])
                 if return_trace:
-                    data = ans.get("data", {})
                     trace_items.append(
                         {
                             "component_id": data.get("component_id"),
