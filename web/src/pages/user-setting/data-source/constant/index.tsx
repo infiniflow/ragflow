@@ -1095,14 +1095,6 @@ export const DataSourceFormFields = {
       defaultValue: 'none',
     },
     {
-      label: 'Page Param',
-      name: 'config.pagination_config.page_param',
-      type: FormFieldType.Text,
-      required: false,
-      defaultValue: 'page',
-      shouldRender: (values: any) => values?.config?.pagination_type === 'page',
-    },
-    {
       label: 'Start Page',
       name: 'config.pagination_config.start_page',
       type: FormFieldType.Number,
@@ -1157,24 +1149,6 @@ export const DataSourceFormFields = {
     },
     // ── Advanced fields (hidden until toggled) ────────────────────────
     {
-      label: 'Items JSONPath',
-      name: 'config.items_path',
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: 'stories (auto-detected if empty)',
-      tooltip: t('setting.restApiItemsPathTip'),
-      shouldRender: (values: any) => !!values?.config?.show_advanced,
-    },
-    {
-      label: 'ID Field',
-      name: 'config.id_field',
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: 'id (auto-generated if empty)',
-      tooltip: t('setting.restApiIdFieldTip'),
-      shouldRender: (values: any) => !!values?.config?.show_advanced,
-    },
-    {
       label: 'Custom Headers (JSON)',
       name: 'config.headers',
       type: FormFieldType.Textarea,
@@ -1182,16 +1156,6 @@ export const DataSourceFormFields = {
       placeholder: `{"X-Custom-Header": "value"}`,
       tooltip: t('setting.restApiHeadersTip'),
       shouldRender: (values: any) => !!values?.config?.show_advanced,
-    },
-    {
-      label: 'Page Size Param',
-      name: 'config.pagination_config.page_size_param',
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: 'per_page (leave empty if already in Query Parameters)',
-      shouldRender: (values: any) =>
-        !!values?.config?.show_advanced &&
-        values?.config?.pagination_type === 'page',
     },
     {
       label: 'Limit Param',
