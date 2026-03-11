@@ -20,12 +20,11 @@ import re
 
 from common.constants import ParserType
 from io import BytesIO
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level, attach_media_context
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level, attach_media_context, concat_img
 from common.token_utils import num_tokens_from_string
 from deepdoc.parser import PdfParser, DocxParser
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper, vision_figure_parser_docx_wrapper
 from docx import Document
-from PIL import Image
 from rag.app.naive import by_plaintext, PARSERS
 from common.parser_config_utils import normalize_layout_recognizer
 
@@ -71,45 +70,6 @@ class Docx(DocxParser):
     def __init__(self):
         pass
 
-    def get_picture(self, document, paragraph):
-        img = paragraph._element.xpath(".//pic:pic")
-        if not img:
-            return None
-        try:
-            img = img[0]
-            embed = img.xpath(".//a:blip/@r:embed")[0]
-            related_part = document.part.related_parts[embed]
-            image = related_part.image
-            if image is not None:
-                image = Image.open(BytesIO(image.blob))
-                return image
-            elif related_part.blob is not None:
-                image = Image.open(BytesIO(related_part.blob))
-                return image
-            else:
-                return None
-        except Exception:
-            return None
-
-    def concat_img(self, img1, img2):
-        if img1 and not img2:
-            return img1
-        if not img1 and img2:
-            return img2
-        if not img1 and not img2:
-            return None
-        width1, height1 = img1.size
-        width2, height2 = img2.size
-
-        new_width = max(width1, width2)
-        new_height = height1 + height2
-        new_image = Image.new("RGB", (new_width, new_height))
-
-        new_image.paste(img1, (0, 0))
-        new_image.paste(img2, (0, height1))
-
-        return new_image
-
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, callback=None):
         self.doc = Document(filename) if not binary else Document(BytesIO(binary))
         pn = 0
@@ -125,7 +85,7 @@ class Docx(DocxParser):
             if not question_level or question_level > 6:  # not a question
                 last_answer = f"{last_answer}\n{p_text}"
                 current_image = self.get_picture(self.doc, p)
-                last_image = self.concat_img(last_image, current_image)
+                last_image = concat_img(last_image, current_image)
             else:  # is a question
                 if last_answer or last_image:
                     sum_question = "\n".join(question_stack)
