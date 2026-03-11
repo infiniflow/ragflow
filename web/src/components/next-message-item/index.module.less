@@ -39,7 +39,7 @@
     word-break: break-word;
     :global(section.think) {
       color: rgb(166, 166, 166);
-      border-left-color: rgb(78, 78, 86);
+      border-inline-start-color: rgb(78, 78, 86);
     }
 
     // RTL Support
@@ -47,13 +47,13 @@
       text-align: right;
 
       :global(section.think) {
-        border-left-color: transparent;
-        border-right-color: rgb(78, 78, 86);
-        border-right-width: 2px;
-        border-right-style: solid;
-        border-left: none;
-        padding-left: 0;
-        padding-right: 10px;
+        border-inline-start-color: transparent;
+        border-inline-end-color: rgb(78, 78, 86);
+        border-inline-end-width: 2px;
+        border-inline-end-style: solid;
+        border-inline-start: none;
+        padding-inline-start: 0;
+        padding-inline-end: 10px;
       }
     }
   }
@@ -79,9 +79,9 @@
 }
 
 .messageItemLeft {
-  text-align: left;
+  text-align: start;
 }
 
 .messageItemRight {
-  text-align: right;
+  text-align: end;
 }
