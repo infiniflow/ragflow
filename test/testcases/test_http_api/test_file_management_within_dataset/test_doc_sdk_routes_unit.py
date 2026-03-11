@@ -221,14 +221,9 @@ def _load_doc_module(monkeypatch):
                     return [np.array([0.2, 0.8]), np.array([0.3, 0.7])], 1
             return _EmbedModel()
 
-    class _StubLLMFactoriesService:
-        @staticmethod
-        def get_all():
-            return []
-
     tenant_llm_service_mod.TenantService = _StubTenantService
     tenant_llm_service_mod.TenantLLMService = _StubTenantLLMService
-    tenant_llm_service_mod.LLMFactoriesService = _StubLLMFactoriesService
+    tenant_llm_service_mod.LLMFactoriesService = SimpleNamespace(get_all=lambda: [])
     monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_service_mod)
 
     # Mock LLMService
@@ -257,21 +252,11 @@ def _load_doc_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
 
     file_service_mod = ModuleType("api.db.services.file_service")
-
-    class _StubFileService:
-        @staticmethod
-        def upload_document(*_args, **_kwargs):
-            return [], []
-
-        @staticmethod
-        def get_root_folder(_tenant):
-            return {"id": "pf-1"}
-
-        @staticmethod
-        def init_knowledgebase_docs(*_args, **_kwargs):
-            return None
-
-    file_service_mod.FileService = _StubFileService
+    file_service_mod.FileService = SimpleNamespace(
+        upload_document=lambda *_args, **_kwargs: ([], []),
+        get_root_folder=lambda _tenant: {"id": "pf-1"},
+        init_knowledgebase_docs=lambda *_args, **_kwargs: None,
+    )
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
 
     # Mock tenant_model_service to ensure it uses mocked services

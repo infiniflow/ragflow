@@ -260,15 +260,6 @@ def _load_chunk_module(monkeypatch):
     rag_nlp_mod.search = SimpleNamespace(index_name=lambda tenant_id: f"idx-{tenant_id}")
     monkeypatch.setitem(sys.modules, "rag.nlp", rag_nlp_mod)
 
-    rag_utils_pkg = ModuleType("rag.utils")
-    rag_utils_pkg.__path__ = []
-    monkeypatch.setitem(sys.modules, "rag.utils", rag_utils_pkg)
-
-    rag_sparse_vector_mod = ModuleType("rag.utils.sparse_vector")
-    rag_sparse_vector_mod.attach_sparse_vector = lambda *_args, **_kwargs: False
-    rag_sparse_vector_mod.build_sparse_text = lambda *parts: "\n".join(str(part) for part in parts if part is not None)
-    monkeypatch.setitem(sys.modules, "rag.utils.sparse_vector", rag_sparse_vector_mod)
-
     rag_prompts_pkg = ModuleType("rag.prompts")
     rag_prompts_pkg.__path__ = []
     monkeypatch.setitem(sys.modules, "rag.prompts", rag_prompts_pkg)
