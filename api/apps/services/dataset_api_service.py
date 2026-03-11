@@ -41,11 +41,31 @@ async def create_dataset(tenant_id: str, req: dict):
     # Extract ext field for additional parameters
     ext_fields = req.pop("ext", {})
 
+    # Map auto_metadata_config (if provided) into parser_config structure
+    auto_meta = req.pop("auto_metadata_config", {})
+    if auto_meta:
+        parser_cfg = req.get("parser_config") or {}
+        fields = []
+        for f in auto_meta.get("fields", []):
+            fields.append(
+                {
+                    "name": f.get("name", ""),
+                    "type": f.get("type", ""),
+                    "description": f.get("description"),
+                    "examples": f.get("examples"),
+                    "restrict_values": f.get("restrict_values", False),
+                }
+            )
+        parser_cfg["metadata"] = fields
+        parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
+        req["parser_config"] = parser_cfg
+    req.update(ext_fields)
+
     e, req = KnowledgebaseService.create_with_name(
         name=req.pop("name", None),
         tenant_id=tenant_id,
         parser_id=req.pop("parser_id", None),
-        **ext_fields
+        **req
     )
 
     if not e:
@@ -142,6 +162,25 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
 
     # Extract ext field for additional parameters
     ext_fields = req.pop("ext", {})
+
+    # Map auto_metadata_config into parser_config if present
+    auto_meta = req.pop("auto_metadata_config", {})
+    if auto_meta:
+        parser_cfg = req.get("parser_config") or {}
+        fields = []
+        for f in auto_meta.get("fields", []):
+            fields.append(
+                {
+                    "name": f.get("name", ""),
+                    "type": f.get("type", ""),
+                    "description": f.get("description"),
+                    "examples": f.get("examples"),
+                    "restrict_values": f.get("restrict_values", False),
+                }
+            )
+        parser_cfg["metadata"] = fields
+        parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
+        req["parser_config"] = parser_cfg
     
     # Merge ext fields with req
     req.update(ext_fields)
