@@ -1365,6 +1365,7 @@ class REST_API(SyncBase):
             poll_timestamp_field=self.conf.get("poll_timestamp_field"),
             batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
             max_pages=self.conf.get("max_pages", _DEFAULT_MAX_PAGES),
+            request_delay=float(self.conf.get("request_delay", 0.5)),
             request_body=self.conf.get("request_body"),
             field_type_hints=self.conf.get("field_type_hints") or {},
             field_default_values=self.conf.get("field_default_values") or {},

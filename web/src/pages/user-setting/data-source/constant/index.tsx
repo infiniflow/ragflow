@@ -1221,6 +1221,16 @@ export const DataSourceFormFields = {
       shouldRender: (values: any) => !!values?.config?.show_advanced,
     },
     {
+      label: 'Request Delay (seconds)',
+      name: 'config.request_delay',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 0.5,
+      placeholder: '0.5',
+      tooltip: t('setting.restApiRequestDelayTip'),
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
+    },
+    {
       label: 'Poll Timestamp Field',
       name: 'config.poll_timestamp_field',
       type: FormFieldType.Text,
@@ -1602,6 +1612,7 @@ export const DataSourceFormDefaultValues = {
       pagination_config: {},
       poll_timestamp_field: '',
       request_body: '',
+      request_delay: 0.5,
       show_advanced: false,
       credentials: {
         api_key: '',

@@ -1176,6 +1176,8 @@ Example: Virtual Hosted Style`,
         'Field path in each item that represents the last updated time, used for incremental sync.',
       restApiRequestBodyTip:
         'Optional JSON body to send for POST requests. Used together with query params and pagination.',
+      restApiRequestDelayTip:
+        'Delay in seconds between consecutive page requests. Helps avoid rate limiting from the API. Set to 0 to disable.',
       restApiValidationApiKeyRequired:
         'API key is required when Auth Type is API Key (Header).',
       restApiValidationBearerTokenRequired:

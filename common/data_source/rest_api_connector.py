@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, Iterable, List, Mapping, Optional
 from urllib.parse import parse_qs, urlparse, urlunparse
@@ -111,6 +112,7 @@ class RestAPIConnectorConfig(BaseModel):
 
     batch_size: int = INDEX_BATCH_SIZE
     max_pages: int = _DEFAULT_MAX_PAGES
+    request_delay: float = 0.5
 
     @field_validator("headers", mode="before")
     @classmethod
@@ -179,6 +181,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
         poll_timestamp_field: Optional[str] = None,
         batch_size: int = INDEX_BATCH_SIZE,
         max_pages: int = _DEFAULT_MAX_PAGES,
+        request_delay: float = 0.5,
         request_body: Optional[Dict[str, Any]] = None,
         field_type_hints: Optional[Dict[str, str]] = None,
         field_default_values: Optional[Dict[str, Any]] = None,
@@ -214,6 +217,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
         self.poll_timestamp_field = poll_timestamp_field
         self.batch_size = batch_size
         self.max_pages = max_pages
+        self.request_delay = max(request_delay, 0.0)
         self.field_type_hints: Dict[str, str] = field_type_hints or {}
         self.field_default_values: Dict[str, Any] = field_default_values or {}
         self.content_template = content_template
@@ -332,6 +336,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
             poll_timestamp_field=cfg.poll_timestamp_field,
             batch_size=cfg.batch_size,
             max_pages=min(cfg.max_pages, 10),
+            request_delay=cfg.request_delay,
             request_body=cfg.request_body,
             field_type_hints=cfg.field_type_hints,
             field_default_values=cfg.field_default_values,
@@ -427,6 +432,9 @@ class RestAPIConnector(LoadConnector, PollConnector):
                 self._apply_offset_pagination(params, offset, limit)
             elif self.pagination_type == PaginationType.CURSOR and cursor is not None:
                 self._apply_cursor_pagination(params, cursor)
+
+            if page_count > 0 and self.request_delay > 0:
+                time.sleep(self.request_delay)
 
             try:
                 response_json = self._fetch_page(params)
@@ -655,7 +663,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
                     text = self._strip_html(self._coerce_to_text(val))
                     if text:
                         parts.append(text)
-            content_text = "\n\n".join(parts)
+            content_text = "\n".join(parts)
         blob = content_text.encode("utf-8")
 
         metadata: Dict[str, Any] = {}
@@ -837,7 +845,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
         except Exception as exc:
             logging.warning("Failed to render content template: %s", exc)
             parts = [self._coerce_to_text(self._get_typed_field_value(f, item)) for f in self.content_fields]
-            rendered = "\n\n".join(p for p in parts if p)
+            rendered = "\n".join(p for p in parts if p)
 
         return self._strip_html(rendered)
 
