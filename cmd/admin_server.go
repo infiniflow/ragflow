@@ -33,21 +33,18 @@ import (
 
 	"ragflow/internal/admin"
 	"ragflow/internal/dao"
-	"ragflow/internal/handler"
 	"ragflow/internal/logger"
 	"ragflow/internal/server"
-	"ragflow/internal/service"
 	"ragflow/internal/utility"
 )
 
 // AdminServer admin server
 type AdminServer struct {
-	router      *admin.Router
-	handler     *admin.Handler
-	service     *admin.Service
-	userHandler *handler.UserHandler
-	engine      *gin.Engine
-	port        string
+	router  *admin.Router
+	handler *admin.Handler
+	service *admin.Service
+	engine  *gin.Engine
+	port    string
 }
 
 func main() {
@@ -112,8 +109,12 @@ func main() {
 	}
 
 	adminService := admin.NewService()
-	userService := service.NewUserService()
-	adminHandler := admin.NewHandler(adminService, userService)
+	adminHandler := admin.NewHandler(adminService)
+
+	// Initialize default admin user
+	if err := adminService.InitDefaultAdmin(); err != nil {
+		logger.Error("Failed to initialize default admin user", err)
+	}
 
 	// Initialize router
 	r := admin.NewRouter(adminHandler)

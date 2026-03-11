@@ -18,6 +18,7 @@ package handler
 
 import (
 	"net/http"
+	"ragflow/internal/common"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -54,23 +55,9 @@ func NewSearchHandler(searchService *service.SearchService, userService *service
 // @Success 200 {object} service.ListSearchAppsResponse
 // @Router /v1/search/list [post]
 func (h *SearchHandler) ListSearchApps(c *gin.Context) {
-	// Get access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID

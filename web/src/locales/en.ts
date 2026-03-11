@@ -584,8 +584,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       naive: `<p>Supported file formats are <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPTX, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
       <p>This method chunks files using a 'naive' method: </p>
       <p>
+      <ul>
       <li>Use vision detection model to split the texts into smaller segments.</li>
-      <li>Then, combine adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</li></p>`,
+      <li>Then, combine adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</li></ul></p>`,
       paper: `<p>Only <b>PDF</b> file is supported.</p><p>
       Papers will be split by section, such as <i>abstract, 1.1, 1.2</i>. </p><p>
       This approach enables the LLM to summarize the paper more effectively and to provide more comprehensive, understandable responses.
@@ -597,6 +598,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       <p>
       This chunking method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.
     </p>
+    <ul>
     <li>
       If a file is in <b>XLSX</b> or <b>XLS (Excel 97-2003)</b> format, it should contain two columns without headers: one for questions and the other for answers, with the question column preceding the answer column. Multiple sheets are
       acceptable, provided the columns are properly structured.
@@ -604,6 +606,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     <li>
       If a file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB as the delimiter to separate questions and answers.
     </li>
+    </ul>
     <p>
       <i>
         Lines of texts that fail to follow the above rules will be ignored, and
@@ -726,6 +729,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         table: 'Table',
         text: 'Text',
       },
+      size: 'Size',
+      uploadedTime: 'Uploaded time',
       chunk: 'Chunk',
       bulk: 'Bulk',
       selectAll: 'Select all',
@@ -1839,6 +1844,7 @@ Example: Virtual Hosted Style`,
       dbType: 'Database type',
       database: 'Database',
       username: 'Username',
+      userId: 'User id',
       host: 'Host',
       port: 'Port',
       password: 'Password',

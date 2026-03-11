@@ -321,36 +321,8 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       >
         <>
           <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <div className="w-1/2">
-                {secondTitle || t('knowledgeDetails.metadata.metadata')}
-              </div>
-              <div>
-                {/* {metadataType === MetadataType.Manage && (
-                  <Button
-                    variant={'ghost'}
-                    className="border border-border-button"
-                    type="button"
-                    onClick={handleMenuClick(Routes.DataSetSetting, {
-                      openMetadata: true,
-                    })}
-                  >
-                    {t('knowledgeDetails.metadata.toMetadataSetting')}
-                  </Button>
-                )} */}
-                {isCanAdd && activeTab !== 'built-in' && (
-                  <Button
-                    variant={'ghost'}
-                    className="border border-border-button"
-                    type="button"
-                    onClick={handAddValueRow}
-                    data-testid={addButtonTestId}
-                  >
-                    <Plus />
-                    {t('common.add')}
-                  </Button>
-                )}
-              </div>
+            <div className="flex gap-4 items-center justify-between text-truncate">
+              {secondTitle || t('knowledgeDetails.metadata.metadata')}
             </div>
 
             {rowSelectionIsEmpty || (
@@ -366,14 +338,43 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                 value={activeTab}
                 onValueChange={(v) => setActiveTab(v as MetadataSettingsTab)}
               >
-                <TabsList className="w-fit">
-                  <TabsTrigger value="generation">
-                    {t('knowledgeDetails.metadata.generation')}
-                  </TabsTrigger>
-                  <TabsTrigger value="built-in">
-                    {t('knowledgeDetails.metadata.builtIn')}
-                  </TabsTrigger>
-                </TabsList>
+                <div className="flex gap-4 items-center justify-between">
+                  <TabsList className="w-fit">
+                    <TabsTrigger value="generation">
+                      {t('knowledgeDetails.metadata.generation')}
+                    </TabsTrigger>
+                    <TabsTrigger value="built-in">
+                      {t('knowledgeDetails.metadata.builtIn')}
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <div>
+                    {/* {metadataType === MetadataType.Manage && (
+                      <Button
+                        variant={'ghost'}
+                        className="border border-border-button"
+                        type="button"
+                        onClick={handleMenuClick(Routes.DataSetSetting, {
+                          openMetadata: true,
+                        })}
+                      >
+                        {t('knowledgeDetails.metadata.toMetadataSetting')}
+                      </Button>
+                    )} */}
+                    {isCanAdd && activeTab !== 'built-in' && (
+                      <Button
+                        variant="outline"
+                        type="button"
+                        onClick={handAddValueRow}
+                        data-testid={addButtonTestId}
+                      >
+                        <Plus />
+                        {t('common.add')}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
                 <TabsContent value="generation">
                   <Table rootClassName="max-h-[800px]">
                     <TableHeader>
