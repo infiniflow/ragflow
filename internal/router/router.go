@@ -24,6 +24,7 @@ import (
 
 // Router router
 type Router struct {
+	authHandler          *handler.AuthHandler
 	userHandler          *handler.UserHandler
 	tenantHandler        *handler.TenantHandler
 	documentHandler      *handler.DocumentHandler
@@ -40,6 +41,7 @@ type Router struct {
 
 // NewRouter create router
 func NewRouter(
+	authHandler *handler.AuthHandler,
 	userHandler *handler.UserHandler,
 	tenantHandler *handler.TenantHandler,
 	documentHandler *handler.DocumentHandler,
@@ -54,6 +56,7 @@ func NewRouter(
 	fileHandler *handler.FileHandler,
 ) *Router {
 	return &Router{
+		authHandler:          authHandler,
 		userHandler:          userHandler,
 		tenantHandler:        tenantHandler,
 		documentHandler:      documentHandler,
@@ -83,132 +86,138 @@ func (r *Router) Setup(engine *gin.Engine) {
 	engine.GET("/v1/system/config", r.systemHandler.GetConfig)
 	engine.GET("/v1/system/configs", r.systemHandler.GetConfigs)
 	engine.GET("/v1/system/version", r.systemHandler.GetVersion)
-
-	// User login by email endpoint
-	engine.POST("/v1/user/login", r.userHandler.LoginByEmail)
 	engine.POST("/v1/user/register", r.userHandler.Register)
 	// User login channels endpoint
 	engine.GET("/v1/user/login/channels", r.userHandler.GetLoginChannels)
-	// User logout endpoint
-	engine.GET("/v1/user/logout", r.userHandler.Logout)
-	// User info endpoint
-	engine.GET("/v1/user/info", r.userHandler.Info)
-	// User tenant info endpoint
-	engine.GET("/v1/user/tenant_info", r.tenantHandler.TenantInfo)
-	// Tenant list endpoint
-	engine.GET("/v1/tenant/list", r.tenantHandler.TenantList)
-	// User settings endpoint
-	engine.POST("/v1/user/setting", r.userHandler.Setting)
-	// User change password endpoint
-	engine.POST("/v1/user/setting/password", r.userHandler.ChangePassword)
-	// User set tenant info endpoint
-	engine.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
 
-	// API v1 route group
-	v1 := engine.Group("/api/v1")
+	// User login by email endpoint
+	engine.POST("/v1/user/login", r.userHandler.LoginByEmail)
+
+	// Protected routes
+	authorized := engine.Group("")
+	authorized.Use(r.authHandler.AuthMiddleware())
 	{
-		// User routes
-		users := v1.Group("/users")
+		// User logout endpoint
+		authorized.GET("/v1/user/logout", r.userHandler.Logout)
+		// User info endpoint
+		authorized.GET("/v1/user/info", r.userHandler.Info)
+		// User tenant info endpoint
+		authorized.GET("/v1/user/tenant_info", r.tenantHandler.TenantInfo)
+		// Tenant list endpoint
+		authorized.GET("/v1/tenant/list", r.tenantHandler.TenantList)
+		// User settings endpoint
+		authorized.POST("/v1/user/setting", r.userHandler.Setting)
+		// User change password endpoint
+		authorized.POST("/v1/user/setting/password", r.userHandler.ChangePassword)
+		// User set tenant info endpoint
+		authorized.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
+
+		// API v1 route group
+		v1 := authorized.Group("/api/v1")
 		{
-			users.POST("/register", r.userHandler.Register)
-			users.POST("/login", r.userHandler.Login)
-			users.GET("", r.userHandler.ListUsers)
-			users.GET("/:id", r.userHandler.GetUserByID)
+			// User routes
+			users := v1.Group("/users")
+			{
+				users.POST("/register", r.userHandler.Register)
+				users.POST("/login", r.userHandler.Login)
+				users.GET("", r.userHandler.ListUsers)
+				users.GET("/:id", r.userHandler.GetUserByID)
+			}
+
+			// Document routes
+			documents := v1.Group("/documents")
+			{
+				documents.POST("", r.documentHandler.CreateDocument)
+				documents.GET("", r.documentHandler.ListDocuments)
+				documents.GET("/:id", r.documentHandler.GetDocumentByID)
+				documents.PUT("/:id", r.documentHandler.UpdateDocument)
+				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
+			}
+
+			// Author routes
+			authors := v1.Group("/authors")
+			{
+				authors.GET("/:author_id/documents", r.documentHandler.GetDocumentsByAuthorID)
+			}
 		}
 
-		// Document routes
-		documents := v1.Group("/documents")
+		// Knowledge base routes
+		kb := authorized.Group("/v1/kb")
 		{
-			documents.POST("", r.documentHandler.CreateDocument)
-			documents.GET("", r.documentHandler.ListDocuments)
-			documents.GET("/:id", r.documentHandler.GetDocumentByID)
-			documents.PUT("/:id", r.documentHandler.UpdateDocument)
-			documents.DELETE("/:id", r.documentHandler.DeleteDocument)
+			kb.POST("/create", r.knowledgebaseHandler.CreateKB)
+			kb.POST("/update", r.knowledgebaseHandler.UpdateKB)
+			kb.POST("/update_metadata_setting", r.knowledgebaseHandler.UpdateMetadataSetting)
+			kb.GET("/detail", r.knowledgebaseHandler.GetDetail)
+			kb.POST("/list", r.knowledgebaseHandler.ListKbs)
+			kb.POST("/rm", r.knowledgebaseHandler.DeleteKB)
+			kb.GET("/tags", r.knowledgebaseHandler.ListTagsFromKbs)
+			kb.GET("/get_meta", r.knowledgebaseHandler.GetMeta)
+			kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
+
+			// KB ID specific routes
+			kbByID := kb.Group("/:kb_id")
+			{
+				kbByID.GET("/tags", r.knowledgebaseHandler.ListTags)
+				kbByID.POST("/rm_tags", r.knowledgebaseHandler.RemoveTags)
+				kbByID.POST("/rename_tag", r.knowledgebaseHandler.RenameTag)
+				kbByID.GET("/knowledge_graph", r.knowledgebaseHandler.KnowledgeGraph)
+				kbByID.DELETE("/knowledge_graph", r.knowledgebaseHandler.DeleteKnowledgeGraph)
+			}
 		}
 
-		// Author routes
-		authors := v1.Group("/authors")
+		// Chunk routes
+		chunk := authorized.Group("/v1/chunk")
 		{
-			authors.GET("/:author_id/documents", r.documentHandler.GetDocumentsByAuthorID)
+			chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
 		}
-	}
 
-	// Knowledge base routes
-	kb := engine.Group("/v1/kb")
-	{
-		kb.POST("/create", r.knowledgebaseHandler.CreateKB)
-		kb.POST("/update", r.knowledgebaseHandler.UpdateKB)
-		kb.POST("/update_metadata_setting", r.knowledgebaseHandler.UpdateMetadataSetting)
-		kb.GET("/detail", r.knowledgebaseHandler.GetDetail)
-		kb.POST("/list", r.knowledgebaseHandler.ListKbs)
-		kb.POST("/rm", r.knowledgebaseHandler.DeleteKB)
-		kb.GET("/tags", r.knowledgebaseHandler.ListTagsFromKbs)
-		kb.GET("/get_meta", r.knowledgebaseHandler.GetMeta)
-		kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
-
-		// KB ID specific routes
-		kbByID := kb.Group("/:kb_id")
+		// LLM routes
+		llm := authorized.Group("/v1/llm")
 		{
-			kbByID.GET("/tags", r.knowledgebaseHandler.ListTags)
-			kbByID.POST("/rm_tags", r.knowledgebaseHandler.RemoveTags)
-			kbByID.POST("/rename_tag", r.knowledgebaseHandler.RenameTag)
-			kbByID.GET("/knowledge_graph", r.knowledgebaseHandler.KnowledgeGraph)
-			kbByID.DELETE("/knowledge_graph", r.knowledgebaseHandler.DeleteKnowledgeGraph)
+			llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
+			llm.GET("/factories", r.llmHandler.Factories)
+			llm.GET("/list", r.llmHandler.ListApp)
+			llm.POST("/set_api_key", r.llmHandler.SetAPIKey)
 		}
-	}
 
-	// Chunk routes
-	chunk := engine.Group("/v1/chunk")
-	{
-		chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
-	}
+		// Chat routes
+		chat := authorized.Group("/v1/dialog")
+		{
+			chat.GET("/list", r.chatHandler.ListChats)
+			chat.POST("/next", r.chatHandler.ListChatsNext)
+			chat.POST("/set", r.chatHandler.SetDialog)
+			chat.POST("/rm", r.chatHandler.RemoveChats)
+		}
 
-	// LLM routes
-	llm := engine.Group("/v1/llm")
-	{
-		llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
-		llm.GET("/factories", r.llmHandler.Factories)
-		llm.GET("/list", r.llmHandler.ListApp)
-		llm.POST("/set_api_key", r.llmHandler.SetAPIKey)
-	}
+		// Chat session (conversation) routes
+		session := authorized.Group("/v1/conversation")
+		{
+			session.POST("/set", r.chatSessionHandler.SetChatSession)
+			session.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
+			session.GET("/list", r.chatSessionHandler.ListChatSessions)
+			session.POST("/completion", r.chatSessionHandler.Completion)
+		}
 
-	// Chat routes
-	chat := engine.Group("/v1/dialog")
-	{
-		chat.GET("/list", r.chatHandler.ListChats)
-		chat.POST("/next", r.chatHandler.ListChatsNext)
-		chat.POST("/set", r.chatHandler.SetDialog)
-		chat.POST("/rm", r.chatHandler.RemoveChats)
-	}
+		// Connector routes
+		connector := authorized.Group("/v1/connector")
+		{
+			connector.GET("/list", r.connectorHandler.ListConnectors)
+		}
 
-	// Chat session (conversation) routes
-	session := engine.Group("/v1/conversation")
-	{
-		session.POST("/set", r.chatSessionHandler.SetChatSession)
-		session.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
-		session.GET("/list", r.chatSessionHandler.ListChatSessions)
-		session.POST("/completion", r.chatSessionHandler.Completion)
-	}
+		// Search routes
+		search := authorized.Group("/v1/search")
+		{
+			search.POST("/list", r.searchHandler.ListSearchApps)
+		}
 
-	// Connector routes
-	connector := engine.Group("/v1/connector")
-	{
-		connector.GET("/list", r.connectorHandler.ListConnectors)
-	}
-
-	// Search routes
-	search := engine.Group("/v1/search")
-	{
-		search.POST("/list", r.searchHandler.ListSearchApps)
-	}
-
-	// File routes
-	file := engine.Group("/v1/file")
-	{
-		file.GET("/list", r.fileHandler.ListFiles)
-		file.GET("/root_folder", r.fileHandler.GetRootFolder)
-		file.GET("/parent_folder", r.fileHandler.GetParentFolder)
-		file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
+		// File routes
+		file := authorized.Group("/v1/file")
+		{
+			file.GET("/list", r.fileHandler.ListFiles)
+			file.GET("/root_folder", r.fileHandler.GetRootFolder)
+			file.GET("/parent_folder", r.fileHandler.GetParentFolder)
+			file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
+		}
 	}
 
 	// Handle undefined routes
