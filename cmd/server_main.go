@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"ragflow/internal/common"
-	"ragflow/internal/init_data"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"strings"
@@ -67,7 +66,7 @@ func main() {
 	}
 
 	// Initialize LLM factory data models from configuration file
-	if err := init_data.InitLLMFactory(); err != nil {
+	if err := dao.InitLLMFactory(); err != nil {
 		logger.Error("Failed to initialize LLM factory", err)
 	} else {
 		logger.Info("LLM factory initialized successfully")
@@ -135,6 +134,7 @@ func startServer(config *server.Config) {
 	fileService := service.NewFileService()
 
 	// Initialize handler layer
+	authHandler := handler.NewAuthHandler()
 	userHandler := handler.NewUserHandler(userService)
 	tenantHandler := handler.NewTenantHandler(tenantService, userService)
 	documentHandler := handler.NewDocumentHandler(documentService)
@@ -149,7 +149,7 @@ func startServer(config *server.Config) {
 	fileHandler := handler.NewFileHandler(fileService, userService)
 
 	// Initialize router
-	r := router.NewRouter(userHandler, tenantHandler, documentHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

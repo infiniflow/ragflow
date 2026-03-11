@@ -41,6 +41,7 @@ export declare interface IFlow {
   user_id: string;
   permission: string;
   nickname: string;
+  release?: boolean;
 }
 
 export interface IFlowTemplate {

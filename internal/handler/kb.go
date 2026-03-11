@@ -40,29 +40,6 @@ func NewKnowledgebaseHandler(kbService *service.KnowledgebaseService, userServic
 	}
 }
 
-// getUserID extracts user ID from authorization header
-// It validates the authorization token and returns the user ID
-// Parameters:
-//   - c: gin.Context - the HTTP request context
-//
-// Returns:
-//   - string: the user ID
-//   - common.ErrorCode: the error code
-//   - error: any error that occurred
-func (h *KnowledgebaseHandler) getUserID(c *gin.Context) (string, common.ErrorCode, error) {
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		return "", common.CodeUnauthorized, ErrMissingAuth
-	}
-
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		return "", code, err
-	}
-
-	return user.ID, common.CodeSuccess, nil
-}
-
 // jsonResponse sends a JSON response with code and message
 func jsonResponse(c *gin.Context, code common.ErrorCode, data interface{}, message string) {
 	c.JSON(http.StatusOK, gin.H{
@@ -97,6 +74,7 @@ var (
 	ErrMissingAuth = &HTTPError{Code: common.CodeUnauthorized, Message: "Missing Authorization header"}
 	// ErrInvalidToken indicates invalid access token
 	ErrInvalidToken = &HTTPError{Code: common.CodeUnauthorized, Message: "Invalid access token"}
+	ErrForbidden    = &HTTPError{Code: common.CodeForbidden, Message: "Forbidden user"}
 )
 
 // CreateKB handles the create knowledge base request
@@ -110,9 +88,9 @@ var (
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/create [post]
 func (h *KnowledgebaseHandler) CreateKB(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -122,7 +100,7 @@ func (h *KnowledgebaseHandler) CreateKB(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.kbService.CreateKB(&req, userID)
+	result, code, err := h.kbService.CreateKB(&req, user.ID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
@@ -142,9 +120,9 @@ func (h *KnowledgebaseHandler) CreateKB(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/update [post]
 func (h *KnowledgebaseHandler) UpdateKB(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -154,7 +132,7 @@ func (h *KnowledgebaseHandler) UpdateKB(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.kbService.UpdateKB(&req, userID)
+	result, code, err := h.kbService.UpdateKB(&req, user.ID)
 	if err != nil {
 		if strings.Contains(err.Error(), "authorization") {
 			jsonError(c, common.CodeAuthenticationError, err.Error())
@@ -178,9 +156,9 @@ func (h *KnowledgebaseHandler) UpdateKB(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/update_metadata_setting [post]
 func (h *KnowledgebaseHandler) UpdateMetadataSetting(c *gin.Context) {
-	_, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -210,9 +188,9 @@ func (h *KnowledgebaseHandler) UpdateMetadataSetting(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/detail [get]
 func (h *KnowledgebaseHandler) GetDetail(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -222,7 +200,7 @@ func (h *KnowledgebaseHandler) GetDetail(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.kbService.GetDetail(kbID, userID)
+	result, code, err := h.kbService.GetDetail(kbID, user.ID)
 	if err != nil {
 		if strings.Contains(err.Error(), "authorized") {
 			jsonError(c, common.CodeOperatingError, err.Error())
@@ -246,9 +224,9 @@ func (h *KnowledgebaseHandler) GetDetail(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/list [post]
 func (h *KnowledgebaseHandler) ListKbs(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -312,7 +290,7 @@ func (h *KnowledgebaseHandler) ListKbs(c *gin.Context) {
 		ownerIDs = *req.OwnerIDs
 	}
 
-	result, code, err := h.kbService.ListKbs(keywords, page, pageSize, parserID, orderby, desc, ownerIDs, userID)
+	result, code, err := h.kbService.ListKbs(keywords, page, pageSize, parserID, orderby, desc, ownerIDs, user.ID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
@@ -332,9 +310,9 @@ func (h *KnowledgebaseHandler) ListKbs(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/rm [post]
 func (h *KnowledgebaseHandler) DeleteKB(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -346,7 +324,7 @@ func (h *KnowledgebaseHandler) DeleteKB(c *gin.Context) {
 		return
 	}
 
-	code, err = h.kbService.DeleteKB(req.KBID, userID)
+	code, err := h.kbService.DeleteKB(req.KBID, user.ID)
 	if err != nil {
 		if strings.Contains(err.Error(), "authorization") {
 			jsonError(c, common.CodeAuthenticationError, err.Error())
@@ -370,9 +348,9 @@ func (h *KnowledgebaseHandler) DeleteKB(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/{kb_id}/tags [get]
 func (h *KnowledgebaseHandler) ListTags(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -382,7 +360,7 @@ func (h *KnowledgebaseHandler) ListTags(c *gin.Context) {
 		return
 	}
 
-	if !h.kbService.Accessible(kbID, userID) {
+	if !h.kbService.Accessible(kbID, user.ID) {
 		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
@@ -401,9 +379,9 @@ func (h *KnowledgebaseHandler) ListTags(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/tags [get]
 func (h *KnowledgebaseHandler) ListTagsFromKbs(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -415,7 +393,7 @@ func (h *KnowledgebaseHandler) ListTagsFromKbs(c *gin.Context) {
 
 	kbIDs := strings.Split(kbIDsStr, ",")
 	for _, kbID := range kbIDs {
-		if !h.kbService.Accessible(kbID, userID) {
+		if !h.kbService.Accessible(kbID, user.ID) {
 			jsonError(c, common.CodeAuthenticationError, "No authorization.")
 			return
 		}
@@ -436,9 +414,9 @@ func (h *KnowledgebaseHandler) ListTagsFromKbs(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/{kb_id}/rm_tags [post]
 func (h *KnowledgebaseHandler) RemoveTags(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -448,7 +426,7 @@ func (h *KnowledgebaseHandler) RemoveTags(c *gin.Context) {
 		return
 	}
 
-	if !h.kbService.Accessible(kbID, userID) {
+	if !h.kbService.Accessible(kbID, user.ID) {
 		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
@@ -476,9 +454,9 @@ func (h *KnowledgebaseHandler) RemoveTags(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/{kb_id}/rename_tag [post]
 func (h *KnowledgebaseHandler) RenameTag(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -488,7 +466,7 @@ func (h *KnowledgebaseHandler) RenameTag(c *gin.Context) {
 		return
 	}
 
-	if !h.kbService.Accessible(kbID, userID) {
+	if !h.kbService.Accessible(kbID, user.ID) {
 		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
@@ -516,9 +494,9 @@ func (h *KnowledgebaseHandler) RenameTag(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/{kb_id}/knowledge_graph [get]
 func (h *KnowledgebaseHandler) KnowledgeGraph(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -528,7 +506,7 @@ func (h *KnowledgebaseHandler) KnowledgeGraph(c *gin.Context) {
 		return
 	}
 
-	if !h.kbService.Accessible(kbID, userID) {
+	if !h.kbService.Accessible(kbID, user.ID) {
 		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
@@ -552,9 +530,9 @@ func (h *KnowledgebaseHandler) KnowledgeGraph(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/{kb_id}/knowledge_graph [delete]
 func (h *KnowledgebaseHandler) DeleteKnowledgeGraph(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -564,7 +542,7 @@ func (h *KnowledgebaseHandler) DeleteKnowledgeGraph(c *gin.Context) {
 		return
 	}
 
-	if !h.kbService.Accessible(kbID, userID) {
+	if !h.kbService.Accessible(kbID, user.ID) {
 		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
@@ -583,9 +561,9 @@ func (h *KnowledgebaseHandler) DeleteKnowledgeGraph(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/get_meta [get]
 func (h *KnowledgebaseHandler) GetMeta(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -597,7 +575,7 @@ func (h *KnowledgebaseHandler) GetMeta(c *gin.Context) {
 
 	kbIDs := strings.Split(kbIDsStr, ",")
 	for _, kbID := range kbIDs {
-		if !h.kbService.Accessible(kbID, userID) {
+		if !h.kbService.Accessible(kbID, user.ID) {
 			jsonError(c, common.CodeAuthenticationError, "No authorization.")
 			return
 		}
@@ -617,9 +595,9 @@ func (h *KnowledgebaseHandler) GetMeta(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/basic_info [get]
 func (h *KnowledgebaseHandler) GetBasicInfo(c *gin.Context) {
-	userID, code, err := h.getUserID(c)
-	if err != nil {
-		jsonError(c, code, err.Error())
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -629,7 +607,7 @@ func (h *KnowledgebaseHandler) GetBasicInfo(c *gin.Context) {
 		return
 	}
 
-	if !h.kbService.Accessible(kbID, userID) {
+	if !h.kbService.Accessible(kbID, user.ID) {
 		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}

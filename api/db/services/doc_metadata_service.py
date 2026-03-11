@@ -474,7 +474,7 @@ class DocMetadataService:
 
             # For Infinity or as fallback: use delete+insert
             logging.debug(f"[update_document_metadata] Using delete+insert method for doc_id: {doc_id}")
-            cls.delete_document_metadata(doc_id, skip_empty_check=True)
+            cls.delete_document_metadata(doc_id, kb_id, tenant_id, skip_empty_check=True)
             return cls.insert_document_metadata(doc_id, processed_meta)
 
         except Exception as e:
@@ -483,7 +483,7 @@ class DocMetadataService:
 
     @classmethod
     @DB.connection_context()
-    def delete_document_metadata(cls, doc_id: str, skip_empty_check: bool = False) -> bool:
+    def delete_document_metadata(cls, doc_id: str, kb_id: str, tenant_id: str = None, skip_empty_check: bool = False) -> bool:
         """
         Delete document metadata from ES/Infinity.
         Also drops the metadata table if it becomes empty (efficiently).
@@ -491,6 +491,8 @@ class DocMetadataService:
 
         Args:
             doc_id: Document ID
+            kb_id: Knowledge base ID
+            tenant_id: Tenant ID, if not provided, get it from kb_id
             skip_empty_check: If True, skip checking/dropping empty table (for bulk deletions)
 
         Returns:
@@ -498,18 +500,15 @@ class DocMetadataService:
         """
         try:
             logging.debug(f"[METADATA DELETE] Starting metadata deletion for document: {doc_id}")
-            # Get document with tenant_id
-            doc_query = Document.select(Document, Knowledgebase.tenant_id).join(
-                Knowledgebase, on=(Knowledgebase.id == Document.kb_id)
-            ).where(Document.id == doc_id)
 
-            doc = doc_query.first()
-            if not doc:
-                logging.warning(f"Document {doc_id} not found for metadata deletion")
-                return False
+            # Get tenant_id from kb_id if not provided
+            if tenant_id is None:
+                kb = Knowledgebase.get_or_none(Knowledgebase.id == kb_id)
+                if not kb:
+                    logging.warning(f"Knowledgebase {kb_id} not found for metadata deletion")
+                    return False
+                tenant_id = kb.tenant_id
 
-            tenant_id = doc.knowledgebase.tenant_id
-            kb_id = doc.kb_id
             index_name = cls._get_doc_meta_index_name(tenant_id)
             logging.debug(f"[delete_document_metadata] Deleting doc_id: {doc_id}, kb_id: {kb_id}, index: {index_name}")
 
@@ -693,82 +692,6 @@ class DocMetadataService:
 
         except Exception as e:
             logging.error(f"Error getting metadata for document {doc_id}: {e}")
-            return {}
-
-    @classmethod
-    @DB.connection_context()
-    def get_meta_by_kbs(cls, kb_ids: List[str]) -> Dict:
-        """
-        Get metadata for documents in knowledge bases (Legacy).
-
-        Legacy metadata aggregator (backward-compatible).
-        - Does NOT expand list values and a list is kept as one string key.
-          Example: {"tags": ["foo","bar"]} -> meta["tags"]["['foo', 'bar']"] = [doc_id]
-        - Expects meta_fields is a dict.
-        Use when existing callers rely on the old list-as-string semantics.
-
-        Args:
-            kb_ids: List of knowledge base IDs
-
-        Returns:
-            Metadata dictionary in format: {field_name: {value: [doc_ids]}}
-        """
-        try:
-            # Get tenant_id from first KB
-            kb = Knowledgebase.get_by_id(kb_ids[0])
-            if not kb:
-                return {}
-
-            tenant_id = kb.tenant_id
-            index_name = cls._get_doc_meta_index_name(tenant_id)
-
-            condition = {"kb_id": kb_ids}
-            order_by = OrderByExpr()
-
-            # Query with large limit
-            results = settings.docStoreConn.search(
-                select_fields=["*"],
-                highlight_fields=[],
-                condition=condition,
-                match_expressions=[],
-                order_by=order_by,
-                offset=0,
-                limit=10000,
-                index_names=index_name,
-                knowledgebase_ids=kb_ids
-            )
-
-            logging.debug(f"[get_meta_by_kbs] index_name: {index_name}, kb_ids: {kb_ids}")
-
-            # Aggregate metadata (legacy: keeps lists as string keys)
-            meta = {}
-
-            # Use helper to iterate over results in any format
-            for doc_id, doc in cls._iter_search_results(results):
-                # Extract metadata fields (exclude system fields)
-                doc_meta = cls._extract_metadata(doc)
-
-                # Legacy: Keep lists as string keys (do NOT expand)
-                for k, v in doc_meta.items():
-                    if k not in meta:
-                        meta[k] = {}
-                    # If not list, make it a list
-                    if not isinstance(v, list):
-                        v = [v]
-                    # Legacy: Use the entire list as a string key
-                    # Skip nested lists/dicts
-                    if isinstance(v, list) and any(isinstance(x, (list, dict)) for x in v):
-                        continue
-                    list_key = str(v)
-                    if list_key not in meta[k]:
-                        meta[k][list_key] = []
-                    meta[k][list_key].append(doc_id)
-
-            logging.debug(f"[get_meta_by_kbs] KBs: {kb_ids}, Returning metadata: {meta}")
-            return meta
-
-        except Exception as e:
-            logging.error(f"Error getting metadata for KBs {kb_ids}: {e}")
             return {}
 
     @classmethod
@@ -1143,7 +1066,7 @@ class DocMetadataService:
                     logging.debug(f"[batch_update_metadata] Updating doc_id: {doc_id}, meta: {meta}")
                     # If metadata is empty, delete the row entirely instead of keeping empty metadata
                     if not meta:
-                        cls.delete_document_metadata(doc_id, skip_empty_check=True)
+                        cls.delete_document_metadata(doc_id, kb_id, tenant_id=None, skip_empty_check=True)
                     else:
                         cls.update_document_metadata(doc_id, meta)
                     updated_docs += 1
