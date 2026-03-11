@@ -241,11 +241,8 @@ class MCPSkillEvaluator:
         tmp_dir.mkdir(exist_ok=True)
 
         for kb_name, content in docs.items():
-            # Re-use existing KB if it already exists (ignore permission errors from other tenants)
-            try:
-                existing = list_datasets(self.client, name=kb_name)
-            except Exception:
-                existing = []
+            # Re-use existing KB if it already exists
+            existing = list_datasets(self.client, name=kb_name)
             if existing:
                 ds_id = existing[0]["id"]
                 print(f"  [skip] '{kb_name}' already exists (id={ds_id})")
@@ -335,26 +332,32 @@ class MCPSkillEvaluator:
         questions: List[Question],
         results_a: List[RetrievalResult],
         results_b: List[RetrievalResult],
-        openai_api_key: str,
+        moonshot_api_key: str,
     ) -> Dict[str, Any]:
-        print("\n[ragas] Running evaluation with OpenAI gpt-4o as judge LLM...")
+        print("\n[ragas] Running evaluation with Kimi as judge LLM...")
         try:
             from datasets import Dataset
             from openai import OpenAI
             from ragas import evaluate
-            from ragas.llms import llm_factory
-            from ragas.metrics import ContextPrecision, ContextRecall
+            from ragas.llms import LangchainLLMWrapper
+            from ragas.metrics import context_precision, context_recall
         except ImportError as exc:
             print(f"[ragas] Import error: {exc}")
             print("[ragas] Install with: uv sync --group test")
             return {}
 
         try:
-            client = OpenAI(api_key=openai_api_key)
-            judge_llm = llm_factory("gpt-4o", client=client)
-            metrics = [ContextPrecision(llm=judge_llm), ContextRecall(llm=judge_llm)]
+            from langchain_openai import ChatOpenAI
+
+            kimi_llm = LangchainLLMWrapper(
+                ChatOpenAI(
+                    model="moonshot-v1-8k",
+                    openai_api_key=moonshot_api_key,
+                    openai_api_base="https://api.moonshot.cn/v1",
+                )
+            )
         except Exception as exc:
-            print(f"[ragas] Failed to create OpenAI LLM: {exc}")
+            print(f"[ragas] Failed to create Kimi LLM wrapper: {exc}")
             return {}
 
         def _build_dataset(results: List[RetrievalResult]) -> Dataset:
@@ -364,31 +367,23 @@ class MCPSkillEvaluator:
                 "reference": [q.ground_truth for q in questions],
             })
 
-        def _extract_score(result: Any, key: str) -> Optional[float]:
-            val = result[key]
-            if isinstance(val, list):
-                valid = [v for v in val if isinstance(v, (int, float))]
-                return float(sum(valid) / len(valid)) if valid else None
-            try:
-                return float(val)
-            except (TypeError, ValueError):
-                return None
-
         scores: Dict[str, Any] = {}
         for group_name, group_results in [("baseline", results_a), ("routing", results_b)]:
             print(f"  [ragas] Evaluating group '{group_name}'...")
             try:
                 ds = _build_dataset(group_results)
-                result = evaluate(ds, metrics=metrics, raise_exceptions=False)
+                result = evaluate(
+                    ds,
+                    metrics=[context_precision, context_recall],
+                    llm=kimi_llm,
+                    raise_exceptions=False,
+                )
                 scores[group_name] = {
-                    "context_precision": _extract_score(result, "context_precision"),
-                    "context_recall": _extract_score(result, "context_recall"),
+                    "context_precision": float(result["context_precision"]),
+                    "context_recall": float(result["context_recall"]),
                 }
-                cp = scores[group_name]["context_precision"]
-                cr = scores[group_name]["context_recall"]
-                cp_str = f"{cp:.3f}" if cp is not None else "N/A"
-                cr_str = f"{cr:.3f}" if cr is not None else "N/A"
-                print(f"    context_precision={cp_str}, context_recall={cr_str}")
+                print(f"    context_precision={scores[group_name]['context_precision']:.3f}, "
+                      f"context_recall={scores[group_name]['context_recall']:.3f}")
             except Exception as exc:
                 print(f"  [ragas] Evaluation failed for '{group_name}': {exc}")
                 scores[group_name] = {"context_precision": None, "context_recall": None}
@@ -503,9 +498,9 @@ def main() -> None:
     parser.add_argument("--output", default=None, help="Write Markdown report to this file")
     args = parser.parse_args()
 
-    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
-    if not args.skip_ragas and not openai_api_key:
-        print("[warn] OPENAI_API_KEY not set. ragas evaluation will be skipped. Use --skip-ragas to suppress this warning.")
+    moonshot_api_key = os.environ.get("MOONSHOT_API_KEY", "")
+    if not args.skip_ragas and not moonshot_api_key:
+        print("[warn] MOONSHOT_API_KEY not set. ragas evaluation will be skipped. Use --skip-ragas to suppress this warning.")
         args.skip_ragas = True
 
     client = HttpClient(base_url=args.base_url, api_key=args.api_key)
@@ -520,7 +515,7 @@ def main() -> None:
 
         ragas_scores: Dict[str, Any] = {}
         if not args.skip_ragas:
-            ragas_scores = evaluator.evaluate_with_ragas(questions, results_a, results_b, openai_api_key)
+            ragas_scores = evaluator.evaluate_with_ragas(questions, results_a, results_b, moonshot_api_key)
 
         report = evaluator.generate_report(results_a, results_b, ragas_scores)
         print("\n" + "=" * 60)

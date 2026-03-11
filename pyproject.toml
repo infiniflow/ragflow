@@ -175,6 +175,8 @@ test = [
     "requests-toolbelt>=1.0.0",
     "pycryptodomex==3.20.0",
     "codecov>=2.1.13",
+    "ragas>=0.2.0",
+    "openai>=1.0.0",
 ]
 
 [[tool.uv.index]]
