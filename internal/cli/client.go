@@ -26,10 +26,14 @@ import (
 	"unsafe"
 )
 
+// PasswordPromptFunc is a function type for password input
+type PasswordPromptFunc func(prompt string) (string, error)
+
 // RAGFlowClient handles API interactions with the RAGFlow server
 type RAGFlowClient struct {
-	HTTPClient *HTTPClient
-	ServerType string // "admin" or "user"
+	HTTPClient        *HTTPClient
+	ServerType        string           // "admin" or "user"
+	PasswordPrompt    PasswordPromptFunc // Function for password input
 }
 
 // NewRAGFlowClient creates a new RAGFlow client
@@ -164,10 +168,20 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 	}
 
 	// Get password from user input (hidden)
-	fmt.Printf("password for %s: ", email)
-	password, err := readPassword()
-	if err != nil {
-		return fmt.Errorf("failed to read password: %w", err)
+	var password string
+	if c.PasswordPrompt != nil {
+		pwd, err := c.PasswordPrompt(fmt.Sprintf("password for %s: ", email))
+		if err != nil {
+			return fmt.Errorf("failed to read password: %w", err)
+		}
+		password = pwd
+	} else {
+		fmt.Printf("password for %s: ", email)
+		pwd, err := readPassword()
+		if err != nil {
+			return fmt.Errorf("failed to read password: %w", err)
+		}
+		password = pwd
 	}
 	password = strings.TrimSpace(password)
 
