@@ -18,6 +18,7 @@ package handler
 
 import (
 	"net/http"
+	"ragflow/internal/common"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -48,23 +49,9 @@ func NewChatHandler(chatService *service.ChatService, userService *service.UserS
 // @Success 200 {object} service.ListChatsResponse
 // @Router /v1/dialog/list [get]
 func (h *ChatHandler) ListChats(c *gin.Context) {
-	// Get access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -101,23 +88,9 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 // @Success 200 {object} service.ListChatsNextResponse
 // @Router /v1/dialog/next [post]
 func (h *ChatHandler) ListChatsNext(c *gin.Context) {
-	// Get access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -185,23 +158,9 @@ func (h *ChatHandler) ListChatsNext(c *gin.Context) {
 // @Success 200 {object} service.SetDialogResponse
 // @Router /v1/dialog/set [post]
 func (h *ChatHandler) SetDialog(c *gin.Context) {
-	// Get access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -257,23 +216,9 @@ type RemoveDialogsRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/dialog/rm [post]
 func (h *ChatHandler) RemoveChats(c *gin.Context) {
-	// Get access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID

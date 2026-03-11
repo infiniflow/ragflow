@@ -40,6 +40,36 @@ type Config struct {
 	DocEngine       DocEngineConfig        `mapstructure:"doc_engine"`
 	RegisterEnabled int                    `mapstructure:"register_enabled"`
 	OAuth           map[string]OAuthConfig `mapstructure:"oauth"`
+	Admin           AdminConfig            `mapstructure:"admin"`
+	UserDefaultLLM  UserDefaultLLMConfig   `mapstructure:"user_default_llm"`
+}
+
+// AdminConfig admin server configuration
+type AdminConfig struct {
+	Host string `mapstructure:"host"`
+	Port int    `mapstructure:"http_port"`
+}
+
+// UserDefaultLLMConfig user default LLM configuration
+type UserDefaultLLMConfig struct {
+	DefaultModels DefaultModelsConfig `mapstructure:"default_models"`
+}
+
+// DefaultModelsConfig default models configuration
+type DefaultModelsConfig struct {
+	ChatModel       ModelConfig `mapstructure:"chat_model"`
+	EmbeddingModel  ModelConfig `mapstructure:"embedding_model"`
+	RerankModel     ModelConfig `mapstructure:"rerank_model"`
+	ASRModel        ModelConfig `mapstructure:"asr_model"`
+	Image2TextModel ModelConfig `mapstructure:"image2text_model"`
+}
+
+// ModelConfig model configuration
+type ModelConfig struct {
+	Name    string `mapstructure:"name"`
+	APIKey  string `mapstructure:"api_key"`
+	BaseURL string `mapstructure:"base_url"`
+	Factory string `mapstructure:"factory"`
 }
 
 // OAuthConfig OAuth configuration for a channel
@@ -302,6 +332,20 @@ func Init(configPath string) error {
 		return fmt.Errorf("unmarshal config error: %w", err)
 	}
 
+	// Set default values for admin configuration if not configured
+	if globalConfig.Admin.Host == "" {
+		globalConfig.Admin.Host = v.GetString("admin.host")
+	}
+	if globalConfig.Admin.Host == "" {
+		globalConfig.Admin.Host = "127.0.0.1"
+	}
+	if globalConfig.Admin.Port == 0 {
+		globalConfig.Admin.Port = v.GetInt("admin.http_port")
+	}
+	if globalConfig.Admin.Port == 0 {
+		globalConfig.Admin.Port = 9381
+	}
+
 	// Load REGISTER_ENABLED from environment variable (default: 1)
 	registerEnabled := 1
 	if envVal := os.Getenv("REGISTER_ENABLED"); envVal != "" {
@@ -335,7 +379,7 @@ func Init(configPath string) error {
 			ragflowConfig := v.Sub("ragflow")
 			if ragflowConfig != nil {
 				globalConfig.Server.Port = ragflowConfig.GetInt("http_port") + 2 // 9382, by default
-				// globalConfig.Server.Port = ragflowConfig.GetInt("http_port") // Correct
+				//globalConfig.Server.Port = ragflowConfig.GetInt("http_port") // Correct
 				// If mode is not set, default to debug
 				if globalConfig.Server.Mode == "" {
 					globalConfig.Server.Mode = "release"
@@ -414,12 +458,59 @@ func Init(configPath string) error {
 		}
 	}
 
+	// Map user_default_llm section to UserDefaultLLMConfig
+	if v.IsSet("user_default_llm") {
+		userDefaultLLMConfig := v.Sub("user_default_llm")
+		if userDefaultLLMConfig != nil {
+			if defaultModels := userDefaultLLMConfig.Sub("default_models"); defaultModels != nil {
+				globalConfig.UserDefaultLLM.DefaultModels.ChatModel = ModelConfig{
+					Name:    defaultModels.GetString("chat_model.name"),
+					APIKey:  defaultModels.GetString("chat_model.api_key"),
+					BaseURL: defaultModels.GetString("chat_model.base_url"),
+					Factory: defaultModels.GetString("chat_model.factory"),
+				}
+				globalConfig.UserDefaultLLM.DefaultModels.EmbeddingModel = ModelConfig{
+					Name:    defaultModels.GetString("embedding_model.name"),
+					APIKey:  defaultModels.GetString("embedding_model.api_key"),
+					BaseURL: defaultModels.GetString("embedding_model.base_url"),
+					Factory: defaultModels.GetString("embedding_model.factory"),
+				}
+				globalConfig.UserDefaultLLM.DefaultModels.RerankModel = ModelConfig{
+					Name:    defaultModels.GetString("rerank_model.name"),
+					APIKey:  defaultModels.GetString("rerank_model.api_key"),
+					BaseURL: defaultModels.GetString("rerank_model.base_url"),
+					Factory: defaultModels.GetString("rerank_model.factory"),
+				}
+				globalConfig.UserDefaultLLM.DefaultModels.ASRModel = ModelConfig{
+					Name:    defaultModels.GetString("asr_model.name"),
+					APIKey:  defaultModels.GetString("asr_model.api_key"),
+					BaseURL: defaultModels.GetString("asr_model.base_url"),
+					Factory: defaultModels.GetString("asr_model.factory"),
+				}
+				globalConfig.UserDefaultLLM.DefaultModels.Image2TextModel = ModelConfig{
+					Name:    defaultModels.GetString("image2text_model.name"),
+					APIKey:  defaultModels.GetString("image2text_model.api_key"),
+					BaseURL: defaultModels.GetString("image2text_model.base_url"),
+					Factory: defaultModels.GetString("image2text_model.factory"),
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
 // Get get global configuration
 func GetConfig() *Config {
 	return globalConfig
+}
+
+// GetAdminConfig gets the admin server configuration
+func GetAdminConfig() *AdminConfig {
+	if globalConfig == nil {
+		return nil
+	}
+	return &globalConfig.Admin
 }
 
 // SetLogger sets the logger instance
