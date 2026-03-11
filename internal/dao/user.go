@@ -109,7 +109,15 @@ func (dao *UserDAO) Delete(id uint) error {
 	return DB.Delete(&model.User{}, id).Error
 }
 
-// DeleteByID delete user by string ID
+// DeleteByID delete user by string ID (soft delete - set status to 0)
 func (dao *UserDAO) DeleteByID(id string) error {
 	return DB.Model(&model.User{}).Where("id = ?", id).Update("status", "0").Error
+}
+
+// ListByEmail list users by email
+// Returns all users matching the given email address
+func (dao *UserDAO) ListByEmail(email string) ([]*model.User, error) {
+	var users []*model.User
+	err := DB.Where("email = ?", email).Find(&users).Error
+	return users, err
 }
