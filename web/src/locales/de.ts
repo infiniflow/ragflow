@@ -1016,6 +1016,8 @@ Beispiel: Virtual Hosted Style`,
         'Verbinden Sie GitHub, um Pull Requests und Issues zur Recherche zu synchronisieren.',
       airtableDescription:
         'Verbinden Sie sich mit Airtable und synchronisieren Sie Dateien aus einer bestimmten Tabelle in einem vorgesehenen Arbeitsbereich.',
+      dingtalkAITableDescription:
+        'Verbinden Sie sich mit Dingtalk AI Table und synchronisieren Sie Datensätze aus einer bestimmten Tabelle.',
       asanaDescription:
         'Verbinden Sie sich mit Asana und synchronisieren Sie Dateien aus einem bestimmten Arbeitsbereich.',
       imapDescription:
@@ -1034,19 +1036,18 @@ Beispiel: Virtual Hosted Style`,
         'Die vollstaendige URL Ihres SeaFile-Servers inklusive Protokoll. Beispiel: https://seafile.example.com - Kein abschliessender Schraegstrich und kein Pfad nach der Domain.',
       seafileAccountScopeTip:
         'Synchronisiert alle Bibliotheken, die für den unten angegebenen Konto-API-Token sichtbar sind.',
-      seafileTokenPanelHeading: 
+      seafileTokenPanelHeading:
         'Wählen Sie eine der folgenden Authentifizierungsmethoden:',
-      seafileTokenPanelAccountBullet: 
+      seafileTokenPanelAccountBullet:
         '- gewährt Zugriff auf alle Ihre Bibliotheken.',
-      seafileTokenPanelLibraryBullet: 
+      seafileTokenPanelLibraryBullet:
         '- auf eine einzelne Bibliothek beschränkt (sicherer).',
       seafileValidationAccountTokenRequired:
         'Konto-API-Token ist erforderlich für den Umfang „Gesamtes Konto"',
       seafileValidationTokenRequired:
         'Geben Sie entweder einen Konto-API-Token oder einen Bibliotheks-Token an',
-      seafileValidationLibraryIdRequired: 
-        'Bibliotheks-ID ist erforderlich',
-      seafileValidationDirectoryPathRequired: 
+      seafileValidationLibraryIdRequired: 'Bibliotheks-ID ist erforderlich',
+      seafileValidationDirectoryPathRequired:
         'Verzeichnispfad ist erforderlich',
       seafileSyncScopeTip:
         'Legt fest, was synchronisiert wird: ' +
@@ -1178,6 +1179,8 @@ Beispiel: Virtual Hosted Style`,
         'Wenn Ihr API-Schlüssel von OpenAI stammt, ignorieren Sie dies. Andere Zwischenanbieter geben diese Basis-URL mit dem API-Schlüssel an.',
       tongyiBaseUrlTip:
         'Für chinesische Benutzer ist keine Eingabe erforderlich oder verwenden Sie https://dashscope.aliyuncs.com/compatible-mode/v1. Für internationale Benutzer verwenden Sie https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Für chinesische Benutzer ist keine Eingabe erforderlich oder verwenden Sie https://api.siliconflow.cn/v1. Für internationale Benutzer verwenden Sie https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Nur für internationale Benutzer, bitte Hinweis beachten)',
       minimaxBaseUrlTip:

@@ -158,6 +158,11 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
         "role": "user",
         "id": str(uuid4())
     }
+
+    # Propagate runtime attachments so downstream chat flow can resolve file content.
+    if isinstance(kwargs.get("files"), list) and kwargs["files"]:
+        question["files"] = kwargs["files"]
+
     conv.message.append(question)
     for m in conv.message:
         if m["role"] == "system":

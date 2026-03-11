@@ -92,6 +92,7 @@ sql_command: login_user
            | drop_chat_session
            | list_chat_sessions
            | chat_on_session
+           | list_server_configs
            | benchmark
 
 // meta command definition
@@ -176,6 +177,7 @@ BENCHMARK: "BENCHMARK"i
 PING: "PING"i
 SESSION: "SESSION"i
 SESSIONS: "SESSIONS"i
+SERVER: "SERVER"i
 
 login_user: LOGIN USER quoted_string ";"
 list_services: LIST SERVICES ";"
@@ -220,6 +222,8 @@ show_variable: SHOW VAR identifier ";"
 list_variables: LIST VARS ";"
 list_configs: LIST CONFIGS ";"
 list_environments: LIST ENVS ";"
+
+list_server_configs: LIST SERVER CONFIGS ";"
 
 benchmark: BENCHMARK NUMBER NUMBER user_statement
 
@@ -472,6 +476,9 @@ class RAGFlowCLITransformer(Transformer):
 
     def list_environments(self, items):
         return {"type": "list_environments"}
+
+    def list_server_configs(self, items):
+        return {"type": "list_server_configs"}
 
     def create_model_provider(self, items):
         provider_name = items[3].children[0].strip("'\"")

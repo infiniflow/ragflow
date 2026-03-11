@@ -19,8 +19,8 @@ from common import (
     chat_completions,
     create_chat_assistant,
     create_session_with_chat_assistant,
-    delete_chat_assistants,
-    delete_session_with_chat_assistants,
+    delete_all_chat_assistants,
+    delete_all_sessions_with_chat_assistant,
     list_documents,
     parse_documents,
 )
@@ -52,8 +52,8 @@ class TestChatCompletions:
         res = create_chat_assistant(HttpApiAuth, {"name": "chat_completion_test", "dataset_ids": [dataset_id]})
         assert res["code"] == 0, res
         chat_id = res["data"]["id"]
-        request.addfinalizer(lambda: delete_session_with_chat_assistants(HttpApiAuth, chat_id))
-        request.addfinalizer(lambda: delete_chat_assistants(HttpApiAuth))
+        request.addfinalizer(lambda: delete_all_chat_assistants(HttpApiAuth))
+        request.addfinalizer(lambda: delete_all_sessions_with_chat_assistant(HttpApiAuth, chat_id))
 
         res = create_session_with_chat_assistant(HttpApiAuth, chat_id, {"name": "session_for_completion"})
         assert res["code"] == 0, res
@@ -85,8 +85,8 @@ class TestChatCompletions:
         res = create_chat_assistant(HttpApiAuth, {"name": "chat_completion_invalid_session", "dataset_ids": []})
         assert res["code"] == 0, res
         chat_id = res["data"]["id"]
-        request.addfinalizer(lambda: delete_session_with_chat_assistants(HttpApiAuth, chat_id))
-        request.addfinalizer(lambda: delete_chat_assistants(HttpApiAuth))
+        request.addfinalizer(lambda: delete_all_chat_assistants(HttpApiAuth))
+        request.addfinalizer(lambda: delete_all_sessions_with_chat_assistant(HttpApiAuth, chat_id))
 
         res = chat_completions(
             HttpApiAuth,
@@ -101,8 +101,8 @@ class TestChatCompletions:
         res = create_chat_assistant(HttpApiAuth, {"name": "chat_completion_invalid_meta", "dataset_ids": []})
         assert res["code"] == 0, res
         chat_id = res["data"]["id"]
-        request.addfinalizer(lambda: delete_session_with_chat_assistants(HttpApiAuth, chat_id))
-        request.addfinalizer(lambda: delete_chat_assistants(HttpApiAuth))
+        request.addfinalizer(lambda: delete_all_chat_assistants(HttpApiAuth))
+        request.addfinalizer(lambda: delete_all_sessions_with_chat_assistant(HttpApiAuth, chat_id))
 
         res = create_session_with_chat_assistant(HttpApiAuth, chat_id, {"name": "session_for_meta"})
         assert res["code"] == 0, res

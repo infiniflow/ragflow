@@ -542,6 +542,8 @@ export default {
         "Si votre clé API provient d'OpenAI, ignorez ceci. Tout autre fournisseur intermédiaire fournira cette URL de base avec la clé API.",
       tongyiBaseUrlTip:
         'Pour les utilisateurs chinois, pas besoin de remplir ou utiliser https://dashscope.aliyuncs.com/compatible-mode/v1. Pour les utilisateurs internationaux, utilisez https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Pour les utilisateurs chinois, pas besoin de remplir ou utiliser https://api.siliconflow.cn/v1. Pour les utilisateurs internationaux, utilisez https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         "(Utilisateurs internationaux uniquement, veuillez consulter l'astuce)",
       minimaxBaseUrlTip:
@@ -678,6 +680,8 @@ export default {
       modelsToBeAddedTooltip:
         'Si votre fournisseur de modèle n\'est pas listé mais prétend être "compatible OpenAI", sélectionnez la carte compatible OpenAI-API pour ajouter le(s) modèle(s) pertinent(s).',
       mcp: 'MCP',
+      dingtalkAITableDescription:
+        'Connectez-vous à Dingtalk AI Table et synchronisez les enregistrements d\'une table spécifiée.',
     },
     message: {
       registered: 'Enregistré !',

@@ -770,6 +770,8 @@ Quanto sopra è il contenuto che devi riassumere.`,
       baseUrl: 'URL Base',
       baseUrlTip:
         'Se la tua chiave API è da OpenAI, ignoralo. Qualsiasi altro fornitore intermedio fornirà questo URL base con la chiave API.',
+      siliconBaseUrlTip:
+        'For Chinese users, no need to fill in or use https://api.siliconflow.cn/v1. For international users, use https://api.siliconflow.com/v1',
       modify: 'Modifica',
       systemModelSettings: 'Imposta modelli predefiniti',
       chatModel: 'LLM',
@@ -838,6 +840,8 @@ Quanto sopra è il contenuto che devi riassumere.`,
       configuration: 'Configurazione',
       view: 'Visualizza',
       mcp: 'MCP',
+      dingtalkAITableDescription:
+        'Connettiti a Dingtalk AI Table e sincronizza i record da una tabella specificata.',
     },
     message: {
       registered: 'Registrato!',

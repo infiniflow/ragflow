@@ -12,7 +12,7 @@ import { IDataSourceInfoMap } from '../interface';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
 import { S3Constant } from './s3-constant';
-import { seafileConstant } from './seafile-constant'; 
+import { seafileConstant } from './seafile-constant';
 
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
@@ -30,6 +30,7 @@ export enum DataSourceKey {
   OCI_STORAGE = 'oci_storage',
   GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
   AIRTABLE = 'airtable',
+  DINGTALK_AI_TABLE = 'dingtalk_ai_table',
   GITLAB = 'gitlab',
   ASANA = 'asana',
   IMAP = 'imap',
@@ -122,6 +123,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Airtable',
       description: t(`setting.${DataSourceKey.AIRTABLE}Description`),
       icon: <SvgIcon name={'data-source/airtable'} width={38} />,
+    },
+    [DataSourceKey.DINGTALK_AI_TABLE]: {
+      name: 'Dingtalk AI Table',
+      description: t(`setting.dingtalkAITableDescription`),
+      icon: <SvgIcon name={'data-source/dingtalk-ai-table'} width={38} />,
     },
     [DataSourceKey.GITLAB]: {
       name: 'GitLab',
@@ -658,6 +664,26 @@ export const DataSourceFormFields = {
       required: true,
     },
   ],
+  [DataSourceKey.DINGTALK_AI_TABLE]: [
+    {
+      label: 'Access Token',
+      name: 'config.credentials.access_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Base ID',
+      name: 'config.table_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Operator ID',
+      name: 'config.operator_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+  ],
   [DataSourceKey.GITLAB]: [
     {
       label: 'Project Owner',
@@ -1135,6 +1161,17 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  [DataSourceKey.DINGTALK_AI_TABLE]: {
+    name: '',
+    source: DataSourceKey.DINGTALK_AI_TABLE,
+    config: {
+      table_id: '',
+      operator_id: '',
+      credentials: {
+        access_token: '',
+      },
+    },
+  },
   [DataSourceKey.GITLAB]: {
     name: '',
     source: DataSourceKey.GITLAB,
@@ -1222,14 +1259,14 @@ export const DataSourceFormDefaultValues = {
     source: DataSourceKey.SEAFILE,
     config: {
       seafile_url: '',
-      sync_scope: 'account', 
-      repo_id: '',             
-      sync_path: '',            
-      include_shared: true,     
+      sync_scope: 'account',
+      repo_id: '',
+      sync_path: '',
+      include_shared: true,
       batch_size: 100,
       credentials: {
-        seafile_token: '',   
-        repo_token: '',          
+        seafile_token: '',
+        repo_token: '',
       },
     },
   },

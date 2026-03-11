@@ -64,7 +64,6 @@ class PaddleOCRVLConfig:
     """Configuration for PaddleOCR-VL algorithm."""
 
     use_doc_orientation_classify: Optional[bool] = False
-    use_doc_orientation_classify: Optional[bool] = False
     use_doc_unwarping: Optional[bool] = False
     use_layout_detection: Optional[bool] = None
     use_chart_recognition: Optional[bool] = None
@@ -199,6 +198,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
         """Initialize PaddleOCR parser."""
         super().__init__()
 
+        self.outlines = []
         self.api_url = api_url.rstrip("/") if api_url else os.getenv("PADDLEOCR_API_URL", "")
         self.access_token = access_token or os.getenv("PADDLEOCR_ACCESS_TOKEN")
         self.algorithm = algorithm
@@ -532,21 +532,25 @@ class PaddleOCRParser(RAGFlowPdfParser):
                 return None, None
             return
 
-        height = 0
+        total_height = 0
+        max_width = 0
+        img_sizes = []
         for img in imgs:
-            height += img.size[1] + GAP
-        height = int(height)
-        width = int(np.max([i.size[0] for i in imgs]))
-        pic = Image.new("RGB", (width, height), (245, 245, 245))
-        height = 0
-        for ii, img in enumerate(imgs):
-            if ii == 0 or ii + 1 == len(imgs):
+            w, h = img.size
+            img_sizes.append((w, h))
+            max_width = max(max_width, w)
+            total_height += h + GAP
+
+        pic = Image.new("RGB", (max_width, int(total_height)), (245, 245, 245))
+        current_height = 0
+        imgs_count = len(imgs)
+        for ii, (img, (w, h)) in enumerate(zip(imgs, img_sizes)):
+            if ii == 0 or ii + 1 == imgs_count:
                 img = img.convert("RGBA")
-                overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-                overlay.putalpha(128)
+                overlay = Image.new("RGBA", img.size, (0, 0, 0, 128))
                 img = Image.alpha_composite(img, overlay).convert("RGB")
-            pic.paste(img, (0, int(height)))
-            height += img.size[1] + GAP
+            pic.paste(img, (0, int(current_height)))
+            current_height += h + GAP
 
         if need_position:
             return pic, positions

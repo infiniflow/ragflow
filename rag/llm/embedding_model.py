@@ -770,14 +770,17 @@ class SILICONFLOWEmbed(Base):
     _FACTORY_NAME = "SILICONFLOW"
 
     def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1/embeddings"):
-        if not base_url:
-            base_url = "https://api.siliconflow.cn/v1/embeddings"
+        normalized_base_url = (base_url or "").strip()
+        if not normalized_base_url:
+            normalized_base_url = "https://api.siliconflow.cn/v1/embeddings"
+        if "/embeddings" not in normalized_base_url:
+            normalized_base_url = urljoin(f"{normalized_base_url.rstrip('/')}/", "embeddings").rstrip("/")
         self.headers = {
             "accept": "application/json",
             "content-type": "application/json",
             "authorization": f"Bearer {key}",
         }
-        self.base_url = base_url
+        self.base_url = normalized_base_url
         self.model_name = model_name
 
     def encode(self, texts: list):
@@ -1076,4 +1079,18 @@ class JiekouAIEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url="https://api.jiekou.ai/openai/v1/embeddings"):
         if not base_url:
             base_url = "https://api.jiekou.ai/openai/v1/embeddings"
+        super().__init__(key, model_name, base_url)
+
+class RAGconEmbed(OpenAIEmbed):
+    """
+    RAGcon Embedding Provider - routes through LiteLLM proxy
+    
+    Default Base URL: https://connect.ragcon.ai/v1
+    """
+    _FACTORY_NAME = "RAGcon"
+    
+    def __init__(self, key, model_name="text-embedding-3-small", base_url=None):
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+        
         super().__init__(key, model_name, base_url)

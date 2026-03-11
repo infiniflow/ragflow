@@ -6,12 +6,33 @@ import { createHtmlPlugin } from 'vite-plugin-html';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 import { appName } from './src/conf.json';
 
+// Inject code location data attributes for react-dev-inspector
+const inspectorBabelPlugin = (): import('vite').Plugin => ({
+  name: 'inspector-babel',
+  enforce: 'pre' as const,
+  async transform(code: string, id: string) {
+    if (id.includes('node_modules')) return;
+    if (!/\.[jt]sx$/.test(id)) return;
+
+    // Dynamically import babel transform to inject data attributes
+    const { transform } = await import('@react-dev-inspector/babel-plugin');
+    return {
+      code: transform({
+        filePath: id,
+        sourceCode: code,
+      }),
+      map: null,
+    };
+  },
+});
+
 // https://vitejs.dev/config/
-export default defineConfig(({ mode, command }) => {
+export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
 
   return {
     plugins: [
+      inspectorBabelPlugin(),
       react(),
       viteStaticCopy({
         targets: [
@@ -75,6 +96,21 @@ export default defineConfig(({ mode, command }) => {
           changeOrigin: true,
           ws: true,
         },
+        //         '/v1/system/config': {
+        //           target: 'http://127.0.0.1:9382/',
+        //           changeOrigin: true,
+        //           ws: true,
+        //         },
+        //         '/v1/user/login': {
+        //           target: 'http://127.0.0.1:9382/',
+        //           changeOrigin: true,
+        //           ws: true,
+        //         },
+        //         '/v1/user/logout': {
+        //           target: 'http://127.0.0.1:9382/',
+        //           changeOrigin: true,
+        //           ws: true,
+        //         },
         '/v1': {
           target: 'http://127.0.0.1:9380/',
           changeOrigin: true,

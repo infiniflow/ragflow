@@ -529,6 +529,8 @@ export default {
         'Jika kunci API Anda berasal dari OpenAI, abaikan saja. Penyedia perantara lainnya akan memberikan base url ini dengan kunci API.',
       tongyiBaseUrlTip:
         'Untuk pengguna Tiongkok, tidak perlu diisi atau gunakan https://dashscope.aliyuncs.com/compatible-mode/v1. Untuk pengguna internasional, gunakan https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Untuk pengguna Tiongkok, tidak perlu diisi atau gunakan https://api.siliconflow.cn/v1. Untuk pengguna internasional, gunakan https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Hanya untuk pengguna internasional, silakan lihat tip)',
       minimaxBaseUrlTip:
@@ -667,6 +669,8 @@ export default {
       apiVersionMessage: 'Silakan masukkan versi API',
       modelsToBeAddedTooltip:
         'Jika penyedia model Anda tidak tercantum tetapi mengklaim kompatibel dengan OpenAI, pilih kartu OpenAI-API-compatible untuk menambahkan model yang relevan.',
+      dingtalkAITableDescription:
+        'Hubungkan ke Dingtalk AI Table dan sinkronkan catatan dari tabel yang ditentukan.',
     },
     message: {
       registered: 'Terdaftar!',

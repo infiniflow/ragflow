@@ -75,6 +75,7 @@ async def rm():
 @login_required
 async def save():
     req = await get_request_json()
+    req['release'] = bool(req.get("release", ""))
     try:
         req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
     except ValueError as e:
@@ -98,6 +99,7 @@ async def save():
         user_canvas_id=req["id"],
         dsl=req["dsl"],
         title=UserCanvasVersionService.build_version_title(getattr(current_user, "nickname", current_user.id), req.get("title")),
+        release=req.get("release"),
     )
     replica_ok = CanvasReplicaService.replace_for_set(
         canvas_id=req["id"],
@@ -132,6 +134,25 @@ def get(canvas_id):
         )
     except ValueError as e:
         return get_data_error_result(message=str(e))
+
+    # Get the last publication time (latest released version's update_time)
+    last_publish_time = None
+    versions = UserCanvasVersionService.list_by_canvas_id(canvas_id)
+    if versions:
+        released_versions = [v for v in versions if v.release]
+        if released_versions:
+            # Sort by update_time descending and get the latest
+            released_versions.sort(key=lambda x: x.update_time, reverse=True)
+            last_publish_time = released_versions[0].update_time
+
+    # Add last_publish_time to response data
+    if isinstance(c, dict):
+        c["last_publish_time"] = last_publish_time
+    else:
+        # If c is a model object, convert to dict first
+        c = c.to_dict()
+        c["last_publish_time"] = last_publish_time
+
     return get_json_result(data=c)
 
 
@@ -187,7 +208,8 @@ async def run():
     canvas_category = replica_payload.get("canvas_category", CanvasCategory.Agent)
     dsl_str = json.dumps(replica_dsl, ensure_ascii=False)
 
-    if canvas_category == CanvasCategory.DataFlow:
+    _, cvs = await thread_pool_exec(UserCanvasService.get_by_id, req["id"])
+    if cvs.canvas_category == CanvasCategory.DataFlow:
         task_id = get_uuid()
         Pipeline(dsl_str, tenant_id=tenant_id, doc_id=CANVAS_DEBUG_DOC_ID, task_id=task_id, flow_id=req["id"])
         ok, error_message = await thread_pool_exec(queue_dataflow, user_id, req["id"], task_id, CANVAS_DEBUG_DOC_ID, files[0], 0)

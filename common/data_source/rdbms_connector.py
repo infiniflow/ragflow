@@ -204,11 +204,11 @@ class RDBMSConnector(LoadConnector, PollConnector):
                 value = row_dict[col]
                 if isinstance(value, (dict, list)):
                     value = json.dumps(value, ensure_ascii=False)
-                # Use brackets around field name to ensure it's distinguishable
-                # after chunking (TxtParser strips \n delimiters during merge)
-                content_parts.append(f"【{col}】: {value}")
+                # Use brackets around field name and put value on a new line
+                # so that TxtParser preserves field boundaries after chunking.
+                content_parts.append(f"【{col}】:\n{value}")
         
-        content = "\n".join(content_parts)
+        content = "\n\n".join(content_parts)
         
         if self.id_column and self.id_column in row_dict:
             doc_id = f"{self.db_type}:{self.database}:{row_dict[self.id_column]}"

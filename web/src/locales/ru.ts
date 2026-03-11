@@ -778,6 +778,8 @@ export default {
         'Подключите GitHub для синхронизации содержимого Pull Request и Issue для поиска.',
       airtableDescription:
         'Подключите Airtable и синхронизируйте файлы из указанной таблицы в заданном рабочем пространстве.',
+      dingtalkAITableDescription:
+        'Подключите Dingtalk AI Table и синхронизируйте записи из указанной таблицы.',
       gitlabDescription:
         'Подключите GitLab для синхронизации репозиториев, задач, merge requests и связанной документации.',
       asanaDescription:
@@ -894,6 +896,8 @@ export default {
         'Если ваш API ключ от OpenAI, просто проигнорируйте это. Любые другие промежуточные провайдеры дадут этот базовый url вместе с API ключом.',
       tongyiBaseUrlTip:
         'Для китайских пользователей не нужно заполнять или используйте https://dashscope.aliyuncs.com/compatible-mode/v1. Для международных пользователей используйте https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Для китайских пользователей не нужно заполнять или используйте https://api.siliconflow.cn/v1. Для международных пользователей используйте https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Только для международных пользователей, см. подсказку)',
       minimaxBaseUrlTip:

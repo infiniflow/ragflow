@@ -998,6 +998,8 @@ The above is the content you need to summarize.`,
         'Свържете GitHub за синхронизиране на pull requests и issues за извличане.',
       airtableDescription:
         'Свържете се с Airtable и синхронизирайте файлове от определена таблица в определено работно пространство.',
+      dingtalkAITableDescription:
+        'Свържете се с Dingtalk AI Table и синхронизирайте записи от определена таблица.',
       gitlabDescription:
         'Свържете GitLab за синхронизиране на хранилища, issues, merge requests и свързана документация.',
       asanaDescription:
@@ -1137,6 +1139,8 @@ The above is the content you need to summarize.`,
         'Ако вашият API ключ е от OpenAI, просто го игнорирайте. Всеки друг междинен доставчик ще предостави този base url с API ключа.',
       tongyiBaseUrlTip:
         'За китайски потребители не е необходимо да попълвате или използвайте https://dashscope.aliyuncs.com/compatible-mode/v1. За международни потребители използвайте https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'За китайски потребители не е необходимо да попълвате или използвайте https://api.siliconflow.cn/v1. За международни потребители използвайте https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Само за международни потребители, вижте съвета)',
       minimaxBaseUrlTip:

@@ -43,7 +43,7 @@ dependencies = [
     "google-cloud-storage>=2.19.0,<3.0.0",
     "google-genai>=1.41.0,<2.0.0",
     "google-search-results==2.4.2",
-    "graspologic @ git+https://github.com/yuzhichang/graspologic.git@38e680cab72bc9fb68a7992c3bcc2d53b24e42fd",
+    "graspologic @ git+https://gitee.com/infiniflow/graspologic.git@38e680cab72bc9fb68a7992c3bcc2d53b24e42fd",
     "groq==0.9.0",
     "grpcio-status==1.67.1",
     "html-text==0.6.2",
@@ -81,8 +81,7 @@ dependencies = [
     "pyobvector==0.2.22",
     "pyodbc>=5.2.0,<6.0.0",
     "pypandoc>=1.16",
-    "pypdf>=6.6.2",
-    "pypdf2>=3.0.1,<4.0.0",
+    "pypdf>=6.7.5",
     "python-calamine>=0.4.0",
     "python-docx>=1.1.2,<2.0.0",
     "python-pptx>=1.0.2,<2.0.0",
@@ -156,6 +155,7 @@ dependencies = [
     "pygithub>=2.8.1",
     "asana>=5.2.2",
     "python-gitlab>=7.0.0",
+    "alibabacloud-dingtalk>=2.0.0",
     "quart-schema==0.23.0",
 ]
 
@@ -174,6 +174,7 @@ test = [
     "requests>=2.32.2",
     "requests-toolbelt>=1.0.0",
     "pycryptodomex==3.20.0",
+    "pytest-playwright>=0.7.2",
     "codecov>=2.1.13",
     "ragas>=0.2.0",
     "openai>=1.0.0",
@@ -213,9 +214,13 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 
 markers = [
+    "p0: critical priority test cases",
     "p1: high priority test cases",
     "p2: medium priority test cases",
     "p3: low priority test cases",
+    "smoke: smoke test cases",
+    "auth: authentication UI tests",
+    "asyncio: mark test as async",
 ]
 
 # Test collection and runtime configuration
