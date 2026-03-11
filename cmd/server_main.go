@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-  "ragflow/internal/common"
+	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"strings"
@@ -134,6 +134,7 @@ func startServer(config *server.Config) {
 	fileService := service.NewFileService()
 
 	// Initialize handler layer
+	authHandler := handler.NewAuthHandler()
 	userHandler := handler.NewUserHandler(userService)
 	tenantHandler := handler.NewTenantHandler(tenantService, userService)
 	documentHandler := handler.NewDocumentHandler(documentService)
@@ -148,7 +149,7 @@ func startServer(config *server.Config) {
 	fileHandler := handler.NewFileHandler(fileService, userService)
 
 	// Initialize router
-	r := router.NewRouter(userHandler, tenantHandler, documentHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

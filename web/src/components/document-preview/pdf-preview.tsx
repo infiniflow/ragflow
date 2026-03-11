@@ -11,10 +11,10 @@ import {
 import { Spin } from '@/components/ui/spin';
 // import FileError from '@/pages/document-viewer/file-error';
 import { Authorization } from '@/constants/authorization';
+import { cn } from '@/lib/utils';
 import FileError from '@/pages/document-viewer/file-error';
 import { getAuthorization } from '@/utils/authorization-util';
 import { useCatchDocumentError } from './hooks';
-import styles from './index.module.less';
 type PdfLoaderProps = React.ComponentProps<typeof PdfLoader> & {
   httpHeaders?: Record<string, string>;
 };
@@ -69,7 +69,11 @@ const PdfPreview = ({
 
   return (
     <div
-      className={`${styles.documentContainer} rounded-[10px] overflow-hidden	${className}`}
+      className={cn(
+        'relative size-full rounded overflow-hidden',
+        '[&_.pdfViewer.removePageBorders_.page]:last-of-type:mb-0',
+        className,
+      )}
     >
       <Loader
         url={url}
