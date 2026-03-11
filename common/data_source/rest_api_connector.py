@@ -239,6 +239,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
         self._basic_auth = None
 
         if self.auth_type == AuthType.NONE:
+            logging.info("REST API auth_type=none, no authentication configured.")
             return
 
         if self.auth_type == AuthType.API_KEY_HEADER:
@@ -249,10 +250,17 @@ class RestAPIConnector(LoadConnector, PollConnector):
                 or self.auth_config.get("api_key")
             )
             if not header_name or not api_key:
+                logging.warning(
+                    "REST API auth setup failed: header_name=%s, api_key present=%s, "
+                    "credentials keys=%s, auth_config keys=%s",
+                    header_name, bool(api_key),
+                    list(self._credentials.keys()), list(self.auth_config.keys()),
+                )
                 raise ConnectorMissingCredentialError(
                     "REST API (api_key_header) requires 'header_name' in auth_config and 'api_key' in credentials"
                 )
             self._auth_headers[header_name] = str(api_key)
+            logging.info("REST API auth configured: header '%s' set.", header_name)
             return
 
         if self.auth_type == AuthType.BEARER:
@@ -260,6 +268,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
             if not token:
                 raise ConnectorMissingCredentialError("REST API (bearer) requires 'token' in credentials")
             self._auth_headers["Authorization"] = f"Bearer {token}"
+            logging.info("REST API auth configured: Bearer token set.")
             return
 
         if self.auth_type == AuthType.BASIC:
@@ -268,6 +277,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
             if not username or password is None:
                 raise ConnectorMissingCredentialError("REST API (basic) requires 'username' and 'password'")
             self._basic_auth = requests.auth.HTTPBasicAuth(str(username), str(password))
+            logging.info("REST API auth configured: Basic auth for user '%s'.", username)
             return
 
         raise ConnectorValidationError(f"Unsupported auth_type: {self.auth_type}")
@@ -496,6 +506,15 @@ class RestAPIConnector(LoadConnector, PollConnector):
         except requests.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else None
             if status in (401, 403):
+                sensitive = {"authorization", "apikey", "api-key", "x-api-key"}
+                logging.warning(
+                    "REST API %d for %s %s | auth_type=%s | "
+                    "request header keys=%s | auth_header keys=%s",
+                    status, self.method, resp.url,
+                    self.auth_type,
+                    [k for k in headers],
+                    [k for k in self._auth_headers],
+                )
                 raise ConnectorMissingCredentialError(
                     f"REST API authentication failed with status {status}"
                 ) from exc
