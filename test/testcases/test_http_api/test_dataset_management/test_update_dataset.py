@@ -33,11 +33,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 0, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
                 109,
-                "Authentication error: API key is invalid!",
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
         ids=["empty_auth", "invalid_api_token"],

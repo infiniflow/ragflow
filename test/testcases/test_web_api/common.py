@@ -27,6 +27,7 @@ from utils.file_utils import create_txt_file
 HEADERS = {"Content-Type": "application/json"}
 
 KB_APP_URL = f"/{VERSION}/kb"
+DATASETS_URL = f"/api/{VERSION}/datasets"
 DOCUMENT_APP_URL = f"/{VERSION}/document"
 CHUNK_API_URL = f"/{VERSION}/chunk"
 DIALOG_APP_URL = f"/{VERSION}/dialog"
@@ -168,25 +169,28 @@ def search_rm(auth, payload=None, *, headers=HEADERS, data=None):
 
 
 # KB APP
-def create_kb(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/create", headers=headers, auth=auth, json=payload, data=data)
+def create_dataset(auth, payload=None, *, headers=HEADERS, data=None):
+    res = requests.post(url=f"{HOST_ADDRESS}{DATASETS_URL}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def list_kbs(auth, params=None, payload=None, *, headers=HEADERS, data=None):
-    if payload is None:
-        payload = {}
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/list", headers=headers, auth=auth, params=params, json=payload, data=data)
+def list_datasets(auth, params=None, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}", headers=headers, auth=auth, params=params)
     return res.json()
 
 
-def update_kb(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/update", headers=headers, auth=auth, json=payload, data=data)
+def update_dataset(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
+    res = requests.put(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def rm_kb(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/rm", headers=headers, auth=auth, json=payload, data=data)
+def delete_datasets(auth, payload=None, *, headers=HEADERS, data=None):
+    """
+    Delete datasets.
+    The endpoint is DELETE /api/{VERSION}/datasets with payload {"ids": [...]}
+    This is the standard SDK REST API endpoint for dataset deletion.
+    """
+    res = requests.delete(url=f"{HOST_ADDRESS}{DATASETS_URL}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
@@ -299,8 +303,8 @@ def delete_knowledge_graph(auth, dataset_id, payload=None, *, headers=HEADERS, d
 def batch_create_datasets(auth, num):
     ids = []
     for i in range(num):
-        res = create_kb(auth, {"name": f"kb_{i}"})
-        ids.append(res["data"]["kb_id"])
+        res = create_dataset(auth, {"name": f"kb_{i}"})
+        ids.append(res["data"]["id"])
     return ids
 
 
