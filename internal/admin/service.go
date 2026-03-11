@@ -45,13 +45,15 @@ var (
 
 // Service admin service layer
 type Service struct {
-	userDAO *dao.UserDAO
+	userDAO    *dao.UserDAO
+	licenseDAO *dao.LicenseDAO
 }
 
 // NewService create admin service
 func NewService() *Service {
 	return &Service{
-		userDAO: dao.NewUserDAO(),
+		userDAO:    dao.NewUserDAO(),
+		licenseDAO: dao.NewLicenseDAO(),
 	}
 }
 
