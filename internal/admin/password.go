@@ -18,11 +18,16 @@ package admin
 
 import (
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"hash"
+	"os"
 	"strconv"
 	"strings"
 
@@ -108,4 +113,75 @@ func GenerateWerkzeugPasswordHash(password string, iterations int) (string, erro
 	hashB64 := base64.StdEncoding.EncodeToString(key)
 
 	return fmt.Sprintf("pbkdf2:sha256:%d$%s$%s", iterations, saltB64, hashB64), nil
+}
+
+// DecryptPassword decrypts the password using RSA private key
+// The password is expected to be base64 encoded RSA encrypted data
+// If decryption fails, the original password is returned (assumed to be plain text)
+func DecryptPassword(encryptedPassword string) (string, error) {
+	// Try to decode base64
+	ciphertext, err := base64.StdEncoding.DecodeString(encryptedPassword)
+	if err != nil {
+		// If base64 decoding fails, assume it's already a plain password
+		return encryptedPassword, nil
+	}
+
+	// Load private key
+	privateKey, err := loadPrivateKey()
+	if err != nil {
+		return "", err
+	}
+
+	// Decrypt using PKCS#1 v1.5
+	plaintext, err := rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)
+	if err != nil {
+		// If decryption fails, assume it's already a plain password
+		return encryptedPassword, nil
+	}
+
+	return string(plaintext), nil
+}
+
+// loadPrivateKey loads and decrypts the RSA private key from conf/private.pem
+func loadPrivateKey() (*rsa.PrivateKey, error) {
+	// Read private key file
+	keyData, err := os.ReadFile("conf/private.pem")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read private key file: %w", err)
+	}
+
+	// Parse PEM block
+	block, _ := pem.Decode(keyData)
+	if block == nil {
+		return nil, errors.New("failed to decode PEM block")
+	}
+
+	// Decrypt the PEM block if it's encrypted
+	var privateKey interface{}
+	if block.Headers["Proc-Type"] == "4,ENCRYPTED" {
+		// Decrypt using password "Welcome"
+		decryptedData, err := x509.DecryptPEMBlock(block, []byte("Welcome"))
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt private key: %w", err)
+		}
+
+		// Parse the decrypted key
+		privateKey, err = x509.ParsePKCS1PrivateKey(decryptedData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse private key: %w", err)
+		}
+	} else {
+		// Not encrypted, parse directly
+		privateKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse private key: %w", err)
+		}
+	}
+
+	rsaPrivateKey, ok := privateKey.(*rsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("not an RSA private key")
+	}
+
+	return rsaPrivateKey, nil
 }
