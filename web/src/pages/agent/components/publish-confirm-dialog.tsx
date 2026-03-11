@@ -8,6 +8,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { IFlow } from '@/interfaces/database/agent';
 import { Operator } from '@/pages/agent/constant';
 import useGraphStore from '@/pages/agent/store';
 import { formatDate } from '@/utils/date';
@@ -16,7 +17,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface PublishConfirmDialogProps {
-  agentDetail: { title: string; update_time?: number };
+  agentDetail: IFlow;
   loading: boolean;
   onPublish: () => void;
 }
@@ -42,8 +43,8 @@ export function PublishConfirmDialog({
   }, [nodes]);
 
   const lastPublished = useMemo(() => {
-    if (agentDetail?.update_time) {
-      return formatDate(agentDetail.update_time);
+    if (agentDetail?.last_publish_time) {
+      return formatDate(agentDetail.last_publish_time);
     }
     return '-';
   }, [agentDetail?.update_time]);

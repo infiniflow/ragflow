@@ -222,7 +222,7 @@ async def oauth_callback(channel):
         if not users:
             try:
                 try:
-                    avatar = download_img(user_info.avatar_url)
+                    avatar = await download_img(user_info.avatar_url)
                 except Exception as e:
                     logging.exception(e)
                     avatar = ""
@@ -317,7 +317,7 @@ async def github_callback():
         # User isn't try to register
         try:
             try:
-                avatar = download_img(user_info["avatar_url"])
+                avatar = await download_img(user_info["avatar_url"])
             except Exception as e:
                 logging.exception(e)
                 avatar = ""
@@ -421,7 +421,7 @@ async def feishu_callback():
         # User isn't try to register
         try:
             try:
-                avatar = download_img(user_info["avatar_url"])
+                avatar = await download_img(user_info["avatar_url"])
             except Exception as e:
                 logging.exception(e)
                 avatar = ""

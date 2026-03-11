@@ -51,7 +51,7 @@ c_api_debug: $(BUILD_DIR)
 
 # Test the Go bindings
 test_go: c_api
-	cd bindings/example && go run main.go ../../$(BUILD_DIR) "这是一个测试文本。This is a test."
+	cd bindings/example && go run main.go ../../$(BUILD_DIR) "This is a test."
 
 # Run memory test
 test_memory: c_api

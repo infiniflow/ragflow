@@ -835,14 +835,14 @@ Failure:
 
 ### List datasets
 
-**GET** `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
+**GET** `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}&include_parsing_status={include_parsing_status}`
 
 Lists datasets.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
+- URL: `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}&include_parsing_status={include_parsing_status}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -851,6 +851,13 @@ Lists datasets.
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+```bash
+# List datasets with parsing status
+curl --request GET \
+     --url 'http://{address}/api/v1/datasets?include_parsing_status=true' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -870,6 +877,13 @@ curl --request GET \
   The name of the dataset to retrieve.
 - `id`: (*Filter parameter*)  
   The ID of the dataset to retrieve.
+- `include_parsing_status`: (*Filter parameter*)  
+  Whether to include document parsing status counts in the response. Defaults to `false`. When set to `true`, each dataset object in the response will include the following additional fields:
+  - `unstart_count`: Number of documents not yet started parsing.
+  - `running_count`: Number of documents currently being parsed.
+  - `cancel_count`: Number of documents whose parsing was cancelled.
+  - `done_count`: Number of documents that have been successfully parsed.
+  - `fail_count`: Number of documents whose parsing failed.
 
 #### Response
 
@@ -910,6 +924,49 @@ Success:
             "token_num": 12744,
             "update_date": "Thu, 10 Oct 2024 04:07:23 GMT",
             "update_time": 1728533243536,
+            "vector_similarity_weight": 0.3
+        }
+    ],
+    "total_datasets": 1
+}
+```
+
+Success (with `include_parsing_status=true`):
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "avatar": null,
+            "cancel_count": 0,
+            "chunk_count": 30,
+            "chunk_method": "qa",
+            "create_date": "2026-03-09T18:57:13",
+            "create_time": 1773053833094,
+            "created_by": "928f92a210b911f1ac4cc39e0b8fa3ad",
+            "description": null,
+            "document_count": 1,
+            "done_count": 1,
+            "embedding_model": "text-embedding-v2@Tongyi-Qianwen",
+            "fail_count": 0,
+            "id": "ba6586c21ba611f1a3dc476f0709e75e",
+            "language": "English",
+            "name": "Test Dataset",
+            "parser_config": {
+                "graphrag": { "use_graphrag": false },
+                "llm_id": "deepseek-chat@DeepSeek",
+                "raptor": { "use_raptor": false }
+            },
+            "permission": "me",
+            "running_count": 0,
+            "similarity_threshold": 0.2,
+            "status": "1",
+            "tenant_id": "928f92a210b911f1ac4cc39e0b8fa3ad",
+            "token_num": 1746,
+            "unstart_count": 0,
+            "update_date": "2026-03-09T18:59:32",
+            "update_time": 1773053972723,
             "vector_similarity_weight": 0.3
         }
     ],
@@ -2220,11 +2277,11 @@ Failure:
 
 ---
 
-### Switch chunks availability
+### Update chunk availability
 
 **POST** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/switch`
 
-Switches the availability of specified chunks (enable or disable chunks for retrieval).
+Updates or switches the availability status of specified chunks, controlling whether they are available for retrieval.
 
 #### Request
 
@@ -2234,9 +2291,9 @@ Switches the availability of specified chunks (enable or disable chunks for retr
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"chunk_ids"`: `list[string]` (*Required*) List of chunk IDs to switch.
-  - `"available_int"`: `integer` (*Optional*) `1` for available, `0` for unavailable. Mutually exclusive with `"available"`.
-  - `"available"`: `boolean` (*Optional*) Availability status. Mutually exclusive with `"available_int"`. Must provide either `available_int` or `available`.
+  - `"chunk_ids"`: `list[string]` (*Required*)
+  - `"available_int"`: `integer` (*Optional*)
+  - `"available"`: `boolean` (*Optional*)
 
 ##### Request example
 
@@ -2258,12 +2315,16 @@ curl --request POST \
   The ID of the dataset.
 - `document_id`: (*Path parameter*)  
   The ID of the document.
-- `"chunk_ids"`: (*Body parameter*), `list[string]`, *Required*  
-  List of chunk IDs whose availability is to be switched.
-- `"available_int"`: (*Body parameter*), `integer`  
-  `1` for available (chunk participates in retrieval), `0` for unavailable. Either this or `"available"` must be provided.
-- `"available"`: (*Body parameter*), `boolean`  
-  Availability status. `true` for available, `false` for unavailable. Alternative to `"available_int"`.
+- `"chunk_ids"`: (*Body parameter*), `list[string]` (*Required*)  
+  IDs of the chunks whose availability status is to be updated.
+- `"available_int"`: (*Body parameter*), `integer` (*Optional*)  
+  Availability status for the specified chunks. Mutually exclusive with `"available"`. You must provide either `available_int` or `available`, *not* both.
+  - `1`: Available,
+  - `0`: Unavailable.
+- `"available"`: (*Body parameter*), `boolean` (*Optional*)  
+  Availability status of the specified chunks. Mutually exclusive with `"available_int"`. You must provide either `available` or `available_int`, *not* both.  
+  - `true`: Available,
+  - `false`: Unavailable.
 
 #### Response
 

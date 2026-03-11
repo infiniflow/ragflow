@@ -18,20 +18,21 @@ package admin
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 // Common errors
 var (
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrUserNotFound       = errors.New("user not found")
-	ErrInvalidToken       = errors.New("invalid token")
+	ErrUserNotFound = errors.New("user not found")
 )
 
 // Handler admin handler
@@ -41,8 +42,11 @@ type Handler struct {
 }
 
 // NewHandler create admin handler
-func NewHandler(service *Service, userService *service.UserService) *Handler {
-	return &Handler{service: service, userService: userService}
+func NewHandler(svc *Service) *Handler {
+	return &Handler{
+		service:     svc,
+		userService: service.NewUserService(),
+	}
 }
 
 // SuccessResponse success response
@@ -94,28 +98,41 @@ func (h *Handler) Ping(c *gin.Context) {
 	successNoData(c, "PONG")
 }
 
-// LoginHTTPRequest login request body
-type LoginHTTPRequest struct {
-	Email    string `json:"email" binding:"required"`
-	Password string `json:"password" binding:"required"`
-}
-
 // Login handle admin login
+// @Summary Admin Login
+// @Description Admin login verification using email, only superuser can login
+// @Tags admin
+// @Accept json
+// @Produce json
+// @Param request body service.EmailLoginRequest true "login info with email"
+// @Success 200 {object} map[string]interface{}
+// @Router /admin/login [post]
 func (h *Handler) Login(c *gin.Context) {
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
+			"code":    common.CodeBadRequest,
 			"message": err.Error(),
 		})
 		return
 	}
 
-	user, code, err := h.userService.LoginByEmail(&req)
+	// Use userService.LoginByEmail with adminLogin=true
+	// This allows default admin account to login admin system
+	user, code, err := h.userService.LoginByEmail(&req, true)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
+		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
 			"message": err.Error(),
+		})
+		return
+	}
+
+	// Check if user is superuser (admin)
+	if user.IsSuperuser == nil || !*user.IsSuperuser {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeForbidden,
+			"message": "Only superuser can login admin system",
 		})
 		return
 	}
@@ -123,11 +140,16 @@ func (h *Handler) Login(c *gin.Context) {
 	variables := server.GetVariables()
 	secretKey := variables.SecretKey
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": fmt.Sprintf("Failed to generate auth token: %s", err.Error()),
+		})
+		return
+	}
 
 	// Set Authorization header with access_token
-	if user.AccessToken != nil {
-		c.Header("Authorization", authToken)
-	}
+	c.Header("Authorization", authToken)
 	// Set CORS headers
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Methods", "*")
@@ -135,8 +157,9 @@ func (h *Handler) Login(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "Login successful",
+		"code":    common.CodeSuccess,
+		"message": "Welcome back!",
+		"data":    user,
 	})
 }
 
@@ -639,9 +662,12 @@ func (h *Handler) GetUserPermission(c *gin.Context) {
 
 // GetServices handle get all services
 func (h *Handler) GetServices(c *gin.Context) {
-	services, err := h.service.GetAllServices()
+	services, err := h.service.ListServices()
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    common.CodeServerError,
+			"message": err.Error(),
+		})
 		return
 	}
 
@@ -902,7 +928,10 @@ func (h *Handler) TestSandboxConnection(c *gin.Context) {
 
 	result, err := h.service.TestSandboxConnection(req.ProviderType, req.Config)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "Invalid access token",
+		})
 		return
 	}
 
@@ -910,6 +939,7 @@ func (h *Handler) TestSandboxConnection(c *gin.Context) {
 }
 
 // AuthMiddleware JWT auth middleware
+// Validates that the user is authenticated and is a superuser (admin)
 func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader("Authorization")
@@ -925,6 +955,15 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"code":    code,
 				"message": "Invalid access token",
+			})
+			c.Abort()
+			return
+		}
+
+		if !*user.IsSuperuser {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    common.CodeForbidden,
+				"message": "Permission denied",
 			})
 			return
 		}
@@ -942,4 +981,38 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 		Code:    404,
 		Message: "The requested resource was not found",
 	})
+}
+
+// Reports handle heartbeat reports from servers
+func (h *Handler) Reports(c *gin.Context) {
+	var req common.BaseMessage
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	// Set default timestamp if not provided
+	if req.Timestamp.IsZero() {
+		req.Timestamp = time.Now()
+	}
+
+	// Only process heartbeat messages for now
+	if req.MessageType != common.MessageHeartbeat {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "Unsupported report type: " + string(req.MessageType),
+		})
+		return
+	}
+
+	// Handle the heartbeat
+	if err := h.service.HandleHeartbeat(&req); err != nil {
+		errorResponse(c, "Failed to process heartbeat: "+err.Error(), 500)
+		return
+	}
+
+	successNoData(c, "Heartbeat received successfully")
 }

@@ -266,7 +266,8 @@ RAGFlow.list_datasets(
     orderby: str = "create_time", 
     desc: bool = True,
     id: str = None,
-    name: str = None
+    name: str = None,
+    include_parsing_status: bool = False
 ) -> list[DataSet]
 ```
 
@@ -301,6 +302,16 @@ The ID of the dataset to retrieve. Defaults to `None`.
 
 The name of the dataset to retrieve. Defaults to `None`.
 
+##### include_parsing_status: `bool`
+
+Whether to include document parsing status counts in each returned `DataSet` object. Defaults to `False`. When set to `True`, each `DataSet` object will include the following additional attributes:
+
+- `unstart_count`: `int` Number of documents not yet started parsing.
+- `running_count`: `int` Number of documents currently being parsed.
+- `cancel_count`: `int` Number of documents whose parsing was cancelled.
+- `done_count`: `int` Number of documents that have been successfully parsed.
+- `fail_count`: `int` Number of documents whose parsing failed.
+
 #### Returns
 
 - Success: A list of `DataSet` objects.
@@ -320,6 +331,13 @@ for dataset in rag_object.list_datasets():
 ```python
 dataset = rag_object.list_datasets(id = "id_1")
 print(dataset[0])
+```
+
+##### List datasets with parsing status
+
+```python
+for dataset in rag_object.list_datasets(include_parsing_status=True):
+    print(dataset.done_count, dataset.fail_count, dataset.running_count)
 ```
 
 ---
