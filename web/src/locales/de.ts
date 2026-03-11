@@ -29,6 +29,7 @@ export default {
       traditionalChinese: 'Traditionelles Chinesisch',
       russian: 'Russisch',
       bulgarian: 'Bulgarisch',
+      arabic: 'Arabisch',
       german: 'Deutsch',
       language: 'Sprache',
       languageMessage: 'Bitte geben Sie Ihre Sprache ein!',
@@ -2439,6 +2440,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       vietnamese: 'Vietnamesisch',
       russian: 'Russisch',
       bulgarian: 'Bulgarisch',
+      arabic: 'Arabisch',
     },
     pagination: {
       total: 'Gesamt {{total}}',

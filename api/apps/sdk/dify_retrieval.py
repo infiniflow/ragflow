@@ -123,7 +123,7 @@ async def retrieval(tenant_id):
     similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
     top = int(retrieval_setting.get("top_k", 1024))
     metadata_condition = req.get("metadata_condition", {}) or {}
-    metas = DocMetadataService.get_meta_by_kbs([kb_id])
+    metas = DocMetadataService.get_flatted_meta_by_kbs([kb_id])
 
     doc_ids = []
     try:

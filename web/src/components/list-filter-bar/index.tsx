@@ -65,10 +65,12 @@ export default function ListFilterBar({
   filters,
   className,
   icon,
+  iconClassName,
   filterGroup,
 }: PropsWithChildren<IProps & Omit<CheckboxFormMultipleProps, 'setOpen'>> & {
   className?: string;
   icon?: ReactNode;
+  iconClassName?: string;
   filterGroup?: Record<string, string[]>;
 }) {
   const filterCount = useMemo(() => {
@@ -95,7 +97,10 @@ export default function ListFilterBar({
       <div className="text-2xl font-semibold flex items-center gap-2.5">
         {typeof icon === 'string' ? (
           // <IconFont name={icon} className="size-6"></IconFont>
-          <HomeIcon name={`${icon}`} width={'32'} />
+          <HomeIcon
+            name={`${icon}`}
+            imgClass={cn('size-[1em]', iconClassName)}
+          />
         ) : (
           icon
         )}
