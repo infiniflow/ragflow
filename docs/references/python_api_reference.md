@@ -246,7 +246,7 @@ The IDs of the datasets to delete. Defaults to `None`.
 
 ##### delete_all: `bool`
 
-Whether to delete all datasets owned by the current user when `ids` is omitted, `None`, or an empty list. Defaults to `False`.
+Whether to delete all datasets owned by the current user when `ids` is omitted, or set to `None` or an empty list. Defaults to `False`.
 
 #### Returns
 
@@ -693,7 +693,7 @@ The IDs of the documents to delete. Defaults to `None`.
 
 ##### delete_all: `bool`
 
-Whether to delete all documents in the current dataset when `ids` is omitted, `None`, or an empty list. Defaults to `False`.
+Whether to delete all documents in the current dataset when `ids` is omitted, or set to `None` or an empty list. Defaults to `False`.
 
 #### Returns
 
@@ -969,7 +969,7 @@ The IDs of the chunks to delete. Defaults to `None`.
 
 ##### delete_all: `bool`
 
-Whether to delete all chunks in the current document when `ids` is omitted, `None`, or an empty list. Defaults to `False`.
+Whether to delete all chunks in the current document when `ids` is omitted, or set to `None` or an empty list. Defaults to `False`.
 
 #### Returns
 
@@ -1280,7 +1280,7 @@ The IDs of the chat assistants to delete. Defaults to `None`.
 
 ##### delete_all: `bool`
 
-Whether to delete all chat assistants owned by the current user when `ids` is omitted, `None`, or an empty list. Defaults to `False`.
+Whether to delete all chat assistants owned by the current user when `ids` is omitted, or set to `None` or an empty list. Defaults to `False`.
 
 #### Returns
 
@@ -1517,7 +1517,7 @@ The IDs of the sessions to delete. Defaults to `None`.
 
 ##### delete_all: `bool`
 
-Whether to delete all sessions of the current chat assistant when `ids` is omitted, `None`, or an empty list. Defaults to `False`.
+Whether to delete all sessions of the current chat assistant when `ids` is omitted, or set to `None` or an empty list. Defaults to `False`.
 
 #### Returns
 
@@ -1838,12 +1838,12 @@ Deletes sessions of an agent by ID.
 
 The IDs of the sessions to delete. Defaults to `None`.
 
-- If omitted, or set to `null` or an empty array, no sessions are deleted.
+- If omitted, or set to `None` or an empty array, no sessions are deleted.
 - If an array of IDs is provided, only the sessions matching those IDs are deleted.
 
 ##### delete_all: `bool`
 
-Whether to delete all sessions of the current agent when `ids` is omitted, `None`, or an empty list. Defaults to `False`.
+Whether to delete all sessions of the current agent when `ids` is omitted, or set to `None` or an empty list. Defaults to `False`.
 
 #### Returns
 

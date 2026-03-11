@@ -689,8 +689,8 @@ curl --request DELETE \
   Specifies the datasets to delete:
   - If omitted, or set to `null` or an empty array, no datasets are deleted.
   - If an array of IDs is provided, only the datasets matching those IDs are deleted.
-- `"delete_all"`: (*Body parameter*), `boolean`
-  If set to `true` and `"ids"` is omitted, `null`, or an empty array, all datasets owned by the current user are deleted. Defaults to `false`.
+- `"delete_all"`: (*Body parameter*), `boolean`  
+  Whether to delete all datasets owned by the current user when`"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -1847,8 +1847,8 @@ curl --request DELETE \
   The IDs of the documents to delete.
   - If omitted, or set to `null` or an empty array, no documents are deleted.
   - If an array of IDs is provided, only the documents matching those IDs are deleted.
-- `"delete_all"`: (*Body parameter*), `boolean`
-  If set to `true` and `"ids"` is omitted, `null`, or an empty array, all documents in the dataset are deleted. Defaults to `false`.
+- `"delete_all"`: (*Body parameter*), `boolean`  
+  Whether to delete all documents in the specified dataset when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -2222,8 +2222,8 @@ curl --request DELETE \
   The IDs of the chunks to delete.
   - If omitted, or set to `null` or an empty array, no chunks are deleted.
   - If an array of IDs is provided, only the chunks matching those IDs are deleted.
-- `"delete_all"`: (*Body parameter*), `boolean`
-  If set to `true` and `"chunk_ids"` is omitted, `null`, or an empty array, all chunks in the document are deleted. Defaults to `false`.
+- `"delete_all"`: (*Body parameter*), `boolean`  
+  Whether to delete all chunks of the specified documen when `"chunk_ids"` is omitted, or set to`null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -3008,8 +3008,8 @@ curl --request DELETE \
   The IDs of the chat assistants to delete.
   - If omitted, or set to `null` or an empty array, no chat assistants are deleted.
   - If an array of IDs is provided, only the chat assistants matching those IDs are deleted.
-- `"delete_all"`: (*Body parameter*), `boolean`
-  If set to `true` and `"ids"` is omitted, `null`, or an empty array, all chat assistants owned by the current user are deleted. Defaults to `false`.
+- `"delete_all"`: (*Body parameter*), `boolean`  
+  Whether to delete all chat assistants owned by the current user when `"ids"` is omitted, or set to`null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -3401,8 +3401,8 @@ curl --request DELETE \
   The IDs of the sessions to delete.
   - If omitted, or set to `null` or an empty array, no sessions are deleted.
   - If an array of IDs is provided, only the sessions matching those IDs are deleted.
-- `"delete_all"`: (*Body Parameter*), `boolean`
-  If set to `true` and `"ids"` is omitted, `null`, or an empty array, all sessions of the chat assistant are deleted. Defaults to `false`.
+- `"delete_all"`: (*Body Parameter*), `boolean`  
+  Whether to delete all sessions of the specified chat assistant when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -4780,8 +4780,8 @@ curl --request DELETE \
   The IDs of the sessions to delete.
   - If omitted, or set to `null` or an empty array, no sessions are deleted.
   - If an array of IDs is provided, only the sessions matching those IDs are deleted.
-- `"delete_all"`: (*Body Parameter*), `boolean`
-  If set to `true` and `"ids"` is omitted, `null`, or an empty array, all sessions of the agent are deleted. Defaults to `false`.
+- `"delete_all"`: (*Body Parameter*), `boolean`  
+  Whether to delete all sessions of the specified agent when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
