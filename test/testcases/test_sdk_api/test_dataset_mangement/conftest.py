@@ -16,13 +16,13 @@
 
 
 import pytest
-from common import batch_create_datasets, delete_all_datasets
+from common import batch_create_datasets
 
 
 @pytest.fixture(scope="class")
 def add_datasets(client, request):
     def cleanup():
-        delete_all_datasets(client)
+        client.delete_datasets(**{"ids": None})
 
     request.addfinalizer(cleanup)
 
@@ -32,7 +32,7 @@ def add_datasets(client, request):
 @pytest.fixture(scope="function")
 def add_datasets_func(client, request):
     def cleanup():
-        delete_all_datasets(client)
+        client.delete_datasets(**{"ids": None})
 
     request.addfinalizer(cleanup)
 
