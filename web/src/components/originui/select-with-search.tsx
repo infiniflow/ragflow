@@ -165,10 +165,8 @@ export const SelectWithSearch = forwardRef<
             )}
           >
             {selectLabel || value ? (
-              <span className="flex min-w-0 options-center gap-2">
-                <span className="leading-none truncate">
-                  {selectLabel || value}
-                </span>
+              <span className="flex min-w-0 options-center gap-2 truncate">
+                {selectLabel || value}
               </span>
             ) : (
               <span className="text-text-disabled">{placeholder}</span>
@@ -209,10 +207,10 @@ export const SelectWithSearch = forwardRef<
               <CommandEmpty>
                 <div dangerouslySetInnerHTML={{ __html: emptyData }}></div>
               </CommandEmpty>
-              {options.map((group, idx) => {
+              {options.map((group) => {
                 if (group.options) {
                   return (
-                    <Fragment key={idx}>
+                    <Fragment key={group.value}>
                       <CommandGroup heading={group.label} className="mb-1">
                         {group.options.map((option) => (
                           <CommandItem

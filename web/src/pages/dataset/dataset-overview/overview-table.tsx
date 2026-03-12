@@ -150,14 +150,19 @@ export const getFileLogsTableColumns = (
       accessorKey: 'process_begin_at',
       header: ({ column }) => {
         return (
-          <Button
-            variant="transparent"
-            className="border-none"
-            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          >
+          <div className="flex items-center gap-1">
             {t('startDate')}
-            <ArrowUpDown />
-          </Button>
+
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === 'asc')
+              }
+            >
+              <ArrowUpDown className="size-[1em]" />
+            </Button>
+          </div>
         );
       },
       cell: ({ row }) => (
@@ -192,8 +197,7 @@ export const getFileLogsTableColumns = (
         <div className="flex justify-start space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
             variant="ghost"
-            size="sm"
-            className="p-1"
+            size="icon-sm"
             onClick={() => {
               showLog(row, LogTabs.FILE_LOGS);
             }}
@@ -203,8 +207,7 @@ export const getFileLogsTableColumns = (
           {row.original.pipeline_id && (
             <Button
               variant="ghost"
-              size="sm"
-              className="p-1"
+              size="icon-sm"
               onClick={navigateToDataflowResult({
                 id: row.original.id,
                 [PipelineResultSearchParams.KnowledgeId]: kowledgeId,
@@ -261,14 +264,18 @@ export const getDatasetLogsTableColumns = (
       accessorKey: 'process_begin_at',
       header: ({ column }) => {
         return (
-          <Button
-            variant="transparent"
-            className="border-none"
-            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          >
+          <div className="flex items-center gap-1">
             {t('startDate')}
-            <ArrowUpDown />
-          </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === 'asc')
+              }
+            >
+              <ArrowUpDown className="size-[1em]" />
+            </Button>
+          </div>
         );
       },
       cell: ({ row }) => (
@@ -319,11 +326,10 @@ export const getDatasetLogsTableColumns = (
       id: 'operations',
       header: t('operations'),
       cell: ({ row }) => (
-        <div className="flex justify-start space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex justify-start space-x-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
           <Button
             variant="ghost"
-            size="sm"
-            className="p-1"
+            size="icon-sm"
             onClick={() => {
               showLog(row, LogTabs.DATASET_LOGS);
             }}

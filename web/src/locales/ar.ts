@@ -2300,7 +2300,7 @@ export default {
     },
     pagination: {
       total: 'الإجمالي {{total}}',
-      page: '{{page}} /الصفحة',
+      page: '{{page}} / الصفحة',
     },
     dataflowParser: {
       result: 'نتيجة',
