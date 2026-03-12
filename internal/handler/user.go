@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/server"
+	"ragflow/internal/server/local"
 	"ragflow/internal/utility"
 	"strconv"
 
@@ -164,6 +165,16 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		return
 	}
 
+	if !local.IsAdminAvailable() {
+		license := local.GetAdminStatus()
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeAuthenticationError,
+			"message": license.Reason,
+			"data":    "No",
+		})
+		return
+	}
+
 	user, code, err := h.userService.LoginByEmail(&req, false)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -291,14 +302,38 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/logout [post]
 func (h *UserHandler) Logout(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+	// Same as AuthMiddleware@auth.go
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "Missing Authorization header",
+		})
+		c.Abort()
+		return
+	}
+
+	// Get user by access token
+	user, code, err := h.userService.GetUserByToken(token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    code,
+			"message": "Invalid access token",
+		})
+		c.Abort()
+		return
+	}
+
+	if *user.IsSuperuser {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    common.CodeForbidden,
+			"message": "Super user should access the URL",
+		})
 		return
 	}
 
 	// Logout user
-	code, err := h.userService.Logout(user)
+	code, err = h.userService.Logout(user)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,

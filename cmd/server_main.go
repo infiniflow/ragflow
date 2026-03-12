@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"ragflow/internal/common"
 	"ragflow/internal/server"
+	"ragflow/internal/server/local"
 	"ragflow/internal/utility"
 	"strings"
 	"syscall"
@@ -122,6 +123,9 @@ func main() {
 	if err := server.InitVariables(cache.Get()); err != nil {
 		logger.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
+
+	// Initialize admin status (default: unavailable=1)
+	local.InitAdminStatus(1, "admin server not connected")
 
 	// Initialize tokenizer (rag_analyzer)
 	tokenizerCfg := &tokenizer.PoolConfig{
@@ -238,7 +242,11 @@ func startServer(config *server.Config) {
 	} else {
 		// Start heartbeat reporter with 30 seconds interval
 		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
-			if err := heartbeatService.SendHeartbeat(); err != nil {
+			var message string
+			if err, message = heartbeatService.SendHeartbeat(); err == nil {
+				local.SetAdminStatus(0, "")
+			} else {
+				local.SetAdminStatus(1, message)
 				logger.Warn("Failed to send heartbeat", zap.Error(err))
 			}
 		})
