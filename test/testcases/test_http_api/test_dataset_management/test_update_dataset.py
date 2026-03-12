@@ -33,10 +33,10 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "<Unauthorized '401: Unauthorized'>"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
+                401,
                 "<Unauthorized '401: Unauthorized'>",
             ),
         ],
@@ -76,7 +76,7 @@ class TestRquest:
     def test_payload_empty(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         res = update_dataset(HttpApiAuth, dataset_id, {})
-        assert res["code"] == 101, res
+        assert res["code"] == 102, res
         assert res["message"] == "No properties were modified", res
 
     @pytest.mark.p3
@@ -313,7 +313,7 @@ class TestDatasetUpdate:
         dataset_id = add_dataset_func
         payload = {"name": name, "embedding_model": embedding_model}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
-        assert res["code"] == 101, res
+        assert res["code"] == 102, res
         if "tenant_no_auth" in name:
             assert res["message"] == f"Unauthorized model: <{embedding_model}>", res
         else:

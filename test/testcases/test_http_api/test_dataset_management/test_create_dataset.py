@@ -23,7 +23,7 @@ from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
 
-from common import create_dataset
+from test_http_api.common import create_dataset
 
 
 @pytest.mark.usefixtures("clear_datasets")
@@ -32,10 +32,10 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "<Unauthorized '401: Unauthorized'>"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
+                401,
                 "<Unauthorized '401: Unauthorized'>",
             ),
         ],
@@ -250,7 +250,7 @@ class TestDatasetCreate:
     def test_embedding_model_invalid(self, HttpApiAuth, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
         res = create_dataset(HttpApiAuth, payload)
-        assert res["code"] == 101, res
+        assert res["code"] == 102, res
         if "tenant_no_auth" in name:
             assert res["message"] == f"Unauthorized model: <{embedding_model}>", res
         else:

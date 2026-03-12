@@ -19,7 +19,7 @@ from peewee import OperationalError
 from quart import request
 from common.constants import RetCode
 from api.apps import login_required, current_user
-from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_result, add_tenant_id_to_kwargs
+from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_result, add_tenant_id_to_kwargs, get_request_json
 from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
@@ -153,7 +153,7 @@ async def delete(tenant_id):
         return get_error_argument_result(err)
 
     try:
-        success, result = await dataset_api_service.delete_datasets(tenant_id, req.get("ids"))
+        success, result = await dataset_api_service.delete_datasets(tenant_id, req.get("ids"), req.get("delete_all", False))
         if success:
             return get_result(data=result)
         else:
@@ -335,9 +335,7 @@ def list_datasets(tenant_id):
 @add_tenant_id_to_kwargs
 async def knowledge_graph(tenant_id, dataset_id):
     try:
-        # Parse query parameters
-        args = request.args.to_dict()
-        success, result = await dataset_api_service.get_knowledge_graph(dataset_id, tenant_id, args)
+        success, result = await dataset_api_service.get_knowledge_graph(dataset_id, tenant_id)
         if success:
             return get_result(data=result)
         else:
@@ -375,11 +373,7 @@ def delete_knowledge_graph(tenant_id, dataset_id):
 @add_tenant_id_to_kwargs
 async def run_graphrag(tenant_id, dataset_id):
     try:
-        req, err = await validate_and_parse_json_request(request, None, extras={}, exclude_unset=False)
-        if err is not None:
-            return get_error_argument_result(err)
-        
-        success, result = await dataset_api_service.run_graphrag(dataset_id, tenant_id, req)
+        success, result = dataset_api_service.run_graphrag(dataset_id, tenant_id)
         if success:
             return get_result(data=result)
         else:
@@ -409,11 +403,7 @@ def trace_graphrag(tenant_id, dataset_id):
 @add_tenant_id_to_kwargs
 async def run_raptor(tenant_id, dataset_id):
     try:
-        req, err = await validate_and_parse_json_request(request, None, extras={}, exclude_unset=False)
-        if err is not None:
-            return get_error_argument_result(err)
-        
-        success, result = await dataset_api_service.run_raptor(dataset_id, tenant_id, req)
+        success, result = dataset_api_service.run_raptor(dataset_id, tenant_id)
         if success:
             return get_result(data=result)
         else:

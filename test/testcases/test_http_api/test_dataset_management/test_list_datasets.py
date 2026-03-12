@@ -28,10 +28,10 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "<Unauthorized '401: Unauthorized'>"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
+                401,
                 "<Unauthorized '401: Unauthorized'>",
             ),
         ],
@@ -237,7 +237,7 @@ class TestDatasetsList:
     def test_name_wrong(self, HttpApiAuth):
         params = {"name": "wrong name"}
         res = list_datasets(HttpApiAuth, params)
-        assert res["code"] == 108, res
+        assert res["code"] == 102, res
         assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p2
@@ -281,7 +281,7 @@ class TestDatasetsList:
     def test_id_wrong_uuid(self, HttpApiAuth):
         params = {"id": "d94a8dc02c9711f0930f7fbc369eab6d"}
         res = list_datasets(HttpApiAuth, params)
-        assert res["code"] == 108, res
+        assert res["code"] == 102, res
         assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p2
