@@ -17,49 +17,83 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strings"
+	"github.com/peterh/liner"
 )
+
+// HistoryFile returns the path to the history file
+func HistoryFile() string {
+	return os.Getenv("HOME") + "/" + historyFileName
+}
+
+const historyFileName = ".ragflow_cli_history"
 
 // CLI represents the command line interface
 type CLI struct {
-	parser  *Parser
 	client  *RAGFlowClient
 	prompt  string
 	running bool
+	line    *liner.State
 }
 
 // NewCLI creates a new CLI instance
 func NewCLI() (*CLI, error) {
+	// Create liner first
+	line := liner.NewLiner()
+
+	// Create client with password prompt using liner
+	client := NewRAGFlowClient("user") // Default to user mode
+	client.PasswordPrompt = line.PasswordPrompt
+
 	return &CLI{
 		prompt: "RAGFlow> ",
-		client: NewRAGFlowClient("user"), // Default to user mode
+		client: client,
+		line:   line,
 	}, nil
 }
 
 // Run starts the interactive CLI
 func (c *CLI) Run() error {
 	c.running = true
-	scanner := bufio.NewScanner(os.Stdin)
+
+	// Load history from file
+	histFile := HistoryFile()
+	if f, err := os.Open(histFile); err == nil {
+		c.line.ReadHistory(f)
+		f.Close()
+	}
+
+	// Save history on exit
+	defer func() {
+		if f, err := os.Create(histFile); err == nil {
+			c.line.WriteHistory(f)
+			f.Close()
+		}
+		c.line.Close()
+	}()
 
 	fmt.Println("Welcome to RAGFlow CLI")
 	fmt.Println("Type \\? for help, \\q to quit")
 	fmt.Println()
 
 	for c.running {
-		fmt.Print(c.prompt)
-
-		if !scanner.Scan() {
-			break
+		input, err := c.line.Prompt(c.prompt)
+		if err != nil {
+			fmt.Printf("Error reading input: %v\n", err)
+			continue
 		}
 
-		input := scanner.Text()
 		input = strings.TrimSpace(input)
 
 		if input == "" {
 			continue
+		}
+
+		// Add to history (skip meta commands)
+		if !strings.HasPrefix(input, "\\") {
+			c.line.AppendHistory(input)
 		}
 
 		if err := c.execute(input); err != nil {
@@ -67,7 +101,7 @@ func (c *CLI) Run() error {
 		}
 	}
 
-	return scanner.Err()
+	return nil
 }
 
 func (c *CLI) execute(input string) error {
@@ -125,9 +159,9 @@ SQL Commands:
   ... and many more
 
 Meta Commands:
-  \\? or \\h      - Show this help
-  \\q or \\quit   - Exit CLI
-  \\c or \\clear  - Clear screen
+  \? or \h      - Show this help
+  \q or \quit   - Exit CLI
+  \c or \clear  - Clear screen
 
 For more information, see documentation.
 `

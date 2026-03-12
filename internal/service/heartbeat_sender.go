@@ -119,10 +119,9 @@ func (h *HeartbeatSender) SendHeartbeat() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		h.logger.Error("Heartbeat request failed",
-			zap.Int("status_code", resp.StatusCode),
-		)
-		return fmt.Errorf("heartbeat request failed with status code: %d", resp.StatusCode)
+		errMsg := fmt.Errorf("Heartbeat request failed with status code: %d", resp.StatusCode)
+		h.logger.Warn(errMsg.Error())
+		return errMsg
 	}
 
 	h.logger.Debug("Heartbeat sent successfully",
