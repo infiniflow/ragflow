@@ -887,6 +887,37 @@ func (h *Handler) GetVersion(c *gin.Context) {
 	success(c, gin.H{"version": version}, "")
 }
 
+// GetFingerprint handle get system fingerprint
+func (h *Handler) GetFingerprint(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"code":    common.CodeServerError,
+		"message": "method not implemented",
+	})
+	return
+}
+
+type SetLicenseHTTPRequest struct {
+	License string `json:"license" binding:"required"`
+}
+
+// SetLicense to set system license
+func (h *Handler) SetLicense(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"code":    common.CodeServerError,
+		"message": "method not implemented",
+	})
+	return
+}
+
+// ShowLicense to get system license
+func (h *Handler) ShowLicense(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"code":    common.CodeServerError,
+		"message": "method not implemented",
+	})
+	return
+}
+
 // ListSandboxProviders handle list sandbox providers
 func (h *Handler) ListSandboxProviders(c *gin.Context) {
 	providers, err := h.service.ListSandboxProviders()
