@@ -76,7 +76,7 @@ function UploadForm({ submit, showParseOnCreation }: UploadFormProps) {
                 data-testid="parse-on-creation-toggle"
                 onCheckedChange={field.onChange}
                 checked={field.value}
-              ></Switch>
+              />
             )}
           </RAGFlowFormItem>
         )}
@@ -85,7 +85,7 @@ function UploadForm({ submit, showParseOnCreation }: UploadFormProps) {
             <FileUploader
               value={field.value}
               onValueChange={field.onChange}
-              accept={{ '*': [] }}
+              accept={{}}
               data-testid="dataset-upload-dropzone"
             />
           )}
@@ -124,10 +124,7 @@ export function FileUploadDialog({
           </TabsContent>
           <TabsContent value="password">{t('common.comingSoon')}</TabsContent>
         </Tabs> */}
-        <UploadForm
-          submit={onOk!}
-          showParseOnCreation={showParseOnCreation}
-        ></UploadForm>
+        <UploadForm submit={onOk!} showParseOnCreation={showParseOnCreation} />
         <DialogFooter>
           <ButtonLoading type="submit" loading={loading} form={UploadFormId}>
             {t('common.save')}
