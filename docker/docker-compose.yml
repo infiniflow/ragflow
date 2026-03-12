@@ -42,6 +42,11 @@ services:
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
     env_file: .env
+    environment:
+      - https_proxy=http://192.168.1.55:7897
+      - http_proxy=http://192.168.1.55:7897
+      - all_proxy=socks5://192.168.1.5:7897
+      - no_proxy=localhost,127.0.0.1,192.168.1.0/24,$(hostname),es01,infinity,mysql,minio,redis,sandbox-executor-manager,ragflow-cpu,tei,192.168.1.62
     networks:
       - ragflow
     restart: unless-stopped
