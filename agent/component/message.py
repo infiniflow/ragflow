@@ -433,7 +433,7 @@ class Message(ComponentBase):
             return True, "No memory selected."
 
         message_dict = {
-            "user_id": self._canvas._tenant_id,
+            "user_id": self._param.user_id if hasattr(self._param, "user_id") else "",
             "agent_id": self._canvas._id,
             "session_id": self._canvas.task_id,
             "user_input": self._canvas.get_sys_query(),
