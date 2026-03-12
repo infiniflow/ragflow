@@ -19,6 +19,7 @@ services:
       - cluster.routing.allocation.disk.watermark.low=5gb
       - cluster.routing.allocation.disk.watermark.high=3gb
       - cluster.routing.allocation.disk.watermark.flood_stage=2gb
+      - indices.query.bool.max_clause_count=65536
     mem_limit: ${MEM_LIMIT}
     ulimits:
       memlock:
