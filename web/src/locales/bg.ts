@@ -2385,7 +2385,7 @@ Important structured information may include: names, dates, locations, events, k
     },
     pagination: {
       total: 'Общо {{total}}',
-      page: '{{page}} /Страница',
+      page: '{{page}} / Страница',
     },
     dataflowParser: {
       result: 'Резултат',

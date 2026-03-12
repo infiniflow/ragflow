@@ -9,8 +9,8 @@ import {
 } from '@/components/ui/pagination';
 import { RAGFlowSelect, RAGFlowSelectOptionType } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { t } from 'i18next';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export type RAGFlowPaginationType = {
   showQuickJumper?: boolean;
@@ -28,6 +28,7 @@ export function RAGFlowPagination({
   onChange,
   showSizeChanger = true,
 }: RAGFlowPaginationType) {
+  const { t } = useTranslation();
   const [currentPage, setCurrentPage] = useState(1);
   const [currentPageSize, setCurrentPageSize] = useState('10');
 
@@ -36,7 +37,7 @@ export function RAGFlowPagination({
       label: <span>{t('pagination.page', { page: x })}</span>,
       value: x.toString(),
     }));
-  }, []);
+  }, [t]);
 
   const pages = useMemo(() => {
     const num = Math.ceil(total / pageSize);
@@ -134,7 +135,7 @@ export function RAGFlowPagination({
   }, [pages, currentPage]);
 
   return (
-    <section className="flex items-center justify-end text-text-sub-title-invert">
+    <div className="flex items-center justify-end text-text-sub-title-invert">
       <span className="mr-4 text-text-primary">
         {t('pagination.total', { total: total })}
       </span>
@@ -181,6 +182,6 @@ export function RAGFlowPagination({
           triggerClassName="bg-bg-card border-transparent"
         />
       )}
-    </section>
+    </div>
   );
 }

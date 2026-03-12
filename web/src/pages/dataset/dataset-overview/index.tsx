@@ -187,7 +187,6 @@ const FileLogsPage: FC = () => {
         label: t('knowledgeDetails.status'),
         list: Object.values(RunningStatus).map((value) => {
           // const value = key as RunningStatus;
-          console.log(value);
           return {
             id: value,
             // label: RunningStatusMap[value].label,
@@ -245,7 +244,6 @@ const FileLogsPage: FC = () => {
     page: number;
     pageSize: number;
   }) => {
-    console.log('Pagination changed:', { page, pageSize });
     setPagination({
       ...pagination,
       page,

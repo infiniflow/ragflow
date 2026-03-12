@@ -87,10 +87,9 @@ export default function Files() {
   );
 
   return (
-    <article className="p-8">
-      <header>
+    <article className="size-full flex flex-col" data-testid="files-list">
+      <header className="px-5 pt-8 mb-4">
         <ListFilterBar
-          className="mb-4"
           leftPanel={leftPanel}
           searchString={searchString}
           onSearchChange={handleInputChange}
@@ -115,20 +114,25 @@ export default function Files() {
             </DropdownMenuContent>
           </DropdownMenu>
         </ListFilterBar>
+
         {!rowSelectionIsEmpty && (
-          <BulkOperateBar className="mb-4" list={list} count={selectedCount} />
+          <BulkOperateBar className="mt-4" list={list} count={selectedCount} />
         )}
       </header>
-      <FilesTable
-        files={files}
-        total={total}
-        pagination={pagination}
-        setPagination={setPagination}
-        loading={loading}
-        rowSelection={rowSelection}
-        setRowSelection={setRowSelection}
-        showMoveFileModal={showMoveFileModal}
-      ></FilesTable>
+
+      <div className="flex-1 px-5 flex flex-col overflow-hidden">
+        <FilesTable
+          files={files}
+          total={total}
+          pagination={pagination}
+          setPagination={setPagination}
+          loading={loading}
+          rowSelection={rowSelection}
+          setRowSelection={setRowSelection}
+          showMoveFileModal={showMoveFileModal}
+        />
+      </div>
+
       {fileUploadVisible && (
         <FileUploadDialog
           hideModal={hideFileUploadModal}

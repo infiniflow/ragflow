@@ -2482,7 +2482,7 @@ Important structured information may include: names, dates, locations, events, k
     },
     pagination: {
       total: 'Total {{total}}',
-      page: '{{page}} /Page',
+      page: '{{page}} / Page',
     },
     dataflowParser: {
       result: 'Result',
