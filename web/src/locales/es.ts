@@ -20,6 +20,7 @@ export default {
       chinese: 'Chino simplificado',
       traditionalChinese: 'Chino tradicional',
       bulgarian: 'Búlgaro',
+      arabic: 'Árabe',
       language: 'Idioma',
       languageMessage: '¡Por favor ingresa tu idioma!',
       languagePlaceholder: 'Selecciona tu idioma',
@@ -472,6 +473,8 @@ export default {
       apiVersionMessage: '¡Por favor ingresa la versión de la API!',
       modelsToBeAddedTooltip:
         'Si tu proveedor de modelos no aparece en la lista pero afirma ser compatible con OpenAI, selecciona la tarjeta OpenAI-API-compatible para añadir el/los modelo(s) correspondiente(s).',
+      dingtalkAITableDescription:
+        'Conéctese a Dingtalk AI Table y sincronice registros de una tabla especificada.',
     },
     message: {
       registered: '¡Registrado!',
@@ -933,6 +936,13 @@ export default {
       file: 'Archivo',
       knowledge: 'Conocimiento',
       chat: 'Chat',
+    },
+    language: {
+      english: 'Ingles',
+      chinese: 'Chino',
+      russian: 'Ruso',
+      bulgarian: 'Búlgaro',
+      arabic: 'Árabe',
     },
   },
 };

@@ -27,6 +27,7 @@ export default {
       traditionalChinese: 'Китайский традиционный',
       russian: 'Русский',
       bulgarian: 'Болгарский',
+      arabic: 'Арабский',
       language: 'Язык',
       languageMessage: 'Пожалуйста, укажите ваш язык!',
       languagePlaceholder: 'выберите ваш язык',
@@ -778,6 +779,8 @@ export default {
         'Подключите GitHub для синхронизации содержимого Pull Request и Issue для поиска.',
       airtableDescription:
         'Подключите Airtable и синхронизируйте файлы из указанной таблицы в заданном рабочем пространстве.',
+      dingtalkAITableDescription:
+        'Подключите Dingtalk AI Table и синхронизируйте записи из указанной таблицы.',
       gitlabDescription:
         'Подключите GitLab для синхронизации репозиториев, задач, merge requests и связанной документации.',
       asanaDescription:
@@ -2042,6 +2045,7 @@ export default {
       vietnamese: 'Вьетнамский',
       russian: 'Русский',
       bulgarian: 'Болгарский',
+      arabic: 'Арабский',
     },
     pagination: {
       total: 'Всего {{total}}',

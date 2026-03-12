@@ -306,6 +306,7 @@ export const useSetAgent = (showMessage: boolean = true) => {
       dsl?: Record<string, any>;
       avatar?: string;
       canvas_category?: string;
+      release?: string;
     }) => {
       const { data = {} } = await agentService.setCanvas(params);
       if (data.code === 0) {
@@ -528,7 +529,7 @@ export const useFetchInputForm = (componentId?: string) => {
 export const useFetchVersionList = () => {
   const { id } = useParams();
   const { data, isFetching: loading } = useQuery<
-    Array<{ created_at: string; title: string; id: string }>
+    Array<{ created_at: string; title: string; id: string; release?: boolean }>
   >({
     queryKey: [AgentApiAction.FetchVersionList],
     initialData: [],

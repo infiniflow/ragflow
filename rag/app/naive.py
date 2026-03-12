@@ -21,7 +21,6 @@ from functools import reduce
 from io import BytesIO
 from timeit import default_timer as timer
 from docx import Document
-from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
 from docx.opc.pkgreader import _SerializedRelationships, _SerializedRelationship
 from docx.table import Table as DocxTable
 from docx.text.paragraph import Paragraph
@@ -32,8 +31,8 @@ from common.token_utils import num_tokens_from_string
 
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
+from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
-from rag.utils.lazy_image import LazyDocxImage
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
@@ -129,7 +128,8 @@ def by_mineru(
 
         if mineru_llm_name:
             try:
-                ocr_model = LLMBundle(tenant_id=tenant_id, llm_type=LLMType.OCR, llm_name=mineru_llm_name, lang=lang)
+                ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, mineru_llm_name)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
@@ -153,15 +153,17 @@ def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
     parse_method = kwargs.get("parse_method", "raw")
 
     if not pdf_parser.check_installation():
-        callback(-1, "Docling not found.")
+        if callback:
+            callback(-1, "Docling not found.")
         return None, None, pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
         filepath=filename,
         binary=binary,
         callback=callback,
-        output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
-        delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+        output_dir=os.environ.get("DOCLING_OUTPUT_DIR", ""),
+        delete_output=bool(int(os.environ.get("DOCLING_DELETE_OUTPUT", 1))),
+        docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""),
         parse_method=parse_method,
     )
     return sections, tables, pdf_parser
@@ -208,7 +210,8 @@ def by_paddleocr(
 
         if paddleocr_llm_name:
             try:
-                ocr_model = LLMBundle(tenant_id=tenant_id, llm_type=LLMType.OCR, llm_name=paddleocr_llm_name, lang=lang)
+                ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, paddleocr_llm_name)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
@@ -236,10 +239,10 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=No
         tenant_id = kwargs.get("tenant_id")
         if not tenant_id:
             raise ValueError("tenant_id is required when using vision layout recognizer")
+        vision_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.IMAGE2TEXT, layout_recognizer)
         vision_model = LLMBundle(
             tenant_id,
-            LLMType.IMAGE2TEXT,
-            llm_name=layout_recognizer,
+            model_config=vision_model_config,
             lang=kwargs.get("lang", "Chinese"),
         )
         pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
@@ -252,7 +255,7 @@ PARSERS = {
     "deepdoc": by_deepdoc,
     "mineru": by_mineru,
     "docling": by_docling,
-    "tcadp": by_tcadp,
+    "tcadp parser": by_tcadp,
     "paddleocr": by_paddleocr,
     "plaintext": by_plaintext,  # default
 }
@@ -261,40 +264,6 @@ PARSERS = {
 class Docx(DocxParser):
     def __init__(self):
         pass
-
-    def get_picture(self, document, paragraph):
-        imgs = paragraph._element.xpath(".//pic:pic")
-        if not imgs:
-            return None
-        image_blobs = []
-        for img in imgs:
-            embed = img.xpath(".//a:blip/@r:embed")
-            if not embed:
-                continue
-            embed = embed[0]
-            try:
-                related_part = document.part.related_parts[embed]
-                image_blob = related_part.image.blob
-            except UnrecognizedImageError:
-                logging.info("Unrecognized image format. Skipping image.")
-                continue
-            except UnexpectedEndOfFileError:
-                logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
-                continue
-            except InvalidImageStreamError:
-                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-                continue
-            except UnicodeDecodeError:
-                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-                continue
-            except Exception as e:
-                logging.warning(f"The recognized image stream appears to be corrupted. Skipping image, exception: {e}")
-                continue
-            image_blobs.append(image_blob)
-
-        if not image_blobs:
-            return None
-        return LazyDocxImage(image_blobs)
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
@@ -854,7 +823,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             urls = extract_links_from_pdf(binary)
 
         if isinstance(layout_recognizer, bool):
-            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
+            layout_recognizer = "DeepDOC" if layout_recognizer else "PlainText"
 
         name = layout_recognizer.strip().lower()
         parser = PARSERS.get(name, by_plaintext)
@@ -939,7 +908,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         is_markdown = True
 
         try:
-            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
             callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
         except Exception as e:
             logging.warning(f"Failed to detect figure extraction: {e}")

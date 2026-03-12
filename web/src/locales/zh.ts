@@ -27,6 +27,7 @@ export default {
       chinese: '简体中文',
       traditionalChinese: '繁体中文',
       bulgarian: '保加利亚语',
+      arabic: '阿拉伯语',
       language: '语言',
       languageMessage: '请输入语言',
       languagePlaceholder: '请选择语言',
@@ -142,6 +143,7 @@ export default {
         action: '操作',
       },
       config: {
+        descriptionPlaceholder: '描述你的记忆',
         memorySizeTooltip: `记录每条消息的内容 + 其嵌入向量（≈ 内容 + 维度 × 8 字节）。
 例如：一条带有 1024 维嵌入的 1 KB 消息大约使用 9 KB。5 MB 的默认限制大约可容纳 500 条此类消息。`,
         avatar: '头像',
@@ -386,6 +388,10 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      randomSeedTip:
+        '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
+      datasetDescription: '你的数据集描述。',
+      overlappedPercentTip: '相邻两个块之间的重叠百分比',
       settings: '设置',
       autoMetadataTip:
         '自动生成元数据。适用于解析新文件。现有文件需要重新解析才能更新（chunk将保留）。请注意，配置中指定的索引模型将消耗额外的 Token。',
@@ -698,17 +704,26 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       assistantAvatar: '助理头像',
       language: '语言',
       emptyResponse: '空回复',
+      emptyResponsePlaceholder: '在数据集中未找到您要寻找的答案！',
       emptyResponseTip: `如果在知识库中没有检索到用户的问题，它将使用它作为答案。 如果您希望 LLM 在未检索到任何内容时提出自己的意见，请将此留空。`,
       emptyResponseMessage: `当知识库中未检索到任何相关信息时，将触发空响应。由于未选择任何知识库，因此请清除“空响应”。`,
       setAnOpener: '设置开场白',
       setAnOpenerInitial: `你好！ 我是你的助理，有什么可以帮到你的吗？`,
       setAnOpenerTip: '您想如何欢迎您的客户？',
       knowledgeBases: '知识库',
+      knowledgeBasesPlaceholder: '请选择',
       knowledgeBasesMessage: '请选择',
       knowledgeBasesTip:
         '选择关联的知识库。新建或空知识库不会在下拉菜单中显示。',
       system: '系统提示词',
-      systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
+      systemPlaceholder: `你是一个智能助手，主要功能是基于提供的知识库严格回答问题。
+
+**重要规则:**
+  - 你的回答必须**仅**来自此数据集：{knowledge}。
+  - **当信息可用时**: 总结内容以给出详细答案。
+  - **当信息不可用时**: 你的回答必须包含这句确切的话："在知识库中未找到您要的答案！"
+  - **始终考虑**整个对话历史。`,
+      systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括"知识库中未找到您要的答案！"这句话。回答需要考虑聊天历史。
         以下是知识库：
         {knowledge}
         以上是知识库。`,
@@ -802,8 +817,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '在多轮对话时，对查询问题根据上下文进行优化。会调用大模型额外消耗 token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
-      descriptionPlaceholder:
-        '例如 你是一个专业的简历助手，只能回答简历的问题。',
+      descriptionPlaceholder: '我是一个聊天助手。',
       useKnowledgeGraph: '使用知识图谱',
       useKnowledgeGraphTip:
         '是否检索与所选知识库对应的知识图谱相关文本块，以处理复杂的多跳问题？这一过程将涉及对实体、关系和社区报告文本块的多次检索，会显著延长检索时间。',
@@ -817,6 +831,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tavilyApiKeyMessage: '请输入你的 Tavily API Key',
       tavilyApiKeyHelp: '如何获取？',
       crossLanguage: '跨语言搜索',
+      crossLanguagePlaceholder: '请选择',
       crossLanguageTip: `选择一种或多种语言进行跨语言搜索。如果未选择任何语言，系统将使用原始查询进行搜索。`,
       metadata: '元数据',
       metadataTip:
@@ -837,7 +852,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tocEnhance: 'PageIndex',
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
-      deleteSelectedConfirm: '删除选中的 {count} 个会话？',
+      deleteSelectedConfirm: '删除选中的 {{count}} 个会话？',
     },
     setting: {
       Verify: '验证',
@@ -905,6 +920,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       githubDescription:
         '连接 GitHub，可同步 Pull Request 与 Issue 内容用于检索。',
       airtableDescription: '连接 Airtable，同步指定工作区下指定表格中的文件。',
+      dingtalkAITableDescription: '连接钉钉AI表格，同步指定表格中的记录。',
       gitlabDescription:
         '连接 GitLab，同步仓库、Issue、合并请求（MR）及相关文档内容。',
       asanaDescription: '连接 Asana，同步工作区中的文件。',
@@ -1186,6 +1202,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       hint: '提示',
     },
     fileManager: {
+      uploadFolderTitle: '上传文件夹',
+      folder: '文件夹',
       files: '文件',
       name: '名称',
       uploadDate: '上传日期',
@@ -1232,6 +1250,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       consumerApp: '消费者应用',
       other: '其他',
       agents: '智能体',
+      publishedAt: '发布于',
       beginInput: '开始输入',
       seconds: '秒',
       ref: '引用变量',
@@ -1327,6 +1346,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       cite: '引用',
       citeTip: '引用',
       nameMessage: '请输入名称',
+      lastSavedAt: '上次保存于',
       description: '描述',
       examples: '示例',
       to: '下一步',
@@ -1580,6 +1600,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       dbType: '数据库类型',
       database: '数据库',
       username: '用户名',
+      userId: '用户 ID',
       host: '主机',
       port: '端口',
       password: '密码',
@@ -1870,6 +1891,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '在此处编写您的 SQL 查询。您可以使用变量、原始 SQL，或使用变量语法混合使用两者。',
       frameworkPrompts: '框架',
       release: '发布',
+      production: '正式版',
+      productionTooltip: '此版本已发布到生产环境。可通过 API 或嵌入页面访问。',
       createFromBlank: '从空白创建',
       createFromTemplate: '从模板创建',
       importJsonFile: '导入 JSON 文件',
@@ -2121,6 +2144,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       korean: '韩语',
       vietnamese: '越南语',
       bulgarian: '保加利亚语',
+      arabic: '阿拉伯语',
     },
     pagination: {
       total: '总共 {{total}} 条',

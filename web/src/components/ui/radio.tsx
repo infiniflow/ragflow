@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils';
 import React, { useContext, useState } from 'react';
 
 const RadioGroupContext = React.createContext<{
+  name?: string;
   value: string | number;
   onChange: (value: string | number) => void;
   disabled?: boolean;
@@ -13,9 +14,20 @@ type RadioProps = {
   disabled?: boolean;
   onChange?: (checked: boolean) => void;
   children?: React.ReactNode;
-};
+} & Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  'value' | 'checked' | 'onChange'
+>;
 
-function Radio({ value, checked, disabled, onChange, children }: RadioProps) {
+function Radio({
+  className,
+  value,
+  checked,
+  disabled,
+  onChange,
+  children,
+  ...props
+}: RadioProps) {
   const groupContext = useContext(RadioGroupContext);
   const isControlled = checked !== undefined;
   // const [internalChecked, setInternalChecked] = useState(false);
@@ -42,29 +54,45 @@ function Radio({ value, checked, disabled, onChange, children }: RadioProps) {
   return (
     <label
       className={cn(
-        'flex items-center cursor-pointer gap-2 text-sm',
+        'group/radio relative flex items-center cursor-pointer gap-2 text-sm',
         mergedDisabled && 'cursor-not-allowed opacity-50',
       )}
     >
-      <span
+      <input
+        type="radio"
+        value={value}
+        checked={isChecked}
+        onClick={handleClick}
+        disabled={mergedDisabled}
+        className={cn('peer absolute size-[1px] opacity-0', className)}
+        {...props}
+        name={groupContext?.name}
+      />
+
+      <div
         className={cn(
-          'flex h-4 w-4 items-center justify-center rounded-full border border-border transition-colors',
-          'peer outline-none focus-visible:border-border-button',
+          'flex h-4 w-4 items-center justify-center rounded-full text-border-button border border-current transition-colors',
+          'group-hover/radio:text-border-default hover:text-border-default',
+          'peer-focus:text-text-primary',
           isChecked && 'border-primary bg-primary/10',
           mergedDisabled && 'border-muted',
         )}
-        onClick={handleClick}
       >
-        {isChecked && (
-          <div className="h-3 w-3 fill-primary text-primary bg-text-primary rounded-full" />
-        )}
-      </span>
+        <div
+          className={cn(
+            'h-2 w-2 fill-primary text-primary bg-text-primary rounded-full opacity-0 scale-0 transition-all',
+            isChecked && 'opacity-100 scale-100',
+          )}
+        />
+      </div>
+
       {children && <span className="text-foreground">{children}</span>}
     </label>
   );
 }
 
 type RadioGroupProps = {
+  name?: string;
   value?: string | number;
   defaultValue?: string | number;
   onChange?: (value: string | number) => void;
@@ -77,6 +105,7 @@ type RadioGroupProps = {
 const Group = React.forwardRef<HTMLDivElement, RadioGroupProps>(
   (
     {
+      name,
       value,
       defaultValue,
       onChange,
@@ -107,6 +136,7 @@ const Group = React.forwardRef<HTMLDivElement, RadioGroupProps>(
     return (
       <RadioGroupContext.Provider
         value={{
+          name,
           value: mergedValue,
           onChange: handleChange,
           disabled,

@@ -28,6 +28,7 @@ export default {
       traditionalChinese: 'Традиционен китайски',
       russian: 'Руски',
       bulgarian: 'Български',
+      arabic: 'Арабски',
       language: 'Език',
       languageMessage: 'Моля, въведете вашия език!',
       languagePlaceholder: 'изберете вашия език',
@@ -998,6 +999,8 @@ The above is the content you need to summarize.`,
         'Свържете GitHub за синхронизиране на pull requests и issues за извличане.',
       airtableDescription:
         'Свържете се с Airtable и синхронизирайте файлове от определена таблица в определено работно пространство.',
+      dingtalkAITableDescription:
+        'Свържете се с Dingtalk AI Table и синхронизирайте записи от определена таблица.',
       gitlabDescription:
         'Свържете GitLab за синхронизиране на хранилища, issues, merge requests и свързана документация.',
       asanaDescription:
@@ -2378,6 +2381,7 @@ Important structured information may include: names, dates, locations, events, k
       vietnamese: 'Виетнамски',
       russian: 'Руски',
       bulgarian: 'Български',
+      arabic: 'Арабски',
     },
     pagination: {
       total: 'Общо {{total}}',

@@ -3,7 +3,7 @@ import { Toaster } from '@/components/ui/toaster';
 import i18n, { changeLanguageAsync } from '@/locales/config';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { configResponsive } from 'ahooks';
-import { App, ConfigProvider, ConfigProviderProps, theme } from 'antd';
+import { ConfigProvider, ConfigProviderProps, theme } from 'antd';
 import pt_BR from 'antd/lib/locale/pt_BR';
 import arEG from 'antd/locale/ar_EG';
 import deDE from 'antd/locale/de_DE';
@@ -19,10 +19,11 @@ import localeData from 'dayjs/plugin/localeData';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import weekYear from 'dayjs/plugin/weekYear';
 import weekday from 'dayjs/plugin/weekday';
+import 'dayjs/locale/ar';
+import 'dayjs/locale/zh-cn';
 import React, { useEffect, useState } from 'react';
 import { RouterProvider } from 'react-router';
 import { ThemeProvider, useTheme } from './components/theme-provider';
-import { SidebarProvider } from './components/ui/sidebar';
 import { TooltipProvider } from './components/ui/tooltip';
 import { ThemeEnum } from './constants/common';
 import { routers } from './routes';
@@ -89,9 +90,8 @@ function Root({ children }: React.PropsWithChildren) {
     AntLanguageMap[lng as keyof typeof AntLanguageMap] ?? enUS;
   const updateDocumentLocale = (lng: string) => {
     document.documentElement.lang = lng;
-    document.documentElement.dir = lng.toLowerCase().startsWith('ar')
-      ? 'rtl'
-      : 'ltr';
+    document.documentElement.dir = 'ltr';
+    dayjs.locale(lng === 'zh' ? 'zh-cn' : lng);
   };
 
   const [locale, setLocal] = useState<Locale>(getLocale(storage.getLanguage()));
@@ -124,11 +124,12 @@ function Root({ children }: React.PropsWithChildren) {
               : theme.defaultAlgorithm,
         }}
         locale={locale}
+        direction={'ltr'}
       >
-        <SidebarProvider className="h-full">
-          <App className="w-full h-dvh relative">{children}</App>
-        </SidebarProvider>
-        <Sonner position={'top-right'} expand richColors closeButton></Sonner>
+        {children}
+
+        <Sonner position="top-right" expand richColors closeButton />
+
         <Toaster />
       </ConfigProvider>
     </>

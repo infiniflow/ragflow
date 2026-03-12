@@ -8,7 +8,8 @@ import {
 import { Radio } from '@/components/ui/radio';
 import { Segmented } from '@/components/ui/segmented';
 import { useTranslate } from '@/hooks/common-hooks';
-import { ListFilter, Plus } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { LucideFilter, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { ChunkTextMode } from '../../constant';
 interface ChunkResultBarProps {
@@ -20,7 +21,8 @@ interface ChunkResultBarProps {
   handleInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   searchString: string;
 }
-export default ({
+export default function ChunkResultBar({
+  className,
   changeChunkTextMode,
   available,
   selectAllChunk,
@@ -28,7 +30,7 @@ export default ({
   createChunk,
   handleInputChange,
   searchString,
-}: ChunkResultBarProps) => {
+}: ChunkResultBarProps) {
   const { t } = useTranslate('chunk');
   const [textSelectValue, setTextSelectValue] = useState<string | number>(
     ChunkTextMode.Full,
@@ -59,44 +61,48 @@ export default ({
     changeChunkTextMode(value);
   };
   return (
-    <div className="flex pr-[25px]">
+    <div className={cn('flex justify-end gap-4', className)}>
       <Segmented
+        className="gap-0 me-auto"
+        buttonSize="xs"
+        itemClassName="px-2"
         options={textSelectOptions}
         value={textSelectValue}
         onChange={changeTextSelectValue}
       />
-      <div className="ml-auto"></div>
-      <div className="h-8 flex items-center gap-5">
-        <SearchInput
-          // style={{ width: 200 }}
-          placeholder={t('search')}
-          // icon={<SearchOutlined />}
-          onChange={handleInputChange}
-          value={searchString}
-        />
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant={'ghost'}
-              // className="bg-bg-card text-text-secondary hover:bg-card"
-            >
-              <ListFilter />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="p-0 w-[200px]">
-            {filterContent}
-          </PopoverContent>
-        </Popover>
-        <Button
-          variant={'ghost'}
-          onClick={() => createChunk()}
-          // className="bg-bg-card text-primary hover:bg-card"
-        >
-          <Plus size={44} />
-        </Button>
-      </div>
+
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
+            // className="bg-bg-card text-text-secondary hover:bg-card"
+          >
+            <LucideFilter />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="p-0 w-[200px]">
+          {filterContent}
+        </PopoverContent>
+      </Popover>
+
+      <SearchInput
+        className="w-28"
+        placeholder={t('search')}
+        onChange={handleInputChange}
+        value={searchString}
+      />
+
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={() => createChunk()}
+        // className="bg-bg-card text-primary hover:bg-card"
+      >
+        <Plus size={44} />
+      </Button>
       {/* <div className="w-[20px]"></div>
       <div className="w-[20px]"></div> */}
     </div>
   );
-};
+}
