@@ -20,7 +20,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"ragflow/internal/dao"
+	"ragflow/internal/server"
 	"strings"
 	"time"
 
@@ -65,6 +67,22 @@ func parseModelName(compositeName string) (modelName, provider string, err error
 	}
 }
 
+// isTEIFallback checks if the fallback to global config should happen
+func isTEIFallback(provider, modelName string) bool {
+	if provider != "Builtin" {
+		return false
+	}
+
+	composeProfiles := os.Getenv("COMPOSE_PROFILES")
+	if !strings.Contains(composeProfiles, "tei-") {
+		return false
+	}
+
+	teiModel := os.Getenv("TEI_MODEL")
+
+	return modelName == teiModel
+}
+
 // GetEmbeddingModel returns an embedding model for the given tenant
 func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID string, compositeModelName string) (model.EmbeddingModel, error) {
 	// Parse composite model name to extract model name and provider
@@ -73,25 +91,63 @@ func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID stri
 		return nil, err
 	}
 
-	// Get API key and configuration
+	// Try to get from tenant-specific configuration first
 	embeddingModel, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(tenantID, provider, modelName)
-	if err != nil {
-		return nil, err
+	if err == nil && embeddingModel != nil {
+		// Found tenant-specific model
+		apiKey := embeddingModel.APIKey
+		if apiKey != nil && *apiKey != "" {
+			// Get API base from model provider configuration
+			providerDAO := dao.NewModelProviderDAO()
+			providerConfig := providerDAO.GetProviderByName(provider)
+			if providerConfig == nil || providerConfig.DefaultEmbeddingURL == "" {
+				return nil, fmt.Errorf("no API base found for provider %s", provider)
+			}
+			apiBase := providerConfig.DefaultEmbeddingURL
+			return models.CreateEmbeddingModel(provider, *apiKey, apiBase, modelName, p.httpClient)
+		}
 	}
 
-	apiKey := embeddingModel.APIKey
-	if apiKey == nil || *apiKey == "" {
-		return nil, fmt.Errorf("no API key found for tenant %s and model %s", tenantID, compositeModelName)
+	// Fallback to global config
+	if !isTEIFallback(provider, modelName) {
+		return nil, fmt.Errorf("model %s not found for tenant %s (and not eligible for TEI fallback)", compositeModelName, tenantID)
 	}
-	// Always get API base from model provider configuration
-	providerDAO := dao.NewModelProviderDAO()
-	providerConfig := providerDAO.GetProviderByName(provider)
-	if providerConfig == nil || providerConfig.DefaultEmbeddingURL == "" {
-		return nil, fmt.Errorf("no API base found for provider %s", provider)
-	}
-	apiBase := providerConfig.DefaultEmbeddingURL
 
-	return models.CreateEmbeddingModel(provider, *apiKey, apiBase, modelName, p.httpClient)
+	config := server.GetConfig()
+	if config == nil || config.UserDefaultLLM.DefaultModels.EmbeddingModel.Name == "" {
+		return nil, fmt.Errorf("no embedding model found for tenant %s (and no global config)", tenantID)
+	}
+
+	globalModel := config.UserDefaultLLM.DefaultModels.EmbeddingModel
+	globalModelName, globalProvider, _ := parseModelName(globalModel.Name)
+	if globalModelName == "" {
+		globalModelName = modelName
+	}
+	if globalProvider == "" {
+		globalProvider = provider
+	}
+
+	// Use global config values
+	apiKey := ""
+	if globalModel.APIKey != "" {
+		apiKey = globalModel.APIKey
+	}
+
+	apiBase := globalModel.BaseURL
+	if apiBase == "" {
+    	// Fallback to provider default
+		providerDAO := dao.NewModelProviderDAO()
+		providerConfig := providerDAO.GetProviderByName(globalProvider)
+		if providerConfig != nil {
+			apiBase = providerConfig.DefaultEmbeddingURL
+		}
+	}
+
+	if apiBase == "" {
+		return nil, fmt.Errorf("no API base found for provider %s", globalProvider)
+	}
+
+	return models.CreateEmbeddingModel(globalProvider, apiKey, apiBase, globalModelName, p.httpClient)
 }
 
 // GetChatModel returns a chat model for the given tenant

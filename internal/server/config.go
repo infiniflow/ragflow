@@ -497,7 +497,80 @@ func Init(configPath string) error {
 		}
 	}
 
+	loadEmbeddingConfigFromEnv()
+
 	return nil
+}
+
+// Load embedding config from docker/.env (overrides service_conf.yaml)
+func loadEmbeddingConfigFromEnv() {
+	envFile := "docker/.env"
+
+	// Check if file exists
+	if _, err := os.Stat(envFile); os.IsNotExist(err) {
+		// Try alternative paths
+		altPaths := []string{
+			"../docker/.env",
+			"../../docker/.env",
+			".env",
+		}
+		for _, p := range altPaths {
+			if _, err := os.Stat(p); err == nil {
+				envFile = p
+				break
+			}
+		}
+	}
+
+	// Read .env file
+	data, err := os.ReadFile(envFile)
+	if err != nil {
+		// Silently skip if .env not found - service_conf.yaml values will be used
+		return
+	}
+
+	// Parse key=value pairs
+	envVars := make(map[string]string)
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if idx := strings.Index(line, "="); idx > 0 {
+			key := strings.TrimSpace(line[:idx])
+			value := strings.TrimSpace(line[idx+1:])
+			// Remove quotes
+			value = strings.Trim(value, "\"")
+			envVars[key] = value
+		}
+	}
+
+	// Check if TEI is enabled (COMPOSE_PROFILES contains tei-cpu or tei-gpu)
+	composeProfiles := envVars["COMPOSE_PROFILES"]
+	teiEnabled := strings.Contains(composeProfiles, "tei-")
+
+	if !teiEnabled || globalConfig == nil {
+		return
+	}
+
+	// Get TEI_MODEL from env
+	teiModel := envVars["TEI_MODEL"]
+	if teiModel == "" {
+		teiModel = "BAAI/bge-small-en-v1.5" // default fallback
+	}
+
+	// Update model name with @Builtin suffix
+	// Note: base_url is NOT overridden - keeps value from service_conf.yaml
+	modelName := teiModel + "@Builtin"
+	globalConfig.UserDefaultLLM.DefaultModels.EmbeddingModel.Name = modelName
+	globalConfig.UserDefaultLLM.DefaultModels.EmbeddingModel.Factory = "Builtin"
+
+	zap.L().Info("Loaded embedding model from docker/.env",
+		zap.String("model", teiModel),
+		zap.String("provider", "Builtin"),
+		zap.String("name_with_provider", modelName),
+	)
 }
 
 // Get get global configuration
