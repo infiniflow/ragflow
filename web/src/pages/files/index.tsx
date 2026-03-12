@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
-import { Upload } from 'lucide-react';
+import { LucidePlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { CreateFolderDialog } from './create-folder-dialog';
 import { FileBreadcrumb } from './file-breadcrumb';
@@ -87,35 +87,38 @@ export default function Files() {
   );
 
   return (
-    <section className="p-8">
-      <ListFilterBar
-        leftPanel={leftPanel}
-        searchString={searchString}
-        onSearchChange={handleInputChange}
-        showFilter={false}
-        icon={'file'}
-      >
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button>
-              <Upload />
-              {t('knowledgeDetails.addFile')}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56">
-            <DropdownMenuItem onClick={showFileUploadModal}>
-              {t('fileManager.uploadFile')}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={showFolderCreateModal}>
-              {t('fileManager.newFolder')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </ListFilterBar>
-      {!rowSelectionIsEmpty && (
-        <BulkOperateBar list={list} count={selectedCount}></BulkOperateBar>
-      )}
+    <article className="p-8">
+      <header>
+        <ListFilterBar
+          className="mb-4"
+          leftPanel={leftPanel}
+          searchString={searchString}
+          onSearchChange={handleInputChange}
+          showFilter={false}
+          icon={'file'}
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button>
+                <LucidePlus />
+                {t('knowledgeDetails.addFile')}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56">
+              <DropdownMenuItem onClick={showFileUploadModal}>
+                {t('fileManager.uploadFile')}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={showFolderCreateModal}>
+                {t('fileManager.newFolder')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </ListFilterBar>
+        {!rowSelectionIsEmpty && (
+          <BulkOperateBar className="mb-4" list={list} count={selectedCount} />
+        )}
+      </header>
       <FilesTable
         files={files}
         total={total}
@@ -148,6 +151,6 @@ export default function Files() {
           loading={moveFileLoading}
         ></MoveDialog>
       )}
-    </section>
+    </article>
   );
 }
