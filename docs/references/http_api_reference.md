@@ -657,8 +657,9 @@ Deletes datasets by ID.
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
-  - Body:
-    - `"ids"`: `list[string]` or `null`
+- Body:
+  - `"ids"`: `list[string]` or `null`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -672,12 +673,24 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/datasets \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+     "delete_all": true
+     }'
+```
+
 ##### Request parameters
 
-- `"ids"`: (*Body parameter*), `list[string]` or `null`,   *Required*  
+- `"ids"`: (*Body parameter*), `list[string]` or `null`
   Specifies the datasets to delete:
   - If omitted, or set to `null` or an empty array, no datasets are deleted.
   - If an array of IDs is provided, only the datasets matching those IDs are deleted.
+- `"delete_all"`: (*Body parameter*), `boolean`  
+  Whether to delete all datasets owned by the current user when`"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -1801,6 +1814,7 @@ Deletes documents by ID.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -1815,6 +1829,16 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request parameters
 
 - `dataset_id`: (*Path parameter*)  
@@ -1823,6 +1847,8 @@ curl --request DELETE \
   The IDs of the documents to delete.
   - If omitted, or set to `null` or an empty array, no documents are deleted.
   - If an array of IDs is provided, only the documents matching those IDs are deleted.
+- `"delete_all"`: (*Body parameter*), `boolean`  
+  Whether to delete all documents in the specified dataset when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -2161,6 +2187,7 @@ Deletes chunks by ID.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"chunk_ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -2175,6 +2202,16 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request parameters
 
 - `dataset_id`: (*Path parameter*)  
@@ -2185,6 +2222,8 @@ curl --request DELETE \
   The IDs of the chunks to delete.
   - If omitted, or set to `null` or an empty array, no chunks are deleted.
   - If an array of IDs is provided, only the chunks matching those IDs are deleted.
+- `"delete_all"`: (*Body parameter*), `boolean`  
+  Whether to delete all chunks of the specified documen when `"chunk_ids"` is omitted, or set to`null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -2938,6 +2977,7 @@ Deletes chat assistants by ID.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -2952,12 +2992,24 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/chats \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request parameters
 
 - `"ids"`: (*Body parameter*), `list[string]`  
   The IDs of the chat assistants to delete.
   - If omitted, or set to `null` or an empty array, no chat assistants are deleted.
   - If an array of IDs is provided, only the chat assistants matching those IDs are deleted.
+- `"delete_all"`: (*Body parameter*), `boolean`  
+  Whether to delete all chat assistants owned by the current user when `"ids"` is omitted, or set to`null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -3316,6 +3368,7 @@ Deletes sessions of a chat assistant by ID.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -3330,6 +3383,16 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request Parameters
 
 - `chat_id`: (*Path parameter*)  
@@ -3338,6 +3401,8 @@ curl --request DELETE \
   The IDs of the sessions to delete.
   - If omitted, or set to `null` or an empty array, no sessions are deleted.
   - If an array of IDs is provided, only the sessions matching those IDs are deleted.
+- `"delete_all"`: (*Body Parameter*), `boolean`  
+  Whether to delete all sessions of the specified chat assistant when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -4682,6 +4747,7 @@ Deletes sessions of an agent by ID.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -4696,6 +4762,16 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/agents/{agent_id}/sessions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request Parameters
 
 - `agent_id`: (*Path parameter*)  
@@ -4704,6 +4780,8 @@ curl --request DELETE \
   The IDs of the sessions to delete.
   - If omitted, or set to `null` or an empty array, no sessions are deleted.
   - If an array of IDs is provided, only the sessions matching those IDs are deleted.
+- `"delete_all"`: (*Body Parameter*), `boolean`  
+  Whether to delete all sessions of the specified agent when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
