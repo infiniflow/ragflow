@@ -318,7 +318,7 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
             data-testid={uploadInputTestId}
           />
         </div>
-        <div className="margin-1 text-sm text-text-secondary">
+        <div className="ms-1 text-xs text-text-secondary">
           {tips ?? t('knowledgeConfiguration.photoTip')}
         </div>
 
