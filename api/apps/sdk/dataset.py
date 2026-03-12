@@ -198,7 +198,13 @@ async def delete(tenant_id):
                 type: string
               description: |
                 List of dataset IDs to delete.
-                If `null` or an empty array is provided, no datasets will be deleted.
+                If `null` or an empty array is provided, no datasets will be deleted
+                unless `delete_all` is set to `true`.
+            delete_all:
+              type: boolean
+              description: |
+                If `true` and `ids` is null or empty, delete all datasets owned by the current user.
+                Defaults to `false`.
     responses:
       200:
         description: Successful operation.
@@ -212,7 +218,12 @@ async def delete(tenant_id):
     try:
         kb_id_instance_pairs = []
         if req["ids"] is None or len(req["ids"]) == 0:
-            return get_result()
+            if req.get("delete_all"):
+                req["ids"] = [kb.id for kb in KnowledgebaseService.query(tenant_id=tenant_id)]
+                if not req["ids"]:
+                    return get_result()
+            else:
+                return get_result()
 
         error_kb_ids = []
         for kb_id in req["ids"]:
