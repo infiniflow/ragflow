@@ -2196,9 +2196,11 @@ This process aggregates variables from multiple branches into a single variable 
       production: 'Production',
       productionTooltip:
         'This version is published to production. Access it via the API or the embedded page.',
-      confirmPublish: 'Confirm Publish',
-      publishDescription: 'You are about to publish this data pipeline.',
-      linkedDataset: 'Linked dataset',
+      confirmPublish: 'Confirm publish',
+      publishIngestionPipeline:
+        'You are about to publish this Ingestion pipeline.',
+      publishAgent: 'You are about to publish this agent',
+      linkedDataset: 'Linked dataset:',
       lastPublished: 'Last published',
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',
