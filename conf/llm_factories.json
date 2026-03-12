@@ -6,6 +6,7 @@
             "tags": "LLM,TEXT EMBEDDING,TTS,TEXT RE-RANK,SPEECH2TEXT,MODERATION",
             "status": "1",
             "rank": "999",
+            "url": "https://api.openai.com/v1",
             "llm": [
                 {
                     "llm_name": "gpt-5.2-pro",
@@ -254,6 +255,7 @@
             "logo": "",
             "tags": "LLM",
             "status": "1",
+            "url": "https://ragflow.vip-api.tokenpony.cn/v1",
             "llm": [
                 {
                     "llm_name": "qwen3-8b",
@@ -375,6 +377,7 @@
             "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,TTS,SPEECH2TEXT,MODERATION",
             "status": "1",
             "rank": "950",
+            "url" : "https://dashscope.aliyuncs.com/compatible-mode/v1",
             "llm": [
                 {
                     "llm_name": "Moonshot-Kimi-K2-Instruct",
@@ -789,6 +792,7 @@
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
             "rank": "940",
+            "url": "https://open.bigmodel.cn/api/paas/v4",
             "llm": [
                 {
                     "llm_name": "glm-4.7",
@@ -979,6 +983,7 @@
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
             "status": "1",
             "rank": "960",
+            "url": "https://api.moonshot.cn/v1",
             "llm": [
                 {
                     "llm_name": "kimi-thinking-preview",
@@ -1107,6 +1112,7 @@
             "tags": "LLM",
             "status": "1",
             "rank": "970",
+            "url": "https://api.deepseek.com/v1",
             "llm": [
                 {
                     "llm_name": "deepseek-chat",
@@ -1292,6 +1298,7 @@
             "tags": "LLM",
             "status": "1",
             "rank": "810",
+            "url": "https://api.minimaxi.com/v1",
             "llm": [
                 {
                     "llm_name": "MiniMax-M2.1",
@@ -1313,6 +1320,7 @@
             "tags": "LLM,TEXT EMBEDDING,MODERATION",
             "status": "1",
             "rank": "910",
+            "url": "https://api.mistral.ai/v1",
             "llm": [
                 {
                     "llm_name": "codestral-latest",
@@ -2766,6 +2774,7 @@
             "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,IMAGE2TEXT",
             "status": "1",
             "rank": "780",
+            "url": "https://api.siliconflow.cn/v1",
             "llm": [
                 {
                     "llm_name": "THUDM/GLM-4.1V-9B-Thinking",
@@ -3839,6 +3848,7 @@
             "logo": "",
             "tags": "LLM,IMAGE2TEXT",
             "status": "1",
+            "url": "https://api.hunyuan.cloud.tencent.com/v1",
             "llm": [
                 {
                     "llm_name": "hunyuan-pro",
@@ -3909,6 +3919,7 @@
             "tags": "LLM",
             "status": "1",
             "rank": "990",
+            "url": "https://api.anthropic.com/",
             "llm": [
                 {
                     "llm_name": "claude-opus-4-5-20251101",
@@ -4096,6 +4107,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT,SPEECH2TEXT,TEXT RE-RANK",
             "status": "1",
+            "url": "https://ai.gitee.com/v1/",
             "llm": [
                 {
                     "llm_name": "ERNIE-4.5-Turbo",
@@ -5262,6 +5274,7 @@
             "tags": "LLM",
             "status": "1",
             "rank": "870",
+            "url": "https://api.longcat.chat/openai",
             "llm": [
                 {
                     "llm_name": "LongCat-Flash-Chat",
@@ -6201,6 +6214,7 @@
             "tags": "LLM",
             "status": "1",
             "rank": "900",
+            "url": "https://api.n1n.ai/v1",
             "llm": [
                 {
                     "llm_name": "gpt-4o-mini",
