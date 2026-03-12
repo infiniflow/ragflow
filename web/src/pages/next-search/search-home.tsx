@@ -42,7 +42,7 @@ export default function SearchPage({
             {!isSearching && (
               <>
                 <p className="mb-4 transition-opacity">
-                  👋 Hallo! Hier kannst du deine Dokumente durchsuchen...
+                  👋 Hallo! Was möchtest du suchen?
                 </p>
                 <p className="mb-10 transition-opacity">
                   {userInfo && (
