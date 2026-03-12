@@ -25,13 +25,13 @@ import (
 
 // ModelProvider represents a model provider configuration
 type ModelProvider struct {
-	Name                string `json:"name"`
-	Logo                string `json:"logo"`
-	Tags                string `json:"tags"`
-	Status              string `json:"status"`
-	Rank                string `json:"rank"`
-	LLMs                []LLM  `json:"llm"`
-	DefaultEmbeddingURL string `json:"default_embedding_url,omitempty"`
+	Name       string `json:"name"`
+	Logo       string `json:"logo"`
+	Tags       string `json:"tags"`
+	Status     string `json:"status"`
+	Rank       string `json:"rank"`
+	LLMs       []LLM  `json:"llm"`
+	DefaultURL string `json:"url,omitempty"`
 }
 
 // LLM represents a language model within a provider

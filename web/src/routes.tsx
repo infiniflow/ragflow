@@ -281,16 +281,18 @@ const routeConfigOptions = [
             path: `${Routes.UserSetting}${Routes.Mcp}`,
             Component: () => import('@/pages/user-setting/mcp'),
           },
-          {
-            path: `${Routes.UserSetting}${Routes.DataSource}${Routes.DataSourceDetailPage}`,
-            Component: () =>
-              import('@/pages/user-setting/data-source/data-source-detail-page'),
-          },
+
           {
             path: `${Routes.UserSetting}${Routes.DataSource}`,
             Component: () => import('@/pages/user-setting/data-source'),
           },
         ],
+      },
+      {
+        path: `${Routes.UserSetting}${Routes.DataSource}${Routes.DataSourceDetailPage}`,
+        layout: false,
+        Component: () =>
+          import('@/pages/user-setting/data-source/data-source-detail-page'),
       },
     ],
   },
