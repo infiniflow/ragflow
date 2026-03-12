@@ -1,4 +1,3 @@
-import FileStatusBadge from '@/components/file-status-badge';
 import { FilterCollection } from '@/components/list-filter-bar/interface';
 import SvgIcon from '@/components/svg-icon';
 import { useIsDarkTheme } from '@/components/theme-provider';
@@ -192,12 +191,7 @@ const FileLogsPage: FC = () => {
           return {
             id: value,
             // label: RunningStatusMap[value].label,
-            label: (
-              <FileStatusBadge
-                status={value as RunningStatus}
-                name={RunningStatusMap[value as RunningStatus]}
-              />
-            ),
+            label: RunningStatusMap[value],
           };
         }),
       },

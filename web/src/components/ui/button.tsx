@@ -68,6 +68,13 @@ const buttonVariants = cva(
           hover:bg-state-error/10 focus-visible:bg-state-error/10
         `,
 
+        'danger-hover': `
+          bg-bg-input border-border-button
+          hover:bg-state-error/10 focus-visible:bg-state-error/10
+          hover:text-state-error focus-visible:text-state-error
+          hover:border-state-error focus-visible:border-state-error
+        `,
+
         // Ghost variant series
         // Button has transparent background, without borders
         ghost: `
@@ -91,11 +98,11 @@ const buttonVariants = cva(
       size: {
         auto: '',
 
-        xl: 'h-12 rounded-xl px-5',
+        xl: 'h-12 rounded-xl px-5 gap-3',
         lg: 'h-10 rounded-lg px-4',
         default: 'h-8 rounded px-3',
-        sm: 'h-7 rounded-sm px-2',
-        xs: 'h-6 rounded-xs px-1',
+        sm: 'h-7 rounded-sm px-2 gap-1',
+        xs: 'h-6 rounded-xs px-1 gap-0.5',
 
         'icon-xl': 'size-12 rounded-xl',
         'icon-lg': 'size-10 rounded-lg',

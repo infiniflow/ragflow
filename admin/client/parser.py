@@ -93,6 +93,9 @@ sql_command: login_user
            | list_chat_sessions
            | chat_on_session
            | list_server_configs
+           | show_fingerprint
+           | set_license
+           | show_license
            | benchmark
 
 // meta command definition
@@ -178,6 +181,8 @@ PING: "PING"i
 SESSION: "SESSION"i
 SESSIONS: "SESSIONS"i
 SERVER: "SERVER"i
+FINGERPRINT: "FINGERPRINT"i
+LICENSE: "LICENSE"i
 
 login_user: LOGIN USER quoted_string ";"
 list_services: LIST SERVICES ";"
@@ -222,6 +227,10 @@ show_variable: SHOW VAR identifier ";"
 list_variables: LIST VARS ";"
 list_configs: LIST CONFIGS ";"
 list_environments: LIST ENVS ";"
+
+show_fingerprint: SHOW FINGERPRINT ";"
+set_license: SET LICENSE quoted_string ";"
+show_license: SHOW LICENSE ";"
 
 list_server_configs: LIST SERVER CONFIGS ";"
 
@@ -476,6 +485,16 @@ class RAGFlowCLITransformer(Transformer):
 
     def list_environments(self, items):
         return {"type": "list_environments"}
+
+    def show_fingerprint(self, items):
+        return {"type": "show_fingerprint"}
+
+    def set_license(self, items):
+        license = items[2].children[0].strip("'\"")
+        return {"type": "set_license", "license": license}
+
+    def show_license(self, items):
+        return {"type": "show_license"}
 
     def list_server_configs(self, items):
         return {"type": "list_server_configs"}

@@ -1,7 +1,7 @@
 'use client';
 
 import * as CheckboxPrimitive from '@radix-ui/react-checkbox';
-import { LucideCheck } from 'lucide-react';
+import { LucideCheck, LucideMinus } from 'lucide-react';
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
@@ -23,7 +23,12 @@ const Checkbox = React.forwardRef<
     {...props}
   >
     <CheckboxPrimitive.Indicator className="flex items-center justify-center text-current">
-      <LucideCheck className="size-2.5 stroke-[3]" />
+      {props.checked === 'indeterminate' && (
+        <LucideMinus className="size-2.5 stroke-[3]" />
+      )}
+      {props.checked === true && (
+        <LucideCheck className="size-2.5 stroke-[3]" />
+      )}
     </CheckboxPrimitive.Indicator>
   </CheckboxPrimitive.Root>
 ));

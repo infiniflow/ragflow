@@ -204,6 +204,7 @@ func (h *LLMHandler) Factories(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
 		"data": filtered,
 	})
 }

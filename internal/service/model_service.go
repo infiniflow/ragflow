@@ -86,10 +86,10 @@ func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID stri
 	// Always get API base from model provider configuration
 	providerDAO := dao.NewModelProviderDAO()
 	providerConfig := providerDAO.GetProviderByName(provider)
-	if providerConfig == nil || providerConfig.DefaultEmbeddingURL == "" {
+	if providerConfig == nil || providerConfig.DefaultURL == "" {
 		return nil, fmt.Errorf("no API base found for provider %s", provider)
 	}
-	apiBase := providerConfig.DefaultEmbeddingURL
+	apiBase := fmt.Sprintf("%sembeddings/", providerConfig.DefaultURL)
 
 	return models.CreateEmbeddingModel(provider, *apiKey, apiBase, modelName, p.httpClient)
 }

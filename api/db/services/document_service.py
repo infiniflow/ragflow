@@ -30,7 +30,7 @@ from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
 from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES, FileType, UserTenantRole, CanvasCategory
 from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File, UserCanvas, User
 from api.db.db_utils import bulk_insert_into_db
-from api.db.services.common_service import CommonService
+from api.db.services.common_service import CommonService, retry_deadlock_operation
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.doc_metadata_service import DocMetadataService
 from common.misc_utils import get_uuid
@@ -560,6 +560,7 @@ class DocumentService(CommonService):
         return num
 
     @classmethod
+    @retry_deadlock_operation()
     @DB.connection_context()
     def delete_document_and_update_kb_counts(cls, doc_id) -> bool:
         """Atomically delete the document row and update KB counters.
@@ -568,7 +569,17 @@ class DocumentService(CommonService):
         already deleted by a concurrent request (idempotent).
         """
         with DB.atomic():
-            doc = cls.model.get_or_none(cls.model.id == doc_id)
+            doc = (
+                cls.model.select(
+                    cls.model.id,
+                    cls.model.kb_id,
+                    cls.model.token_num,
+                    cls.model.chunk_num,
+                )
+                .where(cls.model.id == doc_id)
+                .for_update()
+                .get_or_none()
+            )
             if doc is None:
                 return False
             deleted = cls.model.delete().where(cls.model.id == doc_id).execute()

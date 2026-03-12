@@ -72,9 +72,9 @@ export function SideBar({ refreshCount }: PropType) {
   }, [t, routerData]);
 
   return (
-    <aside className="w-64 relative px-5 space-y-8">
+    <aside className="flex flex-col w-64 relative">
       <header
-        className="grid grid-cols-[auto_1fr] grid-rows-[auto_auto] gap-x-3"
+        className="px-5 pb-4 grid grid-cols-[auto_1fr] grid-rows-[auto_auto] gap-x-3"
         style={{
           gridTemplateAreas: '"avatar title" "avatar stats"',
         }}
@@ -110,27 +110,31 @@ export function SideBar({ refreshCount }: PropType) {
         </div>
       </header>
 
-      <div className="flex flex-col gap-5">
-        {items.map((item, itemIdx) => {
-          const active = '/' + pathName === item.key;
+      <nav className="px-5 pt-1 pb-5 overflow-y-auto">
+        <ul className="space-y-5">
+          {items.map((item) => {
+            const active = '/' + pathName === item.key;
 
-          return (
-            <Button
-              key={itemIdx}
-              asLink
-              variant="ghost"
-              className={cn(
-                'w-full justify-start gap-2.5 px-3 relative h-10 text-base',
-                active && 'bg-bg-card text-text-primary',
-              )}
-              to={`${Routes.DatasetBase}${item.key}/${id}`}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </Button>
-          );
-        })}
-      </div>
+            return (
+              <li key={item.key}>
+                <Button
+                  asLink
+                  block
+                  variant="ghost"
+                  className={cn(
+                    'justify-start gap-2.5 px-3 relative h-10 text-base',
+                    active && 'bg-bg-card text-text-primary',
+                  )}
+                  to={`${Routes.DatasetBase}${item.key}/${id}`}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
     </aside>
   );
 }

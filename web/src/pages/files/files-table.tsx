@@ -36,7 +36,6 @@ import {
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
-import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import { pick } from 'lodash';
@@ -122,13 +121,18 @@ export function FilesTable({
       accessorKey: 'name',
       header: ({ column }) => {
         return (
-          <Button
-            variant="ghost"
-            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          >
+          <div className="flex items-center gap-1">
             {t('name')}
-            <ArrowUpDown />
-          </Button>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === 'asc')
+              }
+            >
+              <ArrowUpDown />
+            </Button>
+          </div>
         );
       },
       meta: { cellClassName: 'max-w-[20vw]' },
@@ -147,21 +151,18 @@ export function FilesTable({
         return (
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex gap-2">
-                <span className="size-4">
-                  <FileIcon name={name} type={type}></FileIcon>
-                </span>
-                <span
-                  className={cn('truncate', { ['cursor-pointer']: isFolder })}
-                  onClick={handleNameClick}
-                >
-                  {name}
-                </span>
-              </div>
+              <Button
+                variant="static"
+                onClick={handleNameClick}
+                className="max-w-full p-0 flex justify-start gap-2 text-text-primary"
+              >
+                <FileIcon name={name} type={type} />
+
+                <span className="truncate">{name}</span>
+              </Button>
             </TooltipTrigger>
-            <TooltipContent>
-              <p>{name}</p>
-            </TooltipContent>
+
+            <TooltipContent>{name}</TooltipContent>
           </Tooltip>
         );
       },
@@ -170,13 +171,18 @@ export function FilesTable({
       accessorKey: 'create_time',
       header: ({ column }) => {
         return (
-          <Button
-            variant="ghost"
-            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          >
+          <div className="flex items-center gap-1">
             {t('uploadDate')}
-            <ArrowUpDown />
-          </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === 'asc')
+              }
+            >
+              <ArrowUpDown />
+            </Button>
+          </div>
         );
       },
       cell: ({ row }) => (
@@ -189,13 +195,18 @@ export function FilesTable({
       accessorKey: 'size',
       header: ({ column }) => {
         return (
-          <Button
-            variant="ghost"
-            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          >
+          <div className="flex items-center gap-1">
             {t('size')}
-            <ArrowUpDown />
-          </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === 'asc')
+              }
+            >
+              <ArrowUpDown />
+            </Button>
+          </div>
         );
       },
       cell: ({ row }) => (
@@ -213,6 +224,9 @@ export function FilesTable({
     {
       id: 'actions',
       header: t('action'),
+      meta: {
+        headerCellClassName: 'w-0',
+      },
       enableHiding: false,
       enablePinning: true,
       cell: ({ row }) => {
@@ -222,7 +236,7 @@ export function FilesTable({
             showConnectToKnowledgeModal={showConnectToKnowledgeModal}
             showFileRenameModal={showFileRenameModal}
             showMoveFileModal={showMoveFileModal}
-          ></ActionCell>
+          />
         );
       },
     },
@@ -271,7 +285,12 @@ export function FilesTable({
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
                   return (
-                    <TableHead key={header.id}>
+                    <TableHead
+                      key={header.id}
+                      className={
+                        header.column.columnDef.meta?.headerCellClassName
+                      }
+                    >
                       {header.isPlaceholder
                         ? null
                         : flexRender(

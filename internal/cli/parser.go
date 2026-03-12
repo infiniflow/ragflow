@@ -950,10 +950,11 @@ func (p *Parser) parseActivateUser() (*Command, error) {
 	}
 
 	p.nextToken()
-	status, err := p.parseIdentifier()
-	if err != nil {
-		return nil, err
-	}
+	// Accept 'on' or 'off' as identifier
+	status := p.curToken.Value
+	if status != "on" && status != "off" {
+		return nil, fmt.Errorf("expected 'on' or 'off', got %s", p.curToken.Value)
+	 }
 
 	cmd := NewCommand("activate_user")
 	cmd.Params["user_name"] = userName
@@ -962,7 +963,7 @@ func (p *Parser) parseActivateUser() (*Command, error) {
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err
-	}
+	 }
 	return cmd, nil
 }
 
