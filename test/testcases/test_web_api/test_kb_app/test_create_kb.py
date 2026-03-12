@@ -75,9 +75,9 @@ class TestDatasetCreate:
         [
             ("", "Field: <name> - Message: <String should have at least 1 character>"),
             (" ", "Field: <name> - Message: <String should have at least 1 character>"),
-            ("a" * (DATASET_NAME_LIMIT + 1), f"Field: <name> - Message: <String should have at most 128 characters>"),
-            (0, f"Field: <name> - Message: <Input should be a valid string>"),
-            (None, f"Field: <name> - Message: <Input should be a valid string>"),
+            ("a" * (DATASET_NAME_LIMIT + 1), "Field: <name> - Message: <String should have at most 128 characters>"),
+            (0, "Field: <name> - Message: <Input should be a valid string>"),
+            (None, "Field: <name> - Message: <Input should be a valid string>"),
         ],
         ids=["empty_name", "space_name", "too_long_name", "invalid_name", "None_name"],
     )
