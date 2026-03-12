@@ -227,6 +227,7 @@ def query_message(filter_dict: dict, params: dict):
         "memory_id": List[str],
         "agent_id": optional
         "session_id": optional
+        "user_id": optional
     }
     :param params: {
         "query": question str,
