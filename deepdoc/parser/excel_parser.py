@@ -20,7 +20,7 @@ import pandas as pd
 from openpyxl import Workbook, load_workbook
 
 from rag.nlp import find_codec
-from rag.utils.lazy_image import LazyDocxImage
+from rag.utils.lazy_image import LazyImage
 
 # copied from `/openpyxl/cell/cell.py`
 ILLEGAL_CHARACTERS_RE = re.compile(r"[\000-\010]|[\013-\014]|[\016-\037]")
@@ -122,7 +122,7 @@ class RAGFlowExcelParser:
         for img in images:
             try:
                 img_bytes = img._data()
-                lazy_img = LazyDocxImage([img_bytes])
+                lazy_img = LazyImage([img_bytes])
 
                 anchor = img.anchor
                 if hasattr(anchor, "_from") and hasattr(anchor, "_to"):
