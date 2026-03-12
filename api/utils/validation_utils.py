@@ -649,7 +649,8 @@ class UpdateDatasetReq(CreateDatasetReq):
 
 
 class DeleteReq(Base):
-    ids: Annotated[list[str] | None, Field(...)]
+    ids: Annotated[list[str] | None, Field(default=None)]
+    delete_all: Annotated[bool, Field(default=False)]
 
     @field_validator("ids", mode="after")
     @classmethod

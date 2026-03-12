@@ -751,7 +751,12 @@ async def delete(tenant_id, chat_id):
 
     ids = req.get("ids")
     if not ids:
-        return get_result()
+        if req.get("delete_all") is True:
+            ids = [conv.id for conv in ConversationService.query(dialog_id=chat_id)]
+            if not ids:
+                return get_result()
+        else:
+            return get_result()
 
     conv_list = ids
 
@@ -799,7 +804,12 @@ async def delete_agent_session(tenant_id, agent_id):
 
     ids = req.get("ids")
     if not ids:
-        return get_result()
+        if req.get("delete_all") is True:
+            ids = [conv.id for conv in API4ConversationService.query(dialog_id=agent_id)]
+            if not ids:
+                return get_result()
+        else:
+            return get_result()
 
     conv_list = ids
 
