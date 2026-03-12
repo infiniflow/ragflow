@@ -115,7 +115,7 @@ class Excel(ExcelParser):
             tables.append(
                 (
                     (
-                        img["image"],  # Image.Image
+                        img["image"],  # Image.Image or LazyDocxImage
                         [img["image_description"]]  # description list (must be list)
                     ),
                     [
