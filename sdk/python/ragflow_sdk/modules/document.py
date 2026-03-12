@@ -94,8 +94,8 @@ class Document(Base):
             return Chunk(self.rag, res["data"].get("chunk"))
         raise Exception(res.get("message"))
 
-    def delete_chunks(self, ids: list[str] | None = None):
-        res = self.rm(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks", {"chunk_ids": ids})
+    def delete_chunks(self, ids: list[str] | None = None, delete_all: bool = False):
+        res = self.rm(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks", {"chunk_ids": ids, "delete_all": delete_all})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))

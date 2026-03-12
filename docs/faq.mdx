@@ -567,6 +567,24 @@ RAGFlow supports MinerU's `vlm-http-client` backend, enabling you to delegate do
 When using the `vlm-http-client` backend, the RAGFlow server requires no GPU, only network connectivity. This enables cost-effective distributed deployment with multiple RAGFlow instances sharing one remote vLLM server.
 :::
 
+### How to use an external Docling Serve server for document parsing?
+
+RAGFlow supports Docling in two modes:
+
+1. **Local Docling** (existing mode): install Docling in the RAGFlow runtime (`USE_DOCLING=true`) and parse in-process.
+2. **External Docling Serve** (remote mode): point RAGFlow to a Docling Serve endpoint.
+
+To enable remote mode, set:
+
+```bash
+DOCLING_SERVER_URL=http://your-docling-serve-host:5001
+```
+
+Behavior:
+
+- When `DOCLING_SERVER_URL` is set, RAGFlow sends PDFs to Docling Serve using `/v1/convert/source` (and falls back to `/v1alpha/convert/source` for older servers).
+- When `DOCLING_SERVER_URL` is not set, RAGFlow uses local in-process Docling.
+
 ### How to use PaddleOCR for document parsing?
 
 From v0.24.0 onwards, RAGFlow includes PaddleOCR as an optional PDF parser. Please note that RAGFlow acts only as a *remote client* for PaddleOCR, calling the PaddleOCR API to parse PDFs and reading the returned files.

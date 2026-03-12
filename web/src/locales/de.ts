@@ -2444,7 +2444,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
     },
     pagination: {
       total: 'Gesamt {{total}}',
-      page: '{{page}} /Seite',
+      page: '{{page}} / Seite',
     },
     dataflowParser: {
       result: 'Ergebnis',

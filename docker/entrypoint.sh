@@ -249,6 +249,7 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     echo "Starting admin_server..."
     while true; do
         "$PY" admin/server/admin_server.py &
+        bin/admin_server &
         wait;
         sleep 1;
     done &
