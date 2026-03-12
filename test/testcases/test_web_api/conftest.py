@@ -28,7 +28,7 @@ from common import (
     list_documents,
     list_datasets,
     parse_documents,
-    delete_datasets,
+    delete_datasets, kb_get_meta,
 )
 from libs.auth import RAGFlowWebApiAuth
 from pytest import FixtureRequest
@@ -123,8 +123,8 @@ def clear_dialogs(request, WebApiAuth):
 def add_dataset(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth) -> str:
     def cleanup():
         res = list_datasets(WebApiAuth, params={"page_size": 1000})
-        for kb in res["data"]:
-            delete_datasets(WebApiAuth, {"ids": kb["id"]})
+        kb_ids = [kb["id"] for kb in res["data"]]
+        delete_datasets(WebApiAuth, {"ids": kb_ids})
 
     request.addfinalizer(cleanup)
     return batch_create_datasets(WebApiAuth, 1)[0]
@@ -134,8 +134,8 @@ def add_dataset(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth) -> str:
 def add_dataset_func(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth) -> str:
     def cleanup():
         res = list_datasets(WebApiAuth, params={"page_size": 1000})
-        for kb in res["data"]:
-            delete_datasets(WebApiAuth, {"ids": kb["id"]})
+        kb_ids = [kb["id"] for kb in res["data"]]
+        delete_datasets(WebApiAuth, {"ids": kb_ids})
 
     request.addfinalizer(cleanup)
     return batch_create_datasets(WebApiAuth, 1)[0]

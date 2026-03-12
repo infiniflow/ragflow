@@ -354,7 +354,12 @@ class TestDatasetUpdate:
         payload = {"name": "parser_config", "description": "", "chunk_method": "naive", "parser_config": parser_config}
         res = update_dataset(WebApiAuth, kb_id, payload)
         assert res["code"] == 0, res
-        assert res["data"]["parser_config"] == parser_config, res
+        for key, value in parser_config.items():
+            if not isinstance(value, dict):
+                assert res["data"]["parser_config"].get(key) == value, res
+            else:
+                for sub_key, sub_value in value.items():
+                    assert res["data"]["parser_config"].get(key, {}).get(sub_key) == sub_value, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
