@@ -105,8 +105,8 @@ def require_env_flag():
 def clear_datasets(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth):
     def cleanup():
         res = list_datasets(WebApiAuth, params={"page_size": 1000})
-        for kb in res["data"]["kbs"]:
-            delete_datasets(WebApiAuth, {"ids": kb["id"]})
+        kb_ids = [kb["id"] for kb in res["data"]]
+        delete_datasets(WebApiAuth, {"ids": kb_ids})
 
     request.addfinalizer(cleanup)
 

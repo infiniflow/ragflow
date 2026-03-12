@@ -71,8 +71,6 @@ async def create_dataset(tenant_id: str, req: dict):
     if not e:
         return False, create_dict
 
-    logging.info("try to create dataset, create_dict: %s", create_dict)
-
     # Insert embedding model(embd id)
     ok, t = TenantService.get_by_id(tenant_id)
     if not ok:

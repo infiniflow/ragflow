@@ -240,23 +240,43 @@ def kb_pipeline_log_detail(auth, params=None, *, headers=HEADERS):
     return res.json()
 
 
-def kb_run_graphrag(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/run_graphrag", headers=headers, auth=auth, json=payload, data=data)
+# DATASET GRAPH AND TASKS
+def knowledge_graph(auth, dataset_id, params=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/knowledge_graph"
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
-def kb_trace_graphrag(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/trace_graphrag", headers=headers, auth=auth, params=params)
+def delete_knowledge_graph(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/knowledge_graph"
+    if payload is None:
+        res = requests.delete(url=url, headers=HEADERS, auth=auth)
+    else:
+        res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def kb_run_raptor(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/run_raptor", headers=headers, auth=auth, json=payload, data=data)
+def run_graphrag(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/run_graphrag"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def kb_trace_raptor(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/trace_raptor", headers=headers, auth=auth, params=params)
+def trace_graphrag(auth, dataset_id, params=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/trace_graphrag"
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
+    return res.json()
+
+
+def run_raptor(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/run_raptor"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def trace_raptor(auth, dataset_id, params=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/trace_raptor"
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
@@ -287,16 +307,6 @@ def rm_tags(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
 
 def rename_tags(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
     res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/{dataset_id}/rename_tag", headers=headers, auth=auth, json=payload, data=data)
-    return res.json()
-
-
-def knowledge_graph(auth, dataset_id, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/{dataset_id}/knowledge_graph", headers=headers, auth=auth, params=params)
-    return res.json()
-
-
-def delete_knowledge_graph(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
-    res = requests.delete(url=f"{HOST_ADDRESS}{KB_APP_URL}/{dataset_id}/knowledge_graph", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
