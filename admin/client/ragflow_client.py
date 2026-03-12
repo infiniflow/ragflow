@@ -600,7 +600,7 @@ class RAGFlowClient:
         response = self.http_client.request("POST", "/admin/license", json_body={"license": license}, use_api_base=True, auth_kind="admin")
         res_json = response.json()
         if response.status_code == 200:
-            print(f"Set license successfully")
+            print("Set license successfully")
         else:
             print(f"Fail to set license, code: {res_json['code']}, message: {res_json['message']}")
 
