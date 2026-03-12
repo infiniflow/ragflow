@@ -212,7 +212,7 @@ func startServer(config *server.Config) {
 				"     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /\n" +
 				"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
 		)
-		logger.Info(fmt.Sprintf("Version: %s", utility.GetRAGFlowVersion()))
+		logger.Info(fmt.Sprintf("RAGFlow Go Version: %s", utility.GetRAGFlowVersion()))
 		logger.Info(fmt.Sprintf("Server starting on port: %d", config.Server.Port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatal("Failed to start server", zap.Error(err))
