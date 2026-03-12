@@ -18,9 +18,9 @@ from io import BytesIO
 
 import pandas as pd
 from openpyxl import Workbook, load_workbook
-from PIL import Image
 
 from rag.nlp import find_codec
+from rag.utils.lazy_image import LazyDocxImage
 
 # copied from `/openpyxl/cell/cell.py`
 ILLEGAL_CHARACTERS_RE = re.compile(r"[\000-\010]|[\013-\014]|[\016-\037]")
@@ -122,7 +122,7 @@ class RAGFlowExcelParser:
         for img in images:
             try:
                 img_bytes = img._data()
-                pil_img = Image.open(BytesIO(img_bytes)).convert("RGB")
+                lazy_img = LazyDocxImage([img_bytes])
 
                 anchor = img.anchor
                 if hasattr(anchor, "_from") and hasattr(anchor, "_to"):
@@ -139,7 +139,7 @@ class RAGFlowExcelParser:
 
                 item = {
                     "sheet": sheetname or ws.title,
-                    "image": pil_img,
+                    "image": lazy_img,
                     "image_description": "",
                     "row_from": r1,
                     "col_from": c1,
