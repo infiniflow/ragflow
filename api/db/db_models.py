@@ -1423,6 +1423,9 @@ def migrate_add_unique_email(migrator):
 def update_tenant_llm_to_id_primary_key():
     """Add ID and set to primary key step by step."""
     try:
+        if settings.DATABASE_TYPE.lower() == "postgres":
+            logging.info("Skip update_tenant_llm_to_id_primary_key for PostgreSQL.")
+            return
         with DB.atomic():
             # 0. Check if exist ID
             cursor = DB.execute_sql("""
@@ -1464,6 +1467,8 @@ def update_tenant_llm_to_id_primary_key():
 
     except Exception as e:
         logging.error(str(e))
+        if settings.DATABASE_TYPE.lower() == "postgres":
+            return
         cursor = DB.execute_sql("""
                                     SELECT COLUMN_NAME 
                                     FROM INFORMATION_SCHEMA.COLUMNS 
