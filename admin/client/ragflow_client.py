@@ -1326,13 +1326,13 @@ class RAGFlowClient:
         return res_json["data"]["docs"]
 
     def _get_dataset_id(self, dataset_name: str):
-        response = self.http_client.request("POST", "/kb/list", use_api_base=False, auth_kind="web")
+        response = self.http_client.request("GET", "/datasets", use_api_base=True, auth_kind="web")
         res_json = response.json()
         if response.status_code != 200:
             print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
             return None
 
-        dataset_list = res_json["data"]["kbs"]
+        dataset_list = res_json["data"]
         dataset_id: str = ""
         for dataset in dataset_list:
             if dataset["name"] == dataset_name:
