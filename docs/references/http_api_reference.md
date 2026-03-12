@@ -3844,16 +3844,16 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"session_id"`: `string` (optional)
   - `"inputs"`: `object` (optional)
   - `"user_id"`: `string` (optional)
-  - `"return_trace"`: `boolean` (optional, default `false`) — include execution trace logs.
+  - `"return_trace"`: `boolean` (optional, default `false`) — whether to include execution trace logs.
   - `"release"`: `boolean` (optional, default `false`) - whether to visit the latest published canvas.
 
 #### Streaming events to handle
 
-When `stream=true`, the server sends Server-Sent Events (SSE). Clients should handle these `event` types:
+When `stream=true`, the server sends Server-Sent Events (SSE). A client should handle these events:
 
 - `message`: streaming content from Message components.
 - `message_end`: end of a Message component; may include `reference`/`attachment`.
-- `node_finished`: a component finishes; `data.inputs/outputs/error/elapsed_time` describe the node result. If a component produces structured output, read it from that component's `data.outputs.structured`. If `return_trace=true`, the trace is attached inside the same `node_finished` event (`data.trace`).
+- `node_finished`: a component finishes; `data.inputs/outputs/error/elapsed_time` describes the node result. If a component produces structured output, read it from that component's `data.outputs.structured`. If `return_trace=true`, the trace is attached inside the same `node_finished` event (`data.trace`).
 
 The stream terminates with `[DONE]`.
 
