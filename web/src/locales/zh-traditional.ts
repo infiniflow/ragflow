@@ -19,6 +19,7 @@ export default {
       chinese: '簡體中文',
       traditionalChinese: '繁體中文',
       bulgarian: '保加利亞語',
+      arabic: '阿拉伯語',
       language: '語言',
       languageMessage: '請輸入語言',
       languagePlaceholder: '請選擇語言',
@@ -1279,6 +1280,13 @@ export default {
       file: '文件',
       knowledge: '知識',
       chat: '聊天',
+    },
+    language: {
+      english: '英語',
+      chinese: '簡體中文',
+      russian: '俄語',
+      bulgarian: '保加利亞語',
+      arabic: '阿拉伯語',
     },
     modal: {
       okText: '確認',

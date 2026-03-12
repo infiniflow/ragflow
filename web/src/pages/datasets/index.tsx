@@ -91,7 +91,7 @@ export default function Datasets() {
               value={filterValue}
               filters={owners}
               onChange={handleFilterSubmit}
-              className="px-8"
+              className="px-8 mb-4"
               icon={'datasets'}
             >
               <Button onClick={showModal}>

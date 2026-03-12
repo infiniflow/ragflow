@@ -18,6 +18,7 @@ package handler
 
 import (
 	"net/http"
+	"ragflow/internal/common"
 
 	"github.com/gin-gonic/gin"
 
@@ -48,23 +49,9 @@ func NewChunkHandler(chunkService *service.ChunkService, userService *service.Us
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/chunk/retrieval_test [post]
 func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
-	// Extract access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 

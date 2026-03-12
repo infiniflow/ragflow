@@ -20,6 +20,7 @@ export default {
       chinese: 'Chino simplificado',
       traditionalChinese: 'Chino tradicional',
       bulgarian: 'Búlgaro',
+      arabic: 'Árabe',
       language: 'Idioma',
       languageMessage: '¡Por favor ingresa tu idioma!',
       languagePlaceholder: 'Selecciona tu idioma',
@@ -935,6 +936,13 @@ export default {
       file: 'Archivo',
       knowledge: 'Conocimiento',
       chat: 'Chat',
+    },
+    language: {
+      english: 'Ingles',
+      chinese: 'Chino',
+      russian: 'Ruso',
+      bulgarian: 'Búlgaro',
+      arabic: 'Árabe',
     },
   },
 };
