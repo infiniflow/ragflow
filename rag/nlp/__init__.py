@@ -1200,7 +1200,7 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
 
 def docx_question_level(p, bull=-1):
     txt = re.sub(r"\u3000", " ", p.text).strip()
-    if p.style.name.startswith('Heading'):
+    if hasattr(p.style, 'name') and p.style.name and p.style.name.startswith('Heading'):
         return int(p.style.name.split(' ')[-1]), txt
     else:
         if bull < 0:
@@ -1212,6 +1212,21 @@ def docx_question_level(p, bull=-1):
 
 
 def concat_img(img1, img2):
+    from rag.utils.lazy_image import ensure_pil_image, LazyDocxImage
+
+    # Fast path: preserve laziness when both sides are LazyDocxImage or None.
+    if (img1 is None or isinstance(img1, LazyDocxImage)) and \
+       (img2 is None or isinstance(img2, LazyDocxImage)):
+        if img1 and not img2:
+            return img1
+        if not img1 and img2:
+            return img2
+        if not img1 and not img2:
+            return None
+        return LazyDocxImage.merge(img1, img2)
+
+    img1 = ensure_pil_image(img1) or img1
+    img2 = ensure_pil_image(img2) or img2
     if img1 and not img2:
         return img1
     if not img1 and img2:

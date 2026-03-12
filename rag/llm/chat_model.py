@@ -149,12 +149,13 @@ class Base(ABC):
                 continue
             if not resp.choices[0].delta.content:
                 resp.choices[0].delta.content = ""
-            if kwargs.get("with_reasoning", True) and hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
+            _reasoning = getattr(resp.choices[0].delta, "reasoning_content", None) or getattr(resp.choices[0].delta, "reasoning", None)
+            if kwargs.get("with_reasoning", True) and _reasoning:
                 ans = ""
                 if not reasoning_start:
                     reasoning_start = True
                     ans = "<think>"
-                ans += resp.choices[0].delta.reasoning_content + "</think>"
+                ans += _reasoning + "</think>"
             else:
                 reasoning_start = False
                 ans = resp.choices[0].delta.content
@@ -294,8 +295,9 @@ class Base(ABC):
                         raise Exception(f"500 response structure error. Response: {response}")
 
                     if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[0].message.tool_calls:
-                        if hasattr(response.choices[0].message, "reasoning_content") and response.choices[0].message.reasoning_content:
-                            ans += "<think>" + response.choices[0].message.reasoning_content + "</think>"
+                        _reasoning = getattr(response.choices[0].message, "reasoning_content", None) or getattr(response.choices[0].message, "reasoning", None)
+                        if _reasoning:
+                            ans += "<think>" + _reasoning + "</think>"
 
                         ans += response.choices[0].message.content
                         if response.choices[0].finish_reason == "length":
@@ -370,12 +372,13 @@ class Base(ABC):
                         if not hasattr(delta, "content") or delta.content is None:
                             delta.content = ""
 
-                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                        _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                        if _reasoning:
                             ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
                                 ans = "<think>"
-                            ans += delta.reasoning_content + "</think>"
+                            ans += _reasoning + "</think>"
                             yield ans
                         else:
                             reasoning_start = False
@@ -1096,6 +1099,15 @@ class N1nChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class AvianChat(Base):
+    _FACTORY_NAME = "Avian"
+
+    def __init__(self, key, model_name, base_url="https://api.avian.io/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.avian.io/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1270,12 +1282,13 @@ class LiteLLMBase(ABC):
                     if not hasattr(delta, "content") or delta.content is None:
                         delta.content = ""
 
-                    if kwargs.get("with_reasoning", True) and hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                    _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                    if kwargs.get("with_reasoning", True) and _reasoning:
                         ans = ""
                         if not reasoning_start:
                             reasoning_start = True
                             ans = "<think>"
-                        ans += delta.reasoning_content + "</think>"
+                        ans += _reasoning + "</think>"
                     else:
                         reasoning_start = False
                         ans = delta.content
@@ -1395,8 +1408,9 @@ class LiteLLMBase(ABC):
                     message = response.choices[0].message
 
                     if not hasattr(message, "tool_calls") or not message.tool_calls:
-                        if hasattr(message, "reasoning_content") and message.reasoning_content:
-                            ans += f"<think>{message.reasoning_content}</think>"
+                        _reasoning = getattr(message, "reasoning_content", None) or getattr(message, "reasoning", None)
+                        if _reasoning:
+                            ans += f"<think>{_reasoning}</think>"
                         ans += message.content or ""
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
@@ -1476,12 +1490,13 @@ class LiteLLMBase(ABC):
                         if not hasattr(delta, "content") or delta.content is None:
                             delta.content = ""
 
-                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                        _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                        if _reasoning:
                             ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
                                 ans = "<think>"
-                            ans += delta.reasoning_content + "</think>"
+                            ans += _reasoning + "</think>"
                             yield ans
                         else:
                             reasoning_start = False
@@ -1625,7 +1640,7 @@ class LiteLLMBase(ABC):
         elif self.provider == SupportedLiteLLMProvider.GPUStack:
             completion_args.update(
                 {
-                    "api_base": self.base_url,
+                    "api_base": urljoin(self.base_url, "v1"),
                 }
             )
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
@@ -1649,3 +1664,17 @@ class LiteLLMBase(ABC):
             completion_args["extra_headers"] = extra_headers
         return completion_args
 
+class RAGconChat(Base):
+    """
+    RAGcon Chat Provider - routes through LiteLLM proxy
+    
+    All model types are handled through a unified LiteLLM endpoint.
+    Default Base URL: https://connect.ragcon.com/v1
+    """
+    _FACTORY_NAME = "RAGcon"
+    
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+        
+        super().__init__(key, model_name, base_url, **kwargs)

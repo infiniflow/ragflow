@@ -4,14 +4,15 @@ import React from 'react';
 import { Button, ButtonProps } from './ui/button';
 
 export const MoreButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, size, ...props }, ref) => {
+  function MoreButton({ className, size, ...props }, ref) {
     return (
       <Button
         ref={ref}
         variant="ghost"
-        size={size || 'icon'}
+        size={size || 'icon-xs'}
         className={cn(
-          'invisible group-hover:visible size-3.5 bg-transparent group-hover:bg-transparent',
+          'opacity-0 size-3.5 transition-all bg-transparent group-hover:bg-transparent',
+          'group-focus-within:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100',
           className,
         )}
         {...props}

@@ -564,3 +564,14 @@ class KnowledgebaseService(CommonService):
             'update_date': datetime_format(datetime.now())
         }
         return cls.model.update(update_dict).where(cls.model.id == kb_id).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def get_null_tenant_embd_id_row(cls):
+        fields = [
+            cls.model.id,
+            cls.model.tenant_id,
+            cls.model.embd_id
+        ]
+        objs = cls.model.select(*fields).where(cls.model.tenant_embd_id.is_null())
+        return list(objs)

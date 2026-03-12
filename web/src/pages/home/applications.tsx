@@ -59,49 +59,51 @@ export function Applications() {
 
   return (
     <section className="mt-12">
-      <div className="flex justify-between items-center mb-5">
-        <h2 className="text-2xl font-semibold flex gap-2.5">
+      <header className="flex justify-between items-center mb-2.5">
+        <h2 className="text-2xl font-semibold">
           <HomeIcon
+            imgClass="me-2.5"
             name={`${IconMap[val as keyof typeof IconMap]}`}
-            width={'32'}
+            width={24}
           />
           {options.find((x) => x.value === val)?.label}
         </h2>
+
         <Segmented
+          buttonSize="sm"
           options={options}
           value={val}
           onChange={handleChange}
-          buttonSize="xl"
           // className="bg-bg-card border border-border-button rounded-lg"
           // activeClassName="bg-text-primary border-none rounded-lg"
-        ></Segmented>
-      </div>
+        />
+      </header>
+
       {/* <div className="flex flex-wrap gap-4"> */}
       <CardSineLineContainer>
         {val === Routes.Chats && (
           <ChatList
             setListLength={(length: number) => setListLength(length)}
             setLoading={(loading: boolean) => setLoading(loading)}
-          ></ChatList>
+          />
         )}
         {val === Routes.Searches && (
           <SearchList
             setListLength={(length: number) => setListLength(length)}
             setLoading={(loading: boolean) => setLoading(loading)}
-          ></SearchList>
+          />
         )}
         {val === Routes.Memories && (
           <MemoryList
             setListLength={(length: number) => setListLength(length)}
             setLoading={(loading: boolean) => setLoading(loading)}
-          ></MemoryList>
+          />
         )}
         {listLength > 0 && (
-          <SeeAllAppCard
-            click={() => handleNavigate({ isCreate: false })}
-          ></SeeAllAppCard>
+          <SeeAllAppCard click={() => handleNavigate({ isCreate: false })} />
         )}
       </CardSineLineContainer>
+
       {listLength <= 0 && !loading && (
         <EmptyAppCard
           type={EmptyTypeMap[val as keyof typeof EmptyTypeMap]}

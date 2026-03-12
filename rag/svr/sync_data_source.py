@@ -55,10 +55,11 @@ from common.data_source import (
     ZendeskConnector,
     SeaFileConnector,
     RDBMSConnector,
+    DingTalkAITableConnector,
 )
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
-from common.data_source.models import ConnectorFailure
+from common.data_source.models import ConnectorFailure, SeafileSyncScope
 from common.data_source.webdav_connector import WebDAVConnector
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.gmail_connector import GmailConnector
@@ -274,6 +275,7 @@ class Confluence(SyncBase):
             space=space,
             page_id=page_id,
             index_recursively=index_recursively,
+            
         )
 
         credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"],
@@ -1180,21 +1182,23 @@ class Bitbucket(SyncBase):
 
         return wrapper()
 
+
 class SeaFile(SyncBase):
     SOURCE_NAME: str = FileSource.SEAFILE
 
     async def _generate(self, task: dict):
+        conf = self.conf
         self.connector = SeaFileConnector(
-            seafile_url=self.conf["seafile_url"],
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
-            include_shared=self.conf.get("include_shared", True)
+            seafile_url=conf["seafile_url"],
+            batch_size=conf.get("batch_size", INDEX_BATCH_SIZE),
+            include_shared=conf.get("include_shared", True),
+            sync_scope=conf.get("sync_scope", SeafileSyncScope.ACCOUNT),
+            repo_id=conf.get("repo_id") or None,
+            sync_path=conf.get("sync_path") or None,
         )
+        self.connector.load_credentials(conf["credentials"])
 
-        self.connector.load_credentials(self.conf["credentials"])
-
-        # Determine the time range for synchronization based on reindex or poll_range_start
         poll_start = task.get("poll_range_start")
-
         if task["reindex"] == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             begin_info = "totally"
@@ -1205,13 +1209,60 @@ class SeaFile(SyncBase):
             )
             begin_info = f"from {poll_start}"
 
+        scope = conf.get("sync_scope", "account")
+        extra = ""
+        if scope in ("library", "directory"):
+            extra = f" repo_id={conf.get('repo_id')}"
+        if scope == "directory":
+            extra += f" path={conf.get('sync_path')}"
+
         logging.info(
-            "Connect to SeaFile: {} (include_shared: {}) {}".format(
-                self.conf["seafile_url"],
-                self.conf.get("include_shared", True),
-                begin_info
-            )
+            "Connect to SeaFile: %s (scope=%s%s) %s",
+            conf["seafile_url"], scope, extra, begin_info,
         )
+        return document_generator
+
+
+class DingTalkAITable(SyncBase):
+    SOURCE_NAME: str = FileSource.DINGTALK_AI_TABLE
+
+    async def _generate(self, task: dict):
+        """
+        Sync records from DingTalk AI Table (Notable).
+        """
+        self.connector = DingTalkAITableConnector(
+            table_id=self.conf.get("table_id"),
+            operator_id=self.conf.get("operator_id"),
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+
+        credentials = self.conf.get("credentials", {})
+        if "access_token" not in credentials:
+            raise ValueError("Missing access_token in credentials")
+
+        self.connector.load_credentials(
+            {"access_token": credentials["access_token"]}
+        )
+
+        poll_start = task.get("poll_range_start")
+
+        if task.get("reindex") == "1" or poll_start is None:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+            begin_info = f"from {poll_start}"
+
+        logging.info(
+            "Connect to DingTalk AI Table: table_id(%s), operator_id(%s) %s",
+            self.conf.get("table_id"),
+            self.conf.get("operator_id"),
+            begin_info,
+        )
+
         return document_generator
 
 
@@ -1315,6 +1366,7 @@ func_factory = {
     FileSource.SEAFILE: SeaFile,
     FileSource.MYSQL: MySQL,
     FileSource.POSTGRESQL: PostgreSQL,
+    FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
 }
 
 

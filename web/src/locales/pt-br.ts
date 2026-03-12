@@ -19,6 +19,7 @@ export default {
       chinese: 'Chinês Simplificado',
       traditionalChinese: 'Chinês Tradicional',
       bulgarian: 'Búlgaro',
+      arabic: 'Árabe',
       language: 'Idioma',
       languageMessage: 'Por favor, insira seu idioma!',
       languagePlaceholder: 'selecione seu idioma',
@@ -524,6 +525,8 @@ export default {
         'Se sua chave da API for do OpenAI, ignore isso. Outros provedores intermediários fornecerão essa URL base com a chave da API.',
       tongyiBaseUrlTip:
         'Para usuários chineses, não é necessário preencher ou usar https://dashscope.aliyuncs.com/compatible-mode/v1. Para usuários internacionais, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Para usuários chineses, não é necessário preencher ou usar https://api.siliconflow.cn/v1. Para usuários internacionais, use https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Apenas para usuários internacionais, consulte a dica)',
       minimaxBaseUrlTip:
@@ -637,6 +640,8 @@ export default {
       sureQuit: 'Tem certeza de que deseja sair da equipe que você ingressou?',
       modelsToBeAddedTooltip:
         'Se o seu provedor de modelo não estiver listado, mas afirmar ser compatível com a OpenAI, selecione o card OpenAI-API-compatible para adicionar o(s) modelo(s) relevante(s). ',
+      dingtalkAITableDescription:
+        'Conecte-se ao Dingtalk AI Table e sincronize registros de uma tabela especificada.',
     },
     message: {
       registered: 'Registrado!',
@@ -1132,11 +1137,12 @@ export default {
 
       emailComponent: 'Email',
       emailDescription: 'Enviar um email para um endereço especificado.',
-      smtpServer: 'Servidor SMTP',
+      smtpServer: 'Host SMTP',
       smtpPort: 'Porta SMTP',
-      senderEmail: 'Email do remetente',
-      authCode: 'Código de autorização',
-      senderName: 'Nome do remetente',
+      senderEmail: 'Endereço do remetente (From)',
+      smtpUsername: 'Usuário de login SMTP',
+      authCode: 'Senha SMTP / senha de app',
+      senderName: 'Nome de exibição do remetente',
       toEmail: 'Email do destinatário',
       ccEmail: 'Email CC',
       emailSubject: 'Assunto',
@@ -1194,6 +1200,13 @@ export default {
       file: 'arquivo',
       knowledge: 'conhecimento',
       chat: 'bate-papo',
+    },
+    language: {
+      english: 'Inglês',
+      chinese: 'Chinês',
+      russian: 'Russo',
+      bulgarian: 'Búlgaro',
+      arabic: 'Árabe',
     },
   },
 };

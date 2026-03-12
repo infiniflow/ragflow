@@ -20,6 +20,7 @@ export default {
       chinese: '中国語（簡体字）',
       traditionalChinese: '中国語（繁体字）',
       bulgarian: 'ブルガリア語',
+      arabic: 'アラビア語',
       language: '言語',
       languageMessage: 'あなたの言語を入力してください！',
       languagePlaceholder: 'あなたの言語を選択してください',
@@ -569,6 +570,8 @@ export default {
         'APIキーがOpenAIからのものであれば無視してください。他の中間プロバイダーはAPIキーと共にこのベースURLを提供します。',
       tongyiBaseUrlTip:
         '中国ユーザーの場合、記入不要または https://dashscope.aliyuncs.com/compatible-mode/v1 を使用してください。国際ユーザーは https://dashscope-intl.aliyuncs.com/compatible-mode/v1 を使用してください',
+      siliconBaseUrlTip:
+        '中国ユーザーの場合、入力不要または https://api.siliconflow.cn/v1 を使用してください。国際ユーザーは https://api.siliconflow.com/v1 を使用してください',
       tongyiBaseUrlPlaceholder: '（国際ユーザーのみ、ヒントをご覧ください）',
       minimaxBaseUrlTip:
         '国際ユーザーのみ：https://api.minimax.io/v1 を使用してください。',
@@ -689,6 +692,8 @@ export default {
       sureQuit: '参加したチームから退出してもよろしいですか？',
       modelsToBeAddedTooltip:
         'モデルプロバイダーがリストにないが「OpenAI互換」を謳っている場合は、OpenAI-API-compatible カードを選択して関連モデルを追加してください。',
+      dingtalkAITableDescription:
+        'Dingtalk AI Table に接続し、指定されたテーブルからレコードを同期します。',
     },
     message: {
       registered: '登録完了！',
@@ -1156,11 +1161,12 @@ export default {
         'このコンポーネントは、さまざまなコンポーネントの出力を組版するために使用されます。1. Jinja2テンプレートをサポートし、最初に入力をオブジェクトに変換してからテンプレートをレンダリングします。2. {parameter}文字列置換を使用する元の方法も同時に保持します',
       emailComponent: 'メール',
       emailDescription: '指定されたアドレスにメールを送信',
-      smtpServer: 'SMTPサーバー',
+      smtpServer: 'SMTPホスト',
       smtpPort: 'SMTPポート',
-      senderEmail: '送信者のメール',
-      authCode: '認証コード',
-      senderName: '送信者の名前',
+      senderEmail: '差出人メールアドレス（From）',
+      smtpUsername: 'SMTPログインユーザー名',
+      authCode: 'SMTPパスワード/アプリパスワード',
+      senderName: '差出人表示名',
       toEmail: '受信者のメール',
       ccEmail: 'CCメール',
       emailSubject: '件名',
@@ -1194,6 +1200,13 @@ export default {
       file: 'ファイル',
       knowledge: 'ナレッジ',
       chat: 'チャット',
+    },
+    language: {
+      english: '英語',
+      chinese: '中国語',
+      russian: 'ロシア語',
+      bulgarian: 'ブルガリア語',
+      arabic: 'アラビア語',
     },
   },
 };

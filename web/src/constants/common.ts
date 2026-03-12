@@ -41,12 +41,13 @@ export const fileIconMap = {
   xml: 'xml.svg',
 };
 
+// TODO: Use standard BCP 47 language tag and display names
 export const LanguageList = [
   'English',
   'Chinese',
   'Traditional Chinese',
   'Russian',
-  'Indonesia',
+  'Indonesian',
   'Spanish',
   'Vietnamese',
   'Japanese',
@@ -55,27 +56,30 @@ export const LanguageList = [
   'French',
   'Italian',
   'Bulgarian',
+  'Arabic',
 ];
 export const LanguageMap = {
   English: 'English',
   Chinese: '简体中文',
   'Traditional Chinese': '繁體中文',
   Russian: 'Русский',
+  Indonesian: 'Bahasa Indonesia',
   Indonesia: 'Indonesia',
   Spanish: 'Español',
   Vietnamese: 'Tiếng việt',
   Japanese: '日本語',
   'Portuguese BR': 'Português BR',
-  German: 'German',
+  German: 'Deutsch',
   French: 'Français',
   Italian: 'Italiano',
   Bulgarian: 'Български',
+  Arabic: 'العربية',
 };
 
 export enum LanguageAbbreviation {
   En = 'en',
-  Zh = 'zh',
-  ZhTraditional = 'zh-TRADITIONAL',
+  Zh = 'zh-Hans',
+  ZhTraditional = 'zh-Hant',
   Ru = 'ru',
   Id = 'id',
   Ja = 'ja',
@@ -86,6 +90,7 @@ export enum LanguageAbbreviation {
   Fr = 'fr',
   It = 'it',
   Bg = 'bg',
+  Ar = 'ar',
 }
 
 export const LanguageAbbreviationMap = {
@@ -93,7 +98,7 @@ export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.Zh]: '简体中文',
   [LanguageAbbreviation.ZhTraditional]: '繁體中文',
   [LanguageAbbreviation.Ru]: 'Русский',
-  [LanguageAbbreviation.Id]: 'Indonesia',
+  [LanguageAbbreviation.Id]: 'Bahasa Indonesia',
   [LanguageAbbreviation.Es]: 'Español',
   [LanguageAbbreviation.Vi]: 'Tiếng việt',
   [LanguageAbbreviation.Ja]: '日本語',
@@ -102,19 +107,23 @@ export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.Fr]: 'Français',
   [LanguageAbbreviation.It]: 'Italiano',
   [LanguageAbbreviation.Bg]: 'Български',
+  [LanguageAbbreviation.Ar]: 'العربية',
 };
 
 export const LanguageTranslationMap = {
   English: 'en',
-  Chinese: 'zh',
-  'Traditional Chinese': 'zh-TRADITIONAL',
+  Chinese: 'zh-Hans',
+  'Traditional Chinese': 'zh-Hant',
   Russian: 'ru',
   Indonesian: 'id',
+  Indonesia: 'id',
   Spanish: 'es',
   Vietnamese: 'vi',
   Japanese: 'ja',
   Korean: 'ko',
-  'Portuguese BR': 'pt-br',
+  'Portuguese BR': 'pt-BR',
+  'pt-br': 'pt-BR',
+  'pt-BR': 'pt-BR',
   German: 'de',
   French: 'fr',
   Italian: 'it',
@@ -126,6 +135,7 @@ export const LanguageTranslationMap = {
   Hindi: 'hi',
   Ukrainian: 'uk',
   Bulgarian: 'bg',
+  Arabic: 'ar',
 };
 
 export enum FileMimeType {

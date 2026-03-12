@@ -1,11 +1,7 @@
 import { FileUploadProps } from '@/components/file-upload';
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
-import {
-  AgentCategory,
-  AgentGlobals,
-  initialBeginValues,
-} from '@/constants/agent';
+import { AgentCategory, AgentGlobals } from '@/constants/agent';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import {
   IAgentLogResponse,
@@ -22,7 +18,6 @@ import {
   IDebugSingleRequestBody,
 } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
-import { BeginId } from '@/pages/agent/constant';
 import { IInputs } from '@/pages/agent/interface';
 import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
 import agentService, {
@@ -77,50 +72,6 @@ export const enum AgentApiAction {
   DeleteAgentSession = 'deleteAgentSession',
   FetchSessionByIdManually = 'fetchSessionByIdManually',
 }
-
-export const EmptyDsl = {
-  graph: {
-    nodes: [
-      {
-        id: BeginId,
-        type: 'beginNode',
-        position: {
-          x: 50,
-          y: 200,
-        },
-        data: {
-          label: 'Begin',
-          name: 'begin',
-          form: initialBeginValues,
-        },
-        sourcePosition: 'left',
-        targetPosition: 'right',
-      },
-    ],
-    edges: [],
-  },
-  components: {
-    begin: {
-      obj: {
-        component_name: 'Begin',
-        params: {},
-      },
-      downstream: [], // other edge target is downstream, edge source is current node id
-      upstream: [], // edge source is upstream, edge target is current node id
-    },
-  },
-  retrieval: [], // reference
-  history: [],
-  path: [],
-  variables: [],
-  globals: {
-    [AgentGlobals.SysQuery]: '',
-    [AgentGlobals.SysUserId]: '',
-    [AgentGlobals.SysConversationTurns]: 0,
-    [AgentGlobals.SysFiles]: [],
-    [AgentGlobals.SysHistory]: [],
-  },
-};
 
 export const useFetchAgentTemplates = () => {
   const { data } = useQuery<IFlowTemplate[]>({
@@ -355,6 +306,7 @@ export const useSetAgent = (showMessage: boolean = true) => {
       dsl?: Record<string, any>;
       avatar?: string;
       canvas_category?: string;
+      release?: string;
     }) => {
       const { data = {} } = await agentService.setCanvas(params);
       if (data.code === 0) {
@@ -405,7 +357,7 @@ export const useUploadCanvasFile = () => {
         }
         return data;
       } catch (error) {
-        message.error('error');
+        message.error(error as string);
       }
     },
   });
@@ -413,9 +365,7 @@ export const useUploadCanvasFile = () => {
   return { data, loading, uploadCanvasFile: mutateAsync };
 };
 
-export const useUploadCanvasFileWithProgress = (
-  identifier?: Nullable<string>,
-) => {
+export const useUploadCanvasFileWithProgress = (identifier?: string | null) => {
   const { id } = useParams();
 
   type UploadParameters = Parameters<NonNullable<FileUploadProps['onUpload']>>;
@@ -579,7 +529,7 @@ export const useFetchInputForm = (componentId?: string) => {
 export const useFetchVersionList = () => {
   const { id } = useParams();
   const { data, isFetching: loading } = useQuery<
-    Array<{ created_at: string; title: string; id: string }>
+    Array<{ created_at: string; title: string; id: string; release?: boolean }>
   >({
     queryKey: [AgentApiAction.FetchVersionList],
     initialData: [],

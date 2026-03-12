@@ -105,7 +105,13 @@ export function findInputFromList(eventList: IEventList) {
 }
 
 export function getLatestError(eventList: IEventList) {
-  return get(eventList.at(-1), 'data.outputs._ERROR');
+  const latest = eventList.at(-1) as
+    | { code?: number; message?: string }
+    | undefined;
+  return (
+    get(latest, 'data.outputs._ERROR') ||
+    (latest?.code && latest.code !== 0 ? latest?.message : undefined)
+  );
 }
 
 export const useGetBeginNodePrologue = () => {
@@ -218,13 +224,15 @@ export const useSendAgentMessage = ({
   isShared,
   refetch,
   isTaskMode: isTask,
+  releaseMode,
 }: {
   url?: string;
   addEventList?: (data: IEventList, messageId: string) => void;
-  beginParams?: any[];
+  beginParams?: BeginQuery[];
   isShared?: boolean;
   refetch?: () => void;
   isTaskMode?: boolean;
+  releaseMode?: string | null;
 }) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
@@ -232,9 +240,10 @@ export const useSendAgentMessage = ({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const { send, answerList, done, stopOutputMessage, resetAnswerList } =
     useSendMessageBySSE(url || api.runCanvas);
+  const firstAnswer = answerList[0];
   const messageId = useMemo(() => {
-    return answerList[0]?.message_id;
-  }, [answerList]);
+    return firstAnswer?.message_id;
+  }, [firstAnswer]);
 
   const isTaskMode = useIsTaskMode(isTask);
 
@@ -266,10 +275,12 @@ export const useSendAgentMessage = ({
   const { stopMessage } = useStopMessage();
 
   const stopConversation = useCallback(() => {
-    const taskId = answerList.at(0)?.task_id;
+    const taskId = firstAnswer?.task_id;
     stopOutputMessage();
-    stopMessage(taskId);
-  }, [answerList, stopMessage, stopOutputMessage]);
+    if (!isShared) {
+      stopMessage(taskId);
+    }
+  }, [firstAnswer, isShared, stopMessage, stopOutputMessage]);
 
   const sendMessage = useCallback(
     async ({
@@ -301,6 +312,9 @@ export const useSendAgentMessage = ({
         params.files = uploadResponseList;
 
         params.session_id = sessionId || exploreSessionId;
+        if (releaseMode) {
+          params.release = releaseMode;
+        }
       }
 
       try {
@@ -332,6 +346,7 @@ export const useSendAgentMessage = ({
       setValue,
       removeLatestMessage,
       refetch,
+      releaseMode,
     ],
   );
 
@@ -343,10 +358,14 @@ export const useSendAgentMessage = ({
           .join('<br/>'),
         role: MessageType.User,
       });
-      await send({ ...body, session_id: sessionId });
+      await send({
+        ...body,
+        session_id: sessionId,
+        ...(releaseMode ? { release: releaseMode } : {}),
+      });
       refetch?.();
     },
-    [addNewestOneQuestion, refetch, send, sessionId],
+    [addNewestOneQuestion, refetch, releaseMode, send, sessionId],
   );
 
   // reset session
@@ -394,7 +413,7 @@ export const useSendAgentMessage = ({
     ],
   );
 
-  const sendedTaskMessage = useRef<boolean>(false);
+  const sendedTaskMessage = useRef(false);
 
   const sendMessageInTaskMode = useCallback(() => {
     if (isShared || !isTaskMode || sendedTaskMessage.current) {
@@ -455,10 +474,10 @@ export const useSendAgentMessage = ({
   }, [addEventList, answerList, addEventListFun, messageId]);
 
   useEffect(() => {
-    if (answerList[0]?.session_id) {
-      setSessionId(answerList[0]?.session_id);
+    if (firstAnswer?.session_id) {
+      setSessionId(firstAnswer.session_id);
     }
-  }, [answerList]);
+  }, [firstAnswer]);
 
   return {
     value,

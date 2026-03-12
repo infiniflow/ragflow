@@ -28,6 +28,7 @@ export default {
       traditionalChinese: 'Традиционен китайски',
       russian: 'Руски',
       bulgarian: 'Български',
+      arabic: 'Арабски',
       language: 'Език',
       languageMessage: 'Моля, въведете вашия език!',
       languagePlaceholder: 'изберете вашия език',
@@ -998,6 +999,8 @@ The above is the content you need to summarize.`,
         'Свържете GitHub за синхронизиране на pull requests и issues за извличане.',
       airtableDescription:
         'Свържете се с Airtable и синхронизирайте файлове от определена таблица в определено работно пространство.',
+      dingtalkAITableDescription:
+        'Свържете се с Dingtalk AI Table и синхронизирайте записи от определена таблица.',
       gitlabDescription:
         'Свържете GitLab за синхронизиране на хранилища, issues, merge requests и свързана документация.',
       asanaDescription:
@@ -1137,6 +1140,8 @@ The above is the content you need to summarize.`,
         'Ако вашият API ключ е от OpenAI, просто го игнорирайте. Всеки друг междинен доставчик ще предостави този base url с API ключа.',
       tongyiBaseUrlTip:
         'За китайски потребители не е необходимо да попълвате или използвайте https://dashscope.aliyuncs.com/compatible-mode/v1. За международни потребители използвайте https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'За китайски потребители не е необходимо да попълвате или използвайте https://api.siliconflow.cn/v1. За международни потребители използвайте https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Само за международни потребители, вижте съвета)',
       minimaxBaseUrlTip:
@@ -1912,11 +1917,12 @@ The above is the content you need to summarize.`,
         'Компонент, който форматира изхода на други компоненти. 1. Поддържа Jinja2 шаблони, 2. Едновременно запазва оригиналния метод за заместване на низове с {parameter}',
       emailComponent: 'Имейл',
       emailDescription: 'Изпращане на имейл до определен адрес.',
-      smtpServer: 'SMTP сървър',
+      smtpServer: 'SMTP хост',
       smtpPort: 'SMTP порт',
-      senderEmail: 'Имейл на подателя',
-      authCode: 'Код за оторизация',
-      senderName: 'Име на подателя',
+      senderEmail: 'Адрес на подателя (From)',
+      smtpUsername: 'SMTP потребителско име',
+      authCode: 'SMTP парола / парола за приложение',
+      senderName: 'Показвано име на подателя',
       toEmail: 'Имейл на получателя',
       ccEmail: 'Копие до',
       emailSubject: 'Тема',
@@ -2375,10 +2381,11 @@ Important structured information may include: names, dates, locations, events, k
       vietnamese: 'Виетнамски',
       russian: 'Руски',
       bulgarian: 'Български',
+      arabic: 'Арабски',
     },
     pagination: {
       total: 'Общо {{total}}',
-      page: '{{page}} /Страница',
+      page: '{{page}} / Страница',
     },
     dataflowParser: {
       result: 'Резултат',

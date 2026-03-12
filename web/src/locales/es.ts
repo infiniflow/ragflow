@@ -20,6 +20,7 @@ export default {
       chinese: 'Chino simplificado',
       traditionalChinese: 'Chino tradicional',
       bulgarian: 'Búlgaro',
+      arabic: 'Árabe',
       language: 'Idioma',
       languageMessage: '¡Por favor ingresa tu idioma!',
       languagePlaceholder: 'Selecciona tu idioma',
@@ -358,6 +359,8 @@ export default {
         'Si tu clave API es de OpenAI, ignora esto. Cualquier otro proveedor intermedio proporcionará esta URL base junto con la clave API.',
       tongyiBaseUrlTip:
         'Para usuarios chinos, no es necesario rellenar o usar https://dashscope.aliyuncs.com/compatible-mode/v1. Para usuarios internacionales, usar https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Para usuarios chinos, no es necesario rellenar o usar https://api.siliconflow.cn/v1. Para usuarios internacionales, usar https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Solo para usuarios internacionales, por favor ver consejo)',
       minimaxBaseUrlTip:
@@ -470,6 +473,8 @@ export default {
       apiVersionMessage: '¡Por favor ingresa la versión de la API!',
       modelsToBeAddedTooltip:
         'Si tu proveedor de modelos no aparece en la lista pero afirma ser compatible con OpenAI, selecciona la tarjeta OpenAI-API-compatible para añadir el/los modelo(s) correspondiente(s).',
+      dingtalkAITableDescription:
+        'Conéctese a Dingtalk AI Table y sincronice registros de una tabla especificada.',
     },
     message: {
       registered: '¡Registrado!',
@@ -931,6 +936,13 @@ export default {
       file: 'Archivo',
       knowledge: 'Conocimiento',
       chat: 'Chat',
+    },
+    language: {
+      english: 'Ingles',
+      chinese: 'Chino',
+      russian: 'Ruso',
+      bulgarian: 'Búlgaro',
+      arabic: 'Árabe',
     },
   },
 };

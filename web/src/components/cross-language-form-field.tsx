@@ -20,6 +20,7 @@ const Languages = [
   'Japanese',
   'Korean',
   'Vietnamese',
+  'Arabic',
 ];
 
 export const crossLanguageOptions = Languages.map((x) => ({
@@ -60,7 +61,7 @@ export const CrossLanguageFormField = ({
           <FormControl>
             <MultiSelect
               options={crossLanguageOptions}
-              placeholder={t('fileManager.pleaseSelect')}
+              placeholder={t('chat.crossLanguagePlaceholder')}
               maxCount={100}
               {...field}
               onValueChange={field.onChange}

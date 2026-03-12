@@ -1,13 +1,14 @@
 import i18n from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
+import { upperFirst } from 'lodash';
 import { initReactI18next } from 'react-i18next';
 
 import { LanguageAbbreviation } from '@/constants/common';
-import { createTranslationTable, flattenObject } from './until';
 
 import translation_en from './en';
 
 const languageImports: Record<string, () => Promise<{ default: any }>> = {
+  [LanguageAbbreviation.En]: () => import('./en'),
   [LanguageAbbreviation.Zh]: () => import('./zh'),
   [LanguageAbbreviation.ZhTraditional]: () => import('./zh-traditional'),
   [LanguageAbbreviation.Id]: () => import('./id'),
@@ -20,14 +21,25 @@ const languageImports: Record<string, () => Promise<{ default: any }>> = {
   [LanguageAbbreviation.Fr]: () => import('./fr'),
   [LanguageAbbreviation.It]: () => import('./it'),
   [LanguageAbbreviation.Bg]: () => import('./bg'),
+  [LanguageAbbreviation.Ar]: () => import('./ar'),
 };
 
-const enFlattened = flattenObject(translation_en);
+const supportedLanguageCodes: Intl.UnicodeBCP47LocaleIdentifier[] =
+  Object.keys(languageImports);
 
-export const translationTable = createTranslationTable(
-  [enFlattened],
-  ['English'],
-);
+export const supportedLanguages = supportedLanguageCodes.map((code) => {
+  const locale = new Intl.Locale(code);
+
+  return {
+    code,
+    locale,
+    displayName: upperFirst(
+      new Intl.DisplayNames(locale, { type: 'language' }).of(code)!,
+    ),
+  };
+});
+
+export const DEFAULT_LANGUAGE_CODE = LanguageAbbreviation.En;
 
 const resources = {
   [LanguageAbbreviation.En]: translation_en,
@@ -40,20 +52,23 @@ i18n
     detection: {
       lookupLocalStorage: 'lng',
     },
-    supportedLngs: Object.values(LanguageAbbreviation),
+    supportedLngs: supportedLanguageCodes,
     resources,
-    fallbackLng: 'en',
+    fallbackLng: DEFAULT_LANGUAGE_CODE,
     interpolation: {
       escapeValue: false,
     },
   });
 
 export const loadLanguageAsync = async (lng: string): Promise<void> => {
-  if (i18n.hasResourceBundle(lng, 'translation')) {
+  // const normalizedLng = normalizeLanguageCode(lng);
+  const normalizedLng = lng;
+
+  if (i18n.hasResourceBundle(normalizedLng, 'translation')) {
     return;
   }
 
-  const importFn = languageImports[lng];
+  const importFn = languageImports[normalizedLng];
   if (!importFn) {
     console.warn(`Language ${lng} is not supported for lazy loading`);
     return;
@@ -62,29 +77,34 @@ export const loadLanguageAsync = async (lng: string): Promise<void> => {
   try {
     const module = await importFn();
     const translationData = module.default?.translation || module.default;
-    i18n.addResourceBundle(lng, 'translation', translationData);
-
-    const flattened = flattenObject({ translation: translationData });
-    translationTable.push(flattened);
+    i18n.addResourceBundle(normalizedLng, 'translation', translationData);
   } catch (error) {
     console.error(`Failed to load language ${lng}:`, error);
   }
 };
 
 export const changeLanguageAsync = async (lng: string): Promise<void> => {
-  if (lng !== 'en' && !i18n.hasResourceBundle(lng, 'translation')) {
-    await loadLanguageAsync(lng);
+  // const normalizedLng = normalizeLanguageCode(lng);
+  const normalizedLng = lng;
+
+  if (
+    normalizedLng !== LanguageAbbreviation.En &&
+    !i18n.hasResourceBundle(normalizedLng, 'translation')
+  ) {
+    await loadLanguageAsync(normalizedLng);
   }
-  await i18n.changeLanguage(lng);
+  await i18n.changeLanguage(normalizedLng);
 };
 
 export const initLanguage = async (): Promise<void> => {
-  const currentLng = i18n.language || localStorage.getItem('lng') || 'en';
+  // const currentLng = normalizeLanguageCode(
+  //   i18n.language || localStorage.getItem('lng') || LanguageAbbreviation.En,
+  // );
 
-  if (currentLng !== 'en' && languageImports[currentLng]) {
-    await loadLanguageAsync(currentLng);
-    await i18n.changeLanguage(currentLng);
-  }
+  const currentLng =
+    i18n.language || localStorage.getItem('lng') || DEFAULT_LANGUAGE_CODE;
+
+  await changeLanguageAsync(currentLng);
 };
 
 export default i18n;

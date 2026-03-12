@@ -26,12 +26,15 @@ export function ConversationDropdown({
   const { t } = useTranslation();
   const { setConversationBoth } = useChatUrlParams();
   const { removeConversation } = useRemoveConversation();
-  const { isNew } = useGetChatSearchParams();
+  const { conversationId, isNew } = useGetChatSearchParams();
 
   const handleDelete: MouseEventHandler<HTMLDivElement> =
     useCallback(async () => {
       if (isNew === 'true' && removeTemporaryConversation) {
         removeTemporaryConversation(conversation.id);
+        if (conversationId === conversation.id) {
+          setConversationBoth('', '');
+        }
       } else {
         const code = await removeConversation([conversation.id]);
         if (code === 0) {
@@ -40,6 +43,7 @@ export function ConversationDropdown({
       }
     }, [
       conversation.id,
+      conversationId,
       isNew,
       removeConversation,
       removeTemporaryConversation,
@@ -59,6 +63,8 @@ export function ConversationDropdown({
             onClick={(e) => {
               e.stopPropagation();
             }}
+            data-testid="chat-detail-session-delete"
+            data-session-id={conversation.id}
           >
             {t('common.delete')} <Trash2 />
           </DropdownMenuItem>
