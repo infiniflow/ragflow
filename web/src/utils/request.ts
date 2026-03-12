@@ -117,10 +117,12 @@ request.interceptors.response.use(async (response: Response, options) => {
     if (!isRedirecting) {
       isRedirecting = true;
 
-      const data = await response.clone().json().catch(() => ({}));
+      const data = await response
+        .clone()
+        .json()
+        .catch(() => ({}));
 
-      const messageText =
-        data?.message || RetcodeMessage[401];
+      const messageText = data?.message || RetcodeMessage[401];
       notification.error({
         message: messageText,
         description: messageText,

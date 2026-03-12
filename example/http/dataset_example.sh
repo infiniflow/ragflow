@@ -41,6 +41,12 @@ curl --request GET \
      --url http://127.0.0.1:9380/api/v1/datasets \
      --header 'Authorization: Bearer ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm'
 
+# List datasets with parsing status
+echo -e "\n-- List datasets with parsing status"
+curl --request GET \
+     --url 'http://127.0.0.1:9380/api/v1/datasets?include_parsing_status=true' \
+     --header 'Authorization: Bearer ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm'
+
 # Delete datasets
 echo -e "\n-- Delete datasets"
 curl --request DELETE \

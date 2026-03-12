@@ -26,7 +26,7 @@ import (
 
 	"go.uber.org/zap"
 
-	rag "ragflow/internal/go_binding"
+	rag "ragflow/internal/binding"
 	"ragflow/internal/logger"
 )
 

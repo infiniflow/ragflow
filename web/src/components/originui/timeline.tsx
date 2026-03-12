@@ -80,7 +80,7 @@ function TimelineContent({
   return (
     <div
       data-slot="timeline-content"
-      className={cn('text-muted-foreground text-sm', className)}
+      className={cn('text-text-secondary text-sm', className)}
       {...props}
     />
   );
@@ -102,7 +102,7 @@ function TimelineDate({
     <Comp
       data-slot="timeline-date"
       className={cn(
-        'text-muted-foreground mb-1 block text-xs font-medium group-data-[orientation=vertical]/timeline:max-sm:h-4',
+        'text-text-secondary mb-1 block text-xs font-medium group-data-[orientation=vertical]/timeline:max-sm:h-4',
         className,
       )}
       {...props}
@@ -158,7 +158,10 @@ function TimelineItem({ step, className, ...props }: TimelineItemProps) {
     <div
       data-slot="timeline-item"
       className={cn(
-        'group/timeline-item has-[+[data-completed]]:[&_[data-slot=timeline-separator]]:bg-primary relative flex flex-1 flex-col gap-0.5 group-data-[orientation=horizontal]/timeline:mt-8 group-data-[orientation=horizontal]/timeline:not-last:pe-8 group-data-[orientation=vertical]/timeline:ms-8 group-data-[orientation=vertical]/timeline:not-last:pb-12',
+        'group/timeline-item has-[+[data-completed]]:[&_[data-slot=timeline-separator]]:bg-primary',
+        'relative flex flex-1 flex-col gap-0.5',
+        'group-data-[orientation=horizontal]/timeline:mt-8 group-data-[orientation=horizontal]/timeline:not-last:pe-8',
+        'group-data-[orientation=vertical]/timeline:ms-8 group-data-[orientation=vertical]/timeline:not-last:pb-12',
         className,
       )}
       data-completed={step <= activeStep || undefined}
@@ -176,7 +179,12 @@ function TimelineSeparator({
     <div
       data-slot="timeline-separator"
       className={cn(
-        'bg-primary/10 absolute self-start group-last/timeline-item:hidden group-data-[orientation=horizontal]/timeline:-top-6 group-data-[orientation=horizontal]/timeline:h-0.5 group-data-[orientation=horizontal]/timeline:w-[calc(100%-1rem-0.25rem)] group-data-[orientation=horizontal]/timeline:translate-x-4.5 group-data-[orientation=horizontal]/timeline:-translate-y-1/2 group-data-[orientation=vertical]/timeline:-left-6 group-data-[orientation=vertical]/timeline:h-[calc(100%-1rem-0.25rem)] group-data-[orientation=vertical]/timeline:w-0.5 group-data-[orientation=vertical]/timeline:-translate-x-1/2 group-data-[orientation=vertical]/timeline:translate-y-4.5',
+        'bg-primary/10 absolute self-start group-last/timeline-item:hidden',
+        'group-data-[orientation=horizontal]/timeline:-top-6 group-data-[orientation=horizontal]/timeline:h-0.5',
+        'group-data-[orientation=horizontal]/timeline:w-[calc(100%-1rem-0.25rem)] group-data-[orientation=horizontal]/timeline:translate-x-4.5',
+        'group-data-[orientation=horizontal]/timeline:-translate-y-1/2 group-data-[orientation=vertical]/timeline:-left-6',
+        'group-data-[orientation=vertical]/timeline:h-[calc(100%-1rem-0.25rem)] group-data-[orientation=vertical]/timeline:w-0.5',
+        'group-data-[orientation=vertical]/timeline:-translate-x-1/2 group-data-[orientation=vertical]/timeline:translate-y-4.5',
         className,
       )}
       aria-hidden="true"
@@ -208,10 +216,8 @@ interface TimelineIndicatorNodeProps {
   indicatorBorderColor?: string;
 }
 interface TimelineNode
-  extends Omit<
-      React.HTMLAttributes<HTMLDivElement>,
-      'id' | 'title' | 'content'
-    >,
+  extends
+    Omit<React.HTMLAttributes<HTMLDivElement>, 'id' | 'title' | 'content'>,
     TimelineIndicatorNodeProps {
   id: string | number;
   title?: React.ReactNode;
@@ -231,7 +237,7 @@ interface CustomTimelineProps extends React.HTMLAttributes<HTMLDivElement> {
   nodeSize?: string | number;
   onStepChange?: (step: number, id: string | number) => void;
   orientation?: 'horizontal' | 'vertical';
-  lineStyle?: 'solid' | 'dashed';
+  lineStyle?: 'solid' | 'dashed' | 'none';
   lineColor?: string;
   indicatorColor?: string;
   defaultValue?: number;
@@ -254,7 +260,7 @@ const CustomTimeline = ({
 }: CustomTimelineProps) => {
   const [internalActiveStep, setInternalActiveStep] =
     React.useState(defaultValue);
-  const _lineColor = `rgb(${parseColorToRGB(lineColor)})`;
+  // const _lineColor = `rgb(${parseColorToRGB(lineColor)})`;
   const currentActiveStep = activeStep ?? internalActiveStep;
 
   const handleStepChange = (step: number, id: string | number) => {
@@ -281,7 +287,7 @@ const CustomTimeline = ({
         const _nodeSizeTemp =
           isActive && _activeStyle?.nodeSize
             ? _activeStyle?.nodeSize
-            : node.nodeSize ?? nodeSize;
+            : (node.nodeSize ?? nodeSize);
         const _nodeSize =
           typeof _nodeSizeTemp === 'number'
             ? `${_nodeSizeTemp}px`
@@ -302,25 +308,22 @@ const CustomTimeline = ({
           >
             <TimelineSeparator
               className={cn(
+                'border-0.5 border-border-default',
                 'group-data-[orientation=horizontal]/timeline:-top-6 group-data-[orientation=horizontal]/timeline:h-0.1  group-data-[orientation=horizontal]/timeline:-translate-y-1/2',
                 'group-data-[orientation=vertical]/timeline:-left-6 group-data-[orientation=vertical]/timeline:w-0.1 group-data-[orientation=vertical]/timeline:-translate-x-1/2 ',
                 // `group-data-[orientation=horizontal]/timeline:w-[calc(100%-0.5rem-1rem)] group-data-[orientation=vertical]/timeline:h-[calc(100%-1rem-1rem)] group-data-[orientation=vertical]/timeline:translate-y-7 group-data-[orientation=horizontal]/timeline:translate-x-7`,
               )}
               style={{
-                border:
-                  lineStyle === 'dashed'
-                    ? `1px dashed ${isActive ? _activeStyle.lineColor || _lineColor : _lineColor}`
-                    : lineStyle === 'solid'
-                      ? `1px solid ${isActive ? _activeStyle.lineColor || _lineColor : _lineColor}`
-                      : 'none',
+                borderStyle: lineStyle,
+                // borderColor: isActive ? _activeStyle.lineColor || _lineColor : _lineColor,
                 backgroundColor: 'transparent',
                 width:
                   orientation === 'horizontal'
-                    ? `calc(100% - ${_nodeSize} - 2px - 0.1rem)`
+                    ? `calc(100% - ${_nodeSize})`
                     : '1px',
                 height:
                   orientation === 'vertical'
-                    ? `calc(100% - ${_nodeSize} - 2px - 0.1rem)`
+                    ? `calc(100% - ${_nodeSize})`
                     : '1px',
                 transform: `translate(${
                   orientation === 'horizontal' ? `${_nodeSize}` : '0'
@@ -330,9 +333,11 @@ const CustomTimeline = ({
 
             <TimelineIndicator
               className={cn(
-                'flex items-center justify-center p-1',
-                isCompleted && 'bg-primary border-primary',
-                !isCompleted && 'border-text-secondary bg-bg-base',
+                'flex items-center justify-center p-1 border bg-bg-card',
+                isCompleted
+                  ? 'border-border-accent text-text-primary'
+                  : 'border-border-default text-text-secondary',
+                isActive && 'text-accent-primary bg-accent-primary/10',
               )}
               style={{
                 width: _nodeSize,
@@ -347,29 +352,15 @@ const CustomTimeline = ({
                 //   : isCompleted
                 //     ? indicatorColor
                 //     : '',
-                backgroundColor: isActive
-                  ? _activeStyle.indicatorBgColor ||
-                    `rgba(${r}, ${g}, ${b}, 0.1)`
-                  : isCompleted
-                    ? `rgba(${r}, ${g}, ${b}, 0.1)`
-                    : '',
+                // backgroundColor: isActive
+                //   ? _activeStyle.indicatorBgColor ||
+                //     `rgba(${r}, ${g}, ${b}, 0.1)`
+                //   : isCompleted
+                //     ? `rgba(${r}, ${g}, ${b}, 0.1)`
+                //     : '',
               }}
             >
-              {node.icon && (
-                <div
-                  className={cn(
-                    'text-current',
-                    `w-[${_nodeSize}] h-[${_nodeSize}]`,
-                    isActive &&
-                      `text-primary w-[${_activeStyle.nodeSize || _nodeSize}] h-[${_activeStyle.nodeSize || _nodeSize}]`,
-                  )}
-                  style={{
-                    color: isActive ? _activeStyle.iconColor : undefined,
-                  }}
-                >
-                  {node.icon}
-                </div>
-              )}
+              {node.icon}
             </TimelineIndicator>
 
             <TimelineHeader className="transform -translate-x-[40%] text-center">

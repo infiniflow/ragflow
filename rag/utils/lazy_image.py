@@ -88,6 +88,19 @@ class LazyDocxImage:
         self.close()
         return False
 
+    @staticmethod
+    def merge(a, b):
+        """
+        Merge two LazyDocxImage instances by combining their blob lists.
+        """
+        a_blobs = a._blobs if isinstance(a, LazyDocxImage) else []
+        b_blobs = b._blobs if isinstance(b, LazyDocxImage) else []
+        combined = a_blobs + b_blobs
+        if not combined:
+            return None
+        merged = LazyDocxImage(combined)
+        return merged
+
 
 def ensure_pil_image(img):
     if isinstance(img, Image.Image):

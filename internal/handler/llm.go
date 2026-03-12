@@ -21,6 +21,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
 )
@@ -60,50 +61,84 @@ func NewLLMHandler(llmService *service.LLMService, userService *service.UserServ
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/llm/my_llms [get]
 func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
-	// Extract token from request
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	// Get user by token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	// Get tenant ID from user
 	tenantID := user.ID
-	if tenantID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "User has no tenant ID",
-		})
-		return
-	}
-
-	// Parse include_details query parameter
 	includeDetailsStr := c.DefaultQuery("include_details", "false")
 	includeDetails := includeDetailsStr == "true"
 
-	// Get LLMs for tenant
 	llms, err := h.llmService.GetMyLLMs(tenantID, includeDetails)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get LLMs",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeExceptionError,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"data": llms,
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    llms,
+	})
+}
+
+// SetAPIKey set API key for a LLM factory
+// @Summary Set API Key
+// @Description Set API key for a LLM factory and test connectivity
+// @Tags llm
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body service.SetAPIKeyRequest true "API Key configuration"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/llm/set_api_key [post]
+func (h *LLMHandler) SetAPIKey(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.SetAPIKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"message": "Invalid request: " + err.Error(),
+			"data":    false,
+		})
+		return
+	}
+
+	tenantID := user.ID
+	result, err := h.llmService.SetAPIKey(tenantID, &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+
+	if req.Verify {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeSuccess,
+			"message": "success",
+			"data":    result,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    true,
 	})
 }
 
@@ -117,23 +152,9 @@ func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 // @Success 200 {array} FactoryResponse
 // @Router /v1/llm/factories [get]
 func (h *LLMHandler) Factories(c *gin.Context) {
-	// Extract token from request
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by token
-	_, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -198,52 +219,29 @@ func (h *LLMHandler) Factories(c *gin.Context) {
 // @Success 200 {object} map[string][]service.LLMListItem
 // @Router /v1/llm/list [get]
 func (h *LLMHandler) ListApp(c *gin.Context) {
-	// Extract token from request
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	// Get user by token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	// Get tenant ID from user
 	tenantID := user.ID
-	if tenantID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "User has no tenant ID",
-		})
-		return
-	}
 
-	// Parse model_type query parameter
 	modelType := c.Query("model_type")
 
-	// Get LLM list
 	llms, err := h.llmService.ListLLMs(tenantID, modelType)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeExceptionError,
 			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    llms,
+		"code":    common.CodeSuccess,
 		"message": "success",
+		"data":    llms,
 	})
 }

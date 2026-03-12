@@ -149,7 +149,7 @@ request.interceptors.response.use(
     console.log('🚀 ~ error:', error);
 
     // Handle HTTP 401 (token expired / invalid)
-     const status = error?.response?.status;
+    const status = error?.response?.status;
     if (status === 401) {
       if (!isRedirecting) {
         isRedirecting = true;
@@ -164,8 +164,8 @@ request.interceptors.response.use(
         redirectToLogin();
       }
 
-    return Promise.reject(error);
-  }
+      return Promise.reject(error);
+    }
 
     errorHandler(error);
     return Promise.reject(error);

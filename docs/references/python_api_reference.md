@@ -230,19 +230,23 @@ dataset = rag_object.create_dataset(name="kb_1")
 ### Delete datasets
 
 ```python
-RAGFlow.delete_datasets(ids: list[str] | None = None)
+RAGFlow.delete_datasets(ids: list[str] | None = None, delete_all: bool = False)
 ```
 
 Deletes datasets by ID.
 
 #### Parameters
 
-##### ids: `list[str]` or `None`, *Required*
+##### ids: `list[str]` or `None`
 
 The IDs of the datasets to delete. Defaults to `None`.
 
 - If omitted, or set to `null` or an empty array, no datasets are deleted.
 - If an array of IDs is provided, only the datasets matching those IDs are deleted.
+
+##### delete_all: `bool`
+
+Whether to delete all datasets owned by the current user when `ids` is omitted, or set to `None` or an empty list. Defaults to `False`.
 
 #### Returns
 
@@ -253,6 +257,7 @@ The IDs of the datasets to delete. Defaults to `None`.
 
 ```python
 rag_object.delete_datasets(ids=["d94a8dc02c9711f0930f7fbc369eab6d","e94a8dc02c9711f0930f7fbc369eab6e"])
+rag_object.delete_datasets(delete_all=True)
 ```
 
 ---
@@ -266,7 +271,8 @@ RAGFlow.list_datasets(
     orderby: str = "create_time", 
     desc: bool = True,
     id: str = None,
-    name: str = None
+    name: str = None,
+    include_parsing_status: bool = False
 ) -> list[DataSet]
 ```
 
@@ -301,6 +307,16 @@ The ID of the dataset to retrieve. Defaults to `None`.
 
 The name of the dataset to retrieve. Defaults to `None`.
 
+##### include_parsing_status: `bool`
+
+Whether to include document parsing status counts in each returned `DataSet` object. Defaults to `False`. When set to `True`, each `DataSet` object will include the following additional attributes:
+
+- `unstart_count`: `int` Number of documents not yet started parsing.
+- `running_count`: `int` Number of documents currently being parsed.
+- `cancel_count`: `int` Number of documents whose parsing was cancelled.
+- `done_count`: `int` Number of documents that have been successfully parsed.
+- `fail_count`: `int` Number of documents whose parsing failed.
+
 #### Returns
 
 - Success: A list of `DataSet` objects.
@@ -320,6 +336,13 @@ for dataset in rag_object.list_datasets():
 ```python
 dataset = rag_object.list_datasets(id = "id_1")
 print(dataset[0])
+```
+
+##### List datasets with parsing status
+
+```python
+for dataset in rag_object.list_datasets(include_parsing_status=True):
+    print(dataset.done_count, dataset.fail_count, dataset.running_count)
 ```
 
 ---
@@ -654,7 +677,7 @@ for doc in dataset.list_documents(keywords="rag", page=0, page_size=12):
 ### Delete documents
 
 ```python
-DataSet.delete_documents(ids: list[str] = None)
+DataSet.delete_documents(ids: list[str] | None = None, delete_all: bool = False)
 ```
 
 Deletes documents by ID.
@@ -667,6 +690,10 @@ The IDs of the documents to delete. Defaults to `None`.
 
 - If omitted, or set to `null` or an empty array, no documents are deleted.
 - If an array of IDs is provided, only the documents matching those IDs are deleted.
+
+##### delete_all: `bool`
+
+Whether to delete all documents in the current dataset when `ids` is omitted, or set to `None` or an empty list. Defaults to `False`.
 
 #### Returns
 
@@ -682,6 +709,7 @@ rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:
 dataset = rag_object.list_datasets(name="kb_1")
 dataset = dataset[0]
 dataset.delete_documents(ids=["id_1","id_2"])
+dataset.delete_documents(delete_all=True)
 ```
 
 ---
@@ -925,19 +953,23 @@ for chunk in docs[0].list_chunks(keywords="rag", page=0, page_size=12):
 ### Delete chunks
 
 ```python
-Document.delete_chunks(chunk_ids: list[str])
+Document.delete_chunks(ids: list[str] | None = None, delete_all: bool = False)
 ```
 
 Deletes chunks by ID.
 
 #### Parameters
 
-##### chunk_ids: `list[str]`
+##### ids: `list[str]` or `None`
 
 The IDs of the chunks to delete. Defaults to `None`.
 
 - If omitted, or set to `null` or an empty array, no chunks are deleted.
 - If an array of IDs is provided, only the chunks matching those IDs are deleted.
+
+##### delete_all: `bool`
+
+Whether to delete all chunks in the current document when `ids` is omitted, or set to `None` or an empty list. Defaults to `False`.
 
 #### Returns
 
@@ -956,6 +988,7 @@ doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
 chunk = doc.add_chunk(content="xxxxxxx")
 doc.delete_chunks(["id_1","id_2"])
+doc.delete_chunks(delete_all=True)
 ```
 
 ---
@@ -1231,19 +1264,23 @@ assistant.update({"name": "Stefan", "llm": {"temperature": 0.8}, "prompt": {"top
 ### Delete chat assistants
 
 ```python
-RAGFlow.delete_chats(ids: list[str] = None)
+RAGFlow.delete_chats(ids: list[str] | None = None, delete_all: bool = False)
 ```
 
 Deletes chat assistants by ID.
 
 #### Parameters
 
-##### ids: `list[str]`
+##### ids: `list[str]` or `None`
 
 The IDs of the chat assistants to delete. Defaults to `None`.
 
 - If omitted, or set to `null` or an empty array, no chat assistants are deleted.
 - If an array of IDs is provided, only the chat assistants matching those IDs are deleted.
+
+##### delete_all: `bool`
+
+Whether to delete all chat assistants owned by the current user when `ids` is omitted, or set to `None` or an empty list. Defaults to `False`.
 
 #### Returns
 
@@ -1257,6 +1294,7 @@ from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 rag_object.delete_chats(ids=["id_1","id_2"])
+rag_object.delete_chats(delete_all=True)
 ```
 
 ---
@@ -1463,19 +1501,23 @@ for session in assistant.list_sessions():
 ### Delete chat assistant's sessions
 
 ```python
-Chat.delete_sessions(ids:list[str] = None)
+Chat.delete_sessions(ids: list[str] | None = None, delete_all: bool = False)
 ```
 
 Deletes sessions of the current chat assistant by ID.
 
 #### Parameters
 
-##### ids: `list[str]`
+##### ids: `list[str]` or `None`
 
 The IDs of the sessions to delete. Defaults to `None`.
 
 - If omitted, or set to `null` or an empty array, no sessions are deleted.
 - If an array of IDs is provided, only the sessions matching those IDs are deleted.
+
+##### delete_all: `bool`
+
+Whether to delete all sessions of the current chat assistant when `ids` is omitted, or set to `None` or an empty list. Defaults to `False`.
 
 #### Returns
 
@@ -1491,6 +1533,7 @@ rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:
 assistant = rag_object.list_chats(name="Miss R")
 assistant = assistant[0]
 assistant.delete_sessions(ids=["id_1","id_2"])
+assistant.delete_sessions(delete_all=True)
 ```
 
 ---
@@ -1784,19 +1827,23 @@ for session in sessions:
 ### Delete agent's sessions
 
 ```python
-Agent.delete_sessions(ids: list[str] = None)
+Agent.delete_sessions(ids: list[str] | None = None, delete_all: bool = False)
 ```
 
 Deletes sessions of an agent by ID.
 
 #### Parameters
 
-##### ids: `list[str]`
+##### ids: `list[str]` or `None`
 
 The IDs of the sessions to delete. Defaults to `None`.
 
-- If omitted, or set to `null` or an empty array, no sessions are deleted.
+- If omitted, or set to `None` or an empty array, no sessions are deleted.
 - If an array of IDs is provided, only the sessions matching those IDs are deleted.
+
+##### delete_all: `bool`
+
+Whether to delete all sessions of the current agent when `ids` is omitted, or set to `None` or an empty list. Defaults to `False`.
 
 #### Returns
 
@@ -1812,6 +1859,7 @@ rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:
 AGENT_id = "AGENT_ID"
 agent = rag_object.list_agents(id = AGENT_id)[0]
 agent.delete_sessions(ids=["id_1","id_2"])
+agent.delete_sessions(delete_all=True)
 ```
 
 ---

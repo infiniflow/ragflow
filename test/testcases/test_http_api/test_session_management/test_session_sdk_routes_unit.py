@@ -762,7 +762,7 @@ def test_openai_nonstream_branch_unit(monkeypatch):
 
     res = _run(inspect.unwrap(module.chat_completion_openai_like)("tenant-1", "chat-1"))
     assert res["choices"][0]["message"]["content"] == "world"
-
+    
 
 @pytest.mark.p2
 def test_agents_openai_compatibility_unit(monkeypatch):

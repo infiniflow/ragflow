@@ -21,6 +21,7 @@ import { ExportFileType } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 import { PromptEditor } from '../components/prompt-editor';
+import { UserIdFormField } from '../components/user-id-form-field';
 import { useShowWebhookResponseStatus } from './use-show-response-status';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
@@ -42,6 +43,7 @@ function MessageForm({ node }: INextOperatorForm) {
     auto_play: z.boolean().optional(),
     status: z.number().optional(),
     memory_ids: z.array(z.string()).optional(),
+    user_id: z.string().optional(),
   });
 
   const form = useForm({
@@ -163,6 +165,7 @@ function MessageForm({ node }: INextOperatorForm) {
           </>
         )}
         <MemoriesFormField label={t('flow.saveToMemory')}></MemoriesFormField>
+        <UserIdFormField></UserIdFormField>
       </FormWrapper>
     </Form>
   );

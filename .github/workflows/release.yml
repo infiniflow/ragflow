@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: [ "self-hosted", "ragflow-test" ]
+    runs-on: [ "self-hosted", "ragflow-release" ]
     steps:
       - name: Ensure workspace ownership
         run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}

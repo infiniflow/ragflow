@@ -121,6 +121,7 @@ class Invoke(ComponentBase, ABC):
                     else:
                         response = requests.post(url=url, data=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
                     if self._param.clean_html:
+                        sections = HtmlParser()(None, response.content)
                         self.set_output("result", "\n".join(sections))
                     else:
                         self.set_output("result", response.text)

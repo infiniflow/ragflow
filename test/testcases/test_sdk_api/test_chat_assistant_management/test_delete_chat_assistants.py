@@ -64,7 +64,7 @@ class TestChatAssistantsDelete:
         "payload",
         [
             pytest.param(lambda r: {"ids": ["invalid_id"] + r}, marks=pytest.mark.p3),
-            pytest.param(lambda r: {"ids": r[:1] + ["invalid_id"] + r[1:5]}, marks=pytest.mark.p1),
+            pytest.param(lambda r: {"ids": r[:1] + ["invalid_id"] + r[1:5]}, marks=pytest.mark.p3),
             pytest.param(lambda r: {"ids": r + ["invalid_id"]}, marks=pytest.mark.p3),
         ],
     )

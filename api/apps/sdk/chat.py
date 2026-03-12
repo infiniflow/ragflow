@@ -239,7 +239,12 @@ async def delete_chats(tenant_id):
 
     ids = req.get("ids")
     if not ids:
-        return get_result()
+        if req.get("delete_all") is True:
+            ids = [d.id for d in DialogService.query(tenant_id=tenant_id, status=StatusEnum.VALID.value)]
+            if not ids:
+                return get_result()
+        else:
+            return get_result()
 
     id_list = ids
 

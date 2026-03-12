@@ -64,13 +64,14 @@ func (TenantLangfuse) TableName() string {
 
 // MyLLM represents LLM information for a tenant with factory details
 type MyLLM struct {
+	ID         string  `gorm:"column:id" json:"id"`
 	LLMFactory string  `gorm:"column:llm_factory" json:"llm_factory"`
 	Logo       *string `gorm:"column:logo" json:"logo,omitempty"`
-	Tags       string  `gorm:"column:tags" json:"tags"`
-	ModelType  string  `gorm:"column:model_type" json:"model_type"`
-	LLMName    string  `gorm:"column:llm_name" json:"llm_name"`
-	UsedTokens int64   `gorm:"column:used_tokens" json:"used_tokens"`
-	Status     string  `gorm:"column:status" json:"status"`
-	APIBase    string  `gorm:"column:api_base" json:"api_base,omitempty"`
-	MaxTokens  int64   `gorm:"column:max_tokens" json:"max_tokens,omitempty"`
+	Tags       *string `gorm:"column:tags" json:"tags"`
+	ModelType  *string `gorm:"column:model_type" json:"model_type"`
+	LLMName    *string `gorm:"column:llm_name" json:"llm_name"`
+	UsedTokens *int64  `gorm:"column:used_tokens" json:"used_tokens"`
+	Status     *string `gorm:"column:status" json:"status"`
+	APIBase    *string `gorm:"column:api_base" json:"api_base,omitempty"`
+	MaxTokens  *int64  `gorm:"column:max_tokens" json:"max_tokens,omitempty"`
 }

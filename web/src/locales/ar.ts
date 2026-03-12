@@ -132,9 +132,9 @@ export default {
       name: 'اسم',
       memoryNamePlaceholder: 'اسم الذاكرة',
       memoryType: 'نوع الذاكرة',
-      embeddingModel: 'نموذج التضمين',
+      embeddingModel: 'نموذج Embedding',
       selectModel: 'حدد النموذج',
-      llm: 'ماجستير',
+      llm: 'LLM',
       delMemoryWarn:
         'بعد الحذف، سيتم حذف كافة الرسائل الموجودة في هذه الذاكرة ولا يمكن للوكلاء استردادها.',
     },
@@ -170,7 +170,7 @@ export default {
       },
       config: {
         memorySizeTooltip:
-          'حسابات محتوى كل رسالة + ناقل التضمين الخاص بها (≈ المحتوى + الأبعاد × 8 بايت).\nمثال: رسالة بحجم 1 كيلو بايت مع تضمين 1024-dim تستخدم حوالي 9 كيلو بايت. يحتوي الحد الافتراضي البالغ 5 ميغابايت على 500 رسالة تقريبًا.',
+          'حسابات محتوى كل رسالة + ناقل Embedding الخاص بها (≈ المحتوى + الأبعاد × 8 بايت).\nمثال: رسالة بحجم 1 كيلو بايت مع Embedding 1024-dim تستخدم حوالي 9 كيلو بايت. يحتوي الحد الافتراضي البالغ 5 ميغابايت على 500 رسالة تقريبًا.',
         avatar: 'الصورة الرمزية',
         description: 'وصف',
         memorySize: 'حجم الذاكرة',
@@ -206,7 +206,7 @@ export default {
     knowledgeDetails: {
       metadata: {
         fields: 'الحقول',
-        selectFiles: 'الملفات {{count}} المحددة',
+        selectFiles: 'الملفات المحددة ({{count}})',
         type: 'يكتب',
         fieldNameInvalid:
           'يمكن أن يحتوي اسم الحقل على أحرف أو شرطات سفلية فقط.',
@@ -407,7 +407,7 @@ export default {
       autoQuestions: 'سؤال تلقائي',
       autoQuestionsTip:
         'قم باستخراج الأسئلة N تلقائيًا لكل مجموعة لزيادة تصنيفها للاستعلامات التي تحتوي على تلك الأسئلة. يمكنك التحقق من الأسئلة المضافة أو تحديثها لمقطع من قائمة المقاطع. لن تعطل هذه الميزة عملية التقسيم في حالة حدوث خطأ، إلا أنها قد تضيف نتيجة فارغة إلى المقطع الأصلي. انتبه إلى أنه سيتم استهلاك الرموز المميزة الإضافية بواسطة نموذج الفهرسة المحدد في "التكوين". للحصول على التفاصيل، راجع https://ragflow.io/docs/dev/autokeyword_autoquestion.',
-      redo: 'هل تريد مسح قطع {{chunkNum}} الموجودة؟',
+      redo: 'هل تريد مسح القطع الموجودة ({{chunkNum}})؟',
       setMetaData: 'تعيين البيانات الوصفية',
       pleaseInputJson: 'الرجاء إدخال JSON',
       documentMetaTips:
@@ -501,11 +501,11 @@ export default {
       languageMessage: 'يرجى إدخال لغتك!',
       languagePlaceholder: 'يرجى اختيار لغة المستند',
       permissions: 'الأذونات',
-      embeddingModel: 'نموذج التضمين',
+      embeddingModel: 'نموذج Embedding',
       chunkTokenNumber: 'حجم القطعة الموصى بها',
       chunkTokenNumberMessage: 'مطلوب رقم الرمز المميز للنص',
       embeddingModelTip:
-        'نموذج التضمين الافتراضي الذي تستخدمه قاعدة المعرفة. بمجرد أن تحتوي قاعدة المعرفة على أجزاء، عند تبديل نموذج التضمين، يقوم النظام بشكل عشوائي باختبار بعض القطع للتحقق من التوافق، ويعيد دمجها مع نموذج التضمين الجديد، ويحسب تشابه جيب التمام بين المتجهات الجديدة والقديمة. يُسمح بالتبديل فقط عندما يكون متوسط ​​تشابه العينة ≥ 0.9. بخلاف ذلك، يجب عليك حذف كافة الأجزاء الموجودة في قاعدة المعرفة قبل أن تتمكن من تغييرها.',
+        'نموذج Embedding الافتراضي الذي تستخدمه قاعدة المعرفة. بمجرد أن تحتوي قاعدة المعرفة على أجزاء، عند تبديل نموذج Embedding، يقوم النظام بشكل عشوائي باختبار بعض القطع للتحقق من التوافق، ويعيد دمجها مع نموذج Embedding الجديد، ويحسب تشابه جيب التمام بين المتجهات الجديدة والقديمة. يُسمح بالتبديل فقط عندما يكون متوسط ​​تشابه العينة ≥ 0.9. بخلاف ذلك، يجب عليك حذف كافة الأجزاء الموجودة في قاعدة المعرفة قبل أن تتمكن من تغييرها.',
       permissionsTip:
         'إذا تم تعيينه على "فريق"، فسيتمكن جميع أعضاء فريقك من إدارة قاعدة المعرفة.',
       chunkTokenNumberTip:
@@ -516,7 +516,7 @@ export default {
       english: 'إنجليزي',
       chinese: 'الصينية',
       portugueseBr: 'البرتغالية (البرازيل)',
-      embeddingModelPlaceholder: 'الرجاء تحديد نموذج التضمين.',
+      embeddingModelPlaceholder: 'الرجاء تحديد نموذج Embedding.',
       chunkMethodPlaceholder: 'يرجى اختيار طريقة التقسيم.',
       parserLabel: {
         naive: 'عام',
@@ -550,14 +550,14 @@ export default {
       naive:
         '<p>تنسيقات الملفات المدعومة هي <b>MD، MDX، DOCX، XLSX، XLS (Excel 97-2003)، PPTX، PDF، TXT، JPEG، JPG، PNG، TIF، GIF، CSV، JSON، EML، HTML</b>.</p>\n      <p> تقوم هذه الطريقة بتقطيع الملفات باستخدام طريقة "ساذجة": </p>\n      <p>\n      <li> استخدم نموذج اكتشاف الرؤية لتقسيم النصوص إلى أجزاء أصغر.</li>\n      <li>ثم، قم بدمج المقاطع المتجاورة حتى يتجاوز عدد الرموز المميزة الحد المحدد بواسطة "رقم القطعة المميزة للنص"، وعند هذه النقطة يتم إنشاء القطعة.</li></p>',
       paper:
-        '<p> يتم دعم ملف <b>PDF</b> فقط.</p><p>\n      سيتم تقسيم الأوراق حسب القسم، مثل <i>الملخص، 1.1، 1.2</i>. </p><p>\n      يمكّن هذا النهج LLM من تلخيص الورقة بشكل أكثر فعالية وتقديم استجابات أكثر شمولاً ومفهومة.\n      ومع ذلك، فإنه يزيد أيضًا من سياق محادثات الذكاء الاصطناعي ويضيف إلى التكلفة الحسابية لماجستير القانون. لذا، أثناء المحادثة، فكر في تقليل قيمة "<b>topN</b>".</p>',
+        '<p> يتم دعم ملف <b>PDF</b> فقط.</p><p>\n      سيتم تقسيم الأوراق حسب القسم، مثل <i>الملخص، 1.1، 1.2</i>. </p><p>\n      يمكّن هذا النهج LLM من تلخيص الورقة بشكل أكثر فعالية وتقديم استجابات أكثر شمولاً ومفهومة.\n      ومع ذلك، فإنه يزيد أيضًا من سياق محادثات الذكاء الاصطناعي ويضيف إلى التكلفة الحسابية لـ LLM. لذا، أثناء المحادثة، فكر في تقليل قيمة "<b>topN</b>".</p>',
       presentation:
         '<p>تنسيقات الملفات المدعومة هي <b>PDF</b>، <b>PPTX</b>.</p><p>\n      يتم التعامل مع كل صفحة في الشرائح على أنها جزء، مع تخزين صورتها المصغرة.</p><p>\n      <i> يتم تطبيق طريقة التجزئة هذه تلقائيًا على جميع ملفات PPT التي تم تحميلها، لذلك لا تحتاج إلى تحديدها يدويًا.</i></p>',
       qa: '<p>\n      تدعم طريقة التقطيع هذه <b>XLSX</b> و<b>CSV/TXT</b> تنسيقات الملفات.\n    </p>\n    <li>\n      إذا كان الملف بتنسيق <b>XLSX</b> أو <b>XLS (Excel 97-2003)</b>، فيجب أن يحتوي على عمودين بدون رؤوس: أحدهما للأسئلة والآخر للإجابات، بحيث يسبق عمود السؤال عمود الإجابة. أوراق متعددة هي\n      مقبول، بشرط أن تكون الأعمدة منظمة بشكل صحيح.\n    </li>\n    <li>\n      إذا كان الملف بتنسيق <b>CSV/TXT</b>، فيجب أن يكون مشفرًا بـ UTF-8 باستخدام TAB كمحدد لفصل الأسئلة والأجوبة.\n    </li>\n    <p>\n      <i>\n        سيتم تجاهل أسطر النصوص التي لا تتبع القواعد المذكورة أعلاه، و\n        سيتم اعتبار كل زوج من الأسئلة والأجوبة جزءًا مميزًا.\n      </i>\n    </p>',
       resume:
         '<p>تنسيقات الملفات المدعومة هي <b>DOCX</b>، <b>PDF</b>، <b>TXT</b>.\n      </p><p>\n      يتم تحليل السيرة الذاتية بمختلف أشكالها وتنظيمها في بيانات منظمة لتسهيل البحث عن المرشحين للقائمين بالتوظيف.\n      </p>',
       table:
-        "<p>تنسيقات الملفات المدعومة هي <b>XLSX</b> و<b>CSV/TXT</b>.</p><p>\n      فيما يلي بعض المتطلبات الأساسية والنصائح:\n      <ul>\n    <li>بالنسبة لملف CSV أو TXT، يجب أن يكون المحدد بين الأعمدة هو <em><b>TAB</b></em>.</li>\n    <li>يجب أن يكون الصف الأول عبارة عن رؤوس أعمدة.</li>\n    <li> يجب أن تكون رؤوس الأعمدة مصطلحات ذات معنى للمساعدة في فهم ماجستير إدارة الأعمال الخاص بك.\n    من الممارسات الجيدة وضع المرادفات جنبًا إلى جنب مفصولة بشرطة مائلة <i>'/'</i> وتعداد القيم باستخدام الأقواس، على سبيل المثال: <i>'الجنس/الجنس (ذكر، أنثى)'</i>.<p>\n    فيما يلي بعض الأمثلة على الرؤوس:<ol>\n        <li>المورد/البائع<b>'TAB'</b>اللون (أصفر، أزرق، بني)<b>'TAB'</b>الجنس/الجنس (ذكر، أنثى)<b>'TAB'</b>الحجم (M، L، XL، XXL)</li>\n        </ol>\n        </p>\n    </li>\n    <li>سيتم التعامل مع كل صف في الجدول كقطعة.</li>\n    </ul>",
+        "<p>تنسيقات الملفات المدعومة هي <b>XLSX</b> و<b>CSV/TXT</b>.</p><p>\n      فيما يلي بعض المتطلبات الأساسية والنصائح:\n      <ul>\n    <li>بالنسبة لملف CSV أو TXT، يجب أن يكون المحدد بين الأعمدة هو <em><b>TAB</b></em>.</li>\n    <li>يجب أن يكون الصف الأول عبارة عن رؤوس أعمدة.</li>\n    <li> يجب أن تكون رؤوس الأعمدة مصطلحات ذات معنى للمساعدة في فهم LLM الخاص بك.\n    من الممارسات الجيدة وضع المرادفات جنبًا إلى جنب مفصولة بشرطة مائلة <i>'/'</i> وتعداد القيم باستخدام الأقواس، على سبيل المثال: <i>'الجنس/الجنس (ذكر، أنثى)'</i>.<p>\n    فيما يلي بعض الأمثلة على الرؤوس:<ol>\n        <li>المورد/البائع<b>'TAB'</b>اللون (أصفر، أزرق، بني)<b>'TAB'</b>الجنس/الجنس (ذكر، أنثى)<b>'TAB'</b>الحجم (M، L، XL، XXL)</li>\n        </ol>\n        </p>\n    </li>\n    <li>سيتم التعامل مع كل صف في الجدول كقطعة.</li>\n    </ul>",
       picture:
         '<p>يتم دعم ملفات الصور، وسيتوفر دعم الفيديو قريبًا.</p><p>\n    تستخدم هذه الطريقة نموذج التعرف الضوئي على الحروف (OCR) لاستخراج النصوص من الصور.\n    </p><p>\n    إذا تم اعتبار النص المستخرج بواسطة نموذج التعرف الضوئي على الحروف (OCR) غير كافٍ، فسيتم استخدام LLM مرئي محدد لتقديم وصف للصورة.\n    </p>',
       one: '<p>تنسيقات الملفات المدعومة هي <b>DOCX، XLSX، XLS (Excel 97-2003)، PDF، TXT</b>.\n    </p><p>\n    تتعامل هذه الطريقة مع كل مستند في مجمله كقطعة.\n    </p><p>\n    ينطبق ذلك عندما تطلب من LLM تلخيص المستند بأكمله، بشرط أن يتمكن من التعامل مع هذا القدر من طول السياق.\n    </p>',
@@ -826,7 +826,7 @@ export default {
       tocEnhanceTip:
         'أثناء تحليل المستند، تم إنشاء معلومات جدول المحتويات (راجع خيار "تمكين استخراج جدول المحتويات" في الطريقة العامة). يسمح هذا للنموذج الكبير بإرجاع عناصر جدول المحتويات ذات الصلة باستعلام المستخدم، وبالتالي استخدام هذه العناصر لاسترداد الأجزاء ذات الصلة وتطبيق الترجيح على هذه القطع أثناء عملية الفرز. يحاكي هذا الأسلوب سلوك الإنسان في البحث عن المعلومات في الكتب.',
       batchDeleteSessions: 'حذف دفعة',
-      deleteSelectedConfirm: 'هل تريد حذف الجلسة (الجلسات) {{count}} المحددة؟',
+      deleteSelectedConfirm: 'هل تريد حذف الجلسة/الجلسات المحددة ({{count}})؟',
     },
     setting: {
       Verify: 'يؤكد',
@@ -869,7 +869,7 @@ export default {
         'مطلوب لصندوق تخزين متوافق مع S3. حدد عنوان URL لنقطة النهاية المتوافقة مع S3.\nمثال: https://fsn1.your-objectstorage.com',
       S3CompatibleAddressingStyleTip:
         'مطلوب لصندوق تخزين متوافق مع S3. حدد نمط العنونة المتوافق مع S3.\nمثال: النمط المستضاف الافتراضي',
-      addDataSourceModalTitle: 'قم بإنشاء موصل {{name}} الخاص بك',
+      addDataSourceModalTitle: 'إضافة موصل {{name}}',
       deleteSourceModalTitle: 'حذف مصدر البيانات',
       deleteSourceModalContent:
         '<p>هل أنت متأكد من أنك تريد حذف رابط مصدر البيانات هذا؟</p>',
@@ -879,146 +879,149 @@ export default {
       timeStarted: 'بدأ الوقت',
       log: 'سجل',
       confluenceDescription:
-        'قم بدمج مساحة عمل Confluence الخاصة بك للبحث في الوثائق.',
+        'Integrate your Confluence workspace to search documentation.',
       s3Description:
-        'اتصل بحاوية AWS S3 الخاصة بك لاستيراد الملفات المخزنة ومزامنتها.',
+        'Connect to your AWS S3 bucket to import and sync stored files.',
       google_cloud_storageDescription:
-        'قم بتوصيل مجموعة Google Cloud Storage لاستيراد الملفات ومزامنتها.',
+        'Connect your Google Cloud Storage bucket to import and sync files.',
       r2Description:
-        'قم بتوصيل مجموعة Cloudflare R2 الخاصة بك لاستيراد الملفات ومزامنتها.',
+        'Connect your Cloudflare R2 bucket to import and sync files.',
       oci_storageDescription:
-        'قم بتوصيل حاوية Oracle Cloud Object Storage لاستيراد الملفات ومزامنتها.',
+        'Connect your Oracle Cloud Object Storage bucket to import and sync files.',
       discordDescription:
-        'قم بربط خادم Discord الخاص بك للوصول إلى بيانات الدردشة وتحليلها.',
+        'Link your Discord server to access and analyze chat data.',
       notionDescription:
-        'مزامنة الصفحات وقواعد البيانات من Notion لاسترجاع المعرفة.',
+        'Sync pages and databases from Notion for knowledge retrieval.',
       google_driveDescription:
-        'قم بتوصيل Google Drive الخاص بك عبر OAuth وقم بمزامنة مجلدات أو محركات أقراص محددة.',
-      gmailDescription:
-        'قم بتوصيل Gmail الخاص بك عبر OAuth لمزامنة رسائل البريد الإلكتروني.',
-      webdavDescription: 'اتصل بخوادم WebDAV لمزامنة الملفات.',
+        'Connect your Google Drive via OAuth and sync specific folders or drives.',
+      gmailDescription: 'Connect your Gmail via OAuth to sync emails.',
+      webdavDescription: 'Connect to WebDAV servers to sync files.',
       webdavRemotePathTip:
-        'اختياري: حدد مسار المجلد على خادم WebDAV (على سبيل المثال، /Documents). اتركه فارغًا للمزامنة من الجذر.',
+        'Optional: Specify a folder path on the WebDAV server (e.g., /Documents). Leave empty to sync from root.',
       google_driveTokenTip:
-        'قم بتحميل رمز OAuth المميز JSON الذي تم إنشاؤه من مساعد OAuth أو Google Cloud Console. يمكنك أيضًا تحميل Client_secret JSON من تطبيق "مثبت" أو "ويب". إذا كانت هذه هي المزامنة الأولى لك، فسيتم فتح نافذة متصفح لإكمال موافقة OAuth. إذا كان JSON يحتوي بالفعل على رمز تحديث، فسيتم إعادة استخدامه تلقائيًا.',
+        'Upload the OAuth token JSON generated from the OAuth helper or Google Cloud Console. You may also upload a client_secret JSON from an "installed" or "web" application. If this is your first sync, a browser window will open to complete the OAuth consent. If the JSON already contains a refresh token, it will be reused automatically.',
       google_drivePrimaryAdminTip:
-        'عنوان البريد الإلكتروني الذي يمكنه الوصول إلى محتوى Drive الذي تتم مزامنته',
+        'Email address that has access to the Drive content being synced',
       zendeskDescription:
-        'قم بتوصيل Zendesk الخاص بك لمزامنة التذاكر والمقالات والمحتويات الأخرى.',
+        'Connect your Zendesk to sync tickets, articles, and other content.',
       google_driveMyDriveEmailsTip:
-        'رسائل البريد الإلكتروني المفصولة بفواصل والتي يجب فهرسة محتويات "ملفاتي" (بما في ذلك المسؤول الأساسي).',
+        'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
-        'روابط مجلد Google Drive مفصولة بفواصل للزحف.',
+        'Comma-separated Google Drive folder links to crawl.',
       gmailPrimaryAdminTip:
-        'البريد الإلكتروني الأساسي للمشرف مع إمكانية الوصول إلى Gmail / Workspace، يُستخدم لتعداد مستخدمي المجال وكحساب المزامنة الافتراضي.',
+        'Primary admin email with Gmail / Workspace access, used to enumerate domain users and as the default sync account.',
       gmailTokenTip:
-        'قم بتحميل OAuth JSON الذي تم إنشاؤه من Google Console. إذا كان يحتوي فقط على بيانات اعتماد العميل، فقم بتشغيل التحقق المستند إلى المتصفح مرة واحدة لسك رموز التحديث طويلة الأمد.',
+        'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
       dropboxDescription:
-        'قم بتوصيل Dropbox الخاص بك لمزامنة الملفات والمجلدات من الحساب المختار.',
-      bitbucketDescription:
-        'قم بتوصيل Bitbucket لمزامنة محتوى العلاقات العامة.',
+        'Connect your Dropbox to sync files and folders from a chosen account.',
+      bitbucketDescription: 'Connect Bitbucket to sync PR content.',
       bitbucketTopWorkspaceTip:
-        'مساحة عمل Bitbucket المراد فهرستها (على سبيل المثال، "atlassian" من https://bitbucket.org/atlassian/workspace ).',
+        'The Bitbucket workspace to index (e.g., "atlassian" from https://bitbucket.org/atlassian/workspace ).',
       bitbucketRepositorySlugsTip:
-        'البزاقات المستودعية المفصولة بفواصل. على سبيل المثال، الريبو واحد، الريبو اثنين',
-      bitbucketProjectsTip:
-        'مفاتيح المشروع مفصولة بفواصل. على سبيل المثال، PROJ1، PROJ2',
+        'Comma separated repository slugs. E.g., repo-one,repo-two',
+      bitbucketProjectsTip: 'Comma separated project keys. E.g., PROJ1,PROJ2',
       bitbucketWorkspaceTip:
-        'سيقوم هذا الرابط بفهرسة كافة المستودعات الموجودة في مساحة العمل.',
-      boxDescription: 'قم بتوصيل محرك Box الخاص بك لمزامنة الملفات والمجلدات.',
+        'This connector will index all repositories in the workspace.',
+      boxDescription: 'Connect your Box drive to sync files and folders.',
       githubDescription:
-        'قم بتوصيل GitHub لمزامنة طلبات السحب ومشكلات الاسترجاع.',
+        'Connect GitHub to sync pull requests and issues for retrieval.',
       airtableDescription:
-        'اتصل بـ Airtable وقم بمزامنة الملفات من جدول محدد ضمن مساحة عمل محددة.',
+        'Connect to Airtable and synchronize files from a specified table within a designated workspace.',
       gitlabDescription:
-        'قم بتوصيل GitLab لمزامنة المستودعات والمشكلات وطلبات الدمج والوثائق ذات الصلة.',
-      asanaDescription: 'اتصل بـ Asana وقم بمزامنة الملفات من مساحة عمل محددة.',
+        'Connect GitLab to sync repositories, issues, merge requests, and related documentation.',
+      asanaDescription:
+        'Connect to Asana and synchronize files from a specified workspace.',
       imapDescription:
-        'اتصل بصندوق بريد IMAP الخاص بك لمزامنة رسائل البريد الإلكتروني لاسترجاع المعرفة.',
+        'Connect to your IMAP mailbox to sync emails for knowledge retrieval.',
       dropboxAccessTokenTip:
-        'قم بإنشاء رمز وصول طويل الأمد في Dropbox App Console باستخدام نطاقات files.metadata.read وfiles.content.read وsharing.read.',
+        'Generate a long-lived access token in the Dropbox App Console with files.metadata.read, files.content.read, and sharing.read scopes.',
       moodleDescription:
-        'اتصل بنظام Moodle LMS الخاص بك لمزامنة محتوى الدورة والمنتديات والموارد.',
+        'Connect to your Moodle LMS to sync course content, forums, and resources.',
       moodleUrlTip:
-        'عنوان URL الأساسي لمثيل Moodle الخاص بك (على سبيل المثال، https://moodle.university.edu). لا تقم بتضمين /webservice أو /login.',
+        'The base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
       moodleTokenTip:
-        'أنشئ رمزًا مميزًا لخدمة الويب في Moodle: انتقل إلى إدارة الموقع ← الخادم ← خدمات الويب ← إدارة الرموز المميزة. يجب أن يكون المستخدم مسجلاً في المقررات الدراسية التي تريد مزامنتها.',
+        'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
       seafileDescription:
-        'اتصل بخادم SeaFile الخاص بك لمزامنة الملفات والمستندات من مكتباتك.',
+        'Connect to your SeaFile server to synchronise files and documents from your libraries.',
       seafileUrlTip:
-        'عنوان URL الكامل لخادم SeaFile الخاص بك بما في ذلك البروتوكول. مثال: https://seafile.example.com - لا تقم بتضمين شرطة مائلة زائدة أو أي مسار بعد المجال.',
+        'The full URL of your SeaFile server including the protocol. Example: https://seafile.example.com - Do not include a trailing slash or any path after the domain.',
       seafileAccountScopeTip:
-        'مزامنة جميع المكتبات المرئية لرمز واجهة برمجة تطبيقات الحساب أدناه.',
-      seafileTokenPanelHeading: 'قم بتوفير إحدى طرق المصادقة التالية:',
-      seafileTokenPanelAccountBullet: '- يمنح الوصول إلى جميع مكتباتك.',
-      seafileTokenPanelLibraryBullet: '— مُخصص لمكتبة واحدة فقط (أكثر أمانًا).',
+        'Syncs all libraries visible to the Account API Token below.',
+      seafileTokenPanelHeading: 'Provide one of these authentication methods:',
+      seafileTokenPanelAccountBullet: '- grants access to all your libraries.',
+      seafileTokenPanelLibraryBullet:
+        '— scoped to a single library only (more secure).',
       seafileValidationAccountTokenRequired:
-        'رمز واجهة برمجة التطبيقات للحساب مطلوب لنطاق الحساب بالكامل',
-      seafileValidationTokenRequired: 'قم بتوفير رمز API للحساب أو رمز المكتبة',
-      seafileValidationLibraryIdRequired: 'معرف المكتبة مطلوب',
-      seafileValidationDirectoryPathRequired: 'مسار الدليل مطلوب',
+        'Account API Token is required for Entire Account scope',
+      seafileValidationTokenRequired:
+        'Provide either an Account API Token or a Library Token',
+      seafileValidationLibraryIdRequired: 'Library ID is required',
+      seafileValidationDirectoryPathRequired: 'Directory Path is required',
       seafileSyncScopeTip:
-        'يتحكم في ما تتم مزامنته: (1) الحساب بالكامل - يقوم بمزامنة جميع المكتبات التي يمكن لرمزك الوصول إليها. يتطلب رمز API للحساب. (2) مكتبة واحدة - مزامنة جميع الملفات داخل مكتبة واحدة محددة. يتطلب معرف المكتبة وإما رمز API للحساب أو رمز API للمكتبة. (3) الدليل المحدد - يقوم بمزامنة الملفات فقط داخل مجلد معين داخل المكتبة. يتطلب معرف المكتبة، ومسار المجلد داخل تلك المكتبة، وإما رمز واجهة برمجة تطبيقات الحساب أو رمز واجهة برمجة تطبيقات المكتبة.',
+        'Controls what gets synchronised: (1) Entire Account - Syncs all libraries your token has access to. Requires an Account API Token. (2) Single Library - Syncs all files within one specific library. Requires the Library ID and either an Account API Token or a Library API Token. (3) Specific Directory - Syncs only files within a specific folder inside a library. Requires the Library ID, the folder path within that library, and either an Account API Token or a Library API Token.',
       seafileTokenTip:
-        'رمز SeaFile API الخاص بك على مستوى الحساب. يمنح الوصول إلى جميع المكتبات المرئية لحسابك. مطلوب عندما يكون نطاق المزامنة هو "الحساب بالكامل". بالنسبة إلى "المكتبة الفردية" أو "الدليل المحدد"، يمكنك استخدام هذا الرمز المميز أو رمز Library API المميز بدلاً من ذلك.',
+        'Your account-level SeaFile API token. Grants access to all libraries visible to your account. Required when sync scope is "Entire Account". For "Single Library" or "Specific Directory" you can use this token or a Library API Token instead.',
       seafileRepoTokenTip:
-        'رمز واجهة برمجة التطبيقات (API) على مستوى المكتبة والذي يمنح الوصول إلى مكتبة واحدة محددة فقط. يمكن استخدامه بدلاً من رمز واجهة برمجة تطبيقات الحساب لنطاقات مزامنة "المكتبة الفردية" و"الدليل المحدد".',
+        'A library-scoped API token that only grants access to one specific library. Can be used instead of the Account API Token for "Single Library" and "Specific Directory" sync scopes.',
       seafileRepoIdTip:
-        'المعرف الفريد (UUID) لمكتبة SeaFile التي تريد مزامنتها. يمكنك العثور عليه في شريط عنوان المتصفح الخاص بك عند فتح المكتبة في واجهة الويب SeaFile. مثال: 7a9e1b3c-4d5f-6a7b-8c9d-0e1f2a3b4c5d. مطلوب عندما يكون نطاق المزامنة هو "مكتبة واحدة" أو "دليل محدد".',
+        'The unique identifier (UUID) of the SeaFile library you want to synchronise. You can find it in your browser address bar when you open the library in the SeaFile web interface. Example: 7a9e1b3c-4d5f-6a7b-8c9d-0e1f2a3b4c5d. Required when sync scope is "Single Library" or "Specific Directory".',
       seafileSyncPathTip:
-        'المسار المطلق للمجلد المطلوب مزامنته داخل المكتبة المحددة بواسطة معرف المكتبة أعلاه. يجب أن تبدأ بشرطة مائلة للأمام. سيتم تضمين كافة الملفات والمجلدات الفرعية ضمن هذا المسار بشكل متكرر. مثال: /المستندات/التقارير. هام: يجب أن يكون المجلد موجودًا داخل المكتبة المحددة. المسارات خارج المكتبة غير مدعومة. يتم استخدامه فقط عندما يكون نطاق المزامنة هو "دليل محدد".',
+        'The absolute path of the folder to synchronise within the library specified by the Library ID above. Must start with a forward slash. All files and subfolders under this path will be included recursively. Example: /Documents/Reports. Important: The folder must exist inside the specified library. Paths outside the library are not supported. Only used when sync scope is "Specific Directory".',
       seafileIncludeSharedTip:
-        'عند التمكين، يتم تضمين المكتبات التي شاركها المستخدمون الآخرون معك في المزامنة. عند التعطيل، تتم مزامنة المكتبات المملوكة لحسابك فقط. ينطبق فقط عندما يكون نطاق المزامنة هو "الحساب بالكامل".',
+        'When enabled, libraries that other users have shared with you are included in the synchronisation. When disabled, only libraries owned by your account are synchronised. Only applies when sync scope is "Entire Account".',
       seafileBatchSizeTip:
-        'عدد المستندات التي تمت معالجتها وإرجاعها لكل دفعة أثناء المزامنة. تستخدم القيمة الأصغر ذاكرة أقل ولكنها قد تكون أبطأ بشكل عام. الافتراضي: 100.',
+        'The number of documents processed and returned per batch during synchronisation. A smaller value uses less memory but may be slower overall. Default: 100.',
       jiraDescription:
-        'قم بتوصيل مساحة عمل Jira الخاصة بك لمزامنة المشكلات والتعليقات والمرفقات.',
+        'Connect your Jira workspace to sync issues, comments, and attachments.',
       jiraBaseUrlTip:
-        'عنوان URL الأساسي لموقع Jira الخاص بك (على سبيل المثال، https://your-domain.atlassian.net).',
+        'Base URL of your Jira site (e.g., https://your-domain.atlassian.net).',
       jiraProjectKeyTip:
-        'اختياري: تقييد المزامنة بمفتاح مشروع واحد (على سبيل المثال، ENG).',
+        'Optional: limit syncing to a single project key (e.g., ENG).',
       jiraJqlTip:
-        'مرشح JQL اختياري. اتركه فارغًا للاعتماد على مرشحات المشروع/الوقت.',
-      jiraBatchSizeTip: 'الحد الأقصى لعدد الإصدارات المطلوبة من Jira لكل دفعة.',
+        'Optional JQL filter. Leave blank to rely on project/time filters.',
+      jiraBatchSizeTip:
+        'Maximum number of issues requested from Jira per batch.',
       jiraCommentsTip:
-        'قم بتضمين تعليقات Jira في مستند تخفيض السعر الذي تم إنشاؤه.',
-      jiraAttachmentsTip: 'قم بتنزيل المرفقات كمستندات منفصلة أثناء المزامنة.',
+        'Include Jira comments in the generated markdown document.',
+      jiraAttachmentsTip:
+        'Download attachments as separate documents during sync.',
       jiraAttachmentSizeTip:
-        'سيتم تخطي المرفقات الأكبر من هذا العدد من البايتات.',
-      jiraLabelsTip: 'التسميات التي يجب تخطيها أثناء الفهرسة (مفصولة بفواصل).',
+        'Attachments larger than this number of bytes will be skipped.',
+      jiraLabelsTip:
+        'Labels that should be skipped while indexing (comma separated).',
       jiraBlacklistTip:
-        'سيتم تجاهل التعليقات التي يتطابق بريد مؤلفها الإلكتروني مع هذه الإدخالات.',
+        'Comments whose author email matches these entries will be ignored.',
       jiraScopedTokenTip:
-        'قم بتمكين هذا عند استخدام رموز Atlassian المميزة (api.atlassian.com).',
-      jiraEmailTip:
-        'البريد الإلكتروني المرتبط بحساب Jira/الرمز المميز لواجهة برمجة التطبيقات.',
+        'Enable this when using scoped Atlassian tokens (api.atlassian.com).',
+      jiraEmailTip: 'Email associated with the Jira account/API token.',
       jiraTokenTip:
-        'رمز API المميز الذي تم إنشاؤه من https://id.atlassian.com/manage-profile/security/api-tokens.',
-      jiraPasswordTip: 'كلمة مرور اختيارية لبيئات Jira Server/Data Center.',
+        'API token generated from https://id.atlassian.com/manage-profile/security/api-tokens.',
+      jiraPasswordTip:
+        'Optional password for Jira Server/Data Center environments.',
       mysqlDescription:
-        'اتصل بقاعدة بيانات MySQL لمزامنة البيانات من الجداول باستخدام استعلامات SQL.',
+        'Connect to MySQL database to sync data from tables using SQL queries.',
       mysqlQueryTip:
-        'استعلام SQL لاستخراج البيانات من قاعدة البيانات الخاصة بك (على سبيل المثال، SELECT * FROM Products WHERE Status = "active").',
+        'SQL query to extract data from your database (e.g., SELECT * FROM products WHERE status = "active").',
       mysqlContentColumnsTip:
-        'أسماء الأعمدة المفصولة بفواصل والتي سيتم دمج قيمها كمحتوى مستند لتوجيهها.',
+        'Comma-separated column names whose values will be combined as document content for vectorization.',
       mysqlMetadataColumnsTip:
-        'أسماء أعمدة مفصولة بفواصل لتخزينها كبيانات تعريف للمستند (غير متجهة، ولكنها قابلة للبحث).',
+        'Comma-separated column names to store as document metadata (not vectorized, but searchable).',
       mysqlIdColumnTip:
-        'العمود المطلوب استخدامه كمعرف مستند فريد. إذا لم يتم تحديده، سيتم استخدام تجزئة المحتوى.',
+        'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       mysqlTimestampColumnTip:
-        'عمود التاريخ والوقت/الطابع الزمني للمزامنة المتزايدة. سيتم جلب الصفوف التي تم تعديلها بعد آخر مزامنة فقط.',
+        'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
       postgresqlDescription:
-        'اتصل بقاعدة بيانات PostgreSQL لمزامنة البيانات من الجداول باستخدام استعلامات SQL.',
+        'Connect to PostgreSQL database to sync data from tables using SQL queries.',
       postgresqlQueryTip:
-        "استعلام SQL لاستخراج البيانات من قاعدة البيانات الخاصة بك (على سبيل المثال، SELECT * FROM Products WHERE Status = 'active').",
+        "SQL query to extract data from your database (e.g., SELECT * FROM products WHERE status = 'active').",
       postgresqlContentColumnsTip:
-        'أسماء الأعمدة المفصولة بفواصل والتي سيتم دمج قيمها كمحتوى مستند لتوجيهها.',
+        'Comma-separated column names whose values will be combined as document content for vectorization.',
       postgresqlMetadataColumnsTip:
-        'أسماء أعمدة مفصولة بفواصل لتخزينها كبيانات تعريف للمستند (غير متجهة، ولكنها قابلة للبحث).',
+        'Comma-separated column names to store as document metadata (not vectorized, but searchable).',
       postgresqlIdColumnTip:
-        'العمود المطلوب استخدامه كمعرف مستند فريد. إذا لم يتم تحديده، سيتم استخدام تجزئة المحتوى.',
+        'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       postgresqlTimestampColumnTip:
-        'عمود التاريخ والوقت/الطابع الزمني للمزامنة المتزايدة. سيتم جلب الصفوف التي تم تعديلها بعد آخر مزامنة فقط.',
+        'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
       availableSourcesDescription: 'حدد مصدر بيانات لإضافته',
       availableSources: 'المصادر المتاحة',
       datasourceDescription: 'إدارة مصدر البيانات والاتصالات الخاصة بك',
@@ -1091,7 +1094,7 @@ export default {
         '(للمستخدمين الدوليين فقط، املأ https://api.minimax.io/v1)',
       modify: 'يُعدِّل',
       systemModelSettings: 'تعيين النماذج الافتراضية',
-      chatModel: 'ماجستير',
+      chatModel: 'LLM',
       chatModelTip: 'LLM الافتراضي لكل قاعدة معرفية تم إنشاؤها حديثًا.',
       embeddingModel: 'التضمين',
       embeddingModelTip:
@@ -1110,8 +1113,8 @@ export default {
         'النموذج الافتراضي لتحويل النص إلى كلام. إذا لم تتمكن من العثور على نموذج من القائمة المنسدلة، فراجع https://ragflow.io/docs/dev/supported_models لمعرفة ما إذا كان موفر النموذج الخاص بك يدعم هذا النموذج.',
       workspace: 'مساحة العمل',
       upgrade: 'يرقي',
-      addLlmTitle: 'أضف ماجستير',
-      editLlmTitle: 'تحرير {{name}} النموذج',
+      addLlmTitle: 'أضف LLM',
+      editLlmTitle: 'تحرير النموذج {{name}}',
       editModel: 'تحرير النموذج',
       modelName: 'اسم النموذج',
       modelID: 'معرف النموذج',
@@ -2342,7 +2345,7 @@ export default {
       delSearch: 'حذف البحث',
       delFile: 'حذف الملف',
       delFiles: 'حذف الملفات',
-      delFilesContent: 'الملفات {{count}} المحددة',
+      delFilesContent: 'الملفات المحددة ({{count}})',
       delChat: 'حذف الدردشة',
       delMember: 'حذف العضو',
       delMemory: 'حذف الذاكرة',
@@ -2401,7 +2404,7 @@ export default {
         providerSelection: 'اختيار المزود',
         providerSelectionDescription:
           'اختر موفر وضع الحماية لتنفيذ التعليمات البرمجية',
-        namedProviderConfiguration: '{{name}} التكوين',
+        namedProviderConfiguration: 'تكوين {{name}}',
         namedProviderConfigurationDescription:
           'قم بتكوين إعدادات الاتصال لـ {{name}}.',
         saveConfiguration: 'حفظ التكوين',
@@ -2465,7 +2468,7 @@ export default {
       share: 'يشارك',
       create: 'يخلق',
       extraInfo: 'معلومات اضافية',
-      serviceDetail: 'خدمة {{name}} التفاصيل',
+      serviceDetail: 'تفاصيل الخدمة {{name}}',
       taskExecutorDetail: 'تفاصيل منفذ المهمة',
       whitelistManagement: 'إدارة القائمة البيضاء',
       exportAsExcel: 'تصدير اكسل',
@@ -2520,7 +2523,7 @@ export default {
       createFirstSession: 'قم بإنشاء جلستك الأولى',
       noCanvasFound: 'لم يتم العثور على قماش',
       deleteSelectedConfirm:
-        'هل أنت متأكد أنك تريد حذف {{count}} الجلسة (الجلسات)؟',
+        'هل أنت متأكد أنك تريد حذف الجلسة/الجلسات ({{count}})؟',
       batchDeleteSessions: 'حذف الجلسات',
     },
   },

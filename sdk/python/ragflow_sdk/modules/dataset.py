@@ -95,8 +95,8 @@ class DataSet(Base):
             return documents
         raise Exception(res["message"])
 
-    def delete_documents(self, ids: list[str] | None = None):
-        res = self.rm(f"/datasets/{self.id}/documents", {"ids": ids})
+    def delete_documents(self, ids: list[str] | None = None, delete_all: bool = False):
+        res = self.rm(f"/datasets/{self.id}/documents", {"ids": ids, "delete_all": delete_all})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])

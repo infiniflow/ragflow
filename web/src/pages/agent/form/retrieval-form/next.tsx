@@ -38,6 +38,7 @@ import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
+import { UserIdFormField } from '../components/user-id-form-field';
 import { useValues } from './use-values';
 
 export const RetrievalPartialSchema = {
@@ -54,6 +55,7 @@ export const RetrievalPartialSchema = {
   ...MetadataFilterSchema,
   memory_ids: z.array(z.string()).optional(),
   retrieval_from: z.string(),
+  user_id: z.string().optional(),
 };
 
 export const FormSchema = z.object({
@@ -82,7 +84,10 @@ export function MemoryDatasetForm() {
         </Radio.Group>
       </RAGFlowFormItem>
       {retrievalFrom === RetrievalFrom.Memory ? (
-        <MemoriesFormField label={t('header.memories')}></MemoriesFormField>
+        <>
+          <MemoriesFormField label={t('header.memories')}></MemoriesFormField>
+          <UserIdFormField></UserIdFormField>
+        </>
       ) : (
         <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
       )}

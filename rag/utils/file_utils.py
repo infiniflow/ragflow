@@ -21,7 +21,7 @@ import requests
 from requests.exceptions import Timeout, RequestException
 from io import BytesIO
 from typing import List, Union, Tuple, Optional, Dict
-import PyPDF2
+import pypdf as PyPDF2
 from docx import Document
 import olefile
 

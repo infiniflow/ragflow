@@ -19,6 +19,8 @@ import localeData from 'dayjs/plugin/localeData';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import weekYear from 'dayjs/plugin/weekYear';
 import weekday from 'dayjs/plugin/weekday';
+import 'dayjs/locale/ar';
+import 'dayjs/locale/zh-cn';
 import React, { useEffect, useState } from 'react';
 import { RouterProvider } from 'react-router';
 import { ThemeProvider, useTheme } from './components/theme-provider';
@@ -88,9 +90,8 @@ function Root({ children }: React.PropsWithChildren) {
     AntLanguageMap[lng as keyof typeof AntLanguageMap] ?? enUS;
   const updateDocumentLocale = (lng: string) => {
     document.documentElement.lang = lng;
-    document.documentElement.dir = lng.toLowerCase().startsWith('ar')
-      ? 'rtl'
-      : 'ltr';
+    document.documentElement.dir = 'ltr';
+    dayjs.locale(lng === 'zh' ? 'zh-cn' : lng);
   };
 
   const [locale, setLocal] = useState<Locale>(getLocale(storage.getLanguage()));
@@ -123,6 +124,7 @@ function Root({ children }: React.PropsWithChildren) {
               : theme.defaultAlgorithm,
         }}
         locale={locale}
+        direction={'ltr'}
       >
         {children}
 

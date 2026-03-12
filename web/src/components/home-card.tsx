@@ -2,6 +2,7 @@ import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatDate } from '@/utils/date';
 import { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface IProps {
   data: {
@@ -9,12 +10,19 @@ interface IProps {
     description?: string;
     avatar?: string;
     update_time?: string | number;
+    release_time?: number;
   };
   onClick?: () => void;
   moreDropdown: React.ReactNode;
   sharedBadge?: ReactNode;
   icon?: React.ReactNode;
   testId?: string;
+}
+
+function Time({ time }: { time: string | number | undefined }) {
+  return (
+    <p className="text-sm opacity-80 whitespace-nowrap">{formatDate(time)}</p>
+  );
 }
 export function HomeCard({
   data,
@@ -24,6 +32,8 @@ export function HomeCard({
   icon,
   testId,
 }: IProps) {
+  const { t } = useTranslation();
+
   return (
     <Card
       as="article"
@@ -72,9 +82,20 @@ export function HomeCard({
                 {data.description}
               </div>
               <div className="flex justify-between items-center">
-                <p className="text-sm opacity-80 whitespace-nowrap">
-                  {formatDate(data.update_time)}
-                </p>
+                {data.release_time ? (
+                  <section>
+                    <div className="flex items-center gap-2 text-sm opacity-80">
+                      {`${t('flow.lastSavedAt')}:`}
+                      <Time time={data.update_time}></Time>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm opacity-80">
+                      {`${t('flow.publishedAt')}:`}
+                      <Time time={data.release_time}></Time>
+                    </div>
+                  </section>
+                ) : (
+                  <Time time={data.update_time}></Time>
+                )}
                 {sharedBadge}
               </div>
             </section>

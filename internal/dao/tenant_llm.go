@@ -94,21 +94,14 @@ func (dao *TenantLLMDAO) Delete(tenantID, factory, modelName string) error {
 }
 
 // GetMyLLMs get tenant LLMs with factory details
-func (dao *TenantLLMDAO) GetMyLLMs(tenantID string, includeDetails bool) ([]model.MyLLM, error) {
+func (dao *TenantLLMDAO) GetMyLLMs(tenantID string) ([]model.MyLLM, error) {
 	var myLLMs []model.MyLLM
 
-	// Base query
-	query := DB.Table("tenant_llm tl").
-		Select("tl.llm_factory, lf.logo, lf.tags, tl.model_type, tl.llm_name, tl.used_tokens, tl.status").
+	err := DB.Table("tenant_llm tl").
+		Select("tl.id, tl.llm_factory, lf.logo, lf.tags, tl.model_type, tl.llm_name, tl.used_tokens, tl.status").
 		Joins("JOIN llm_factories lf ON tl.llm_factory = lf.name").
-		Where("tl.tenant_id = ? AND tl.api_key IS NOT NULL", tenantID)
-
-	// Add detailed fields if requested
-	if includeDetails {
-		query = query.Select("tl.llm_factory, lf.logo, lf.tags, tl.model_type, tl.llm_name, tl.used_tokens, tl.status, tl.api_base, tl.max_tokens")
-	}
-
-	err := query.Find(&myLLMs).Error
+		Where("tl.tenant_id = ? AND tl.api_key IS NOT NULL", tenantID).
+		Find(&myLLMs).Error
 	if err != nil {
 		return nil, err
 	}

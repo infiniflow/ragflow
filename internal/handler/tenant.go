@@ -21,6 +21,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
 	"ragflow/internal/service"
 )
 
@@ -48,44 +49,35 @@ func NewTenantHandler(tenantService *service.TenantService, userService *service
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/tenant_info [get]
 func (h *TenantHandler) TenantInfo(c *gin.Context) {
-	// Extract token from request
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-	// Get user by token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	// Get tenant info
 	tenantInfo, err := h.tenantService.GetTenantInfo(user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get tenant information",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeExceptionError,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
 	if tenantInfo == nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "Tenant not found",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": "Tenant not found!",
+			"data":    false,
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"data": tenantInfo,
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    tenantInfo,
 	})
 }
 
@@ -99,38 +91,25 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/tenant/list [get]
 func (h *TenantHandler) TenantList(c *gin.Context) {
-	// Extract token from request
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	// Get user by token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	// Get tenant list
 	tenantList, err := h.tenantService.GetTenantList(user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "Failed to get tenant list",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeExceptionError,
+			"message": err.Error(),
+			"data":    false,
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"data": tenantList,
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    tenantList,
 	})
 }

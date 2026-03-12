@@ -415,8 +415,8 @@ export function AutoMetadata({
             avatar={knowledgeBase.avatar}
             name={knowledgeBase.name}
             className="size-8"
-          ></RAGFlowAvatar>
-          <div className=" text-text-primary text-base space-y-1 overflow-hidden">
+          />
+          <div className="text-text-primary text-base space-y-1 truncate overflow-hidden">
             {knowledgeBase.name}
           </div>
         </div>

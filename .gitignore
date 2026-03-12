@@ -220,7 +220,14 @@ uv-aarch64*.tar.gz
 uv-aarch64-unknown-linux-gnu.tar.gz
 docker/launch_backend_service_windows.sh
 
-# Go server build output
-bin/
+# C++ build directories
+internal/cpp/build/
 internal/cpp/cmake-build-release/
 internal/cpp/cmake-build-debug/
+
+# Trae IDE config
+.trae/
+
+# Go server build output
+bin/*
+!bin/.gitkeep

@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/iromli/go-itsdangerous"
 )
 
@@ -132,4 +133,8 @@ func GenerateSecretKey() (string, error) {
 		return "", fmt.Errorf("failed to generate random key: %v", err)
 	}
 	return hex.EncodeToString(bytes), nil
+}
+
+func GenerateToken() string {
+	return strings.ReplaceAll(uuid.New().String(), "-", "")
 }

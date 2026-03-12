@@ -19,6 +19,7 @@ export default {
       chinese: 'Tiếng Trung giản thể',
       traditionalChinese: 'Tiếng Trung phồn thể',
       bulgarian: 'Tiếng Bulgaria',
+      arabic: 'Tiếng Ả Rập',
       language: 'Ngôn ngữ',
       languageMessage: 'Vui lòng chọn ngôn ngữ của bạn!',
       languagePlaceholder: 'chọn ngôn ngữ của bạn',
@@ -1247,6 +1248,13 @@ export default {
       file: 'tệp',
       knowledge: 'kiến thức',
       chat: 'trò chuyện',
+    },
+    language: {
+      english: 'Tiếng Anh',
+      chinese: 'Tiếng Trung',
+      russian: 'Tiếng Nga',
+      bulgarian: 'Tiếng Bulgaria',
+      arabic: 'Tiếng Ả Rập',
     },
   },
 };

@@ -86,7 +86,7 @@ const buttonVariants = cva(
 
         // Static
         // Button has no interaction transitions
-        static: '',
+        static: 'text-text-secondary',
       },
       size: {
         auto: '',

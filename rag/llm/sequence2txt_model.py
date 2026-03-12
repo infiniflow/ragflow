@@ -37,8 +37,8 @@ class Base(ABC):
         pass
 
     def transcription(self, audio_path, **kwargs):
-        audio_file = open(audio_path, "rb")
-        transcription = self.client.audio.transcriptions.create(model=self.model_name, file=audio_file)
+        with open(audio_path, "rb") as audio_file:
+            transcription = self.client.audio.transcriptions.create(model=self.model_name, file=audio_file)
         return transcription.text.strip(), num_tokens_from_string(transcription.text.strip())
 
     def audio2base64(self, audio):
@@ -172,8 +172,8 @@ class XinferenceSeq2txt(Base):
 
     def transcription(self, audio, language="zh", prompt=None, response_format="json", temperature=0.7):
         if isinstance(audio, str):
-            audio_file = open(audio, "rb")
-            audio_data = audio_file.read()
+            with open(audio, "rb") as audio_file:
+                audio_data = audio_file.read()
             audio_file_name = audio.split("/")[-1]
         else:
             audio_data = audio

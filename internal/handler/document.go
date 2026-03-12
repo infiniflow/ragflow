@@ -18,6 +18,7 @@ package handler
 
 import (
 	"net/http"
+	"ragflow/internal/common"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -47,6 +48,12 @@ func NewDocumentHandler(documentService *service.DocumentService) *DocumentHandl
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents [post]
 func (h *DocumentHandler) CreateDocument(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
 	var req service.CreateDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -79,6 +86,12 @@ func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [get]
 func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -111,6 +124,12 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [put]
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -149,6 +168,12 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [delete]
 func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -180,6 +205,12 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents [get]
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 
@@ -220,6 +251,12 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/authors/{author_id}/documents [get]
 func (h *DocumentHandler) GetDocumentsByAuthorID(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
 	authorIDStr := c.Param("author_id")
 	authorID, err := strconv.Atoi(authorIDStr)
 	if err != nil {

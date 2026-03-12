@@ -21,7 +21,7 @@ test = [
 ]
 
 [tool.setuptools]
-py-modules = ["ragflow_cli", "parser"]
+py-modules = ["ragflow_cli", "parser", "http_client", "ragflow_client", "user"]
 
 [project.scripts]
 ragflow-cli = "ragflow_cli:main"

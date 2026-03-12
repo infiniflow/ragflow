@@ -1,7 +1,8 @@
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { t } from 'i18next';
-import { X } from 'lucide-react';
+import { LucideX } from 'lucide-react';
 import { useState } from 'react';
 import CategoryPanel from './category-panel';
 
@@ -20,20 +21,25 @@ const ChunkMethodLearnMore = ({ parserId }: { parserId: string }) => {
           {t('knowledgeDetails.learnMore')}
         </Button>
       </div>
-      <div
-        className="bg-[#FFF]/10 p-[20px] rounded-[12px] mt-[10px] relative flex-1 overflow-auto"
+
+      <Card
+        as="article"
+        className="relative flex-1 overflow-auto mt-4"
         style={{ display: visible ? 'block' : 'none' }}
       >
-        <CategoryPanel chunkMethod={parserId}></CategoryPanel>
-        <div
-          className="absolute right-1 top-1 cursor-pointer hover:text-[#FFF]/30"
-          onClick={() => {
-            setVisible(false);
-          }}
+        <Button
+          className="absolute right-2 top-2"
+          variant="ghost"
+          size="icon-xs"
+          onClick={() => setVisible(false)}
         >
-          <X />
-        </div>
-      </div>
+          <LucideX />
+        </Button>
+
+        <CardContent className="p-5">
+          <CategoryPanel chunkMethod={parserId}></CategoryPanel>
+        </CardContent>
+      </Card>
     </div>
   );
 };

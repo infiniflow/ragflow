@@ -14,16 +14,19 @@ type RadioProps = {
   disabled?: boolean;
   onChange?: (checked: boolean) => void;
   children?: React.ReactNode;
-  testId?: string;
-};
+} & Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  'value' | 'checked' | 'onChange'
+>;
 
 function Radio({
+  className,
   value,
   checked,
   disabled,
   onChange,
   children,
-  testId,
+  ...props
 }: RadioProps) {
   const groupContext = useContext(RadioGroupContext);
   const isControlled = checked !== undefined;
@@ -57,24 +60,23 @@ function Radio({
     >
       <input
         type="radio"
-        name={groupContext?.name}
         value={value}
         checked={isChecked}
         onClick={handleClick}
         disabled={mergedDisabled}
-        data-testid={testId}
-        className="peer absolute size-[1px] opacity-0"
+        className={cn('peer absolute size-[1px] opacity-0', className)}
+        {...props}
+        name={groupContext?.name}
       />
 
       <div
         className={cn(
-          'flex h-4 w-4 items-center justify-center rounded-full border border-border-button transition-colors',
-          'group-hover/radio:border-border-default hover:border-border-default',
-          'peer-focus:border-primary',
+          'flex h-4 w-4 items-center justify-center rounded-full text-border-button border border-current transition-colors',
+          'group-hover/radio:text-border-default hover:text-border-default',
+          'peer-focus:text-text-primary',
           isChecked && 'border-primary bg-primary/10',
           mergedDisabled && 'border-muted',
         )}
-        data-testid={testId}
       >
         <div
           className={cn(

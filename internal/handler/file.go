@@ -18,6 +18,7 @@ package handler
 
 import (
 	"net/http"
+	"ragflow/internal/common"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -54,23 +55,9 @@ func NewFileHandler(fileService *service.FileService, userService *service.UserS
 // @Success 200 {object} service.ListFilesResponse
 // @Router /v1/file/list [get]
 func (h *FileHandler) ListFiles(c *gin.Context) {
-	// Get access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -130,23 +117,9 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/file/root_folder [get]
 func (h *FileHandler) GetRootFolder(c *gin.Context) {
-	// Get access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -178,23 +151,9 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/file/parent_folder [get]
 func (h *FileHandler) GetParentFolder(c *gin.Context) {
-	// Get access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token (for validation)
-	_, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -235,23 +194,9 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/file/all_parent_folder [get]
 func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
-	// Get access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token (for validation)
-	_, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 

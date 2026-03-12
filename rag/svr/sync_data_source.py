@@ -275,6 +275,7 @@ class Confluence(SyncBase):
             space=space,
             page_id=page_id,
             index_recursively=index_recursively,
+            
         )
 
         credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"],
