@@ -108,7 +108,8 @@ class Tokenizer(ProcessBase):
     async def _invoke(self, **kwargs):
         try:
             chunks = kwargs.get("chunks")
-            kwargs["chunks"] = [c for c in chunks if c is not None]
+            if chunks is not None:
+                kwargs["chunks"] = [c for c in chunks if c is not None]
 
             from_upstream = TokenizerFromUpstream.model_validate(kwargs)
         except Exception as e:
