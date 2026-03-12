@@ -334,16 +334,12 @@ func Init(configPath string) error {
 
 	// Set default values for admin configuration if not configured
 	if globalConfig.Admin.Host == "" {
-		globalConfig.Admin.Host = v.GetString("admin.host")
-	}
-	if globalConfig.Admin.Host == "" {
 		globalConfig.Admin.Host = "127.0.0.1"
 	}
 	if globalConfig.Admin.Port == 0 {
-		globalConfig.Admin.Port = v.GetInt("admin.http_port")
-	}
-	if globalConfig.Admin.Port == 0 {
-		globalConfig.Admin.Port = 9381
+		globalConfig.Admin.Port = 9383
+	} else {
+		globalConfig.Admin.Port += 2
 	}
 
 	// Load REGISTER_ENABLED from environment variable (default: 1)
