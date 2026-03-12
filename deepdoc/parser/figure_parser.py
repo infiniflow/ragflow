@@ -75,7 +75,7 @@ def vision_figure_parser_figure_xlsx_wrapper(images,callback=None, **kwargs):
         vision_model = None
     if vision_model:
         figures_data = [((
-                        img["image"],   # Image.Image or LazyDocxImage (converted by ensure_pil_image)
+                        img["image"],   # Image.Image or LazyImage (converted by ensure_pil_image)
                         [img["image_description"]]     # description list (must be list)
                     ),
                     [
