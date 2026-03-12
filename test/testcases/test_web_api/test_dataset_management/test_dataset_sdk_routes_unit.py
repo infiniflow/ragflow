@@ -418,7 +418,7 @@ def _load_dataset_module(monkeypatch):
     return module
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_create_route_error_matrix_unit(monkeypatch):
     module = _load_dataset_module(monkeypatch)
     req_state = {"name": "kb"}
@@ -448,7 +448,7 @@ def test_create_route_error_matrix_unit(monkeypatch):
     assert res["message"] == "Database operation failed", res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_delete_route_error_summary_matrix_unit(monkeypatch):
     module = _load_dataset_module(monkeypatch)
     req_state = {"ids": ["kb-1"]}
@@ -476,7 +476,7 @@ def test_delete_route_error_summary_matrix_unit(monkeypatch):
     assert res["code"] == module.RetCode.SUCCESS, res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_update_route_branch_matrix_unit(monkeypatch):
     module = _load_dataset_module(monkeypatch)
     req_state = {"name": "new"}
@@ -556,7 +556,7 @@ def test_update_route_branch_matrix_unit(monkeypatch):
     assert res["message"] == "Database operation failed", res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_list_knowledge_graph_delete_kg_matrix_unit(monkeypatch):
     module = _load_dataset_module(monkeypatch)
 
@@ -629,7 +629,7 @@ def test_list_knowledge_graph_delete_kg_matrix_unit(monkeypatch):
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_run_trace_graphrag_matrix_unit(monkeypatch):
     module = _load_dataset_module(monkeypatch)
 
@@ -705,7 +705,7 @@ def test_run_trace_graphrag_matrix_unit(monkeypatch):
     assert res["data"]["id"] == "task-1", res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_run_trace_raptor_matrix_unit(monkeypatch):
     module = _load_dataset_module(monkeypatch)
 
