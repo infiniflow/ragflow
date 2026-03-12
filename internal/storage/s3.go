@@ -33,15 +33,15 @@ import (
 
 // S3Config holds AWS S3 storage configuration
 type S3Config struct {
-	AccessKeyID     string `mapstructure:"access_key"`      // AWS Access Key ID
-	SecretAccessKey string `mapstructure:"secret_key"`      // AWS Secret Access Key
-	SessionToken    string `mapstructure:"session_token"`   // AWS Session Token (optional)
-	Region          string `mapstructure:"region_name"`     // AWS Region
-	EndpointURL     string `mapstructure:"endpoint_url"`    // Custom endpoint (optional)
+	AccessKeyID      string `mapstructure:"access_key"`        // AWS Access Key ID
+	SecretAccessKey  string `mapstructure:"secret_key"`        // AWS Secret Access Key
+	SessionToken     string `mapstructure:"session_token"`     // AWS Session Token (optional)
+	Region           string `mapstructure:"region_name"`       // AWS Region
+	EndpointURL      string `mapstructure:"endpoint_url"`      // Custom endpoint (optional)
 	SignatureVersion string `mapstructure:"signature_version"` // Signature version
-	AddressingStyle string `mapstructure:"addressing_style"`   // Addressing style
-	Bucket          string `mapstructure:"bucket"`          // Default bucket (optional)
-	PrefixPath      string `mapstructure:"prefix_path"`     // Path prefix (optional)
+	AddressingStyle  string `mapstructure:"addressing_style"`  // Addressing style
+	Bucket           string `mapstructure:"bucket"`            // Default bucket (optional)
+	PrefixPath       string `mapstructure:"prefix_path"`       // Path prefix (optional)
 }
 
 // S3Storage implements Storage interface for AWS S3
@@ -101,7 +101,7 @@ func (s *S3Storage) connect() error {
 		})
 	}
 
-	s.client = s3.New(&cfg, clientOpts...)
+	s.client = s3.NewFromConfig(cfg, clientOpts...)
 	return nil
 }
 
@@ -356,18 +356,18 @@ func (s *S3Storage) RemoveBucket(bucket string) error {
 				Key:    obj.Key,
 			})
 			if err != nil {
-				zap.L().Error("Failed to delete object", zap.String("bucket", actualBucket), zap.String("key", toString(obj.Key)), zap.Error(err))
+				zap.L().Error("Failed to delete object", zap.String("bucket", actualBucket), zap.Error(err))
 			}
 		}
 
-		if !toBool(result.IsTruncated) {
+		if result.IsTruncated == nil || !*result.IsTruncated {
 			break
 		}
 		listInput.ContinuationToken = result.NextContinuationToken
 	}
 
 	// Delete bucket
-	_, err = s.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+	_, err := s.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
 		Bucket: aws.String(actualBucket),
 	})
 	if err != nil {
@@ -410,21 +410,6 @@ func (s *S3Storage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
 		return true
 	}
 	return false
-}
-
-// Helper functions
-func toString(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
-func toBool(b *bool) bool {
-	if b == nil {
-		return false
-	}
-	return *b
 }
 
 // isNotFound checks if the error is a not found error

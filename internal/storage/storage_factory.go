@@ -35,13 +35,10 @@ type StorageFactory struct {
 
 // StorageConfig holds all storage-related configurations
 type StorageConfig struct {
-	StorageType string           `mapstructure:"storage_type"`
-	Minio       *MinioConfig     `mapstructure:"minio"`
-	S3          *S3Config        `mapstructure:"s3"`
-	OSS         *OSSConfig       `mapstructure:"oss"`
-	Azure       *AzureConfig     `mapstructure:"azure"`
-	GCS         *GCSConfig       `mapstructure:"gcs"`
-	OpenDAL     *OpenDALConfig   `mapstructure:"opendal"`
+	StorageType string       `mapstructure:"storage_type"`
+	Minio       *MinioConfig `mapstructure:"minio"`
+	S3          *S3Config    `mapstructure:"s3"`
+	OSS         *OSSConfig   `mapstructure:"oss"`
 }
 
 // AzureConfig holds Azure-specific configurations
@@ -107,18 +104,10 @@ func (f *StorageFactory) initStorage(storageType string, v *viper.Viper) error {
 	switch storageType {
 	case "MINIO":
 		return f.initMinio(v)
-	case "AZURE_SPN":
-		return f.initAzureSPN(v)
-	case "AZURE_SAS":
-		return f.initAzureSAS(v)
 	case "AWS_S3":
 		return f.initS3(v)
 	case "OSS":
 		return f.initOSS(v)
-	case "GCS":
-		return f.initGCS(v)
-	case "OPENDAL":
-		return f.initOpenDAL(v)
 	default:
 		return fmt.Errorf("unsupported storage type: %s", storageType)
 	}
@@ -162,58 +151,6 @@ func (f *StorageFactory) initMinio(v *viper.Viper) error {
 	f.storageType = StorageMinio
 	f.storage = storage
 	f.config.Minio = config
-
-	return nil
-}
-
-func (f *StorageFactory) initAzureSPN(v *viper.Viper) error {
-	config := &AzureSPNConfig{}
-
-	if v.IsSet("azure") {
-		azureConfig := v.Sub("azure")
-		if azureConfig != nil {
-			config.AccountURL = azureConfig.GetString("account_url")
-			config.ClientID = azureConfig.GetString("client_id")
-			config.ClientSecret = azureConfig.GetString("secret")
-			config.TenantID = azureConfig.GetString("tenant_id")
-			config.ContainerName = azureConfig.GetString("container_name")
-			config.AuthorityHost = azureConfig.GetString("authority_host")
-		}
-	}
-
-	storage, err := NewAzureSPNStorage(config)
-	if err != nil {
-		return fmt.Errorf("failed to create Azure SPN storage: %w", err)
-	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.storageType = StorageAzureSpn
-	f.storage = storage
-
-	return nil
-}
-
-func (f *StorageFactory) initAzureSAS(v *viper.Viper) error {
-	config := &AzureSASConfig{}
-
-	if v.IsSet("azure") {
-		azureConfig := v.Sub("azure")
-		if azureConfig != nil {
-			config.ContainerURL = azureConfig.GetString("container_url")
-			config.SASToken = azureConfig.GetString("sas_token")
-		}
-	}
-
-	storage, err := NewAzureSASStorage(config)
-	if err != nil {
-		return fmt.Errorf("failed to create Azure SAS storage: %w", err)
-	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.storageType = StorageAzureSas
-	f.storage = storage
 
 	return nil
 }
@@ -281,93 +218,6 @@ func (f *StorageFactory) initOSS(v *viper.Viper) error {
 	return nil
 }
 
-func (f *StorageFactory) initGCS(v *viper.Viper) error {
-	config := &GCSConfig{}
-
-	if v.IsSet("gcs") {
-		gcsConfig := v.Sub("gcs")
-		if gcsConfig != nil {
-			config.Bucket = gcsConfig.GetString("bucket")
-			config.CredentialsFile = gcsConfig.GetString("credentials_file")
-			config.ProjectID = gcsConfig.GetString("project_id")
-		}
-	}
-
-	storage, err := NewGCSStorage(config)
-	if err != nil {
-		return fmt.Errorf("failed to create GCS storage: %w", err)
-	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.storageType = StorageGCS
-	f.storage = storage
-	f.config.GCS = config
-
-	return nil
-}
-
-func (f *StorageFactory) initOpenDAL(v *viper.Viper) error {
-	config := &OpenDALConfig{
-		Scheme: "mysql",
-		Config: make(map[string]interface{}),
-	}
-
-	if v.IsSet("opendal") {
-		opendalConfig := v.Sub("opendal")
-		if opendalConfig != nil {
-			config.Scheme = opendalConfig.GetString("scheme")
-			if config.Scheme == "" {
-				config.Scheme = "mysql"
-			}
-
-			// Load custom config
-			if config.Scheme != "mysql" {
-				config.Config = opendalConfig.GetStringMap("config")
-			}
-		}
-	}
-
-	// For MySQL scheme, use MySQL config
-	if config.Scheme == "mysql" && v.IsSet("mysql") {
-		mysqlConfig := v.Sub("mysql")
-		if mysqlConfig != nil {
-			config.MySQLHost = mysqlConfig.GetString("host")
-			config.MySQLPort = mysqlConfig.GetInt("port")
-			config.MySQLUser = mysqlConfig.GetString("user")
-			config.MySQLPassword = mysqlConfig.GetString("password")
-			config.MySQLDatabase = mysqlConfig.GetString("name")
-			config.MaxAllowedPacket = mysqlConfig.GetInt("max_allowed_packet")
-		}
-
-		if v.IsSet("opendal") {
-			opendalConfig := v.Sub("opendal")
-			if opendalConfig != nil {
-				config.Table = opendalConfig.GetString("config.oss_table")
-			}
-		}
-		if config.Table == "" {
-			config.Table = "opendal_storage"
-		}
-		if config.MaxAllowedPacket == 0 {
-			config.MaxAllowedPacket = 134217728 // Default 128MB
-		}
-	}
-
-	storage, err := NewOpenDALStorage(config)
-	if err != nil {
-		return fmt.Errorf("failed to create OpenDAL storage: %w", err)
-	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.storageType = StorageOpenDAL
-	f.storage = storage
-	f.config.OpenDAL = config
-
-	return nil
-}
-
 // GetStorage returns the current storage instance
 func (f *StorageFactory) GetStorage() Storage {
 	f.mu.RLock()
@@ -395,30 +245,6 @@ func (f *StorageFactory) Create(storageType StorageType) (Storage, error) {
 		} else {
 			return nil, fmt.Errorf("MinIO config not available")
 		}
-	case StorageAzureSpn:
-		if f.config.Azure != nil {
-			config := &AzureSPNConfig{
-				AccountURL:    f.config.Azure.AccountURL,
-				ClientID:      f.config.Azure.ClientID,
-				ClientSecret:  f.config.Azure.Secret,
-				TenantID:      f.config.Azure.TenantID,
-				ContainerName: f.config.Azure.ContainerName,
-				AuthorityHost: f.config.Azure.AuthorityHost,
-			}
-			storage, err = NewAzureSPNStorage(config)
-		} else {
-			return nil, fmt.Errorf("Azure config not available")
-		}
-	case StorageAzureSas:
-		if f.config.Azure != nil {
-			config := &AzureSASConfig{
-				ContainerURL: f.config.Azure.ContainerURL,
-				SASToken:     f.config.Azure.SASToken,
-			}
-			storage, err = NewAzureSASStorage(config)
-		} else {
-			return nil, fmt.Errorf("Azure config not available")
-		}
 	case StorageAWSS3:
 		if f.config.S3 != nil {
 			storage, err = NewS3Storage(f.config.S3)
@@ -430,18 +256,6 @@ func (f *StorageFactory) Create(storageType StorageType) (Storage, error) {
 			storage, err = NewOSSStorage(f.config.OSS)
 		} else {
 			return nil, fmt.Errorf("OSS config not available")
-		}
-	case StorageGCS:
-		if f.config.GCS != nil {
-			storage, err = NewGCSStorage(f.config.GCS)
-		} else {
-			return nil, fmt.Errorf("GCS config not available")
-		}
-	case StorageOpenDAL:
-		if f.config.OpenDAL != nil {
-			storage, err = NewOpenDALStorage(f.config.OpenDAL)
-		} else {
-			return nil, fmt.Errorf("OpenDAL config not available")
 		}
 	default:
 		return nil, fmt.Errorf("unsupported storage type: %v", storageType)
@@ -469,30 +283,6 @@ var StorageTypeMapping = map[StorageType]func(*StorageConfig) (Storage, error){
 		}
 		return NewMinioStorage(config.Minio)
 	},
-	StorageAzureSpn: func(config *StorageConfig) (Storage, error) {
-		if config.Azure == nil {
-			return nil, fmt.Errorf("Azure config not available")
-		}
-		azureConfig := &AzureSPNConfig{
-			AccountURL:    config.Azure.AccountURL,
-			ClientID:      config.Azure.ClientID,
-			ClientSecret:  config.Azure.Secret,
-			TenantID:      config.Azure.TenantID,
-			ContainerName: config.Azure.ContainerName,
-			AuthorityHost: config.Azure.AuthorityHost,
-		}
-		return NewAzureSPNStorage(azureConfig)
-	},
-	StorageAzureSas: func(config *StorageConfig) (Storage, error) {
-		if config.Azure == nil {
-			return nil, fmt.Errorf("Azure config not available")
-		}
-		azureConfig := &AzureSASConfig{
-			ContainerURL: config.Azure.ContainerURL,
-			SASToken:     config.Azure.SASToken,
-		}
-		return NewAzureSASStorage(azureConfig)
-	},
 	StorageAWSS3: func(config *StorageConfig) (Storage, error) {
 		if config.S3 == nil {
 			return nil, fmt.Errorf("S3 config not available")
@@ -505,18 +295,4 @@ var StorageTypeMapping = map[StorageType]func(*StorageConfig) (Storage, error){
 		}
 		return NewOSSStorage(config.OSS)
 	},
-	StorageOpenDAL: func(config *StorageConfig) (Storage, error) {
-		if config.OpenDAL == nil {
-			return nil, fmt.Errorf("OpenDAL config not available")
-		}
-		return NewOpenDALStorage(config.OpenDAL)
-	},
-	StorageGCS: func(config *StorageConfig) (Storage, error) {
-		if config.GCS == nil {
-			return nil, fmt.Errorf("GCS config not available")
-		}
-		return NewGCSStorage(config.GCS)
-	},
 }
-
-

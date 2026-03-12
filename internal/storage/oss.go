@@ -34,14 +34,14 @@ import (
 // OSSConfig holds Aliyun OSS storage configuration
 // OSS is compatible with S3 API
 type OSSConfig struct {
-	AccessKeyID     string `mapstructure:"access_key"`       // OSS Access Key ID
-	SecretAccessKey string `mapstructure:"secret_key"`       // OSS Secret Access Key
-	EndpointURL     string `mapstructure:"endpoint_url"`     // OSS Endpoint (e.g., "https://oss-cn-hangzhou.aliyuncs.com")
-	Region          string `mapstructure:"region"`           // Region (e.g., "cn-hangzhou")
-	Bucket          string `mapstructure:"bucket"`           // Default bucket (optional)
-	PrefixPath      string `mapstructure:"prefix_path"`      // Path prefix (optional)
+	AccessKeyID      string `mapstructure:"access_key"`        // OSS Access Key ID
+	SecretAccessKey  string `mapstructure:"secret_key"`        // OSS Secret Access Key
+	EndpointURL      string `mapstructure:"endpoint_url"`      // OSS Endpoint (e.g., "https://oss-cn-hangzhou.aliyuncs.com")
+	Region           string `mapstructure:"region"`            // Region (e.g., "cn-hangzhou")
+	Bucket           string `mapstructure:"bucket"`            // Default bucket (optional)
+	PrefixPath       string `mapstructure:"prefix_path"`       // Path prefix (optional)
 	SignatureVersion string `mapstructure:"signature_version"` // Signature version
-	AddressingStyle string `mapstructure:"addressing_style"`   // Addressing style
+	AddressingStyle  string `mapstructure:"addressing_style"`  // Addressing style
 }
 
 // OSSStorage implements Storage interface for Aliyun OSS
@@ -88,8 +88,8 @@ func (o *OSSStorage) connect() error {
 	}
 
 	// Create S3 client with OSS endpoint
-	o.client = s3.New(&cfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(o.config.EndpointURL)
+	o.client = s3.NewFromConfig(cfg, func(opts *s3.Options) {
+		opts.BaseEndpoint = aws.String(o.config.EndpointURL)
 	})
 
 	return nil
@@ -346,18 +346,18 @@ func (o *OSSStorage) RemoveBucket(bucket string) error {
 				Key:    obj.Key,
 			})
 			if err != nil {
-				zap.L().Error("Failed to delete object", zap.String("bucket", actualBucket), zap.String("key", toString(obj.Key)), zap.Error(err))
+				zap.L().Error("Failed to delete object", zap.String("bucket", actualBucket), zap.Error(err))
 			}
 		}
 
-		if !toBool(result.IsTruncated) {
+		if result.IsTruncated == nil || !*result.IsTruncated {
 			break
 		}
 		listInput.ContinuationToken = result.NextContinuationToken
 	}
 
 	// Delete bucket
-	_, err = o.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+	_, err := o.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
 		Bucket: aws.String(actualBucket),
 	})
 	if err != nil {
@@ -412,18 +412,4 @@ func isOSSNotFound(err error) bool {
 		return apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "404" || apiErr.ErrorCode() == "NoSuchKey"
 	}
 	return false
-}
-
-func toString(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
-func toBool(b *bool) bool {
-	if b == nil {
-		return false
-	}
-	return *b
 }
