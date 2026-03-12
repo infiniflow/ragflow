@@ -46,15 +46,17 @@ var (
 
 // Service admin service layer
 type Service struct {
-	userDAO    *dao.UserDAO
-	licenseDAO *dao.LicenseDAO
+	userDAO           *dao.UserDAO
+	licenseDAO        *dao.LicenseDAO
+	systemSettingsDAO *dao.SystemSettingsDAO
 }
 
 // NewService create admin service
 func NewService() *Service {
 	return &Service{
-		userDAO:    dao.NewUserDAO(),
-		licenseDAO: dao.NewLicenseDAO(),
+		userDAO:           dao.NewUserDAO(),
+		licenseDAO:        dao.NewLicenseDAO(),
+		systemSettingsDAO: dao.NewSystemSettingsDAO(),
 	}
 }
 
@@ -888,43 +890,172 @@ func (s *Service) RestartService(serviceID string) (map[string]interface{}, erro
 
 // Variable/Settings methods
 
-// GetVariable get variable
-func (s *Service) GetVariable(varName string) (map[string]interface{}, error) {
-	// TODO: Implement with settings manager
-	return map[string]interface{}{
-		"var_name":  varName,
-		"var_value": "",
-	}, nil
+// AdminException admin exception error
+type AdminException struct {
+	Message string
+	Code    int
+}
+
+// Error implement error interface
+func (e *AdminException) Error() string {
+	return e.Message
+}
+
+// NewAdminException create admin exception
+func NewAdminException(message string) *AdminException {
+	return &AdminException{
+		Message: message,
+		Code:    400,
+	}
+}
+
+// GetVariable get variable by name
+// Returns the system setting with the given name
+// Returns AdminException if the setting is not found
+func (s *Service) GetVariable(varName string) ([]map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetByName(varName)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(settings) == 0 {
+		return nil, NewAdminException("Can't get setting: " + varName)
+	}
+
+	result := make([]map[string]interface{}, 0, len(settings))
+	for _, setting := range settings {
+		result = append(result, map[string]interface{}{
+			"name":      setting.Name,
+			"source":    setting.Source,
+			"data_type": setting.DataType,
+			"value":     setting.Value,
+		})
+	}
+	return result, nil
 }
 
 // GetAllVariables get all variables
+// Returns all system settings from database
 func (s *Service) GetAllVariables() ([]map[string]interface{}, error) {
-	// TODO: Implement with settings manager
-	return []map[string]interface{}{}, nil
+	settings, err := s.systemSettingsDAO.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]map[string]interface{}, 0, len(settings))
+	for _, setting := range settings {
+		result = append(result, map[string]interface{}{
+			"name":      setting.Name,
+			"source":    setting.Source,
+			"data_type": setting.DataType,
+			"value":     setting.Value,
+		})
+	}
+	return result, nil
 }
 
 // SetVariable set variable
+// Creates or updates a system setting
+// If the setting exists, updates it; otherwise creates a new one
 func (s *Service) SetVariable(varName, varValue string) error {
-	// TODO: Implement with settings manager
-	_ = varName
-	_ = varValue
-	return nil
+	settings, err := s.systemSettingsDAO.GetByName(varName)
+	if err != nil {
+		return err
+	}
+
+	if len(settings) == 1 {
+		setting := &settings[0]
+		setting.Value = varValue
+		return s.systemSettingsDAO.UpdateByName(varName, setting)
+	} else if len(settings) > 1 {
+		return NewAdminException("Can't update more than 1 setting: " + varName)
+	}
+
+	// Create new setting if it doesn't exist
+	// Determine data_type based on name and value
+	dataType := "string"
+	if len(varName) >= 7 && varName[:7] == "sandbox" {
+		dataType = "json"
+	} else if len(varName) >= 9 && varName[len(varName)-9:] == ".enabled" {
+		dataType = "boolean"
+	}
+
+	newSetting := &model.SystemSettings{
+		Name:     varName,
+		Value:    varValue,
+		Source:   "admin",
+		DataType: dataType,
+	}
+	return s.systemSettingsDAO.Create(newSetting)
 }
 
 // Config methods
 
 // GetAllConfigs get all configs
+// Returns all service configurations from the config file
 func (s *Service) GetAllConfigs() ([]map[string]interface{}, error) {
-	// TODO: Implement with config manager
-	return []map[string]interface{}{}, nil
+	result := server.GetAllConfigs()
+	return result, nil
 }
 
 // Environment methods
 
 // GetAllEnvironments get all environments
+// Returns important environment variables
 func (s *Service) GetAllEnvironments() ([]map[string]interface{}, error) {
-	// TODO: Implement with environment manager
-	return []map[string]interface{}{}, nil
+	result := make([]map[string]interface{}, 0)
+
+	// DOC_ENGINE
+	docEngine := os.Getenv("DOC_ENGINE")
+	if docEngine == "" {
+		docEngine = "elasticsearch"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DOC_ENGINE",
+		"value": docEngine,
+	})
+
+	// DEFAULT_SUPERUSER_EMAIL
+	defaultSuperuserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
+	if defaultSuperuserEmail == "" {
+		defaultSuperuserEmail = "admin@ragflow.io"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DEFAULT_SUPERUSER_EMAIL",
+		"value": defaultSuperuserEmail,
+	})
+
+	// DB_TYPE
+	dbType := os.Getenv("DB_TYPE")
+	if dbType == "" {
+		dbType = "mysql"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DB_TYPE",
+		"value": dbType,
+	})
+
+	// DEVICE
+	device := os.Getenv("DEVICE")
+	if device == "" {
+		device = "cpu"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DEVICE",
+		"value": device,
+	})
+
+	// STORAGE_IMPL
+	storageImpl := os.Getenv("STORAGE_IMPL")
+	if storageImpl == "" {
+		storageImpl = "MINIO"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "STORAGE_IMPL",
+		"value": storageImpl,
+	})
+
+	return result, nil
 }
 
 // Version methods
