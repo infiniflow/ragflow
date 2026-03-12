@@ -153,15 +153,17 @@ def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
     parse_method = kwargs.get("parse_method", "raw")
 
     if not pdf_parser.check_installation():
-        callback(-1, "Docling not found.")
+        if callback:
+            callback(-1, "Docling not found.")
         return None, None, pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
         filepath=filename,
         binary=binary,
         callback=callback,
-        output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
-        delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+        output_dir=os.environ.get("DOCLING_OUTPUT_DIR", ""),
+        delete_output=bool(int(os.environ.get("DOCLING_DELETE_OUTPUT", 1))),
+        docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""),
         parse_method=parse_method,
     )
     return sections, tables, pdf_parser

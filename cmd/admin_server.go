@@ -137,7 +137,7 @@ func main() {
 	r.Setup(ginEngine)
 
 	// Create HTTP server
-	addr := fmt.Sprintf(":9381")
+	addr := fmt.Sprintf(":%d", cfg.Admin.Port)
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: ginEngine,
@@ -159,8 +159,8 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		logger.Info(fmt.Sprintf("Version: %s", utility.GetRAGFlowVersion()))
-		logger.Info(fmt.Sprintf("Starting RAGFlow admin server on port: 9381"))
+		logger.Info(fmt.Sprintf("Admin Go Version: %s", utility.GetRAGFlowVersion()))
+		logger.Info(fmt.Sprintf("Starting RAGFlow admin server on port: %d", cfg.Admin.Port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatal("Failed to start server", zap.Error(err))
 		}

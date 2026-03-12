@@ -140,6 +140,8 @@ func InitDB() error {
 		&model.EvaluationCase{},
 		&model.EvaluationRun{},
 		&model.EvaluationResult{},
+		&model.TimeRecord{},
+		&model.License{},
 	}
 
 	for _, m := range models {
