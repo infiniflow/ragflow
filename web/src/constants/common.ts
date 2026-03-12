@@ -41,6 +41,7 @@ export const fileIconMap = {
   xml: 'xml.svg',
 };
 
+// TODO: Need to migrate to standard BCP 47 language tag
 export const LanguageList = [
   'English',
   'Chinese',
@@ -68,7 +69,7 @@ export const LanguageMap = {
   Vietnamese: 'Tiếng việt',
   Japanese: '日本語',
   'Portuguese BR': 'Português BR',
-  German: 'German',
+  German: 'Deutsch',
   French: 'Français',
   Italian: 'Italiano',
   Bulgarian: 'Български',
