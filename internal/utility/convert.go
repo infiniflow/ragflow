@@ -19,6 +19,7 @@ package utility
 import (
 	"fmt"
 	"os"
+	"time"
 )
 
 // GetProjectBaseDirectory returns the current working directory.
@@ -77,4 +78,12 @@ func ParseInt64(s string) int64 {
 	var result int64
 	fmt.Sscanf(s, "%d", &result)
 	return result
+}
+
+// FormatTime formats time for display
+func FormatTime(t time.Time) string {
+	if t.IsZero() {
+		return "N/A (Perpetual)"
+	}
+	return t.Format("2006-01-02 15:04:05")
 }

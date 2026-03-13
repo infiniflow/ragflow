@@ -604,6 +604,18 @@ class RAGFlowClient:
         else:
             print(f"Fail to set license, code: {res_json['code']}, message: {res_json['message']}")
 
+    def set_license_config(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+        value1 = command["value1"]
+        value2 = command["value2"]
+        response = self.http_client.request("POST", "/admin/license/config", json_body={"value1": value1, "value2": value2}, use_api_base=True, auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            print("Set license successfully")
+        else:
+            print(f"Fail to set license, code: {res_json['code']}, message: {res_json['message']}")
+
     def show_license(self, command):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
@@ -1560,6 +1572,8 @@ def run_command(client: RAGFlowClient, command_dict: dict):
             client.show_fingerprint(command_dict)
         case "set_license":
             client.set_license(command_dict)
+        case "set_license_config":
+            client.set_license_config(command_dict)
         case "show_license":
             client.show_license(command_dict)
         case "check_license":

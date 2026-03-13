@@ -88,6 +88,20 @@ func errorResponse(c *gin.Context, message string, code int) {
 	})
 }
 
+func responseWithCode(c *gin.Context, message string, httpCode int, errorCode common.ErrorCode) {
+	if message == "" {
+		c.JSON(httpCode, ErrorResponse{
+			Code:    int(errorCode),
+			Message: errorCode.Message(),
+		})
+	} else {
+		c.JSON(httpCode, ErrorResponse{
+			Code:    int(errorCode),
+			Message: message,
+		})
+	}
+}
+
 // Health health check
 func (h *Handler) Health(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "ok"})
@@ -909,6 +923,19 @@ func (h *Handler) SetLicense(c *gin.Context) {
 	return
 }
 
+type SetLicenseConfigHTTPRequest struct {
+	TimeRecordSaveInterval int64 `json:"value1" binding:"required"`
+	TimeRecordTaskDuration int64 `json:"value2" binding:"required"`
+}
+
+func (h *Handler) UpdateLicenseConfig(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"code":    common.CodeServerError,
+		"message": "method not implemented",
+	})
+	return
+}
+
 // ShowLicense to get system license
 func (h *Handler) ShowLicense(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, gin.H{
@@ -1092,10 +1119,11 @@ func (h *Handler) Reports(c *gin.Context) {
 	}
 
 	// Handle the heartbeat
-	if err := h.service.HandleHeartbeat(&req); err != nil {
-		errorResponse(c, "Failed to process heartbeat: "+err.Error(), 500)
+	errCode, message := h.service.HandleHeartbeat(&req)
+	if errCode != common.CodeLicenseValid {
+		responseWithCode(c, message, 500, errCode)
 		return
 	}
 
-	successNoData(c, "Heartbeat received successfully")
+	responseWithCode(c, message, int(http.StatusOK), errCode)
 }
