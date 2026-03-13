@@ -543,12 +543,15 @@ def test_create_and_update_guard_matrix(monkeypatch):
     assert "Fail to create a session" in res["message"]
 
     monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args()))
-    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (False, None))
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [SimpleNamespace(id="agent-1")])
+
+    def _raise_lookup(*_args, **_kwargs):
+        raise LookupError("Agent not found.")
+
+    monkeypatch.setattr(module.UserCanvasService, "get_agent_dsl_with_release", _raise_lookup)
     res = _run(inspect.unwrap(module.create_agent_session)("tenant-1", "agent-1"))
     assert res["message"] == "Agent not found."
 
-    canvas = SimpleNamespace(dsl="{}", id="agent-1")
-    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, canvas))
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [])
     res = _run(inspect.unwrap(module.create_agent_session)("tenant-1", "agent-1"))
     assert res["message"] == "You cannot access the agent."
