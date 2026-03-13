@@ -53,7 +53,7 @@ func main() {
 	flag.Parse()
 
 	// Initialize logger
-	if err := logger.Init("debug"); err != nil {
+	if err := logger.Init("info"); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
