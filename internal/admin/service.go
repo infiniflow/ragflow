@@ -29,12 +29,15 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/elasticsearch"
+	"ragflow/internal/logger"
 	"ragflow/internal/model"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"regexp"
 	"strconv"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // Service errors
@@ -50,6 +53,19 @@ type Service struct {
 	licenseDAO        *dao.LicenseDAO
 	timeRecordDAO     *dao.TimeRecordDAO
 	systemSettingsDAO *dao.SystemSettingsDAO
+	tenantDAO         *dao.TenantDAO
+	userTenantDAO     *dao.UserTenantDAO
+	tenantLLMDAO      *dao.TenantLLMDAO
+	fileDAO           *dao.FileDAO
+	documentDAO       *dao.DocumentDAO
+	taskDAO           *dao.TaskDAO
+	kbDAO             *dao.KnowledgebaseDAO
+	canvasDAO         *dao.UserCanvasDAO
+	chatDAO           *dao.ChatDAO
+	chatSessionDAO    *dao.ChatSessionDAO
+	apiTokenDAO       *dao.APITokenDAO
+	api4ConvDAO       *dao.API4ConversationDAO
+	llmDAO            *dao.LLMDAO
 }
 
 // NewService create admin service
@@ -59,6 +75,19 @@ func NewService() *Service {
 		licenseDAO:        dao.NewLicenseDAO(),
 		timeRecordDAO:     dao.NewTimeRecordDAO(),
 		systemSettingsDAO: dao.NewSystemSettingsDAO(),
+		tenantDAO:         dao.NewTenantDAO(),
+		userTenantDAO:     dao.NewUserTenantDAO(),
+		tenantLLMDAO:      dao.NewTenantLLMDAO(),
+		fileDAO:           dao.NewFileDAO(),
+		documentDAO:       dao.NewDocumentDAO(),
+		taskDAO:           dao.NewTaskDAO(),
+		kbDAO:             dao.NewKnowledgebaseDAO(),
+		canvasDAO:         dao.NewUserCanvasDAO(),
+		chatDAO:           dao.NewChatDAO(),
+		chatSessionDAO:    dao.NewChatSessionDAO(),
+		apiTokenDAO:       dao.NewAPITokenDAO(),
+		api4ConvDAO:       dao.NewAPI4ConversationDAO(),
+		llmDAO:            dao.NewLLMDAO(),
 	}
 }
 
@@ -176,9 +205,133 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		},
 	}
 
-	if err := s.userDAO.Create(user); err != nil {
+	// Start transaction for creating user and related data
+	tx := dao.DB.Begin()
+	if tx.Error != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", tx.Error)
+	}
+
+	// Rollback helper function
+	rollbackTx := func() {
+		if rbErr := tx.Rollback(); rbErr.Error != nil {
+			logger.Error("failed to rollback transaction", rbErr.Error)
+		}
+	}
+
+	// 1. Create user
+	if err := tx.Create(user).Error; err != nil {
+		rollbackTx()
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
+
+	// 2. Create tenant (tenant_id = user_id)
+	// tenant name = nickname + "'s Kingdom" (same as Python)
+	tenantName := user.Nickname + "'s Kingdom"
+
+	// Get default model IDs from config
+	cfg := server.GetConfig()
+	chatMdl := ""
+	embdMdl := ""
+	asrMdl := ""
+	img2txtMdl := ""
+	rerankMdl := ""
+	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"
+
+	if cfg != nil {
+		chatMdl = cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
+		embdMdl = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name
+		asrMdl = cfg.UserDefaultLLM.DefaultModels.ASRModel.Name
+		img2txtMdl = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name
+		rerankMdl = cfg.UserDefaultLLM.DefaultModels.RerankModel.Name
+	}
+
+	tenantStatus := "1"
+	tenant := &model.Tenant{
+		ID:        userID,
+		Name:      &tenantName,
+		LLMID:     chatMdl,
+		EmbdID:    embdMdl,
+		ASRID:     asrMdl,
+		Img2TxtID: img2txtMdl,
+		RerankID:  rerankMdl,
+		ParserIDs: parserIDs,
+		Credit:    512,
+		Status:    &tenantStatus,
+		BaseModel: model.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
+	}
+	if err := tx.Create(tenant).Error; err != nil {
+		rollbackTx()
+		return nil, fmt.Errorf("failed to create tenant: %w", err)
+	}
+
+	// 3. Create user-tenant relation
+	userTenantStatus := "1"
+	userTenant := &model.UserTenant{
+		ID:        utility.GenerateToken(),
+		UserID:    userID,
+		TenantID:  userID,
+		Role:      "owner",
+		InvitedBy: userID,
+		Status:    &userTenantStatus,
+		BaseModel: model.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
+	}
+	if err := tx.Create(userTenant).Error; err != nil {
+		rollbackTx()
+		return nil, fmt.Errorf("failed to create user-tenant relation: %w", err)
+	}
+
+	// 4. Create tenant LLM configurations
+	tenantLLMs, err := s.getInitTenantLLM(userID)
+	if err != nil {
+		logger.Warn("failed to get init tenant LLM configs", zap.Error(err))
+		// Continue without LLM configs - not a critical error
+	} else if len(tenantLLMs) > 0 {
+		if err := tx.Create(&tenantLLMs).Error; err != nil {
+			logger.Warn("failed to create tenant LLM configs", zap.Error(err))
+			// Continue without LLM configs - not a critical error
+		}
+	}
+
+	// 5. Create root file folder
+	fileID := utility.GenerateToken()
+	fileLocation := ""
+	file := &model.File{
+		ID:        fileID,
+		ParentID:  fileID,
+		TenantID:  userID,
+		CreatedBy: userID,
+		Name:      "/",
+		Type:      "folder",
+		Size:      0,
+		Location:  &fileLocation,
+		BaseModel: model.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
+	}
+	if err := tx.Create(file).Error; err != nil {
+		rollbackTx()
+		return nil, fmt.Errorf("failed to create root file folder: %w", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	logger.Info("Create user success with tenant and related data", zap.String("username", username))
 
 	return map[string]interface{}{
 		"id":           user.ID,
@@ -188,6 +341,139 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		"is_superuser": isSuperuser,
 		"create_date":  user.CreateDate,
 	}, nil
+}
+
+// getInitTenantLLM gets initial tenant LLM configurations
+// This matches Python's get_init_tenant_llm function
+func (s *Service) getInitTenantLLM(userID string) ([]*model.TenantLLM, error) {
+	cfg := server.GetConfig()
+	if cfg == nil {
+		return nil, fmt.Errorf("config not initialized")
+	}
+
+	var tenantLLMs []*model.TenantLLM
+
+	// Get model configs from configuration
+	modelConfigs := []server.ModelConfig{
+		cfg.UserDefaultLLM.DefaultModels.ChatModel,
+		cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
+		cfg.UserDefaultLLM.DefaultModels.RerankModel,
+		cfg.UserDefaultLLM.DefaultModels.ASRModel,
+		cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
+	}
+
+	// Track seen factories to avoid duplicates
+	seenFactories := make(map[string]bool)
+	var uniqueFactories []server.ModelConfig
+
+	for _, mc := range modelConfigs {
+		if mc.Factory == "" {
+			continue
+		}
+		if !seenFactories[mc.Factory] {
+			seenFactories[mc.Factory] = true
+			uniqueFactories = append(uniqueFactories, mc)
+		}
+	}
+
+	// Get LLMs for each unique factory
+	for _, factoryConfig := range uniqueFactories {
+		llms, err := s.llmDAO.GetByFactory(factoryConfig.Factory)
+		if err != nil {
+			logger.Warn("failed to get LLMs for factory", zap.String("factory", factoryConfig.Factory), zap.Error(err))
+			continue
+		}
+
+		for _, llm := range llms {
+			// Determine API key and base URL based on model type
+			var apiKey, apiBase string
+			switch llm.ModelType {
+			case string(model.ModelTypeChat):
+				apiKey = factoryConfig.APIKey
+				apiBase = factoryConfig.BaseURL
+			case string(model.ModelTypeEmbedding):
+				apiKey = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.APIKey
+				apiBase = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.BaseURL
+				if apiKey == "" {
+					apiKey = factoryConfig.APIKey
+				}
+				if apiBase == "" {
+					apiBase = factoryConfig.BaseURL
+				}
+			case string(model.ModelTypeRerank):
+				apiKey = cfg.UserDefaultLLM.DefaultModels.RerankModel.APIKey
+				apiBase = cfg.UserDefaultLLM.DefaultModels.RerankModel.BaseURL
+				if apiKey == "" {
+					apiKey = factoryConfig.APIKey
+				}
+				if apiBase == "" {
+					apiBase = factoryConfig.BaseURL
+				}
+			case string(model.ModelTypeSpeech2Text):
+				apiKey = cfg.UserDefaultLLM.DefaultModels.ASRModel.APIKey
+				apiBase = cfg.UserDefaultLLM.DefaultModels.ASRModel.BaseURL
+				if apiKey == "" {
+					apiKey = factoryConfig.APIKey
+				}
+				if apiBase == "" {
+					apiBase = factoryConfig.BaseURL
+				}
+			case string(model.ModelTypeImage2Text):
+				apiKey = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.APIKey
+				apiBase = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.BaseURL
+				if apiKey == "" {
+					apiKey = factoryConfig.APIKey
+				}
+				if apiBase == "" {
+					apiBase = factoryConfig.BaseURL
+				}
+			default:
+				apiKey = factoryConfig.APIKey
+				apiBase = factoryConfig.BaseURL
+			}
+
+			maxTokens := int64(8192)
+			if llm.MaxTokens > 0 {
+				maxTokens = llm.MaxTokens
+			}
+
+			llmName := llm.LLMName
+			modelType := llm.ModelType
+			now := time.Now().Unix()
+			nowDate := time.Now()
+
+			tenantLLM := &model.TenantLLM{
+				TenantID:   userID,
+				LLMFactory: factoryConfig.Factory,
+				LLMName:    &llmName,
+				ModelType:  &modelType,
+				APIKey:     &apiKey,
+				APIBase:    &apiBase,
+				MaxTokens:  maxTokens,
+				Status:     "1",
+				BaseModel: model.BaseModel{
+					CreateTime: &now,
+					CreateDate: &nowDate,
+					UpdateTime: &now,
+					UpdateDate: &nowDate,
+				},
+			}
+			tenantLLMs = append(tenantLLMs, tenantLLM)
+		}
+	}
+
+	// Remove duplicates based on (tenant_id, llm_factory, llm_name)
+	seen := make(map[string]bool)
+	var uniqueLLMs []*model.TenantLLM
+	for _, tllm := range tenantLLMs {
+		key := fmt.Sprintf("%s|%s|%s", tllm.TenantID, tllm.LLMFactory, *tllm.LLMName)
+		if !seen[key] {
+			seen[key] = true
+			uniqueLLMs = append(uniqueLLMs, tllm)
+		}
+	}
+
+	return uniqueLLMs, nil
 }
 
 // GetUserDetails get user details
@@ -209,7 +495,7 @@ func (s *Service) GetUserDetails(username string) (map[string]interface{}, error
 	}, nil
 }
 
-// DeleteUser delete user
+// DeleteUser delete user with cascade delete of all related data
 // Parameters:
 //   - username: email address of the user to delete
 //
@@ -237,9 +523,139 @@ func (s *Service) DeleteUser(username string) error {
 		return fmt.Errorf("Cannot delete admin account")
 	}
 
-	if err := s.userDAO.DeleteByID(user.ID); err != nil {
-		return fmt.Errorf("failed to delete user: %w", err)
+	// Get user-tenant relations
+	tenants, err := s.userTenantDAO.GetByUserIDAll(user.ID)
+	if err != nil {
+		logger.Warn("failed to get user-tenant relations", zap.Error(err))
 	}
+
+	// Find owned tenant (role = "owner")
+	var ownedTenantID string
+	for _, t := range tenants {
+		if t.Role == "owner" {
+			ownedTenantID = t.TenantID
+			break
+		}
+	}
+
+	// Start transaction for cascade delete
+	tx := dao.DB.Begin()
+	if tx.Error != nil {
+		return fmt.Errorf("failed to begin transaction: %w", tx.Error)
+	}
+
+	// Rollback helper function
+	rollbackTx := func() {
+		if rbErr := tx.Rollback(); rbErr.Error != nil {
+			logger.Error("failed to rollback transaction", rbErr.Error)
+		}
+	}
+
+	// Delete owned tenant data
+	if ownedTenantID != "" {
+		// 1. Get knowledge base IDs
+		kbIDs, err := s.kbDAO.GetKBIDsByTenantIDSimple(ownedTenantID)
+		if err != nil {
+			logger.Warn("failed to get knowledge base IDs", zap.Error(err))
+		}
+
+		if len(kbIDs) > 0 {
+			// 2. Get document IDs
+			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(kbIDs)
+			if err != nil {
+				logger.Warn("failed to get document IDs", zap.Error(err))
+			}
+
+			// 3. Delete tasks by document IDs
+			if len(docIDs) > 0 {
+				docIDList := make([]string, len(docIDs))
+				for i, d := range docIDs {
+					docIDList[i] = d["id"]
+				}
+				if delErr := tx.Unscoped().Where("doc_id IN ?", docIDList).Delete(&model.Task{}); delErr.Error != nil {
+					logger.Warn("failed to delete tasks", zap.Error(delErr.Error))
+				}
+			}
+
+			// 4. Delete documents
+			if delErr := tx.Unscoped().Where("kb_id IN ?", kbIDs).Delete(&model.Document{}); delErr.Error != nil {
+				logger.Warn("failed to delete documents", zap.Error(delErr.Error))
+			}
+
+			// 5. Delete knowledge bases
+			if delErr := tx.Unscoped().Where("id IN ?", kbIDs).Delete(&model.Knowledgebase{}); delErr.Error != nil {
+				logger.Warn("failed to delete knowledge bases", zap.Error(delErr.Error))
+			}
+		}
+
+		// 6. Delete files
+		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&model.File{}); delErr.Error != nil {
+			logger.Warn("failed to delete files", zap.Error(delErr.Error))
+		}
+
+		// 7. Delete user canvas (agents)
+		if delErr := tx.Unscoped().Where("user_id = ?", ownedTenantID).Delete(&model.UserCanvas{}); delErr.Error != nil {
+			logger.Warn("failed to delete user canvas", zap.Error(delErr.Error))
+		}
+
+		// 8. Get dialog IDs
+		var dialogIDs []string
+		if pluckErr := tx.Model(&model.Chat{}).Where("tenant_id = ?", ownedTenantID).Pluck("id", &dialogIDs); pluckErr.Error != nil {
+			logger.Warn("failed to get dialog IDs", zap.Error(pluckErr.Error))
+		}
+
+		// 9. Delete chat sessions
+		if len(dialogIDs) > 0 {
+			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&model.ChatSession{}); delErr.Error != nil {
+				logger.Warn("failed to delete chat sessions", zap.Error(delErr.Error))
+			}
+		}
+
+		// 10. Delete chats/dialogs
+		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&model.Chat{}); delErr.Error != nil {
+			logger.Warn("failed to delete chats", zap.Error(delErr.Error))
+		}
+
+		// 11. Delete API tokens
+		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&model.APIToken{}); delErr.Error != nil {
+			logger.Warn("failed to delete API tokens", zap.Error(delErr.Error))
+		}
+
+		// 12. Delete API4Conversations
+		if len(dialogIDs) > 0 {
+			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&model.API4Conversation{}); delErr.Error != nil {
+				logger.Warn("failed to delete API4Conversations", zap.Error(delErr.Error))
+			}
+		}
+
+		// 13. Delete tenant LLM configurations
+		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&model.TenantLLM{}); delErr.Error != nil {
+			logger.Warn("failed to delete tenant LLM", zap.Error(delErr.Error))
+		}
+
+		// 14. Delete tenant
+		if delErr := tx.Unscoped().Where("id = ?", ownedTenantID).Delete(&model.Tenant{}); delErr.Error != nil {
+			logger.Warn("failed to delete tenant", zap.Error(delErr.Error))
+		}
+	}
+
+	// 15. Delete user-tenant relations
+	if delErr := tx.Unscoped().Where("user_id = ?", user.ID).Delete(&model.UserTenant{}); delErr.Error != nil {
+		logger.Warn("failed to delete user-tenant relations", zap.Error(delErr.Error))
+	}
+
+	// 16. Finally, hard delete user
+	if delErr := tx.Unscoped().Where("id = ?", user.ID).Delete(&model.User{}); delErr.Error != nil {
+		rollbackTx()
+		return fmt.Errorf("failed to delete user: %w", delErr.Error)
+	}
+
+	// Commit transaction
+	if commitErr := tx.Commit(); commitErr.Error != nil {
+		return fmt.Errorf("failed to commit transaction: %w", commitErr.Error)
+	}
+
+	logger.Info("Delete user success with all related data", zap.String("username", username))
 
 	return nil
 }
