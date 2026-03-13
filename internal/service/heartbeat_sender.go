@@ -18,6 +18,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/server"
@@ -69,7 +70,7 @@ func (h *HeartbeatSender) InitHTTPClient() error {
 
 	h.logger.Info("Heartbeat HTTP client initialized",
 		zap.String("admin_host", adminConfig.Host),
-		zap.Int("admin_port", adminConfig.Port+2),
+		zap.Int("admin_port", adminConfig.Port),
 	)
 
 	return nil
@@ -119,10 +120,16 @@ func (h *HeartbeatSender) SendHeartbeat() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		h.logger.Error("Heartbeat request failed",
-			zap.Int("status_code", resp.StatusCode),
-		)
-		return fmt.Errorf("heartbeat request failed with status code: %d", resp.StatusCode)
+		// extract the Code and Message field of the response
+		var responseBody map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&responseBody)
+		if err != nil {
+			return err
+		}
+		responseCode := common.ErrorCode(responseBody["code"].(float64))
+		if responseCode != common.CodeLicenseValid {
+			return errors.New(responseCode.Message())
+		}
 	}
 
 	h.logger.Debug("Heartbeat sent successfully",

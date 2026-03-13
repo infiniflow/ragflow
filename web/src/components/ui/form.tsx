@@ -102,13 +102,14 @@ const FormLabel = React.forwardRef<
   return (
     <Label
       ref={ref}
-      className={cn(className, 'flex pb-0.5')}
+      className={cn(
+        className,
+        required && 'before:content-["*"] before:text-state-error',
+      )}
       htmlFor={formItemId}
       {...props}
     >
-      {required && <span className="text-state-error">*</span>}
-      {props.children}
-
+      <span>{props.children}</span>
       {tooltip && <FormTooltip tooltip={tooltip}></FormTooltip>}
     </Label>
   );

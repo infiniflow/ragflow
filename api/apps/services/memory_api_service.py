@@ -291,6 +291,7 @@ async def search_message(filter_dict: dict, params: dict):
         "memory_id": list[str],
         "agent_id": str,
         "session_id": str
+        "user_id": str
     }
     :param params: {
         "query": str,

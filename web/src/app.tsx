@@ -13,6 +13,8 @@ import vi_VN from 'antd/locale/vi_VN';
 import zhCN from 'antd/locale/zh_CN';
 import zh_HK from 'antd/locale/zh_HK';
 import dayjs from 'dayjs';
+import 'dayjs/locale/ar';
+import 'dayjs/locale/zh-cn';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import localeData from 'dayjs/plugin/localeData';
@@ -88,9 +90,8 @@ function Root({ children }: React.PropsWithChildren) {
     AntLanguageMap[lng as keyof typeof AntLanguageMap] ?? enUS;
   const updateDocumentLocale = (lng: string) => {
     document.documentElement.lang = lng;
-    document.documentElement.dir = lng.toLowerCase().startsWith('ar')
-      ? 'rtl'
-      : 'ltr';
+    document.documentElement.dir = 'ltr';
+    dayjs.locale(lng === 'zh' ? 'zh-cn' : lng);
   };
 
   const [locale, setLocal] = useState<Locale>(getLocale(storage.getLanguage()));
@@ -123,6 +124,7 @@ function Root({ children }: React.PropsWithChildren) {
               : theme.defaultAlgorithm,
         }}
         locale={locale}
+        direction={'ltr'}
       >
         {children}
 

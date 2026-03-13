@@ -16,12 +16,18 @@
 
 package model
 
+import "time"
+
 // SystemSettings system settings model
 type SystemSettings struct {
-	Name     string `gorm:"column:name;primaryKey;size:128" json:"name"`
-	Source   string `gorm:"column:source;size:32;not null" json:"source"`
-	DataType string `gorm:"column:data_type;size:32;not null" json:"data_type"`
-	Value    string `gorm:"column:value;type:longtext;not null" json:"value"`
+	Name       string     `gorm:"column:name;primaryKey;size:128" json:"name"`
+	Source     string     `gorm:"column:source;size:32;not null" json:"source"`
+	DataType   string     `gorm:"column:data_type;size:32;not null" json:"data_type"`
+	Value      string     `gorm:"column:value;type:longtext;not null" json:"value"`
+	CreateTime *int64     `gorm:"column:create_time" json:"create_time"`
+	CreateDate *time.Time `gorm:"column:create_date" json:"create_date"`
+	UpdateTime *int64     `gorm:"column:update_time" json:"update_time"`
+	UpdateDate *time.Time `gorm:"column:update_date" json:"update_date"`
 }
 
 // TableName specify table name

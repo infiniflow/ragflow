@@ -20,6 +20,7 @@ export default {
       chinese: 'Chinois simplifié',
       traditionalChinese: 'Chinois traditionnel',
       bulgarian: 'Bulgare',
+      arabic: 'Arabe',
       language: 'Langue',
       languageMessage: 'Veuillez saisir votre langue !',
       languagePlaceholder: 'Sélectionnez votre langue',
@@ -477,6 +478,13 @@ export default {
       crossLanguage: 'Recherche inter-langues',
       crossLanguageTip: `Sélectionnez une ou plusieurs langues pour la recherche inter-langues. Si aucune langue n’est sélectionnée, le système recherche avec la requête originale.`,
     },
+    language: {
+      english: 'Anglais',
+      chinese: 'Chinois',
+      russian: 'Russe',
+      bulgarian: 'Bulgare',
+      arabic: 'Arabe',
+    },
     setting: {
       profile: 'Profil',
       avatar: 'Avatar',
@@ -681,7 +689,7 @@ export default {
         'Si votre fournisseur de modèle n\'est pas listé mais prétend être "compatible OpenAI", sélectionnez la carte compatible OpenAI-API pour ajouter le(s) modèle(s) pertinent(s).',
       mcp: 'MCP',
       dingtalkAITableDescription:
-        'Connectez-vous à Dingtalk AI Table et synchronisez les enregistrements d\'une table spécifiée.',
+        "Connectez-vous à Dingtalk AI Table et synchronisez les enregistrements d'une table spécifiée.",
     },
     message: {
       registered: 'Enregistré !',

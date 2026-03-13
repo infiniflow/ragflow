@@ -19,6 +19,7 @@ package admin
 import (
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -31,61 +32,34 @@ import (
 	"ragflow/internal/model"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
+	"regexp"
 	"strconv"
 	"time"
 )
 
+// Service errors
+var (
+	ErrInvalidToken = errors.New("invalid token")
+	ErrNotAdmin     = errors.New("user is not admin")
+	ErrUserInactive = errors.New("user is inactive")
+)
+
 // Service admin service layer
 type Service struct {
-	userDAO *dao.UserDAO
+	userDAO           *dao.UserDAO
+	licenseDAO        *dao.LicenseDAO
+	timeRecordDAO     *dao.TimeRecordDAO
+	systemSettingsDAO *dao.SystemSettingsDAO
 }
 
 // NewService create admin service
 func NewService() *Service {
 	return &Service{
-		userDAO: dao.NewUserDAO(),
+		userDAO:           dao.NewUserDAO(),
+		licenseDAO:        dao.NewLicenseDAO(),
+		timeRecordDAO:     dao.NewTimeRecordDAO(),
+		systemSettingsDAO: dao.NewSystemSettingsDAO(),
 	}
-}
-
-// LoginRequest login request
-type LoginRequest struct {
-	Email    string
-	Password string
-}
-
-// LoginResponse login response
-type LoginResponse struct {
-	Token    string
-	UserID   string
-	Email    string
-	Nickname string
-}
-
-// Login admin login
-func (s *Service) Login(req *LoginRequest) (*LoginResponse, error) {
-	// Get user by email
-	user, err := s.userDAO.GetByEmail(req.Email)
-	if err != nil {
-		return nil, ErrInvalidCredentials
-	}
-
-	// Check if user is active
-	if user.IsActive != "1" {
-		return nil, errors.New("user is not active")
-	}
-
-	// Generate access token
-	token := utility.GenerateToken()
-	if err := s.userDAO.UpdateAccessToken(user, token); err != nil {
-		return nil, err
-	}
-
-	return &LoginResponse{
-		Token:    token,
-		UserID:   user.ID,
-		Email:    user.Email,
-		Nickname: user.Nickname,
-	}, nil
 }
 
 // Logout user logout
@@ -96,6 +70,24 @@ func (s *Service) Logout(user interface{}) error {
 		return s.userDAO.UpdateAccessToken(u, invalidToken)
 	}
 	return nil
+}
+
+// GetUserByToken get user by access token
+func (s *Service) GetUserByToken(token string) (*model.User, error) {
+	user, err := s.userDAO.GetByAccessToken(token)
+	if err != nil {
+		return nil, ErrInvalidToken
+	}
+
+	if user.IsSuperuser == nil || !*user.IsSuperuser {
+		return nil, ErrNotAdmin
+	}
+
+	if user.IsActive != "1" {
+		return nil, fmt.Errorf("user inactive")
+	}
+
+	return user, nil
 }
 
 // generateRandomHex generate random hex string
@@ -126,11 +118,75 @@ func (s *Service) ListUsers() ([]map[string]interface{}, error) {
 }
 
 // CreateUser create a new user
+// Parameters:
+//   - username: email address of the user
+//   - password: encrypted password (base64 encoded RSA encrypted)
+//   - role: user role ("user" or "admin")
+//
+// Returns:
+//   - map[string]interface{}: user information without password
+//   - error: error message
 func (s *Service) CreateUser(username, password, role string) (map[string]interface{}, error) {
-	// TODO: Implement user creation with proper password hashing
+	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
+	if !emailRegex.MatchString(username) {
+		return nil, fmt.Errorf("Invalid email address: %s!", username)
+	}
+
+	existUser, _ := s.userDAO.GetByEmail(username)
+	if existUser != nil {
+		return nil, fmt.Errorf("User '%s' already exists", username)
+	}
+
+	decryptedPassword, err := DecryptPassword(password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt password: %w", err)
+	}
+
+	hashedPassword, err := GenerateWerkzeugPasswordHash(decryptedPassword, 150000)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	userID := utility.GenerateToken()
+	accessToken := utility.GenerateToken()
+	status := "1"
+	loginChannel := "password"
+	isSuperuser := role == "admin"
+
+	now := time.Now().Unix()
+	nowDate := time.Now()
+
+	user := &model.User{
+		ID:              userID,
+		AccessToken:     &accessToken,
+		Email:           username,
+		Nickname:        "",
+		Password:        &hashedPassword,
+		Status:          &status,
+		IsActive:        "1",
+		IsAuthenticated: "1",
+		IsAnonymous:     "0",
+		LoginChannel:    &loginChannel,
+		IsSuperuser:     &isSuperuser,
+		BaseModel: model.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
+	}
+
+	if err := s.userDAO.Create(user); err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
 	return map[string]interface{}{
-		"username": username,
-		"role":     role,
+		"id":           user.ID,
+		"email":        user.Email,
+		"nickname":     user.Nickname,
+		"is_active":    user.IsActive,
+		"is_superuser": isSuperuser,
+		"create_date":  user.CreateDate,
 	}, nil
 }
 
@@ -154,32 +210,188 @@ func (s *Service) GetUserDetails(username string) (map[string]interface{}, error
 }
 
 // DeleteUser delete user
+// Parameters:
+//   - username: email address of the user to delete
+//
+// Returns:
+//   - error: error message
 func (s *Service) DeleteUser(username string) error {
-	// TODO: Implement user deletion
+	userList, err := s.userDAO.ListByEmail(username)
+	if err != nil || len(userList) == 0 {
+		return fmt.Errorf("User '%s' not found", username)
+	}
+
+	if len(userList) > 1 {
+		return fmt.Errorf("Exist more than 1 user: %s!", username)
+	}
+
+	user := userList[0]
+
+	// Check if user is active - cannot delete active users
+	if user.IsActive == "1" {
+		return fmt.Errorf("User '%s' is active and can't be deleted. Please deactivate the user first", username)
+	}
+
+	// Check if user is superuser - cannot delete admin accounts
+	if user.IsSuperuser != nil && *user.IsSuperuser {
+		return fmt.Errorf("Cannot delete admin account")
+	}
+
+	if err := s.userDAO.DeleteByID(user.ID); err != nil {
+		return fmt.Errorf("failed to delete user: %w", err)
+	}
+
 	return nil
 }
 
 // ChangePassword change user password
+// Parameters:
+//   - username: email address of the user
+//   - newPassword: new encrypted password (base64 encoded RSA encrypted)
+//
+// Returns:
+//   - error: error message
 func (s *Service) ChangePassword(username, newPassword string) error {
-	// TODO: Implement password change
+	userList, err := s.userDAO.ListByEmail(username)
+	if err != nil || len(userList) == 0 {
+		return fmt.Errorf("User '%s' not found", username)
+	}
+
+	if len(userList) > 1 {
+		return fmt.Errorf("Exist more than 1 user: %s!", username)
+	}
+
+	user := userList[0]
+
+	decryptedPassword, err := DecryptPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt password: %w", err)
+	}
+
+	if user.Password != nil && CheckWerkzeugPassword(decryptedPassword, *user.Password) {
+		return nil
+	}
+
+	hashedPassword, err := GenerateWerkzeugPasswordHash(decryptedPassword, 150000)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	user.Password = &hashedPassword
+	now := time.Now().Unix()
+	user.UpdateTime = &now
+
+	if err := s.userDAO.Update(user); err != nil {
+		return fmt.Errorf("failed to update user: %w", err)
+	}
+
 	return nil
 }
 
 // UpdateUserActivateStatus update user activate status
+// Parameters:
+//   - username: email address of the user
+//   - isActive: true to activate, false to deactivate
+//
+// Returns:
+//   - error: error message
 func (s *Service) UpdateUserActivateStatus(username string, isActive bool) error {
-	// TODO: Implement activate status update
+	userList, err := s.userDAO.ListByEmail(username)
+	if err != nil || len(userList) == 0 {
+		return fmt.Errorf("User '%s' not found", username)
+	}
+
+	if len(userList) > 1 {
+		return fmt.Errorf("Exist more than 1 user: %s!", username)
+	}
+
+	user := userList[0]
+
+	targetStatus := "0"
+	if isActive {
+		targetStatus = "1"
+	}
+
+	if user.IsActive == targetStatus {
+		return nil
+	}
+
+	user.IsActive = targetStatus
+	now := time.Now().Unix()
+	user.UpdateTime = &now
+
+	if err := s.userDAO.Update(user); err != nil {
+		return fmt.Errorf("failed to update user: %w", err)
+	}
+
 	return nil
 }
 
 // GrantAdmin grant admin privileges
+// Parameters:
+//   - username: email address of the user
+//
+// Returns:
+//   - error: error message
 func (s *Service) GrantAdmin(username string) error {
-	// TODO: Implement grant admin
+	userList, err := s.userDAO.ListByEmail(username)
+	if err != nil || len(userList) == 0 {
+		return fmt.Errorf("User '%s' not found", username)
+	}
+
+	if len(userList) > 1 {
+		return fmt.Errorf("Exist more than 1 user: %s!", username)
+	}
+
+	user := userList[0]
+
+	if user.IsSuperuser != nil && *user.IsSuperuser {
+		return nil
+	}
+
+	isSuperuser := true
+	user.IsSuperuser = &isSuperuser
+	now := time.Now().Unix()
+	user.UpdateTime = &now
+
+	if err := s.userDAO.Update(user); err != nil {
+		return fmt.Errorf("failed to update user: %w", err)
+	}
+
 	return nil
 }
 
 // RevokeAdmin revoke admin privileges
+// Parameters:
+//   - username: email address of the user
+//
+// Returns:
+//   - error: error message
 func (s *Service) RevokeAdmin(username string) error {
-	// TODO: Implement revoke admin
+	userList, err := s.userDAO.ListByEmail(username)
+	if err != nil || len(userList) == 0 {
+		return fmt.Errorf("User '%s' not found", username)
+	}
+
+	if len(userList) > 1 {
+		return fmt.Errorf("Exist more than 1 user: %s!", username)
+	}
+
+	user := userList[0]
+
+	if user.IsSuperuser == nil || !*user.IsSuperuser {
+		return nil
+	}
+
+	isSuperuser := false
+	user.IsSuperuser = &isSuperuser
+	now := time.Now().Unix()
+	user.UpdateTime = &now
+
+	if err := s.userDAO.Update(user); err != nil {
+		return fmt.Errorf("failed to update user: %w", err)
+	}
+
 	return nil
 }
 
@@ -680,43 +892,172 @@ func (s *Service) RestartService(serviceID string) (map[string]interface{}, erro
 
 // Variable/Settings methods
 
-// GetVariable get variable
-func (s *Service) GetVariable(varName string) (map[string]interface{}, error) {
-	// TODO: Implement with settings manager
-	return map[string]interface{}{
-		"var_name":  varName,
-		"var_value": "",
-	}, nil
+// AdminException admin exception error
+type AdminException struct {
+	Message string
+	Code    int
+}
+
+// Error implement error interface
+func (e *AdminException) Error() string {
+	return e.Message
+}
+
+// NewAdminException create admin exception
+func NewAdminException(message string) *AdminException {
+	return &AdminException{
+		Message: message,
+		Code:    400,
+	}
+}
+
+// GetVariable get variable by name
+// Returns the system setting with the given name
+// Returns AdminException if the setting is not found
+func (s *Service) GetVariable(varName string) ([]map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetByName(varName)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(settings) == 0 {
+		return nil, NewAdminException("Can't get setting: " + varName)
+	}
+
+	result := make([]map[string]interface{}, 0, len(settings))
+	for _, setting := range settings {
+		result = append(result, map[string]interface{}{
+			"name":      setting.Name,
+			"source":    setting.Source,
+			"data_type": setting.DataType,
+			"value":     setting.Value,
+		})
+	}
+	return result, nil
 }
 
 // GetAllVariables get all variables
+// Returns all system settings from database
 func (s *Service) GetAllVariables() ([]map[string]interface{}, error) {
-	// TODO: Implement with settings manager
-	return []map[string]interface{}{}, nil
+	settings, err := s.systemSettingsDAO.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]map[string]interface{}, 0, len(settings))
+	for _, setting := range settings {
+		result = append(result, map[string]interface{}{
+			"name":      setting.Name,
+			"source":    setting.Source,
+			"data_type": setting.DataType,
+			"value":     setting.Value,
+		})
+	}
+	return result, nil
 }
 
 // SetVariable set variable
+// Creates or updates a system setting
+// If the setting exists, updates it; otherwise creates a new one
 func (s *Service) SetVariable(varName, varValue string) error {
-	// TODO: Implement with settings manager
-	_ = varName
-	_ = varValue
-	return nil
+	settings, err := s.systemSettingsDAO.GetByName(varName)
+	if err != nil {
+		return err
+	}
+
+	if len(settings) == 1 {
+		setting := &settings[0]
+		setting.Value = varValue
+		return s.systemSettingsDAO.UpdateByName(varName, setting)
+	} else if len(settings) > 1 {
+		return NewAdminException("Can't update more than 1 setting: " + varName)
+	}
+
+	// Create new setting if it doesn't exist
+	// Determine data_type based on name and value
+	dataType := "string"
+	if len(varName) >= 7 && varName[:7] == "sandbox" {
+		dataType = "json"
+	} else if len(varName) >= 9 && varName[len(varName)-9:] == ".enabled" {
+		dataType = "boolean"
+	}
+
+	newSetting := &model.SystemSettings{
+		Name:     varName,
+		Value:    varValue,
+		Source:   "admin",
+		DataType: dataType,
+	}
+	return s.systemSettingsDAO.Create(newSetting)
 }
 
 // Config methods
 
 // GetAllConfigs get all configs
+// Returns all service configurations from the config file
 func (s *Service) GetAllConfigs() ([]map[string]interface{}, error) {
-	// TODO: Implement with config manager
-	return []map[string]interface{}{}, nil
+	result := server.GetAllConfigs()
+	return result, nil
 }
 
 // Environment methods
 
 // GetAllEnvironments get all environments
+// Returns important environment variables
 func (s *Service) GetAllEnvironments() ([]map[string]interface{}, error) {
-	// TODO: Implement with environment manager
-	return []map[string]interface{}{}, nil
+	result := make([]map[string]interface{}, 0)
+
+	// DOC_ENGINE
+	docEngine := os.Getenv("DOC_ENGINE")
+	if docEngine == "" {
+		docEngine = "elasticsearch"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DOC_ENGINE",
+		"value": docEngine,
+	})
+
+	// DEFAULT_SUPERUSER_EMAIL
+	defaultSuperuserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
+	if defaultSuperuserEmail == "" {
+		defaultSuperuserEmail = "admin@ragflow.io"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DEFAULT_SUPERUSER_EMAIL",
+		"value": defaultSuperuserEmail,
+	})
+
+	// DB_TYPE
+	dbType := os.Getenv("DB_TYPE")
+	if dbType == "" {
+		dbType = "mysql"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DB_TYPE",
+		"value": dbType,
+	})
+
+	// DEVICE
+	device := os.Getenv("DEVICE")
+	if device == "" {
+		device = "cpu"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DEVICE",
+		"value": device,
+	})
+
+	// STORAGE_IMPL
+	storageImpl := os.Getenv("STORAGE_IMPL")
+	if storageImpl == "" {
+		storageImpl = "MINIO"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "STORAGE_IMPL",
+		"value": storageImpl,
+	})
+
+	return result, nil
 }
 
 // Version methods
@@ -766,17 +1107,151 @@ func (s *Service) TestSandboxConnection(providerType string, config map[string]i
 	}, nil
 }
 
+var heartBeatCount int64 = 0
+
 // HandleHeartbeat handle heartbeat
-func (s *Service) HandleHeartbeat(msg *common.BaseMessage) error {
+func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode, string) {
+	heartBeatCount++
+
 	status := &common.BaseMessage{
-		ServerName: msg.ServerName,
-		ServerType: msg.ServerType,
-		Host:       msg.Host,
-		Port:       msg.Port,
-		Version:    msg.Version,
-		Timestamp:  msg.Timestamp,
-		Ext:        msg.Ext,
+		ServerName: message.ServerName,
+		ServerType: message.ServerType,
+		Host:       message.Host,
+		Port:       message.Port,
+		Version:    message.Version,
+		Timestamp:  message.Timestamp,
+		Ext:        message.Ext,
 	}
-	GlobalServerStatusStore.UpdateStatus(msg.ServerName, status)
+	GlobalServerStatusStore.UpdateStatus(message.ServerName, status)
+	return common.CodeLicenseValid, ""
+}
+
+// InitDefaultAdmin initialize default admin user
+// This matches Python's init_default_admin behavior
+func (s *Service) InitDefaultAdmin() error {
+	// Default superuser settings (matching Python's DEFAULT_SUPERUSER_* defaults)
+	defaultNickname := "admin"
+	defaultEmail := "admin@ragflow.io"
+	defaultPassword := "admin"
+
+	// Query superusers
+	var users []*model.User
+	err := dao.DB.Where("is_superuser = ? AND status = ?", true, "1").Find(&users).Error
+	if err != nil {
+		return fmt.Errorf("failed to query superusers: %w", err)
+	}
+
+	if len(users) == 0 {
+		now := time.Now().Unix()
+		nowDate := time.Now()
+		userID := utility.GenerateToken()
+		accessToken := utility.GenerateToken()
+		status := "1"
+		loginChannel := "password"
+		isSuperuser := true
+
+		// Python: password = encode_to_base64(password) = base64.b64encode(password)
+		// Then: generate_password_hash(base64_password) creates werkzeug hash
+		password := base64.StdEncoding.EncodeToString([]byte(defaultPassword))
+		hashedPassword, err := GenerateWerkzeugPasswordHash(password, 150000)
+		if err != nil {
+			return fmt.Errorf("failed to hash password: %w", err)
+		}
+
+		user := &model.User{
+			ID:              userID,
+			Email:           defaultEmail,
+			Nickname:        defaultNickname,
+			Password:        &hashedPassword,
+			AccessToken:     &accessToken,
+			Status:          &status,
+			IsActive:        "1",
+			IsAuthenticated: "1",
+			IsAnonymous:     "0",
+			LoginChannel:    &loginChannel,
+			IsSuperuser:     &isSuperuser,
+			BaseModel: model.BaseModel{
+				CreateTime: &now,
+				CreateDate: &nowDate,
+				UpdateTime: &now,
+				UpdateDate: &nowDate,
+			},
+		}
+
+		if err := dao.DB.Create(user).Error; err != nil {
+			return fmt.Errorf("can't init admin: %w", err)
+		}
+
+		if err := s.addTenantForAdmin(userID, defaultNickname); err != nil {
+			return fmt.Errorf("failed to add tenant for admin: %w", err)
+		}
+
+		return nil
+	}
+
+	for _, user := range users {
+		if user.IsActive != "1" {
+			return fmt.Errorf("no active admin. Please update 'is_active' in db manually")
+		}
+	}
+
+	for _, user := range users {
+		if user.Email == defaultEmail {
+			// Check if tenant exists
+			var count int64
+			dao.DB.Model(&model.UserTenant{}).Where("user_id = ? AND status = ?", user.ID, "1").Count(&count)
+			if count == 0 {
+				nickname := defaultNickname
+				if user.Nickname != "" {
+					nickname = user.Nickname
+				}
+				if err := s.addTenantForAdmin(user.ID, nickname); err != nil {
+					return err
+				}
+			}
+			break
+		}
+	}
+
 	return nil
+}
+
+// addTenantForAdmin add tenant for admin user
+func (s *Service) addTenantForAdmin(userID, nickname string) error {
+	now := time.Now().Unix()
+	nowDate := time.Now()
+	status := "1"
+	role := "owner"
+	tenantName := nickname + "'s Kingdom"
+
+	tenant := &model.Tenant{
+		ID:   userID,
+		Name: &tenantName,
+		BaseModel: model.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
+	}
+
+	if err := dao.DB.Create(tenant).Error; err != nil {
+		return err
+	}
+
+	userTenant := &model.UserTenant{
+		TenantID:  userID,
+		UserID:    userID,
+		InvitedBy: userID,
+		Role:      role,
+		Status:    &status,
+		BaseModel: model.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
+	}
+
+	return dao.DB.Create(userTenant).Error
 }

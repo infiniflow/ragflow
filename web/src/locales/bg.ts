@@ -28,6 +28,7 @@ export default {
       traditionalChinese: 'Традиционен китайски',
       russian: 'Руски',
       bulgarian: 'Български',
+      arabic: 'Арабски',
       language: 'Език',
       languageMessage: 'Моля, въведете вашия език!',
       languagePlaceholder: 'изберете вашия език',
@@ -2380,10 +2381,11 @@ Important structured information may include: names, dates, locations, events, k
       vietnamese: 'Виетнамски',
       russian: 'Руски',
       bulgarian: 'Български',
+      arabic: 'Арабски',
     },
     pagination: {
       total: 'Общо {{total}}',
-      page: '{{page}} /Страница',
+      page: '{{page}} / Страница',
     },
     dataflowParser: {
       result: 'Резултат',

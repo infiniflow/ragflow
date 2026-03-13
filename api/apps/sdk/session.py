@@ -87,19 +87,20 @@ async def create(tenant_id, chat_id):
 async def create_agent_session(tenant_id, agent_id):
     req = await get_request_json()
     user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
-    release_mode = req.get("release", request.args.get("release", False))
-    e, cvs = UserCanvasService.get_by_id(agent_id)
-    if not e:
-        return get_error_data_result("Agent not found.")
+    release_mode = bool(req.get("release", request.args.get("release", False)))
+
     if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
         return get_error_data_result("You cannot access the agent.")
-    if not isinstance(cvs.dsl, str):
-        cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
-    if release_mode and not bool(cvs.release):
-        raise PermissionError("No available published version")
+    try:
+        cvs, dsl = UserCanvasService.get_agent_dsl_with_release(agent_id, release_mode, tenant_id)
+    except LookupError:
+        return get_error_data_result("Agent not found.")
+    except PermissionError as e:
+        return get_error_data_result(str(e))
+
     session_id = get_uuid()
-    canvas = Canvas(cvs.dsl, tenant_id, agent_id, canvas_id=cvs.id)
+    canvas = Canvas(dsl, tenant_id, agent_id, canvas_id=cvs.id)
     canvas.reset()
 
     cvs.dsl = json.loads(str(canvas))
@@ -584,6 +585,7 @@ async def agent_completions(tenant_id, agent_id):
     reference = {}
     final_ans = ""
     trace_items = []
+    structured_output = {}
     async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
         try:
             ans = json.loads(answer[5:])
@@ -594,20 +596,26 @@ async def agent_completions(tenant_id, agent_id):
             if ans.get("data", {}).get("reference", None):
                 reference.update(ans["data"]["reference"])
 
-            if return_trace and ans.get("event") == "node_finished":
-                data = ans.get("data", {})
-                trace_items.append(
-                    {
-                        "component_id": data.get("component_id"),
-                        "trace": [copy.deepcopy(data)],
-                    }
-                )
+            if ans.get("event") == "node_finished":
+                node_out = ans.get("data", {}).get("outputs", {})
+                if node_out.get("structured"):
+                    structured_output = node_out["structured"]
+                if return_trace:
+                    data = ans.get("data", {})
+                    trace_items.append(
+                        {
+                            "component_id": data.get("component_id"),
+                            "trace": [copy.deepcopy(data)],
+                        }
+                    )
 
             final_ans = ans
         except Exception as e:
             return get_result(data=f"**ERROR**: {str(e)}")
     final_ans["data"]["content"] = full_content
     final_ans["data"]["reference"] = reference
+    if structured_output:
+        final_ans["data"]["structured"] = structured_output
     if return_trace and final_ans:
         final_ans["data"]["trace"] = trace_items
     return get_result(data=final_ans)
@@ -744,7 +752,12 @@ async def delete(tenant_id, chat_id):
 
     ids = req.get("ids")
     if not ids:
-        return get_result()
+        if req.get("delete_all") is True:
+            ids = [conv.id for conv in ConversationService.query(dialog_id=chat_id)]
+            if not ids:
+                return get_result()
+        else:
+            return get_result()
 
     conv_list = ids
 
@@ -792,7 +805,12 @@ async def delete_agent_session(tenant_id, agent_id):
 
     ids = req.get("ids")
     if not ids:
-        return get_result()
+        if req.get("delete_all") is True:
+            ids = [conv.id for conv in API4ConversationService.query(dialog_id=agent_id)]
+            if not ids:
+                return get_result()
+        else:
+            return get_result()
 
     conv_list = ids
 

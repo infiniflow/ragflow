@@ -18,6 +18,7 @@ package admin
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/server"
@@ -31,9 +32,7 @@ import (
 
 // Common errors
 var (
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrUserNotFound       = errors.New("user not found")
-	ErrInvalidToken       = errors.New("invalid token")
+	ErrUserNotFound = errors.New("user not found")
 )
 
 // Handler admin handler
@@ -43,8 +42,11 @@ type Handler struct {
 }
 
 // NewHandler create admin handler
-func NewHandler(service *Service, userService *service.UserService) *Handler {
-	return &Handler{service: service, userService: userService}
+func NewHandler(svc *Service) *Handler {
+	return &Handler{
+		service:     svc,
+		userService: service.NewUserService(),
+	}
 }
 
 // SuccessResponse success response
@@ -86,6 +88,20 @@ func errorResponse(c *gin.Context, message string, code int) {
 	})
 }
 
+func responseWithCode(c *gin.Context, message string, httpCode int, errorCode common.ErrorCode) {
+	if message == "" {
+		c.JSON(httpCode, ErrorResponse{
+			Code:    int(errorCode),
+			Message: errorCode.Message(),
+		})
+	} else {
+		c.JSON(httpCode, ErrorResponse{
+			Code:    int(errorCode),
+			Message: message,
+		})
+	}
+}
+
 // Health health check
 func (h *Handler) Health(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "ok"})
@@ -96,28 +112,41 @@ func (h *Handler) Ping(c *gin.Context) {
 	successNoData(c, "PONG")
 }
 
-// LoginHTTPRequest login request body
-type LoginHTTPRequest struct {
-	Email    string `json:"email" binding:"required"`
-	Password string `json:"password" binding:"required"`
-}
-
 // Login handle admin login
+// @Summary Admin Login
+// @Description Admin login verification using email, only superuser can login
+// @Tags admin
+// @Accept json
+// @Produce json
+// @Param request body service.EmailLoginRequest true "login info with email"
+// @Success 200 {object} map[string]interface{}
+// @Router /admin/login [post]
 func (h *Handler) Login(c *gin.Context) {
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
+			"code":    common.CodeBadRequest,
 			"message": err.Error(),
 		})
 		return
 	}
 
+	// Use userService.LoginByEmail with adminLogin=true
+	// This allows default admin account to login admin system
 	user, code, err := h.userService.LoginByEmail(&req, true)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
+		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
 			"message": err.Error(),
+		})
+		return
+	}
+
+	// Check if user is superuser (admin)
+	if user.IsSuperuser == nil || !*user.IsSuperuser {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeForbidden,
+			"message": "Only superuser can login admin system",
 		})
 		return
 	}
@@ -125,11 +154,16 @@ func (h *Handler) Login(c *gin.Context) {
 	variables := server.GetVariables()
 	secretKey := variables.SecretKey
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": fmt.Sprintf("Failed to generate auth token: %s", err.Error()),
+		})
+		return
+	}
 
 	// Set Authorization header with access_token
-	if user.AccessToken != nil {
-		c.Header("Authorization", authToken)
-	}
+	c.Header("Authorization", authToken)
 	// Set CORS headers
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Methods", "*")
@@ -269,7 +303,7 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 
 // UpdateActivateStatusHTTPRequest update activate status request
 type UpdateActivateStatusHTTPRequest struct {
-	ActivateStatus bool `json:"activate_status" binding:"required"`
+	ActivateStatus string `json:"activate_status" binding:"required"`
 }
 
 // UpdateUserActivateStatus handle update user activate status
@@ -286,7 +320,13 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.UpdateUserActivateStatus(username, req.ActivateStatus); err != nil {
+	if req.ActivateStatus != "on" && req.ActivateStatus != "off" {
+		errorResponse(c, "Activation status must be 'on' or 'off'", 400)
+		return
+	}
+
+	isActive := req.ActivateStatus == "on"
+	if err := h.service.UpdateUserActivateStatus(username, isActive); err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
 	}
@@ -302,9 +342,9 @@ func (h *Handler) GrantAdmin(c *gin.Context) {
 		return
 	}
 
-	// Get current user from context
-	currentUser, _ := c.Get("user")
-	if currentUser != nil && currentUser.(string) == username {
+	// Get current user email from context
+	email, _ := c.Get("email")
+	if email != nil && email.(string) == username {
 		errorResponse(c, "can't grant current user: "+username, 409)
 		return
 	}
@@ -325,9 +365,9 @@ func (h *Handler) RevokeAdmin(c *gin.Context) {
 		return
 	}
 
-	// Get current user from context
-	currentUser, _ := c.Get("user")
-	if currentUser != nil && currentUser.(string) == username {
+	// Get current user email from context
+	email, _ := c.Get("email")
+	if email != nil && email.(string) == username {
 		errorResponse(c, "can't revoke current user: "+username, 409)
 		return
 	}
@@ -741,28 +781,46 @@ func (h *Handler) RestartService(c *gin.Context) {
 }
 
 // GetVariables handle get variables
+// Python logic: if request body is empty, list all variables; otherwise get single variable by var_name from body
 func (h *Handler) GetVariables(c *gin.Context) {
-	varName := c.Query("var_name")
-
-	if varName != "" {
-		// Get single variable
-		variable, err := h.service.GetVariable(varName)
+	// Check if request has body content
+	if c.Request.ContentLength == 0 || c.Request.ContentLength == -1 {
+		// List all variables
+		variables, err := h.service.GetAllVariables()
 		if err != nil {
-			errorResponse(c, err.Error(), 400)
+			errorResponse(c, err.Error(), 500)
 			return
 		}
-		success(c, variable, "")
+		success(c, variables, "")
 		return
 	}
 
-	// List all variables
-	variables, err := h.service.GetAllVariables()
+	// Get single variable by var_name from request body
+	var req struct {
+		VarName string `json:"var_name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "Invalid request body", 400)
+		return
+	}
+
+	if req.VarName == "" {
+		errorResponse(c, "Var name is required", 400)
+		return
+	}
+
+	variable, err := h.service.GetVariable(req.VarName)
 	if err != nil {
+		// Check if it's an AdminException
+		if adminErr, ok := err.(*AdminException); ok {
+			errorResponse(c, adminErr.Message, 400)
+			return
+		}
 		errorResponse(c, err.Error(), 500)
 		return
 	}
 
-	success(c, variables, "")
+	success(c, variable, "")
 }
 
 // SetVariableHTTPRequest set variable request
@@ -772,15 +830,31 @@ type SetVariableHTTPRequest struct {
 }
 
 // SetVariable handle set variable
+// Python logic: update or create a system setting with the given name and value
 func (h *Handler) SetVariable(c *gin.Context) {
 	var req SetVariableHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "Var name and value are required", 400)
+		errorResponse(c, "Var name is required", 400)
+		return
+	}
+
+	if req.VarName == "" {
+		errorResponse(c, "Var name is required", 400)
+		return
+	}
+
+	if req.VarValue == "" {
+		errorResponse(c, "Var value is required", 400)
 		return
 	}
 
 	if err := h.service.SetVariable(req.VarName, req.VarValue); err != nil {
-		errorResponse(c, err.Error(), 400)
+		// Check if it's an AdminException
+		if adminErr, ok := err.(*AdminException); ok {
+			errorResponse(c, adminErr.Message, 400)
+			return
+		}
+		errorResponse(c, err.Error(), 500)
 		return
 	}
 
@@ -788,10 +862,16 @@ func (h *Handler) SetVariable(c *gin.Context) {
 }
 
 // GetConfigs handle get configs
+// Python logic: return all service configurations
 func (h *Handler) GetConfigs(c *gin.Context) {
 	configs, err := h.service.GetAllConfigs()
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		// Check if it's an AdminException
+		if adminErr, ok := err.(*AdminException); ok {
+			errorResponse(c, adminErr.Message, 400)
+			return
+		}
+		errorResponse(c, err.Error(), 500)
 		return
 	}
 
@@ -799,10 +879,16 @@ func (h *Handler) GetConfigs(c *gin.Context) {
 }
 
 // GetEnvironments handle get environments
+// Python logic: return important environment variables
 func (h *Handler) GetEnvironments(c *gin.Context) {
 	environments, err := h.service.GetAllEnvironments()
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		// Check if it's an AdminException
+		if adminErr, ok := err.(*AdminException); ok {
+			errorResponse(c, adminErr.Message, 400)
+			return
+		}
+		errorResponse(c, err.Error(), 500)
 		return
 	}
 
@@ -813,6 +899,50 @@ func (h *Handler) GetEnvironments(c *gin.Context) {
 func (h *Handler) GetVersion(c *gin.Context) {
 	version := h.service.GetVersion()
 	success(c, gin.H{"version": version}, "")
+}
+
+// GetFingerprint handle get system fingerprint
+func (h *Handler) GetFingerprint(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"code":    common.CodeServerError,
+		"message": "method not implemented",
+	})
+	return
+}
+
+type SetLicenseHTTPRequest struct {
+	License string `json:"license" binding:"required"`
+}
+
+// SetLicense to set system license
+func (h *Handler) SetLicense(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"code":    common.CodeServerError,
+		"message": "method not implemented",
+	})
+	return
+}
+
+type SetLicenseConfigHTTPRequest struct {
+	TimeRecordSaveInterval int64 `json:"value1" binding:"required"`
+	TimeRecordTaskDuration int64 `json:"value2" binding:"required"`
+}
+
+func (h *Handler) UpdateLicenseConfig(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"code":    common.CodeServerError,
+		"message": "method not implemented",
+	})
+	return
+}
+
+// ShowLicense to get system license
+func (h *Handler) ShowLicense(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"code":    common.CodeServerError,
+		"message": "method not implemented",
+	})
+	return
 }
 
 // ListSandboxProviders handle list sandbox providers
@@ -919,6 +1049,7 @@ func (h *Handler) TestSandboxConnection(c *gin.Context) {
 }
 
 // AuthMiddleware JWT auth middleware
+// Validates that the user is authenticated and is a superuser (admin)
 func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader("Authorization")
@@ -935,6 +1066,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 				"code":    code,
 				"message": "Invalid access token",
 			})
+			c.Abort()
 			return
 		}
 
@@ -987,10 +1119,11 @@ func (h *Handler) Reports(c *gin.Context) {
 	}
 
 	// Handle the heartbeat
-	if err := h.service.HandleHeartbeat(&req); err != nil {
-		errorResponse(c, "Failed to process heartbeat: "+err.Error(), 500)
+	errCode, message := h.service.HandleHeartbeat(&req)
+	if errCode != common.CodeLicenseValid {
+		responseWithCode(c, message, 500, errCode)
 		return
 	}
 
-	successNoData(c, "Heartbeat received successfully")
+	responseWithCode(c, message, int(http.StatusOK), errCode)
 }
