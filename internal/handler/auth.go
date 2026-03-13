@@ -67,7 +67,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		if *user.IsSuperuser {
 			c.JSON(http.StatusForbidden, gin.H{
 				"code":    common.CodeForbidden,
-				"message": "Super user should access the URL",
+				"message": "Super user shouldn't access the URL",
 			})
 			return
 		}

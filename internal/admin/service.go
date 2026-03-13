@@ -183,7 +183,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	isSuperuser := role == "admin"
 
 	now := time.Now().Unix()
-	nowDate := time.Now()
+	nowDate := time.Now().Truncate(time.Second)
 
 	user := &model.User{
 		ID:              userID,
@@ -440,7 +440,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*model.TenantLLM, error) {
 			llmName := llm.LLMName
 			modelType := llm.ModelType
 			now := time.Now().Unix()
-			nowDate := time.Now()
+			nowDate := time.Now().Truncate(time.Second)
 
 			tenantLLM := &model.TenantLLM{
 				TenantID:   userID,
@@ -1559,7 +1559,7 @@ func (s *Service) InitDefaultAdmin() error {
 
 	if len(users) == 0 {
 		now := time.Now().Unix()
-		nowDate := time.Now()
+		nowDate := time.Now().Truncate(time.Second)
 		userID := utility.GenerateToken()
 		accessToken := utility.GenerateToken()
 		status := "1"
@@ -1635,7 +1635,7 @@ func (s *Service) InitDefaultAdmin() error {
 // addTenantForAdmin add tenant for admin user
 func (s *Service) addTenantForAdmin(userID, nickname string) error {
 	now := time.Now().Unix()
-	nowDate := time.Now()
+	nowDate := time.Now().Truncate(time.Second)
 	status := "1"
 	role := "owner"
 	tenantName := nickname + "'s Kingdom"

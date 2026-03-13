@@ -336,14 +336,6 @@ func (h *UserHandler) Logout(c *gin.Context) {
 		return
 	}
 
-	if *user.IsSuperuser {
-		c.JSON(http.StatusForbidden, gin.H{
-			"code":    common.CodeForbidden,
-			"message": "Super user should access the URL",
-		})
-		return
-	}
-
 	// Logout user
 	code, err = h.userService.Logout(user)
 	if err != nil {

@@ -150,7 +150,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	now := time.Now().Unix()
 	user.CreateTime = &now
 	user.UpdateTime = &now
-	now_date := time.Now()
+	now_date := time.Now().Truncate(time.Second)
 	user.CreateDate = &now_date
 	user.UpdateDate = &now_date
 	user.LastLoginTime = &now_date
@@ -343,7 +343,7 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest, adminLogin bool) (*mo
 
 	now := time.Now().Unix()
 	user.UpdateTime = &now
-	now_date := time.Now()
+	now_date := time.Now().Truncate(time.Second)
 	user.UpdateDate = &now_date
 	if err := s.userDAO.Update(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
