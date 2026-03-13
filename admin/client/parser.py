@@ -96,6 +96,7 @@ sql_command: login_user
            | show_fingerprint
            | set_license
            | show_license
+           | check_license
            | benchmark
 
 // meta command definition
@@ -183,6 +184,7 @@ SESSIONS: "SESSIONS"i
 SERVER: "SERVER"i
 FINGERPRINT: "FINGERPRINT"i
 LICENSE: "LICENSE"i
+CHECK: "CHECK"i
 
 login_user: LOGIN USER quoted_string ";"
 list_services: LIST SERVICES ";"
@@ -231,6 +233,7 @@ list_environments: LIST ENVS ";"
 show_fingerprint: SHOW FINGERPRINT ";"
 set_license: SET LICENSE quoted_string ";"
 show_license: SHOW LICENSE ";"
+check_license: CHECK LICENSE ";"
 
 list_server_configs: LIST SERVER CONFIGS ";"
 
@@ -495,6 +498,9 @@ class RAGFlowCLITransformer(Transformer):
 
     def show_license(self, items):
         return {"type": "show_license"}
+
+    def check_license(self, items):
+        return {"type": "check_license"}
 
     def list_server_configs(self, items):
         return {"type": "list_server_configs"}

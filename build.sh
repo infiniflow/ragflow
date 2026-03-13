@@ -92,7 +92,8 @@ build_go() {
     
     echo "Building Go binary: $OUTPUT_BINARY"
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$OUTPUT_BINARY" ./cmd/server_main.go
-    
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$OUTPUT_BINARY" ./cmd/admin_server.go
+
     if [ ! -f "$OUTPUT_BINARY" ]; then
         echo -e "${RED}Error: Failed to build Go binary${NC}"
         exit 1

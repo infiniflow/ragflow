@@ -225,7 +225,7 @@ export function FilesTable({
       id: 'actions',
       header: t('action'),
       meta: {
-        headerCellClassName: 'w-0',
+        headerCellClassName: 'w-0 whitespace-nowrap',
       },
       enableHiding: false,
       enablePinning: true,
@@ -278,8 +278,8 @@ export function FilesTable({
 
   return (
     <>
-      <div className="w-full">
-        <Table rootClassName="max-h-[calc(100vh-242px)] overflow-auto">
+      <div className="flex-1 h-0 size-full">
+        <Table rootClassName="max-h-full overflow-auto">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -332,17 +332,17 @@ export function FilesTable({
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-end py-4">
-        <div className="space-x-2">
-          <RAGFlowPagination
-            {...pick(pagination, 'current', 'pageSize')}
-            total={total}
-            onChange={(page, pageSize) => {
-              setPagination({ page, pageSize });
-            }}
-          ></RAGFlowPagination>
-        </div>
-      </div>
+
+      <footer className="flex items-center justify-end pb-5 mt-4">
+        <RAGFlowPagination
+          {...pick(pagination, 'current', 'pageSize')}
+          total={total}
+          onChange={(page, pageSize) => {
+            setPagination({ page, pageSize });
+          }}
+        />
+      </footer>
+
       {connectToKnowledgeVisible && (
         <LinkToDatasetDialog
           hideModal={hideConnectToKnowledgeModal}

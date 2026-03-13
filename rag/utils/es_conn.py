@@ -264,7 +264,8 @@ class ESConnection(ESConnectionBase):
             assert "id" in d
             d_copy = copy.deepcopy(d)
             d_copy["kb_id"] = knowledgebase_id
-            meta_id = d_copy.pop("id", "")
+            # Use id as _id for uniqueness, also keep "id" as a regular field for sorting
+            meta_id = d_copy.get("id", "")
             operations.append(
                 {"index": {"_index": index_name, "_id": meta_id}})
             operations.append(d_copy)

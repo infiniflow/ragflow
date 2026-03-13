@@ -337,9 +337,9 @@ func Init(configPath string) error {
 		globalConfig.Admin.Host = "127.0.0.1"
 	}
 	if globalConfig.Admin.Port == 0 {
-		globalConfig.Admin.Port = 9383
+		globalConfig.Admin.Port = 9385
 	} else {
-		globalConfig.Admin.Port += 2
+		globalConfig.Admin.Port += 4
 	}
 
 	// Load REGISTER_ENABLED from environment variable (default: 1)
@@ -374,7 +374,7 @@ func Init(configPath string) error {
 		if v.IsSet("ragflow") {
 			ragflowConfig := v.Sub("ragflow")
 			if ragflowConfig != nil {
-				globalConfig.Server.Port = ragflowConfig.GetInt("http_port") + 2 // 9382, by default
+				globalConfig.Server.Port = ragflowConfig.GetInt("http_port") + 4 // 9384, by default
 				//globalConfig.Server.Port = ragflowConfig.GetInt("http_port") // Correct
 				// If mode is not set, default to debug
 				if globalConfig.Server.Mode == "" {
