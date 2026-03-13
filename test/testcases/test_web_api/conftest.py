@@ -26,9 +26,9 @@ from common import (
     delete_dialogs,
     list_chunks,
     list_documents,
-    list_kbs,
+    list_datasets,
     parse_documents,
-    rm_kb,
+    delete_datasets,
 )
 from libs.auth import RAGFlowWebApiAuth
 from pytest import FixtureRequest
@@ -104,9 +104,9 @@ def require_env_flag():
 @pytest.fixture(scope="function")
 def clear_datasets(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth):
     def cleanup():
-        res = list_kbs(WebApiAuth, params={"page_size": 1000})
-        for kb in res["data"]["kbs"]:
-            rm_kb(WebApiAuth, {"kb_id": kb["id"]})
+        res = list_datasets(WebApiAuth, params={"page_size": 1000})
+        kb_ids = [kb["id"] for kb in res["data"]]
+        delete_datasets(WebApiAuth, {"ids": kb_ids})
 
     request.addfinalizer(cleanup)
 
@@ -122,9 +122,9 @@ def clear_dialogs(request, WebApiAuth):
 @pytest.fixture(scope="class")
 def add_dataset(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth) -> str:
     def cleanup():
-        res = list_kbs(WebApiAuth, params={"page_size": 1000})
-        for kb in res["data"]["kbs"]:
-            rm_kb(WebApiAuth, {"kb_id": kb["id"]})
+        res = list_datasets(WebApiAuth, params={"page_size": 1000})
+        kb_ids = [kb["id"] for kb in res["data"]]
+        delete_datasets(WebApiAuth, {"ids": kb_ids})
 
     request.addfinalizer(cleanup)
     return batch_create_datasets(WebApiAuth, 1)[0]
@@ -133,9 +133,9 @@ def add_dataset(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth) -> str:
 @pytest.fixture(scope="function")
 def add_dataset_func(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth) -> str:
     def cleanup():
-        res = list_kbs(WebApiAuth, params={"page_size": 1000})
-        for kb in res["data"]["kbs"]:
-            rm_kb(WebApiAuth, {"kb_id": kb["id"]})
+        res = list_datasets(WebApiAuth, params={"page_size": 1000})
+        kb_ids = [kb["id"] for kb in res["data"]]
+        delete_datasets(WebApiAuth, {"ids": kb_ids})
 
     request.addfinalizer(cleanup)
     return batch_create_datasets(WebApiAuth, 1)[0]
