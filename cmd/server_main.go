@@ -242,12 +242,11 @@ func startServer(config *server.Config) {
 	} else {
 		// Start heartbeat reporter with 30 seconds interval
 		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
-			var message string
-			if err, message = heartbeatService.SendHeartbeat(); err == nil {
+			if err = heartbeatService.SendHeartbeat(); err == nil {
 				local.SetAdminStatus(0, "")
 			} else {
-				local.SetAdminStatus(1, message)
-				logger.Warn("Failed to send heartbeat", zap.Error(err))
+				local.SetAdminStatus(1, err.Error())
+				logger.Warn(fmt.Sprintf(err.Error()))
 			}
 		})
 		heartbeatReporter.Start()
