@@ -74,7 +74,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 
 		if !local.IsAdminAvailable() {
 			license := local.GetAdminStatus()
-			errMsg := fmt.Sprintf("server license %s, check admin server status", license.Reason)
+			errMsg := fmt.Sprintf("server license %s", license.Reason)
 			logger.Warn(errMsg)
 			c.JSON(http.StatusServiceUnavailable, gin.H{
 				"code":    common.CodeUnauthorized,

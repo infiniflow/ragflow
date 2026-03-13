@@ -116,6 +116,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/fingerprint", r.handler.GetFingerprint)
 			// License
 			protected.POST("/license", r.handler.SetLicense)
+			protected.POST("/license/config", r.handler.UpdateLicenseConfig)
 			protected.GET("/license", r.handler.ShowLicense)
 		}
 	}
