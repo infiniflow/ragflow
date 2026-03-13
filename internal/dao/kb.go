@@ -494,3 +494,18 @@ func mergeConfig(old, new map[string]interface{}) map[string]interface{} {
 
 	return result
 }
+
+// DeleteByTenantID deletes all knowledge bases by tenant ID (hard delete)
+func (dao *KnowledgebaseDAO) DeleteByTenantID(tenantID string) (int64, error) {
+	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&model.Knowledgebase{})
+	return result.RowsAffected, result.Error
+}
+
+// GetKBIDsByTenantID gets all knowledge base IDs by tenant ID
+func (dao *KnowledgebaseDAO) GetKBIDsByTenantIDSimple(tenantID string) ([]string, error) {
+	var kbIDs []string
+	err := DB.Model(&model.Knowledgebase{}).
+		Where("tenant_id = ?", tenantID).
+		Pluck("id", &kbIDs).Error
+	return kbIDs, err
+}
