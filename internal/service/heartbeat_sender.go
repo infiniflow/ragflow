@@ -18,6 +18,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/server"
@@ -69,19 +70,19 @@ func (h *HeartbeatSender) InitHTTPClient() error {
 
 	h.logger.Info("Heartbeat HTTP client initialized",
 		zap.String("admin_host", adminConfig.Host),
-		zap.Int("admin_port", adminConfig.Port+2),
+		zap.Int("admin_port", adminConfig.Port),
 	)
 
 	return nil
 }
 
 // SendHeartbeat sends a heartbeat message to the admin server
-func (h *HeartbeatSender) SendHeartbeat() (error, string) {
+func (h *HeartbeatSender) SendHeartbeat() error {
 
 	if h.attemptCount < 10 {
 		if h.lastSuccess {
 			h.attemptCount++
-			return nil, ""
+			return nil
 		}
 	}
 	h.attemptCount = 0
@@ -90,7 +91,7 @@ func (h *HeartbeatSender) SendHeartbeat() (error, string) {
 	if h.client == nil {
 		if err := h.InitHTTPClient(); err != nil {
 			h.logger.Error("Failed to initialize HTTP client", zap.Error(err))
-			return err, "internal error, fail to initialize HTTP client"
+			return err
 		}
 	}
 
@@ -109,19 +110,26 @@ func (h *HeartbeatSender) SendHeartbeat() (error, string) {
 	jsonData, err := json.Marshal(message)
 	if err != nil {
 		h.logger.Error("Failed to marshal heartbeat message", zap.Error(err))
-		return err, "fail to parse the message"
+		return err
 	}
 
 	resp, err := h.client.PostJSON("/api/v1/admin/reports", jsonData)
 	if err != nil {
-		return err, "can't connect with admin server"
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		errMsg := fmt.Errorf("Heartbeat request failed with status code: %d", resp.StatusCode)
-		h.logger.Warn(errMsg.Error())
-		return errMsg, errMsg.Error()
+		// extract the Code and Message field of the response
+		var responseBody map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&responseBody)
+		if err != nil {
+			return err
+		}
+		responseCode := common.ErrorCode(responseBody["code"].(float64))
+		if responseCode != common.CodeLicenseValid {
+			return errors.New(responseCode.Message())
+		}
 	}
 
 	h.logger.Debug("Heartbeat sent successfully",
@@ -131,5 +139,5 @@ func (h *HeartbeatSender) SendHeartbeat() (error, string) {
 
 	h.lastSuccess = true
 
-	return nil, ""
+	return nil
 }
