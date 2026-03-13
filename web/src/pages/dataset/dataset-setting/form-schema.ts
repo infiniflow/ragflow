@@ -7,9 +7,7 @@ export const formSchema = z
     name: z.string().min(1, {
       message: 'Username must be at least 2 characters.',
     }),
-    description: z.string().min(2, {
-      message: 'Description must be at least 2 characters.',
-    }),
+    description: z.string().optional(),
     // avatar: z.instanceof(File),
     avatar: z.any().nullish(),
     permission: z.string().optional(),
