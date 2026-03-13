@@ -481,12 +481,8 @@ function AdminUserManagement() {
             <div className="ml-auto flex justify-end gap-4">
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="dark:bg-bg-input dark:border-border-button text-text-secondary"
-                  >
-                    <LucideFilter className="h-4 w-4" />
+                  <Button size="icon-lg" variant="outline">
+                    <LucideFilter className="size-4" />
                   </Button>
                 </PopoverTrigger>
 

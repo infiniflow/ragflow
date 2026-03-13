@@ -84,16 +84,17 @@ func (dao *UserDAO) UpdateAccessToken(user *model.User, token string) error {
 	return DB.Model(user).Update("access_token", token).Error
 }
 
-// List list users
+// List list users (only active users with status != "0")
 func (dao *UserDAO) List(offset, limit int) ([]*model.User, int64, error) {
 	var users []*model.User
 	var total int64
 
-	if err := DB.Model(&model.User{}).Count(&total).Error; err != nil {
+	// Only count users with status != "0" (not deleted)
+	if err := DB.Model(&model.User{}).Where("status != ? OR status IS NULL", "0").Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	query := DB.Model(&model.User{})
+	query := DB.Model(&model.User{}).Where("status != ? OR status IS NULL", "0")
 	if offset > 0 {
 		query = query.Offset(offset)
 	}
@@ -109,7 +110,15 @@ func (dao *UserDAO) Delete(id uint) error {
 	return DB.Delete(&model.User{}, id).Error
 }
 
-// DeleteByID delete user by string ID
+// DeleteByID delete user by string ID (soft delete - set status to 0)
 func (dao *UserDAO) DeleteByID(id string) error {
 	return DB.Model(&model.User{}).Where("id = ?", id).Update("status", "0").Error
+}
+
+// ListByEmail list users by email (only active users with status != "0")
+// Returns all users matching the given email address
+func (dao *UserDAO) ListByEmail(email string) ([]*model.User, error) {
+	var users []*model.User
+	err := DB.Where("email = ? AND (status != ? OR status IS NULL)", email, "0").Find(&users).Error
+	return users, err
 }
