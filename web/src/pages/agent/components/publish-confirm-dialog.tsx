@@ -13,7 +13,7 @@ import { IFlow } from '@/interfaces/database/agent';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { formatDate } from '@/utils/date';
 import { BookPlus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useIsPipeline } from '../hooks/use-is-pipeline';
 
@@ -81,10 +81,14 @@ export function PublishConfirmDialog({
     return agentDetail?.datasets || [];
   }, [agentDetail?.datasets]);
 
-  const handleConfirmPublish = () => {
+  const handleConfirmPublish = useCallback(() => {
     onPublish();
     setOpen(false);
-  };
+  }, []);
+
+  if (isPipeline) {
+    return null;
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
