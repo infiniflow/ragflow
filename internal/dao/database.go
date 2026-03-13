@@ -140,6 +140,8 @@ func InitDB() error {
 		&model.EvaluationCase{},
 		&model.EvaluationRun{},
 		&model.EvaluationResult{},
+		&model.TimeRecord{},
+		&model.License{},
 	}
 
 	for _, m := range models {
@@ -248,6 +250,5 @@ func InitLLMFactory() error {
 		}
 	}
 
-	log.Println("LLM factories initialized successfully")
 	return nil
 }

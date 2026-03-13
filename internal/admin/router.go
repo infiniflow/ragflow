@@ -18,14 +18,11 @@ package admin
 
 import (
 	"github.com/gin-gonic/gin"
-
-	"ragflow/internal/handler"
 )
 
 // Router admin router
 type Router struct {
-	handler     *Handler
-	userHandler *handler.UserHandler
+	handler *Handler
 }
 
 // NewRouter create admin router
@@ -114,6 +111,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/sandbox/config", r.handler.GetSandboxConfig)
 			protected.POST("/sandbox/config", r.handler.SetSandboxConfig)
 			protected.POST("/sandbox/test", r.handler.TestSandboxConnection)
+
+			// Fingerprint
+			protected.GET("/fingerprint", r.handler.GetFingerprint)
+			// License
+			protected.POST("/license", r.handler.SetLicense)
+			protected.GET("/license", r.handler.ShowLicense)
 		}
 	}
 

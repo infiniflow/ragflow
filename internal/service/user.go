@@ -18,12 +18,15 @@ package service
 
 import (
 	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"hash"
 	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/server"
@@ -32,6 +35,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/crypto/scrypt"
 
 	"ragflow/internal/dao"
@@ -408,7 +412,77 @@ func (s *UserService) HashPassword(password string) (string, error) {
 }
 
 // VerifyPassword verify password
+// Supports both werkzeug pbkdf2 format (pbkdf2:sha256:iterations$salt$hash) and scrypt format
 func (s *UserService) VerifyPassword(hashedPassword, password string) bool {
+	// Check if it's pbkdf2 format (werkzeug)
+	if strings.HasPrefix(hashedPassword, "pbkdf2:") {
+		return s.verifyPBKDF2Password(hashedPassword, password)
+	}
+
+	// Check if it's scrypt format
+	if strings.HasPrefix(hashedPassword, "scrypt:") {
+		return s.verifyScryptPassword(hashedPassword, password)
+	}
+
+	return false
+}
+
+// verifyPBKDF2Password verifies password using PBKDF2 (werkzeug format)
+// Format: pbkdf2:sha256:iterations$salt$hash
+func (s *UserService) verifyPBKDF2Password(hashedPassword, password string) bool {
+	parts := strings.Split(hashedPassword, "$")
+	if len(parts) != 3 {
+		return false
+	}
+
+	// Parse method (e.g., "pbkdf2:sha256:150000")
+	methodParts := strings.Split(parts[0], ":")
+	if len(methodParts) != 3 {
+		return false
+	}
+
+	if methodParts[0] != "pbkdf2" {
+		return false
+	}
+
+	var hashFunc func() hash.Hash
+	switch methodParts[1] {
+	case "sha256":
+		hashFunc = sha256.New
+	case "sha512":
+		hashFunc = sha512.New
+	default:
+		return false
+	}
+
+	iterations, err := strconv.Atoi(methodParts[2])
+	if err != nil {
+		return false
+	}
+
+	salt := parts[1]
+	expectedHash := parts[2]
+
+	// Decode salt from base64
+	saltBytes, err := base64.StdEncoding.DecodeString(salt)
+	if err != nil {
+		// Try hex encoding
+		saltBytes, err = hex.DecodeString(salt)
+		if err != nil {
+			return false
+		}
+	}
+
+	// Generate hash using PBKDF2
+	key := pbkdf2.Key([]byte(password), saltBytes, iterations, 32, hashFunc)
+	computedHash := base64.StdEncoding.EncodeToString(key)
+
+	return computedHash == expectedHash
+}
+
+// verifyScryptPassword verifies password using scrypt format
+// Format: scrypt:n:r:p$salt$hash
+func (s *UserService) verifyScryptPassword(hashedPassword, password string) bool {
 	// Parse hash format: scrypt:n:r:p$salt$hash
 	parts := strings.Split(hashedPassword, "$")
 	if len(parts) != 3 {

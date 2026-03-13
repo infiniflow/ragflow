@@ -18,6 +18,7 @@ package handler
 
 import (
 	"net/http"
+	"ragflow/internal/common"
 
 	"github.com/gin-gonic/gin"
 
@@ -47,23 +48,9 @@ func NewConnectorHandler(connectorService *service.ConnectorService, userService
 // @Success 200 {object} service.ListConnectorsResponse
 // @Router /connector/list [get]
 func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
-	// Get access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID

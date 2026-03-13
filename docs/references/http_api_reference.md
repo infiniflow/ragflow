@@ -657,8 +657,9 @@ Deletes datasets by ID.
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
-  - Body:
-    - `"ids"`: `list[string]` or `null`
+- Body:
+  - `"ids"`: `list[string]` or `null`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -672,12 +673,24 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/datasets \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+     "delete_all": true
+     }'
+```
+
 ##### Request parameters
 
-- `"ids"`: (*Body parameter*), `list[string]` or `null`,   *Required*  
+- `"ids"`: (*Body parameter*), `list[string]` or `null`
   Specifies the datasets to delete:
   - If omitted, or set to `null` or an empty array, no datasets are deleted.
   - If an array of IDs is provided, only the datasets matching those IDs are deleted.
+- `"delete_all"`: (*Body parameter*), `boolean`  
+  Whether to delete all datasets owned by the current user when`"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -835,14 +848,14 @@ Failure:
 
 ### List datasets
 
-**GET** `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
+**GET** `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}&include_parsing_status={include_parsing_status}`
 
 Lists datasets.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
+- URL: `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}&include_parsing_status={include_parsing_status}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -851,6 +864,13 @@ Lists datasets.
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+```bash
+# List datasets with parsing status
+curl --request GET \
+     --url 'http://{address}/api/v1/datasets?include_parsing_status=true' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -870,6 +890,13 @@ curl --request GET \
   The name of the dataset to retrieve.
 - `id`: (*Filter parameter*)  
   The ID of the dataset to retrieve.
+- `include_parsing_status`: (*Filter parameter*)  
+  Whether to include document parsing status counts in the response. Defaults to `false`. When set to `true`, each dataset object in the response will include the following additional fields:
+  - `unstart_count`: Number of documents not yet started parsing.
+  - `running_count`: Number of documents currently being parsed.
+  - `cancel_count`: Number of documents whose parsing was cancelled.
+  - `done_count`: Number of documents that have been successfully parsed.
+  - `fail_count`: Number of documents whose parsing failed.
 
 #### Response
 
@@ -910,6 +937,49 @@ Success:
             "token_num": 12744,
             "update_date": "Thu, 10 Oct 2024 04:07:23 GMT",
             "update_time": 1728533243536,
+            "vector_similarity_weight": 0.3
+        }
+    ],
+    "total_datasets": 1
+}
+```
+
+Success (with `include_parsing_status=true`):
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "avatar": null,
+            "cancel_count": 0,
+            "chunk_count": 30,
+            "chunk_method": "qa",
+            "create_date": "2026-03-09T18:57:13",
+            "create_time": 1773053833094,
+            "created_by": "928f92a210b911f1ac4cc39e0b8fa3ad",
+            "description": null,
+            "document_count": 1,
+            "done_count": 1,
+            "embedding_model": "text-embedding-v2@Tongyi-Qianwen",
+            "fail_count": 0,
+            "id": "ba6586c21ba611f1a3dc476f0709e75e",
+            "language": "English",
+            "name": "Test Dataset",
+            "parser_config": {
+                "graphrag": { "use_graphrag": false },
+                "llm_id": "deepseek-chat@DeepSeek",
+                "raptor": { "use_raptor": false }
+            },
+            "permission": "me",
+            "running_count": 0,
+            "similarity_threshold": 0.2,
+            "status": "1",
+            "tenant_id": "928f92a210b911f1ac4cc39e0b8fa3ad",
+            "token_num": 1746,
+            "unstart_count": 0,
+            "update_date": "2026-03-09T18:59:32",
+            "update_time": 1773053972723,
             "vector_similarity_weight": 0.3
         }
     ],
@@ -1744,6 +1814,7 @@ Deletes documents by ID.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -1758,6 +1829,16 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request parameters
 
 - `dataset_id`: (*Path parameter*)  
@@ -1766,6 +1847,8 @@ curl --request DELETE \
   The IDs of the documents to delete.
   - If omitted, or set to `null` or an empty array, no documents are deleted.
   - If an array of IDs is provided, only the documents matching those IDs are deleted.
+- `"delete_all"`: (*Body parameter*), `boolean`  
+  Whether to delete all documents in the specified dataset when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -2104,6 +2187,7 @@ Deletes chunks by ID.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"chunk_ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -2118,6 +2202,16 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request parameters
 
 - `dataset_id`: (*Path parameter*)  
@@ -2128,6 +2222,8 @@ curl --request DELETE \
   The IDs of the chunks to delete.
   - If omitted, or set to `null` or an empty array, no chunks are deleted.
   - If an array of IDs is provided, only the chunks matching those IDs are deleted.
+- `"delete_all"`: (*Body parameter*), `boolean`  
+  Whether to delete all chunks of the specified documen when `"chunk_ids"` is omitted, or set to`null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -2881,6 +2977,7 @@ Deletes chat assistants by ID.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -2895,12 +2992,24 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/chats \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request parameters
 
 - `"ids"`: (*Body parameter*), `list[string]`  
   The IDs of the chat assistants to delete.
   - If omitted, or set to `null` or an empty array, no chat assistants are deleted.
   - If an array of IDs is provided, only the chat assistants matching those IDs are deleted.
+- `"delete_all"`: (*Body parameter*), `boolean`  
+  Whether to delete all chat assistants owned by the current user when `"ids"` is omitted, or set to`null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -3259,6 +3368,7 @@ Deletes sessions of a chat assistant by ID.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -3273,6 +3383,16 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request Parameters
 
 - `chat_id`: (*Path parameter*)  
@@ -3281,6 +3401,8 @@ curl --request DELETE \
   The IDs of the sessions to delete.
   - If omitted, or set to `null` or an empty array, no sessions are deleted.
   - If an array of IDs is provided, only the sessions matching those IDs are deleted.
+- `"delete_all"`: (*Body Parameter*), `boolean`  
+  Whether to delete all sessions of the specified chat assistant when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -4625,6 +4747,7 @@ Deletes sessions of an agent by ID.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -4639,6 +4762,16 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/agents/{agent_id}/sessions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request Parameters
 
 - `agent_id`: (*Path parameter*)  
@@ -4647,6 +4780,8 @@ curl --request DELETE \
   The IDs of the sessions to delete.
   - If omitted, or set to `null` or an empty array, no sessions are deleted.
   - If an array of IDs is provided, only the sessions matching those IDs are deleted.
+- `"delete_all"`: (*Body Parameter*), `boolean`  
+  Whether to delete all sessions of the specified agent when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 

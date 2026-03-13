@@ -235,19 +235,37 @@ async def switch():
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
 @login_required
-@validate_request("chunk_ids", "doc_id")
+@validate_request("doc_id")
 async def rm():
     req = await get_request_json()
     try:
         def _rm_sync():
-            deleted_chunk_ids = req["chunk_ids"]
+            deleted_chunk_ids = req.get("chunk_ids")
             if isinstance(deleted_chunk_ids, list):
                 unique_chunk_ids = list(dict.fromkeys(deleted_chunk_ids))
                 has_ids = len(unique_chunk_ids) > 0
-            else:
+            elif deleted_chunk_ids is not None:
                 unique_chunk_ids = [deleted_chunk_ids]
                 has_ids = deleted_chunk_ids not in (None, "")
+            else:
+                unique_chunk_ids = []
+                has_ids = False
             if not has_ids:
+                if req.get("delete_all") is True:
+                    e, doc = DocumentService.get_by_id(req["doc_id"])
+                    if not e:
+                        return get_data_error_result(message="Document not found!")
+                    tenant_id = DocumentService.get_tenant_id(req["doc_id"])
+                    # Clean up storage assets while index rows still exist for discovery
+                    DocumentService.delete_chunk_images(doc, tenant_id)
+                    condition = {"doc_id": req["doc_id"]}
+                    try:
+                        deleted_count = settings.docStoreConn.delete(condition, search.index_name(tenant_id), doc.kb_id)
+                    except Exception:
+                        return get_data_error_result(message="Chunk deleting failure")
+                    if deleted_count > 0:
+                        DocumentService.decrement_chunk_num(doc.id, doc.kb_id, 1, deleted_count, 0)
+                    return get_json_result(data=True)
                 return get_json_result(data=True)
 
             e, doc = DocumentService.get_by_id(req["doc_id"])
