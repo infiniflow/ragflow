@@ -93,12 +93,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// User login by email endpoint
 	engine.POST("/v1/user/login", r.userHandler.LoginByEmail)
 
+	// User logout endpoint
+	engine.GET("/v1/user/logout", r.userHandler.Logout)
+
 	// Protected routes
 	authorized := engine.Group("")
 	authorized.Use(r.authHandler.AuthMiddleware())
 	{
-		// User logout endpoint
-		authorized.GET("/v1/user/logout", r.userHandler.Logout)
 		// User info endpoint
 		authorized.GET("/v1/user/info", r.userHandler.Info)
 		// User tenant info endpoint
@@ -116,13 +117,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 		v1 := authorized.Group("/api/v1")
 		{
 			// User routes
-			users := v1.Group("/users")
-			{
-				users.POST("/register", r.userHandler.Register)
-				users.POST("/login", r.userHandler.Login)
-				users.GET("", r.userHandler.ListUsers)
-				users.GET("/:id", r.userHandler.GetUserByID)
-			}
+			//users := v1.Group("/users")
+			//{
+			//	users.POST("/register", r.userHandler.Register)
+			//	users.POST("/login", r.userHandler.Login)
+			//	users.GET("", r.userHandler.ListUsers)
+			//	users.GET("/:id", r.userHandler.GetUserByID)
+			//}
 
 			// Document routes
 			documents := v1.Group("/documents")

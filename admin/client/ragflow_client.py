@@ -614,6 +614,17 @@ class RAGFlowClient:
         else:
             print(f"Fail to show license, code: {res_json['code']}, message: {res_json['message']}")
 
+    def check_license(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+        response = self.http_client.request("GET", "/admin/license?check=true", use_api_base=True, auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            print(res_json["data"])
+        else:
+            print(f"Fail to show license, code: {res_json['code']}, message: {res_json['message']}")
+
+
     def list_server_configs(self, command):
         """List server configs by calling /system/configs API and flattening the JSON response."""
         response = self.http_client.request("GET", "/system/configs", use_api_base=False, auth_kind="web")
@@ -1551,6 +1562,8 @@ def run_command(client: RAGFlowClient, command_dict: dict):
             client.set_license(command_dict)
         case "show_license":
             client.show_license(command_dict)
+        case "check_license":
+            client.check_license(command_dict)
         case "list_server_configs":
             client.list_server_configs(command_dict)
         case "create_model_provider":

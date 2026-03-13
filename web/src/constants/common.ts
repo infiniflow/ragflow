@@ -41,7 +41,7 @@ export const fileIconMap = {
   xml: 'xml.svg',
 };
 
-// TODO: Need to migrate to standard BCP 47 language tag
+// TODO: Use standard BCP 47 language tag and display names
 export const LanguageList = [
   'English',
   'Chinese',
@@ -78,8 +78,8 @@ export const LanguageMap = {
 
 export enum LanguageAbbreviation {
   En = 'en',
-  Zh = 'zh',
-  ZhTraditional = 'zh-TRADITIONAL',
+  Zh = 'zh-Hans',
+  ZhTraditional = 'zh-Hant',
   Ru = 'ru',
   Id = 'id',
   Ja = 'ja',
@@ -112,8 +112,8 @@ export const LanguageAbbreviationMap = {
 
 export const LanguageTranslationMap = {
   English: 'en',
-  Chinese: 'zh',
-  'Traditional Chinese': 'zh-TRADITIONAL',
+  Chinese: 'zh-Hans',
+  'Traditional Chinese': 'zh-Hant',
   Russian: 'ru',
   Indonesian: 'id',
   Indonesia: 'id',
