@@ -19,7 +19,10 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"strconv"
 	"strings"
+	"syscall"
 	"github.com/peterh/liner"
 )
 
@@ -127,6 +130,7 @@ func (c *CLI) execute(input string) error {
 
 func (c *CLI) handleMetaCommand(cmd *Command) error {
 	command := cmd.Params["command"].(string)
+	args, _ := cmd.Params["args"].([]string)
 
 	switch command {
 	case "q", "quit", "exit":
@@ -137,6 +141,39 @@ func (c *CLI) handleMetaCommand(cmd *Command) error {
 	case "c", "clear":
 		// Clear screen (simple approach)
 		fmt.Print("\033[H\033[2J")
+	case "admin":
+		c.client.ServerType = "admin"
+		c.client.HTTPClient.Port = 9381
+		c.prompt = "RAGFlow(admin)> "
+		fmt.Println("Switched to ADMIN mode (port 9381)")
+	case "user":
+		c.client.ServerType = "user"
+		c.client.HTTPClient.Port = 9380
+		c.prompt = "RAGFlow> "
+		fmt.Println("Switched to USER mode (port 9380)")
+	case "host":
+		if len(args) == 0 {
+			fmt.Printf("Current host: %s\n", c.client.HTTPClient.Host)
+		} else {
+			c.client.HTTPClient.Host = args[0]
+			fmt.Printf("Host set to: %s\n", args[0])
+		}
+	case "port":
+		if len(args) == 0 {
+			fmt.Printf("Current port: %d\n", c.client.HTTPClient.Port)
+		} else {
+			port, err := strconv.Atoi(args[0])
+			if err != nil {
+				return fmt.Errorf("invalid port number: %s", args[0])
+			}
+			if port < 1 || port > 65535 {
+				return fmt.Errorf("port must be between 1 and 65535")
+			}
+			c.client.HTTPClient.Port = port
+			fmt.Printf("Port set to: %d\n", port)
+		}
+	case "status":
+		fmt.Printf("Server: %s:%d (mode: %s)\n", c.client.HTTPClient.Host, c.client.HTTPClient.Port, c.client.ServerType)
 	default:
 		return fmt.Errorf("unknown meta command: \\%s", command)
 	}
@@ -148,13 +185,39 @@ func (c *CLI) printHelp() {
 RAGFlow CLI Help
 ================
 
-SQL Commands:
+Meta Commands:
+  \admin        - Switch to ADMIN mode (port 9381)
+  \user         - Switch to USER mode (port 9380)
+  \host [ip]    - Show or set server host (default: 127.0.0.1)
+  \port [num]   - Show or set server port (default: 9380 for user, 9381 for admin)
+  \status       - Show current connection status
+  \? or \h      - Show this help
+  \q or \quit   - Exit CLI
+  \c or \clear  - Clear screen
+
+SQL Commands (User Mode):
   LOGIN USER 'email';                                    - Login as user
   REGISTER USER 'name' AS 'nickname' PASSWORD 'pwd';     - Register new user
   SHOW VERSION;                                          - Show version info
-  SHOW CURRENT USER;                                     - Show current user
+  PING;                                                  - Ping server
+  LIST DATASETS;                                         - List user datasets
+  LIST AGENTS;                                           - List user agents
+  LIST CHATS;                                            - List user chats
+  LIST MODEL PROVIDERS;                                  - List model providers
+  LIST DEFAULT MODELS;                                   - List default models
+
+SQL Commands (Admin Mode):
+  LOGIN USER 'email';                                    - Login as admin
   LIST USERS;                                            - List all users
+  SHOW USER 'email';                                     - Show user details
+  CREATE USER 'email' 'password';                        - Create new user
+  DROP USER 'email';                                     - Delete user
+  ALTER USER PASSWORD 'email' 'new_password';            - Change user password
+  ALTER USER ACTIVE 'email' on/off;                      - Activate/deactivate user
+  GRANT ADMIN 'email';                                   - Grant admin role
+  REVOKE ADMIN 'email';                                  - Revoke admin role
   LIST SERVICES;                                         - List services
+  SHOW SERVICE <id>;                                     - Show service details
   PING;                                                  - Ping server
   ... and many more
 
@@ -171,4 +234,23 @@ For more information, see documentation.
 // Cleanup performs cleanup before exit
 func (c *CLI) Cleanup() {
 	fmt.Println("\nCleaning up...")
+}
+
+// RunInteractive runs the CLI in interactive mode
+func RunInteractive() error {
+	cli, err := NewCLI()
+	if err != nil {
+		return fmt.Errorf("failed to create CLI: %v", err)
+	}
+
+	// Handle interrupt signal
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		cli.Cleanup()
+		os.Exit(0)
+	}()
+
+	return cli.Run()
 }
