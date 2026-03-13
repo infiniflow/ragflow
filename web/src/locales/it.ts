@@ -1203,7 +1203,7 @@ Quanto sopra è il contenuto che devi riassumere.`,
     },
     pagination: {
       total: 'Totale {{total}}',
-      page: '{{page}} /Pagina',
+      page: '{{page}} / Pagina',
     },
     deleteModal: {
       delAgent: 'Elimina agente',

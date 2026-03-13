@@ -1,4 +1,3 @@
-import FileStatusBadge from '@/components/file-status-badge';
 import { FilterCollection } from '@/components/list-filter-bar/interface';
 import SvgIcon from '@/components/svg-icon';
 import { useIsDarkTheme } from '@/components/theme-provider';
@@ -188,16 +187,10 @@ const FileLogsPage: FC = () => {
         label: t('knowledgeDetails.status'),
         list: Object.values(RunningStatus).map((value) => {
           // const value = key as RunningStatus;
-          console.log(value);
           return {
             id: value,
             // label: RunningStatusMap[value].label,
-            label: (
-              <FileStatusBadge
-                status={value as RunningStatus}
-                name={RunningStatusMap[value as RunningStatus]}
-              />
-            ),
+            label: RunningStatusMap[value],
           };
         }),
       },
@@ -251,7 +244,6 @@ const FileLogsPage: FC = () => {
     page: number;
     pageSize: number;
   }) => {
-    console.log('Pagination changed:', { page, pageSize });
     setPagination({
       ...pagination,
       page,

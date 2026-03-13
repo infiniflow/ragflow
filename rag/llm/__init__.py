@@ -81,7 +81,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Anthropic: "https://api.anthropic.com/",
     SupportedLiteLLMProvider.JiekouAI: "https://api.jiekou.ai/openai",
     SupportedLiteLLMProvider.ZHIPU_AI: "https://open.bigmodel.cn/api/paas/v4",
-    SupportedLiteLLMProvider.MiniMax: "https://api.minimaxi.com/v1",
+    SupportedLiteLLMProvider.MiniMax: "https://api.minimax.io/v1",
     SupportedLiteLLMProvider.DeerAPI: "https://api.deerapi.com/v1",
     SupportedLiteLLMProvider.OpenAI: "https://api.openai.com/v1",
     SupportedLiteLLMProvider.n1n: "https://api.n1n.ai/v1",

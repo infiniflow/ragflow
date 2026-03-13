@@ -32,6 +32,7 @@ from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid
 from deepdoc.parser import ExcelParser
+from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
@@ -173,7 +174,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "tcadp parser", "paddleocr"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "tcadp parser", "paddleocr"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -369,6 +370,29 @@ class Parser(ProcessBase):
                     "image": pdf_parser.crop(poss, 1),
                     "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
                     "text": t,
+                }
+                bboxes.append(box)
+        elif parse_method.lower() == "docling":
+            pdf_parser = DoclingParser(docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""))
+            lines, _ = pdf_parser.parse_pdf(
+                filepath=name,
+                binary=blob,
+                callback=self.callback,
+                parse_method=conf.get("docling_parse_method", "raw"),
+                docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""),
+            )
+            bboxes = []
+            for item in lines:
+                if not isinstance(item, tuple) or not item:
+                    continue
+                text = item[0]
+                poss = item[-1] if len(item) >= 2 else ""
+                box = {
+                    "text": text,
+                    "image": pdf_parser.crop(poss, 1) if isinstance(poss, str) and poss else None,
+                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
+                    if isinstance(poss, str) and poss
+                    else [],
                 }
                 bboxes.append(box)
         elif parse_method.lower() == "tcadp parser":

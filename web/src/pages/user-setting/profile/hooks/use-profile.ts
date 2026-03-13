@@ -1,4 +1,5 @@
 // src/hooks/useProfile.ts
+import { DEFAULT_TIMEZONE } from '@/constants/setting';
 import {
   useFetchUserInfo,
   useSaveSetting,
@@ -53,7 +54,10 @@ export const useProfile = () => {
     // form.setValue('currPasswd', ''); // current password
     const profile = {
       userName: userInfo.nickname,
-      timeZone: userInfo.timezone,
+      timeZone:
+        userInfo.timezone === ' UTC+8\tAsia/Shanghai'
+          ? DEFAULT_TIMEZONE.name
+          : userInfo.timezone,
       avatar: userInfo.avatar || '',
       email: userInfo.email,
       currPasswd: userInfo.password,
