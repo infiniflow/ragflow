@@ -8,6 +8,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
+import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Spin } from '@/components/ui/spin';
@@ -20,6 +21,7 @@ import {
 import { IReferenceObject } from '@/interfaces/database/chat';
 import { useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { DateRange } from '../../components/originui/calendar/index';
 import {
@@ -44,6 +46,7 @@ const getEndOfToday = (): Date => {
   return today;
 };
 const AgentLogPage: React.FC = () => {
+  const { t } = useTranslation();
   const { navigateToAgents, navigateToAgent } = useNavigatePage();
   const { flowDetail: agentDetail } = useFetchDataOnMount();
   const { id: canvasId } = useParams();
@@ -58,6 +61,7 @@ const AgentLogPage: React.FC = () => {
     page_size: 10,
   };
   const [searchParams, setSearchParams] = useState(init);
+
   const columns = [
     {
       title: 'ID',
@@ -65,10 +69,16 @@ const AgentLogPage: React.FC = () => {
       key: 'id',
     },
     {
+      title: 'User ID',
+      dataIndex: 'user_id',
+      key: 'user_id',
+      render: (text: string) => <span>{text}</span>,
+    },
+    {
       title: 'Title',
       dataIndex: 'title',
       key: 'title',
-      render: (text, record: IAgentLogResponse) => (
+      render: (_text: string, record: IAgentLogResponse) => (
         <span>
           {record?.message?.length ? record?.message[0]?.content : ''}
         </span>
@@ -78,7 +88,7 @@ const AgentLogPage: React.FC = () => {
       title: 'State',
       dataIndex: 'state',
       key: 'state',
-      render: (text, record: IAgentLogResponse) => (
+      render: (_text: string, record: IAgentLogResponse) => (
         <div
           className="size-2 rounded-full"
           style={{ backgroundColor: record.errors ? 'red' : 'green' }}
@@ -101,6 +111,11 @@ const AgentLogPage: React.FC = () => {
       dataIndex: 'create_date',
       key: 'create_date',
       sortable: true,
+    },
+    {
+      title: 'Version',
+      dataIndex: 'version',
+      key: 'version',
     },
   ];
 
@@ -231,6 +246,7 @@ const AgentLogPage: React.FC = () => {
 
           <div className="flex justify-end space-x-2 mb-4 text-foreground">
             <div className="flex items-center space-x-2">
+              <Button>{t('flow.export')}</Button>
               <span>ID/Title</span>
               <SearchInput
                 value={keywords}
@@ -319,8 +335,13 @@ const AgentLogPage: React.FC = () => {
                     {columns.map((column) => (
                       <TableCell key={column.dataIndex}>
                         {column.render
-                          ? column.render(item[column.dataIndex], item)
-                          : item[column.dataIndex]}
+                          ? column.render(
+                              item[column.dataIndex as keyof IAgentLogResponse],
+                              item,
+                            )
+                          : (item[
+                              column.dataIndex as keyof typeof item
+                            ] as string)}
                       </TableCell>
                     ))}
                   </TableRow>

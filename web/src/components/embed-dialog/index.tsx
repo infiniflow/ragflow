@@ -24,20 +24,23 @@ import {
   LanguageAbbreviationMap,
   ThemeEnum,
 } from '@/constants/common';
-import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { Routes } from '@/routes';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { isEmpty, trim } from 'lodash';
 import { ExternalLink } from 'lucide-react';
 import { memo, useCallback, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import {
   oneDark,
   oneLight,
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { z } from 'zod';
+import { RAGFlowFormItem } from '../ragflow-form';
 import { useIsDarkTheme } from '../theme-provider';
+import { Input } from '../ui/input';
 
 const FormSchema = z.object({
   visibleAvatar: z.boolean(),
@@ -46,6 +49,7 @@ const FormSchema = z.object({
   embedType: z.enum(['fullscreen', 'widget']),
   enableStreaming: z.boolean(),
   theme: z.enum([ThemeEnum.Light, ThemeEnum.Dark]),
+  userId: z.string().optional(),
 });
 
 type IProps = IModalProps<any> & {
@@ -63,7 +67,7 @@ function EmbedDialog({
   isAgent,
   visible,
 }: IProps) {
-  const { t } = useTranslate('chat');
+  const { t } = useTranslation();
   const isDarkTheme = useIsDarkTheme();
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -95,6 +99,7 @@ function EmbedDialog({
       embedType,
       enableStreaming,
       theme,
+      userId,
     } = values;
     const baseRoute =
       embedType === 'widget'
@@ -123,6 +128,9 @@ function EmbedDialog({
     }
     if (theme && embedType === 'fullscreen') {
       src.searchParams.append('theme', theme);
+    }
+    if (!isEmpty(trim(userId))) {
+      src.searchParams.append('userId', userId!);
     }
 
     return src.toString();
@@ -175,9 +183,7 @@ window.addEventListener('message',e=>{
     <Dialog open={visible} onOpenChange={hideModal}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {t('embedIntoSite', { keyPrefix: 'common' })}
-          </DialogTitle>
+          <DialogTitle>{t('common.embedIntoSite')}</DialogTitle>
         </DialogHeader>
 
         <section className="w-full overflow-auto space-y-5 text-sm text-text-secondary">
@@ -253,7 +259,7 @@ window.addEventListener('message',e=>{
                 name="visibleAvatar"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('avatarHidden')}</FormLabel>
+                    <FormLabel>{t('chat.avatarHidden')}</FormLabel>
                     <FormControl>
                       <Switch
                         checked={field.value}
@@ -303,7 +309,7 @@ window.addEventListener('message',e=>{
                 name="locale"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('locale')}</FormLabel>
+                    <FormLabel>{t('chat.locale')}</FormLabel>
                     <FormControl>
                       <SelectWithSearch
                         {...field}
@@ -314,10 +320,13 @@ window.addEventListener('message',e=>{
                   </FormItem>
                 )}
               />
+              <RAGFlowFormItem name="userId" label={t('flow.userId')}>
+                <Input></Input>
+              </RAGFlowFormItem>
             </form>
           </Form>
           <div>
-            <span>{t('embedCode', { keyPrefix: 'search' })}</span>
+            <span>{t('search.embedCode')}</span>
             <div>
               <SyntaxHighlighter
                 className="max-h-[350px] overflow-auto scrollbar-auto"
@@ -334,7 +343,7 @@ window.addEventListener('message',e=>{
             variant="secondary"
           >
             <ExternalLink className="mr-2 h-4 w-4" />
-            {t('openInNewTab', { keyPrefix: 'common' })}
+            {t('common.openInNewTab')}
           </Button>
           <div className=" font-medium mt-4 mb-1">
             {t(isAgent ? 'flow' : 'chat', { keyPrefix: 'header' })}
@@ -354,7 +363,7 @@ window.addEventListener('message',e=>{
             target="_blank"
             rel="noreferrer"
           >
-            {t('howUseId', { keyPrefix: isAgent ? 'flow' : 'chat' })}
+            {t(`${isAgent ? 'flow' : 'chat'}.howUseId`)}
           </a>
         </section>
       </DialogContent>
