@@ -494,7 +494,7 @@ class TestDatasetUpdate:
         dataset_id = add_dataset_func
         payload = {"pagerank": 50}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
-        assert res["code"] == 101, res
+        assert res["code"] == 102, res
         assert res["message"] == "'pagerank' can only be set when doc_engine is elasticsearch", res
 
     @pytest.mark.p2
