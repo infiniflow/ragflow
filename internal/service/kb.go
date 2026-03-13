@@ -146,7 +146,7 @@ func (s *KnowledgebaseService) CreateKB(req *CreateKBRequest, tenantID string) (
 
 	// Create knowledge base model
 	now := time.Now().Unix()
-	nowDate := time.Now()
+	nowDate := time.Now().Truncate(time.Second)
 	kb := &model.Knowledgebase{
 		ID:           kbID,
 		Name:         duplicateName,
@@ -256,7 +256,7 @@ func (s *KnowledgebaseService) UpdateKB(req *UpdateKBRequest, userID string) (ma
 	}
 
 	now := time.Now().Unix()
-	nowDate := time.Now()
+	nowDate := time.Now().Truncate(time.Second)
 	updates["update_time"] = now
 	updates["update_date"] = nowDate
 

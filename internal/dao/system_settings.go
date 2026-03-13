@@ -59,7 +59,7 @@ func (d *SystemSettingsDAO) GetByName(name string) ([]model.SystemSettings, erro
 // Updates the setting with the given name using the provided data
 func (d *SystemSettingsDAO) UpdateByName(name string, setting *model.SystemSettings) error {
 	now := time.Now().Unix()
-	nowDate := time.Now()
+	nowDate := time.Now().Truncate(time.Second)
 
 	return DB.Model(&model.SystemSettings{}).
 		Where("name = ?", name).
@@ -76,7 +76,7 @@ func (d *SystemSettingsDAO) UpdateByName(name string, setting *model.SystemSetti
 // Inserts a new system setting record into database
 func (d *SystemSettingsDAO) Create(setting *model.SystemSettings) error {
 	now := time.Now().Unix()
-	nowDate := time.Now()
+	nowDate := time.Now().Truncate(time.Second)
 
 	setting.CreateTime = &now
 	setting.CreateDate = &nowDate
@@ -161,7 +161,7 @@ func (d *SystemSettingsDAO) Transaction(fn func(tx *gorm.DB) error) error {
 // CreateWithTx create setting within transaction
 func (d *SystemSettingsDAO) CreateWithTx(tx *gorm.DB, setting *model.SystemSettings) error {
 	now := time.Now().Unix()
-	nowDate := time.Now()
+	nowDate := time.Now().Truncate(time.Second)
 
 	setting.CreateTime = &now
 	setting.CreateDate = &nowDate
@@ -174,7 +174,7 @@ func (d *SystemSettingsDAO) CreateWithTx(tx *gorm.DB, setting *model.SystemSetti
 // UpdateByNameWithTx update setting within transaction
 func (d *SystemSettingsDAO) UpdateByNameWithTx(tx *gorm.DB, name string, setting *model.SystemSettings) error {
 	now := time.Now().Unix()
-	nowDate := time.Now()
+	nowDate := time.Now().Truncate(time.Second)
 
 	return tx.Model(&model.SystemSettings{}).
 		Where("name = ?", name).

@@ -293,7 +293,7 @@ func (dao *KnowledgebaseDAO) DuplicateName(name, tenantID string) string {
 // This matches the Python atomic_increase_doc_num_by_id method
 func (dao *KnowledgebaseDAO) AtomicIncreaseDocNumByID(kbID string) error {
 	now := time.Now().Unix()
-	nowDate := time.Now()
+	nowDate := time.Now().Truncate(time.Second)
 	return DB.Model(&model.Knowledgebase{}).
 		Where("id = ?", kbID).
 		Updates(map[string]interface{}{
@@ -307,7 +307,7 @@ func (dao *KnowledgebaseDAO) AtomicIncreaseDocNumByID(kbID string) error {
 // This matches the Python decrease_document_num_in_delete method
 func (dao *KnowledgebaseDAO) DecreaseDocumentNum(kbID string, docNum, chunkNum, tokenNum int64) error {
 	now := time.Now().Unix()
-	nowDate := time.Now()
+	nowDate := time.Now().Truncate(time.Second)
 	return DB.Model(&model.Knowledgebase{}).
 		Where("id = ?", kbID).
 		Updates(map[string]interface{}{
