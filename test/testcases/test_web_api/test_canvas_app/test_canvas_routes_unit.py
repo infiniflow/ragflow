@@ -183,6 +183,14 @@ def _load_canvas_module(monkeypatch):
     api_pkg.__path__ = [str(repo_root / "api")]
     monkeypatch.setitem(sys.modules, "api", api_pkg)
 
+    db_pkg = ModuleType("api.db")
+    db_pkg.__path__ = [str(repo_root / "api" / "db")]
+    monkeypatch.setitem(sys.modules, "api.db", db_pkg)
+
+    db_services_pkg = ModuleType("api.db.services")
+    db_services_pkg.__path__ = [str(repo_root / "api" / "db" / "services")]
+    monkeypatch.setitem(sys.modules, "api.db.services", db_services_pkg)
+
     apps_mod = ModuleType("api.apps")
     apps_mod.__path__ = []
     apps_mod.current_user = SimpleNamespace(id="user-1")
@@ -326,6 +334,12 @@ def _load_canvas_module(monkeypatch):
         get_blob=lambda *_args, **_kwargs: b"",
     )
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
+
+    knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
+    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace(
+        query=lambda **_kwargs: [],
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod)
 
     pipeline_log_service_mod = ModuleType("api.db.services.pipeline_operation_log_service")
     pipeline_log_service_mod.PipelineOperationLogService = SimpleNamespace(
