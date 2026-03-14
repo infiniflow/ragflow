@@ -117,7 +117,7 @@ dependencies = [
     "xgboost==1.6.0",
     "xpinyin==0.7.6",
     "yfinance==0.2.65",
-    "zhipuai==2.0.1",
+    "zhipuai>=2.0.1",
     "peewee>=3.17.1,<4.0.0",
     #    following modules aren't necessary
     #    "nltk==3.9.1",
@@ -176,6 +176,12 @@ test = [
     "pycryptodomex==3.20.0",
     "pytest-playwright>=0.7.2",
     "codecov>=2.1.13",
+]
+
+[tool.uv]
+override-dependencies = [
+    "pyjwt>=2.10.1",
+    "cryptography>=45.0.7",
 ]
 
 [[tool.uv.index]]
