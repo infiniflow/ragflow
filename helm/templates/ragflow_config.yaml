@@ -20,7 +20,7 @@ metadata:
 data:
   ragflow.conf: |
     server {
-        listen 80;
+        listen 8080;
         server_name _;
         root /ragflow/web/dist;
 
@@ -62,7 +62,6 @@ data:
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
   nginx.conf: |
-    user  root;
     worker_processes  auto;
 
     error_log  /var/log/nginx/error.log notice;

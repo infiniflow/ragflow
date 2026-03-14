@@ -16,13 +16,14 @@ env:
   # - `elasticsearch` (default)
   # - `infinity` (https://github.com/infiniflow/infinity)
   # - `opensearch` (https://github.com/opensearch-project/OpenSearch)
+  # DOC_ENGINE: elasticsearch
   DOC_ENGINE: elasticsearch
-  # DOC_ENGINE: infinity
   # DOC_ENGINE: opensearch
 
   # The version of Elasticsearch.
   STACK_VERSION: "8.11.3"
-
+  USE_DOCLING: false
+  REGISTER_ENABLED: 0
   # The password for Elasticsearch
   ELASTIC_PASSWORD: infini_rag_flow_helm
 
@@ -74,21 +75,10 @@ env:
   # The number of text chunks processed in a single batch during embedding vectorization.
   EMBEDDING_BATCH_SIZE: 32
 
-  #Port auf dem der MCP-Server Exposed wird.
-  SVR_MCP_PORT: 9382
-  # Deaktiviere die Registrierung von neuen Benutzern, um die Sicherheit zu erhöhen. Setze diesen Wert auf "1", wenn du die Registrierung aktivieren möchtest.
-  REGISTER_ENABLED: 0
-
-  #Aktiviere DOCLING als Parsing Engine
-  USE_DOCLING: true
-
-  #Maximale Dateigröße für den Upload von Dokumenten, in Bytes (aktuell 5 GB pro Dokument).
-  MAX_CONTENT_LENGTH: 40000000000
-
 ragflow:
   image:
-    repository: TIMBLOCKER/kira
-    tag: v0.24.0
+    repository: quay-etaps.registry.intern/dap/kira
+    tag: v24
     pullPolicy: IfNotPresent
     pullSecrets: []
   # Optional service configuration overrides
@@ -101,17 +91,17 @@ ragflow:
   # llm_factories.json file inside the RAGFlow
   # container.
   llm_factories:
-    # factory_llm_infos:
-    # - name: OpenAI-API-Compatible
-    #   logo: ""
-    #   tags: "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION"
-    #   status: "1"
-    #   llm:
-    #     - llm_name: my-custom-llm
-    #       tags: "LLM,CHAT,"
-    #       max_tokens: 100000
-    #       model_type: chat
-    #       is_tools: false
+  # factory_llm_infos:
+  # - name: OpenAI-API-Compatible
+  #   logo: ""
+  #   tags: "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION"
+  #   status: "1"
+  #   llm:
+  #     - llm_name: my-custom-llm
+  #       tags: "LLM,CHAT,"
+  #       max_tokens: 100000
+  #       model_type: chat
+  #       is_tools: false
 
   # Kubernetes configuration
   deployment:
@@ -134,7 +124,7 @@ ragflow:
 
 infinity:
   image:
-    repository: infiniflow/infinity
+    repository: quay-etaps.registry.intern/dap/infiniflow/infinity
     tag: v0.7.0-dev2
     pullPolicy: IfNotPresent
     pullSecrets: []
@@ -149,17 +139,17 @@ infinity:
 
 elasticsearch:
   image:
-    repository: elasticsearch
-    tag: "8.11.3"
+    repository: quay-etaps.registry.intern/dap/elasticsearch
+    tag: 8.11.3
     pullPolicy: IfNotPresent
     pullSecrets: []
   initContainers:
     alpine:
-      repository: alpine
+      repository: quay-etaps.registry.intern/dap/alpine
       tag: latest
       pullPolicy: IfNotPresent
     busybox:
-      repository: busybox
+      repository: quay-etaps.registry.intern/dap/busybox
       tag: latest
       pullPolicy: IfNotPresent
   storage:
@@ -169,24 +159,24 @@ elasticsearch:
     strategy:
     resources:
       requests:
-        cpu: "4"
-        memory: "16Gi"
+        cpu: "8"
+        memory: "32Gi"
   service:
     type: ClusterIP
 
 opensearch:
   image:
-    repository: opensearchproject/opensearch
+    repository: quay-etaps.registry.intern/dap/opensearch
     tag: 2.19.1
     pullPolicy: IfNotPresent
     pullSecrets: []
   initContainers:
     alpine:
-      repository: alpine
+      repository: quay-etaps.registry.intern/dap/alpine
       tag: latest
       pullPolicy: IfNotPresent
     busybox:
-      repository: busybox
+      repository: quay-etaps.registry.intern/dap/busybox
       tag: latest
       pullPolicy: IfNotPresent
   storage:
@@ -204,7 +194,7 @@ opensearch:
 minio:
   enabled: true
   image:
-    repository: quay.io/minio/minio
+    repository: quay-etaps.registry.intern/dap/minio
     tag: RELEASE.2023-12-20T01-00-02Z
     pullPolicy: IfNotPresent
     pullSecrets: []
@@ -220,7 +210,7 @@ minio:
 mysql:
   enabled: true
   image:
-    repository: mysql
+    repository: quay-etaps.registry.intern/dap/mysql
     tag: 8.0.39
     pullPolicy: IfNotPresent
     pullSecrets: []
@@ -236,7 +226,7 @@ mysql:
 redis:
   enabled: true
   image:
-    repository: valkey/valkey
+    repository: quay-etaps.registry.intern/dap/valkey
     tag: 8
     pullPolicy: IfNotPresent
     pullSecrets: []
@@ -245,11 +235,11 @@ redis:
     capacity: 5Gi
   persistence:
     enabled: true
-    # Set's the retention policy for the persistent storage (only available in k8s 1.32 or later)
-    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
-    # retentionPolicy:
+      # Set's the retention policy for the persistent storage (only available in k8s 1.32 or later)
+      # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
+      # retentionPolicy:
       # whenDeleted: Delete
-      # whenScaled: Delete
+    # whenScaled: Delete
   deployment:
     strategy:
     resources:
@@ -260,13 +250,13 @@ redis:
 # This block is for setting up web service ingress. For more information, see:
 # https://kubernetes.io/docs/concepts/services-networking/ingress/
 ingress:
-  enabled: false
+  enabled: true
   className: ""
   annotations: {}
     # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
+  # kubernetes.io/tls-acme: "true"
   hosts:
-    - host: chart-example.local
+    - host: kira-ragflow.apps.ocmtdx05.dyn.mtd.openshift.intern
       paths:
         - path: /
           pathType: ImplementationSpecific
