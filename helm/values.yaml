@@ -140,7 +140,7 @@ infinity:
 elasticsearch:
   image:
     repository: elasticsearch
-    tag: latest
+    tag: "8.11.3"
     pullPolicy: IfNotPresent
     pullSecrets: []
   initContainers:
@@ -256,7 +256,7 @@ ingress:
     # kubernetes.io/ingress.class: nginx
   # kubernetes.io/tls-acme: "true"
   hosts:
-    - host: 10.109.0.1
+    - host: kira.local
       paths:
         - path: /
           pathType: ImplementationSpecific

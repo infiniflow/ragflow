@@ -62,9 +62,8 @@ spec:
           env:
               - name: PYTHONPATH
                 value: "/ragflow/conf:/ragflow/.venv/lib/python3.12/site-packages:/ragflow"
-                - name: HOME
-                  value: "/tmp"
-
+              - name: HOME
+                value: "/tmp"
           {{- with .Values.ragflow.image.pullPolicy }}
           imagePullPolicy: {{ . }}
           {{- end }}
