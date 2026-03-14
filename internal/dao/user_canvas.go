@@ -127,3 +127,18 @@ type CanvasBasicInfo struct {
 	CanvasType     *string `gorm:"column:canvas_type" json:"canvas_type,omitempty"`
 	CanvasCategory string  `gorm:"column:canvas_category" json:"canvas_category"`
 }
+
+// DeleteByUserID deletes all canvases by user ID (hard delete)
+func (dao *UserCanvasDAO) DeleteByUserID(userID string) (int64, error) {
+	result := DB.Unscoped().Where("user_id = ?", userID).Delete(&model.UserCanvas{})
+	return result.RowsAffected, result.Error
+}
+
+// GetAllCanvasIDsByUserID gets all canvas IDs by user ID
+func (dao *UserCanvasDAO) GetAllCanvasIDsByUserID(userID string) ([]string, error) {
+	var canvasIDs []string
+	err := DB.Model(&model.UserCanvas{}).
+		Where("user_id = ?", userID).
+		Pluck("id", &canvasIDs).Error
+	return canvasIDs, err
+}

@@ -40,13 +40,18 @@ export function Banner() {
 }
 
 export function NextBanner() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   return (
-    <section className="text-5xl pt-10 pb-14 font-bold px-10">
-      <span className="text-text-primary">{t('header.welcome')}</span>
-      <span className="pl-3 text-transparent bg-clip-text  bg-gradient-to-l from-[#9B348E] to-[#ee0000]">
-        KIRA
+    <h1
+      className="text-5xl leading-normal text-left"
+      dir={i18n.language?.startsWith('ar') ? 'rtl' : 'ltr'}
+    >
+      <span className="font-semibold text-text-primary">
+        {t('header.welcome')}{' '}
       </span>
-    </section>
+      <span className="font-bold text-transparent bg-clip-text bg-gradient-to-l from-[#40EBE3] to-[#4A51FF]">
+        RAGFlow
+      </span>
+    </h1>
   );
 }
