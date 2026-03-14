@@ -22,7 +22,7 @@ env:
 
   # The version of Elasticsearch.
   STACK_VERSION: "8.11.3"
-  USE_DOCLING: false
+  USE_DOCLING: true
   REGISTER_ENABLED: 0
   # The password for Elasticsearch
   ELASTIC_PASSWORD: infini_rag_flow_helm
@@ -77,7 +77,7 @@ env:
 
 ragflow:
   image:
-    repository: quay-etaps.registry.intern/dap/kira
+    repository: timblocker/kira
     tag: v24
     pullPolicy: IfNotPresent
     pullSecrets: []
@@ -124,8 +124,8 @@ ragflow:
 
 infinity:
   image:
-    repository: quay-etaps.registry.intern/dap/infiniflow/infinity
-    tag: v0.7.0-dev2
+    repository: infiniflow/infinity
+    tag: latest
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:
@@ -139,17 +139,17 @@ infinity:
 
 elasticsearch:
   image:
-    repository: quay-etaps.registry.intern/dap/elasticsearch
-    tag: 8.11.3
+    repository: elasticsearch
+    tag: latest
     pullPolicy: IfNotPresent
     pullSecrets: []
   initContainers:
     alpine:
-      repository: quay-etaps.registry.intern/dap/alpine
+      repository: alpine
       tag: latest
       pullPolicy: IfNotPresent
     busybox:
-      repository: quay-etaps.registry.intern/dap/busybox
+      repository: busybox
       tag: latest
       pullPolicy: IfNotPresent
   storage:
@@ -159,24 +159,24 @@ elasticsearch:
     strategy:
     resources:
       requests:
-        cpu: "8"
-        memory: "32Gi"
+        cpu: "4"
+        memory: "16Gi"
   service:
     type: ClusterIP
 
 opensearch:
   image:
-    repository: quay-etaps.registry.intern/dap/opensearch
-    tag: 2.19.1
+    repository: opensearchproject/opensearch
+    tag: latest
     pullPolicy: IfNotPresent
     pullSecrets: []
   initContainers:
     alpine:
-      repository: quay-etaps.registry.intern/dap/alpine
+      repository: alpine
       tag: latest
       pullPolicy: IfNotPresent
     busybox:
-      repository: quay-etaps.registry.intern/dap/busybox
+      repository: busybox
       tag: latest
       pullPolicy: IfNotPresent
   storage:
@@ -194,8 +194,8 @@ opensearch:
 minio:
   enabled: true
   image:
-    repository: quay-etaps.registry.intern/dap/minio
-    tag: RELEASE.2023-12-20T01-00-02Z
+    repository: quay.io/minio/minio
+    tag: RELEASE.2024-12-18T13-15-44Z
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:
@@ -210,8 +210,8 @@ minio:
 mysql:
   enabled: true
   image:
-    repository: quay-etaps.registry.intern/dap/mysql
-    tag: 8.0.39
+    repository: mysql
+    tag: latest
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:
@@ -226,8 +226,8 @@ mysql:
 redis:
   enabled: true
   image:
-    repository: quay-etaps.registry.intern/dap/valkey
-    tag: 8
+    repository: valkey/valkey
+    tag: latest
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:
@@ -256,7 +256,7 @@ ingress:
     # kubernetes.io/ingress.class: nginx
   # kubernetes.io/tls-acme: "true"
   hosts:
-    - host: kira-ragflow.apps.ocmtdx05.dyn.mtd.openshift.intern
+    - host: 10.109.0.1
       paths:
         - path: /
           pathType: ImplementationSpecific
