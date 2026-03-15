@@ -93,6 +93,8 @@ export const formSchema = z
           .optional(),
         enable_metadata: z.boolean().optional(),
         llm_id: z.string().optional(),
+        // Table parser: "auto" = all columns both, "manual" = use column role selector
+        table_column_mode: z.enum(['auto', 'manual']).optional(),
         // Table parser: column name -> role (vectorize | metadata | both)
         table_column_roles: z
           .record(z.enum(['vectorize', 'metadata', 'both']))

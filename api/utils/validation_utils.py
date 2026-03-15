@@ -381,6 +381,9 @@ class ParserConfig(Base):
     task_page_size: Annotated[int | None, Field(default=None, ge=1)]
     pages: Annotated[list[list[int]] | None, Field(default=None)]
     # Table parser: column name -> "vectorize" | "metadata" | "both". Absence => all columns "both".
+    # Table parser: "auto" = all columns both (default), "manual" = use table_column_roles. None → treated as "auto".
+    table_column_mode: Annotated[Literal["auto", "manual"] | None, Field(default=None)]
+    # Table parser: column name -> "vectorize" | "metadata" | "both". Used only when table_column_mode == "manual".
     table_column_roles: Annotated[dict[str, TableColumnRole] | None, Field(default=None)]
     # Table parser: list of column names (set by backend after first parse; used by frontend for role selector).
     table_column_names: Annotated[list[str] | None, Field(default=None)]

@@ -456,9 +456,12 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 txts.extend([str(c) for c in cln if c])
         clmns_map = [(py_clmns[i].lower() + fields_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in
                      range(len(clmns))]
-        # Column roles: vectorize (chunk text only), metadata (chunk_data/typed fields only), both (default)
+        # Column roles: only when mode is "manual"; otherwise all columns = both (RAGFlow default)
         parser_config = kwargs.get("parser_config") or {}
-        column_roles = parser_config.get("table_column_roles") or {}
+        if parser_config.get("table_column_mode") == "manual":
+            column_roles = parser_config.get("table_column_roles") or {}
+        else:
+            column_roles = {}
         # field_map: only columns stored in chunk_data (metadata or both) — used for retrieval/SQL
         stored_indices = [
             i for i in range(len(clmns))
