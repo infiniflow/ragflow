@@ -61,23 +61,9 @@ func NewLLMHandler(llmService *service.LLMService, userService *service.UserServ
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/llm/my_llms [get]
 func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeUnauthorized,
-			"message": "Unauthorized!",
-			"data":    false,
-		})
-		return
-	}
-
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    false,
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -113,23 +99,9 @@ func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/llm/set_api_key [post]
 func (h *LLMHandler) SetAPIKey(c *gin.Context) {
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeUnauthorized,
-			"message": "Unauthorized!",
-			"data":    false,
-		})
-		return
-	}
-
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    false,
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -180,23 +152,9 @@ func (h *LLMHandler) SetAPIKey(c *gin.Context) {
 // @Success 200 {array} FactoryResponse
 // @Router /v1/llm/factories [get]
 func (h *LLMHandler) Factories(c *gin.Context) {
-	// Extract token from request
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by token
-	_, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -246,6 +204,7 @@ func (h *LLMHandler) Factories(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
 		"data": filtered,
 	})
 }
@@ -261,23 +220,9 @@ func (h *LLMHandler) Factories(c *gin.Context) {
 // @Success 200 {object} map[string][]service.LLMListItem
 // @Router /v1/llm/list [get]
 func (h *LLMHandler) ListApp(c *gin.Context) {
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeUnauthorized,
-			"message": "Unauthorized!",
-			"data":    false,
-		})
-		return
-	}
-
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    false,
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 

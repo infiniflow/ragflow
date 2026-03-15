@@ -127,3 +127,17 @@ func (dao *TenantLLMDAO) ListAllByTenant(tenantID string) ([]*model.TenantLLM, e
 	}
 	return tenantLLMs, nil
 }
+
+// InsertMany inserts multiple tenant LLM records
+func (dao *TenantLLMDAO) InsertMany(tenantLLMs []*model.TenantLLM) error {
+	if len(tenantLLMs) == 0 {
+		return nil
+	}
+	return DB.Create(&tenantLLMs).Error
+}
+
+// DeleteByTenantID deletes all tenant LLM records by tenant ID (hard delete)
+func (dao *TenantLLMDAO) DeleteByTenantID(tenantID string) (int64, error) {
+	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&model.TenantLLM{})
+	return result.RowsAffected, result.Error
+}

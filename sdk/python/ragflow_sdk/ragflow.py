@@ -79,8 +79,8 @@ class RAGFlow:
             return DataSet(self, res["data"])
         raise Exception(res["message"])
 
-    def delete_datasets(self, ids: list[str] | None = None):
-        res = self.delete("/datasets", {"ids": ids})
+    def delete_datasets(self, ids: list[str] | None = None, delete_all: bool = False):
+        res = self.delete("/datasets", {"ids": ids, "delete_all": delete_all})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
@@ -109,26 +109,6 @@ class RAGFlow:
             for data in res["data"]:
                 result_list.append(DataSet(self, data))
             return result_list
-        raise Exception(res["message"])
-
-    def get_auto_metadata(self, dataset_id: str) -> dict[str, Any]:
-        """
-        Retrieve auto-metadata configuration for a dataset via SDK.
-        """
-        res = self.get(f"/datasets/{dataset_id}/auto_metadata")
-        res = res.json()
-        if res.get("code") == 0:
-            return res["data"]
-        raise Exception(res["message"])
-
-    def update_auto_metadata(self, dataset_id: str, **config: Any) -> dict[str, Any]:
-        """
-        Update auto-metadata configuration for a dataset via SDK.
-        """
-        res = self.put(f"/datasets/{dataset_id}/auto_metadata", config)
-        res = res.json()
-        if res.get("code") == 0:
-            return res["data"]
         raise Exception(res["message"])
 
     def create_chat(self, name: str, avatar: str = "", dataset_ids=None, llm: Chat.LLM | None = None, prompt: Chat.Prompt | None = None) -> Chat:
@@ -185,8 +165,8 @@ class RAGFlow:
             return Chat(self, res["data"])
         raise Exception(res["message"])
 
-    def delete_chats(self, ids: list[str] | None = None):
-        res = self.delete("/chats", {"ids": ids})
+    def delete_chats(self, ids: list[str] | None = None, delete_all: bool = False):
+        res = self.delete("/chats", {"ids": ids, "delete_all": delete_all})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])

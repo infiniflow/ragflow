@@ -83,3 +83,12 @@ func (dao *ChatSessionDAO) GetDialogByID(dialogID string) (*model.Chat, error) {
 	}
 	return &dialog, nil
 }
+
+// DeleteByDialogIDs deletes chat sessions by dialog IDs (hard delete)
+func (dao *ChatSessionDAO) DeleteByDialogIDs(dialogIDs []string) (int64, error) {
+	if len(dialogIDs) == 0 {
+		return 0, nil
+	}
+	result := DB.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&model.ChatSession{})
+	return result.RowsAffected, result.Error
+}

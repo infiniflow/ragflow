@@ -44,6 +44,7 @@ export function AgentCard({ data, showAgentRenameModal }: DatasetCardProps) {
           </Button>
         )
       }
+      showReleaseTime
     />
   );
 }

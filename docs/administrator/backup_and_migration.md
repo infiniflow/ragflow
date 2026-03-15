@@ -39,15 +39,25 @@ local     docker_redis_data
 
 These volumes contain all the data you need to migrate.
 
+:::note
+The volume name prefix (e.g., `docker_`) comes from the Docker Compose project name. By default it is `docker` (derived from the directory name). If you started RAGFlow with `docker compose -p <project_name>`, your volumes will be prefixed with `<project_name>_` instead, for example `ragflow_mysql_data`.
+:::
+
 ### Step 1: Stop RAGFlow services
 
 Before starting the migration, you must stop all running RAGFlow services on the **source machine**. Navigate to the project's root directory and run:
 
 ```bash
-docker-compose -f docker/docker-compose.yml down
+docker compose -f docker/docker-compose.yml down
 ```
 
-**Important:** Do **not** use the `-v` flag (e.g., `docker-compose down -v`), as this will delete all your data volumes. The migration script includes a check and will prevent you from running it if services are active.
+If you started RAGFlow with a custom project name (e.g., `docker compose -p ragflow`), include it in the command:
+
+```bash
+docker compose -p ragflow -f docker/docker-compose.yml down
+```
+
+**Important:** Do **not** use the `-v` flag (e.g., `docker compose down -v`), as this will delete all your data volumes. The migration script includes a check and will prevent you from running it if services are active.
 
 ### Step 2: Back up your data
 
@@ -74,6 +84,13 @@ bash docker/migration.sh backup my_ragflow_backup
 
 This will create a folder named `my_ragflow_backup/` instead.
 
+If you started RAGFlow with a custom project name (e.g., `docker compose -p ragflow`), use the `-p` flag so the script can find the correct volumes:
+
+```bash
+bash docker/migration.sh -p ragflow backup
+bash docker/migration.sh -p ragflow backup my_ragflow_backup
+```
+
 ### Step 3: Transfer the backup folder
 
 Copy the entire backup folder (e.g., `backup/` or `my_ragflow_backup/`) from your source machine to the RAGFlow project directory on your **target machine**. You can use tools like `scp`, `rsync`, or a physical drive for the transfer.
@@ -94,6 +111,13 @@ If you used a custom name, specify it in the command:
 bash docker/migration.sh restore my_ragflow_backup
 ```
 
+If the target machine uses a custom project name, use the `-p` flag to ensure the volumes are created with the correct prefix:
+
+```bash
+bash docker/migration.sh -p ragflow restore
+bash docker/migration.sh -p ragflow restore my_ragflow_backup
+```
+
 The script will automatically create the necessary Docker volumes and unpack the data.
 
 **Note:** If the script detects that Docker volumes with the same names already exist on the target machine, it will warn you that restoring will overwrite the existing data and ask for confirmation before proceeding.
@@ -103,16 +127,22 @@ The script will automatically create the necessary Docker volumes and unpack the
 Once the restore process is complete, you can start the RAGFlow services on your new machine:
 
 ```bash
-docker-compose -f docker/docker-compose.yml up -d
+docker compose -f docker/docker-compose.yml up -d
 ```
 
-**Note:** If you already have built a service by docker-compose before, you may need to backup your data for target machine like this guide above and run like:
+If you use a custom project name:
 
 ```bash
-# Please backup by `sh docker/migration.sh backup backup_dir_name` before you do the following line.
+docker compose -p ragflow -f docker/docker-compose.yml up -d
+```
+
+**Note:** If you already have built a service by docker compose before, you may need to backup your data for target machine like this guide above and run like:
+
+```bash
+# Please backup by `bash docker/migration.sh backup backup_dir_name` before you do the following line.
 # !!! this line -v flag will delete the original docker volume
-docker-compose -f docker/docker-compose.yml down -v
-docker-compose -f docker/docker-compose.yml up -d
+docker compose -f docker/docker-compose.yml down -v
+docker compose -f docker/docker-compose.yml up -d
 ```
 
 Your RAGFlow instance is now running with all the data from your original machine.

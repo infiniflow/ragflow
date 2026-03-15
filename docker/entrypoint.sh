@@ -230,7 +230,11 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting ragflow_server..."
     while true; do
         "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
-        bin/server_main &
+
+        if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+            echo "Starting RAGFlow server in hybrid mode..."
+            bin/server_main &
+        fi
         wait;
         sleep 1;
     done &
@@ -249,6 +253,10 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     echo "Starting admin_server..."
     while true; do
         "$PY" admin/server/admin_server.py &
+        if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+            echo "Starting Admin server in hybrid mode..."
+            bin/admin_server &
+        fi
         wait;
         sleep 1;
     done &
