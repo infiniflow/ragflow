@@ -93,6 +93,12 @@ export const formSchema = z
           .optional(),
         enable_metadata: z.boolean().optional(),
         llm_id: z.string().optional(),
+        // Table parser: column name -> role (vectorize | metadata | both)
+        table_column_roles: z
+          .record(z.enum(['vectorize', 'metadata', 'both']))
+          .optional(),
+        // Table parser: column names list (set by backend after first parse)
+        table_column_names: z.array(z.string()).optional(),
       })
       .optional(),
     pagerank: z.number(),

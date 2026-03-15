@@ -363,6 +363,9 @@ class AutoMetadataConfig(Base):
     fields: Annotated[list[AutoMetadataField], Field(default_factory=list)]
 
 
+TableColumnRole = Literal["vectorize", "metadata", "both"]
+
+
 class ParserConfig(Base):
     auto_keywords: Annotated[int, Field(default=0, ge=0, le=32)]
     auto_questions: Annotated[int, Field(default=0, ge=0, le=10)]
@@ -377,6 +380,10 @@ class ParserConfig(Base):
     filename_embd_weight: Annotated[float | None, Field(default=0.1, ge=0.0, le=1.0)]
     task_page_size: Annotated[int | None, Field(default=None, ge=1)]
     pages: Annotated[list[list[int]] | None, Field(default=None)]
+    # Table parser: column name -> "vectorize" | "metadata" | "both". Absence => all columns "both".
+    table_column_roles: Annotated[dict[str, TableColumnRole] | None, Field(default=None)]
+    # Table parser: list of column names (set by backend after first parse; used by frontend for role selector).
+    table_column_names: Annotated[list[str] | None, Field(default=None)]
 
 
 class CreateDatasetReq(Base):

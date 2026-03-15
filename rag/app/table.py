@@ -475,7 +475,10 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 for i in stored_indices
             }
         logging.debug(f"Field map: {field_map}")
-        KnowledgebaseService.update_parser_config(kwargs["kb_id"], {"field_map": field_map})
+        KnowledgebaseService.update_parser_config(
+            kwargs["kb_id"],
+            {"field_map": field_map, "table_column_names": list(clmns)},
+        )
 
         eng = lang.lower() == "english"  # is_english(txts)
         for ii, row in df.iterrows():
