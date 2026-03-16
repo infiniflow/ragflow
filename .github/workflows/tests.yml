@@ -134,7 +134,7 @@ jobs:
           BUILDER_CONTAINER=ragflow_build_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           echo "BUILDER_CONTAINER=${BUILDER_CONTAINER}" >> ${GITHUB_ENV}
           TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
-          sudo docker run --privileged -d --name ${BUILDER_CONTAINER} -e TZ=${TZ} -e UV_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple -v ${PWD}:/ragflow -v ${PWD}/internal/cpp/resource:/usr/share/infinity/resource infiniflow/infinity_builder:ubuntu22_clang20
+          sudo docker run --privileged -d --name ${BUILDER_CONTAINER} -e TZ=${TZ} -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple -v ${PWD}:/ragflow -v ${PWD}/internal/cpp/resource:/usr/share/infinity/resource infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec ${BUILDER_CONTAINER} bash -c "git config --global safe.directory \"*\" && cd /ragflow && ./build.sh --cpp"
           ./build.sh --go
           if [[ -n "${BUILDER_CONTAINER}" ]]; then
