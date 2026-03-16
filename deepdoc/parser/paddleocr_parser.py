@@ -59,6 +59,18 @@ def _remove_images_from_markdown(markdown: str) -> str:
     return _MARKDOWN_IMAGE_PATTERN.sub("", markdown)
 
 
+def _normalize_bbox(bbox: list[Any] | tuple[Any, ...]) -> tuple[float, float, float, float]:
+    if len(bbox) < 4:
+        return 0.0, 0.0, 0.0, 0.0
+
+    left, top, right, bottom = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+    if left > right:
+        left, right = right, left
+    if top > bottom:
+        top, bottom = bottom, top
+    return left, top, right, bottom
+
+
 @dataclass
 class PaddleOCRVLConfig:
     """Configuration for PaddleOCR-VL algorithm."""
@@ -393,8 +405,9 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
                     label = block.get("block_label", "")
                     block_bbox = block.get("block_bbox", [0, 0, 0, 0])
+                    left, top, right, bottom = _normalize_bbox(block_bbox)
 
-                    tag = f"@@{page_idx + 1}\t{block_bbox[0] // self._ZOOMIN}\t{block_bbox[2] // self._ZOOMIN}\t{block_bbox[1] // self._ZOOMIN}\t{block_bbox[3] // self._ZOOMIN}##"
+                    tag = f"@@{page_idx + 1}\t{left // self._ZOOMIN}\t{right // self._ZOOMIN}\t{top // self._ZOOMIN}\t{bottom // self._ZOOMIN}##"
 
                     if parse_method == "manual":
                         sections.append((block_content, label, tag))
@@ -509,6 +522,16 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
             img0 = self.page_images[pns[0]]
             x0, y0, x1, y1 = int(left), int(top), int(right), int(min(bottom, img0.size[1]))
+            if x0 > x1:
+                x0, x1 = x1, x0
+            if y0 > y1:
+                y0, y1 = y1, y0
+            x0 = max(0, min(x0, img0.size[0]))
+            x1 = max(0, min(x1, img0.size[0]))
+            y0 = max(0, min(y0, img0.size[1]))
+            y1 = max(0, min(y1, img0.size[1]))
+            if x1 <= x0 or y1 <= y0:
+                continue
             crop0 = img0.crop((x0, y0, x1, y1))
             imgs.append(crop0)
             if 0 < ii < len(poss) - 1:
@@ -521,6 +544,17 @@ class PaddleOCRParser(RAGFlowPdfParser):
                     continue
                 page = self.page_images[pn]
                 x0, y0, x1, y1 = int(left), 0, int(right), int(min(bottom, page.size[1]))
+                if x0 > x1:
+                    x0, x1 = x1, x0
+                if y0 > y1:
+                    y0, y1 = y1, y0
+                x0 = max(0, min(x0, page.size[0]))
+                x1 = max(0, min(x1, page.size[0]))
+                y0 = max(0, min(y0, page.size[1]))
+                y1 = max(0, min(y1, page.size[1]))
+                if x1 <= x0 or y1 <= y0:
+                    bottom -= page.size[1]
+                    continue
                 cimgp = page.crop((x0, y0, x1, y1))
                 imgs.append(cimgp)
                 if 0 < ii < len(poss) - 1:
