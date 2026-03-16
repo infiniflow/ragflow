@@ -264,6 +264,11 @@ async def delete(tenant_id):
             if not KnowledgebaseService.delete_by_id(kb_id):
                 errors.append(f"Delete dataset error for {kb_id}")
                 continue
+
+            # delete storage bucket of dataset
+            if hasattr(settings.STORAGE_IMPL, "remove_bucket"):
+                settings.STORAGE_IMPL.remove_bucket(kb.id)
+
             success_count += 1
 
         if not errors:
