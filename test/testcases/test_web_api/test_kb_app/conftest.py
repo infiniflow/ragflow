@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import batch_create_datasets, list_datasets, delete_datasets
+from common import batch_create_datasets, list_kbs, rm_kb
 from libs.auth import RAGFlowWebApiAuth
 from pytest import FixtureRequest
 from ragflow_sdk import RAGFlow
@@ -26,10 +26,11 @@ def add_datasets(request: FixtureRequest, client: RAGFlow, WebApiAuth: RAGFlowWe
 
     def cleanup():
         # Web KB cleanup cannot call SDK dataset bulk delete with empty ids; deletion must stay explicit.
-        res = list_datasets(WebApiAuth, params={"page_size": 1000})
-        existing_ids = {kb["id"] for kb in res["data"]}
-        ids_to_delete = list({dataset_id for dataset_id in dataset_ids if dataset_id in existing_ids})
-        delete_datasets(WebApiAuth, {"ids": ids_to_delete})
+        res = list_kbs(WebApiAuth, params={"page_size": 1000})
+        existing_ids = {kb["id"] for kb in res["data"]["kbs"]}
+        for dataset_id in dataset_ids:
+            if dataset_id in existing_ids:
+                rm_kb(WebApiAuth, {"kb_id": dataset_id})
 
     request.addfinalizer(cleanup)
     return dataset_ids
@@ -41,10 +42,11 @@ def add_datasets_func(request: FixtureRequest, client: RAGFlow, WebApiAuth: RAGF
 
     def cleanup():
         # Web KB cleanup cannot call SDK dataset bulk delete with empty ids; deletion must stay explicit.
-        res = list_datasets(WebApiAuth, params={"page_size": 1000})
-        existing_ids = {kb["id"] for kb in res["data"]}
-        ids_to_delete = list({dataset_id for dataset_id in dataset_ids if dataset_id in existing_ids})
-        delete_datasets(WebApiAuth, {"ids": ids_to_delete})
+        res = list_kbs(WebApiAuth, params={"page_size": 1000})
+        existing_ids = {kb["id"] for kb in res["data"]["kbs"]}
+        for dataset_id in dataset_ids:
+            if dataset_id in existing_ids:
+                rm_kb(WebApiAuth, {"kb_id": dataset_id})
 
     request.addfinalizer(cleanup)
     return dataset_ids
