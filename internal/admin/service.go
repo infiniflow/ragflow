@@ -29,11 +29,15 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/elasticsearch"
+	"ragflow/internal/logger"
 	"ragflow/internal/model"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
+	"regexp"
 	"strconv"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // Service errors
@@ -45,13 +49,45 @@ var (
 
 // Service admin service layer
 type Service struct {
-	userDAO *dao.UserDAO
+	userDAO           *dao.UserDAO
+	licenseDAO        *dao.LicenseDAO
+	timeRecordDAO     *dao.TimeRecordDAO
+	systemSettingsDAO *dao.SystemSettingsDAO
+	tenantDAO         *dao.TenantDAO
+	userTenantDAO     *dao.UserTenantDAO
+	tenantLLMDAO      *dao.TenantLLMDAO
+	fileDAO           *dao.FileDAO
+	documentDAO       *dao.DocumentDAO
+	taskDAO           *dao.TaskDAO
+	kbDAO             *dao.KnowledgebaseDAO
+	canvasDAO         *dao.UserCanvasDAO
+	chatDAO           *dao.ChatDAO
+	chatSessionDAO    *dao.ChatSessionDAO
+	apiTokenDAO       *dao.APITokenDAO
+	api4ConvDAO       *dao.API4ConversationDAO
+	llmDAO            *dao.LLMDAO
 }
 
 // NewService create admin service
 func NewService() *Service {
 	return &Service{
-		userDAO: dao.NewUserDAO(),
+		userDAO:           dao.NewUserDAO(),
+		licenseDAO:        dao.NewLicenseDAO(),
+		timeRecordDAO:     dao.NewTimeRecordDAO(),
+		systemSettingsDAO: dao.NewSystemSettingsDAO(),
+		tenantDAO:         dao.NewTenantDAO(),
+		userTenantDAO:     dao.NewUserTenantDAO(),
+		tenantLLMDAO:      dao.NewTenantLLMDAO(),
+		fileDAO:           dao.NewFileDAO(),
+		documentDAO:       dao.NewDocumentDAO(),
+		taskDAO:           dao.NewTaskDAO(),
+		kbDAO:             dao.NewKnowledgebaseDAO(),
+		canvasDAO:         dao.NewUserCanvasDAO(),
+		chatDAO:           dao.NewChatDAO(),
+		chatSessionDAO:    dao.NewChatSessionDAO(),
+		apiTokenDAO:       dao.NewAPITokenDAO(),
+		api4ConvDAO:       dao.NewAPI4ConversationDAO(),
+		llmDAO:            dao.NewLLMDAO(),
 	}
 }
 
@@ -111,12 +147,333 @@ func (s *Service) ListUsers() ([]map[string]interface{}, error) {
 }
 
 // CreateUser create a new user
+// Parameters:
+//   - username: email address of the user
+//   - password: encrypted password (base64 encoded RSA encrypted)
+//   - role: user role ("user" or "admin")
+//
+// Returns:
+//   - map[string]interface{}: user information without password
+//   - error: error message
 func (s *Service) CreateUser(username, password, role string) (map[string]interface{}, error) {
-	// TODO: Implement user creation with proper password hashing
+	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
+	if !emailRegex.MatchString(username) {
+		return nil, fmt.Errorf("Invalid email address: %s!", username)
+	}
+
+	existUser, _ := s.userDAO.GetByEmail(username)
+	if existUser != nil {
+		return nil, fmt.Errorf("User '%s' already exists", username)
+	}
+
+	decryptedPassword, err := DecryptPassword(password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt password: %w", err)
+	}
+
+	hashedPassword, err := GenerateWerkzeugPasswordHash(decryptedPassword, 150000)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	userID := utility.GenerateToken()
+	accessToken := utility.GenerateToken()
+	status := "1"
+	loginChannel := "password"
+	isSuperuser := role == "admin"
+
+	now := time.Now().Unix()
+	nowDate := time.Now().Truncate(time.Second)
+
+	user := &model.User{
+		ID:              userID,
+		AccessToken:     &accessToken,
+		Email:           username,
+		Nickname:        "",
+		Password:        &hashedPassword,
+		Status:          &status,
+		IsActive:        "1",
+		IsAuthenticated: "1",
+		IsAnonymous:     "0",
+		LoginChannel:    &loginChannel,
+		IsSuperuser:     &isSuperuser,
+		BaseModel: model.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
+	}
+
+	// Start transaction for creating user and related data
+	tx := dao.DB.Begin()
+	if tx.Error != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", tx.Error)
+	}
+
+	// Rollback helper function
+	rollbackTx := func() {
+		if rbErr := tx.Rollback(); rbErr.Error != nil {
+			logger.Error("failed to rollback transaction", rbErr.Error)
+		}
+	}
+
+	// 1. Create user
+	if err := tx.Create(user).Error; err != nil {
+		rollbackTx()
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	// 2. Create tenant (tenant_id = user_id)
+	// tenant name = nickname + "'s Kingdom" (same as Python)
+	tenantName := user.Nickname + "'s Kingdom"
+
+	// Get default model IDs from config
+	cfg := server.GetConfig()
+	chatMdl := ""
+	embdMdl := ""
+	asrMdl := ""
+	img2txtMdl := ""
+	rerankMdl := ""
+	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"
+
+	if cfg != nil {
+		chatMdl = cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
+		embdMdl = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name
+		asrMdl = cfg.UserDefaultLLM.DefaultModels.ASRModel.Name
+		img2txtMdl = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name
+		rerankMdl = cfg.UserDefaultLLM.DefaultModels.RerankModel.Name
+	}
+
+	tenantStatus := "1"
+	tenant := &model.Tenant{
+		ID:        userID,
+		Name:      &tenantName,
+		LLMID:     chatMdl,
+		EmbdID:    embdMdl,
+		ASRID:     asrMdl,
+		Img2TxtID: img2txtMdl,
+		RerankID:  rerankMdl,
+		ParserIDs: parserIDs,
+		Credit:    512,
+		Status:    &tenantStatus,
+		BaseModel: model.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
+	}
+	if err := tx.Create(tenant).Error; err != nil {
+		rollbackTx()
+		return nil, fmt.Errorf("failed to create tenant: %w", err)
+	}
+
+	// 3. Create user-tenant relation
+	userTenantStatus := "1"
+	userTenant := &model.UserTenant{
+		ID:        utility.GenerateToken(),
+		UserID:    userID,
+		TenantID:  userID,
+		Role:      "owner",
+		InvitedBy: userID,
+		Status:    &userTenantStatus,
+		BaseModel: model.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
+	}
+	if err := tx.Create(userTenant).Error; err != nil {
+		rollbackTx()
+		return nil, fmt.Errorf("failed to create user-tenant relation: %w", err)
+	}
+
+	// 4. Create tenant LLM configurations
+	tenantLLMs, err := s.getInitTenantLLM(userID)
+	if err != nil {
+		logger.Warn("failed to get init tenant LLM configs", zap.Error(err))
+		// Continue without LLM configs - not a critical error
+	} else if len(tenantLLMs) > 0 {
+		if err := tx.Create(&tenantLLMs).Error; err != nil {
+			logger.Warn("failed to create tenant LLM configs", zap.Error(err))
+			// Continue without LLM configs - not a critical error
+		}
+	}
+
+	// 5. Create root file folder
+	fileID := utility.GenerateToken()
+	fileLocation := ""
+	file := &model.File{
+		ID:        fileID,
+		ParentID:  fileID,
+		TenantID:  userID,
+		CreatedBy: userID,
+		Name:      "/",
+		Type:      "folder",
+		Size:      0,
+		Location:  &fileLocation,
+		BaseModel: model.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
+	}
+	if err := tx.Create(file).Error; err != nil {
+		rollbackTx()
+		return nil, fmt.Errorf("failed to create root file folder: %w", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	logger.Info("Create user success with tenant and related data", zap.String("username", username))
+
 	return map[string]interface{}{
-		"username": username,
-		"role":     role,
+		"id":           user.ID,
+		"email":        user.Email,
+		"nickname":     user.Nickname,
+		"is_active":    user.IsActive,
+		"is_superuser": isSuperuser,
+		"create_date":  user.CreateDate,
 	}, nil
+}
+
+// getInitTenantLLM gets initial tenant LLM configurations
+// This matches Python's get_init_tenant_llm function
+func (s *Service) getInitTenantLLM(userID string) ([]*model.TenantLLM, error) {
+	cfg := server.GetConfig()
+	if cfg == nil {
+		return nil, fmt.Errorf("config not initialized")
+	}
+
+	var tenantLLMs []*model.TenantLLM
+
+	// Get model configs from configuration
+	modelConfigs := []server.ModelConfig{
+		cfg.UserDefaultLLM.DefaultModels.ChatModel,
+		cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
+		cfg.UserDefaultLLM.DefaultModels.RerankModel,
+		cfg.UserDefaultLLM.DefaultModels.ASRModel,
+		cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
+	}
+
+	// Track seen factories to avoid duplicates
+	seenFactories := make(map[string]bool)
+	var uniqueFactories []server.ModelConfig
+
+	for _, mc := range modelConfigs {
+		if mc.Factory == "" {
+			continue
+		}
+		if !seenFactories[mc.Factory] {
+			seenFactories[mc.Factory] = true
+			uniqueFactories = append(uniqueFactories, mc)
+		}
+	}
+
+	// Get LLMs for each unique factory
+	for _, factoryConfig := range uniqueFactories {
+		llms, err := s.llmDAO.GetByFactory(factoryConfig.Factory)
+		if err != nil {
+			logger.Warn("failed to get LLMs for factory", zap.String("factory", factoryConfig.Factory), zap.Error(err))
+			continue
+		}
+
+		for _, llm := range llms {
+			// Determine API key and base URL based on model type
+			var apiKey, apiBase string
+			switch llm.ModelType {
+			case string(model.ModelTypeChat):
+				apiKey = factoryConfig.APIKey
+				apiBase = factoryConfig.BaseURL
+			case string(model.ModelTypeEmbedding):
+				apiKey = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.APIKey
+				apiBase = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.BaseURL
+				if apiKey == "" {
+					apiKey = factoryConfig.APIKey
+				}
+				if apiBase == "" {
+					apiBase = factoryConfig.BaseURL
+				}
+			case string(model.ModelTypeRerank):
+				apiKey = cfg.UserDefaultLLM.DefaultModels.RerankModel.APIKey
+				apiBase = cfg.UserDefaultLLM.DefaultModels.RerankModel.BaseURL
+				if apiKey == "" {
+					apiKey = factoryConfig.APIKey
+				}
+				if apiBase == "" {
+					apiBase = factoryConfig.BaseURL
+				}
+			case string(model.ModelTypeSpeech2Text):
+				apiKey = cfg.UserDefaultLLM.DefaultModels.ASRModel.APIKey
+				apiBase = cfg.UserDefaultLLM.DefaultModels.ASRModel.BaseURL
+				if apiKey == "" {
+					apiKey = factoryConfig.APIKey
+				}
+				if apiBase == "" {
+					apiBase = factoryConfig.BaseURL
+				}
+			case string(model.ModelTypeImage2Text):
+				apiKey = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.APIKey
+				apiBase = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.BaseURL
+				if apiKey == "" {
+					apiKey = factoryConfig.APIKey
+				}
+				if apiBase == "" {
+					apiBase = factoryConfig.BaseURL
+				}
+			default:
+				apiKey = factoryConfig.APIKey
+				apiBase = factoryConfig.BaseURL
+			}
+
+			maxTokens := int64(8192)
+			if llm.MaxTokens > 0 {
+				maxTokens = llm.MaxTokens
+			}
+
+			llmName := llm.LLMName
+			modelType := llm.ModelType
+			now := time.Now().Unix()
+			nowDate := time.Now().Truncate(time.Second)
+
+			tenantLLM := &model.TenantLLM{
+				TenantID:   userID,
+				LLMFactory: factoryConfig.Factory,
+				LLMName:    &llmName,
+				ModelType:  &modelType,
+				APIKey:     &apiKey,
+				APIBase:    &apiBase,
+				MaxTokens:  maxTokens,
+				Status:     "1",
+				BaseModel: model.BaseModel{
+					CreateTime: &now,
+					CreateDate: &nowDate,
+					UpdateTime: &now,
+					UpdateDate: &nowDate,
+				},
+			}
+			tenantLLMs = append(tenantLLMs, tenantLLM)
+		}
+	}
+
+	// Remove duplicates based on (tenant_id, llm_factory, llm_name)
+	seen := make(map[string]bool)
+	var uniqueLLMs []*model.TenantLLM
+	for _, tllm := range tenantLLMs {
+		key := fmt.Sprintf("%s|%s|%s", tllm.TenantID, tllm.LLMFactory, *tllm.LLMName)
+		if !seen[key] {
+			seen[key] = true
+			uniqueLLMs = append(uniqueLLMs, tllm)
+		}
+	}
+
+	return uniqueLLMs, nil
 }
 
 // GetUserDetails get user details
@@ -138,33 +495,319 @@ func (s *Service) GetUserDetails(username string) (map[string]interface{}, error
 	}, nil
 }
 
-// DeleteUser delete user
+// DeleteUser delete user with cascade delete of all related data
+// Parameters:
+//   - username: email address of the user to delete
+//
+// Returns:
+//   - error: error message
 func (s *Service) DeleteUser(username string) error {
-	// TODO: Implement user deletion
+	userList, err := s.userDAO.ListByEmail(username)
+	if err != nil || len(userList) == 0 {
+		return fmt.Errorf("User '%s' not found", username)
+	}
+
+	if len(userList) > 1 {
+		return fmt.Errorf("Exist more than 1 user: %s!", username)
+	}
+
+	user := userList[0]
+
+	// Check if user is active - cannot delete active users
+	if user.IsActive == "1" {
+		return fmt.Errorf("User '%s' is active and can't be deleted. Please deactivate the user first", username)
+	}
+
+	// Check if user is superuser - cannot delete admin accounts
+	if user.IsSuperuser != nil && *user.IsSuperuser {
+		return fmt.Errorf("Cannot delete admin account")
+	}
+
+	// Get user-tenant relations
+	tenants, err := s.userTenantDAO.GetByUserIDAll(user.ID)
+	if err != nil {
+		logger.Warn("failed to get user-tenant relations", zap.Error(err))
+	}
+
+	// Find owned tenant (role = "owner")
+	var ownedTenantID string
+	for _, t := range tenants {
+		if t.Role == "owner" {
+			ownedTenantID = t.TenantID
+			break
+		}
+	}
+
+	// Start transaction for cascade delete
+	tx := dao.DB.Begin()
+	if tx.Error != nil {
+		return fmt.Errorf("failed to begin transaction: %w", tx.Error)
+	}
+
+	// Rollback helper function
+	rollbackTx := func() {
+		if rbErr := tx.Rollback(); rbErr.Error != nil {
+			logger.Error("failed to rollback transaction", rbErr.Error)
+		}
+	}
+
+	// Delete owned tenant data
+	if ownedTenantID != "" {
+		// 1. Get knowledge base IDs
+		kbIDs, err := s.kbDAO.GetKBIDsByTenantIDSimple(ownedTenantID)
+		if err != nil {
+			logger.Warn("failed to get knowledge base IDs", zap.Error(err))
+		}
+
+		if len(kbIDs) > 0 {
+			// 2. Get document IDs
+			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(kbIDs)
+			if err != nil {
+				logger.Warn("failed to get document IDs", zap.Error(err))
+			}
+
+			// 3. Delete tasks by document IDs
+			if len(docIDs) > 0 {
+				docIDList := make([]string, len(docIDs))
+				for i, d := range docIDs {
+					docIDList[i] = d["id"]
+				}
+				if delErr := tx.Unscoped().Where("doc_id IN ?", docIDList).Delete(&model.Task{}); delErr.Error != nil {
+					logger.Warn("failed to delete tasks", zap.Error(delErr.Error))
+				}
+			}
+
+			// 4. Delete documents
+			if delErr := tx.Unscoped().Where("kb_id IN ?", kbIDs).Delete(&model.Document{}); delErr.Error != nil {
+				logger.Warn("failed to delete documents", zap.Error(delErr.Error))
+			}
+
+			// 5. Delete knowledge bases
+			if delErr := tx.Unscoped().Where("id IN ?", kbIDs).Delete(&model.Knowledgebase{}); delErr.Error != nil {
+				logger.Warn("failed to delete knowledge bases", zap.Error(delErr.Error))
+			}
+		}
+
+		// 6. Delete files
+		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&model.File{}); delErr.Error != nil {
+			logger.Warn("failed to delete files", zap.Error(delErr.Error))
+		}
+
+		// 7. Delete user canvas (agents)
+		if delErr := tx.Unscoped().Where("user_id = ?", ownedTenantID).Delete(&model.UserCanvas{}); delErr.Error != nil {
+			logger.Warn("failed to delete user canvas", zap.Error(delErr.Error))
+		}
+
+		// 8. Get dialog IDs
+		var dialogIDs []string
+		if pluckErr := tx.Model(&model.Chat{}).Where("tenant_id = ?", ownedTenantID).Pluck("id", &dialogIDs); pluckErr.Error != nil {
+			logger.Warn("failed to get dialog IDs", zap.Error(pluckErr.Error))
+		}
+
+		// 9. Delete chat sessions
+		if len(dialogIDs) > 0 {
+			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&model.ChatSession{}); delErr.Error != nil {
+				logger.Warn("failed to delete chat sessions", zap.Error(delErr.Error))
+			}
+		}
+
+		// 10. Delete chats/dialogs
+		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&model.Chat{}); delErr.Error != nil {
+			logger.Warn("failed to delete chats", zap.Error(delErr.Error))
+		}
+
+		// 11. Delete API tokens
+		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&model.APIToken{}); delErr.Error != nil {
+			logger.Warn("failed to delete API tokens", zap.Error(delErr.Error))
+		}
+
+		// 12. Delete API4Conversations
+		if len(dialogIDs) > 0 {
+			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&model.API4Conversation{}); delErr.Error != nil {
+				logger.Warn("failed to delete API4Conversations", zap.Error(delErr.Error))
+			}
+		}
+
+		// 13. Delete tenant LLM configurations
+		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&model.TenantLLM{}); delErr.Error != nil {
+			logger.Warn("failed to delete tenant LLM", zap.Error(delErr.Error))
+		}
+
+		// 14. Delete tenant
+		if delErr := tx.Unscoped().Where("id = ?", ownedTenantID).Delete(&model.Tenant{}); delErr.Error != nil {
+			logger.Warn("failed to delete tenant", zap.Error(delErr.Error))
+		}
+	}
+
+	// 15. Delete user-tenant relations
+	if delErr := tx.Unscoped().Where("user_id = ?", user.ID).Delete(&model.UserTenant{}); delErr.Error != nil {
+		logger.Warn("failed to delete user-tenant relations", zap.Error(delErr.Error))
+	}
+
+	// 16. Finally, hard delete user
+	if delErr := tx.Unscoped().Where("id = ?", user.ID).Delete(&model.User{}); delErr.Error != nil {
+		rollbackTx()
+		return fmt.Errorf("failed to delete user: %w", delErr.Error)
+	}
+
+	// Commit transaction
+	if commitErr := tx.Commit(); commitErr.Error != nil {
+		return fmt.Errorf("failed to commit transaction: %w", commitErr.Error)
+	}
+
+	logger.Info("Delete user success with all related data", zap.String("username", username))
+
 	return nil
 }
 
 // ChangePassword change user password
+// Parameters:
+//   - username: email address of the user
+//   - newPassword: new encrypted password (base64 encoded RSA encrypted)
+//
+// Returns:
+//   - error: error message
 func (s *Service) ChangePassword(username, newPassword string) error {
-	// TODO: Implement password change
+	userList, err := s.userDAO.ListByEmail(username)
+	if err != nil || len(userList) == 0 {
+		return fmt.Errorf("User '%s' not found", username)
+	}
+
+	if len(userList) > 1 {
+		return fmt.Errorf("Exist more than 1 user: %s!", username)
+	}
+
+	user := userList[0]
+
+	decryptedPassword, err := DecryptPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt password: %w", err)
+	}
+
+	if user.Password != nil && CheckWerkzeugPassword(decryptedPassword, *user.Password) {
+		return nil
+	}
+
+	hashedPassword, err := GenerateWerkzeugPasswordHash(decryptedPassword, 150000)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	user.Password = &hashedPassword
+	now := time.Now().Unix()
+	user.UpdateTime = &now
+
+	if err := s.userDAO.Update(user); err != nil {
+		return fmt.Errorf("failed to update user: %w", err)
+	}
+
 	return nil
 }
 
 // UpdateUserActivateStatus update user activate status
+// Parameters:
+//   - username: email address of the user
+//   - isActive: true to activate, false to deactivate
+//
+// Returns:
+//   - error: error message
 func (s *Service) UpdateUserActivateStatus(username string, isActive bool) error {
-	// TODO: Implement activate status update
+	userList, err := s.userDAO.ListByEmail(username)
+	if err != nil || len(userList) == 0 {
+		return fmt.Errorf("User '%s' not found", username)
+	}
+
+	if len(userList) > 1 {
+		return fmt.Errorf("Exist more than 1 user: %s!", username)
+	}
+
+	user := userList[0]
+
+	targetStatus := "0"
+	if isActive {
+		targetStatus = "1"
+	}
+
+	if user.IsActive == targetStatus {
+		return nil
+	}
+
+	user.IsActive = targetStatus
+	now := time.Now().Unix()
+	user.UpdateTime = &now
+
+	if err := s.userDAO.Update(user); err != nil {
+		return fmt.Errorf("failed to update user: %w", err)
+	}
+
 	return nil
 }
 
 // GrantAdmin grant admin privileges
+// Parameters:
+//   - username: email address of the user
+//
+// Returns:
+//   - error: error message
 func (s *Service) GrantAdmin(username string) error {
-	// TODO: Implement grant admin
+	userList, err := s.userDAO.ListByEmail(username)
+	if err != nil || len(userList) == 0 {
+		return fmt.Errorf("User '%s' not found", username)
+	}
+
+	if len(userList) > 1 {
+		return fmt.Errorf("Exist more than 1 user: %s!", username)
+	}
+
+	user := userList[0]
+
+	if user.IsSuperuser != nil && *user.IsSuperuser {
+		return nil
+	}
+
+	isSuperuser := true
+	user.IsSuperuser = &isSuperuser
+	now := time.Now().Unix()
+	user.UpdateTime = &now
+
+	if err := s.userDAO.Update(user); err != nil {
+		return fmt.Errorf("failed to update user: %w", err)
+	}
+
 	return nil
 }
 
 // RevokeAdmin revoke admin privileges
+// Parameters:
+//   - username: email address of the user
+//
+// Returns:
+//   - error: error message
 func (s *Service) RevokeAdmin(username string) error {
-	// TODO: Implement revoke admin
+	userList, err := s.userDAO.ListByEmail(username)
+	if err != nil || len(userList) == 0 {
+		return fmt.Errorf("User '%s' not found", username)
+	}
+
+	if len(userList) > 1 {
+		return fmt.Errorf("Exist more than 1 user: %s!", username)
+	}
+
+	user := userList[0]
+
+	if user.IsSuperuser == nil || !*user.IsSuperuser {
+		return nil
+	}
+
+	isSuperuser := false
+	user.IsSuperuser = &isSuperuser
+	now := time.Now().Unix()
+	user.UpdateTime = &now
+
+	if err := s.userDAO.Update(user); err != nil {
+		return fmt.Errorf("failed to update user: %w", err)
+	}
+
 	return nil
 }
 
@@ -665,43 +1308,172 @@ func (s *Service) RestartService(serviceID string) (map[string]interface{}, erro
 
 // Variable/Settings methods
 
-// GetVariable get variable
-func (s *Service) GetVariable(varName string) (map[string]interface{}, error) {
-	// TODO: Implement with settings manager
-	return map[string]interface{}{
-		"var_name":  varName,
-		"var_value": "",
-	}, nil
+// AdminException admin exception error
+type AdminException struct {
+	Message string
+	Code    int
+}
+
+// Error implement error interface
+func (e *AdminException) Error() string {
+	return e.Message
+}
+
+// NewAdminException create admin exception
+func NewAdminException(message string) *AdminException {
+	return &AdminException{
+		Message: message,
+		Code:    400,
+	}
+}
+
+// GetVariable get variable by name
+// Returns the system setting with the given name
+// Returns AdminException if the setting is not found
+func (s *Service) GetVariable(varName string) ([]map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetByName(varName)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(settings) == 0 {
+		return nil, NewAdminException("Can't get setting: " + varName)
+	}
+
+	result := make([]map[string]interface{}, 0, len(settings))
+	for _, setting := range settings {
+		result = append(result, map[string]interface{}{
+			"name":      setting.Name,
+			"source":    setting.Source,
+			"data_type": setting.DataType,
+			"value":     setting.Value,
+		})
+	}
+	return result, nil
 }
 
 // GetAllVariables get all variables
+// Returns all system settings from database
 func (s *Service) GetAllVariables() ([]map[string]interface{}, error) {
-	// TODO: Implement with settings manager
-	return []map[string]interface{}{}, nil
+	settings, err := s.systemSettingsDAO.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]map[string]interface{}, 0, len(settings))
+	for _, setting := range settings {
+		result = append(result, map[string]interface{}{
+			"name":      setting.Name,
+			"source":    setting.Source,
+			"data_type": setting.DataType,
+			"value":     setting.Value,
+		})
+	}
+	return result, nil
 }
 
 // SetVariable set variable
+// Creates or updates a system setting
+// If the setting exists, updates it; otherwise creates a new one
 func (s *Service) SetVariable(varName, varValue string) error {
-	// TODO: Implement with settings manager
-	_ = varName
-	_ = varValue
-	return nil
+	settings, err := s.systemSettingsDAO.GetByName(varName)
+	if err != nil {
+		return err
+	}
+
+	if len(settings) == 1 {
+		setting := &settings[0]
+		setting.Value = varValue
+		return s.systemSettingsDAO.UpdateByName(varName, setting)
+	} else if len(settings) > 1 {
+		return NewAdminException("Can't update more than 1 setting: " + varName)
+	}
+
+	// Create new setting if it doesn't exist
+	// Determine data_type based on name and value
+	dataType := "string"
+	if len(varName) >= 7 && varName[:7] == "sandbox" {
+		dataType = "json"
+	} else if len(varName) >= 9 && varName[len(varName)-9:] == ".enabled" {
+		dataType = "boolean"
+	}
+
+	newSetting := &model.SystemSettings{
+		Name:     varName,
+		Value:    varValue,
+		Source:   "admin",
+		DataType: dataType,
+	}
+	return s.systemSettingsDAO.Create(newSetting)
 }
 
 // Config methods
 
 // GetAllConfigs get all configs
+// Returns all service configurations from the config file
 func (s *Service) GetAllConfigs() ([]map[string]interface{}, error) {
-	// TODO: Implement with config manager
-	return []map[string]interface{}{}, nil
+	result := server.GetAllConfigs()
+	return result, nil
 }
 
 // Environment methods
 
 // GetAllEnvironments get all environments
+// Returns important environment variables
 func (s *Service) GetAllEnvironments() ([]map[string]interface{}, error) {
-	// TODO: Implement with environment manager
-	return []map[string]interface{}{}, nil
+	result := make([]map[string]interface{}, 0)
+
+	// DOC_ENGINE
+	docEngine := os.Getenv("DOC_ENGINE")
+	if docEngine == "" {
+		docEngine = "elasticsearch"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DOC_ENGINE",
+		"value": docEngine,
+	})
+
+	// DEFAULT_SUPERUSER_EMAIL
+	defaultSuperuserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
+	if defaultSuperuserEmail == "" {
+		defaultSuperuserEmail = "admin@ragflow.io"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DEFAULT_SUPERUSER_EMAIL",
+		"value": defaultSuperuserEmail,
+	})
+
+	// DB_TYPE
+	dbType := os.Getenv("DB_TYPE")
+	if dbType == "" {
+		dbType = "mysql"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DB_TYPE",
+		"value": dbType,
+	})
+
+	// DEVICE
+	device := os.Getenv("DEVICE")
+	if device == "" {
+		device = "cpu"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DEVICE",
+		"value": device,
+	})
+
+	// STORAGE_IMPL
+	storageImpl := os.Getenv("STORAGE_IMPL")
+	if storageImpl == "" {
+		storageImpl = "MINIO"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "STORAGE_IMPL",
+		"value": storageImpl,
+	})
+
+	return result, nil
 }
 
 // Version methods
@@ -751,19 +1523,23 @@ func (s *Service) TestSandboxConnection(providerType string, config map[string]i
 	}, nil
 }
 
+var heartBeatCount int64 = 0
+
 // HandleHeartbeat handle heartbeat
-func (s *Service) HandleHeartbeat(msg *common.BaseMessage) error {
+func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode, string) {
+	heartBeatCount++
+
 	status := &common.BaseMessage{
-		ServerName: msg.ServerName,
-		ServerType: msg.ServerType,
-		Host:       msg.Host,
-		Port:       msg.Port,
-		Version:    msg.Version,
-		Timestamp:  msg.Timestamp,
-		Ext:        msg.Ext,
+		ServerName: message.ServerName,
+		ServerType: message.ServerType,
+		Host:       message.Host,
+		Port:       message.Port,
+		Version:    message.Version,
+		Timestamp:  message.Timestamp,
+		Ext:        message.Ext,
 	}
-	GlobalServerStatusStore.UpdateStatus(msg.ServerName, status)
-	return nil
+	GlobalServerStatusStore.UpdateStatus(message.ServerName, status)
+	return common.CodeLicenseValid, ""
 }
 
 // InitDefaultAdmin initialize default admin user
@@ -783,7 +1559,7 @@ func (s *Service) InitDefaultAdmin() error {
 
 	if len(users) == 0 {
 		now := time.Now().Unix()
-		nowDate := time.Now()
+		nowDate := time.Now().Truncate(time.Second)
 		userID := utility.GenerateToken()
 		accessToken := utility.GenerateToken()
 		status := "1"
@@ -859,7 +1635,7 @@ func (s *Service) InitDefaultAdmin() error {
 // addTenantForAdmin add tenant for admin user
 func (s *Service) addTenantForAdmin(userID, nickname string) error {
 	now := time.Now().Unix()
-	nowDate := time.Now()
+	nowDate := time.Now().Truncate(time.Second)
 	status := "1"
 	role := "owner"
 	tenantName := nickname + "'s Kingdom"

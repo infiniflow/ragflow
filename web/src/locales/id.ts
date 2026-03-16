@@ -20,6 +20,7 @@ export default {
       chinese: 'Cina',
       traditionalChinese: 'Cina Tradisional',
       bulgarian: 'Bulgaria',
+      arabic: 'Arab',
       language: 'Bahasa',
       languageMessage: 'Silakan masukkan bahasa Anda!',
       languagePlaceholder: 'Pilih bahasa Anda',
@@ -139,7 +140,7 @@ export default {
       toMessage: 'Nomor halaman akhir hilang (tidak termasuk)',
       layoutRecognize: 'Pengenalan tata letak',
       layoutRecognizeTip:
-        'Gunakan model visual untuk analisis tata letak untuk lebih mengidentifikasi struktur dokumen, menemukan di mana judul, blok teks, gambar, dan tabel berada. Tanpa fitur ini, hanya teks biasa dari PDF yang dapat diperoleh. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dev/select_pdf_parser.',
+        'Gunakan model visual untuk analisis tata letak untuk lebih mengidentifikasi struktur dokumen, menemukan di mana judul, blok teks, gambar, and tabel berada. Tanpa fitur ini, hanya teks biasa dari PDF yang dapat diperoleh. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dev/select_pdf_parser.',
       taskPageSize: 'Ukuran halaman tugas',
       taskPageSizeMessage: 'Silakan masukkan ukuran halaman tugas Anda!',
       taskPageSizeTip: `Jika menggunakan pengenalan tata letak, file PDF akan dibagi menjadi kelompok berturut-turut. Analisis tata letak akan dilakukan secara paralel antar kelompok untuk meningkatkan kecepatan pemrosesan. 'Ukuran halaman tugas' menentukan ukuran kelompok. Semakin besar ukuran halaman, semakin kecil kemungkinan teks berkelanjutan antara halaman dibagi menjadi potongan yang berbeda.`,
@@ -150,7 +151,7 @@ export default {
       changeSpecificCategory: 'Ubah kategori spesifik',
       uploadTitle: 'Klik atau seret file ke area ini untuk mengunggah',
       uploadDescription:
-        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Untuk RAGFlow yang dideploy secara lokal: batas ukuran total file per unggahan adalah 1GB, dengan batas unggahan batch sebanyak 32 file. Tidak ada batasan jumlah total file per akun. Untuk demo.ragflow.io: batas ukuran total file per unggahan adalah 10MB, dengan setiap file tidak melebihi 10MB dan maksimum 128 file per akun.',
+        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Untuk RAGFlow yang dideploy secara lokal: batas ukuran total file per unggahan adalah 1GB, dengan batas unggahan batch sebanyak 32 file. Tidak ada batasan jumlah total file per akun. Untuk cloud.ragflow.io: batas ukuran total file per unggahan adalah 10MB, dengan setiap file tidak melebihi 10MB dan maksimum 128 file per akun.',
       chunk: 'Potongan',
       bulk: 'Massal',
       cancel: 'Batal',
@@ -284,15 +285,15 @@ export default {
         </p><p>
         Untuk dokumen, akan diperlakukan sebagai potongan utuh, tidak ada pemisahan sama sekali.
         </p><p>
-        Jika Anda ingin merangkum sesuatu yang membutuhkan semua konteks dari sebuah artikel dan panjang konteks LLM yang dipilih mencakup panjang dokumen, Anda dapat mencoba metode ini.
+        Jika Anda ingin merangkum sesuatu yang membutuhkan semua konteks dari sebuah artikel and panjang konteks LLM yang dipilih mencakup panjang dokumen, Anda dapat mencoba metode ini.
         </p>`,
       knowledgeGraph: `<p>Format file yang didukung adalah <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
-
-    <p>Setelah file dipotong, digunakan potongan untuk mengekstrak grafik pengetahuan dan peta pikiran dari seluruh dokumen. Metode ini menerapkan cara naif untuk memotong file:
-    Teks berturut-turut akan dipotong menjadi potongan masing-masing yang berjumlah sekitar 512 token.</p>
-    <p>Selanjutnya, potongan akan dikirim ke LLM untuk mengekstrak node dan hubungan dari grafik pengetahuan, dan peta pikiran.</p>
-
-    Perhatikan jenis entitas yang perlu Anda tentukan.</p>`,
+ 
+     <p>Setelah file dipotong, digunakan potongan untuk mengekstrak grafik pengetahuan dan peta pikiran dari seluruh dokumen. Metode ini menerapkan cara naif untuk memotong file:
+     Teks berturut-turut akan dipotong menjadi potongan masing-masing yang berjumlah sekitar 512 token.</p>
+     <p>Selanjutnya, potongan akan dikirim ke LLM untuk mengekstrak node dan hubungan dari grafik pengetahuan, dan peta pikiran.</p>
+ 
+     Perhatikan jenis entitas yang perlu Anda tentukan.</p>`,
       useRaptor: 'Gunakan RAPTOR untuk meningkatkan pengambilan',
       useRaptorTip:
         'Aktifkan RAPTOR untuk tugas tanya jawab multi-langkah. Lihat https://ragflow.io/docs/dev/enable_raptor untuk informasi lebih lanjut.',
@@ -384,7 +385,7 @@ export default {
           Di atas adalah basis pengetahuan.`,
       systemMessage: 'Silakan masukkan!',
       systemTip:
-        'Instruksi yang perlu diikuti LLM saat menjawab pertanyaan, seperti desain karakter, panjang jawaban, dan bahasa jawaban, dll. Jika model Anda memiliki dukungan bawaan untuk penalaran, Anda dapat menambahkan //no_thinking ke prompt untuk menghentikan penalaran.',
+        'Instruksi yang perlu diikuti LLM saat menjawab pertanyaan, seperti desain karakter, panjang jawaban, and bahasa jawaban, dll. Jika model Anda memiliki dukungan bawaan untuk penalaran, Anda dapat menambahkan //no_thinking ke prompt untuk menghentikan penalaran.',
       topN: 'Top N',
       topNTip: `Tidak semua potongan yang skor kesamaannya di atas 'ambang kesamaan' akan diberikan ke LLM. LLM hanya dapat melihat potongan 'Top N' ini.`,
       variable: 'Variabel',
@@ -400,6 +401,7 @@ export default {
       improvise: 'Improvisasi',
       precise: 'Tepat',
       balance: 'Seimbang',
+      custom: 'Custom',
       freedomTip: `'Tepat' berarti LLM akan berhati-hati dan menjawab pertanyaan Anda dengan hati-hati. 'Improvisasi' berarti Anda ingin LLM berbicara banyak dan bebas. 'Seimbang' adalah antara berhati-hati dan bebas.`,
       temperature: 'Temperatur',
       temperatureMessage: 'Temperatur diperlukan',
@@ -667,6 +669,17 @@ export default {
         'Silakan tambahkan model embedding dan LLM di <b>Pengaturan > Penyedia Model</b> terlebih dahulu. Kemudian, atur keduanya di "Atur model default".',
       apiVersion: 'Versi API',
       apiVersionMessage: 'Silakan masukkan versi API',
+      add: 'Tambah',
+      updateDate: 'Tanggal diperbarui',
+      role: 'Peran',
+      invite: 'Undang',
+      agree: 'Setuju',
+      refuse: 'Tolak',
+      teamMembers: 'Anggota tim',
+      joinedTeams: 'Tim yang diikuti',
+      sureDelete: 'Apakah Anda yakin ingin menghapus anggota ini?',
+      quit: 'Keluar',
+      sureQuit: 'Apakah Anda yakin ingin keluar dari tim yang Anda ikuti?',
       modelsToBeAddedTooltip:
         'Jika penyedia model Anda tidak tercantum tetapi mengklaim kompatibel dengan OpenAI, pilih kartu OpenAI-API-compatible untuk menambahkan model yang relevan.',
       dingtalkAITableDescription:
@@ -721,7 +734,7 @@ export default {
       directory: 'Direktori',
       uploadTitle: 'Klik atau seret file ke area ini untuk mengunggah',
       uploadDescription:
-        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Untuk RAGFlow yang dideploy secara lokal: batas ukuran total file per unggahan adalah 1GB, dengan batas unggahan batch sebanyak 32 file. Tidak ada batasan jumlah total file per akun. Untuk demo.ragflow.io: batas ukuran total file per unggahan adalah 10MB, dengan setiap file tidak melebihi 10MB dan maksimum 128 file per akun.',
+        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Untuk RAGFlow yang dideploy secara lokal: batas ukuran total file per unggahan adalah 1GB, dengan batas unggahan batch sebanyak 32 file. Tidak ada batasan jumlah total file per akun. Untuk cloud.ragflow.io: batas ukuran total file per unggahan adalah 10MB, dengan setiap file tidak melebihi 10MB dan maksimum 128 file per akun.',
       local: 'Unggahan lokal',
       s3: 'Unggahan S3',
       preview: 'Pratinjau',
@@ -910,7 +923,7 @@ export default {
         dan: 'Denmark',
         fin: 'Finlandia',
         cs: 'Ceko',
-        rom: 'Rumania',
+        rom: 'Rumano',
         slo: 'Slovenia',
         swe: 'Swedia',
         hu: 'Hungaria',
@@ -1027,7 +1040,7 @@ export default {
       },
       akShare: 'AkShare',
       akShareDescription:
-        'Komponen ini dapat digunakan untuk mendapatkan ringkasan berita keuangan dari situs web keuangan utama, membantu penelitian industri dan kuantitatif.',
+        'Este componente se puede usar para obtener información de noticias para la acción correspondiente del sitio web de Eastmoney.',
       yahooFinance: 'YahooFinance',
       yahooFinanceDescription:
         'Komponen ini menanyakan informasi tentang perusahaan berdasarkan simbol ticker yang diberikan.',
@@ -1082,14 +1095,14 @@ export default {
       },
       concentrator: 'Konsentrator',
       concentratorDescription:
-        'Komponen yang menerima output dari komponen hulu dan meneruskannya sebagai input ke komponen hilir.',
+        'Un componente que recibe la salida del componente anterior y la pasa como entrada a los componentes posteriores.',
       tuShare: 'TuShare',
       tuShareDescription:
-        'Komponen ini dapat digunakan untuk mendapatkan ringkasan berita keuangan dari situs web keuangan utama, membantu penelitian industri dan kuantitatif.',
+        'Este componente se puede usar para obtener breves noticias financieras de sitios web financieros de referencia, lo que ayuda a la investigación industrial y cuantitativa.',
       tuShareSrcOptions: {
         sina: 'Sina',
         wallstreetcn: 'wallstreetcn',
-        '10jqka': 'Flush langsung',
+        '10jqka': 'Flush recto',
         eastmoney: 'Eastmoney',
         yuncaijing: 'YUNCAIJING',
         fenghuang: 'FENGHUANG',
@@ -1103,6 +1116,7 @@ export default {
       note: 'Catatan',
       noteDescription: 'Catatan',
       notePlaceholder: 'Silakan masukkan catatan',
+      runningHintText: 'sedang berjalan...🕞',
 
       invoke: 'Permintaan HTTP',
       invokeDescription:
@@ -1121,15 +1135,16 @@ export default {
       promptTip:
         'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
       promptMessage: 'Prompt diperlukan',
-      runningHintText: 'sedang berjalan...🕞',
     },
     footer: {
       profile: 'Semua hak dilindungi @ React',
     },
-    layout: {
-      file: 'file',
-      knowledge: 'pengetahuan',
-      chat: 'obrolan',
+    language: {
+      english: 'Inggris',
+      chinese: 'Cina',
+      russian: 'Rusia',
+      bulgarian: 'Bulgaria',
+      arabic: 'Arab',
     },
   },
 };

@@ -87,19 +87,20 @@ async def create(tenant_id, chat_id):
 async def create_agent_session(tenant_id, agent_id):
     req = await get_request_json()
     user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
-    release_mode = req.get("release", request.args.get("release", False))
-    e, cvs = UserCanvasService.get_by_id(agent_id)
-    if not e:
-        return get_error_data_result("Agent not found.")
+    release_mode = bool(req.get("release", request.args.get("release", False)))
+
     if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
         return get_error_data_result("You cannot access the agent.")
-    if not isinstance(cvs.dsl, str):
-        cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
-    if release_mode and not bool(cvs.release):
-        raise PermissionError("No available published version")
+    try:
+        cvs, dsl = UserCanvasService.get_agent_dsl_with_release(agent_id, release_mode, tenant_id)
+    except LookupError:
+        return get_error_data_result("Agent not found.")
+    except PermissionError as e:
+        return get_error_data_result(str(e))
+
     session_id = get_uuid()
-    canvas = Canvas(cvs.dsl, tenant_id, agent_id, canvas_id=cvs.id)
+    canvas = Canvas(dsl, tenant_id, agent_id, canvas_id=cvs.id)
     canvas.reset()
 
     cvs.dsl = json.loads(str(canvas))
@@ -751,7 +752,12 @@ async def delete(tenant_id, chat_id):
 
     ids = req.get("ids")
     if not ids:
-        return get_result()
+        if req.get("delete_all") is True:
+            ids = [conv.id for conv in ConversationService.query(dialog_id=chat_id)]
+            if not ids:
+                return get_result()
+        else:
+            return get_result()
 
     conv_list = ids
 
@@ -799,7 +805,12 @@ async def delete_agent_session(tenant_id, agent_id):
 
     ids = req.get("ids")
     if not ids:
-        return get_result()
+        if req.get("delete_all") is True:
+            ids = [conv.id for conv in API4ConversationService.query(dialog_id=agent_id)]
+            if not ids:
+                return get_result()
+        else:
+            return get_result()
 
     conv_list = ids
 

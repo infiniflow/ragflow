@@ -30,7 +30,7 @@ from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
 from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES, FileType, UserTenantRole, CanvasCategory
 from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File, UserCanvas, User
 from api.db.db_utils import bulk_insert_into_db
-from api.db.services.common_service import CommonService
+from api.db.services.common_service import CommonService, retry_deadlock_operation
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.doc_metadata_service import DocMetadataService
 from common.misc_utils import get_uuid
@@ -522,15 +522,21 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_unfinished_docs(cls):
-        fields = [cls.model.id, cls.model.process_begin_at, cls.model.parser_config, cls.model.progress_msg, cls.model.run, cls.model.parser_id]
-        unfinished_task_query = Task.select(Task.doc_id).where((Task.progress >= 0) & (Task.progress < 1))
+        fields = [cls.model.id, cls.model.process_begin_at, cls.model.parser_config, cls.model.progress_msg,
+                  cls.model.run, cls.model.parser_id]
+        unfinished_task_query = Task.select(Task.doc_id).where(
+            (Task.progress >= 0) & (Task.progress < 1)
+        )
+        docs_with_non_failed_tasks = Task.select(Task.doc_id).where(Task.progress >= 0).distinct()
 
         docs = cls.model.select(*fields).where(
             cls.model.status == StatusEnum.VALID.value,
             ~(cls.model.type == FileType.VIRTUAL.value),
             ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value)),
-            (((cls.model.progress < 1) & (cls.model.progress > 0)) | (cls.model.id.in_(unfinished_task_query))),
-        )  # including unfinished tasks like GraphRAG, RAPTOR and Mindmap
+            (((cls.model.progress < 1) & (cls.model.progress > 0)) |
+             (cls.model.id.in_(unfinished_task_query)) |
+             ((cls.model.progress == -1) & (cls.model.run == TaskStatus.FAIL.value) &
+              (cls.model.id.in_(docs_with_non_failed_tasks)))))  # including GraphRAG/RAPTOR/Mindmap; re-sync failed docs
         return list(docs.dicts())
 
     @classmethod
@@ -560,6 +566,7 @@ class DocumentService(CommonService):
         return num
 
     @classmethod
+    @retry_deadlock_operation()
     @DB.connection_context()
     def delete_document_and_update_kb_counts(cls, doc_id) -> bool:
         """Atomically delete the document row and update KB counters.
@@ -568,7 +575,17 @@ class DocumentService(CommonService):
         already deleted by a concurrent request (idempotent).
         """
         with DB.atomic():
-            doc = cls.model.get_or_none(cls.model.id == doc_id)
+            doc = (
+                cls.model.select(
+                    cls.model.id,
+                    cls.model.kb_id,
+                    cls.model.token_num,
+                    cls.model.chunk_num,
+                )
+                .where(cls.model.id == doc_id)
+                .for_update()
+                .get_or_none()
+            )
             if doc is None:
                 return False
             deleted = cls.model.delete().where(cls.model.id == doc_id).execute()
@@ -839,6 +856,8 @@ class DocumentService(CommonService):
                 elif finished:
                     prg = 1
                     status = TaskStatus.DONE.value
+                elif not finished:
+                    status = TaskStatus.RUNNING.value
 
                 # only for special task and parsed docs and unfinished
                 freeze_progress = special_task_running and doc_progress >= 1 and not finished

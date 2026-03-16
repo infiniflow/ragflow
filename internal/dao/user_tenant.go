@@ -124,3 +124,22 @@ func (dao *UserTenantDAO) GetTenantsByUserID(userID string) ([]*TenantInfoByUser
 		Scan(&results).Error
 	return results, err
 }
+
+// DeleteByUserID delete user tenant relationships by user ID (hard delete)
+func (dao *UserTenantDAO) DeleteByUserID(userID string) (int64, error) {
+	result := DB.Unscoped().Where("user_id = ?", userID).Delete(&model.UserTenant{})
+	return result.RowsAffected, result.Error
+}
+
+// DeleteByTenantID delete user tenant relationships by tenant ID (hard delete)
+func (dao *UserTenantDAO) DeleteByTenantID(tenantID string) (int64, error) {
+	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&model.UserTenant{})
+	return result.RowsAffected, result.Error
+}
+
+// GetByUserIDAll get all user tenant relationships by user ID (including deleted)
+func (dao *UserTenantDAO) GetByUserIDAll(userID string) ([]*model.UserTenant, error) {
+	var relations []*model.UserTenant
+	err := DB.Where("user_id = ?", userID).Find(&relations).Error
+	return relations, err
+}

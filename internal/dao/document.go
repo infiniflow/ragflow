@@ -79,3 +79,27 @@ func (dao *DocumentDAO) List(offset, limit int) ([]*model.Document, int64, error
 	err := DB.Preload("Author").Offset(offset).Limit(limit).Find(&documents).Error
 	return documents, total, err
 }
+
+// DeleteByTenantID deletes all documents by tenant ID (hard delete)
+func (dao *DocumentDAO) DeleteByTenantID(tenantID string) (int64, error) {
+	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&model.Document{})
+	return result.RowsAffected, result.Error
+}
+
+// GetAllDocIDsByKBIDs gets all document IDs by knowledge base IDs
+func (dao *DocumentDAO) GetAllDocIDsByKBIDs(kbIDs []string) ([]map[string]string, error) {
+	var docs []struct {
+		ID  string `gorm:"column:id"`
+		KbID string `gorm:"column:kb_id"`
+	}
+	err := DB.Model(&model.Document{}).Select("id, kb_id").Where("kb_id IN ?", kbIDs).Find(&docs).Error
+	if err != nil {
+		return nil, err
+	}
+	
+	result := make([]map[string]string, len(docs))
+	for i, doc := range docs {
+		result[i] = map[string]string{"id": doc.ID, "kb_id": doc.KbID}
+	}
+	return result, nil
+}

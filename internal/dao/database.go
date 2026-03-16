@@ -90,6 +90,7 @@ func InitDB() error {
 		NowFunc: func() time.Time {
 			return time.Now().Local()
 		},
+		TranslateError: true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to connect database: %w", err)
@@ -140,6 +141,8 @@ func InitDB() error {
 		&model.EvaluationCase{},
 		&model.EvaluationRun{},
 		&model.EvaluationResult{},
+		&model.TimeRecord{},
+		&model.License{},
 	}
 
 	for _, m := range models {

@@ -41,6 +41,7 @@ export const fileIconMap = {
   xml: 'xml.svg',
 };
 
+// TODO: Use standard BCP 47 language tag and display names
 export const LanguageList = [
   'English',
   'Chinese',
@@ -68,7 +69,7 @@ export const LanguageMap = {
   Vietnamese: 'Tiếng việt',
   Japanese: '日本語',
   'Portuguese BR': 'Português BR',
-  German: 'German',
+  German: 'Deutsch',
   French: 'Français',
   Italian: 'Italiano',
   Bulgarian: 'Български',
@@ -77,8 +78,8 @@ export const LanguageMap = {
 
 export enum LanguageAbbreviation {
   En = 'en',
-  Zh = 'zh',
-  ZhTraditional = 'zh-TRADITIONAL',
+  Zh = 'zh-Hans',
+  ZhTraditional = 'zh-Hant',
   Ru = 'ru',
   Id = 'id',
   Ja = 'ja',
@@ -111,8 +112,8 @@ export const LanguageAbbreviationMap = {
 
 export const LanguageTranslationMap = {
   English: 'en',
-  Chinese: 'zh',
-  'Traditional Chinese': 'zh-TRADITIONAL',
+  Chinese: 'zh-Hans',
+  'Traditional Chinese': 'zh-Hant',
   Russian: 'ru',
   Indonesian: 'id',
   Indonesia: 'id',
@@ -162,7 +163,7 @@ export enum FileMimeType {
   Mdx = 'text/markdown',
 }
 
-export const Domain = 'demo.ragflow.io';
+export const Domain = 'cloud.ragflow.io';
 
 //#region file preview
 export const Images = [

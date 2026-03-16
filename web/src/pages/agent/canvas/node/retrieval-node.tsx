@@ -2,7 +2,7 @@ import { NodeCollapsible } from '@/components/collapse';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
 import { useFetchAllMemoryList } from '@/hooks/use-memory-request';
-import { BaseNode } from '@/interfaces/database/flow';
+import { BaseNode } from '@/interfaces/database/agent';
 import { NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';
 import { get } from 'lodash';
