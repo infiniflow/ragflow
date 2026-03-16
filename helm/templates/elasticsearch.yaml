@@ -42,7 +42,7 @@ spec:
           image: busybox
           command: [ "sh", "-c", "chown -R 1000:0 /usr/share/elasticsearch/data" ]
           securityContext:
-            runAsUser: 0  # Darf jetzt als root laufen, dank 'anyuid' SCC
+            runAsUser: 0
           volumeMounts:
             - mountPath: /usr/share/elasticsearch/data
               name: es-data
