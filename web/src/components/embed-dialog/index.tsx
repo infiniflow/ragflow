@@ -274,9 +274,11 @@ window.addEventListener('message',e=>{
               <RAGFlowFormItem name="locale" label={t('chat.locale')}>
                 <SelectWithSearch options={languageOptions}></SelectWithSearch>
               </RAGFlowFormItem>
-              <RAGFlowFormItem name="userId" label={t('flow.userId')}>
-                <Input></Input>
-              </RAGFlowFormItem>
+              {isAgent && (
+                <RAGFlowFormItem name="userId" label={t('flow.userId')}>
+                  <Input></Input>
+                </RAGFlowFormItem>
+              )}
             </form>
           </Form>
           <div>
