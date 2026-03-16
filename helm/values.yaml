@@ -17,7 +17,7 @@ env:
   # - `infinity` (https://github.com/infiniflow/infinity)
   # - `opensearch` (https://github.com/opensearch-project/OpenSearch)
   # DOC_ENGINE: elasticsearch
-  DOC_ENGINE: infinity
+  DOC_ENGINE: infinity 
   # DOC_ENGINE: opensearch
 
   # The version of Elasticsearch.

@@ -11,7 +11,7 @@ zenithClient:
 ragflow:
   env:
     # Elasticsearch seems more stable than other options for now
-    DOC_ENGINE: infinity 
+    DOC_ENGINE: elasticsearch
 
   # Clean up redis volumes when Azimuth app is uninstalled
   redis:
