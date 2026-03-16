@@ -391,8 +391,8 @@ docker build --platform linux/amd64 \
 - [البدء السريع](https://ragflow.io/docs/dev/)
 - [التكوين](https://ragflow.io/docs/dev/configurations)
 - [ملاحظات الإصدار](https://ragflow.io/docs/dev/release_notes)
-- [أدلة المستخدم](https://ragflow.io/docs/dev/category/guides)
-- [أدلة المطورين](https://ragflow.io/docs/dev/category/developers)
+- [أدلة المستخدم](https://ragflow.io/docs/category/user-guides)
+- [أدلة المطورين](https://ragflow.io/docs/category/developer-guides)
 - [المراجع](https://ragflow.io/docs/dev/category/references)
 - [الأسئلة الشائعة](https://ragflow.io/docs/dev/faq)
 

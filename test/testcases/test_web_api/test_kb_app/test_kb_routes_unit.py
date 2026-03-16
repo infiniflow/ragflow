@@ -1064,6 +1064,11 @@ def test_unbind_task_branch_matrix(monkeypatch):
 def test_check_embedding_similarity_threshold_matrix_unit(monkeypatch):
     module = _load_kb_module(monkeypatch)
     route = inspect.unwrap(module.check_embedding)
+    monkeypatch.setattr(
+        module,
+        "get_model_config_by_type_and_name",
+        lambda *_args, **_kwargs: {"llm_factory": "test", "llm_name": "emb-1", "model_type": module.LLMType.EMBEDDING.value},
+    )
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, SimpleNamespace(tenant_id="tenant-1")))
     monkeypatch.setattr(module.search, "index_name", lambda _tenant_id: "idx")
 
@@ -1228,6 +1233,11 @@ def test_check_embedding_similarity_threshold_matrix_unit(monkeypatch):
 def test_check_embedding_error_and_empty_sample_paths_unit(monkeypatch):
     module = _load_kb_module(monkeypatch)
     route = inspect.unwrap(module.check_embedding)
+    monkeypatch.setattr(
+        module,
+        "get_model_config_by_type_and_name",
+        lambda *_args, **_kwargs: {"llm_factory": "test", "llm_name": "emb-1", "model_type": module.LLMType.EMBEDDING.value},
+    )
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, SimpleNamespace(tenant_id="tenant-1")))
     monkeypatch.setattr(module.search, "index_name", lambda _tenant_id: "idx")
     monkeypatch.setattr(module.random, "sample", lambda population, k: list(population)[:k])
