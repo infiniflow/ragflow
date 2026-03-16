@@ -27,6 +27,7 @@ metadata:
     {{- include "ragflow.labels" . | nindent 4 }}
     app.kubernetes.io/component: mysql
 spec:
+  serviceName: {{ include "ragflow.fullname" . }}-mysql
   replicas: 1
   selector:
     matchLabels:
@@ -67,10 +68,10 @@ spec:
           - --max_connections=1000
           - --character-set-server=utf8mb4
           - --collation-server=utf8mb4_general_ci
-          - --default-authentication-plugin=mysql_native_password
+          - --authentication_policy=caching_sha2_password
           - --tls_version=TLSv1.2,TLSv1.3
-          - --init-file=/data/application/init.sql
           - --disable-log-bin
+          - --host_cache_size=0
         ports:
           - containerPort: 3306
             name: mysql
@@ -81,7 +82,8 @@ spec:
         volumeMounts:
           - mountPath: /var/lib/mysql
             name: mysql-data
-          - mountPath: /data/application/init.sql
+            subPath: data
+          - mountPath: /docker-entrypoint-initdb.d/init.sql
             subPath: init.sql
             readOnly: true
             name: init-script-volume
@@ -108,5 +110,5 @@ spec:
     - protocol: TCP
       port: 3306
       targetPort: mysql
-  type: {{ .Values.mysql.service.type }}
+  type: {{ .Values.mysql.service.type | default "ClusterIP" }}
 {{- end }}

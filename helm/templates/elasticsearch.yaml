@@ -37,27 +37,43 @@ spec:
         app.kubernetes.io/component: elasticsearch
     spec:
       # REMOVED: securityContext fsGroup (OpenShift restricted-v2 forbids 0)
-
+      initContainers:
+        - name: fix-permissions
+          image: busybox
+          command: [ "sh", "-c", "chown -R 1000:0 /usr/share/elasticsearch/data" ]
+          securityContext:
+            runAsUser: 0  # Darf jetzt als root laufen, dank 'anyuid' SCC
+          volumeMounts:
+            - mountPath: /usr/share/elasticsearch/data
+              name: es-data
       containers:
         - name: elasticsearch
           image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.elasticsearch.image.repository) }}:{{ .Values.elasticsearch.image.tag }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           env:
               - name: discovery.type
                 value: single-node
-                - name: xpack.security.enabled
-                  value: "false"
+              - name: xpack.security.enabled
+                value: "false"
             # FORCE ELASTIC TO USE A WRITABLE SUBFOLDER
-                - name: path.data
-                  value: /mnt/elasticsearch/data
-                - name: ES_JAVA_OPTS
-                  value: "-Xms1g -Xmx1g"
+              - name: path.data
+                value: /mnt/elasticsearch/data
+              - name: ES_JAVA_OPTS
+                value: "-Xms1g -Xmx1g"
           volumeMounts:
             # Mount the volume to a neutral, fresh path
             - mountPath: /mnt/elasticsearch
               name: es-data
           {{- with .Values.elasticsearch.deployment.resources }}
           resources:
-            {{- . | toYaml | nindent 10 }}
+            {{- . | toYaml | nindent 12 }}
           {{- end }}
       volumes:
         - name: es-data
