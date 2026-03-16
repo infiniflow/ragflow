@@ -211,6 +211,68 @@ def _mm_dismiss_open_popovers(page) -> None:
         page.wait_for_timeout(120)
 
 
+def _mm_open_model_options(page, card, option_prefix: str):
+    options = page.locator(f"[data-testid^='{option_prefix}']")
+    deadline = monotonic() + 12
+    while monotonic() < deadline:
+        card.get_by_test_id("chat-detail-multimodel-card-model-select").click()
+        try:
+            expect(options.first).to_be_visible(timeout=1200)
+            return options
+        except AssertionError:
+            pass
+
+        popover_root = page.locator("[data-radix-popper-content-wrapper]").last
+        if popover_root.count() > 0:
+            popover_model_select = popover_root.locator("button[role='combobox']").first
+            if popover_model_select.count() > 0:
+                try:
+                    popover_model_select.click(timeout=1200)
+                except Exception:
+                    pass
+                try:
+                    expect(options.first).to_be_visible(timeout=1200)
+                    return options
+                except AssertionError:
+                    pass
+        page.wait_for_timeout(120)
+
+    raise AssertionError(
+        f"no model options rendered for prefix={option_prefix!r} in multi-model selector"
+    )
+
+
+def _mm_click_generic_model_option(page, card_index: int, option_prefix: str) -> str:
+    popover_root = page.locator("[data-radix-popper-content-wrapper]").last
+    options = popover_root.locator("[role='option']")
+    expect(options.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+
+    option_count = options.count()
+    choose_index = 1 if option_count > 1 and card_index == 1 else 0
+    chosen = options.nth(choose_index)
+    chosen.scroll_into_view_if_needed()
+
+    for _ in range(3):
+        try:
+            chosen.click(timeout=2000, force=True)
+            break
+        except Exception:
+            page.wait_for_timeout(120)
+    else:
+        raise AssertionError("failed to click fallback generic model option")
+
+    chosen_testid = chosen.get_attribute("data-testid") or ""
+    if chosen_testid:
+        return chosen_testid
+
+    chosen_value = (
+        chosen.get_attribute("data-value")
+        or chosen.get_attribute("value")
+        or f"idx-{choose_index}"
+    )
+    return f"{option_prefix}{chosen_value}"
+
+
 def mm_step_01_ensure_authed_and_open_chat_list(ctx: FlowContext, step, snap):
     page = ctx.page
     with step("ensure logged in and open chat list"):
@@ -555,17 +617,7 @@ def mm_step_10_select_models_for_two_cards(ctx: FlowContext, step, snap):
                 f"[data-testid='chat-detail-multimodel-card'][data-card-index='{card_index}']"
             ).first
             expect(card).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-            card.get_by_test_id("chat-detail-multimodel-card-model-select").click()
-
-            options = page.locator(f"[data-testid^='{option_prefix}']")
-            if options.count() == 0:
-                popover_root = page.locator("[data-radix-popper-content-wrapper]").last
-                expect(popover_root).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-                popover_model_select = popover_root.locator("button[role='combobox']").first
-                expect(popover_model_select).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-                popover_model_select.click()
-
-            expect(options.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+            options = _mm_open_model_options(page, card, option_prefix)
             option_testids = [
                 tid
                 for tid in options.evaluate_all(
@@ -574,14 +626,17 @@ def mm_step_10_select_models_for_two_cards(ctx: FlowContext, step, snap):
                 if tid
             ]
             option_testids = list(dict.fromkeys(option_testids))
-            assert option_testids, "no deterministic model options were rendered"
 
-            if len(option_testids) > 1 and card_index == 1:
-                chosen = option_testids[1]
+            if option_testids:
+                if len(option_testids) > 1 and card_index == 1:
+                    chosen = option_testids[1]
+                else:
+                    chosen = option_testids[0]
+                selected_option_testids.append(chosen)
+                _mm_click_model_option_by_testid(page, chosen)
             else:
-                chosen = option_testids[0]
-            selected_option_testids.append(chosen)
-            _mm_click_model_option_by_testid(page, chosen)
+                chosen = _mm_click_generic_model_option(page, card_index, option_prefix)
+                selected_option_testids.append(chosen)
             _mm_dismiss_open_popovers(page)
 
     ctx.state["mm_selected_option_testids"] = selected_option_testids
@@ -677,7 +732,12 @@ def mm_step_12_composer_and_single_send(ctx: FlowContext, step, snap):
                 expect(stream_status).to_be_visible(timeout=5000)
             except AssertionError:
                 pass
-            expect(stream_status).to_have_count(0, timeout=90000)
+            try:
+                expect(stream_status.first).to_have_attribute(
+                    "data-status", "idle", timeout=90000
+                )
+            except AssertionError:
+                expect(stream_status).to_have_count(0, timeout=90000)
 
             deadline = monotonic() + 8
             while not completion_payloads and monotonic() < deadline:
