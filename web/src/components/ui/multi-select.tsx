@@ -242,9 +242,7 @@ export const MultiSelect = React.forwardRef<
 
     const disabledValueSet = React.useMemo(() => {
       return new Set(
-        flatOptions
-          .filter((option) => option.disabled)
-          .map((option) => option.value),
+        flatOptions.filter((option) => option.disabled).map((option) => option.value),
       );
     }, [flatOptions]);
 

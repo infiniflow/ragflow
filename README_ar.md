@@ -1,5 +1,5 @@
 <div align="center">
-<a href="https://demo.ragflow.io/">
+<a href="https://cloud.ragflow.io/">
 <img src="web/src/assets/logo-with-text.svg" width="520" alt="ragflow logo">
 </a>
 </div>
@@ -20,7 +20,7 @@
     <a href="https://x.com/intent/follow?screen_name=infiniflowai" target="_blank">
         <img src="https://img.shields.io/twitter/follow/infiniflow?logo=X&color=%20%23f5f5f5" alt="follow on X(Twitter)">
     </a>
-    <a href="https://demo.ragflow.io" target="_blank">
+    <a href="https://cloud.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
@@ -42,7 +42,7 @@
   <a href="https://github.com/infiniflow/ragflow/issues/12241">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
   <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
-  <a href="https://demo.ragflow.io">Demo</a>
+  <a href="https://cloud.ragflow.io">Demo</a>
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -78,7 +78,7 @@
 
 ## 🎮 Demo
 
-جرّب النسخة التجريبية على [https://demo.ragflow.io](https://demo.ragflow.io).
+جرّب النسخة التجريبية على [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -391,8 +391,8 @@ docker build --platform linux/amd64 \
 - [البدء السريع](https://ragflow.io/docs/dev/)
 - [التكوين](https://ragflow.io/docs/dev/configurations)
 - [ملاحظات الإصدار](https://ragflow.io/docs/dev/release_notes)
-- [أدلة المستخدم](https://ragflow.io/docs/dev/category/guides)
-- [أدلة المطورين](https://ragflow.io/docs/dev/category/developers)
+- [أدلة المستخدم](https://ragflow.io/docs/category/user-guides)
+- [أدلة المطورين](https://ragflow.io/docs/category/developer-guides)
 - [المراجع](https://ragflow.io/docs/dev/category/references)
 - [الأسئلة الشائعة](https://ragflow.io/docs/dev/faq)
 

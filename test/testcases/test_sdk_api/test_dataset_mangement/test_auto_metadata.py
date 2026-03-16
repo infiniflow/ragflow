@@ -44,7 +44,7 @@ class TestAutoMetadataOnCreate:
         dataset = client.create_dataset(**payload)
         # The SDK should expose parser_config via internal properties or metadata;
         # we rely on the HTTP API for verification via get_auto_metadata.
-        cfg = dataset.get_auto_metadata()
+        cfg = client.get_auto_metadata(dataset_id=dataset.id)
         assert cfg["enabled"] is True
         assert len(cfg["fields"]) == 2
         names = {f["name"] for f in cfg["fields"]}
@@ -74,7 +74,7 @@ class TestAutoMetadataOnUpdate:
         }
         dataset.update(payload)
 
-        cfg = dataset.get_auto_metadata()
+        cfg = client.get_auto_metadata(dataset_id=dataset.id)
         assert cfg["enabled"] is True
         assert len(cfg["fields"]) == 1
         assert cfg["fields"][0]["name"] == "tags"
@@ -93,9 +93,9 @@ class TestAutoMetadataOnUpdate:
                 }
             ],
         }
-        dataset.update_auto_metadata(**update_cfg)
+        client.update_auto_metadata(dataset_id=dataset.id, **update_cfg)
 
-        cfg2 = dataset.get_auto_metadata()
+        cfg2 = client.get_auto_metadata(dataset_id=dataset.id)
         assert cfg2["enabled"] is False
         assert len(cfg2["fields"]) == 1
         assert cfg2["fields"][0]["name"] == "year"

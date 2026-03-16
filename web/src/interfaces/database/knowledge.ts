@@ -11,16 +11,16 @@ export interface IConnector {
 // knowledge base
 export interface IKnowledge {
   avatar?: any;
-  chunk_count: number;
+  chunk_num: number;
   create_date: string;
   create_time: number;
   created_by: string;
   description: string;
-  document_count: number;
+  doc_num: number;
   id: string;
   name: string;
   parser_config: ParserConfig;
-  chunk_method: string;
+  parser_id: string;
   pipeline_id: string;
   pipeline_name: string;
   pipeline_avatar: string;
@@ -32,7 +32,7 @@ export interface IKnowledge {
   update_date: string;
   update_time: number;
   vector_similarity_weight: number;
-  embedding_model: string;
+  embd_id: string;
   nickname: string;
   operator_permission: number;
   size: number;
@@ -47,7 +47,7 @@ export interface IKnowledge {
 
 export interface IKnowledgeResult {
   kbs: IKnowledge[];
-  total_datasets: number;
+  total: number;
 }
 
 export interface Raptor {

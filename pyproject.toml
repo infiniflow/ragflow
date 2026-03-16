@@ -21,7 +21,7 @@ dependencies = [
     "chardet>=5.2.0,<6.0.0",
     "cn2an==0.5.22",
     "cohere==5.6.2",
-    "Crawl4AI>=0.8.0,<1.0.0",
+    "Crawl4AI>=0.4.0,<1.0.0",
     "dashscope==1.25.11",
     "deepl==1.18.0",
     "demjson3==3.0.6",
@@ -56,7 +56,7 @@ dependencies = [
     "markdown==3.6",
     "markdown-to-json==2.1.1",
     "markdownify>=1.2.0",
-    "mcp>=1.23.0",
+    "mcp>=1.19.0",
     "mini-racer>=0.12.4,<0.13.0",
     "minio==7.2.4",
     "mistralai==0.4.2",
@@ -179,7 +179,7 @@ test = [
 ]
 
 [[tool.uv.index]]
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.aliyun.com/pypi/simple"
 
 [tool.setuptools]
 packages = [
