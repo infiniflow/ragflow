@@ -146,7 +146,6 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               </FormItem>
             )}
           />
-
           {/* Do not display the type field in create mode */}
           {isEditMode && (
             <FormField
@@ -174,7 +173,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
             />
           )}
 
-          {isEditMode && form.getValues('doc_type_kwd') === 'image' && (
+          {(!isEditMode || form.getValues('doc_type_kwd') + '' === 'image') && (
             <FormField
               control={form.control}
               name="image"
@@ -213,7 +212,6 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               )}
             />
           )}
-
           <FormField
             control={form.control}
             name="important_kwd"
@@ -227,7 +225,6 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               </FormItem>
             )}
           />
-
           <FormField
             control={form.control}
             name="question_kwd"
@@ -255,7 +252,6 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               </FormItem>
             )}
           />
-
           {isTagParser && (
             <FormField
               control={form.control}
@@ -271,7 +267,6 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               )}
             />
           )}
-
           {!isTagParser && (
             <FormProvider {...form}>
               <TagFeatureItem />
