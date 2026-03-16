@@ -78,7 +78,7 @@ env:
 
 ragflow:
   image:
-    repository: timblocker/kira
+    repository: quay-etaps.registry.intern/dap/kira
     tag: v24
     pullPolicy: IfNotPresent
     pullSecrets: []
@@ -110,15 +110,7 @@ ragflow:
     resources:
   service:
     # Use LoadBalancer to expose the web interface externally
-    type: LoadBalancer
-    # DigitalOcean LoadBalancer annotations
-    # Ref: https://github.com/digitalocean/digitalocean-cloud-controller-manager/blob/master/docs/controllers/services/examples/README.md
-    annotations:
-      service.beta.kubernetes.io/do-loadbalancer-size-unit: "1"
-      # service.beta.kubernetes.io/do-loadbalancer-protocol: "http"
-      # service.beta.kubernetes.io/do-loadbalancer-algorithm: "round_robin"
-      # service.beta.kubernetes.io/do-loadbalancer-health-check-port: "80"
-    loadBalancerSourceRanges: []
+    type: ClusterIP
   admin:
     # Enable Admin Service
     enabled: true
@@ -133,8 +125,8 @@ ragflow:
 
 infinity:
   image:
-    repository: infiniflow/infinity
-    tag: latest
+    repository: quay-etaps.registry.intern/dap/infiniflow/infinity
+    tag: v0.7.0-dev2
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:
@@ -148,17 +140,17 @@ infinity:
 
 elasticsearch:
   image:
-    repository: elasticsearch
-    tag: "8.11.3"
+    repository: quay-etaps.registry.intern/dap/elasticsearch
+    tag: 8.11.3
     pullPolicy: IfNotPresent
     pullSecrets: []
   initContainers:
     alpine:
-      repository: alpine
+      repository: quay-etaps.registry.intern/dap/alpine
       tag: latest
       pullPolicy: IfNotPresent
     busybox:
-      repository: busybox
+      repository: quay-etaps.registry.intern/dap/busybox
       tag: latest
       pullPolicy: IfNotPresent
   storage:
@@ -168,27 +160,24 @@ elasticsearch:
     strategy:
     resources:
       requests:
-        cpu: "1"
-        memory: "2Gi"
-      limits:
-        cpu: "4"
-        memory: "8Gi"
+        cpu: "8"
+        memory: "32Gi"
   service:
     type: ClusterIP
 
 opensearch:
   image:
-    repository: opensearchproject/opensearch
-    tag: latest
+    repository: quay-etaps.registry.intern/dap/opensearch
+    tag: 2.19.1
     pullPolicy: IfNotPresent
     pullSecrets: []
   initContainers:
     alpine:
-      repository: alpine
+      repository: quay-etaps.registry.intern/dap/alpine
       tag: latest
       pullPolicy: IfNotPresent
     busybox:
-      repository: busybox
+      repository: quay-etaps.registry.intern/dap/busybox
       tag: latest
       pullPolicy: IfNotPresent
   storage:
@@ -206,8 +195,8 @@ opensearch:
 minio:
   enabled: true
   image:
-    repository: quay.io/minio/minio
-    tag: RELEASE.2024-12-18T13-15-44Z
+    repository: quay-etaps.registry.intern/dap/minio
+    tag: RELEASE.2023-12-20T01-00-02Z
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:
@@ -222,12 +211,12 @@ minio:
 mysql:
   enabled: true
   image:
-    repository: mysql
+    repository: quay-etaps.registry.intern/dap/mysql
     tag: 9
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:
-    className: "do-block-storage"
+    className:
     capacity: 5Gi
   deployment:
     strategy:
@@ -238,8 +227,8 @@ mysql:
 redis:
   enabled: true
   image:
-    repository: valkey/valkey
-    tag: latest
+    repository: quay-etaps.registry.intern/dap/valkey
+    tag: 8
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:
@@ -268,7 +257,7 @@ ingress:
     # kubernetes.io/ingress.class: nginx
   # kubernetes.io/tls-acme: "true"
   hosts:
-    - host: kira.local
+    - host: kira-ragflow.apps.ocmtdx05.dyn.mtd.openshift.intern
       paths:
         - path: /
           pathType: ImplementationSpecific
