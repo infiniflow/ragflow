@@ -16,7 +16,7 @@ export function GeneralSavingButton() {
     () => form.formState.defaultValues ?? {},
     [form.formState.defaultValues],
   );
-  const chunk_method = defaultValues['chunk_method'];
+  const parser_id = defaultValues['parser_id'];
 
   return (
     <ButtonLoading
@@ -31,7 +31,7 @@ export function GeneralSavingButton() {
           if (isValidate) {
             saveKnowledgeConfiguration({
               kb_id,
-              chunk_method,
+              parser_id,
               name,
               description,
               avatar,

@@ -1,6 +1,7 @@
 import { IRenameTag } from '@/interfaces/database/knowledge';
 import {
   IFetchDocumentListRequestBody,
+  IFetchKnowledgeListRequestBody,
   IFetchKnowledgeListRequestParams,
 } from '@/interfaces/request/knowledge';
 import { ProcessingType } from '@/pages/dataset/dataset-overview/dataset-common';
@@ -10,6 +11,7 @@ import request, { post } from '@/utils/request';
 
 const {
   create_kb,
+  update_kb,
   rm_kb,
   get_kb_detail,
   kb_list,
@@ -40,6 +42,10 @@ const {
   getKnowledgeBasicInfo,
   fetchDataPipelineLog,
   fetchPipelineDatasetLogs,
+  runGraphRag,
+  traceGraphRag,
+  runRaptor,
+  traceRaptor,
   check_embedding,
   kbUpdateMetaData,
   documentUpdateMetaData,
@@ -50,9 +56,13 @@ const methods = {
     url: create_kb,
     method: 'post',
   },
+  updateKb: {
+    url: update_kb,
+    method: 'post',
+  },
   rmKb: {
     url: rm_kb,
-    method: 'delete',
+    method: 'post',
   },
   get_kb_detail: {
     url: get_kb_detail,
@@ -60,7 +70,7 @@ const methods = {
   },
   getList: {
     url: kb_list,
-    method: 'get',
+    method: 'post',
   },
   // document manager
   get_document_list: {
@@ -181,6 +191,22 @@ const methods = {
     method: 'get',
   },
 
+  runGraphRag: {
+    url: runGraphRag,
+    method: 'post',
+  },
+  traceGraphRag: {
+    url: traceGraphRag,
+    method: 'get',
+  },
+  runRaptor: {
+    url: runRaptor,
+    method: 'post',
+  },
+  traceRaptor: {
+    url: traceRaptor,
+    method: 'get',
+  },
   pipelineRerun: {
     url: api.pipelineRerun,
     method: 'post',
@@ -225,23 +251,10 @@ export function deleteKnowledgeGraph(knowledgeId: string) {
   return request.delete(api.getKnowledgeGraph(knowledgeId));
 }
 
-export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
-  request.get(api.kb_list, { params });
-
-export const updateKb = (datasetId: string, data: Record<string, any>) =>
-  request.put(api.update_kb(datasetId), { data });
-
-export const runGraphRag = (datasetId: string) =>
-  request.post(api.runGraphRag(datasetId));
-
-export const traceGraphRag = (datasetId: string) =>
-  request.get(api.traceGraphRag(datasetId));
-
-export const runRaptor = (datasetId: string) =>
-  request.post(api.runRaptor(datasetId));
-
-export const traceRaptor = (datasetId: string) =>
-  request.get(api.traceRaptor(datasetId));
+export const listDataset = (
+  params?: IFetchKnowledgeListRequestParams,
+  body?: IFetchKnowledgeListRequestBody,
+) => request.post(api.kb_list, { data: body || {}, params });
 
 export const listDocument = (
   params?: IFetchKnowledgeListRequestParams,
