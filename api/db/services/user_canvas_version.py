@@ -91,6 +91,17 @@ class UserCanvasVersionService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_latest_released(cls, user_canvas_id):
+        try:
+            return cls.model.select().where((cls.model.user_canvas_id == user_canvas_id) & (cls.model.release)).order_by(cls.model.create_time.desc()).first()
+        except DoesNotExist:
+            return None
+        except Exception as e:
+            logging.exception(e)
+            return None
+
+    @classmethod
+    @DB.connection_context()
     def save_or_replace_latest(cls, user_canvas_id, dsl, title=None, description=None, release=None):
         """
         Persist a canvas snapshot into version history.

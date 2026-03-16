@@ -128,20 +128,32 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// Set Authorization header with access_token
-	if user.AccessToken != nil {
-		c.Header("Authorization", *user.AccessToken)
+	// Sign the access_token using itsdangerous (compatible with Python)
+	variables := server.GetVariables()
+	secretKey := variables.SecretKey
+	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "Failed to generate auth token",
+			"data":    false,
+		})
+		return
 	}
+
+	// Set Authorization header with signed token
+	c.Header("Authorization", authToken)
 	// Set CORS headers
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Methods", "*")
 	c.Header("Access-Control-Allow-Headers", "*")
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
+	profile := h.userService.GetUserProfile(user)
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"message": "Welcome back!",
-		"data":    user,
+		"data":    profile,
 	})
 }
 
@@ -321,14 +333,6 @@ func (h *UserHandler) Logout(c *gin.Context) {
 			"message": "Invalid access token",
 		})
 		c.Abort()
-		return
-	}
-
-	if *user.IsSuperuser {
-		c.JSON(http.StatusForbidden, gin.H{
-			"code":    common.CodeForbidden,
-			"message": "Super user should access the URL",
-		})
 		return
 	}
 

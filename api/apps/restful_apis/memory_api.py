@@ -249,11 +249,13 @@ async def search_message():
     top_n = int(args.get("top_n", 5))
     agent_id = args.get("agent_id", "")
     session_id = args.get("session_id", "")
+    user_id = args.get("user_id", "")
 
     filter_dict = {
         "memory_id": memory_ids,
         "agent_id": agent_id,
-        "session_id": session_id
+        "session_id": session_id,
+        "user_id": user_id
     }
     params = {
         "query": query,

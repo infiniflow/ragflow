@@ -17,6 +17,7 @@
 package service
 
 import (
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
@@ -149,7 +150,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	now := time.Now().Unix()
 	user.CreateTime = &now
 	user.UpdateTime = &now
-	now_date := time.Now()
+	now_date := time.Now().Truncate(time.Second)
 	user.CreateDate = &now_date
 	user.UpdateDate = &now_date
 	user.LastLoginTime = &now_date
@@ -342,7 +343,7 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest, adminLogin bool) (*mo
 
 	now := time.Now().Unix()
 	user.UpdateTime = &now
-	now_date := time.Now()
+	now_date := time.Now().Truncate(time.Second)
 	user.UpdateDate = &now_date
 	if err := s.userDAO.Update(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
@@ -399,16 +400,29 @@ func (s *UserService) ListUsers(page, pageSize int) ([]*UserResponse, int64, com
 	return responses, total, common.CodeSuccess, nil
 }
 
-// HashPassword generate password hash
+// HashPassword generate password hash using scrypt (werkzeug compatible)
+// The password should already be base64 encoded (from decrypt process)
+// Werkzeug default format: scrypt:32768:8:1$base64(salt)$hex(hash)
+// IMPORTANT: werkzeug uses the base64-encoded salt string as UTF-8 bytes, NOT the decoded bytes
 func (s *UserService) HashPassword(password string) (string, error) {
-	salt := s.generateSalt()
-	hash, err := scrypt.Key([]byte(password), salt, 32768, 8, 1, 64)
+	// Generate random bytes (12 bytes will produce 16-char base64 string)
+	randomBytes, err := s.generateSalt()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to generate salt: %w", err)
 	}
 
-	// Return werkzeug format: scrypt:n:r:p$salt$hash
-	return fmt.Sprintf("scrypt:32768:8:1$%s$%x", string(salt), hash), nil
+	// Encode to base64 string (this will be 16 characters)
+	saltB64 := base64.StdEncoding.EncodeToString(randomBytes)
+
+	// Use scrypt with werkzeug default parameters: N=32768, r=8, p=1, keyLen=64
+	// IMPORTANT: werkzeug uses the base64 string as UTF-8 bytes, NOT the decoded bytes
+	hash, err := scrypt.Key([]byte(password), []byte(saltB64), 32768, 8, 1, 64)
+	if err != nil {
+		return "", fmt.Errorf("failed to compute scrypt hash: %w", err)
+	}
+
+	// Format: scrypt:n:r:p$base64(salt)$hex(hash)
+	return fmt.Sprintf("scrypt:32768:8:1$%s$%x", saltB64, hash), nil
 }
 
 // VerifyPassword verify password
@@ -481,9 +495,10 @@ func (s *UserService) verifyPBKDF2Password(hashedPassword, password string) bool
 }
 
 // verifyScryptPassword verifies password using scrypt format
-// Format: scrypt:n:r:p$salt$hash
+// Format: scrypt:n:r:p$base64(salt)$hex(hash)
+// IMPORTANT: werkzeug uses the base64-encoded salt string as UTF-8 bytes, NOT the decoded bytes
 func (s *UserService) verifyScryptPassword(hashedPassword, password string) bool {
-	// Parse hash format: scrypt:n:r:p$salt$hash
+	// Parse hash format: scrypt:n:r:p$base64(salt)$hex(hash)
 	parts := strings.Split(hashedPassword, "$")
 	if len(parts) != 3 {
 		return false
@@ -507,24 +522,36 @@ func (s *UserService) verifyScryptPassword(hashedPassword, password string) bool
 		return false
 	}
 
-	saltStr := parts[1]
+	saltB64 := parts[1]
 	hashHex := parts[2]
 
-	// Compute password hash
-	computed, err := scrypt.Key([]byte(password), []byte(saltStr), int(n), int(r), int(p), len(hashHex)/2)
+	// IMPORTANT: werkzeug uses the base64 string as UTF-8 bytes, NOT decoded bytes
+	// This is the key difference from standard implementations
+	salt := []byte(saltB64)
+
+	// Decode expected hash from hex
+	expectedHash, err := hex.DecodeString(hashHex)
 	if err != nil {
 		return false
 	}
 
-	decodedHash, err := hex.DecodeString(hashHex)
+	// Compute password hash
+	computed, err := scrypt.Key([]byte(password), salt, int(n), int(r), int(p), len(expectedHash))
+	if err != nil {
+		return false
+	}
 
 	// Constant time comparison
-	return s.constantTimeCompare(decodedHash, computed)
+	return s.constantTimeCompare(expectedHash, computed)
 }
 
-// generateSalt generate salt
-func (s *UserService) generateSalt() []byte {
-	return []byte("random_salt_for_user") // TODO: use random salt
+// generateSalt generates a random 12-byte salt (werkzeug default)
+func (s *UserService) generateSalt() ([]byte, error) {
+	salt := make([]byte, 12)
+	if _, err := rand.Read(salt); err != nil {
+		return nil, fmt.Errorf("failed to generate random salt: %w", err)
+	}
+	return salt, nil
 }
 
 // constantTimeCompare constant time comparison

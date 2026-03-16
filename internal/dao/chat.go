@@ -215,3 +215,18 @@ func (dao *ChatDAO) UpdateManyByID(updates []map[string]interface{}) error {
 
 	return tx.Commit().Error
 }
+
+// DeleteByTenantID deletes all chats by tenant ID (hard delete)
+func (dao *ChatDAO) DeleteByTenantID(tenantID string) (int64, error) {
+	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&model.Chat{})
+	return result.RowsAffected, result.Error
+}
+
+// GetAllDialogIDsByTenantID gets all dialog IDs by tenant ID
+func (dao *ChatDAO) GetAllDialogIDsByTenantID(tenantID string) ([]string, error) {
+	var dialogIDs []string
+	err := DB.Model(&model.Chat{}).
+		Where("tenant_id = ?", tenantID).
+		Pluck("id", &dialogIDs).Error
+	return dialogIDs, err
+}
