@@ -90,7 +90,9 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
     && rm -rf "uv-${uv_arch}-unknown-linux-gnu" \
     && uv python install 3.12
 
-ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
+    UV_HTTP_TIMEOUT=300 \
+    UV_HTTP_RETRIES=5
 ENV PATH=/root/.local/bin:$PATH
 
 # nodejs 12.22 on Ubuntu 22.04 is too old
