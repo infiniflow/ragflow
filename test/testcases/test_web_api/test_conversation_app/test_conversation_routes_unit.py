@@ -180,6 +180,16 @@ async def _read_sse_text(response):
     return "".join(chunks)
 
 
+@pytest.fixture(scope="session")
+def auth():
+    return "unit-auth"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def set_tenant_info():
+    return None
+
+
 @pytest.mark.p2
 def test_set_conversation_update_create_and_errors(monkeypatch):
     module = _load_conversation_module(monkeypatch)
@@ -532,13 +542,13 @@ def test_sequence2txt_validation_and_transcription_paths(monkeypatch):
 
     wav_file = _DummyUploadedFile("audio.wav")
     monkeypatch.setattr(module, "request", _DummyRequest(form={"stream": "false"}, files={"file": wav_file}))
-    monkeypatch.setattr(sys.modules["api.db.joint_services.tenant_model_service"].TenantService, "get_by_id", lambda _uid: (False, None))
+    monkeypatch.setattr(module, "get_tenant_default_model_by_type", lambda *_args, **_kwargs: (_ for _ in ()).throw(LookupError("Tenant not found")))
     res = _run(module.sequence2txt())
     assert res["message"] == "Tenant not found"
 
     wav_file = _DummyUploadedFile("audio.wav")
     monkeypatch.setattr(module, "request", _DummyRequest(form={"stream": "false"}, files={"file": wav_file}))
-    monkeypatch.setattr(sys.modules["api.db.joint_services.tenant_model_service"].TenantService, "get_by_id", lambda _uid: (True, SimpleNamespace(tenant_id="tenant-1", asr_id="")))
+    monkeypatch.setattr(module, "get_tenant_default_model_by_type", lambda *_args, **_kwargs: (_ for _ in ()).throw(Exception("No default speech2text model is set.")))
     res = _run(module.sequence2txt())
     assert res["message"] == "No default speech2text model is set."
 
@@ -551,8 +561,11 @@ def test_sequence2txt_validation_and_transcription_paths(monkeypatch):
 
     wav_file = _DummyUploadedFile("audio.wav")
     monkeypatch.setattr(module, "request", _DummyRequest(form={"stream": "false"}, files={"file": wav_file}))
-    monkeypatch.setattr(sys.modules["api.db.joint_services.tenant_model_service"].TenantService, "get_by_id", lambda _uid: (True, SimpleNamespace(tenant_id="tenant-1", asr_id="asr-model")))
-    monkeypatch.setattr(module.TenantLLMService, "get_api_key", lambda tenant_id, model_name: SimpleNamespace(to_dict=lambda: {"llm_factory": "test", "llm_name": "asr-model"}))
+    monkeypatch.setattr(
+        module,
+        "get_tenant_default_model_by_type",
+        lambda *_args, **_kwargs: {"llm_factory": "test", "llm_name": "asr-model", "model_type": module.LLMType.SPEECH2TEXT.value},
+    )
     monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _SyncAsr())
     monkeypatch.setattr(module.os, "remove", lambda _path: (_ for _ in ()).throw(RuntimeError("remove failed")))
     res = _run(module.sequence2txt())
@@ -593,11 +606,11 @@ def test_sequence2txt_validation_and_transcription_paths(monkeypatch):
 def test_tts_request_parse_entry(monkeypatch):
     module = _load_conversation_module(monkeypatch)
     _set_request_json(monkeypatch, module, {"text": "A。B"})
-    monkeypatch.setattr(sys.modules["api.db.joint_services.tenant_model_service"].TenantService, "get_by_id", lambda _uid: (False, None))
+    monkeypatch.setattr(module, "get_tenant_default_model_by_type", lambda *_args, **_kwargs: (_ for _ in ()).throw(LookupError("Tenant not found")))
     res = _run(module.tts())
     assert res["message"] == "Tenant not found"
 
-    monkeypatch.setattr(sys.modules["api.db.joint_services.tenant_model_service"].TenantService, "get_by_id", lambda _uid: (True, SimpleNamespace(tenant_id="tenant-1", tts_id="")))
+    monkeypatch.setattr(module, "get_tenant_default_model_by_type", lambda *_args, **_kwargs: (_ for _ in ()).throw(Exception("No default tts model is set.")))
     res = _run(module.tts())
     assert res["message"] == "No default tts model is set."
 
@@ -607,8 +620,11 @@ def test_tts_request_parse_entry(monkeypatch):
                 return []
             yield f"chunk-{txt}".encode("utf-8")
 
-    monkeypatch.setattr(sys.modules["api.db.joint_services.tenant_model_service"].TenantService, "get_by_id", lambda _uid: (True, SimpleNamespace(tenant_id="tenant-1", tts_id="tts-x")))
-    monkeypatch.setattr(module.TenantLLMService, "get_api_key", lambda tenant_id, model_name: SimpleNamespace(to_dict=lambda: {"llm_factory": "test", "llm_name": model_name}))
+    monkeypatch.setattr(
+        module,
+        "get_tenant_default_model_by_type",
+        lambda *_args, **_kwargs: {"llm_factory": "test", "llm_name": "tts-x", "model_type": module.LLMType.TTS.value},
+    )
     monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _TTSOk())
     resp = _run(module.tts())
     assert resp.mimetype == "audio/mpeg"
@@ -770,7 +786,11 @@ def test_mindmap_and_related_questions_matrix_unit(monkeypatch):
 
     monkeypatch.setattr(module, "LLMBundle", _fake_bundle)
     monkeypatch.setattr(module, "load_prompt", lambda name: f"prompt-{name}")
-    monkeypatch.setattr(module.TenantLLMService, "get_api_key", lambda tenant_id, model_name: SimpleNamespace(to_dict=lambda: {"llm_factory": "test", "llm_name": model_name}))
+    monkeypatch.setattr(
+        module,
+        "get_model_config_by_type_and_name",
+        lambda *_args, **_kwargs: {"llm_factory": "test", "llm_name": "chat-x", "model_type": module.LLMType.CHAT.value},
+    )
     _set_request_json(monkeypatch, module, {"question": "solar", "search_id": "search-1"})
     res = _run(module.related_questions.__wrapped__())
     assert res["code"] == 0

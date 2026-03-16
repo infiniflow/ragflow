@@ -42,7 +42,6 @@ export default {
       previousPage: 'Précédent',
       nextPage: 'Suivant',
       add: 'Ajouter',
-      arabic: 'Arabe',
       promptPlaceholder:
         'Veuillez saisir ou utilisez / pour insérer rapidement des variables.',
     },

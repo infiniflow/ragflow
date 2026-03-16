@@ -90,11 +90,11 @@ func (dao *UserDAO) List(offset, limit int) ([]*model.User, int64, error) {
 	var total int64
 
 	// Only count users with status != "0" (not deleted)
-	if err := DB.Model(&model.User{}).Where("status != ? OR status IS NULL", "0").Count(&total).Error; err != nil {
+	if err := DB.Model(&model.User{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	query := DB.Model(&model.User{}).Where("status != ? OR status IS NULL", "0")
+	query := DB.Model(&model.User{})
 	if offset > 0 {
 		query = query.Offset(offset)
 	}
@@ -113,6 +113,11 @@ func (dao *UserDAO) Delete(id uint) error {
 // DeleteByID delete user by string ID (soft delete - set status to 0)
 func (dao *UserDAO) DeleteByID(id string) error {
 	return DB.Model(&model.User{}).Where("id = ?", id).Update("status", "0").Error
+}
+
+// HardDelete hard delete user by string ID
+func (dao *UserDAO) HardDelete(id string) error {
+	return DB.Unscoped().Where("id = ?", id).Delete(&model.User{}).Error
 }
 
 // ListByEmail list users by email (only active users with status != "0")
