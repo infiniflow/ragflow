@@ -14,8 +14,11 @@
 #  limitations under the License.
 #
 import logging
+from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
 from quart import jsonify
+from quart_schema import DataSource, document_request, document_response, tag
 
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
@@ -28,93 +31,69 @@ from rag.app.tag import label_question
 from common.constants import RetCode, LLMType
 from common import settings
 
+
+class ErrorResponse(BaseModel):
+    code: int = Field(description="Response code.")
+    message: str = Field(description="Response message.")
+    data: Any | None = Field(default=None, description="Response payload.")
+
+
+class DifyRetrievalSetting(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    score_threshold: float | None = Field(default=0.0, description="Similarity threshold.")
+    top_k: int | None = Field(default=1024, description="Maximum number of records to return.")
+
+
+class DifyMetadataCondition(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    logic: str | None = Field(default=None, description="Condition join logic, for example `and` or `or`.")
+    conditions: list[dict[str, Any]] | None = Field(default=None, description="Metadata condition list.")
+
+
+class DifyRetrievalBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "knowledge_id": "dataset_id_123",
+                "query": "What does this dataset contain?",
+                "use_kg": False,
+                "retrieval_setting": {"score_threshold": 0.0, "top_k": 10},
+            }
+        },
+    )
+
+    knowledge_id: str = Field(description="Knowledge base (dataset) ID.")
+    query: str = Field(description="User query text.")
+    use_kg: bool | None = Field(default=False, description="Whether to include knowledge graph retrieval.")
+    retrieval_setting: DifyRetrievalSetting | None = Field(default=None, description="Retrieval configuration.")
+    metadata_condition: DifyMetadataCondition | dict[str, Any] | None = Field(default=None, description="Optional metadata filter condition.")
+
+
+class DifyRecord(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    content: str = Field(description="Retrieved content text.")
+    score: float | None = Field(default=None, description="Similarity score.")
+    title: str | None = Field(default=None, description="Document title.")
+    metadata: dict[str, Any] = Field(description="Record metadata.")
+
+
+class DifyRetrievalResponse(BaseModel):
+    records: list[DifyRecord] = Field(description="Retrieved records.")
+
+
 @manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
 @apikey_required
 @validate_request("knowledge_id", "query")
+@tag(["SDK Dify Retrieval"])
+@document_request(DifyRetrievalBody, source=DataSource.JSON)
+@document_response(DifyRetrievalResponse)
+@document_response(ErrorResponse, 404)
 async def retrieval(tenant_id):
-    """
-    Dify-compatible retrieval API
-    ---
-    tags:
-      - SDK
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: body
-        name: body
-        required: true
-        schema:
-          type: object
-          required:
-            - knowledge_id
-            - query
-          properties:
-            knowledge_id:
-              type: string
-              description: Knowledge base ID
-            query:
-              type: string
-              description: Query text
-            use_kg:
-              type: boolean
-              description: Whether to use knowledge graph
-              default: false
-            retrieval_setting:
-              type: object
-              description: Retrieval configuration
-              properties:
-                score_threshold:
-                  type: number
-                  description: Similarity threshold
-                  default: 0.0
-                top_k:
-                  type: integer
-                  description: Number of results to return
-                  default: 1024
-            metadata_condition:
-              type: object
-              description: Metadata filter condition
-              properties:
-                conditions:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      name:
-                        type: string
-                        description: Field name
-                      comparison_operator:
-                        type: string
-                        description: Comparison operator
-                      value:
-                        type: string
-                        description: Field value
-    responses:
-      200:
-        description: Retrieval succeeded
-        schema:
-          type: object
-          properties:
-            records:
-              type: array
-              items:
-                type: object
-                properties:
-                  content:
-                    type: string
-                    description: Content text
-                  score:
-                    type: number
-                    description: Similarity score
-                  title:
-                    type: string
-                    description: Document title
-                  metadata:
-                    type: object
-                    description: Metadata info
-      404:
-        description: Knowledge base or document not found
-    """
+    """Run a Dify-compatible retrieval request against a dataset."""
     req = await get_request_json()
     question = req["query"]
     kb_id = req["knowledge_id"]
