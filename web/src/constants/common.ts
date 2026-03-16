@@ -163,7 +163,7 @@ export enum FileMimeType {
   Mdx = 'text/markdown',
 }
 
-export const Domain = 'demo.ragflow.io';
+export const Domain = 'cloud.ragflow.io';
 
 //#region file preview
 export const Images = [
