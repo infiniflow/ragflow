@@ -45,7 +45,7 @@ export function ChunkMethodForm() {
 
   const finalParserId: DocumentParserType = useWatch({
     control: form.control,
-    name: 'chunk_method',
+    name: 'parser_id',
   });
 
   const ConfigurationComponent = useMemo(() => {

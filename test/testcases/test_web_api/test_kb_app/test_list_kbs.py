@@ -13,11 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import list_datasets
+from common import list_kbs
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from utils import is_sorted
@@ -33,7 +32,7 @@ class TestAuthorization:
         ],
     )
     def test_auth_invalid(self, invalid_auth, expected_code, expected_message):
-        res = list_datasets(invalid_auth)
+        res = list_kbs(invalid_auth)
         assert res["code"] == expected_code, res
         assert res["message"] == expected_message, res
 
@@ -43,7 +42,7 @@ class TestCapability:
     def test_concurrent_list(self, WebApiAuth):
         count = 100
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(list_datasets, WebApiAuth) for i in range(count)]
+            futures = [executor.submit(list_kbs, WebApiAuth) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
@@ -53,15 +52,15 @@ class TestCapability:
 class TestDatasetsList:
     @pytest.mark.p2
     def test_params_unset(self, WebApiAuth):
-        res = list_datasets(WebApiAuth, None)
+        res = list_kbs(WebApiAuth, None)
         assert res["code"] == 0, res
-        assert len(res["data"]) == 5, res
+        assert len(res["data"]["kbs"]) == 5, res
 
     @pytest.mark.p2
     def test_params_empty(self, WebApiAuth):
-        res = list_datasets(WebApiAuth, {})
+        res = list_kbs(WebApiAuth, {})
         assert res["code"] == 0, res
-        assert len(res["data"]) == 5, res
+        assert len(res["data"]["kbs"]) == 5, res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -76,9 +75,9 @@ class TestDatasetsList:
         ids=["normal_middle_page", "normal_last_partial_page", "beyond_max_page", "string_page_number", "full_data_single_page"],
     )
     def test_page(self, WebApiAuth, params, expected_page_size):
-        res = list_datasets(WebApiAuth, params)
+        res = list_kbs(WebApiAuth, params)
         assert res["code"] == 0, res
-        assert len(res["data"]) == expected_page_size, res
+        assert len(res["data"]["kbs"]) == expected_page_size, res
 
     @pytest.mark.skip
     @pytest.mark.p2
@@ -91,16 +90,16 @@ class TestDatasetsList:
         ids=["page_0", "page_a"],
     )
     def test_page_invalid(self, WebApiAuth, params, expected_code, expected_message):
-        res = list_datasets(WebApiAuth, params=params)
+        res = list_kbs(WebApiAuth, params=params)
         assert res["code"] == expected_code, res
         assert expected_message in res["message"], res
 
     @pytest.mark.p2
     def test_page_none(self, WebApiAuth):
         params = {"page": None}
-        res = list_datasets(WebApiAuth, params)
+        res = list_kbs(WebApiAuth, params)
         assert res["code"] == 0, res
-        assert len(res["data"]) == 5, res
+        assert len(res["data"]["kbs"]) == 5, res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -115,9 +114,9 @@ class TestDatasetsList:
         ids=["min_valid_page_size", "medium_page_size", "page_size_equals_total", "page_size_exceeds_total", "string_type_page_size"],
     )
     def test_page_size(self, WebApiAuth, params, expected_page_size):
-        res = list_datasets(WebApiAuth, params)
+        res = list_kbs(WebApiAuth, params)
         assert res["code"] == 0, res
-        assert len(res["data"]) == expected_page_size, res
+        assert len(res["data"]["kbs"]) == expected_page_size, res
 
     @pytest.mark.skip
     @pytest.mark.p2
@@ -129,27 +128,27 @@ class TestDatasetsList:
         ],
     )
     def test_page_size_invalid(self, WebApiAuth, params, expected_code, expected_message):
-        res = list_datasets(WebApiAuth, params)
+        res = list_kbs(WebApiAuth, params)
         assert res["code"] == expected_code, res
         assert expected_message in res["message"], res
 
     @pytest.mark.p2
     def test_page_size_none(self, WebApiAuth):
         params = {"page_size": None}
-        res = list_datasets(WebApiAuth, params)
+        res = list_kbs(WebApiAuth, params)
         assert res["code"] == 0, res
-        assert len(res["data"]) == 5, res
+        assert len(res["data"]["kbs"]) == 5, res
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, assertions",
         [
-            ({"orderby": "update_time"}, lambda r: (is_sorted(r["data"], "update_time", True))),
+            ({"orderby": "update_time"}, lambda r: (is_sorted(r["data"]["kbs"], "update_time", True))),
         ],
         ids=["orderby_update_time"],
     )
     def test_orderby(self, WebApiAuth, params, assertions):
-        res = list_datasets(WebApiAuth, params)
+        res = list_kbs(WebApiAuth, params)
         assert res["code"] == 0, res
         if callable(assertions):
             assert assertions(res), res
@@ -158,13 +157,13 @@ class TestDatasetsList:
     @pytest.mark.parametrize(
         "params, assertions",
         [
-            ({"desc": "True"}, lambda r: (is_sorted(r["data"], "update_time", True))),
-            ({"desc": "False"}, lambda r: (is_sorted(r["data"], "update_time", False))),
+            ({"desc": "True"}, lambda r: (is_sorted(r["data"]["kbs"], "update_time", True))),
+            ({"desc": "False"}, lambda r: (is_sorted(r["data"]["kbs"], "update_time", False))),
         ],
         ids=["desc=True", "desc=False"],
     )
     def test_desc(self, WebApiAuth, params, assertions):
-        res = list_datasets(WebApiAuth, params)
+        res = list_kbs(WebApiAuth, params)
 
         assert res["code"] == 0, res
         if callable(assertions):
@@ -174,28 +173,29 @@ class TestDatasetsList:
     @pytest.mark.parametrize(
         "params, expected_page_size",
         [
-            ({"ext": json.dumps({"parser_id": "naive"})}, 5),
-            ({"ext": json.dumps({"parser_id": "qa"})}, 0),
+            ({"parser_id": "naive"}, 5),
+            ({"parser_id": "qa"}, 0),
         ],
         ids=["naive", "dqa"],
     )
     def test_parser_id(self, WebApiAuth, params, expected_page_size):
-        res = list_datasets(WebApiAuth, params)
+        res = list_kbs(WebApiAuth, params)
         assert res["code"] == 0, res
-        assert len(res["data"]) == expected_page_size, res
+        assert len(res["data"]["kbs"]) == expected_page_size, res
 
     @pytest.mark.p2
     def test_owner_ids_payload_mode(self, WebApiAuth):
-        base_res = list_datasets(WebApiAuth, {"page_size": 10})
+        base_res = list_kbs(WebApiAuth, {"page_size": 10})
         assert base_res["code"] == 0, base_res
-        assert base_res["data"], base_res
-        owner_id = base_res["data"][0]["tenant_id"]
+        assert base_res["data"]["kbs"], base_res
+        owner_id = base_res["data"]["kbs"][0]["tenant_id"]
 
-        res = list_datasets(
+        res = list_kbs(
             WebApiAuth,
-            params={"page": 1, "page_size": 2, "desc": "false", "ext": json.dumps({"owner_ids": [owner_id]})},
+            params={"page": 1, "page_size": 2, "desc": "false"},
+            payload={"owner_ids": [owner_id]},
         )
         assert res["code"] == 0, res
-        assert res["total_datasets"] >= len(res["data"]), res
-        assert len(res["data"]) <= 2, res
-        assert all(kb["tenant_id"] == owner_id for kb in res["data"]), res
+        assert res["data"]["total"] >= len(res["data"]["kbs"]), res
+        assert len(res["data"]["kbs"]) <= 2, res
+        assert all(kb["tenant_id"] == owner_id for kb in res["data"]["kbs"]), res
