@@ -20,7 +20,7 @@ from types import ModuleType, SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import list_kbs, upload_documents
+from common import list_datasets, upload_documents
 from configs import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from utils.file_utils import create_txt_file
@@ -172,8 +172,8 @@ class TestDocumentsUpload:
         res = upload_documents(WebApiAuth, {"kb_id": kb_id}, fps)
         assert res["code"] == 0, res
 
-        res = list_kbs(WebApiAuth)
-        assert res["data"]["kbs"][0]["doc_num"] == expected_document_count, res
+        res = list_datasets(WebApiAuth)
+        assert res["data"][0]["document_count"] == expected_document_count, res
 
     @pytest.mark.p3
     def test_concurrent_upload(self, WebApiAuth, add_dataset_func, tmp_path):
@@ -191,8 +191,8 @@ class TestDocumentsUpload:
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures), responses
 
-        res = list_kbs(WebApiAuth)
-        assert res["data"]["kbs"][0]["doc_num"] == count, res
+        res = list_datasets(WebApiAuth)
+        assert res["data"][0]["document_count"] == count, res
 
 
 class _AwaitableValue:
