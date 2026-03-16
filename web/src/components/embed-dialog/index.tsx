@@ -17,7 +17,6 @@ import {
 } from '@/components/ui/form';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Switch } from '@/components/ui/switch';
 import { SharedFrom } from '@/constants/chat';
 import {
   LanguageAbbreviation,
@@ -39,12 +38,13 @@ import {
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { z } from 'zod';
 import { RAGFlowFormItem } from '../ragflow-form';
+import { SwitchFormField } from '../switch-fom-field';
 import { useIsDarkTheme } from '../theme-provider';
 import { Input } from '../ui/input';
 
 const FormSchema = z.object({
   visibleAvatar: z.boolean(),
-  publishAvatar: z.boolean(),
+  published: z.boolean(),
   locale: z.string(),
   embedType: z.enum(['fullscreen', 'widget']),
   enableStreaming: z.boolean(),
@@ -74,7 +74,7 @@ function EmbedDialog({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       visibleAvatar: false,
-      publishAvatar: false,
+      published: false,
       locale: '',
       embedType: 'fullscreen' as const,
       enableStreaming: false,
@@ -94,7 +94,7 @@ function EmbedDialog({
   const generateIframeSrc = useCallback(() => {
     const {
       visibleAvatar,
-      publishAvatar,
+      published,
       locale,
       embedType,
       enableStreaming,
@@ -113,7 +113,7 @@ function EmbedDialog({
     src.searchParams.append('from', from);
     src.searchParams.append('auth', beta);
 
-    if (publishAvatar) {
+    if (published) {
       src.searchParams.append('release', 'true');
     }
     if (visibleAvatar) {
@@ -194,7 +194,7 @@ window.addEventListener('message',e=>{
                 name="embedType"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Embed Type</FormLabel>
+                    <FormLabel>{t('chat.embedType')}</FormLabel>
                     <FormControl>
                       <RadioGroup
                         onValueChange={field.onChange}
@@ -204,13 +204,13 @@ window.addEventListener('message',e=>{
                         <div className="flex items-center space-x-2">
                           <RadioGroupItem value="fullscreen" id="fullscreen" />
                           <Label htmlFor="fullscreen" className="text-sm">
-                            Fullscreen Chat (Traditional iframe)
+                            {t('chat.fullscreenChat')}
                           </Label>
                         </div>
                         <div className="flex items-center space-x-2">
                           <RadioGroupItem value="widget" id="widget" />
                           <Label htmlFor="widget" className="text-sm">
-                            Floating Widget (Intercom-style)
+                            {t('chat.floatingWidget')}
                           </Label>
                         </div>
                       </RadioGroup>
@@ -225,7 +225,7 @@ window.addEventListener('message',e=>{
                   name="theme"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Theme</FormLabel>
+                      <FormLabel>{t('chat.theme')}</FormLabel>
                       <FormControl>
                         <RadioGroup
                           onValueChange={field.onChange}
@@ -238,13 +238,13 @@ window.addEventListener('message',e=>{
                               id="light"
                             />
                             <Label htmlFor="light" className="text-sm">
-                              Light
+                              {t('chat.light')}
                             </Label>
                           </div>
                           <div className="flex items-center space-x-2">
                             <RadioGroupItem value={ThemeEnum.Dark} id="dark" />
                             <Label htmlFor="dark" className="text-sm">
-                              Dark
+                              {t('chat.dark')}
                             </Label>
                           </div>
                         </RadioGroup>
@@ -254,72 +254,26 @@ window.addEventListener('message',e=>{
                   )}
                 />
               )}
-              <FormField
-                control={form.control}
+              <SwitchFormField
                 name="visibleAvatar"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('chat.avatarHidden')}</FormLabel>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      ></Switch>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="publishAvatar"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Publish Avatar</FormLabel>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      ></Switch>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              {values.embedType === 'widget' && (
-                <FormField
-                  control={form.control}
-                  name="enableStreaming"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Enable Streaming Responses</FormLabel>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        ></Switch>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                label={t('chat.avatarHidden')}
+              ></SwitchFormField>
+              {isAgent && (
+                <SwitchFormField
+                  name="published"
+                  label={t('chat.published')}
+                  tooltip={t('chat.publishedTooltip')}
+                ></SwitchFormField>
               )}
-              <FormField
-                control={form.control}
-                name="locale"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('chat.locale')}</FormLabel>
-                    <FormControl>
-                      <SelectWithSearch
-                        {...field}
-                        options={languageOptions}
-                      ></SelectWithSearch>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {values.embedType === 'widget' && (
+                <SwitchFormField
+                  name="enableStreaming"
+                  label={t('chat.enableStreaming')}
+                ></SwitchFormField>
+              )}
+              <RAGFlowFormItem name="locale" label={t('chat.locale')}>
+                <SelectWithSearch options={languageOptions}></SelectWithSearch>
+              </RAGFlowFormItem>
               <RAGFlowFormItem name="userId" label={t('flow.userId')}>
                 <Input></Input>
               </RAGFlowFormItem>
