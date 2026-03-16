@@ -875,6 +875,16 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       created: 'Created',
       action: 'Action',
       embedModalTitle: 'Embed into webpage',
+      published: 'Published',
+      publishedTooltip:
+        'Use the published version for this embed. When enabled, the generated URL includes release=true.',
+      embedType: 'Embed type',
+      fullscreenChat: 'Fullscreen chat (traditional iframe)',
+      floatingWidget: 'Floating widget (Intercom-style)',
+      theme: 'Theme',
+      light: 'Light',
+      dark: 'Dark',
+      enableStreaming: 'Enable streaming responses',
       comingSoon: 'Coming soon',
       fullScreenTitle: 'Full embed',
       fullScreenDescription:
