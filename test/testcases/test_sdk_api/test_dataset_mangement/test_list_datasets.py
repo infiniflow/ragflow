@@ -22,7 +22,7 @@ from ragflow_sdk import RAGFlow
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
@@ -54,7 +54,7 @@ class TestCapability:
 
 @pytest.mark.usefixtures("add_datasets")
 class TestDatasetsList:
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_params_unset(self, client):
         datasets = client.list_datasets()
         assert len(datasets) == 5, str(datasets)
@@ -135,7 +135,7 @@ class TestDatasetsList:
             client.list_datasets(**params)
         assert "not instance of" in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params",
         [
@@ -171,7 +171,7 @@ class TestDatasetsList:
             client.list_datasets(**params)
         assert "not instance of" in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params",
         [
@@ -306,7 +306,7 @@ class TestDatasetsList:
             client.list_datasets(**params)
         assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_field_unsupported(self, client):
         params = {"unknown_field": "unknown_field"}
         with pytest.raises(Exception) as exception_info:

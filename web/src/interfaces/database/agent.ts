@@ -256,6 +256,7 @@ export interface IAgentLogResponse {
   user_id: string;
   dsl: string;
   reference: IReference;
+  name: string;
 }
 export interface IAgentLogsResponse {
   total: number;
@@ -269,6 +270,7 @@ export interface IAgentLogsRequest {
   desc?: boolean;
   page?: number;
   page_size?: number;
+  exp_user_id?: string; // tenant id
 }
 
 export interface IAgentLogMessage {

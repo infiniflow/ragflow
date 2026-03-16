@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { VariableRegex } from '../../constant';
 
 interface VariableDisplayProps {
   content: string;
@@ -7,7 +8,9 @@ interface VariableDisplayProps {
 
 // This component mimics the VariableNode's decorate function from PromptEditor
 function VariableNodeDisplay({ label }: { label: ReactNode }) {
-  let content: ReactNode = <span className="text-accent-primary">{label}</span>;
+  const content: ReactNode = (
+    <span className="text-accent-primary">{label}</span>
+  );
 
   return <div className="inline-flex items-center mr-1">{content}</div>;
 }
@@ -16,7 +19,7 @@ export function VariableDisplay({ content, getLabel }: VariableDisplayProps) {
   if (!content) return null;
 
   // Regular expression to match content within {}
-  const regex = /{([^}]*)}/g;
+  const regex = VariableRegex;
   let match;
   let lastIndex = 0;
   const elements: ReactNode[] = [];

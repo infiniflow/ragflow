@@ -1,8 +1,10 @@
 ---
 sidebar_position: 8
 slug: /construct_knowledge_graph
+sidebar_custom_props: {
+  categoryIcon: LucideWandSparkles
+}
 ---
-
 # Construct knowledge graph
 
 Generate a knowledge graph for your dataset.

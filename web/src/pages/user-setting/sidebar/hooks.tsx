@@ -1,7 +1,7 @@
 import { useLogout } from '@/hooks/use-login-request';
 import { Routes } from '@/routes';
 import { useCallback, useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'umi';
+import { useLocation, useNavigate } from 'react-router';
 
 export const useHandleMenuClick = () => {
   const navigate = useNavigate();

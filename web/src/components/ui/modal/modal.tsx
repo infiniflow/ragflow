@@ -4,6 +4,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Loader, X } from 'lucide-react';
 import { FC, ReactNode, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { DialogDescription } from '../dialog';
 import { createPortalModal } from './modal-manage';
 
 export interface ModalProps {
@@ -184,6 +185,7 @@ const Modal: ModalType = ({
             style={style}
             onClick={(e) => e.stopPropagation()}
           >
+            <DialogDescription></DialogDescription>
             {/* title */}
             {title && (
               <div

@@ -101,7 +101,6 @@ export const RAGFlowAvatar = memo(
           }}
           className={cn(
             'bg-gradient-to-b',
-            `from-[${from}] to-[${to}]`,
             'flex items-center justify-center',
             'text-white ',
             { 'rounded-md': !isPerson },

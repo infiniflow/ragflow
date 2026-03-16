@@ -25,8 +25,7 @@ def add_sessions_with_chat_assistant(request: FixtureRequest, add_chat_assistant
         for chat_assistant in chat_assistants:
             try:
                 chat_assistant.delete_sessions(ids=None)
-            except Exception as e:
-                print(f"Exception: {e}")
+            except Exception :
                 pass
 
     request.addfinalizer(cleanup)
@@ -41,8 +40,8 @@ def add_sessions_with_chat_assistant_func(request: FixtureRequest, add_chat_assi
         for chat_assistant in chat_assistants:
             try:
                 chat_assistant.delete_sessions(ids=None)
-            except Exception as e:
-                print(f"Exception: {e}")
+            except Exception :
+                pass
 
     request.addfinalizer(cleanup)
 

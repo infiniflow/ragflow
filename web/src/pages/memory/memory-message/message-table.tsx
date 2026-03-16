@@ -16,24 +16,40 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { RunningStatus } from '@/constants/knowledge';
 import { Pagination } from '@/interfaces/common';
-import { replaceText } from '@/pages/dataset/process-log-modal';
+import { cn } from '@/lib/utils';
+import ProcessLogModal, {
+  ILogInfo,
+  replaceText,
+} from '@/pages/dataset/process-log-modal';
 import { MemoryOptions } from '@/pages/memories/constants';
 import {
   ColumnDef,
   ColumnFiltersState,
+  ExpandedState,
+  Row,
   SortingState,
   VisibilityState,
+  createColumnHelper,
   flexRender,
   getCoreRowModel,
+  getExpandedRowModel,
   getFilteredRowModel,
   getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
+import dayjs from 'dayjs';
 import { t } from 'i18next';
 import { pick } from 'lodash';
-import { Copy, Eraser, TextSelect } from 'lucide-react';
+import {
+  Copy,
+  Eraser,
+  ListChevronsDownUp,
+  ListChevronsUpDown,
+  TextSelect,
+} from 'lucide-react';
 import * as React from 'react';
 import { useMemo, useState } from 'react';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
@@ -46,6 +62,18 @@ export type MemoryTableProps = {
   pagination: Pagination;
   setPagination: (params: { page: number; pageSize: number }) => void;
 };
+
+const columnHelper = createColumnHelper<IMessageInfo>();
+
+function getTaskStatus(progress: number) {
+  if (progress >= 1) {
+    return RunningStatus.DONE;
+  } else if (progress > 0 && progress < 1) {
+    return RunningStatus.RUNNING;
+  } else {
+    return RunningStatus.FAIL;
+  }
+}
 
 export function MemoryTable({
   messages,
@@ -74,15 +102,70 @@ export function MemoryTable({
     handleClickMessageContentDialog,
   } = useMessageAction();
 
+  const disabledRowFunc = (row: Row<IMessageInfo>) => {
+    return row.original.forget_at !== 'None' && !!row.original.forget_at;
+  };
+
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [logInfo, setLogInfo] = useState<ILogInfo>();
+  const showLog = (row: Row<IMessageInfo>) => {
+    const task = row.original.task;
+    const logDetail = {
+      startTime: dayjs(task.create_time)
+        .locale(document.documentElement.lang)
+        .format('MM/DD/YYYY HH:mm:ss'),
+      status: getTaskStatus(task.progress),
+      details: task.progress_msg,
+    } as unknown as ILogInfo;
+    setLogInfo(logDetail);
+    setIsModalVisible(true);
+  };
   // Define columns for the memory table
   const columns: ColumnDef<IMessageInfo>[] = useMemo(
     () => [
       {
         accessorKey: 'session_id',
-        header: () => <span>{t('memory.messages.sessionId')}</span>,
+        header: ({ table }) => (
+          <div className="flex items-center gap-1">
+            <button
+              {...{
+                onClick: table.getToggleAllRowsExpandedHandler(),
+              }}
+            >
+              {table.getIsAllRowsExpanded() ? (
+                <ListChevronsDownUp size={16} />
+              ) : (
+                <ListChevronsUpDown size={16} />
+              )}
+            </button>{' '}
+            <span>{t('memory.messages.sessionId')}</span>
+          </div>
+        ),
         cell: ({ row }) => (
-          <div className="text-sm font-medium ">
-            {row.getValue('session_id')}
+          <div className="flex items-center gap-1">
+            {row.getCanExpand() ? (
+              <button
+                {...{
+                  onClick: row.getToggleExpandedHandler(),
+                  style: { cursor: 'pointer' },
+                }}
+              >
+                {row.getIsExpanded() ? (
+                  <ListChevronsDownUp size={16} />
+                ) : (
+                  <ListChevronsUpDown size={16} />
+                )}
+              </button>
+            ) : (
+              ''
+            )}
+            <div
+              className={cn('text-sm font-medium', {
+                'pl-5': !row.getCanExpand(),
+              })}
+            >
+              {row.getValue('session_id')}
+            </div>
           </div>
         ),
       },
@@ -138,6 +221,7 @@ export function MemoryTable({
           return (
             <div className="flex items-center">
               <Switch
+                disabled={disabledRowFunc(row)}
                 defaultChecked={isEnabled}
                 onCheckedChange={(val) => {
                   handleClickUpdateMessageState(row.original, val);
@@ -147,6 +231,37 @@ export function MemoryTable({
           );
         },
       },
+      columnHelper.display({
+        id: 'task_progress',
+        cell: ({ row }) => {
+          const { task } = row.original;
+
+          if (!task) {
+            return null;
+          }
+
+          const taskStatus = getTaskStatus(task.progress);
+
+          return (
+            <Button
+              variant="transparent"
+              size="icon"
+              className="border-0 size-8"
+              onClick={() => {
+                showLog(row);
+              }}
+            >
+              <div
+                className={cn('size-1 rounded-full', {
+                  'bg-state-success': taskStatus === RunningStatus.DONE,
+                  'bg-state-error': taskStatus === RunningStatus.FAIL,
+                  'bg-state-warning': taskStatus === RunningStatus.RUNNING,
+                })}
+              />
+            </Button>
+          );
+        },
+      }),
       {
         accessorKey: 'action',
         header: () => <span>{t('memory.messages.action')}</span>,
@@ -166,6 +281,7 @@ export function MemoryTable({
             </Button>
             <Button
               variant={'delete'}
+              disabled={disabledRowFunc(row)}
               className="bg-transparent"
               aria-label="Edit"
               onClick={() => {
@@ -187,15 +303,18 @@ export function MemoryTable({
       pageSize: pagination.pageSize || 10,
     };
   }, [pagination]);
-
+  const [expanded, setExpanded] = React.useState<ExpandedState>({});
   const table = useReactTable({
     data: messages,
     columns,
+    onExpandedChange: setExpanded,
+    getSubRows: (row) => (row.extract as IMessageInfo[]) || undefined,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     manualPagination: true,
@@ -204,13 +323,14 @@ export function MemoryTable({
       columnFilters,
       columnVisibility,
       pagination: currentPagination,
+      expanded,
     },
     rowCount: total,
   });
 
   return (
     <div className="w-full">
-      <Table rootClassName="max-h-[calc(100vh-282px)]">
+      <Table rootClassName="max-h-[calc(100vh-292px)]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -233,7 +353,9 @@ export function MemoryTable({
               <TableRow
                 key={row.id}
                 data-state={row.getIsSelected() && 'selected'}
-                className="group"
+                className={cn('group', {
+                  'bg-bg-list/5': !row.getCanExpand(),
+                })}
               >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id}>
@@ -257,7 +379,7 @@ export function MemoryTable({
           title={t('memory.messages.forgetMessage')}
           open={showDeleteDialog}
           onOpenChange={setShowDeleteDialog}
-          okButtonText={t('common.confirm')}
+          okButtonText={t('memory.messages.forget')}
           content={{
             title: t('memory.messages.forgetMessageTip'),
             node: (
@@ -331,6 +453,16 @@ export function MemoryTable({
             )}
           </div>
         </Modal>
+      )}
+
+      {isModalVisible && (
+        <ProcessLogModal
+          title={t('memory.taskLogDialog.title')}
+          visible={isModalVisible}
+          onCancel={() => setIsModalVisible(false)}
+          translateKey="memory.taskLogDialog"
+          logInfo={logInfo as unknown as ILogInfo}
+        />
       )}
 
       <div className="flex items-center justify-end  absolute bottom-3 right-3">

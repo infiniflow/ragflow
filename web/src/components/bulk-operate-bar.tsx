@@ -60,8 +60,12 @@ export function BulkOperateBar({
                 }}
               >
                 <Button
-                  variant={'ghost'}
+                  variant={!isDeleteItem(x.id) ? 'ghost' : 'delete'}
                   onClick={isDeleteItem(x.id) ? () => {} : x.onClick}
+                  className={cn({
+                    ['text-state-error border border-state-error bg-state-error/5']:
+                      isDeleteItem(x.id),
+                  })}
                 >
                   {x.icon} {x.label}
                 </Button>

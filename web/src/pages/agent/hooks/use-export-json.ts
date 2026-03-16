@@ -1,5 +1,6 @@
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { downloadJsonFile } from '@/utils/file-util';
+import { pick } from 'lodash';
 import { useCallback } from 'react';
 import { useBuildDslData } from './use-build-dsl';
 
@@ -8,7 +9,8 @@ export const useHandleExportJsonFile = () => {
   const { data } = useFetchAgent();
 
   const handleExportJson = useCallback(() => {
-    downloadJsonFile(buildDslData().graph, `${data.title}.json`);
+    const dsl = pick(buildDslData(), ['graph', 'globals', 'variables']);
+    downloadJsonFile(dsl, `${data.title}.json`);
   }, [buildDslData, data.title]);
 
   return {

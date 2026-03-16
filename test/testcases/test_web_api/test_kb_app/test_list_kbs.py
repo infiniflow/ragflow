@@ -23,7 +23,7 @@ from utils import is_sorted
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
@@ -50,7 +50,7 @@ class TestCapability:
 
 @pytest.mark.usefixtures("add_datasets")
 class TestDatasetsList:
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_params_unset(self, WebApiAuth):
         res = list_kbs(WebApiAuth, None)
         assert res["code"] == 0, res
@@ -139,7 +139,7 @@ class TestDatasetsList:
         assert res["code"] == 0, res
         assert len(res["data"]["kbs"]) == 5, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, assertions",
         [
@@ -153,7 +153,7 @@ class TestDatasetsList:
         if callable(assertions):
             assert assertions(res), res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, assertions",
         [

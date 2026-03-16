@@ -5,7 +5,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
-import { useNavigate } from 'umi';
+import { useNavigate } from 'react-router';
 import { useSelectBreadcrumbItems } from './use-navigate-to-folder';
 
 export function FileBreadcrumb() {

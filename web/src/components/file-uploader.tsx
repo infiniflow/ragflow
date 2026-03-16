@@ -92,8 +92,10 @@ function FileCard({ file, progress, onRemove }: FileCardProps) {
   );
 }
 
-interface FileUploaderProps
-  extends Omit<React.HTMLAttributes<HTMLDivElement>, 'title'> {
+interface FileUploaderProps extends Omit<
+  React.HTMLAttributes<HTMLDivElement>,
+  'title'
+> {
   /**
    * Value of the uploader.
    * @type File[]

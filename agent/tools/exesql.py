@@ -53,7 +53,7 @@ class ExeSQLParam(ToolParamBase):
         self.max_records = 1024
 
     def check(self):
-        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgres', 'mariadb', 'mssql', 'IBM DB2', 'trino'])
+        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgres', 'mariadb', 'mssql', 'IBM DB2', 'trino', 'oceanbase'])
         self.check_empty(self.database, "Database name")
         self.check_empty(self.username, "database username")
         self.check_empty(self.host, "IP Address")
@@ -86,6 +86,12 @@ class ExeSQL(ToolBase, ABC):
 
         def convert_decimals(obj):
             from decimal import Decimal
+            import math
+            if isinstance(obj, float):
+                # Handle NaN and Infinity which are not valid JSON values
+                if math.isnan(obj) or math.isinf(obj):
+                    return None
+                return obj
             if isinstance(obj, Decimal):
                 return float(obj)  # 或 str(obj)
             elif isinstance(obj, dict):
@@ -120,6 +126,9 @@ class ExeSQL(ToolBase, ABC):
         if self._param.db_type in ["mysql", "mariadb"]:
             db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
                                  port=self._param.port, password=self._param.password)
+        elif self._param.db_type == 'oceanbase':
+            db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
+                                 port=self._param.port, password=self._param.password, charset='utf8mb4')
         elif self._param.db_type == 'postgres':
             db = psycopg2.connect(dbname=self._param.database, user=self._param.username, host=self._param.host,
                                   port=self._param.port, password=self._param.password)

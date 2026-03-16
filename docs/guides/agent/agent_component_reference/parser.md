@@ -1,8 +1,10 @@
 ---
 sidebar_position: 30
 slug: /parser_component
+sidebar_custom_props: {
+  categoryIcon: LucideFilePlay
+}
 ---
-
 # Parser component
 
 A component that sets the parsing rules for your dataset.

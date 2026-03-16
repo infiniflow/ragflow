@@ -9,6 +9,7 @@ import {
 import { RunningStatusMap } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import React, { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
 import { RunningStatus } from './dataset/constant';
 export interface ILogInfo {
@@ -35,6 +36,7 @@ interface ProcessLogModalProps {
   onCancel: () => void;
   logInfo: ILogInfo;
   title: string;
+  translateKey?: string;
 }
 
 const InfoItem: React.FC<{
@@ -85,8 +87,10 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
   onCancel,
   logInfo: initData,
   title,
+  translateKey,
 }) => {
-  const { t } = useTranslate('knowledgeDetails');
+  const { t } = useTranslate(translateKey || 'knowledgeDetails');
+  const { t: tc } = useTranslation();
   const blackKeyList = [''];
   const logInfo = useMemo(() => {
     return initData;
@@ -99,7 +103,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
       onCancel={onCancel}
       footer={
         <div className="flex justify-end">
-          <Button onClick={onCancel}>{t('close')}</Button>
+          <Button onClick={onCancel}>{tc('common.close')}</Button>
         </div>
       }
       className="process-log-modal"

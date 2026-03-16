@@ -16,14 +16,15 @@ import {
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import kbService, { listDocument } from '@/services/knowledge-service';
-import api, { api_host } from '@/utils/api';
+import api, { api_host, ExternalApi } from '@/utils/api';
+import { getSearchValue } from '@/utils/common-util';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { get } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -94,8 +95,10 @@ export const useFetchDocumentList = () => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { id } = useParams();
+  const queryClient = useQueryClient();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const { filterValue, handleFilterSubmit, checkValue } =
+    useHandleFilterSubmit();
   const [docs, setDocs] = useState<IDocumentInfo[]>([]);
   const isLoop = useMemo(() => {
     return docs.some((doc) => doc.run === '1');
@@ -144,6 +147,9 @@ export const useFetchDocumentList = () => {
         },
       );
       if (ret.data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: [DocumentApiAction.FetchDocumentFilter],
+        });
         return ret.data.data;
       }
 
@@ -173,6 +179,7 @@ export const useFetchDocumentList = () => {
     setPagination,
     filterValue,
     handleFilterSubmit,
+    checkValue,
   };
 };
 
@@ -191,7 +198,6 @@ export const useGetDocumentFilter = (): {
       DocumentApiAction.FetchDocumentFilter,
       debouncedSearchString,
       knowledgeId,
-      open,
     ],
     queryFn: async () => {
       const { data } = await kbService.documentFilter({
@@ -459,11 +465,14 @@ export const useCreateDocument = () => {
 };
 
 export const useGetDocumentUrl = (documentId?: string) => {
+  const auth = getSearchValue('auth');
   const getDocumentUrl = useCallback(
     (id?: string) => {
-      return `${api_host}/document/get/${documentId || id}`;
+      return auth
+        ? `${ExternalApi}/v1/documents/${documentId || id}`
+        : `${api_host}/document/get/${documentId || id}`;
     },
-    [documentId],
+    [documentId, auth],
   );
 
   return getDocumentUrl;

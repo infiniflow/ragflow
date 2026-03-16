@@ -1,7 +1,7 @@
 import message from '@/components/ui/message';
 import authorizationUtil from '@/utils/authorization-util';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'umi';
+import { useNavigate, useSearchParams } from 'react-router';
 
 export const useOAuthCallback = () => {
   const [currentQueryParameters, setSearchParams] = useSearchParams();

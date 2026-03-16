@@ -30,7 +30,7 @@ from common.time_utils import date_string_to_timestamp
 @singleton
 class InfinityConnection(InfinityConnectionBase):
     def __init__(self):
-        super().__init__(mapping_file_name="message_infinity_mapping.json")
+        super().__init__(mapping_file_name="message_infinity_mapping.json", table_name_prefix="memory_")
 
     """
     Dataframe and fields convert
@@ -279,6 +279,36 @@ class InfinityConnection(InfinityConnectionBase):
         condition = {"memory_id": memory_id, "exists": "forget_at_flt"}
         order_by = OrderByExpr()
         order_by.asc("forget_at_flt")
+        # query
+        inf_conn = self.connPool.get_conn()
+        db_instance = inf_conn.get_database(self.dbName)
+        table_name = f"{index_name}_{memory_id}"
+        table_instance = db_instance.get_table(table_name)
+        column_name_list = [r[0] for r in table_instance.show_columns().rows()]
+        output_fields = [self.convert_message_field_to_infinity(f, column_name_list) for f in select_fields]
+        builder = table_instance.output(output_fields)
+        filter_cond = self.equivalent_condition_to_str(condition, db_instance.get_table(table_name))
+        builder.filter(filter_cond)
+        order_by_expr_list = list()
+        if order_by.fields:
+            for order_field in order_by.fields:
+                order_field_name = self.convert_condition_and_order_field(order_field[0])
+                if order_field[1] == 0:
+                    order_by_expr_list.append((order_field_name, SortType.Asc))
+                else:
+                    order_by_expr_list.append((order_field_name, SortType.Desc))
+        builder.sort(order_by_expr_list)
+        builder.offset(0).limit(limit)
+        mem_res, _ = builder.option({"total_hits_count": True}).to_df()
+        res = self.concat_dataframes(mem_res, output_fields)
+        res.head(limit)
+        self.connPool.release_conn(inf_conn)
+        return res
+
+    def get_missing_field_message(self, select_fields: list[str], index_name: str, memory_id: str, field_name: str, limit: int=512):
+        condition = {"memory_id": memory_id, "must_not": {"exists": field_name}}
+        order_by = OrderByExpr()
+        order_by.asc("valid_at_flt")
         # query
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
