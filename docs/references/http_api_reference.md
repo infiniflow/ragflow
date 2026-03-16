@@ -2005,6 +2005,7 @@ Adds a chunk to a specified document in a specified dataset.
 - Body:
   - `"content"`: `string`
   - `"important_keywords"`: `list[string]`
+  - `"image_base64"`: `string`
 
 ##### Request example
 
@@ -2015,22 +2016,25 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {
-          "content": "<CHUNK_CONTENT_HERE>"
+          "content": "<CHUNK_CONTENT_HERE>",
+          "image_base64": "<BASE64_ENCODED_IMAGE>"
      }'
 ```
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `document_ids`: (*Path parameter*)  
+- `document_ids`: (*Path parameter*)
   The associated document ID.
-- `"content"`: (*Body parameter*), `string`, *Required*  
+- `"content"`: (*Body parameter*), `string`, *Required*
   The text content of the chunk.
-- `"important_keywords`(*Body parameter*), `list[string]`  
+- `"important_keywords`(*Body parameter*), `list[string]`
   The key terms or phrases to tag with the chunk.
 - `"questions"`(*Body parameter*), `list[string]`
   If there is a given question, the embedded chunks will be based on them
+- `"image_base64"`: (*Body parameter*), `string`
+  A base64-encoded image to associate with the chunk. If the chunk already has an image, the new image will be vertically concatenated below the existing one.
 
 #### Response
 
@@ -2047,6 +2051,7 @@ Success:
             "dataset_id": "72f36e1ebdf411efb7250242ac120006",
             "document_id": "61d68474be0111ef98dd0242ac120006",
             "id": "12ccdc56e59837e5",
+            "image_id": "",
             "important_keywords": [],
             "questions": []
         }
