@@ -26,6 +26,7 @@ env:
   REGISTER_ENABLED: 0
   # The password for Elasticsearch
   ELASTIC_PASSWORD: infini_rag_flow_helm
+  ES_HOST: "kira-ragflow-es.kira.svc.cluster.local"
 
   # The password for OpenSearch.
   # At least one uppercase letter, one lowercase letter, one digit, and one special character
@@ -36,7 +37,7 @@ env:
   # The database of the MySQL service to use
   MYSQL_DBNAME: rag_flow
   # External MySQL host (only required when mysql.enabled=false)
-  # MYSQL_HOST: ""
+  MYSQL_HOST: "kira-ragflow-mysql.kira.svc.cluster.local"
   # External MySQL port (defaults to 3306 if not set)
   # MYSQL_PORT: "3306"
   # External MySQL user (only when mysql.enabled=false), default is root if omitted
@@ -47,14 +48,14 @@ env:
   # The password for MinIO
   MINIO_PASSWORD: infini_rag_flow_helm
   # External MinIO host
-  # MINIO_HOST: ""
+  MINIO_HOST: "kira-ragflow-minio.kira.svc.cluster.local"
   # External MinIO port (defaults to 9000 if not set)
   # MINIO_PORT: "9000"
 
   # The password for Redis
   REDIS_PASSWORD: infini_rag_flow_helm
   # External Redis host (only required when redis.enabled=false)
-  # REDIS_HOST: ""
+  REDIS_HOST: "kira-ragflow-redis-svc.kira.svc.cluster.local"
   # External Redis port (defaults to 6379 if not set)
   # REDIS_PORT: "6379"
 
@@ -109,7 +110,15 @@ ragflow:
     resources:
   service:
     # Use LoadBalancer to expose the web interface externally
-    type: ClusterIP
+    type: LoadBalancer
+    # DigitalOcean LoadBalancer annotations
+    # Ref: https://github.com/digitalocean/digitalocean-cloud-controller-manager/blob/master/docs/controllers/services/examples/README.md
+    annotations:
+      service.beta.kubernetes.io/do-loadbalancer-size-unit: "1"
+      # service.beta.kubernetes.io/do-loadbalancer-protocol: "http"
+      # service.beta.kubernetes.io/do-loadbalancer-algorithm: "round_robin"
+      # service.beta.kubernetes.io/do-loadbalancer-health-check-port: "80"
+    loadBalancerSourceRanges: []
   admin:
     # Enable Admin Service
     enabled: true
@@ -159,8 +168,11 @@ elasticsearch:
     strategy:
     resources:
       requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
         cpu: "4"
-        memory: "16Gi"
+        memory: "8Gi"
   service:
     type: ClusterIP
 
@@ -211,11 +223,11 @@ mysql:
   enabled: true
   image:
     repository: mysql
-    tag: latest
+    tag: 9
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:
-    className:
+    className: "do-block-storage"
     capacity: 5Gi
   deployment:
     strategy:
