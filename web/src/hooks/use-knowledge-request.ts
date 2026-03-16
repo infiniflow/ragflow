@@ -18,7 +18,6 @@ import kbService, {
   listTag,
   removeTag,
   renameTag,
-  updateKb,
 } from '@/services/knowledge-service';
 import {
   useIsMutating,
@@ -138,20 +137,22 @@ export const useFetchNextKnowledgeListByPage = () => {
     ],
     initialData: {
       kbs: [],
-      total_datasets: 0,
+      total: 0,
     },
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await listDataset({
-        page_size: pagination.pageSize,
-        page: pagination.current,
-        ext: {
+      const { data } = await listDataset(
+        {
           keywords: debouncedSearchString,
+          page_size: pagination.pageSize,
+          page: pagination.current,
+        },
+        {
           owner_ids: filterValue.owner,
         },
-      });
+      );
 
-      return { kbs: data?.data, total_datasets: data?.total_datasets };
+      return data?.data;
     },
   });
 
@@ -167,7 +168,7 @@ export const useFetchNextKnowledgeListByPage = () => {
     ...data,
     searchString,
     handleInputChange: onInputChange,
-    pagination: { ...pagination, total: data?.total_datasets },
+    pagination: { ...pagination, total: data?.total },
     setPagination,
     loading,
     filterValue,
@@ -183,18 +184,7 @@ export const useCreateKnowledge = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: [KnowledgeApiAction.CreateKnowledge],
-    mutationFn: async (params: {
-      id?: string;
-      name: string;
-      embedding_model?: string;
-      chunk_method?: string;
-      parseType?: number;
-      pipeline_id?: string | null;
-      ext?: {
-        language?: string;
-        [key: string]: any;
-      };
-    }) => {
+    mutationFn: async (params: { id?: string; name: string }) => {
       const { data = {} } = await kbService.createKb(params);
       if (data.code === 0) {
         message.success(
@@ -218,7 +208,7 @@ export const useDeleteKnowledge = () => {
   } = useMutation({
     mutationKey: [KnowledgeApiAction.DeleteKnowledge],
     mutationFn: async (id: string) => {
-      const { data } = await kbService.rmKb({ ids: [id] });
+      const { data } = await kbService.rmKb({ kb_id: id });
       if (data.code === 0) {
         message.success(i18n.t(`message.deleted`));
         queryClient.invalidateQueries({
@@ -235,119 +225,17 @@ export const useDeleteKnowledge = () => {
 export const useUpdateKnowledge = (shouldFetchList = false) => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const queryClient = useQueryClient();
-
-  const extractRaptorConfigExt = (
-    raptorConfig: Record<string, any> | undefined,
-  ) => {
-    if (!raptorConfig) return raptorConfig;
-    const {
-      use_raptor,
-      prompt,
-      max_token,
-      threshold,
-      max_cluster,
-      random_seed,
-      auto_disable_for_structured_data,
-      ext,
-      ...raptorExt
-    } = raptorConfig;
-    return {
-      use_raptor,
-      prompt,
-      max_token,
-      threshold,
-      max_cluster,
-      random_seed,
-      auto_disable_for_structured_data,
-      ext: { ...ext, ...raptorExt },
-    };
-  };
-
-  const extractParserConfigExt = (
-    parserConfig: Record<string, any> | undefined,
-  ) => {
-    if (!parserConfig) return parserConfig;
-    const {
-      auto_keywords,
-      auto_questions,
-      chunk_token_num,
-      delimiter,
-      graphrag,
-      html4excel,
-      layout_recognize,
-      raptor,
-      tag_kb_ids,
-      topn_tags,
-      filename_embd_weight,
-      task_page_size,
-      pages,
-      ext,
-      ...parserExt
-    } = parserConfig;
-    return {
-      auto_keywords,
-      auto_questions,
-      chunk_token_num,
-      delimiter,
-      graphrag,
-      html4excel,
-      layout_recognize,
-      raptor: extractRaptorConfigExt(raptor),
-      tag_kb_ids,
-      topn_tags,
-      filename_embd_weight,
-      task_page_size,
-      pages,
-      ext: { ...ext, ...parserExt },
-    };
-  };
-
   const {
     data,
     isPending: loading,
     mutateAsync,
   } = useMutation({
     mutationKey: [KnowledgeApiAction.SaveKnowledge],
-    mutationFn: async (params: {
-      kb_id?: string;
-      name?: string;
-      embedding_model?: string;
-      chunk_method?: string;
-      pipeline_id?: string | null;
-      avatar?: string | null;
-      description?: string;
-      permission?: string;
-      pagerank?: number;
-      parser_config?: Record<string, any>;
-      [key: string]: any;
-    }) => {
-      const kbId = params?.kb_id || knowledgeBaseId;
-      const {
-        kb_id,
-        name,
-        embedding_model,
-        chunk_method,
-        pipeline_id,
-        avatar,
-        description,
-        permission,
-        pagerank,
-        parser_config,
-        ...ext
-      } = params;
-      const requestBody: Record<string, any> = {
-        name,
-        embedding_model,
-        chunk_method,
-        pipeline_id,
-        avatar,
-        description,
-        permission,
-        pagerank,
-        parser_config: extractParserConfigExt(parser_config),
-        ext,
-      };
-      const { data = {} } = await updateKb(kbId, requestBody);
+    mutationFn: async (params: Record<string, any>) => {
+      const { data = {} } = await kbService.updateKb({
+        kb_id: params?.kb_id ? params?.kb_id : knowledgeBaseId,
+        ...params,
+      });
       if (data.code === 0) {
         message.success(i18n.t(`message.updated`));
         if (shouldFetchList) {
@@ -471,9 +359,9 @@ export const useFetchKnowledgeList = (
     gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
     queryFn: async () => {
       const { data } = await listDataset();
-      const list = data?.data ?? [];
+      const list = data?.data?.kbs ?? [];
       return shouldFilterListWithoutDocument
-        ? list.filter((x: IKnowledge) => x.chunk_count > 0)
+        ? list.filter((x: IKnowledge) => x.chunk_num > 0)
         : list;
     },
   });

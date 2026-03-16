@@ -16,7 +16,7 @@
 import uuid
 
 import pytest
-from test_web_api.common import (
+from common import (
     delete_knowledge_graph,
     kb_basic_info,
     kb_get_meta,
