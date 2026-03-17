@@ -887,7 +887,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 sections = [(_, "") for _ in excel_parser(binary) if _]
             sections = _normalize_section_text_for_rtl_presentation_forms(sections)
 
-    elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
+    elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql|yml|yaml)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?;。；！？"))
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
@@ -984,7 +984,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             logging.warning(error_msg)
             return []
     else:
-        raise NotImplementedError("file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
+        raise NotImplementedError("file type not supported yet(pdf, doc, docx, csv, xls, xlsx, txt, md, markdown, mdx, htm, html, json, jsonl, ldjson, py, js, java, c, cpp, h, php, go, ts, sh, cs, kt, sql, yml, yaml supported)")
 
     st = timer()
     overlapped_percent = normalize_overlapped_percent(parser_config.get("overlapped_percent", 0))
