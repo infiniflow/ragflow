@@ -43,6 +43,10 @@ type SearchRequest struct {
 	SimilarityThreshold    float64 // Minimum similarity score (default: 0.1)
 	VectorSimilarityWeight float64 // Weight for vector vs keyword (default: 0.3)
 
+	// Sorting and ranking
+	OrderBy     string             // Order by field (e.g., "field1 desc, field2 asc")
+	RankFeature map[string]float64 // Rank features for learning to rank
+
 	// Engine-specific options (optional, for advanced use)
 	Options map[string]interface{}
 }

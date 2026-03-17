@@ -193,8 +193,9 @@ const Chunk = () => {
           <article className="w-2/5 flex flex-col">
             <DocumentHeader className="flex-0 p-5 pb-0" {...documentInfo} />
 
-            <div className="flex-1 h-0 p-5 pt-2.5">
+            <div className="flex-1 h-0 min-h-0 overflow-hidden p-5 pt-2.5 [&>section]:h-full [&>section]:min-h-0">
               <DocumentPreview
+                className="h-full min-h-0 overflow-auto [&_img]:max-w-full [&_img]:h-auto"
                 fileType={fileType}
                 highlights={highlights}
                 setWidthAndHeight={setWidthAndHeight}

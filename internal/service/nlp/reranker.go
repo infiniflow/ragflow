@@ -74,7 +74,12 @@ func Rerank(
 	if useInfinity {
 		// For Infinity: scores are already normalized before fusion
 		// Just extract the scores from results
-		return RerankInfinityFallback(sres)
+		// Check if there are results to rerank
+		if resp == nil || resp.Total == 0 || len(resp.Chunks) == 0 {
+			return []float64{}, []float64{}, []float64{}
+		}
+
+		return RerankInfinityFallback(resp)
 	}
 
 	// For Elasticsearch: need to perform reranking
@@ -208,18 +213,26 @@ func RerankStandard(
 	return HybridSimilarity(questionVector, insEmbd, keywords, insTw, tkWeight, vtWeight, qb)
 }
 
-// RerankInfinityFallback extracts scores from Infinity search results
-// Infinity normalizes each way score before fusion, so we just extract them
-func RerankInfinityFallback(sres *SearchResult) (sim []float64, tsim []float64, vsim []float64) {
-	sim = make([]float64, len(sres.IDs))
-	for i, id := range sres.IDs {
-		if fields := sres.Field[id]; fields != nil {
-			if score, ok := fields["_score"].(float64); ok {
+// RerankInfinityFallback is used as a fallback when no reranker model is provided for Infinity engine.
+// Infinity can return scores in various field names (SCORE, score, SIMILARITY, etc.),
+// so we check multiple possible field names. If no score is found, we default to 1.0
+// to ensure the chunk passes through any similarity threshold filters.
+func RerankInfinityFallback(resp *engine.SearchResponse) (sim []float64, tsim []float64, vsim []float64) {
+	sim = make([]float64, len(resp.Chunks))
+	for i, chunk := range resp.Chunks {
+		scoreFound := false
+		scoreFields := []string{"SCORE", "score", "SIMILARITY", "similarity", "_score", "score()", "similarity()"}
+		for _, field := range scoreFields {
+			if score, ok := chunk[field].(float64); ok {
 				sim[i] = score
+				scoreFound = true
+				break
 			}
 		}
+		if !scoreFound {
+			sim[i] = 1.0
+		}
 	}
-	// For Infinity, tsim and vsim are the same as overall similarity
 	return sim, sim, sim
 }
 
