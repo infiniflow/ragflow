@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/server"
+	"strconv"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -348,10 +350,10 @@ func getSimilarityThreshold(threshold *float64) float64 {
 }
 
 func getVectorSimilarityWeight(weight *float64) float64 {
-	//if weight != nil && *weight >= 0 && *weight <= 1 {
-	//	return *weight
-	//}
-	return 0.95
+	if weight != nil && *weight >= 0 && *weight <= 1 {
+		return *weight
+	}
+	return 0.3
 }
 
 func buildIndexNames(tenantIDs []string) []string {
@@ -424,19 +426,28 @@ func buildRetrievalTestResults(filteredChunks []map[string]interface{}) []map[st
 		result := make(map[string]interface{})
 
 		// Key mappings
-		if v, ok := chunk["_id"]; ok {
+		if v, ok := chunk["id"]; ok {
+			result["chunk_id"] = v
+		} else if v, ok := chunk["_id"]; ok {
 			result["chunk_id"] = v
 		}
-		if v, ok := chunk["content_ltks"]; ok {
+		if v, ok := chunk["content"]; ok {
 			result["content_ltks"] = v
-		}
-		if v, ok := chunk["content_with_weight"]; ok {
 			result["content_with_weight"] = v
+		} else {
+			if v, ok := chunk["content_ltks"]; ok {
+				result["content_ltks"] = v
+			}
+			if v, ok := chunk["content_with_weight"]; ok {
+				result["content_with_weight"] = v
+			}
 		}
 		if v, ok := chunk["doc_id"]; ok {
 			result["doc_id"] = v
 		}
-		if v, ok := chunk["docnm_kwd"]; ok {
+		if v, ok := chunk["docnm"]; ok {
+			result["docnm_kwd"] = v
+		} else if v, ok := chunk["docnm_kwd"]; ok {
 			result["docnm_kwd"] = v
 		}
 		if v, ok := chunk["img_id"]; ok {
@@ -446,7 +457,22 @@ func buildRetrievalTestResults(filteredChunks []map[string]interface{}) []map[st
 			result["kb_id"] = v
 		}
 		if v, ok := chunk["position_int"]; ok {
-			result["positions"] = v
+			if strVal, ok := v.(string); ok && strVal != "" {
+				result["positions"] = convertPositionInt(strVal)
+			} else {
+				result["positions"] = []interface{}{}
+			}
+		}
+		if v, ok := chunk["doc_type_kwd"]; ok {
+			result["doc_type_kwd"] = v
+		}
+		if v, ok := chunk["mom_id"]; ok {
+			result["mom_id"] = v
+		}
+		if v, ok := chunk["important_kwd"]; ok {
+			result["important_kwd"] = v
+		} else if v, ok := chunk["important_keywords"]; ok {
+			result["important_kwd"] = v
 		}
 		if v, ok := chunk["similarity"]; ok {
 			result["similarity"] = v
@@ -462,4 +488,44 @@ func buildRetrievalTestResults(filteredChunks []map[string]interface{}) []map[st
 	}
 
 	return results
+}
+
+// convertPositionInt converts hex string format "00000001_0000005e_..." to array [[1, 94, ...], ...]
+func convertPositionInt(hexStr string) []interface{} {
+	if hexStr == "" {
+		return []interface{}{}
+	}
+
+	parts := strings.Split(hexStr, "_")
+	var intVals []int
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		// Parse hex string (without 0x prefix)
+		val, err := strconv.ParseInt(part, 16, 64)
+		if err != nil {
+			continue
+		}
+		intVals = append(intVals, int(val))
+	}
+
+	// Group by 5 elements
+	var result []interface{}
+	for i := 0; i < len(intVals); i += 5 {
+		end := i + 5
+		if end > len(intVals) {
+			end = len(intVals)
+		}
+		group := make([]int, end-i)
+		copy(group, intVals[i:end])
+		// Convert to interface{} for JSON serialization
+		groupIf := make([]interface{}, len(group))
+		for j, v := range group {
+			groupIf[j] = v
+		}
+		result = append(result, groupIf)
+	}
+
+	return result
 }
