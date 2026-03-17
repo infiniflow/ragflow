@@ -14,8 +14,6 @@
 #  limitations under the License.
 #
 
-import time
-from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -30,7 +28,6 @@ from common.data_source.rest_api_connector import (
     PaginationType,
     RestAPIConnector,
     RestAPIConnectorConfig,
-    _text_to_dict,
 )
 
 
@@ -503,7 +500,7 @@ class TestPaginationBehavior:
             max_pages=3,
             pagination_config={"page_param": "page", "page_size": 2},
         )
-        items = list(c._iter_items())
+        list(c._iter_items())
         assert mock_rl.get.call_count == 3
 
     @patch("common.data_source.rest_api_connector.time.sleep")
