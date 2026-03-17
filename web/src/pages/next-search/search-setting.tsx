@@ -28,7 +28,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import {
   useFetchKnowledgeList,
-  useFetchKnowledgeMetadata,
+  useFetchKnowledgeMetadataKeys,
 } from '@/hooks/use-knowledge-request';
 import {
   useComposeLlmOptionsByModelTypes,
@@ -169,7 +169,11 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         meta_data_filter: search_config?.meta_data_filter,
         reference_metadata: {
           include: search_config?.reference_metadata?.include || false,
-          fields: search_config?.reference_metadata?.fields || [],
+          fields:
+            search_config?.reference_metadata?.fields &&
+            search_config.reference_metadata.fields.length > 0
+              ? search_config.reference_metadata.fields
+              : undefined,
         },
       },
     });
@@ -216,15 +220,15 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
     control: formMethods.control,
     name: 'search_config.reference_metadata.include',
   });
-  const { data: availableMetadata } = useFetchKnowledgeMetadata(
+  const { data: metadataKeys } = useFetchKnowledgeMetadataKeys(
     selectedKbIds || [],
   );
   const metadataFieldOptions = useMemo(() => {
-    return Object.keys(availableMetadata || {}).map((key) => ({
+    return (metadataKeys || []).map((key) => ({
       label: key,
       value: key,
     }));
-  }, [availableMetadata]);
+  }, [metadataKeys]);
 
   // Reset top_k to 1024 only when user actively disables rerank (from true to false)
   const prevRerankEnabled = useRef<boolean | undefined>(undefined);
@@ -259,11 +263,22 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         frequency_penalty: llm_setting.frequency_penalty,
         presence_penalty: llm_setting.presence_penalty,
       } as IllmSettingProps;
+      const referenceMetadata = other_config.reference_metadata;
+      const normalizedReferenceMetadata = referenceMetadata
+        ? {
+            ...referenceMetadata,
+            ...(Array.isArray(referenceMetadata.fields) &&
+            referenceMetadata.fields.length === 0
+              ? { fields: undefined }
+              : {}),
+          }
+        : referenceMetadata;
 
       await updateSearch({
         ...other_formdata,
         search_config: {
           ...other_config,
+          reference_metadata: normalizedReferenceMetadata,
           chat_id: llm_setting.llm_id,
           vector_similarity_weight: 1 - vector_similarity_weight,
           rerank_id: use_rerank ? rerank_id : '',
@@ -333,7 +348,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                         if (!value) {
                           formMethods.setValue(
                             'search_config.reference_metadata.fields',
-                            [],
+                            undefined,
                           );
                         }
                       }}

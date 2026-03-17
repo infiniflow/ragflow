@@ -18,7 +18,7 @@ import { MultiSelect } from '@/components/ui/multi-select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useFetchKnowledgeMetadata } from '@/hooks/use-knowledge-request';
+import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
 import { getDirAttribute } from '@/utils/text-direction';
 import { useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
@@ -34,13 +34,13 @@ export default function ChatBasicSetting() {
     control: form.control,
     name: 'prompt_config.reference_metadata.include',
   });
-  const { data: availableMetadata } = useFetchKnowledgeMetadata(kbIds);
+  const { data: metadataKeys } = useFetchKnowledgeMetadataKeys(kbIds);
   const metadataFieldOptions = useMemo(() => {
-    return Object.keys(availableMetadata || {}).map((key) => ({
+    return (metadataKeys || []).map((key) => ({
       label: key,
       value: key,
     }));
-  }, [availableMetadata]);
+  }, [metadataKeys]);
 
   return (
     <div className="space-y-8">
@@ -114,7 +114,7 @@ export default function ChatBasicSetting() {
                   if (!value) {
                     form.setValue(
                       'prompt_config.reference_metadata.fields',
-                      [],
+                      undefined,
                     );
                   }
                 }}
