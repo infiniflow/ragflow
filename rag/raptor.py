@@ -161,7 +161,6 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 if self._error_count >= self._max_errors:
                     raise RuntimeError(f"RAPTOR aborted after {self._error_count} errors. Last error: {exc}") from exc
 
-        labels = []
         while end - start > 1:
             self._check_task_canceled(task_id, "layer processing")
 
@@ -170,7 +169,6 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 await summarize([start, start + 1])
                 if callback:
                     callback(msg="Cluster one layer: {} -> {}".format(end - start, len(chunks) - end))
-                labels.extend([0, 0])
                 layers.append((end, len(chunks)))
                 start = end
                 end = len(chunks)
@@ -208,7 +206,6 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 raise
 
             assert len(chunks) - end == n_clusters, "{} vs. {}".format(len(chunks) - end, n_clusters)
-            labels.extend(lbls)
             layers.append((end, len(chunks)))
             if callback:
                 callback(msg="Cluster one layer: {} -> {}".format(end - start, len(chunks) - end))
