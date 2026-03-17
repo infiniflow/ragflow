@@ -74,7 +74,7 @@ export function PublishConfirmDialog({
       return formatDate(agentDetail.last_publish_time);
     }
     return '';
-  }, [agentDetail?.update_time]);
+  }, [agentDetail.last_publish_time]);
 
   // Get datasets associated with this pipeline from API response
   const associatedDatasets = useMemo(() => {
@@ -84,7 +84,7 @@ export function PublishConfirmDialog({
   const handleConfirmPublish = useCallback(() => {
     onPublish();
     setOpen(false);
-  }, []);
+  }, [onPublish]);
 
   if (isPipeline) {
     return null;
