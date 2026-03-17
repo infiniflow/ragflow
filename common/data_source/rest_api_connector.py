@@ -591,6 +591,16 @@ class RestAPIConnector(LoadConnector, PollConnector):
                 raise ConnectorMissingCredentialError(
                     f"REST API authentication failed with status {status}"
                 ) from exc
+            if status is not None and 400 <= status < 500 and status != 429:
+                logging.warning(
+                    "REST API client error %d for %s %s; not retrying.",
+                    status,
+                    self.method,
+                    resp.url,
+                )
+                raise ConnectorValidationError(
+                    f"REST API request failed with non-retriable client error status {status}"
+                ) from exc
             raise
 
         try:
