@@ -34,6 +34,7 @@ import {
 } from '../../components/ui/table';
 import { useFetchDataOnMount } from '../agent/hooks/use-fetch-data';
 import { AgentLogDetailModal } from './agent-log-detail-modal';
+import { useExportAgentLogToCSV } from './hooks/use-export-agent-log';
 const getStartOfToday = (): Date => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -64,18 +65,18 @@ const AgentLogPage: React.FC = () => {
 
   const columns = [
     {
-      title: 'ID',
+      title: t('flow.id'),
       dataIndex: 'id',
       key: 'id',
     },
     {
-      title: 'User ID',
+      title: t('flow.userId'),
       dataIndex: 'user_id',
       key: 'user_id',
       render: (text: string) => <span>{text}</span>,
     },
     {
-      title: 'Title',
+      title: t('flow.logTitle'),
       dataIndex: 'title',
       key: 'title',
       render: (_text: string, record: IAgentLogResponse) => (
@@ -85,7 +86,7 @@ const AgentLogPage: React.FC = () => {
       ),
     },
     {
-      title: 'State',
+      title: t('flow.state'),
       dataIndex: 'state',
       key: 'state',
       render: (_text: string, record: IAgentLogResponse) => (
@@ -96,31 +97,32 @@ const AgentLogPage: React.FC = () => {
       ),
     },
     {
-      title: 'Number',
+      title: t('flow.number'),
       dataIndex: 'round',
       key: 'round',
     },
     {
-      title: 'Latest Date',
+      title: t('flow.latestDate'),
       dataIndex: 'update_date',
       key: 'update_date',
       sortable: true,
     },
     {
-      title: 'Create Date',
+      title: t('flow.createDate'),
       dataIndex: 'create_date',
       key: 'create_date',
       sortable: true,
     },
     {
-      title: 'Version',
-      dataIndex: 'version',
-      key: 'version',
+      title: t('flow.version.version'),
+      dataIndex: 'version_title',
+      key: 'version_title',
     },
   ];
 
   const { data: logData, loading } = useFetchAgentLog(searchParams);
   const { sessions: data, total } = logData || {};
+  const { handleExport, loading: exportLoading } = useExportAgentLogToCSV();
   const [currentDate, setCurrentDate] = useState<DateRange>({
     from: searchParams.from_date,
     to: searchParams.to_date,
@@ -158,7 +160,6 @@ const AgentLogPage: React.FC = () => {
   } | null>({ orderby: init.orderby, desc: init.desc ? true : false });
 
   const handlePageChange = (current?: number, pageSize?: number) => {
-    console.log('current', current, 'pageSize', pageSize);
     let page = current || 1;
     if (pagination.pageSize !== pageSize) {
       page = 1;
@@ -219,6 +220,16 @@ const AgentLogPage: React.FC = () => {
     }
   };
 
+  const onExportClick = () => {
+    handleExport({
+      keywords: searchParams.keywords,
+      from_date: searchParams.from_date,
+      to_date: searchParams.to_date,
+      orderby: searchParams.orderby,
+      desc: searchParams.desc,
+    });
+  };
+
   return (
     <div className=" text-white">
       <PageHeader>
@@ -246,7 +257,9 @@ const AgentLogPage: React.FC = () => {
 
           <div className="flex justify-end space-x-2 mb-4 text-foreground">
             <div className="flex items-center space-x-2">
-              <Button>{t('flow.export')}</Button>
+              <Button onClick={onExportClick} loading={exportLoading}>
+                {t('flow.export')}
+              </Button>
               <span>ID/Title</span>
               <SearchInput
                 value={keywords}
