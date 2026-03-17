@@ -16,9 +16,9 @@ from typing import Any
 import networkx as nx
 
 from rag.graphrag.general.extractor import ENTITY_EXTRACTION_MAX_GLEANINGS, Extractor
+from rag.graphrag.llm_protocol import GraphRAGCompletionLLM
 from rag.graphrag.light.graph_prompt import PROMPTS
 from rag.graphrag.utils import chat_limiter, pack_user_ass_to_openai_messages, split_string_by_multi_markers
-from rag.llm.chat_model import Base as CompletionLLM
 from common.token_utils import num_tokens_from_string
 
 @dataclass
@@ -34,7 +34,7 @@ class GraphExtractor(Extractor):
 
     def __init__(
         self,
-        llm_invoker: CompletionLLM,
+        llm_invoker: GraphRAGCompletionLLM,
         language: str | None = "English",
         entity_types: list[str] | None = None,
         example_number: int = 2,
