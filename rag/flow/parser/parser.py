@@ -32,6 +32,7 @@ from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid
 from deepdoc.parser import ExcelParser
+from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
@@ -42,9 +43,8 @@ from rag.nlp import BULLET_PATTERN, bullets_category, docx_question_level, not_b
 from rag.utils.base64_image import image2id
 
 
-
-
 from common.misc_utils import thread_pool_exec
+
 
 class ParserParam(ProcessParamBase):
     def __init__(self):
@@ -81,6 +81,10 @@ class ParserParam(ProcessParamBase):
                 "json",
             ],
             "video": [],
+            "epub": [
+                "text",
+                "json",
+            ],
         }
 
         self.setups = {
@@ -165,6 +169,12 @@ class ParserParam(ProcessParamBase):
                 "output_format": "text",
                 "prompt": "",
             },
+            "epub": {
+                "suffix": [
+                    "epub",
+                ],
+                "output_format": "json",
+            },
         }
 
     def check(self):
@@ -173,7 +183,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "tcadp parser", "paddleocr"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "tcadp parser", "paddleocr"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -217,6 +227,11 @@ class ParserParam(ProcessParamBase):
         if email_config:
             email_output_format = email_config.get("output_format", "")
             self.check_valid_value(email_output_format, "Email output format abnormal.", self.allowed_output_format["email"])
+
+        epub_config = self.setups.get("epub", "")
+        if epub_config:
+            epub_output_format = epub_config.get("output_format", "")
+            self.check_valid_value(epub_output_format, "EPUB output format abnormal.", self.allowed_output_format["epub"])
 
     def get_input_form(self) -> dict[str, dict]:
         return {}
@@ -369,6 +384,27 @@ class Parser(ProcessBase):
                     "image": pdf_parser.crop(poss, 1),
                     "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
                     "text": t,
+                }
+                bboxes.append(box)
+        elif parse_method.lower() == "docling":
+            pdf_parser = DoclingParser(docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""))
+            lines, _ = pdf_parser.parse_pdf(
+                filepath=name,
+                binary=blob,
+                callback=self.callback,
+                parse_method=conf.get("docling_parse_method", "raw"),
+                docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""),
+            )
+            bboxes = []
+            for item in lines:
+                if not isinstance(item, tuple) or not item:
+                    continue
+                text = item[0]
+                poss = item[-1] if len(item) >= 2 else ""
+                box = {
+                    "text": text,
+                    "image": pdf_parser.crop(poss, 1) if isinstance(poss, str) and poss else None,
+                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)] if isinstance(poss, str) and poss else [],
                 }
                 bboxes.append(box)
         elif parse_method.lower() == "tcadp parser":
@@ -674,7 +710,6 @@ class Parser(ProcessBase):
             markdown_text = docx_parser.to_markdown(name, binary=blob)
             self.set_output("markdown", markdown_text)
 
-
     def _slides(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PowerPoint Document")
 
@@ -815,11 +850,13 @@ class Parser(ProcessBase):
             else:
                 txt = cv_model.describe(img_binary.read())
 
-        json_result = [{
-            "text": txt,
-            "image": img,
-            "doc_type_kwd": "image",
-        }]
+        json_result = [
+            {
+                "text": txt,
+                "image": img,
+                "doc_type_kwd": "image",
+            }
+        ]
         self.set_output("json", json_result)
 
     def _audio(self, name, blob, **kwargs):
@@ -989,6 +1026,22 @@ class Parser(ProcessBase):
                             content_txt += fb
             self.set_output("text", content_txt)
 
+    def _epub(self, name, blob, **kwargs):
+        from deepdoc.parser import EpubParser
+
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on an EPUB.")
+        conf = self._param.setups["epub"]
+        self.set_output("output_format", conf["output_format"])
+
+        epub_parser = EpubParser()
+        sections = epub_parser(name, binary=blob)
+
+        if conf.get("output_format") == "json":
+            json_results = [{"text": s} for s in sections if s]
+            self.set_output("json", json_results)
+        else:
+            self.set_output("text", "\n".join(s for s in sections if s))
+
     async def _invoke(self, **kwargs):
         function_map = {
             "pdf": self._pdf,
@@ -1000,6 +1053,7 @@ class Parser(ProcessBase):
             "audio": self._audio,
             "video": self._video,
             "email": self._email,
+            "epub": self._epub,
         }
 
         try:

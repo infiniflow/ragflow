@@ -88,6 +88,20 @@ func errorResponse(c *gin.Context, message string, code int) {
 	})
 }
 
+func responseWithCode(c *gin.Context, message string, httpCode int, errorCode common.ErrorCode) {
+	if message == "" {
+		c.JSON(httpCode, ErrorResponse{
+			Code:    int(errorCode),
+			Message: errorCode.Message(),
+		})
+	} else {
+		c.JSON(httpCode, ErrorResponse{
+			Code:    int(errorCode),
+			Message: message,
+		})
+	}
+}
+
 // Health health check
 func (h *Handler) Health(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "ok"})
@@ -767,28 +781,46 @@ func (h *Handler) RestartService(c *gin.Context) {
 }
 
 // GetVariables handle get variables
+// Python logic: if request body is empty, list all variables; otherwise get single variable by var_name from body
 func (h *Handler) GetVariables(c *gin.Context) {
-	varName := c.Query("var_name")
-
-	if varName != "" {
-		// Get single variable
-		variable, err := h.service.GetVariable(varName)
+	// Check if request has body content
+	if c.Request.ContentLength == 0 || c.Request.ContentLength == -1 {
+		// List all variables
+		variables, err := h.service.GetAllVariables()
 		if err != nil {
-			errorResponse(c, err.Error(), 400)
+			errorResponse(c, err.Error(), 500)
 			return
 		}
-		success(c, variable, "")
+		success(c, variables, "")
 		return
 	}
 
-	// List all variables
-	variables, err := h.service.GetAllVariables()
+	// Get single variable by var_name from request body
+	var req struct {
+		VarName string `json:"var_name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "Invalid request body", 400)
+		return
+	}
+
+	if req.VarName == "" {
+		errorResponse(c, "Var name is required", 400)
+		return
+	}
+
+	variable, err := h.service.GetVariable(req.VarName)
 	if err != nil {
+		// Check if it's an AdminException
+		if adminErr, ok := err.(*AdminException); ok {
+			errorResponse(c, adminErr.Message, 400)
+			return
+		}
 		errorResponse(c, err.Error(), 500)
 		return
 	}
 
-	success(c, variables, "")
+	success(c, variable, "")
 }
 
 // SetVariableHTTPRequest set variable request
@@ -798,15 +830,31 @@ type SetVariableHTTPRequest struct {
 }
 
 // SetVariable handle set variable
+// Python logic: update or create a system setting with the given name and value
 func (h *Handler) SetVariable(c *gin.Context) {
 	var req SetVariableHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "Var name and value are required", 400)
+		errorResponse(c, "Var name is required", 400)
+		return
+	}
+
+	if req.VarName == "" {
+		errorResponse(c, "Var name is required", 400)
+		return
+	}
+
+	if req.VarValue == "" {
+		errorResponse(c, "Var value is required", 400)
 		return
 	}
 
 	if err := h.service.SetVariable(req.VarName, req.VarValue); err != nil {
-		errorResponse(c, err.Error(), 400)
+		// Check if it's an AdminException
+		if adminErr, ok := err.(*AdminException); ok {
+			errorResponse(c, adminErr.Message, 400)
+			return
+		}
+		errorResponse(c, err.Error(), 500)
 		return
 	}
 
@@ -814,10 +862,16 @@ func (h *Handler) SetVariable(c *gin.Context) {
 }
 
 // GetConfigs handle get configs
+// Python logic: return all service configurations
 func (h *Handler) GetConfigs(c *gin.Context) {
 	configs, err := h.service.GetAllConfigs()
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		// Check if it's an AdminException
+		if adminErr, ok := err.(*AdminException); ok {
+			errorResponse(c, adminErr.Message, 400)
+			return
+		}
+		errorResponse(c, err.Error(), 500)
 		return
 	}
 
@@ -825,10 +879,16 @@ func (h *Handler) GetConfigs(c *gin.Context) {
 }
 
 // GetEnvironments handle get environments
+// Python logic: return important environment variables
 func (h *Handler) GetEnvironments(c *gin.Context) {
 	environments, err := h.service.GetAllEnvironments()
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		// Check if it's an AdminException
+		if adminErr, ok := err.(*AdminException); ok {
+			errorResponse(c, adminErr.Message, 400)
+			return
+		}
+		errorResponse(c, err.Error(), 500)
 		return
 	}
 
@@ -856,6 +916,19 @@ type SetLicenseHTTPRequest struct {
 
 // SetLicense to set system license
 func (h *Handler) SetLicense(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"code":    common.CodeServerError,
+		"message": "method not implemented",
+	})
+	return
+}
+
+type SetLicenseConfigHTTPRequest struct {
+	TimeRecordSaveInterval int64 `json:"value1" binding:"required"`
+	TimeRecordTaskDuration int64 `json:"value2" binding:"required"`
+}
+
+func (h *Handler) UpdateLicenseConfig(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, gin.H{
 		"code":    common.CodeServerError,
 		"message": "method not implemented",
@@ -1046,10 +1119,11 @@ func (h *Handler) Reports(c *gin.Context) {
 	}
 
 	// Handle the heartbeat
-	if err := h.service.HandleHeartbeat(&req); err != nil {
-		errorResponse(c, "Failed to process heartbeat: "+err.Error(), 500)
+	errCode, message := h.service.HandleHeartbeat(&req)
+	if errCode != common.CodeLicenseValid {
+		responseWithCode(c, message, 500, errCode)
 		return
 	}
 
-	successNoData(c, "Heartbeat received successfully")
+	responseWithCode(c, message, int(http.StatusOK), errCode)
 }

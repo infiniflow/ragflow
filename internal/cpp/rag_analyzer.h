@@ -121,7 +121,8 @@ private:
             std::vector<std::vector<std::pair<std::string, int>>>& token_list,
             std::vector<std::string>& best_tokens,
             double& max_score,
-            bool memo_all) const;
+            bool memo_all,
+            int depth = 0) const;
 
     void TokenizeInner(std::vector<std::string>& res, const std::string& L) const;
 

@@ -42,7 +42,6 @@ export default {
       previousPage: 'Précédent',
       nextPage: 'Suivant',
       add: 'Ajouter',
-      arabic: 'Arabe',
       promptPlaceholder:
         'Veuillez saisir ou utilisez / pour insérer rapidement des variables.',
     },
@@ -165,7 +164,7 @@ export default {
       changeSpecificCategory: 'Changer de catégorie spécifique',
       uploadTitle: 'Glissez-déposez votre fichier ici pour le téléverser',
       uploadDescription:
-        'Prise en charge du téléversement unique ou en lot. Pour RAGFlow en local : 1 Go max par téléversement, jusqu’à 32 fichiers. Pour demo.ragflow.io : 10 Mo max par fichier uploadDescription128 fichiers au total.',
+        'Prise en charge du téléversement unique ou en lot. Pour RAGFlow en local : 1 Go max par téléversement, jusqu’à 32 fichiers. Pour cloud.ragflow.io : 10 Mo max par fichier uploadDescription128 fichiers au total.',
       chunk: 'Segment',
       bulk: 'En masse',
       cancel: 'Annuler',
@@ -742,7 +741,7 @@ export default {
       directory: 'Répertoire',
       uploadTitle: 'Glissez-déposez votre fichier ici pour téléverser',
       uploadDescription:
-        'Prise en charge du téléversement de fichiers uniques ou en lot. Pour un déploiement local de RAGFlow : la taille totale des fichiers par téléversement est limitée à 1 Go, avec un maximum de 32 fichiers par lot. Il n’y a pas de limite sur le nombre total de fichiers par compte. Pour demo.ragflow.io, la taille totale des fichiers par téléversement est limitée à 10 Mo, chaque fichier ne devant pas dépasser 10 Mo, avec un maximum de 128 fichiers par compte.',
+        'Prise en charge du téléversement de fichiers uniques ou en lot. Pour un déploiement local de RAGFlow : la taille totale des fichiers par téléversement est limitée à 1 Go, avec un maximum de 32 fichiers par lot. Il n’y a pas de limite sur le nombre total de fichiers par compte. Pour cloud.ragflow.io, la taille totale des fichiers par téléversement est limitée à 10 Mo, chaque fichier ne devant pas dépasser 10 Mo, avec un maximum de 128 fichiers par compte.',
       local: 'Téléversements locaux',
       s3: 'Téléversements S3',
       preview: 'Aperçu',

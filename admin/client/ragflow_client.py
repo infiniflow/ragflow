@@ -604,6 +604,18 @@ class RAGFlowClient:
         else:
             print(f"Fail to set license, code: {res_json['code']}, message: {res_json['message']}")
 
+    def set_license_config(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+        value1 = command["value1"]
+        value2 = command["value2"]
+        response = self.http_client.request("POST", "/admin/license/config", json_body={"value1": value1, "value2": value2}, use_api_base=True, auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            print("Set license successfully")
+        else:
+            print(f"Fail to set license, code: {res_json['code']}, message: {res_json['message']}")
+
     def show_license(self, command):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
@@ -613,6 +625,17 @@ class RAGFlowClient:
             self._print_table_simple(res_json["data"])
         else:
             print(f"Fail to show license, code: {res_json['code']}, message: {res_json['message']}")
+
+    def check_license(self, command):
+        if self.server_type != "admin":
+            print("This command is only allowed in ADMIN mode")
+        response = self.http_client.request("GET", "/admin/license?check=true", use_api_base=True, auth_kind="admin")
+        res_json = response.json()
+        if response.status_code == 200:
+            print(res_json["data"])
+        else:
+            print(f"Fail to show license, code: {res_json['code']}, message: {res_json['message']}")
+
 
     def list_server_configs(self, command):
         """List server configs by calling /system/configs API and flattening the JSON response."""
@@ -1549,8 +1572,12 @@ def run_command(client: RAGFlowClient, command_dict: dict):
             client.show_fingerprint(command_dict)
         case "set_license":
             client.set_license(command_dict)
+        case "set_license_config":
+            client.set_license_config(command_dict)
         case "show_license":
             client.show_license(command_dict)
+        case "check_license":
+            client.check_license(command_dict)
         case "list_server_configs":
             client.list_server_configs(command_dict)
         case "create_model_provider":
