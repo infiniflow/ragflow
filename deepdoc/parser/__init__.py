@@ -15,6 +15,7 @@
 #
 
 from .docx_parser import RAGFlowDocxParser as DocxParser
+from .epub_parser import RAGFlowEpubParser as EpubParser
 from .excel_parser import RAGFlowExcelParser as ExcelParser
 from .html_parser import RAGFlowHtmlParser as HtmlParser
 from .json_parser import RAGFlowJsonParser as JsonParser
@@ -29,6 +30,7 @@ __all__ = [
     "PdfParser",
     "PlainParser",
     "DocxParser",
+    "EpubParser",
     "ExcelParser",
     "PptParser",
     "HtmlParser",
