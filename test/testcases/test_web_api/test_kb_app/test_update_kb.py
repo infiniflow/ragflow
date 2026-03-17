@@ -17,7 +17,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from test_web_api.common import update_dataset
+from common import update_kb
 from configs import DATASET_NAME_LIMIT, INVALID_API_TOKEN
 from hypothesis import HealthCheck, example, given, settings
 from libs.auth import RAGFlowWebApiAuth
@@ -37,7 +37,7 @@ class TestAuthorization:
         ids=["empty_auth", "invalid_api_token"],
     )
     def test_auth_invalid(self, invalid_auth, expected_code, expected_message):
-        res = update_dataset(invalid_auth, "dataset_id")
+        res = update_kb(invalid_auth, "dataset_id")
         assert res["code"] == expected_code, res
         assert res["message"] == expected_message, res
 
@@ -50,13 +50,13 @@ class TestCapability:
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [
                 executor.submit(
-                    update_dataset,
+                    update_kb,
                     WebApiAuth,
-                    dataset_id,
                     {
+                        "kb_id": dataset_id,
                         "name": f"dataset_{i}",
                         "description": "",
-                        "chunk_method": "naive",
+                        "parser_id": "naive",
                     },
                 )
                 for i in range(count)
@@ -69,8 +69,8 @@ class TestCapability:
 class TestDatasetUpdate:
     @pytest.mark.p3
     def test_dataset_id_not_uuid(self, WebApiAuth):
-        payload = {"name": "not uuid", "description": "", "chunk_method": "naive"}
-        res = update_dataset(WebApiAuth, "not_uuid", payload)
+        payload = {"name": "not uuid", "description": "", "parser_id": "naive", "kb_id": "not_uuid"}
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 109, res
         assert "No authorization." in res["message"], res
 
@@ -81,8 +81,8 @@ class TestDatasetUpdate:
     @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
     def test_name(self, WebApiAuth, add_dataset_func, name):
         dataset_id = add_dataset_func
-        payload = {"name": name, "description": "", "chunk_method": "naive"}
-        res = update_dataset(WebApiAuth, dataset_id, payload)
+        payload = {"name": name, "description": "", "parser_id": "naive", "kb_id": dataset_id}
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["name"] == name, res
 
@@ -90,27 +90,27 @@ class TestDatasetUpdate:
     @pytest.mark.parametrize(
         "name, expected_message",
         [
-            ("", "Field: <name> - Message: <String should have at least 1 character>"),
-            (" ", "Field: <name> - Message: <String should have at least 1 character>"),
-            ("a" * (DATASET_NAME_LIMIT + 1), "Field: <name> - Message: <String should have at most 128 characters>"),
-            (0, "Field: <name> - Message: <Input should be a valid string>"),
-            (None, "Field: <name> - Message: <Input should be a valid string>"),
+            ("", "Dataset name can't be empty."),
+            (" ", "Dataset name can't be empty."),
+            ("a" * (DATASET_NAME_LIMIT + 1), "Dataset name length is 129 which is large than 128"),
+            (0, "Dataset name must be string."),
+            (None, "Dataset name must be string."),
         ],
         ids=["empty_name", "space_name", "too_long_name", "invalid_name", "None_name"],
     )
     def test_name_invalid(self, WebApiAuth, add_dataset_func, name, expected_message):
         kb_id = add_dataset_func
-        payload = {"name": name, "description": "", "chunk_method": "naive"}
-        res = update_dataset(WebApiAuth, kb_id, payload)
-        assert res["code"] == 101, res
+        payload = {"name": name, "description": "", "parser_id": "naive", "kb_id": kb_id}
+        res = update_kb(WebApiAuth, payload)
+        assert res["code"] == 102, res
         assert expected_message in res["message"], res
 
     @pytest.mark.p3
     def test_name_duplicated(self, WebApiAuth, add_datasets_func):
         kb_id = add_datasets_func[0]
         name = "kb_1"
-        payload = {"name": name, "description": "", "chunk_method": "naive"}
-        res = update_dataset(WebApiAuth, kb_id, payload)
+        payload = {"name": name, "description": "", "parser_id": "naive", "kb_id": kb_id}
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 102, res
         assert res["message"] == "Duplicated dataset name.", res
 
@@ -118,8 +118,8 @@ class TestDatasetUpdate:
     def test_name_case_insensitive(self, WebApiAuth, add_datasets_func):
         kb_id = add_datasets_func[0]
         name = "KB_1"
-        payload = {"name": name, "description": "", "chunk_method": "naive"}
-        res = update_dataset(WebApiAuth, kb_id, payload)
+        payload = {"name": name, "description": "", "parser_id": "naive", "kb_id": kb_id}
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 102, res
         assert res["message"] == "Duplicated dataset name.", res
 
@@ -130,18 +130,19 @@ class TestDatasetUpdate:
         payload = {
             "name": "avatar",
             "description": "",
-            "chunk_method": "naive",
+            "parser_id": "naive",
+            "kb_id": kb_id,
             "avatar": f"data:image/png;base64,{encode_avatar(fn)}",
         }
-        res = update_dataset(WebApiAuth, kb_id, payload)
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["avatar"] == f"data:image/png;base64,{encode_avatar(fn)}", res
 
     @pytest.mark.p2
     def test_description(self, WebApiAuth, add_dataset_func):
         kb_id = add_dataset_func
-        payload = {"name": "description", "description": "description", "chunk_method": "naive"}
-        res = update_dataset(WebApiAuth, kb_id, payload)
+        payload = {"name": "description", "description": "description", "parser_id": "naive", "kb_id": kb_id}
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["description"] == "description", res
 
@@ -156,10 +157,10 @@ class TestDatasetUpdate:
     )
     def test_embedding_model(self, WebApiAuth, add_dataset_func, embedding_model):
         kb_id = add_dataset_func
-        payload = {"name": "embedding_model", "description": "", "chunk_method": "naive", "embedding_model": embedding_model}
-        res = update_dataset(WebApiAuth, kb_id, payload)
+        payload = {"name": "embedding_model", "description": "", "parser_id": "naive", "kb_id": kb_id, "embd_id": embedding_model}
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 0, res
-        assert res["data"]["embedding_model"] == embedding_model, res
+        assert res["data"]["embd_id"] == embedding_model, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -172,8 +173,8 @@ class TestDatasetUpdate:
     )
     def test_permission(self, WebApiAuth, add_dataset_func, permission):
         kb_id = add_dataset_func
-        payload = {"name": "permission", "description": "", "chunk_method": "naive", "permission": permission}
-        res = update_dataset(WebApiAuth, kb_id, payload)
+        payload = {"name": "permission", "description": "", "parser_id": "naive", "kb_id": kb_id, "permission": permission}
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["permission"] == permission.lower().strip(), res
 
@@ -198,17 +199,17 @@ class TestDatasetUpdate:
     )
     def test_chunk_method(self, WebApiAuth, add_dataset_func, chunk_method):
         kb_id = add_dataset_func
-        payload = {"name": "chunk_method", "description": "", "chunk_method": chunk_method}
-        res = update_dataset(WebApiAuth, kb_id, payload)
+        payload = {"name": "chunk_method", "description": "", "parser_id": chunk_method, "kb_id": kb_id}
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 0, res
-        assert res["data"]["chunk_method"] == chunk_method, res
+        assert res["data"]["parser_id"] == chunk_method, res
 
     @pytest.mark.p1
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") != "infinity", reason="Infinity does not support parser_id=tag")
     def test_chunk_method_tag_with_infinity(self, WebApiAuth, add_dataset_func):
         kb_id = add_dataset_func
-        payload = {"name": "chunk_method", "description": "", "chunk_method": "tag"}
-        res = update_dataset(WebApiAuth, kb_id, payload)
+        payload = {"name": "chunk_method", "description": "", "parser_id": "tag", "kb_id": kb_id}
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 103, res
         assert res["message"] == "The chunking method Tag has not been supported by Infinity yet.", res
 
@@ -217,8 +218,8 @@ class TestDatasetUpdate:
     @pytest.mark.parametrize("pagerank", [0, 50, 100], ids=["min", "mid", "max"])
     def test_pagerank(self, WebApiAuth, add_dataset_func, pagerank):
         kb_id = add_dataset_func
-        payload = {"name": "pagerank", "description": "", "chunk_method": "naive", "pagerank": pagerank}
-        res = update_dataset(WebApiAuth, kb_id, payload)
+        payload = {"name": "pagerank", "description": "", "parser_id": "naive", "kb_id": kb_id, "pagerank": pagerank}
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["pagerank"] == pagerank, res
 
@@ -226,13 +227,13 @@ class TestDatasetUpdate:
     @pytest.mark.p2
     def test_pagerank_set_to_0(self, WebApiAuth, add_dataset_func):
         kb_id = add_dataset_func
-        payload = {"name": "pagerank", "description": "", "chunk_method": "naive", "pagerank": 50}
-        res = update_dataset(WebApiAuth, kb_id, payload)
+        payload = {"name": "pagerank", "description": "", "parser_id": "naive", "kb_id": kb_id, "pagerank": 50}
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["pagerank"] == 50, res
 
-        payload = {"name": "pagerank", "description": "", "chunk_method": "naive", "pagerank": 0}
-        res = update_dataset(WebApiAuth, kb_id, payload)
+        payload = {"name": "pagerank", "description": "", "parser_id": "naive", "kb_id": kb_id, "pagerank": 0}
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["pagerank"] == 0, res
 
@@ -240,8 +241,8 @@ class TestDatasetUpdate:
     @pytest.mark.p2
     def test_pagerank_infinity(self, WebApiAuth, add_dataset_func):
         kb_id = add_dataset_func
-        payload = {"name": "pagerank", "description": "", "chunk_method": "naive", "pagerank": 50}
-        res = update_dataset(WebApiAuth, kb_id, payload)
+        payload = {"name": "pagerank", "description": "", "parser_id": "naive", "kb_id": kb_id, "pagerank": 50}
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 102, res
         assert res["message"] == "'pagerank' can only be set when doc_engine is elasticsearch", res
 
@@ -351,15 +352,10 @@ class TestDatasetUpdate:
     )
     def test_parser_config(self, WebApiAuth, add_dataset_func, parser_config):
         kb_id = add_dataset_func
-        payload = {"name": "parser_config", "description": "", "chunk_method": "naive", "parser_config": parser_config}
-        res = update_dataset(WebApiAuth, kb_id, payload)
+        payload = {"name": "parser_config", "description": "", "parser_id": "naive", "kb_id": kb_id, "parser_config": parser_config}
+        res = update_kb(WebApiAuth, payload)
         assert res["code"] == 0, res
-        for key, value in parser_config.items():
-            if not isinstance(value, dict):
-                assert res["data"]["parser_config"].get(key) == value, res
-            else:
-                for sub_key, sub_value in value.items():
-                    assert res["data"]["parser_config"].get(key, {}).get(sub_key) == sub_value, res
+        assert res["data"]["parser_config"] == parser_config, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -376,7 +372,7 @@ class TestDatasetUpdate:
     )
     def test_field_unsupported(self, WebApiAuth, add_dataset_func, payload):
         kb_id = add_dataset_func
-        full_payload = {"name": "field_unsupported", "description": "", "chunk_method": "naive", **payload}
-        res = update_dataset(WebApiAuth, kb_id, full_payload)
+        full_payload = {"name": "field_unsupported", "description": "", "parser_id": "naive", "kb_id": kb_id, **payload}
+        res = update_kb(WebApiAuth, full_payload)
         assert res["code"] == 101, res
-        assert "are not permitted" in res["message"], res
+        assert "isn't allowed" in res["message"], res

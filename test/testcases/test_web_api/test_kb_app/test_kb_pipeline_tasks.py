@@ -14,17 +14,17 @@
 #  limitations under the License.
 #
 import pytest
-from test_web_api.common import (
+from common import (
     kb_delete_pipeline_logs,
     kb_list_pipeline_dataset_logs,
     kb_list_pipeline_logs,
     kb_pipeline_log_detail,
-    run_graphrag,
-    trace_graphrag,
-    run_raptor,
-    trace_raptor,
+    kb_run_graphrag,
     kb_run_mindmap,
+    kb_run_raptor,
+    kb_trace_graphrag,
     kb_trace_mindmap,
+    kb_trace_raptor,
     list_documents,
     parse_documents,
 )
@@ -101,13 +101,13 @@ class TestKbPipelineTasks:
     @pytest.mark.p3
     def test_graphrag_run_and_trace(self, WebApiAuth, add_chunks):
         kb_id, _, _ = add_chunks
-        run_res = run_graphrag(WebApiAuth, kb_id)
+        run_res = kb_run_graphrag(WebApiAuth, {"kb_id": kb_id})
         assert run_res["code"] == 0, run_res
         task_id = run_res["data"]["graphrag_task_id"]
         assert task_id, run_res
 
-        _wait_for_task(trace_graphrag, WebApiAuth, kb_id, task_id)
-        trace_res = trace_graphrag(WebApiAuth, kb_id)
+        _wait_for_task(kb_trace_graphrag, WebApiAuth, kb_id, task_id)
+        trace_res = kb_trace_graphrag(WebApiAuth, {"kb_id": kb_id})
         assert trace_res["code"] == 0, trace_res
         task = _find_task(trace_res["data"], task_id)
         assert task, trace_res
@@ -118,13 +118,13 @@ class TestKbPipelineTasks:
     @pytest.mark.p3
     def test_raptor_run_and_trace(self, WebApiAuth, add_chunks):
         kb_id, _, _ = add_chunks
-        run_res = run_raptor(WebApiAuth, kb_id)
+        run_res = kb_run_raptor(WebApiAuth, {"kb_id": kb_id})
         assert run_res["code"] == 0, run_res
         task_id = run_res["data"]["raptor_task_id"]
         assert task_id, run_res
 
-        _wait_for_task(trace_raptor, WebApiAuth, kb_id, task_id)
-        trace_res = trace_raptor(WebApiAuth, kb_id)
+        _wait_for_task(kb_trace_raptor, WebApiAuth, kb_id, task_id)
+        trace_res = kb_trace_raptor(WebApiAuth, {"kb_id": kb_id})
         assert trace_res["code"] == 0, trace_res
         task = _find_task(trace_res["data"], task_id)
         assert task, trace_res

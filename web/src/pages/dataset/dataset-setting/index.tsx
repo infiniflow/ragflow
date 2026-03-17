@@ -219,7 +219,7 @@ export default function DatasetSettings() {
     defaultValue: knowledgeDetails.pipeline_id ? 2 : 1,
   });
   const selectedTag = useWatch({
-    name: 'chunk_method',
+    name: 'parser_id',
     control: form.control,
   });
   useEffect(() => {
