@@ -15,8 +15,12 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Generator, Iterable, List, Mapping, Optional
 from urllib.parse import parse_qs, urlparse, urlunparse
 
+import ipaddress
+import socket
 import requests
 from pydantic import BaseModel, Field, HttpUrl, ValidationError, field_validator
+
+logger = logging.getLogger(__name__)
 
 from api.utils.common import hash128
 from common.data_source.config import INDEX_BATCH_SIZE, DocumentSource
@@ -164,6 +168,66 @@ class RestAPIConnector(LoadConnector, PollConnector):
     pagination, field mapping).
     """
 
+    @staticmethod
+    def _validate_url_for_ssrf(url: str) -> None:
+        """Validate that the URL does not point to localhost or private/internal networks.
+
+        Raises:
+            ConnectorValidationError: If the URL is considered unsafe.
+        """
+        parsed = urlparse(str(url))
+
+        if parsed.scheme not in ("http", "https"):
+            msg = f"Unsupported URL scheme for REST API connector: {parsed.scheme!r}. Only http/https are allowed."
+            logger.warning(msg)
+            raise ConnectorValidationError(msg)
+
+        hostname = parsed.hostname
+        if not hostname:
+            msg = "REST API connector URL must include a hostname."
+            logger.warning(msg)
+            raise ConnectorValidationError(msg)
+
+        # Quick checks for obvious localhost-style hostnames.
+        lower_host = hostname.lower()
+        if lower_host in ("localhost",):
+            msg = f"REST API connector URL hostname {hostname!r} is not allowed (localhost is blocked)."
+            logger.warning(msg)
+            raise ConnectorValidationError(msg)
+
+        try:
+            addrinfo_list = socket.getaddrinfo(hostname, None)
+        except OSError as exc:
+            # If resolution fails, log and let higher-level validation (if any) decide.
+            # We do not treat this as an SSRF condition by itself.
+            logger.info("DNS resolution failed for REST API connector URL %r: %s", url, exc)
+            return
+
+        for family, _, _, _, sockaddr in addrinfo_list:
+            ip_str = sockaddr[0]
+            try:
+                ip_obj = ipaddress.ip_address(ip_str)
+            except ValueError:
+                # Not an IP address we understand; skip.
+                logger.debug("Skipping non-IP address resolved from %r: %r", hostname, ip_str)
+                continue
+
+            if (
+                ip_obj.is_loopback
+                or ip_obj.is_private
+                or ip_obj.is_link_local
+                or ip_obj.is_reserved
+                or ip_obj.is_multicast
+            ):
+                msg = (
+                    f"REST API connector URL {url!r} resolves to disallowed address {ip_str} "
+                    "(localhost, private, link-local, reserved, or multicast addresses are blocked)."
+                )
+                logger.warning(msg)
+                raise ConnectorValidationError(msg)
+
+        logger.debug("REST API connector URL %r passed SSRF safety validation.", url)
+
     def __init__(
         self,
         url: str,
@@ -187,6 +251,9 @@ class RestAPIConnector(LoadConnector, PollConnector):
         field_default_values: Optional[Dict[str, Any]] = None,
         content_template: Optional[str] = None,
     ) -> None:
+        # Validate URL against SSRF-style targets (localhost, private/internal ranges, etc.)
+        self._validate_url_for_ssrf(url)
+
         parsed = urlparse(str(url))
         self._base_url = urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
         self._url_params: Dict[str, str] = {}
