@@ -2420,6 +2420,15 @@ Important structured information may include: names, dates, locations, events, k
       },
       saveToMemory: 'Save to memory',
       retrievalFrom: 'Retrieval from',
+      id: 'ID',
+      state: 'State',
+      number: 'Number',
+      latestDate: 'Latest date',
+      createDate: 'Create date',
+      noDataToExport: 'No data to export',
+      success: 'Success',
+      failed: 'Failed',
+      logTitle: 'Title',
     },
     llmTools: {
       bad_calculator: {
