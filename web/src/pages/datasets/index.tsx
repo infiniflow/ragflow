@@ -30,7 +30,7 @@ export default function Datasets() {
 
   const {
     kbs,
-    total_datasets,
+    total,
     pagination,
     setPagination,
     handleInputChange,
@@ -107,7 +107,7 @@ export default function Datasets() {
               <footer className="mt-4 px-5 pb-5">
                 <RAGFlowPagination
                   {...pick(pagination, 'current', 'pageSize')}
-                  total={total_datasets}
+                  total={total}
                   onChange={handlePageChange}
                 />
               </footer>

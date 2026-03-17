@@ -69,7 +69,7 @@ export function ChunkMethodItem(props: IProps) {
   return (
     <FormField
       control={form.control}
-      name={'chunk_method'}
+      name={'parser_id'}
       render={({ field }) => (
         <FormItem className=" items-center space-y-1">
           <div className={line === 1 ? 'flex items-center' : ''}>
@@ -121,7 +121,7 @@ export const EmbeddingSelect = ({
   const { handleChange } = useHandleKbEmbedding();
 
   const oldValue = useMemo(() => {
-    const embdStr = form.getValues(name || 'embedding_model');
+    const embdStr = form.getValues(name || 'embd_id');
     return embdStr || '';
   }, [form]);
   const [loading, setLoading] = useState(false);
@@ -165,7 +165,7 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
     <>
       <FormField
         control={form.control}
-        name={'embedding_model'}
+        name={'embd_id'}
         render={({ field }) => (
           <FormItem className={cn(' items-center space-y-0 ')}>
             <div
