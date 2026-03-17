@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 
+import logging
+import warnings
 import zipfile
 from io import BytesIO
 from xml.etree import ElementTree
@@ -27,13 +29,21 @@ _CONTAINER_NS = "urn:oasis:names:tc:opendocument:xmlns:container"
 # Media types that contain readable XHTML content
 _XHTML_MEDIA_TYPES = {"application/xhtml+xml", "text/html", "text/xml"}
 
+logger = logging.getLogger(__name__)
+
 
 class RAGFlowEpubParser:
     """Parse EPUB files by extracting XHTML content in spine (reading) order
     and delegating to RAGFlowHtmlParser for chunking."""
 
     def __call__(self, fnm, binary=None, chunk_token_num=512):
-        if binary:
+        if binary is not None:
+            if not binary:
+                logger.warning(
+                    "RAGFlowEpubParser received an empty EPUB binary payload for %r",
+                    fnm,
+                )
+                raise ValueError("Empty EPUB binary payload")
             zf = zipfile.ZipFile(BytesIO(binary))
         else:
             zf = zipfile.ZipFile(fnm)
@@ -48,7 +58,14 @@ class RAGFlowEpubParser:
                     html_bytes = zf.read(item_path)
                 except KeyError:
                     continue
-                sections = html_parser(item_path, binary=html_bytes, chunk_token_num=chunk_token_num)
+                if not html_bytes:
+                    logger.debug("Skipping empty EPUB content item: %s", item_path)
+                    continue
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=UserWarning)
+                    sections = html_parser(
+                        item_path, binary=html_bytes, chunk_token_num=chunk_token_num
+                    )
                 all_sections.extend(sections)
 
             return all_sections
@@ -64,7 +81,12 @@ class RAGFlowEpubParser:
         except KeyError:
             return RAGFlowEpubParser._fallback_xhtml_order(zf)
 
-        container_root = ElementTree.fromstring(container_xml)
+        try:
+            container_root = ElementTree.fromstring(container_xml)
+        except ElementTree.ParseError:
+            logger.warning("Failed to parse META-INF/container.xml; falling back to XHTML order.")
+            return RAGFlowEpubParser._fallback_xhtml_order(zf)
+
         rootfile_el = container_root.find(f".//{{{_CONTAINER_NS}}}rootfile")
         if rootfile_el is None:
             return RAGFlowEpubParser._fallback_xhtml_order(zf)
@@ -82,7 +104,11 @@ class RAGFlowEpubParser:
         except KeyError:
             return RAGFlowEpubParser._fallback_xhtml_order(zf)
 
-        opf_root = ElementTree.fromstring(opf_xml)
+        try:
+            opf_root = ElementTree.fromstring(opf_xml)
+        except ElementTree.ParseError:
+            logger.warning("Failed to parse OPF file '%s'; falling back to XHTML order.", opf_path)
+            return RAGFlowEpubParser._fallback_xhtml_order(zf)
 
         # 3. Build id->href+mediatype map from <manifest>
         manifest = {}
@@ -104,9 +130,16 @@ class RAGFlowEpubParser:
                 continue
             spine_items.append(opf_dir + href)
 
-        return spine_items if spine_items else RAGFlowEpubParser._fallback_xhtml_order(zf)
+        return (
+            spine_items if spine_items else RAGFlowEpubParser._fallback_xhtml_order(zf)
+        )
 
     @staticmethod
     def _fallback_xhtml_order(zf):
         """Fallback: return all .xhtml/.html files sorted alphabetically."""
-        return sorted(n for n in zf.namelist() if n.lower().endswith((".xhtml", ".html", ".htm")) and not n.startswith("META-INF/"))
+        return sorted(
+            n
+            for n in zf.namelist()
+            if n.lower().endswith((".xhtml", ".html", ".htm"))
+            and not n.startswith("META-INF/")
+        )

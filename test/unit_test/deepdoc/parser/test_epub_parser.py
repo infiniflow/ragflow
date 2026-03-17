@@ -21,23 +21,69 @@ Tests cover:
 - Fallback parsing when META-INF/container.xml is missing
 - Handling of empty or content-less EPUB files
 - Spine ordering respects the OPF itemref sequence
+- Malformed XML graceful fallback
+- Empty binary input handling
 """
 
+import importlib.util
+import os
 import sys
 import zipfile
 from io import BytesIO
 from unittest import mock
 
-# Avoid importing heavy transitive dependencies (xgboost, etc.) that may not
-# be available in the test environment.  We only need html_parser, so we stub
-# the problematic modules before the epub_parser import triggers __init__.
-_STUBS = {}
-for _mod in ("xgboost",):
-    if _mod not in sys.modules:
-        _STUBS[_mod] = mock.MagicMock()
-        sys.modules[_mod] = _STUBS[_mod]
+# Import RAGFlowEpubParser directly by file path to avoid triggering
+# deepdoc/parser/__init__.py which pulls in heavy dependencies
+# (pdfplumber, xgboost, etc.) that may not be available in test environments.
+_MOCK_MODULES = [
+    "xgboost",
+    "xgb",
+    "pdfplumber",
+    "huggingface_hub",
+    "PIL",
+    "PIL.Image",
+    "pypdf",
+    "sklearn",
+    "sklearn.cluster",
+    "sklearn.metrics",
+    "deepdoc.vision",
+    "infinity",
+    "infinity.rag_tokenizer",
+]
+for _m in _MOCK_MODULES:
+    if _m not in sys.modules:
+        sys.modules[_m] = mock.MagicMock()
 
-from deepdoc.parser.epub_parser import RAGFlowEpubParser
+
+def _find_project_root(marker="pyproject.toml"):
+    d = os.path.dirname(os.path.abspath(__file__))
+    while d != os.path.dirname(d):
+        if os.path.exists(os.path.join(d, marker)):
+            return d
+        d = os.path.dirname(d)
+    return None
+
+
+_PROJECT_ROOT = _find_project_root()
+
+# Load html_parser first (epub_parser depends on it via relative import)
+_html_spec = importlib.util.spec_from_file_location(
+    "deepdoc.parser.html_parser",
+    os.path.join(_PROJECT_ROOT, "deepdoc", "parser", "html_parser.py"),
+)
+_html_mod = importlib.util.module_from_spec(_html_spec)
+sys.modules["deepdoc.parser.html_parser"] = _html_mod
+_html_spec.loader.exec_module(_html_mod)
+
+_epub_spec = importlib.util.spec_from_file_location(
+    "deepdoc.parser.epub_parser",
+    os.path.join(_PROJECT_ROOT, "deepdoc", "parser", "epub_parser.py"),
+)
+_epub_mod = importlib.util.module_from_spec(_epub_spec)
+sys.modules["deepdoc.parser.epub_parser"] = _epub_mod
+_epub_spec.loader.exec_module(_epub_mod)
+
+RAGFlowEpubParser = _epub_mod.RAGFlowEpubParser
 
 
 def _make_epub(chapters, include_container=True, spine_order=None):
@@ -122,12 +168,10 @@ class TestEpubParserBasic:
             ("ch2.xhtml", _simple_html("Second")),
             ("ch3.xhtml", _simple_html("Third")),
         ]
-        # Reverse the spine order
         epub_bytes = _make_epub(chapters, spine_order=["ch3.xhtml", "ch1.xhtml", "ch2.xhtml"])
         parser = RAGFlowEpubParser()
         sections = parser(None, binary=epub_bytes, chunk_token_num=512)
         combined = " ".join(sections)
-        # "Third" should appear before "First" in combined output
         assert combined.index("Third") < combined.index("First")
         assert combined.index("First") < combined.index("Second")
 
@@ -136,6 +180,15 @@ class TestEpubParserBasic:
         parser = RAGFlowEpubParser()
         sections = parser(None, binary=epub_bytes, chunk_token_num=512)
         assert sections == []
+
+    def test_empty_binary(self):
+        """Empty bytes should raise ValueError, not trigger file open."""
+        parser = RAGFlowEpubParser()
+        try:
+            parser(None, binary=b"", chunk_token_num=512)
+            assert False, "Expected ValueError for empty binary"
+        except ValueError:
+            pass
 
 
 class TestEpubParserFallback:
@@ -149,6 +202,41 @@ class TestEpubParserFallback:
         sections = parser(None, binary=epub_bytes, chunk_token_num=512)
         combined = " ".join(sections)
         assert "Fallback Content" in combined
+
+    def test_fallback_on_malformed_container_xml(self):
+        """Malformed container.xml should fall back, not raise."""
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("mimetype", "application/epub+zip")
+            zf.writestr("META-INF/container.xml", "THIS IS NOT XML <><><>")
+            zf.writestr("chapter.xhtml", _simple_html("Recovered Content"))
+
+        parser = RAGFlowEpubParser()
+        sections = parser(None, binary=buf.getvalue(), chunk_token_num=512)
+        combined = " ".join(sections)
+        assert "Recovered Content" in combined
+
+    def test_fallback_on_malformed_opf_xml(self):
+        """Malformed OPF file should fall back, not raise."""
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("mimetype", "application/epub+zip")
+            container_xml = (
+                '<?xml version="1.0"?>'
+                '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">'
+                "  <rootfiles>"
+                '    <rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>'
+                "  </rootfiles>"
+                "</container>"
+            )
+            zf.writestr("META-INF/container.xml", container_xml)
+            zf.writestr("content.opf", "BROKEN OPF {{{")
+            zf.writestr("chapter.xhtml", _simple_html("OPF Fallback"))
+
+        parser = RAGFlowEpubParser()
+        sections = parser(None, binary=buf.getvalue(), chunk_token_num=512)
+        combined = " ".join(sections)
+        assert "OPF Fallback" in combined
 
 
 class TestEpubParserEdgeCases:
@@ -224,3 +312,39 @@ class TestEpubParserEdgeCases:
         sections = parser(None, binary=epub_bytes, chunk_token_num=512)
         combined = " ".join(sections)
         assert "Existing Chapter" in combined
+
+    def test_empty_xhtml_file_skipped(self):
+        """Empty XHTML files in the EPUB should be skipped without error."""
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("mimetype", "application/epub+zip")
+            container_xml = (
+                '<?xml version="1.0"?>'
+                '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">'
+                "  <rootfiles>"
+                '    <rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>'
+                "  </rootfiles>"
+                "</container>"
+            )
+            zf.writestr("META-INF/container.xml", container_xml)
+            opf_xml = (
+                '<?xml version="1.0"?>'
+                '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
+                "  <manifest>"
+                '    <item id="ch1" href="empty.xhtml" media-type="application/xhtml+xml"/>'
+                '    <item id="ch2" href="real.xhtml" media-type="application/xhtml+xml"/>'
+                "  </manifest>"
+                "  <spine>"
+                '    <itemref idref="ch1"/>'
+                '    <itemref idref="ch2"/>'
+                "  </spine>"
+                "</package>"
+            )
+            zf.writestr("content.opf", opf_xml)
+            zf.writestr("empty.xhtml", b"")
+            zf.writestr("real.xhtml", _simple_html("Has Content"))
+
+        parser = RAGFlowEpubParser()
+        sections = parser(None, binary=buf.getvalue(), chunk_token_num=512)
+        combined = " ".join(sections)
+        assert "Has Content" in combined
