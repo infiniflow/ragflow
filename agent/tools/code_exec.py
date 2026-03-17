@@ -148,6 +148,8 @@ class CodeExec(ToolBase, ABC):
         if self.check_if_canceled("CodeExec execution"):
             return self.output()
 
+        timeout_seconds = int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60))
+
         try:
             # Try using the new sandbox provider system first
             try:
@@ -160,22 +162,14 @@ class CodeExec(ToolBase, ABC):
                 result = sandbox_execute_code(
                     code=code,
                     language=language,
-                    timeout=int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)),
+                    timeout=timeout_seconds,
                     arguments=arguments
                 )
 
                 if self.check_if_canceled("CodeExec execution"):
                     return
 
-                # Process the result
-                if result.stderr:
-                    self.set_output("_ERROR", result.stderr)
-                    return
-
-                parsed_stdout = self._deserialize_stdout(result.stdout)
-                logging.info(f"[CodeExec]: Provider system -> {parsed_stdout}")
-                self._populate_outputs(parsed_stdout, result.stdout)
-                return
+                return self._process_execution_result(result.stdout, result.stderr, "Provider system")
 
             except (ImportError, RuntimeError) as provider_error:
                 # Provider system not available or not configured, fall back to HTTP
@@ -196,7 +190,7 @@ class CodeExec(ToolBase, ABC):
                 self.set_output("_ERROR", "Task has been canceled")
                 return self.output()
 
-            resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, timeout=int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
+            resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, timeout=timeout_seconds)
             logging.info(f"http://{settings.SANDBOX_HOST}:9385/run,  code_req: {code_req}, resp.status_code {resp.status_code}:")
 
             if self.check_if_canceled("CodeExec execution"):
@@ -206,14 +200,11 @@ class CodeExec(ToolBase, ABC):
                 resp.raise_for_status()
             body = resp.json()
             if body:
-                stderr = body.get("stderr")
-                if stderr:
-                    self.set_output("_ERROR", stderr)
-                    return self.output()
-                raw_stdout = body.get("stdout", "")
-                parsed_stdout = self._deserialize_stdout(raw_stdout)
-                logging.info(f"[CodeExec]: http://{settings.SANDBOX_HOST}:9385/run -> {parsed_stdout}")
-                self._populate_outputs(parsed_stdout, raw_stdout)
+                return self._process_execution_result(
+                    body.get("stdout", ""),
+                    body.get("stderr"),
+                    f"http://{settings.SANDBOX_HOST}:9385/run",
+                )
             else:
                 self.set_output("_ERROR", "There is no response from sandbox")
                 return self.output()
@@ -224,6 +215,16 @@ class CodeExec(ToolBase, ABC):
 
             self.set_output("_ERROR", "Exception executing code: " + str(e))
 
+        return self.output()
+
+    def _process_execution_result(self, stdout: str, stderr: str | None, source: str):
+        if stderr:
+            self.set_output("_ERROR", stderr)
+            return self.output()
+
+        parsed_stdout = self._deserialize_stdout(stdout)
+        logging.info(f"[CodeExec]: {source} -> {parsed_stdout}")
+        self._populate_outputs(parsed_stdout, stdout)
         return self.output()
 
     def _encode_code(self, code: str) -> str:
