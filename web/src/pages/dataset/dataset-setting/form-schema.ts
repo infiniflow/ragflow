@@ -14,11 +14,11 @@ export const formSchema = z
     avatar: z.any().nullish(),
     permission: z.string().optional(),
     language: z.string().optional(),
-    chunk_method: z.string(),
+    parser_id: z.string(),
     pipeline_id: z.string().optional(),
     pipeline_name: z.string().optional(),
     pipeline_avatar: z.string().optional(),
-    embedding_model: z.string(),
+    embd_id: z.string(),
     parser_config: z
       .object({
         layout_recognize: z.string(),
