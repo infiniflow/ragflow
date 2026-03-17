@@ -27,8 +27,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
-            (None, "<Unauthorized '401: Unauthorized'>"),
-            (INVALID_API_TOKEN, "<Unauthorized '401: Unauthorized'>"),
+            (None, "Authentication error: API key is invalid!"),
+            (INVALID_API_TOKEN, "Authentication error: API key is invalid!"),
         ],
     )
     def test_auth_invalid(self, invalid_auth, expected_message):

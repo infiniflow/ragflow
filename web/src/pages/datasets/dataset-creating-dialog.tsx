@@ -46,20 +46,20 @@ export function InputForm({ onOk }: IModalProps<any>) {
         })
         .trim(),
       parseType: z.number().optional(),
-      embedding_model: z
+      embd_id: z
         .string()
         .min(1, {
           message: t('knowledgeConfiguration.embeddingModelPlaceholder'),
         })
         .trim(),
-      chunk_method: z.string().optional(),
+      parser_id: z.string().optional(),
       pipeline_id: z.string().optional(),
     })
     .superRefine((data, ctx) => {
-      // When parseType === 1, chunk_method is required
+      // When parseType === 1, parser_id is required
       if (
         data.parseType === 1 &&
-        (!data.chunk_method || data.chunk_method.trim() === '')
+        (!data.parser_id || data.parser_id.trim() === '')
       ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -82,8 +82,8 @@ export function InputForm({ onOk }: IModalProps<any>) {
     defaultValues: {
       name: '',
       parseType: 1,
-      chunk_method: '',
-      embedding_model: tenantInfo?.embd_id,
+      parser_id: '',
+      embd_id: tenantInfo?.embd_id,
     },
   });
 
