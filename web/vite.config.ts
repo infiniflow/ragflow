@@ -69,8 +69,38 @@ export default defineConfig(({ mode }) => {
         changeOrigin: true,
         ws: true,
       },
+      '/api/v1/admin/roles': {
+        target: 'http://127.0.0.1:9381/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/api/v1/admin/roles/owner/permission': {
+        target: 'http://127.0.0.1:9381/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/api/v1/admin/roles_with_permission': {
+        target: 'http://127.0.0.1:9381/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/api/v1/admin/whitelist': {
+        target: 'http://127.0.0.1:9381/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/api/v1/admin/variables': {
+        target: 'http://127.0.0.1:9381/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/api/v1/billing/current_plan': {
+        target: 'http://127.0.0.1:9381/',
+        changeOrigin: true,
+        ws: true,
+      },
       '/api/v1/admin': {
-        target: 'http://127.0.0.1:9385/',
+        target: 'http://127.0.0.1:9383/',
         changeOrigin: true,
         ws: true,
       },
@@ -87,7 +117,7 @@ export default defineConfig(({ mode }) => {
     },
     go: {
       '/api/v1/admin': {
-        target: 'http://127.0.0.1:9385/',
+        target: 'http://127.0.0.1:9383/',
         changeOrigin: true,
         ws: true,
       },
