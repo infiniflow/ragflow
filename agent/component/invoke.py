@@ -97,8 +97,10 @@ class Invoke(ComponentBase, ABC):
             except Exception:
                 return ""
 
+        variable_pattern = r"\{([a-zA-Z_][a-zA-Z0-9_.@-]*)\}"
+
         # {base_url} or {component_id@variable_name}
-        url = re.sub(r"\{([a-zA-Z_][a-zA-Z0-9_.@-]*)\}", replace_variable, url)
+        url = re.sub(variable_pattern, replace_variable, url)
 
         if url.find("http") != 0:
             url = "http://" + url
@@ -107,6 +109,9 @@ class Invoke(ComponentBase, ABC):
         headers = {}
         if self._param.headers:
             headers = json.loads(self._param.headers)
+            for key in headers:
+                if isinstance(headers[key], str):
+                    headers[key] = re.sub(variable_pattern, replace_variable, headers[key])
         proxies = None
         if re.sub(r"https?:?/?/?", "", self._param.proxy):
             proxies = {"http": self._param.proxy, "https": self._param.proxy}
