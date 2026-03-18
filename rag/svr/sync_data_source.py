@@ -123,7 +123,6 @@ class SyncBase:
             if not document_batch:
                 continue
 
-            min_update = min(doc.doc_updated_at for doc in document_batch)
             max_update = max(doc.doc_updated_at for doc in document_batch)
             next_update = max(next_update, max_update)
 
