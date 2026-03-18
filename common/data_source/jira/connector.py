@@ -96,7 +96,7 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
         scoped_token: bool = False,
         attachment_size_limit: int | None = None,
         timezone_offset: float | None = None,
-        time_buffer_seconds: int = JIRA_SYNC_TIME_BUFFER_SECONDS,
+        time_buffer_seconds: int | None = JIRA_SYNC_TIME_BUFFER_SECONDS,
     ) -> None:
         if not jira_base_url:
             raise ConnectorValidationError("Jira base URL must be provided.")

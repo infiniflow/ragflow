@@ -151,7 +151,7 @@ class SyncBase:
                     task["auto_parse"]
                 )
                 SyncLogsService.increase_docs(
-                    task["id"], min_update, max_update,
+                    task["id"], max_update,
                     len(docs), "\n".join(err), len(err)
                 )
 
