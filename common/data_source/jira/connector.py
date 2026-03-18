@@ -122,7 +122,15 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
         self.timezone_offset = tz_offset_value
         self.timezone = timezone(offset=timedelta(hours=tz_offset_value))
         self._timezone_overridden = timezone_offset is not None
-        buffer_value = JIRA_SYNC_TIME_BUFFER_SECONDS if time_buffer_seconds is None else int(time_buffer_seconds)
+        if time_buffer_seconds is None:
+            buffer_value = JIRA_SYNC_TIME_BUFFER_SECONDS
+        else:
+            try:
+                buffer_value = int(time_buffer_seconds)
+            except (TypeError, ValueError) as exc:
+                raise ConnectorValidationError(
+                    f"Invalid time_buffer_seconds value ({time_buffer_seconds!r}); expected an integer."
+                ) from exc
         self.time_buffer_seconds = max(0, buffer_value)
 
     # -------------------------------------------------------------------------
