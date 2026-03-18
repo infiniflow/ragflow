@@ -217,6 +217,24 @@ function ensure_db_init() {
   "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
 }
 
+function wait_for_server() {
+    local url="$1"
+    local server_name="$2"
+    local timeout=90
+    local interval=2
+    local start_time=$(date +%s)
+
+    echo "Waiting for $server_name to be ready at $url..."
+    while ! curl -f -s -o /dev/null "$url"; do
+        if [ $(($(date +%s) - start_time)) -gt $timeout ]; then
+            echo "Timeout waiting for $server_name after $timeout seconds"
+            return 1
+        fi
+        sleep $interval
+    done
+    echo "$server_name is ready."
+}
+
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
@@ -232,6 +250,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
         "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
 
         if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+            wait_for_server "http://127.0.0.1:9380/healthz" "ragflow_server"
             echo "Starting RAGFlow server in hybrid mode..."
             bin/server_main &
         fi
@@ -254,6 +273,7 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     while true; do
         "$PY" admin/server/admin_server.py &
         if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+            wait_for_server "http://127.0.0.1:9381/api/v1/admin/ping" "admin_server"
             echo "Starting Admin server in hybrid mode..."
             bin/admin_server &
         fi
