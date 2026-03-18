@@ -246,7 +246,7 @@ export function FilesTable({
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-
+    getRowId: (row) => row.id, // Use file ID instead of row index
     manualPagination: true, //we're doing manual "server-side" pagination
     enableRowSelection(row) {
       return !isKnowledgeBaseType(row.original.source_type);
