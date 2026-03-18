@@ -1192,8 +1192,20 @@ class LiteLLMBase(ABC):
 
         return LLMErrorCode.ERROR_GENERIC
 
+    def _is_openai_gpt5_family_model(self) -> bool:
+        if self.provider not in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI}:
+            return False
+        return "gpt-5" in (self.model_name or "").lower()
+
+    def _drop_gpt5_sampling_params(self, params: dict):
+        for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
+            params.pop(key, None)
+
     def _clean_conf(self, gen_conf):
         gen_conf = deepcopy(gen_conf) if gen_conf else {}
+
+        if self._is_openai_gpt5_family_model():
+            self._drop_gpt5_sampling_params(gen_conf)
 
         if self.provider == SupportedLiteLLMProvider.HunYuan:
             unsupported = ["presence_penalty", "frequency_penalty"]
@@ -1228,6 +1240,10 @@ class LiteLLMBase(ABC):
         logging.info("[HISTORY]" + json.dumps(hist, ensure_ascii=False, indent=2))
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
+
+        gen_conf = self._clean_conf(gen_conf)
+        if self._is_openai_gpt5_family_model():
+            self._drop_gpt5_sampling_params(kwargs)
 
         completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **{**gen_conf, **kwargs})
 
