@@ -180,28 +180,20 @@ PY=python3
 # -----------------------------------------------------------------------------
 NGINX_CONF_DIR="/etc/nginx/conf.d"
 if [ -n "$API_PROXY_SCHEME" ]; then
-    if [ "$API_PROXY_SCHEME" = "hybrid" ]; then
-        if [ -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" ]; then
-            mv -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" "$NGINX_CONF_DIR/ragflow.conf"
-            echo "Applied nginx config: ragflow.conf.hybrid"
-        fi
-    elif [ "$API_PROXY_SCHEME" = "go" ]; then
-        if [ -f "$NGINX_CONF_DIR/ragflow.conf.golang" ]; then
-            mv -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
-            echo "Applied nginx config: ragflow.conf.golang (default)"
-        fi
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+        mv -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" "$NGINX_CONF_DIR/ragflow.conf"
+        echo "Applied nginx config: ragflow.conf.hybrid"
+    elif [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        mv -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
+        echo "Applied nginx config: ragflow.conf.golang (default)"
     else
-        if [ -f "$NGINX_CONF_DIR/ragflow.conf.python" ]; then
-            mv -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
-            echo "Applied nginx config: ragflow.conf.python"
-        fi
-    fi
-else
-    # Default to python backend
-    if [ -f "$NGINX_CONF_DIR/ragflow.conf.python" ]; then
         mv -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
         echo "Applied nginx config: ragflow.conf.python"
     fi
+else
+    # Default to python backend
+    mv -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
+    echo "Default: applied nginx config: ragflow.conf.python"
 fi
 
 # -----------------------------------------------------------------------------
