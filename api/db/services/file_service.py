@@ -444,6 +444,15 @@ class FileService(CommonService):
             e, doc = DocumentService.get_by_id(doc_id)
             if e:
                 try:
+                    if str(doc.kb_id) != str(kb.id):
+                        msg = (
+                            f"Existing document id collision detected for {doc_id}: "
+                            f"belongs to kb_id={doc.kb_id}, incoming kb_id={kb.id}. "
+                            "Skipping update to avoid cross-KB overwrite."
+                        )
+                        logging.warning(msg)
+                        err.append(file.filename + ": " + msg)
+                        continue
                     blob = file.read()
                     new_hash = xxhash.xxh128(blob).hexdigest()
                     old_hash = doc.content_hash or ""

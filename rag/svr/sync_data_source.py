@@ -577,6 +577,7 @@ class Jira(SyncBase):
             "scoped_token": self.conf.get("scoped_token", False),
             "attachment_size_limit": self.conf.get("attachment_size_limit"),
             "timezone_offset": self.conf.get("timezone_offset"),
+            "time_buffer_seconds": self.conf.get("time_buffer_seconds"),
         }
 
         self.connector = JiraConnector(**connector_kwargs)
@@ -642,7 +643,15 @@ class Jira(SyncBase):
             if pending_docs:
                 yield pending_docs
 
-        logging.info(f"[Jira] Connect to Jira {connector_kwargs['jira_base_url']} {begin_info}")
+        logging.info(
+            "[Jira] Connect to Jira %s %s (start=%s, end=%s, sync_batch_size=%s, overlap_buffer_s=%s)",
+            connector_kwargs["jira_base_url"],
+            begin_info,
+            start_time,
+            end_time,
+            batch_size,
+            connector_kwargs.get("time_buffer_seconds"),
+        )
         return document_batches()
 
     @staticmethod
