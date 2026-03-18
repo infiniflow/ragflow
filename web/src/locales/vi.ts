@@ -1255,6 +1255,7 @@ export default {
       russian: 'Tiếng Nga',
       bulgarian: 'Tiếng Bulgaria',
       arabic: 'Tiếng Ả Rập',
+      turkish: 'Tiếng Thổ Nhĩ Kỳ',
     },
   },
 };
