@@ -650,7 +650,7 @@ class Jira(SyncBase):
             start_time,
             end_time,
             batch_size,
-            connector_kwargs.get("time_buffer_seconds"),
+            getattr(self.connector, "time_buffer_seconds", connector_kwargs.get("time_buffer_seconds")),
         )
         return document_batches()
 
