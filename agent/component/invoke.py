@@ -108,10 +108,25 @@ class Invoke(ComponentBase, ABC):
         method = self._param.method.lower()
         headers = {}
         if self._param.headers:
-            headers = json.loads(self._param.headers)
-            for key in headers:
-                if isinstance(headers[key], str):
-                    headers[key] = re.sub(variable_pattern, replace_variable, headers[key])
+            try:
+                parsed_headers = json.loads(self._param.headers)
+            except json.JSONDecodeError as e:
+                logging.warning(
+                    "Invoke headers are not valid JSON, ignoring headers. raw=%r error=%s",
+                    self._param.headers,
+                    e,
+                )
+                parsed_headers = {}
+            if not isinstance(parsed_headers, dict):
+                logging.warning(
+                    "Invoke headers JSON is of type %s, expected an object; ignoring headers.",
+                    type(parsed_headers).__name__,
+                )
+                parsed_headers = {}
+            headers = parsed_headers
+            for key, value in list(headers.items()):
+                if isinstance(value, str):
+                    headers[key] = re.sub(variable_pattern, replace_variable, value)
         proxies = None
         if re.sub(r"https?:?/?/?", "", self._param.proxy):
             proxies = {"http": self._param.proxy, "https": self._param.proxy}

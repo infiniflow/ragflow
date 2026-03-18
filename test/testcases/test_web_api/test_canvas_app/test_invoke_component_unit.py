@@ -149,10 +149,6 @@ def test_header_single_variable(monkeypatch):
         headers=json.dumps({"Authorization": "Bearer {auth_token}"}),
         variable_values={"auth_token": "secret123"},
     )
-    monkeypatch.setattr(module.requests, "get", lambda **kw: SimpleNamespace(text="ok"))
-    invoke._invoke()
-    # requests.get is monkeypatched, so check via output
-    # Instead, patch at module level and inspect call
     mock_get = MagicMock(return_value=SimpleNamespace(text="ok"))
     monkeypatch.setattr(module.requests, "get", mock_get)
     invoke._invoke()
