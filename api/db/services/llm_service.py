@@ -87,13 +87,10 @@ class LLMBundle(LLM4Tenant):
         super().__init__(tenant_id, model_config, lang, **kwargs)
 
     def bind_tools(self, toolcall_session, tools):
-        print(f"[LLMBundle.bind_tools] model={self.model_config['llm_name']} bundle.is_tools={self.is_tools} tools={[t['function']['name'] for t in tools]}", flush=True)
         if not self.is_tools:
             logging.warning(f"Model {self.model_config['llm_name']} does not support tool call, but you have assigned one or more tools to it!")
-            print(f"[LLMBundle.bind_tools] SKIPPED — model not capable of tool call", flush=True)
             return
         self.mdl.bind_tools(toolcall_session, tools)
-        print(f"[LLMBundle.bind_tools] done, mdl.is_tools={getattr(self.mdl, 'is_tools', None)}", flush=True)
 
     def encode(self, texts: list):
         if self.langfuse:
@@ -413,10 +410,8 @@ class LLMBundle(LLM4Tenant):
         _has_with_tools = hasattr(self.mdl, "async_chat_streamly_with_tools")
         if _bundle_is_tools and _mdl_is_tools and _has_with_tools:
             stream_fn = getattr(self.mdl, "async_chat_streamly_with_tools", None)
-            print(f"[LLMBundle.async_chat_streamly] routing → async_chat_streamly_with_tools", flush=True)
         elif hasattr(self.mdl, "async_chat_streamly"):
             stream_fn = getattr(self.mdl, "async_chat_streamly", None)
-            print(f"[LLMBundle.async_chat_streamly] routing → async_chat_streamly (NO tools) bundle.is_tools={_bundle_is_tools} mdl.is_tools={_mdl_is_tools} has_with_tools={_has_with_tools}", flush=True)
         else:
             raise RuntimeError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
 

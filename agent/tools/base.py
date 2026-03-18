@@ -56,21 +56,20 @@ class LLMToolPluginCallSession(ToolCallSession):
         return asyncio.run(self.tool_call_async(name, arguments))
 
     async def tool_call_async(self, name: str, arguments: dict[str, Any]) -> Any:
-        print(f"[LLMToolPluginCallSession.tool_call_async] name={name} arguments={arguments}", flush=True)
         assert name in self.tools_map, f"LLM tool {name} does not exist"
+        logging.info(f"[ToolCall] invoke name={name} arguments={str(arguments)[:200]}")
         st = timer()
         tool_obj = self.tools_map[name]
         if isinstance(tool_obj, MCPToolCallSession):
             resp = await thread_pool_exec(tool_obj.tool_call, name, arguments, 60)
         elif hasattr(tool_obj, "invoke_async") and asyncio.iscoroutinefunction(tool_obj.invoke_async):
-            print(f"[LLMToolPluginCallSession.tool_call_async] invoking {type(tool_obj).__name__}.invoke_async", flush=True)
             resp = await tool_obj.invoke_async(**arguments)
         else:
-            print(f"[LLMToolPluginCallSession.tool_call_async] invoking {type(tool_obj).__name__}.invoke (thread)", flush=True)
             resp = await thread_pool_exec(tool_obj.invoke, **arguments)
 
-        print(f"[LLMToolPluginCallSession.tool_call_async] name={name} resp={str(resp)[:200]}", flush=True)
-        self.callback(name, arguments, resp, elapsed_time=timer()-st)
+        elapsed = timer() - st
+        logging.info(f"[ToolCall] done name={name} elapsed={elapsed:.2f}s result={str(resp)[:200]}")
+        self.callback(name, arguments, resp, elapsed_time=elapsed)
         return resp
 
     def get_tool_obj(self, name):

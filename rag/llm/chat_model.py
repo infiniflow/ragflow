@@ -377,11 +377,9 @@ class Base(ABC):
         for attempt in range(self.max_retries + 1):
             history = deepcopy(hist)
             try:
-                for _ in range(self.max_rounds + 1):
+                for _round in range(self.max_rounds + 1):
                     reasoning_start = False
-                    logging.info(f"{tools=}")
-                    print(f"[async_chat_streamly_with_tools] round={_} model={self.model_name} tools={[t['function']['name'] for t in tools]}", flush=True)
-                    print(f"[async_chat_streamly_with_tools] history={json.dumps(history, ensure_ascii=False)[:500]}", flush=True)
+                    logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
 
                     response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
 
@@ -431,31 +429,26 @@ class Base(ABC):
                         if finish_reason == "length":
                             yield self._length_stop("")
 
-                    print(f"[async_chat_streamly_with_tools] round={_} finished: answer={answer[:100]!r} final_tool_calls={list(final_tool_calls.keys())}", flush=True)
-
                     if answer and not final_tool_calls:
-                        print(f"[async_chat_streamly_with_tools] LLM returned text (no tool call), exiting", flush=True)
+                        logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
                         yield total_tokens
                         return
 
                     async def _exec_tool(tc):
                         name = tc.function.name
-                        print(f"[_exec_tool] calling tool name={name} args_raw={tc.function.arguments[:200]}", flush=True)
                         try:
                             args = json_repair.loads(tc.function.arguments)
                             if hasattr(self.toolcall_session, "tool_call_async"):
                                 result = await self.toolcall_session.tool_call_async(name, args)
                             else:
                                 result = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
-                            print(f"[_exec_tool] tool={name} result={str(result)[:200]}", flush=True)
                             return tc, name, args, result, None
                         except Exception as e:
-                            print(f"[_exec_tool] tool={name} ERROR={e}", flush=True)
                             logging.exception(f"Tool call failed: {tc}")
                             return tc, name, {}, None, e
 
                     tcs = list(final_tool_calls.values())
-                    print(f"[async_chat_streamly_with_tools] executing {len(tcs)} tool(s): {[tc.function.name for tc in tcs]}", flush=True)
+                    logging.info(f"[ToolLoop] round={_round} executing {len(tcs)} tool(s): {[tc.function.name for tc in tcs]}")
                     for tc in tcs:
                         try:
                             args = json_repair.loads(tc.function.arguments)
@@ -1545,14 +1538,11 @@ class LiteLLMBase(ABC):
         for attempt in range(self.max_retries + 1):
             history = deepcopy(hist)
             try:
-                for _ in range(self.max_rounds + 1):
+                for _round in range(self.max_rounds + 1):
                     reasoning_start = False
-                    logging.info(f"{tools=}")
-                    print(f"[LiteLLM.async_chat_streamly_with_tools] round={_} tools={[t['function']['name'] for t in tools]}", flush=True)
-                    print(f"[LiteLLM.async_chat_streamly_with_tools] history={json.dumps(history, ensure_ascii=False)[:500]}", flush=True)
+                    logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
 
                     completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
-                    print(f"[LiteLLM.async_chat_streamly_with_tools] completion_args keys={list(completion_args.keys())} tool_choice={completion_args.get('tool_choice')}", flush=True)
                     response = await litellm.acompletion(
                         **completion_args,
                         drop_params=True,
@@ -1605,31 +1595,26 @@ class LiteLLMBase(ABC):
                         if finish_reason == "length":
                             yield self._length_stop("")
 
-                    print(f"[LiteLLM.async_chat_streamly_with_tools] round={_} finished: answer={answer[:100]!r} final_tool_calls={list(final_tool_calls.keys())}", flush=True)
-
                     if answer and not final_tool_calls:
-                        print(f"[LiteLLM.async_chat_streamly_with_tools] LLM returned text (no tool call), exiting", flush=True)
+                        logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
                         yield total_tokens
                         return
 
                     async def _exec_tool(tc):
                         name = tc.function.name
-                        print(f"[LiteLLM._exec_tool] calling tool name={name} args_raw={tc.function.arguments[:200]}", flush=True)
                         try:
                             args = json_repair.loads(tc.function.arguments)
                             if hasattr(self.toolcall_session, "tool_call_async"):
                                 result = await self.toolcall_session.tool_call_async(name, args)
                             else:
                                 result = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
-                            print(f"[LiteLLM._exec_tool] tool={name} result={str(result)[:200]}", flush=True)
                             return tc, name, args, result, None
                         except Exception as e:
-                            print(f"[LiteLLM._exec_tool] tool={name} ERROR={e}", flush=True)
                             logging.exception(f"Tool call failed: {tc}")
                             return tc, name, {}, None, e
 
                     tcs = list(final_tool_calls.values())
-                    print(f"[LiteLLM.async_chat_streamly_with_tools] executing {len(tcs)} tool(s): {[tc.function.name for tc in tcs]}", flush=True)
+                    logging.info(f"[ToolLoop] round={_round} executing {len(tcs)} tool(s): {[tc.function.name for tc in tcs]}")
                     for tc in tcs:
                         try:
                             args = json_repair.loads(tc.function.arguments)
