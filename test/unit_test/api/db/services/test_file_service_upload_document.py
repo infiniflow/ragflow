@@ -29,8 +29,11 @@ warnings.filterwarnings(
 
 
 def _install_cv2_stub_if_unavailable():
-    if importlib.util.find_spec("cv2") is not None:
+    try:
+        importlib.import_module("cv2")
         return
+    except Exception:
+        pass
 
     stub = types.ModuleType("cv2")
     stub.INTER_LINEAR = 1
@@ -52,6 +55,8 @@ def _install_cv2_stub_if_unavailable():
 
 def _install_xgboost_stub_if_unavailable():
     if "xgboost" in sys.modules:
+        return
+    if importlib.util.find_spec("xgboost") is not None:
         return
     sys.modules["xgboost"] = types.ModuleType("xgboost")
 
