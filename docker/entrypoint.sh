@@ -185,17 +185,17 @@ if [ -n "$API_PROXY_SCHEME" ]; then
             mv -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" "$NGINX_CONF_DIR/ragflow.conf"
             echo "Applied nginx config: ragflow.conf.hybrid"
         fi
-    elif [ "$API_PROXY_SCHEME" = "python" ]; then
-        if [ -f "$NGINX_CONF_DIR/ragflow.conf.python" ]; then
-            mv -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
-            echo "Applied nginx config: ragflow.conf.python"
+    elif [ "$API_PROXY_SCHEME" = "go" ]; then
+        if [ -f "$NGINX_CONF_DIR/ragflow.conf.golang" ]; then
+            mv -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
+            echo "Applied nginx config: ragflow.conf.golang (default)"
         fi
     fi
 else
-    # Default to Go backend
-    if [ -f "$NGINX_CONF_DIR/ragflow.conf.golang" ]; then
-        mv -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
-        echo "Applied nginx config: ragflow.conf.golang (default)"
+    # Default to python backend
+    if [ -f "$NGINX_CONF_DIR/ragflow.conf.python" ]; then
+        mv -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
+        echo "Applied nginx config: ragflow.conf.python"
     fi
 fi
 
