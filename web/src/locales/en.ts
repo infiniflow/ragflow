@@ -37,6 +37,7 @@ export default {
       italian: 'Italian',
       bulgarian: 'Bulgarian',
       arabic: 'Arabic',
+      turkish: 'Turkish',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -2500,6 +2501,7 @@ Important structured information may include: names, dates, locations, events, k
       russian: 'Russian',
       bulgarian: 'Bulgarian',
       arabic: 'Arabic',
+      turkish: 'Turkish',
     },
     pagination: {
       total: 'Total {{total}}',
