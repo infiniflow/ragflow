@@ -60,6 +60,58 @@ LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小�
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
 
+def _apply_model_family_policies(
+    model_name: str,
+    *,
+    backend: str,
+    provider: SupportedLiteLLMProvider | str | None = None,
+    gen_conf: dict | None = None,
+    request_kwargs: dict | None = None,
+):
+    model_name_lower = (model_name or "").lower()
+    sanitized_gen_conf = deepcopy(gen_conf) if gen_conf else {}
+    sanitized_kwargs = dict(request_kwargs) if request_kwargs else {}
+
+    # Qwen3 family disables thinking by extra_body on non-stream chat requests.
+    if "qwen3" in model_name_lower:
+        sanitized_kwargs["extra_body"] = {"enable_thinking": False}
+
+    if backend == "base":
+        # GPT-5 and GPT-5.1 endpoints in this path have inconsistent generation-param support.
+        if "gpt-5" in model_name_lower:
+            sanitized_gen_conf = {}
+        return sanitized_gen_conf, sanitized_kwargs
+
+    if backend == "litellm":
+        if provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI} and "gpt-5" in model_name_lower:
+            for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
+                sanitized_gen_conf.pop(key, None)
+                sanitized_kwargs.pop(key, None)
+
+        if provider == SupportedLiteLLMProvider.HunYuan:
+            for key in ("presence_penalty", "frequency_penalty"):
+                sanitized_gen_conf.pop(key, None)
+        elif "kimi-k2.5" in model_name_lower:
+            reasoning = sanitized_gen_conf.pop("reasoning", None)
+            thinking = {"type": "enabled"}
+            if reasoning is not None:
+                thinking = {"type": "enabled"} if reasoning else {"type": "disabled"}
+            elif not isinstance(thinking, dict) or thinking.get("type") not in {"enabled", "disabled"}:
+                thinking = {"type": "disabled"}
+            sanitized_gen_conf["thinking"] = thinking
+
+            thinking_enabled = thinking.get("type") == "enabled"
+            sanitized_gen_conf["temperature"] = 1.0 if thinking_enabled else 0.6
+            sanitized_gen_conf["top_p"] = 0.95
+            sanitized_gen_conf["n"] = 1
+            sanitized_gen_conf["presence_penalty"] = 0.0
+            sanitized_gen_conf["frequency_penalty"] = 0.0
+
+        return sanitized_gen_conf, sanitized_kwargs
+
+    return sanitized_gen_conf, sanitized_kwargs
+
+
 class Base(ABC):
     def __init__(self, key, model_name, base_url, **kwargs):
         timeout = int(os.environ.get("LLM_TIMEOUT_SECONDS", 600))
@@ -100,9 +152,12 @@ class Base(ABC):
 
     def _clean_conf(self, gen_conf):
         model_name_lower = (self.model_name or "").lower()
-        # gpt-5 and gpt-5.1 endpoints have inconsistent parameter support, clear custom generation params to prevent unexpected issues
+        gen_conf, _ = _apply_model_family_policies(
+            self.model_name,
+            backend="base",
+            gen_conf=gen_conf,
+        )
         if "gpt-5" in model_name_lower:
-            gen_conf = {}
             return gen_conf
 
         if "max_tokens" in gen_conf:
@@ -461,8 +516,11 @@ class Base(ABC):
 
             return final_ans.strip(), tol_token
 
-        if self.model_name.lower().find("qwen3") >= 0:
-            kwargs["extra_body"] = {"enable_thinking": False}
+        _, kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="base",
+            request_kwargs=kwargs,
+        )
 
         response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
@@ -1192,41 +1250,13 @@ class LiteLLMBase(ABC):
 
         return LLMErrorCode.ERROR_GENERIC
 
-    def _is_openai_gpt5_family_model(self) -> bool:
-        if self.provider not in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI}:
-            return False
-        return "gpt-5" in (self.model_name or "").lower()
-
-    def _drop_gpt5_sampling_params(self, params: dict):
-        for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
-            params.pop(key, None)
-
     def _clean_conf(self, gen_conf):
-        gen_conf = deepcopy(gen_conf) if gen_conf else {}
-
-        if self._is_openai_gpt5_family_model():
-            self._drop_gpt5_sampling_params(gen_conf)
-
-        if self.provider == SupportedLiteLLMProvider.HunYuan:
-            unsupported = ["presence_penalty", "frequency_penalty"]
-            for key in unsupported:
-                gen_conf.pop(key, None)
-
-        elif "kimi-k2.5" in self.model_name.lower():
-            reasoning = gen_conf.pop("reasoning", None) # will never get one here, handle this later
-            thinking = {"type": "enabled"} # enable thinking by default
-            if reasoning is not None:
-                thinking = {"type": "enabled"} if reasoning else {"type": "disabled"}
-            elif not isinstance(thinking, dict) or thinking.get("type") not in {"enabled", "disabled"}:
-                thinking = {"type": "disabled"}
-            gen_conf["thinking"] = thinking
-
-            thinking_enabled = thinking.get("type") == "enabled"
-            gen_conf["temperature"] = 1.0 if thinking_enabled else 0.6
-            gen_conf["top_p"] = 0.95
-            gen_conf["n"] = 1
-            gen_conf["presence_penalty"] = 0.0
-            gen_conf["frequency_penalty"] = 0.0
+        gen_conf, _ = _apply_model_family_policies(
+            self.model_name,
+            backend="litellm",
+            provider=self.provider,
+            gen_conf=gen_conf,
+        )
 
         gen_conf.pop("max_tokens", None)
         return gen_conf
@@ -1238,12 +1268,13 @@ class LiteLLMBase(ABC):
                 hist.insert(0, {"role": "system", "content": system})
 
         logging.info("[HISTORY]" + json.dumps(hist, ensure_ascii=False, indent=2))
-        if self.model_name.lower().find("qwen3") >= 0:
-            kwargs["extra_body"] = {"enable_thinking": False}
-
         gen_conf = self._clean_conf(gen_conf)
-        if self._is_openai_gpt5_family_model():
-            self._drop_gpt5_sampling_params(kwargs)
+        _, kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="litellm",
+            provider=self.provider,
+            request_kwargs=kwargs,
+        )
 
         completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **{**gen_conf, **kwargs})
 
