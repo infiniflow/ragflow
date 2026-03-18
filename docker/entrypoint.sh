@@ -176,6 +176,30 @@ export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
 PY=python3
 
 # -----------------------------------------------------------------------------
+# Select Nginx Configuration based on API_PROXY_SCHEME
+# -----------------------------------------------------------------------------
+NGINX_CONF_DIR="/etc/nginx/conf.d"
+if [ -n "$API_PROXY_SCHEME" ]; then
+    if [ "$API_PROXY_SCHEME" = "hybrid" ]; then
+        if [ -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" ]; then
+            mv -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" "$NGINX_CONF_DIR/ragflow.conf"
+            echo "Applied nginx config: ragflow.conf.hybrid"
+        fi
+    elif [ "$API_PROXY_SCHEME" = "python" ]; then
+        if [ -f "$NGINX_CONF_DIR/ragflow.conf.python" ]; then
+            mv -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
+            echo "Applied nginx config: ragflow.conf.python"
+        fi
+    fi
+else
+    # Default to Go backend
+    if [ -f "$NGINX_CONF_DIR/ragflow.conf.golang" ]; then
+        mv -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
+        echo "Applied nginx config: ragflow.conf.golang (default)"
+    fi
+fi
+
+# -----------------------------------------------------------------------------
 # Function(s)
 # -----------------------------------------------------------------------------
 
