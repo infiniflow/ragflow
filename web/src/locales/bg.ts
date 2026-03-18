@@ -2382,6 +2382,7 @@ Important structured information may include: names, dates, locations, events, k
       russian: 'Руски',
       bulgarian: 'Български',
       arabic: 'Арабски',
+      turkish: 'Турски',
     },
     pagination: {
       total: 'Общо {{total}}',
