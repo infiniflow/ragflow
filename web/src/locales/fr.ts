@@ -484,6 +484,7 @@ export default {
       russian: 'Russe',
       bulgarian: 'Bulgare',
       arabic: 'Arabe',
+      turkish: 'Turc',
     },
     setting: {
       profile: 'Profil',

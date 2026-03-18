@@ -2297,6 +2297,7 @@ export default {
       russian: 'الروسية',
       bulgarian: 'البلغارية',
       arabic: 'العربية',
+      turkish: 'التركية',
     },
     pagination: {
       total: 'الإجمالي {{total}}',

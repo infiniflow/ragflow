@@ -1207,6 +1207,7 @@ export default {
       russian: 'Russo',
       bulgarian: 'Búlgaro',
       arabic: 'Árabe',
+      turkish: 'Turco',
     },
   },
 };
