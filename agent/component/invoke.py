@@ -54,6 +54,23 @@ class InvokeParam(ComponentParamBase):
 class Invoke(ComponentBase, ABC):
     component_name = "Invoke"
 
+    def get_input_form(self) -> dict[str, dict]:
+        res = {}
+        for item in self._param.variables or []:
+            if not isinstance(item, dict):
+                continue
+            ref = (item.get("ref") or "").strip()
+            if not ref or ref in res:
+                continue
+
+            elements = self.get_input_elements_from_text("{" + ref + "}")
+            element = elements.get(ref, {})
+            res[ref] = {
+                "type": "line",
+                "name": element.get("name") or item.get("key") or ref,
+            }
+        return res
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("Invoke processing"):
@@ -63,8 +80,12 @@ class Invoke(ComponentBase, ABC):
         for para in self._param.variables:
             if para.get("value"):
                 args[para["key"]] = para["value"]
+            elif para.get("ref") in kwargs:
+                args[para["key"]] = kwargs[para["ref"]]
+                self.set_input_value(para["ref"], kwargs[para["ref"]])
             else:
                 args[para["key"]] = self._canvas.get_variable_value(para["ref"])
+                self.set_input_value(para["ref"], args[para["key"]])
 
         url = self._param.url.strip()
 
