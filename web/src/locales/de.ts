@@ -2441,6 +2441,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       russian: 'Russisch',
       bulgarian: 'Bulgarisch',
       arabic: 'Arabisch',
+      turkish: 'Türkisch',
     },
     pagination: {
       total: 'Gesamt {{total}}',

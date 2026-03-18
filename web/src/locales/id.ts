@@ -1145,6 +1145,7 @@ export default {
       russian: 'Rusia',
       bulgarian: 'Bulgaria',
       arabic: 'Arab',
+      turkish: 'Turki',
     },
   },
 };

@@ -943,6 +943,7 @@ export default {
       russian: 'Ruso',
       bulgarian: 'Búlgaro',
       arabic: 'Árabe',
+      turkish: 'Turco',
     },
   },
 };
