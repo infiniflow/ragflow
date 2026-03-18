@@ -190,6 +190,11 @@ if [ -n "$API_PROXY_SCHEME" ]; then
             mv -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
             echo "Applied nginx config: ragflow.conf.golang (default)"
         fi
+    else
+        if [ -f "$NGINX_CONF_DIR/ragflow.conf.python" ]; then
+            mv -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
+            echo "Applied nginx config: ragflow.conf.python"
+        fi
     fi
 else
     # Default to python backend
