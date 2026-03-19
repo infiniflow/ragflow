@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"ragflow/internal/server"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -37,11 +38,11 @@ type OSSStorage struct {
 	client     *s3.Client
 	bucket     string
 	prefixPath string
-	config     *OSSConfig
+	config     *server.OSSConfig
 }
 
 // NewOSSStorage creates a new OSS storage instance
-func NewOSSStorage(config *OSSConfig) (*OSSStorage, error) {
+func NewOSSStorage(config *server.OSSConfig) (*OSSStorage, error) {
 	storage := &OSSStorage{
 		bucket:     config.Bucket,
 		prefixPath: config.PrefixPath,
@@ -60,8 +61,8 @@ func (o *OSSStorage) connect() error {
 
 	// Create static credentials
 	creds := credentials.NewStaticCredentialsProvider(
-		o.config.AccessKeyID,
-		o.config.SecretAccessKey,
+		o.config.AccessKey,
+		o.config.SecretKey,
 		"",
 	)
 
