@@ -28,6 +28,7 @@ type Router struct {
 	userHandler          *handler.UserHandler
 	tenantHandler        *handler.TenantHandler
 	documentHandler      *handler.DocumentHandler
+	datasetsHandler      *handler.DatasetsHandler
 	systemHandler        *handler.SystemHandler
 	knowledgebaseHandler *handler.KnowledgebaseHandler
 	chunkHandler         *handler.ChunkHandler
@@ -45,6 +46,7 @@ func NewRouter(
 	userHandler *handler.UserHandler,
 	tenantHandler *handler.TenantHandler,
 	documentHandler *handler.DocumentHandler,
+	datasetsHandler *handler.DatasetsHandler,
 	systemHandler *handler.SystemHandler,
 	knowledgebaseHandler *handler.KnowledgebaseHandler,
 	chunkHandler *handler.ChunkHandler,
@@ -60,6 +62,7 @@ func NewRouter(
 		userHandler:          userHandler,
 		tenantHandler:        tenantHandler,
 		documentHandler:      documentHandler,
+		datasetsHandler:      datasetsHandler,
 		systemHandler:        systemHandler,
 		knowledgebaseHandler: knowledgebaseHandler,
 		chunkHandler:         chunkHandler,
@@ -133,6 +136,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
+			}
+
+			// RESTful dataset routes
+			datasets := v1.Group("/datasets")
+			{
+				datasets.GET("", r.datasetsHandler.ListDatasets)
+				datasets.POST("", r.datasetsHandler.CreateDataset)
+				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 			}
 
 			// Author routes
