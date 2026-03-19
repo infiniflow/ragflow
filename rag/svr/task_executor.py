@@ -268,6 +268,21 @@ async def build_chunks(task, progress_callback):
         logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
         raise
 
+    # Table parser column roles / mode are stored on the dataset (KB) parser_config;
+    # chunk tasks carry document-level parser_config only — merge KB keys so manual roles apply.
+    parser_config_for_chunk = task["parser_config"]
+    if task.get("parser_id", "").lower() == "table" and task.get("kb_parser_config"):
+        parser_config_for_chunk = dict(task["parser_config"])
+        kb_pc = task["kb_parser_config"]
+        for _k in ("table_column_mode", "table_column_roles", "table_column_names"):
+            if _k in kb_pc:
+                parser_config_for_chunk[_k] = kb_pc[_k]
+        logging.info(
+            "[TASK_EXECUTOR_DEBUG] table parser: merged KB keys into parser_config for chunk; "
+            f"mode={parser_config_for_chunk.get('table_column_mode')}, "
+            f"roles_keys={list((parser_config_for_chunk.get('table_column_roles') or {}).keys())}"
+        )
+
     try:
         async with chunk_limiter:
             cks = await thread_pool_exec(
@@ -279,7 +294,7 @@ async def build_chunks(task, progress_callback):
                 lang=task["language"],
                 callback=progress_callback,
                 kb_id=task["kb_id"],
-                parser_config=task["parser_config"],
+                parser_config=parser_config_for_chunk,
                 tenant_id=task["tenant_id"],
             )
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
