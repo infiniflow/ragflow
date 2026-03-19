@@ -473,7 +473,14 @@ func (h *Handler) ListRoles(c *gin.Context) {
 		return
 	}
 
-	success(c, roles, "")
+	if roles == nil {
+		roles = []map[string]interface{}{}
+	}
+
+	success(c, gin.H{
+		"roles": roles,
+		"total": len(roles),
+	}, "")
 }
 
 // CreateRoleHTTPRequest create role request
