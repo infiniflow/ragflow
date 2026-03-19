@@ -31,19 +31,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// S3Config holds AWS S3 storage configuration
-type S3Config struct {
-	AccessKeyID      string `mapstructure:"access_key"`        // AWS Access Key ID
-	SecretAccessKey  string `mapstructure:"secret_key"`        // AWS Secret Access Key
-	SessionToken     string `mapstructure:"session_token"`     // AWS Session Token (optional)
-	Region           string `mapstructure:"region_name"`       // AWS Region
-	EndpointURL      string `mapstructure:"endpoint_url"`      // Custom endpoint (optional)
-	SignatureVersion string `mapstructure:"signature_version"` // Signature version
-	AddressingStyle  string `mapstructure:"addressing_style"`  // Addressing style
-	Bucket           string `mapstructure:"bucket"`            // Default bucket (optional)
-	PrefixPath       string `mapstructure:"prefix_path"`       // Path prefix (optional)
-}
-
 // S3Storage implements Storage interface for AWS S3
 type S3Storage struct {
 	client     *s3.Client
