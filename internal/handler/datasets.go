@@ -17,8 +17,8 @@
 package handler
 
 import (
-	"bytes"
 	"encoding/json"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -26,12 +26,17 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/service"
-	"ragflow/internal/utility"
 )
 
 // DatasetsHandler handles the RESTful dataset endpoints.
 type DatasetsHandler struct {
 	datasetsService *service.DatasetsService
+}
+
+type listDatasetsExt struct {
+	Keywords string   `json:"keywords,omitempty"`
+	OwnerIDs []string `json:"owner_ids,omitempty"`
+	ParserID string   `json:"parser_id,omitempty"`
 }
 
 // NewDatasetsHandler creates a new datasets handler.
@@ -43,28 +48,71 @@ func NewDatasetsHandler(datasetsService *service.DatasetsService) *DatasetsHandl
 func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		utility.WriteAPIError(c, errorCode, errorMessage)
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	req, err := buildListDatasetsRequest(c)
+	page := 1
+	if pageStr := c.Query("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	pageSize := 30
+	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 {
+			pageSize = ps
+		}
+	}
+
+	orderby := "create_time"
+	if queryOrderby := c.Query("orderby"); queryOrderby != "" {
+		orderby = queryOrderby
+	}
+
+	desc := true
+	if descStr := c.Query("desc"); descStr != "" {
+		desc = strings.ToLower(descStr) == "true"
+	}
+
+	keywords := ""
+	parserID := ""
+	var ownerIDs []string
+
+	// ext keeps the same compatibility payload as the Python REST API.
+	if extStr := c.Query("ext"); extStr != "" {
+		var ext listDatasetsExt
+		if err := json.Unmarshal([]byte(extStr), &ext); err != nil {
+			jsonError(c, common.CodeDataError, err.Error())
+			return
+		}
+		keywords = ext.Keywords
+		parserID = ext.ParserID
+		ownerIDs = ext.OwnerIDs
+	}
+
+	data, total, code, err := h.datasetsService.ListDatasets(
+		c.Query("id"),
+		c.Query("name"),
+		page,
+		pageSize,
+		orderby,
+		desc,
+		keywords,
+		ownerIDs,
+		parserID,
+		user.ID,
+	)
 	if err != nil {
-		utility.WriteAPIError(c, common.CodeArgumentError, err.Error())
-		return
-	}
-	if err := h.datasetsService.ValidateListDatasetsRequest(req); err != nil {
-		utility.WriteAPIError(c, common.CodeArgumentError, err.Error())
+		jsonError(c, code, err.Error())
 		return
 	}
 
-	result, err := h.datasetsService.ListDatasets(user.ID, req)
-	if err != nil {
-		utility.WriteAPIError(c, common.CodeDataError, err.Error())
-		return
-	}
-
-	utility.WriteAPISuccessWithExtras(c, result.Data, map[string]interface{}{
-		"total_datasets": result.Total,
+	c.JSON(http.StatusOK, gin.H{
+		"code":           common.CodeSuccess,
+		"data":           data,
+		"total_datasets": total,
 	})
 }
 
@@ -72,132 +120,60 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		utility.WriteAPIError(c, errorCode, errorMessage)
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
 	var req service.CreateDatasetRequest
-	rawFields, err := bindJSONBody(c, &req)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	result, code, err := h.datasetsService.CreateDataset(&req, user.ID)
 	if err != nil {
-		utility.WriteAPIError(c, common.CodeArgumentError, err.Error())
-		return
-	}
-	_, req.ChunkMethodProvided = rawFields["chunk_method"]
-
-	if err := h.datasetsService.ValidateCreateDatasetRequest(&req); err != nil {
-		utility.WriteAPIError(c, common.CodeArgumentError, err.Error())
+		jsonError(c, code, err.Error())
 		return
 	}
 
-	result, err := h.datasetsService.CreateDataset(user.ID, &req)
-	if err != nil {
-		utility.WriteAPIError(c, common.CodeDataError, err.Error())
-		return
-	}
-
-	utility.WriteAPISuccess(c, result)
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": result,
+	})
 }
 
 // DeleteDatasets handles DELETE /api/v1/datasets.
 func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		utility.WriteAPIError(c, errorCode, errorMessage)
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	var req service.DeleteDatasetsRequest
-	if _, err := bindJSONBody(c, &req); err != nil {
-		utility.WriteAPIError(c, common.CodeArgumentError, err.Error())
-		return
+	var req struct {
+		IDs       *[]string `json:"ids"`
+		DeleteAll bool      `json:"delete_all,omitempty"`
 	}
-	if err := h.datasetsService.ValidateDeleteDatasetsRequest(&req); err != nil {
-		utility.WriteAPIError(c, common.CodeArgumentError, err.Error())
-		return
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			jsonError(c, common.CodeDataError, err.Error())
+			return
+		}
 	}
 
-	result, err := h.datasetsService.DeleteDatasets(user.ID, &req)
+	var ids []string
+	if req.IDs != nil {
+		ids = *req.IDs
+	}
+
+	result, code, err := h.datasetsService.DeleteDatasets(ids, req.DeleteAll, user.ID)
 	if err != nil {
-		utility.WriteAPIError(c, common.CodeDataError, err.Error())
+		jsonError(c, code, err.Error())
 		return
 	}
 
-	utility.WriteAPISuccess(c, result)
-}
-
-func buildListDatasetsRequest(c *gin.Context) (*service.ListDatasetsRequest, error) {
-	req := &service.ListDatasetsRequest{
-		Page:     1,
-		PageSize: 30,
-		OrderBy:  "create_time",
-		Desc:     true,
-	}
-
-	req.ID = strings.TrimSpace(c.Query("id"))
-	req.Name = strings.TrimSpace(c.Query("name"))
-
-	if pageValue := strings.TrimSpace(c.Query("page")); pageValue != "" {
-		page, err := strconv.Atoi(pageValue)
-		if err != nil {
-			return nil, err
-		}
-		req.Page = page
-	}
-	if pageSizeValue := strings.TrimSpace(c.Query("page_size")); pageSizeValue != "" {
-		pageSize, err := strconv.Atoi(pageSizeValue)
-		if err != nil {
-			return nil, err
-		}
-		req.PageSize = pageSize
-	}
-	if orderBy := strings.TrimSpace(c.Query("orderby")); orderBy != "" {
-		req.OrderBy = orderBy
-	}
-	if descValue := strings.TrimSpace(c.Query("desc")); descValue != "" {
-		desc, err := strconv.ParseBool(descValue)
-		if err != nil {
-			return nil, err
-		}
-		req.Desc = desc
-	}
-	if includeParsingStatusValue := strings.TrimSpace(c.Query("include_parsing_status")); includeParsingStatusValue != "" {
-		includeParsingStatus, err := strconv.ParseBool(includeParsingStatusValue)
-		if err != nil {
-			return nil, err
-		}
-		req.IncludeParsingStatus = includeParsingStatus
-	}
-	if extValue := strings.TrimSpace(c.Query("ext")); extValue != "" {
-		if err := json.Unmarshal([]byte(extValue), &req.Ext); err != nil {
-			return nil, err
-		}
-	}
-
-	return req, nil
-}
-
-func bindJSONBody(c *gin.Context, dst interface{}) (map[string]json.RawMessage, error) {
-	body, err := c.GetRawData()
-	if err != nil {
-		return nil, err
-	}
-	if len(bytes.TrimSpace(body)) == 0 {
-		body = []byte("{}")
-	}
-
-	var rawFields map[string]json.RawMessage
-	if err := json.Unmarshal(body, &rawFields); err != nil {
-		return nil, err
-	}
-	if rawFields == nil {
-		rawFields = make(map[string]json.RawMessage)
-	}
-
-	strictDecoder := json.NewDecoder(bytes.NewReader(body))
-	strictDecoder.DisallowUnknownFields()
-	if err := strictDecoder.Decode(dst); err != nil {
-		return nil, err
-	}
-
-	return rawFields, nil
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": result,
+	})
 }

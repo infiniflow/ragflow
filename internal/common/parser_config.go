@@ -1,73 +1,64 @@
-//
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
-//
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-//
+package common
 
-package utility
-
-// CloneMap deep-copies a map[string]interface{} value.
-func CloneMap(source map[string]interface{}) map[string]interface{} {
+// deepCopyMap duplicates a JSON-like map so later merges do not mutate shared defaults.
+func deepCopyMap(source map[string]interface{}) map[string]interface{} {
 	if source == nil {
 		return nil
 	}
 
 	cloned := make(map[string]interface{}, len(source))
 	for key, value := range source {
-		cloned[key] = cloneValue(value)
+		cloned[key] = deepCopyValue(value)
 	}
 	return cloned
 }
 
-// DeepMergeMaps recursively merges override into base.
+// deepCopyValue recursively copies nested maps and slices inside parser_config values.
+func deepCopyValue(value interface{}) interface{} {
+	switch typedValue := value.(type) {
+	case map[string]interface{}:
+		return deepCopyMap(typedValue)
+	case []interface{}:
+		cloned := make([]interface{}, len(typedValue))
+		for idx, item := range typedValue {
+			cloned[idx] = deepCopyValue(item)
+		}
+		return cloned
+	default:
+		return typedValue
+	}
+}
+
+// DeepMergeMaps applies override onto base while preserving nested defaults such as raptor/graphrag.
 func DeepMergeMaps(base, override map[string]interface{}) map[string]interface{} {
-	merged := CloneMap(base)
+	merged := deepCopyMap(base)
 	if merged == nil {
 		merged = make(map[string]interface{})
 	}
+	if override == nil {
+		return merged
+	}
 
 	for key, value := range override {
-		existingValue, exists := merged[key]
 		overrideMap, overrideIsMap := value.(map[string]interface{})
-		existingMap, existingIsMap := existingValue.(map[string]interface{})
-		if exists && overrideIsMap && existingIsMap {
+		existingMap, existingIsMap := merged[key].(map[string]interface{})
+		if overrideIsMap && existingIsMap {
 			merged[key] = DeepMergeMaps(existingMap, overrideMap)
 			continue
 		}
-		merged[key] = cloneValue(value)
+		merged[key] = deepCopyValue(value)
 	}
 	return merged
 }
 
-// RemapKeys renames keys based on aliases while keeping unspecified keys unchanged.
-func RemapKeys(source map[string]interface{}, aliases map[string]string) map[string]interface{} {
-	remapped := make(map[string]interface{}, len(source))
-	for key, value := range source {
-		if mappedKey, ok := aliases[key]; ok {
-			remapped[mappedKey] = value
-			continue
-		}
-		remapped[key] = value
-	}
-	return remapped
-}
-
-// GetParserConfig builds the persisted parser configuration for a chunk method.
+// GetParserConfig builds the final parser_config stored on a dataset:
+// base defaults -> chunk-method defaults -> caller overrides.
 func GetParserConfig(chunkMethod string, parserConfig map[string]interface{}) map[string]interface{} {
 	baseDefaults := map[string]interface{}{
 		"table_context_size": 0,
 		"image_context_size": 0,
 	}
+
 	defaultConfigs := map[string]map[string]interface{}{
 		"naive": {
 			"layout_recognize": "DeepDOC",
@@ -125,28 +116,6 @@ func GetParserConfig(chunkMethod string, parserConfig map[string]interface{}) ma
 		},
 	}
 
-	merged := CloneMap(baseDefaults)
-	defaultConfig, hasDefault := defaultConfigs[chunkMethod]
-	if hasDefault {
-		merged = DeepMergeMaps(merged, defaultConfig)
-	}
-	if parserConfig != nil {
-		merged = DeepMergeMaps(merged, parserConfig)
-	}
-	return merged
-}
-
-func cloneValue(value interface{}) interface{} {
-	switch typedValue := value.(type) {
-	case map[string]interface{}:
-		return CloneMap(typedValue)
-	case []interface{}:
-		cloned := make([]interface{}, len(typedValue))
-		for idx, item := range typedValue {
-			cloned[idx] = cloneValue(item)
-		}
-		return cloned
-	default:
-		return typedValue
-	}
+	merged := DeepMergeMaps(baseDefaults, defaultConfigs[chunkMethod])
+	return DeepMergeMaps(merged, parserConfig)
 }

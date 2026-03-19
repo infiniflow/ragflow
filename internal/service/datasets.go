@@ -18,6 +18,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -25,13 +26,13 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/model"
-	"ragflow/internal/utility"
 )
 
 var (
-	datasetChunkMethods = map[string]struct{}{
+	datasetAllowedChunkMethods = map[string]struct{}{
 		"naive":        {},
 		"book":         {},
 		"email":        {},
@@ -46,20 +47,15 @@ var (
 		"table":        {},
 		"tag":          {},
 	}
-	supportedAvatarMIMETypes = map[string]struct{}{
+	datasetSupportedAvatarMIMETypes = map[string]struct{}{
 		"image/jpeg": {},
 		"image/png":  {},
 	}
-	datasetOrderByFields = map[string]struct{}{
+	datasetAllowedOrderByFields = map[string]struct{}{
 		"create_time": {},
 		"update_time": {},
 	}
-	datasetResponseKeyAliases = map[string]string{
-		"chunk_num": "chunk_count",
-		"doc_num":   "document_count",
-		"parser_id": "chunk_method",
-		"embd_id":   "embedding_model",
-	}
+	datasetChunkMethodErrorMessage = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'resume', 'table' or 'tag'"
 )
 
 // DatasetsService implements the RESTful dataset APIs from dataset_api.py.
@@ -93,9 +89,9 @@ type AutoMetadataConfig struct {
 	Fields  []AutoMetadataField `json:"fields,omitempty"`
 }
 
-// CreateDatasetRequest mirrors POST /api/v1/datasets.
+// CreateDatasetRequest represents the request for creating a dataset.
 type CreateDatasetRequest struct {
-	Name               string                 `json:"name"`
+	Name               string                 `json:"name" binding:"required"`
 	Avatar             *string                `json:"avatar,omitempty"`
 	Description        *string                `json:"description,omitempty"`
 	EmbeddingModel     *string                `json:"embedding_model,omitempty"`
@@ -106,210 +102,66 @@ type CreateDatasetRequest struct {
 	ParserConfig       map[string]interface{} `json:"parser_config,omitempty"`
 	AutoMetadataConfig *AutoMetadataConfig    `json:"auto_metadata_config,omitempty"`
 	Ext                map[string]interface{} `json:"ext,omitempty"`
-
-	ChunkMethodProvided bool `json:"-"`
 }
 
-// DeleteDatasetsRequest mirrors DELETE /api/v1/datasets.
-type DeleteDatasetsRequest struct {
-	IDs       *[]string `json:"ids"`
-	DeleteAll bool      `json:"delete_all,omitempty"`
-}
-
-// ListDatasetsExt mirrors the supported ext query fields of GET /api/v1/datasets.
-type ListDatasetsExt struct {
-	Keywords string   `json:"keywords,omitempty"`
-	OwnerIDs []string `json:"owner_ids,omitempty"`
-	ParserID string   `json:"parser_id,omitempty"`
-}
-
-// ListDatasetsRequest mirrors GET /api/v1/datasets.
-type ListDatasetsRequest struct {
-	ID   string `json:"id,omitempty"`
-	Name string `json:"name,omitempty"`
-
-	Page     int    `json:"page,omitempty"`
-	PageSize int    `json:"page_size,omitempty"`
-	OrderBy  string `json:"orderby,omitempty"`
-	Desc     bool   `json:"desc,omitempty"`
-
-	IncludeParsingStatus bool            `json:"include_parsing_status,omitempty"`
-	Ext                  ListDatasetsExt `json:"ext,omitempty"`
-}
-
-// ListDatasetsResult contains the dataset list payload and total count.
-type ListDatasetsResult struct {
-	Data  []map[string]interface{}
-	Total int64
-}
-
-// ValidateCreateDatasetRequest validates request-shape rules before service execution.
-func (s *DatasetsService) ValidateCreateDatasetRequest(req *CreateDatasetRequest) error {
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		return fmt.Errorf("Field required: name")
-	}
-	if len(name) > model.DatasetNameLimit {
-		return fmt.Errorf("String should have at most %d characters", model.DatasetNameLimit)
-	}
-	if req.Avatar != nil {
-		if err := validateDatasetAvatar(*req.Avatar); err != nil {
-			return err
-		}
-	}
-	if req.EmbeddingModel != nil {
-		trimmed := strings.TrimSpace(*req.EmbeddingModel)
-		if err := validateEmbeddingModelIdentifier(trimmed); err != nil {
-			return err
-		}
-		req.EmbeddingModel = &trimmed
-	}
-	if req.Permission != nil {
-		if *req.Permission != "me" && *req.Permission != "team" {
-			return fmt.Errorf("Input should be 'me' or 'team'")
-		}
-	}
-	if req.ChunkMethodProvided {
-		if req.ChunkMethod == nil {
-			return fmt.Errorf("Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'resume', 'table' or 'tag'")
-		}
-		chunkMethod := strings.TrimSpace(*req.ChunkMethod)
-		if _, ok := datasetChunkMethods[chunkMethod]; !ok {
-			return fmt.Errorf("Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'resume', 'table' or 'tag'")
-		}
-		req.ChunkMethod = &chunkMethod
-		req.ParseType = nil
-		req.PipelineID = nil
-	} else {
-		if req.ParseType != nil {
-			if *req.ParseType < 0 || *req.ParseType > 64 {
-				return fmt.Errorf("Input should be between 0 and 64")
-			}
-		}
-		if req.PipelineID != nil {
-			normalized, err := normalizePipelineID(*req.PipelineID)
-			if err != nil {
-				return err
-			}
-			req.PipelineID = normalized
-		}
-		if req.ParseType == nil && req.PipelineID == nil {
-			chunkMethod := "naive"
-			req.ChunkMethod = &chunkMethod
-		} else if req.ParseType == nil || req.PipelineID == nil {
-			missingFields := make([]string, 0, 2)
-			if req.ParseType == nil {
-				missingFields = append(missingFields, "parse_type")
-			}
-			if req.PipelineID == nil {
-				missingFields = append(missingFields, "pipeline_id")
-			}
-			return fmt.Errorf("parser_id omitted -> required fields missing: %s", strings.Join(missingFields, ", "))
-		}
-	}
-	if len(req.ParserConfig) > 0 {
-		data, err := json.Marshal(req.ParserConfig)
+// ListDatasets lists datasets with pagination and filtering.
+func (s *DatasetsService) ListDatasets(id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
+	id = strings.TrimSpace(id)
+	if id != "" {
+		normalizedID, err := normalizeDatasetUUID1(id)
 		if err != nil {
-			return fmt.Errorf("parser_config must be valid JSON")
+			return nil, 0, common.CodeDataError, err
 		}
-		if len(data) > 65535 {
-			return fmt.Errorf("Parser config exceeds size limit (max 65,535 characters). Current size: %d", len(data))
-		}
-	}
-	return nil
-}
+		id = normalizedID
 
-// ValidateDeleteDatasetsRequest validates request-shape rules before service execution.
-func (s *DatasetsService) ValidateDeleteDatasetsRequest(req *DeleteDatasetsRequest) error {
-	if req.IDs == nil {
-		return nil
-	}
-
-	seen := make(map[string]struct{}, len(*req.IDs))
-	for idx, rawID := range *req.IDs {
-		normalizedID, err := normalizeUUID1Hex(rawID)
+		kbs, err := s.kbDAO.GetKBByIDAndUserID(id, userID)
 		if err != nil {
-			return err
-		}
-		if _, exists := seen[normalizedID]; exists {
-			return fmt.Errorf("Duplicate ids: '%s'", normalizedID)
-		}
-		seen[normalizedID] = struct{}{}
-		(*req.IDs)[idx] = normalizedID
-	}
-	return nil
-}
-
-// ValidateListDatasetsRequest validates query-shape rules before service execution.
-func (s *DatasetsService) ValidateListDatasetsRequest(req *ListDatasetsRequest) error {
-	req.Name = strings.TrimSpace(req.Name)
-
-	if strings.TrimSpace(req.ID) != "" {
-		normalizedID, err := normalizeUUID1Hex(req.ID)
-		if err != nil {
-			return err
-		}
-		req.ID = normalizedID
-	}
-
-	if req.Page < 1 {
-		return fmt.Errorf("Input should be greater than or equal to 1")
-	}
-	if req.PageSize < 1 {
-		return fmt.Errorf("Input should be greater than or equal to 1")
-	}
-
-	req.OrderBy = strings.TrimSpace(req.OrderBy)
-	if _, ok := datasetOrderByFields[req.OrderBy]; !ok {
-		return fmt.Errorf("Input should be 'create_time' or 'update_time'")
-	}
-
-	req.Ext.Keywords = strings.TrimSpace(req.Ext.Keywords)
-	req.Ext.ParserID = strings.TrimSpace(req.Ext.ParserID)
-
-	filteredOwnerIDs := make([]string, 0, len(req.Ext.OwnerIDs))
-	for _, ownerID := range req.Ext.OwnerIDs {
-		trimmedOwnerID := strings.TrimSpace(ownerID)
-		if trimmedOwnerID == "" {
-			continue
-		}
-		filteredOwnerIDs = append(filteredOwnerIDs, trimmedOwnerID)
-	}
-	req.Ext.OwnerIDs = filteredOwnerIDs
-
-	return nil
-}
-
-// ListDatasets ports dataset_api_service.list_datasets.
-func (s *DatasetsService) ListDatasets(userID string, req *ListDatasetsRequest) (*ListDatasetsResult, error) {
-	if req.ID != "" {
-		kbs, err := s.kbDAO.GetKBByIDAndUserID(req.ID, userID)
-		if err != nil {
-			return nil, fmt.Errorf("Database operation failed")
+			return nil, 0, common.CodeServerError, errors.New("Database operation failed")
 		}
 		if len(kbs) == 0 {
-			return nil, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, req.ID)
+			return nil, 0, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, id)
 		}
 	}
 
-	if req.Name != "" {
-		kbs, err := s.kbDAO.GetKBByNameAndUserID(req.Name, userID)
+	name = strings.TrimSpace(name)
+	if name != "" {
+		kbs, err := s.kbDAO.GetKBByNameAndUserID(name, userID)
 		if err != nil {
-			return nil, fmt.Errorf("Database operation failed")
+			return nil, 0, common.CodeServerError, errors.New("Database operation failed")
 		}
 		if len(kbs) == 0 {
-			return nil, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, req.Name)
+			return nil, 0, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, name)
 		}
 	}
 
-	tenantIDs := req.Ext.OwnerIDs
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 30
+	}
+
+	orderby = strings.TrimSpace(orderby)
+	if _, ok := datasetAllowedOrderByFields[orderby]; !ok {
+		orderby = "create_time"
+	}
+
+	keywords = strings.TrimSpace(keywords)
+	parserID = strings.TrimSpace(parserID)
+
+	// Empty owner ids do not change the query, so only keep the meaningful ones.
+	tenantIDs := make([]string, 0, len(ownerIDs))
+	for _, ownerID := range ownerIDs {
+		ownerID = strings.TrimSpace(ownerID)
+		if ownerID != "" {
+			tenantIDs = append(tenantIDs, ownerID)
+		}
+	}
 	if len(tenantIDs) == 0 {
 		joinedTenants, err := s.tenantDAO.GetJoinedTenantsByUserID(userID)
 		if err != nil {
-			return nil, fmt.Errorf("Database operation failed")
+			return nil, 0, common.CodeServerError, errors.New("Database operation failed")
 		}
-
-		tenantIDs = make([]string, 0, len(joinedTenants))
 		for _, joinedTenant := range joinedTenants {
 			if joinedTenant == nil || joinedTenant.TenantID == "" {
 				continue
@@ -318,18 +170,9 @@ func (s *DatasetsService) ListDatasets(userID string, req *ListDatasetsRequest) 
 		}
 	}
 
-	kbs, total, err := s.kbDAO.GetByTenantIDs(
-		tenantIDs,
-		userID,
-		req.Page,
-		req.PageSize,
-		req.OrderBy,
-		req.Desc,
-		req.Ext.Keywords,
-		req.Ext.ParserID,
-	)
+	kbs, total, err := s.kbDAO.GetByTenantIDs(tenantIDs, userID, page, pageSize, orderby, desc, keywords, parserID)
 	if err != nil {
-		return nil, fmt.Errorf("Database operation failed")
+		return nil, 0, common.CodeServerError, errors.New("Database operation failed")
 	}
 
 	data := make([]map[string]interface{}, 0, len(kbs))
@@ -340,111 +183,213 @@ func (s *DatasetsService) ListDatasets(userID string, req *ListDatasetsRequest) 
 		data = append(data, datasetListItemToMap(kb))
 	}
 
-	return &ListDatasetsResult{
-		Data:  data,
-		Total: total,
-	}, nil
+	return data, total, common.CodeSuccess, nil
 }
 
-// CreateDataset ports dataset_api_service.create_dataset.
-func (s *DatasetsService) CreateDataset(tenantID string, req *CreateDatasetRequest) (map[string]interface{}, error) {
-	nameValue := interface{}(req.Name)
+// CreateDataset creates a new dataset.
+func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+	if !isValidString(req.Name) {
+		return nil, common.CodeDataError, errors.New("Dataset name must be string.")
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return nil, common.CodeDataError, errors.New("Dataset name can't be empty.")
+	}
+	if len(name) > model.DatasetNameLimit {
+		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(name), model.DatasetNameLimit)
+	}
+
+	tenant, err := s.tenantDAO.GetByID(tenantID)
+	if err != nil || tenant == nil {
+		return nil, common.CodeDataError, errors.New("Tenant not found.")
+	}
+
+	parserID := ""
+	permission := "me"
+	embeddingModel := ""
+	parserConfig := req.ParserConfig
+	pipelineID := req.PipelineID
 	description := req.Description
 	avatar := req.Avatar
-	language := (*string)(nil)
-	permission := "me"
-	if req.Permission != nil && *req.Permission != "" {
-		permission = *req.Permission
+	var language *string
+
+	if req.Description != nil && len(*req.Description) > 65535 {
+		return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
 	}
-	embdID := ""
+	if req.Avatar != nil {
+		if len(*req.Avatar) > 65535 {
+			return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
+		}
+		if err := validateDatasetAvatar(*req.Avatar); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	}
+	if req.Permission != nil {
+		permission = strings.TrimSpace(*req.Permission)
+		if permission != "me" && permission != "team" {
+			return nil, common.CodeDataError, errors.New("Input should be 'me' or 'team'")
+		}
+	}
+	if req.ChunkMethod != nil {
+		parserID = strings.TrimSpace(*req.ChunkMethod)
+		if err := validateDatasetChunkMethod(parserID); err != nil {
+			return nil, common.CodeDataError, err
+		}
+		pipelineID = nil
+	}
+	if req.ParseType != nil && (*req.ParseType < 0 || *req.ParseType > 64) {
+		return nil, common.CodeDataError, fmt.Errorf("Input should be between 0 and 64")
+	}
+	if req.PipelineID != nil {
+		normalizedPipelineID, err := normalizeDatasetPipelineID(*req.PipelineID)
+		if err != nil {
+			return nil, common.CodeDataError, err
+		}
+		pipelineID = normalizedPipelineID
+	}
 	if req.EmbeddingModel != nil {
-		embdID = strings.TrimSpace(*req.EmbeddingModel)
+		embeddingModel = strings.TrimSpace(*req.EmbeddingModel)
+		if err := validateDatasetEmbeddingModel(embeddingModel); err != nil {
+			return nil, common.CodeDataError, err
+		}
 	}
-	parserID := "naive"
-	if req.ChunkMethod != nil && *req.ChunkMethod != "" {
-		parserID = *req.ChunkMethod
+	if err := validateDatasetParserConfigSize(parserConfig); err != nil {
+		return nil, common.CodeDataError, err
 	}
-	pipelineID := req.PipelineID
-	parserConfig := utility.CloneMap(req.ParserConfig)
-	if len(parserConfig) == 0 {
-		parserConfig = nil
+
+	// ext mirrors the Python REST implementation and overrides known top-level fields.
+	for key, value := range req.Ext {
+		switch key {
+		case "name":
+			nameValue, ok := value.(string)
+			if !ok {
+				return nil, common.CodeDataError, errors.New("Dataset name must be string.")
+			}
+			nameValue = strings.TrimSpace(nameValue)
+			if nameValue == "" {
+				return nil, common.CodeDataError, errors.New("Dataset name can't be empty.")
+			}
+			if len(nameValue) > model.DatasetNameLimit {
+				return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(nameValue), model.DatasetNameLimit)
+			}
+			name = nameValue
+		case "description":
+			descriptionValue, ok := value.(string)
+			if !ok {
+				return nil, common.CodeDataError, errors.New("Description must be string.")
+			}
+			if len(descriptionValue) > 65535 {
+				return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
+			}
+			description = &descriptionValue
+		case "avatar":
+			avatarValue, ok := value.(string)
+			if !ok {
+				return nil, common.CodeDataError, errors.New("Avatar must be string.")
+			}
+			if len(avatarValue) > 65535 {
+				return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
+			}
+			if err := validateDatasetAvatar(avatarValue); err != nil {
+				return nil, common.CodeDataError, err
+			}
+			avatar = &avatarValue
+		case "language":
+			languageValue, ok := value.(string)
+			if !ok {
+				return nil, common.CodeDataError, errors.New("Language must be string.")
+			}
+			languageValue = strings.TrimSpace(languageValue)
+			language = &languageValue
+		case "permission":
+			permissionValue, ok := value.(string)
+			if !ok {
+				return nil, common.CodeDataError, errors.New("Permission must be string.")
+			}
+			permissionValue = strings.TrimSpace(permissionValue)
+			if permissionValue != "me" && permissionValue != "team" {
+				return nil, common.CodeDataError, errors.New("Input should be 'me' or 'team'")
+			}
+			permission = permissionValue
+		case "embedding_model", "embd_id":
+			embeddingModelValue, ok := value.(string)
+			if !ok {
+				return nil, common.CodeDataError, errors.New("Embedding model identifier must follow <model_name>@<provider> format")
+			}
+			embeddingModelValue = strings.TrimSpace(embeddingModelValue)
+			if err := validateDatasetEmbeddingModel(embeddingModelValue); err != nil {
+				return nil, common.CodeDataError, err
+			}
+			embeddingModel = embeddingModelValue
+		case "chunk_method", "parser_id":
+			parserIDValue, ok := value.(string)
+			if !ok {
+				return nil, common.CodeDataError, errors.New(datasetChunkMethodErrorMessage)
+			}
+			parserIDValue = strings.TrimSpace(parserIDValue)
+			if err := validateDatasetChunkMethod(parserIDValue); err != nil {
+				return nil, common.CodeDataError, err
+			}
+			parserID = parserIDValue
+			pipelineID = nil
+		case "pipeline_id":
+			pipelineIDValue, ok := value.(string)
+			if !ok {
+				return nil, common.CodeDataError, errors.New("pipeline_id must be 32 hex characters")
+			}
+			normalizedPipelineID, err := normalizeDatasetPipelineID(pipelineIDValue)
+			if err != nil {
+				return nil, common.CodeDataError, err
+			}
+			pipelineID = normalizedPipelineID
+		case "parser_config":
+			parserConfigValue, ok := value.(map[string]interface{})
+			if !ok {
+				return nil, common.CodeDataError, errors.New("parser_config must be valid JSON")
+			}
+			if err := validateDatasetParserConfigSize(parserConfigValue); err != nil {
+				return nil, common.CodeDataError, err
+			}
+			parserConfig = parserConfigValue
+		}
+	}
+
+	// parser_id wins when it is present; otherwise parse_type and pipeline_id must arrive together.
+	if parserID == "" {
+		if req.ParseType == nil && pipelineID == nil {
+			parserID = "naive"
+		} else if req.ParseType == nil || pipelineID == nil {
+			missingFields := make([]string, 0, 2)
+			if req.ParseType == nil {
+				missingFields = append(missingFields, "parse_type")
+			}
+			if pipelineID == nil {
+				missingFields = append(missingFields, "pipeline_id")
+			}
+			return nil, common.CodeDataError, fmt.Errorf("parser_id omitted -> required fields missing: %s", strings.Join(missingFields, ", "))
+		}
 	}
 
 	if req.AutoMetadataConfig != nil {
 		parserConfig = applyAutoMetadataConfig(parserConfig, req.AutoMetadataConfig)
 	}
 
-	if len(req.Ext) > 0 {
-		if value, ok := req.Ext["name"]; ok {
-			nameValue = value
-		}
-		if value, ok := getStringFromMap(req.Ext, "description"); ok {
-			description = &value
-		}
-		if value, ok := getStringFromMap(req.Ext, "avatar"); ok {
-			avatar = &value
-		}
-		if value, ok := getStringFromMap(req.Ext, "language"); ok {
-			language = &value
-		}
-		if value, ok := getStringFromMap(req.Ext, "permission"); ok {
-			permission = value
-		}
-		if value, ok := getStringFromMap(req.Ext, "embedding_model"); ok {
-			embdID = value
-		}
-		if value, ok := getStringFromMap(req.Ext, "embd_id"); ok {
-			embdID = value
-		}
-		if value, ok := getStringFromMap(req.Ext, "chunk_method"); ok {
-			parserID = value
-		}
-		if value, ok := getStringFromMap(req.Ext, "parser_id"); ok {
-			parserID = value
-		}
-		if value, ok := getStringFromMap(req.Ext, "pipeline_id"); ok {
-			pipelineID = &value
-		}
-		if value, ok := getMapFromMap(req.Ext, "parser_config"); ok {
-			parserConfig = utility.CloneMap(value)
-		}
-	}
-
-	name, ok := nameValue.(string)
-	if !ok {
-		return nil, fmt.Errorf("Dataset name must be string.")
-	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, fmt.Errorf("Dataset name can't be empty.")
-	}
-	if len(name) > model.DatasetNameLimit {
-		return nil, fmt.Errorf("Dataset name length is %d which is large than %d", len(name), model.DatasetNameLimit)
-	}
-
-	tenant, err := s.tenantDAO.GetByID(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("Tenant not found")
-	}
-
-	if strings.TrimSpace(parserID) == "" {
-		parserID = "naive"
-	}
-	parserConfig = utility.GetParserConfig(parserID, parserConfig)
+	parserConfig = common.GetParserConfig(parserID, parserConfig)
 	parserConfig["llm_id"] = tenant.LLMID
 
-	if strings.TrimSpace(embdID) == "" {
-		embdID = tenant.EmbdID
-	} else {
-		ok, message := s.verifyEmbeddingAvailability(strings.TrimSpace(embdID), tenantID)
+	embdID := tenant.EmbdID
+	if embeddingModel != "" {
+		ok, message := s.verifyEmbeddingAvailability(embeddingModel, tenantID)
 		if !ok {
-			return nil, fmt.Errorf("%s", message)
+			return nil, common.CodeDataError, errors.New(message)
 		}
+		embdID = embeddingModel
 	}
 
 	kbID, err := generateUUID1Hex()
 	if err != nil {
-		return nil, fmt.Errorf("Internal server error")
+		return nil, common.CodeServerError, errors.New("Internal server error")
 	}
 
 	now := time.Now().Unix()
@@ -478,42 +423,52 @@ func (s *DatasetsService) CreateDataset(tenantID string, req *CreateDatasetReque
 	}
 
 	if err := s.kbDAO.Create(kb); err != nil {
-		return nil, fmt.Errorf("Failed to save dataset")
+		return nil, common.CodeServerError, errors.New("Failed to save dataset")
 	}
 
 	createdKB, err := s.kbDAO.GetByID(kbID)
-	if err != nil {
-		return nil, fmt.Errorf("Dataset created failed")
+	if err != nil || createdKB == nil {
+		return nil, common.CodeServerError, errors.New("Dataset created failed")
 	}
 
-	return utility.RemapKeys(createdKB.ToMap(), datasetResponseKeyAliases), nil
+	return datasetToMap(createdKB), common.CodeSuccess, nil
 }
 
-// DeleteDatasets ports dataset_api_service.delete_datasets.
-func (s *DatasetsService) DeleteDatasets(tenantID string, req *DeleteDatasetsRequest) (map[string]interface{}, error) {
-	var ids []string
-	if req.IDs != nil {
-		ids = append(ids, (*req.IDs)...)
+// DeleteDatasets deletes multiple datasets.
+func (s *DatasetsService) DeleteDatasets(ids []string, deleteAll bool, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+	normalizedIDs := make([]string, 0, len(ids))
+	seenIDs := make(map[string]struct{}, len(ids))
+
+	// Canonicalize ids once so every downstream DAO call sees the same UUID1 hex format.
+	for _, id := range ids {
+		normalizedID, err := normalizeDatasetUUID1(strings.TrimSpace(id))
+		if err != nil {
+			return nil, common.CodeDataError, err
+		}
+		if _, exists := seenIDs[normalizedID]; exists {
+			return nil, common.CodeDataError, fmt.Errorf("Duplicate ids: '%s'", normalizedID)
+		}
+		seenIDs[normalizedID] = struct{}{}
+		normalizedIDs = append(normalizedIDs, normalizedID)
 	}
 
-	if len(ids) == 0 {
-		if !req.DeleteAll {
-			return map[string]interface{}{"success_count": 0}, nil
+	if len(normalizedIDs) == 0 {
+		if !deleteAll {
+			return map[string]interface{}{"success_count": 0}, common.CodeSuccess, nil
 		}
 
 		kbs, err := s.kbDAO.Query(map[string]interface{}{"tenant_id": tenantID})
 		if err != nil {
-			return nil, fmt.Errorf("Database operation failed")
+			return nil, common.CodeServerError, errors.New("Database operation failed")
 		}
-		ids = make([]string, 0, len(kbs))
 		for _, kb := range kbs {
-			ids = append(ids, kb.ID)
+			normalizedIDs = append(normalizedIDs, kb.ID)
 		}
 	}
 
-	kbs := make([]*model.Knowledgebase, 0, len(ids))
+	kbs := make([]*model.Knowledgebase, 0, len(normalizedIDs))
 	unauthorizedIDs := make([]string, 0)
-	for _, id := range ids {
+	for _, id := range normalizedIDs {
 		kb, err := s.kbDAO.GetByIDAndTenantID(id, tenantID)
 		if err != nil || kb == nil {
 			unauthorizedIDs = append(unauthorizedIDs, id)
@@ -522,41 +477,41 @@ func (s *DatasetsService) DeleteDatasets(tenantID string, req *DeleteDatasetsReq
 		kbs = append(kbs, kb)
 	}
 	if len(unauthorizedIDs) > 0 {
-		return nil, fmt.Errorf("User '%s' lacks permission for datasets: '%s'", tenantID, strings.Join(unauthorizedIDs, ", "))
+		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for datasets: '%s'", tenantID, strings.Join(unauthorizedIDs, ", "))
 	}
 
-	errors := make([]string, 0)
+	errorsList := make([]string, 0)
 	successCount := 0
 	for _, kb := range kbs {
 		if err := s.deleteDataset(tenantID, kb); err != nil {
-			errors = append(errors, err.Error())
+			errorsList = append(errorsList, err.Error())
 			continue
 		}
 		successCount++
 	}
 
-	if len(errors) == 0 {
-		return map[string]interface{}{"success_count": successCount}, nil
+	if len(errorsList) == 0 {
+		return map[string]interface{}{"success_count": successCount}, common.CodeSuccess, nil
 	}
 
-	details := strings.Join(errors, "; ")
+	details := strings.Join(errorsList, "; ")
 	if len(details) > 128 {
 		details = details[:128]
 	}
 	errorMessage := fmt.Sprintf(
 		"Successfully deleted %d datasets, %d failed. Details: %s...",
 		successCount,
-		len(errors),
+		len(errorsList),
 		details,
 	)
 	if successCount == 0 {
-		return nil, fmt.Errorf("%s", errorMessage)
+		return nil, common.CodeDataError, errors.New(errorMessage)
 	}
 
 	return map[string]interface{}{
 		"success_count": successCount,
-		"errors":        limitStrings(errors, 5),
-	}, nil
+		"errors":        limitStrings(errorsList, 5),
+	}, common.CodeSuccess, nil
 }
 
 func (s *DatasetsService) deleteDataset(tenantID string, kb *model.Knowledgebase) error {
@@ -620,6 +575,92 @@ func (s *DatasetsService) deleteDataset(tenantID string, kb *model.Knowledgebase
 	})
 }
 
+func validateDatasetChunkMethod(chunkMethod string) error {
+	if _, ok := datasetAllowedChunkMethods[chunkMethod]; !ok {
+		return errors.New(datasetChunkMethodErrorMessage)
+	}
+	return nil
+}
+
+func validateDatasetAvatar(avatar string) error {
+	if !strings.Contains(avatar, ",") {
+		return errors.New("Missing MIME prefix. Expected format: data:<mime>;base64,<data>")
+	}
+
+	prefix, _, _ := strings.Cut(avatar, ",")
+	if !strings.HasPrefix(prefix, "data:") {
+		return errors.New("Invalid MIME prefix format. Must start with 'data:'")
+	}
+
+	mimeType, _, _ := strings.Cut(strings.TrimPrefix(prefix, "data:"), ";")
+	if _, ok := datasetSupportedAvatarMIMETypes[mimeType]; !ok {
+		return errors.New("Unsupported MIME type. Allowed: [image/jpeg image/png]")
+	}
+
+	return nil
+}
+
+func validateDatasetEmbeddingModel(embeddingModel string) error {
+	if embeddingModel == "" {
+		return errors.New("Embedding model identifier must follow <model_name>@<provider> format")
+	}
+
+	modelName, provider, ok := strings.Cut(embeddingModel, "@")
+	if !ok {
+		return errors.New("Embedding model identifier must follow <model_name>@<provider> format")
+	}
+	if strings.TrimSpace(modelName) == "" || strings.TrimSpace(provider) == "" {
+		return errors.New("Both model_name and provider must be non-empty strings")
+	}
+
+	return nil
+}
+
+func normalizeDatasetPipelineID(pipelineID string) (*string, error) {
+	pipelineID = strings.TrimSpace(pipelineID)
+	if pipelineID == "" {
+		return nil, nil
+	}
+	if len(pipelineID) != 32 {
+		return nil, errors.New("pipeline_id must be 32 hex characters")
+	}
+	for _, char := range pipelineID {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", char) {
+			return nil, errors.New("pipeline_id must be hexadecimal")
+		}
+	}
+
+	normalized := strings.ToLower(pipelineID)
+	return &normalized, nil
+}
+
+func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error {
+	if len(parserConfig) == 0 {
+		return nil
+	}
+
+	data, err := json.Marshal(parserConfig)
+	if err != nil {
+		return errors.New("parser_config must be valid JSON")
+	}
+	if len(data) > 65535 {
+		return fmt.Errorf("Parser config exceeds size limit (max 65,535 characters). Current size: %d", len(data))
+	}
+
+	return nil
+}
+
+func normalizeDatasetUUID1(id string) (string, error) {
+	parsedUUID, err := uuid.Parse(id)
+	if err != nil {
+		return "", errors.New("Invalid UUID1 format")
+	}
+	if parsedUUID.Version() != 1 {
+		return "", errors.New("Must be a UUID1 format")
+	}
+	return strings.ReplaceAll(parsedUUID.String(), "-", ""), nil
+}
+
 func (s *DatasetsService) verifyEmbeddingAvailability(embdID string, tenantID string) (bool, string) {
 	modelName, provider, err := parseModelName(embdID)
 	if err != nil {
@@ -649,62 +690,6 @@ func (s *DatasetsService) verifyEmbeddingAvailability(embdID string, tenantID st
 	return false, fmt.Sprintf("Unauthorized model: <%s>", embdID)
 }
 
-func validateDatasetAvatar(value string) error {
-	if !strings.Contains(value, ",") {
-		return fmt.Errorf("Missing MIME prefix. Expected format: data:<mime>;base64,<data>")
-	}
-
-	prefix, _, _ := strings.Cut(value, ",")
-	if !strings.HasPrefix(prefix, "data:") {
-		return fmt.Errorf("Invalid MIME prefix format. Must start with 'data:'")
-	}
-
-	mimeType, _, _ := strings.Cut(strings.TrimPrefix(prefix, "data:"), ";")
-	if _, ok := supportedAvatarMIMETypes[mimeType]; !ok {
-		return fmt.Errorf("Unsupported MIME type. Allowed: [image/jpeg image/png]")
-	}
-	return nil
-}
-
-func validateEmbeddingModelIdentifier(value string) error {
-	modelName, provider, err := parseModelName(value)
-	if err != nil {
-		return fmt.Errorf("Embedding model identifier must follow <model_name>@<provider> format")
-	}
-	if strings.TrimSpace(modelName) == "" || strings.TrimSpace(provider) == "" {
-		return fmt.Errorf("Both model_name and provider must be non-empty strings")
-	}
-	return nil
-}
-
-func normalizePipelineID(value string) (*string, error) {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil, nil
-	}
-	if len(trimmed) != 32 {
-		return nil, fmt.Errorf("pipeline_id must be 32 hex characters")
-	}
-	for _, char := range trimmed {
-		if !strings.ContainsRune("0123456789abcdefABCDEF", char) {
-			return nil, fmt.Errorf("pipeline_id must be hexadecimal")
-		}
-	}
-	normalized := strings.ToLower(trimmed)
-	return &normalized, nil
-}
-
-func normalizeUUID1Hex(value string) (string, error) {
-	parsedUUID, err := uuid.Parse(value)
-	if err != nil {
-		return "", fmt.Errorf("Invalid UUID1 format")
-	}
-	if parsedUUID.Version() != 1 {
-		return "", fmt.Errorf("Must be a UUID1 format")
-	}
-	return strings.ReplaceAll(parsedUUID.String(), "-", ""), nil
-}
-
 func generateUUID1Hex() (string, error) {
 	generatedUUID, err := uuid.NewUUID()
 	if err != nil {
@@ -714,9 +699,8 @@ func generateUUID1Hex() (string, error) {
 }
 
 func applyAutoMetadataConfig(parserConfig map[string]interface{}, config *AutoMetadataConfig) map[string]interface{} {
-	merged := utility.CloneMap(parserConfig)
-	if merged == nil {
-		merged = make(map[string]interface{})
+	if parserConfig == nil {
+		parserConfig = make(map[string]interface{})
 	}
 
 	fields := make([]map[string]interface{}, 0, len(config.Fields))
@@ -729,27 +713,27 @@ func applyAutoMetadataConfig(parserConfig map[string]interface{}, config *AutoMe
 			"restrict_values": field.RestrictValues,
 		})
 	}
-	merged["metadata"] = fields
+	parserConfig["metadata"] = fields
 	enableMetadata := true
 	if config.Enabled != nil {
 		enableMetadata = *config.Enabled
 	}
-	merged["enable_metadata"] = enableMetadata
-	return merged
+	parserConfig["enable_metadata"] = enableMetadata
+	return parserConfig
 }
 
 func datasetListItemToMap(kb *model.KnowledgebaseListItem) map[string]interface{} {
 	item := map[string]interface{}{
-		"id":         kb.ID,
-		"name":       kb.Name,
-		"tenant_id":  kb.TenantID,
-		"permission": kb.Permission,
-		"doc_num":    kb.DocNum,
-		"token_num":  kb.TokenNum,
-		"chunk_num":  kb.ChunkNum,
-		"parser_id":  kb.ParserID,
-		"embd_id":    kb.EmbdID,
-		"nickname":   kb.Nickname,
+		"id":              kb.ID,
+		"name":            kb.Name,
+		"tenant_id":       kb.TenantID,
+		"permission":      kb.Permission,
+		"document_count":  kb.DocNum,
+		"token_num":       kb.TokenNum,
+		"chunk_count":     kb.ChunkNum,
+		"chunk_method":    kb.ParserID,
+		"embedding_model": kb.EmbdID,
+		"nickname":        kb.Nickname,
 	}
 
 	if kb.Avatar != nil {
@@ -768,31 +752,63 @@ func datasetListItemToMap(kb *model.KnowledgebaseListItem) map[string]interface{
 		item["update_time"] = *kb.UpdateTime
 	}
 
-	return utility.RemapKeys(item, datasetResponseKeyAliases)
+	return item
 }
 
-func getStringFromMap(source map[string]interface{}, key string) (string, bool) {
-	value, ok := source[key]
-	if !ok {
-		return "", false
+func datasetToMap(kb *model.Knowledgebase) map[string]interface{} {
+	item := map[string]interface{}{
+		"id":                       kb.ID,
+		"tenant_id":                kb.TenantID,
+		"name":                     kb.Name,
+		"embedding_model":          kb.EmbdID,
+		"permission":               kb.Permission,
+		"created_by":               kb.CreatedBy,
+		"document_count":           kb.DocNum,
+		"token_num":                kb.TokenNum,
+		"chunk_count":              kb.ChunkNum,
+		"similarity_threshold":     kb.SimilarityThreshold,
+		"vector_similarity_weight": kb.VectorSimilarityWeight,
+		"chunk_method":             kb.ParserID,
+		"parser_config":            kb.ParserConfig,
+		"pagerank":                 kb.Pagerank,
+		"create_time":              kb.CreateTime,
 	}
-	stringValue, ok := value.(string)
-	if !ok {
-		return "", false
-	}
-	return stringValue, true
-}
 
-func getMapFromMap(source map[string]interface{}, key string) (map[string]interface{}, bool) {
-	value, ok := source[key]
-	if !ok {
-		return nil, false
+	if kb.Avatar != nil {
+		item["avatar"] = *kb.Avatar
 	}
-	mapValue, ok := value.(map[string]interface{})
-	if !ok {
-		return nil, false
+	if kb.Language != nil {
+		item["language"] = *kb.Language
 	}
-	return mapValue, true
+	if kb.Description != nil {
+		item["description"] = *kb.Description
+	}
+	if kb.PipelineID != nil {
+		item["pipeline_id"] = *kb.PipelineID
+	}
+	if kb.GraphragTaskID != nil {
+		item["graphrag_task_id"] = *kb.GraphragTaskID
+	}
+	if kb.GraphragTaskFinishAt != nil {
+		item["graphrag_task_finish_at"] = kb.GraphragTaskFinishAt.Format("2006-01-02 15:04:05")
+	}
+	if kb.RaptorTaskID != nil {
+		item["raptor_task_id"] = *kb.RaptorTaskID
+	}
+	if kb.RaptorTaskFinishAt != nil {
+		item["raptor_task_finish_at"] = kb.RaptorTaskFinishAt.Format("2006-01-02 15:04:05")
+	}
+	if kb.MindmapTaskID != nil {
+		item["mindmap_task_id"] = *kb.MindmapTaskID
+	}
+	if kb.MindmapTaskFinishAt != nil {
+		item["mindmap_task_finish_at"] = kb.MindmapTaskFinishAt.Format("2006-01-02 15:04:05")
+	}
+	if kb.UpdateTime != nil {
+		item["update_time"] = *kb.UpdateTime
+	}
+
+	return item
 }
 
 func limitStrings(values []string, limit int) []string {
