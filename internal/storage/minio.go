@@ -29,17 +29,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// MinioConfig holds MinIO storage configuration
-type MinioConfig struct {
-	Host       string `mapstructure:"host"`        // MinIO server host (e.g., "localhost:9000")
-	User       string `mapstructure:"user"`        // Access key
-	Password   string `mapstructure:"password"`    // Secret key
-	Secure     bool   `mapstructure:"secure"`      // Use HTTPS
-	Verify     bool   `mapstructure:"verify"`      // Verify SSL certificates
-	Bucket     string `mapstructure:"bucket"`      // Default bucket (optional)
-	PrefixPath string `mapstructure:"prefix_path"` // Path prefix (optional)
-}
-
 // MinioStorage implements Storage interface for MinIO
 type MinioStorage struct {
 	client     *minio.Client
