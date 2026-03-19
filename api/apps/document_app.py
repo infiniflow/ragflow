@@ -41,12 +41,13 @@ from api.utils.api_utils import (
     validate_request,
     get_request_json,
 )
+from api.utils.doc_index_utils import build_docstore_rename_fields
 from api.utils.file_utils import filename_type, thumbnail
 from common.file_utils import get_project_base_directory
 from common.constants import RetCode, VALID_TASK_STATUS, ParserType, TaskStatus
 from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers, html2pdf, is_valid_url
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
-from rag.nlp import search, rag_tokenizer
+from rag.nlp import search
 from common import settings
 
 
@@ -695,12 +696,7 @@ async def rename():
                 FileService.update_by_id(file.id, {"name": req["name"]})
 
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])
-            title_tks = rag_tokenizer.tokenize(req["name"])
-            es_body = {
-                "docnm_kwd": req["name"],
-                "title_tks": title_tks,
-                "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
-            }
+            es_body = build_docstore_rename_fields(req["name"])
             if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
                 settings.docStoreConn.update(
                     {"doc_id": req["doc_id"]},
