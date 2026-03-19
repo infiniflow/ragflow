@@ -299,7 +299,7 @@ class KGSearch(Dealer):
         fltr["knowledge_graph_kwd"] = "community_report"
         fltr["entities_kwd"] = entities
         comm_res = self.dataStore.search(fields, [], fltr, [],
-                                         OrderByExpr(), 0, topn, idxnms, kb_ids)
+                                         odr, 0, topn, idxnms, kb_ids)
         comm_res_fields = self.dataStore.get_fields(comm_res, fields)
         txts = []
         for ii, (_, row) in enumerate(comm_res_fields.items()):

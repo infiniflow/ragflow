@@ -49,9 +49,7 @@ func InitStorageFactory() error {
 	factory := GetStorageFactory()
 
 	globalConfig := server.GetConfig()
-
 	factory.config = &globalConfig.StorageEngine
-
 	// Initialize storage based on type
 	if err := factory.initStorage(); err != nil {
 		return err
