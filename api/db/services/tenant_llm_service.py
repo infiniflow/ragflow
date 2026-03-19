@@ -36,12 +36,16 @@ class TenantLLMService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_api_key(cls, tenant_id, model_name):
+    def get_api_key(cls, tenant_id, model_name, model_type=None):
         mdlnm, fid = TenantLLMService.split_model_name_and_factory(model_name)
+        model_type_val = model_type.value if hasattr(model_type, "value") else model_type
+        query_kwargs = {"tenant_id": tenant_id, "llm_name": mdlnm}
+        if model_type_val is not None:
+            query_kwargs["model_type"] = model_type_val
         if not fid:
-            objs = cls.query(tenant_id=tenant_id, llm_name=mdlnm)
+            objs = cls.query(**query_kwargs)
         else:
-            objs = cls.query(tenant_id=tenant_id, llm_name=mdlnm, llm_factory=fid)
+            objs = cls.query(**query_kwargs, llm_factory=fid)
 
         if (not objs) and fid:
             if fid == "LocalAI":
@@ -52,7 +56,8 @@ class TenantLLMService(CommonService):
                 mdlnm += "___OpenAI-API"
             elif fid == "VLLM":
                 mdlnm += "___VLLM"
-            objs = cls.query(tenant_id=tenant_id, llm_name=mdlnm, llm_factory=fid)
+            query_kwargs["llm_name"] = mdlnm
+            objs = cls.query(**query_kwargs, llm_factory=fid)
         if not objs:
             return None
         return objs[0]
@@ -112,10 +117,10 @@ class TenantLLMService(CommonService):
         else:
             assert False, "LLM type error"
 
-        model_config = cls.get_api_key(tenant_id, mdlnm)
+        model_config = cls.get_api_key(tenant_id, mdlnm, llm_type)
         mdlnm, fid = TenantLLMService.split_model_name_and_factory(mdlnm)
         if not model_config:  # for some cases seems fid mismatch
-            model_config = cls.get_api_key(tenant_id, mdlnm)
+            model_config = cls.get_api_key(tenant_id, mdlnm, llm_type)
         if model_config:
             model_config = model_config.to_dict()
         elif llm_type == LLMType.EMBEDDING and fid == "Builtin" and "tei-" in os.getenv("COMPOSE_PROFILES", "") and mdlnm == os.getenv("TEI_MODEL", ""):

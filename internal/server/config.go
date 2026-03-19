@@ -334,16 +334,12 @@ func Init(configPath string) error {
 
 	// Set default values for admin configuration if not configured
 	if globalConfig.Admin.Host == "" {
-		globalConfig.Admin.Host = v.GetString("admin.host")
-	}
-	if globalConfig.Admin.Host == "" {
 		globalConfig.Admin.Host = "127.0.0.1"
 	}
 	if globalConfig.Admin.Port == 0 {
-		globalConfig.Admin.Port = v.GetInt("admin.http_port")
-	}
-	if globalConfig.Admin.Port == 0 {
-		globalConfig.Admin.Port = 9381
+		globalConfig.Admin.Port = 9383
+	} else {
+		globalConfig.Admin.Port += 2
 	}
 
 	// Load REGISTER_ENABLED from environment variable (default: 1)
@@ -378,7 +374,7 @@ func Init(configPath string) error {
 		if v.IsSet("ragflow") {
 			ragflowConfig := v.Sub("ragflow")
 			if ragflowConfig != nil {
-				globalConfig.Server.Port = ragflowConfig.GetInt("http_port") + 2 // 9382, by default
+				globalConfig.Server.Port = ragflowConfig.GetInt("http_port") + 4 // 9384, by default
 				//globalConfig.Server.Port = ragflowConfig.GetInt("http_port") // Correct
 				// If mode is not set, default to debug
 				if globalConfig.Server.Mode == "" {
@@ -418,7 +414,11 @@ func Init(configPath string) error {
 
 	// Map doc_engine section to DocEngineConfig
 	if globalConfig != nil && globalConfig.DocEngine.Type == "" {
-		// Try to map from doc_engine section
+		// Use DOC_ENGINE env var if set
+		if docEngine != "" {
+			globalConfig.DocEngine.Type = EngineType(docEngine)
+		}
+		// Try to map from doc_engine section (overrides env var if present)
 		if v.IsSet("doc_engine") {
 			docEngineConfig := v.Sub("doc_engine")
 			if docEngineConfig != nil {

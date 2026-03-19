@@ -17,12 +17,11 @@ interface IProps {
   sharedBadge?: ReactNode;
   icon?: React.ReactNode;
   testId?: string;
+  showReleaseTime?: boolean;
 }
 
 function Time({ time }: { time: string | number | undefined }) {
-  return (
-    <p className="text-sm opacity-80 whitespace-nowrap">{formatDate(time)}</p>
-  );
+  return <p className="text-sm whitespace-nowrap">{formatDate(time)}</p>;
 }
 export function HomeCard({
   data,
@@ -31,6 +30,7 @@ export function HomeCard({
   sharedBadge,
   icon,
   testId,
+  showReleaseTime = false,
 }: IProps) {
   const { t } = useTranslation();
 
@@ -82,16 +82,18 @@ export function HomeCard({
                 {data.description}
               </div>
               <div className="flex justify-between items-center">
-                {data.release_time ? (
-                  <section>
-                    <div className="flex items-center gap-2 text-sm opacity-80">
+                {showReleaseTime ? (
+                  <section className="text-sm text-text-secondary space-y-1">
+                    <div className="flex items-center gap-2">
                       {`${t('flow.lastSavedAt')}:`}
                       <Time time={data.update_time}></Time>
                     </div>
-                    <div className="flex items-center gap-2 text-sm opacity-80">
-                      {`${t('flow.publishedAt')}:`}
-                      <Time time={data.release_time}></Time>
-                    </div>
+                    {data.release_time && (
+                      <div className="flex items-center gap-2">
+                        {`${t('flow.publishedAt')}:`}
+                        <Time time={data.release_time}></Time>
+                      </div>
+                    )}
                   </section>
                 ) : (
                   <Time time={data.update_time}></Time>

@@ -64,3 +64,40 @@ func (dao *TimeRecordDAO) GetByID(id int64) (*model.TimeRecord, error) {
 	}
 	return &record, nil
 }
+
+// GetAll retrieves all records
+func (dao *TimeRecordDAO) GetAll() ([]*model.TimeRecord, error) {
+	var records []*model.TimeRecord
+	err := DB.Find(&records).Error
+	return records, err
+}
+
+// KeepLatest keeps the latest N records and deletes older ones
+func (dao *TimeRecordDAO) KeepLatest(count int64) error {
+	// Step 1: Get the maximum ID
+	var maxID int64
+	if err := DB.Model(&model.TimeRecord{}).Select("COALESCE(MAX(id), 0)").Scan(&maxID).Error; err != nil {
+		return err
+	}
+
+	// If no records or count is 0, nothing to delete
+	if maxID == 0 || count <= 0 {
+		return nil
+	}
+
+	// Step 2: Calculate the threshold ID
+	thresholdID := maxID - count
+
+	// If threshold is less than 0, keep all records
+	if thresholdID <= 0 {
+		return nil
+	}
+
+	// Step 3: Delete records with ID <= threshold
+	return DB.Where("id <= ?", thresholdID).Delete(&model.TimeRecord{}).Error
+}
+
+// DeleteAll deletes all records
+func (dao *TimeRecordDAO) DeleteAll() error {
+	return DB.Where("1=1").Delete(&model.TimeRecord{}).Error
+}

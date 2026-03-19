@@ -9,18 +9,20 @@ import arEG from 'antd/locale/ar_EG';
 import deDE from 'antd/locale/de_DE';
 import enUS from 'antd/locale/en_US';
 import ru_RU from 'antd/locale/ru_RU';
+import trTR from 'antd/locale/tr_TR';
 import vi_VN from 'antd/locale/vi_VN';
 import zhCN from 'antd/locale/zh_CN';
 import zh_HK from 'antd/locale/zh_HK';
 import dayjs from 'dayjs';
+import 'dayjs/locale/ar';
+import 'dayjs/locale/tr';
+import 'dayjs/locale/zh-cn';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import localeData from 'dayjs/plugin/localeData';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import weekYear from 'dayjs/plugin/weekYear';
 import weekday from 'dayjs/plugin/weekday';
-import 'dayjs/locale/ar';
-import 'dayjs/locale/zh-cn';
 import React, { useEffect, useState } from 'react';
 import { RouterProvider } from 'react-router';
 import { ThemeProvider, useTheme } from './components/theme-provider';
@@ -57,6 +59,7 @@ const AntLanguageMap = {
   'pt-BR': pt_BR,
   de: deDE,
   ar: arEG,
+  tr: trTR,
 };
 
 if (process.env.NODE_ENV === 'development') {

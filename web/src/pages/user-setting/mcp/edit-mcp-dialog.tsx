@@ -196,7 +196,7 @@ export function EditMcpDialog({
         form={form}
         setFieldChanged={setFieldChanged}
       ></EditMcpForm>
-      <Card className="bg-transparent">
+      <Card className="bg-transparent mt-4">
         <CardContent className="p-3">
           <Collapse
             title={

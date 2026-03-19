@@ -1200,10 +1200,11 @@ Quanto sopra è il contenuto che devi riassumere.`,
       russian: 'Russo',
       bulgarian: 'Bulgaro',
       arabic: 'Arabo',
+      turkish: 'Turco',
     },
     pagination: {
       total: 'Totale {{total}}',
-      page: '{{page}} /Pagina',
+      page: '{{page}} / Pagina',
     },
     deleteModal: {
       delAgent: 'Elimina agente',
