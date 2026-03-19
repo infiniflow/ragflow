@@ -98,6 +98,11 @@ class ComponentParamBase(ABC):
 
     def as_dict(self):
         def _recursive_convert_obj_to_dict(obj):
+            if isinstance(obj, pd.DataFrame):
+                return _recursive_convert_obj_to_dict(obj.to_dict(orient="records"))
+            if isinstance(obj, list):
+                return [_recursive_convert_obj_to_dict(item) for item in obj]
+
             ret_dict = {}
             if isinstance(obj, dict):
                 for k, v in obj.items():
@@ -113,7 +118,9 @@ class ComponentParamBase(ABC):
                 # get attr
                 attr = getattr(obj, attr_name)
                 if isinstance(attr, pd.DataFrame):
-                    ret_dict[attr_name] = attr.to_dict()
+                    ret_dict[attr_name] = _recursive_convert_obj_to_dict(
+                        attr.to_dict(orient="records")
+                    )
                     continue
                 if isinstance(attr, dict) or (attr and type(attr).__name__ not in dir(builtins)):
                     ret_dict[attr_name] = _recursive_convert_obj_to_dict(attr)
