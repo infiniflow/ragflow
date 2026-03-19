@@ -121,6 +121,23 @@ class InfinityConfig(RetrievalConfig):
         return result
 
 
+class QdrantConfig(RetrievalConfig):
+    grpc_port: int
+    https: bool
+    prefer_grpc: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        result = super().to_dict()
+        if 'extra' not in result:
+            result['extra'] = dict()
+        extra_dict = result['extra'].copy()
+        extra_dict['grpc_port'] = self.grpc_port
+        extra_dict['https'] = self.https
+        extra_dict['prefer_grpc'] = self.prefer_grpc
+        result['extra'] = extra_dict
+        return result
+
+
 class ElasticsearchConfig(RetrievalConfig):
     username: str
     password: str
@@ -221,6 +238,16 @@ class MinioConfig(FileStoreConfig):
         return result
 
 
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() in ("true", "1", "yes", "on")
+    return bool(value)
+
+
 def load_configurations(config_path: str) -> list[BaseConfig]:
     raw_configs = read_config(config_path)
     configurations = []
@@ -262,6 +289,18 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 config = InfinityConfig(id=id_count, name=name, host=host, port=port, service_type="retrieval",
                                         retrieval_type="infinity",
                                         db_name=database, detail_func_name="get_infinity_status")
+                configurations.append(config)
+                id_count += 1
+            case "qdrant":
+                name: str = 'qdrant'
+                host: str = v.get('host', 'qdrant')
+                http_port: int = int(v.get('http_port', 6333))
+                grpc_port: int = int(v.get('grpc_port', 6334))
+                https: bool = _as_bool(v.get('https', False))
+                prefer_grpc: bool = _as_bool(v.get('prefer_grpc', False))
+                config = QdrantConfig(id=id_count, name=name, host=host, port=http_port, service_type="retrieval",
+                                      retrieval_type="qdrant", grpc_port=grpc_port, https=https,
+                                      prefer_grpc=prefer_grpc, detail_func_name="get_qdrant_status")
                 configurations.append(config)
                 id_count += 1
             case "minio":

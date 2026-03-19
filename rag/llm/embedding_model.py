@@ -32,6 +32,8 @@ from common import settings
 import logging
 import base64
 
+from rag.utils.sparse_vector import get_sparse_embedding_model
+
 
 class Base(ABC):
     def __init__(self, key, model_name, **kwargs):
@@ -47,6 +49,21 @@ class Base(ABC):
 
     def encode_queries(self, text: str):
         raise NotImplementedError("Please implement encode method!")
+
+    def supports_sparse(self) -> bool:
+        return get_sparse_embedding_model() is not None
+
+    def encode_sparse(self, texts: list):
+        model = get_sparse_embedding_model()
+        if model is None:
+            return [], 0
+        return model.encode(texts)
+
+    def encode_sparse_queries(self, text: str):
+        model = get_sparse_embedding_model()
+        if model is None:
+            return None, 0
+        return model.encode_queries(text)
 
 
 class BuiltinEmbed(Base):

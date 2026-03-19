@@ -36,6 +36,7 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
 from common.constants import LLMType, ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME
+from rag.utils.sparse_vector import attach_sparse_vector
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import REDIS_CONN
 from common.doc_store.doc_store_base import OrderByExpr
@@ -1088,12 +1089,16 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     def embedding(doc_id, cnts, batch_size=16):
         nonlocal embd_mdl, chunk_counts, token_counts
         vectors = []
+        sparse_vectors = []
         for i in range(0, len(cnts), batch_size):
             vts, c = embd_mdl.encode(cnts[i : i + batch_size])
             vectors.extend(vts.tolist())
+            if embd_mdl.supports_sparse():
+                sparse_vts, _ = embd_mdl.encode_sparse(cnts[i : i + batch_size])
+                sparse_vectors.extend(sparse_vts)
             chunk_counts[doc_id] += len(cnts[i : i + batch_size])
             token_counts[doc_id] += c
-        return vectors
+        return vectors, sparse_vectors
 
     idxnm = search.index_name(kb.tenant_id)
     try_create_idx = True
@@ -1128,11 +1133,13 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             except Exception:
                 logging.exception("Mind map generation error")
 
-        vectors = embedding(doc_id, [c["content_with_weight"] for c in cks])
+        vectors, sparse_vectors = embedding(doc_id, [c["content_with_weight"] for c in cks])
         assert len(cks) == len(vectors)
         for i, d in enumerate(cks):
             v = vectors[i]
             d["q_%d_vec" % len(v)] = v
+            if sparse_vectors:
+                attach_sparse_vector(d, sparse_vectors[i])
         for b in range(0, len(cks), es_bulk_size):
             if try_create_idx:
                 if not settings.docStoreConn.index_exist(idxnm, kb_id):

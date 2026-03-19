@@ -386,7 +386,7 @@ class DocMetadataService:
                 logging.error(f"Failed to insert metadata for document {doc_id}: {result}")
                 return False
             # Force ES refresh to make metadata immediately available for search
-            if not settings.DOC_ENGINE_INFINITY:
+            if hasattr(settings.docStoreConn, "es"):
                 try:
                     settings.docStoreConn.es.indices.refresh(index=index_name)
                     logging.debug(f"Refreshed metadata index: {index_name}")
@@ -438,7 +438,7 @@ class DocMetadataService:
 
             logging.debug(f"[update_document_metadata] Updating doc_id: {doc_id}, kb_id: {kb_id}, meta_fields: {processed_meta}")
 
-            # For Elasticsearch, use efficient partial update
+            # For engines with document-level update support, update in place.
             if not settings.DOC_ENGINE_INFINITY and not settings.DOC_ENGINE_OCEANBASE:
                 # Check if index exists first
                 index_exists = settings.docStoreConn.index_exist(index_name, "")
@@ -453,21 +453,17 @@ class DocMetadataService:
 
                 # Index exists - check if document exists
                 try:
-                    doc_exists = settings.docStoreConn.get(
-                        index_name=index_name,
-                        id=doc_id,
-                        kb_id=kb_id
-                    )
+                    doc_exists = settings.docStoreConn.get(doc_id, index_name, [""])
                     if doc_exists:
-                        # Document exists - use partial update
-                        settings.docStoreConn.es.update(
-                            index=index_name,
-                            id=doc_id,
-                            refresh=True,
-                            doc={"meta_fields": processed_meta}
+                        updated = settings.docStoreConn.update(
+                            {"id": doc_id},
+                            {"meta_fields": processed_meta},
+                            index_name,
+                            kb_id,
                         )
-                        logging.debug(f"Successfully updated metadata for document {doc_id} using ES partial update")
-                        return True
+                        if updated:
+                            logging.debug(f"Successfully updated metadata for document {doc_id}")
+                        return updated
                 except Exception as e:
                     logging.debug(f"Document {doc_id} not found in index, will insert: {e}")
 
@@ -574,59 +570,20 @@ class DocMetadataService:
 
             logging.debug(f"[DROP EMPTY TABLE] Table {index_name} exists, checking if empty...")
 
-            # Use ES count API for accurate count
-            # Note: No need to refresh since delete operation already uses refresh=True
-            try:
-                count_response = settings.docStoreConn.es.count(index=index_name)
-                total_count = count_response['count']
-                logging.debug(f"[DROP EMPTY TABLE] ES count API result: {total_count} documents")
-                is_empty = (total_count == 0)
-            except Exception as e:
-                logging.warning(f"[DROP EMPTY TABLE] Count API failed, falling back to search: {e}")
-                # Fallback to search if count fails
-                results = settings.docStoreConn.search(
-                    select_fields=["id"],
-                    highlight_fields=[],
-                    condition={},
-                    match_expressions=[],
-                    order_by=OrderByExpr(),
-                    offset=0,
-                    limit=1,  # Only need 1 result to know if table is non-empty
-                    index_names=index_name,
-                    knowledgebase_ids=[""]  # Metadata tables don't filter by KB
-                )
-
-                logging.debug(f"[DROP EMPTY TABLE] Search results type: {type(results)}, results: {results}")
-
-                # Check if empty based on return type (fallback search only)
-                if isinstance(results, tuple) and len(results) == 2:
-                    # Infinity returns (DataFrame, int)
-                    df, total = results
-                    logging.debug(f"[DROP EMPTY TABLE] Infinity format - total: {total}, df length: {len(df) if hasattr(df, '__len__') else 'N/A'}")
-                    is_empty = (total == 0 or (hasattr(df, '__len__') and len(df) == 0))
-                elif hasattr(results, 'get') and 'hits' in results:
-                    # ES format - MUST check this before hasattr(results, '__len__')
-                    # because ES response objects also have __len__
-                    total = results.get('hits', {}).get('total', {})
-                    hits = results.get('hits', {}).get('hits', [])
-
-                    # ES 7.x+: total is a dict like {'value': 0, 'relation': 'eq'}
-                    # ES 6.x: total is an int
-                    if isinstance(total, dict):
-                        total_count = total.get('value', 0)
-                    else:
-                        total_count = total
-
-                    logging.debug(f"[DROP EMPTY TABLE] ES format - total: {total_count}, hits count: {len(hits)}")
-                    is_empty = (total_count == 0 or len(hits) == 0)
-                elif hasattr(results, '__len__'):
-                    # DataFrame or list (check this AFTER ES format)
-                    result_len = len(results)
-                    logging.debug(f"[DROP EMPTY TABLE] List/DataFrame format - length: {result_len}")
-                    is_empty = result_len == 0
-                else:
-                    logging.warning(f"[DROP EMPTY TABLE] Unknown result format: {type(results)}")
-                    is_empty = False
+            results = settings.docStoreConn.search(
+                select_fields=["id"],
+                highlight_fields=[],
+                condition={},
+                match_expressions=[],
+                order_by=OrderByExpr(),
+                offset=0,
+                limit=1,
+                index_names=index_name,
+                knowledgebase_ids=[""],
+            )
+            total_count = settings.docStoreConn.get_total(results) if results is not None else 0
+            logging.debug(f"[DROP EMPTY TABLE] Generic count result: {total_count} documents")
+            is_empty = (total_count == 0)
 
             if is_empty:
                 logging.debug(f"[DROP EMPTY TABLE] Metadata table {index_name} is empty, dropping it")

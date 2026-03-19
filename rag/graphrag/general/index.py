@@ -598,7 +598,8 @@ async def extract_community(
     for b in range(0, len(chunks), es_bulk_size):
         doc_store_result = await thread_pool_exec(settings.docStoreConn.insert,chunks[b : b + es_bulk_size],search.index_name(tenant_id),kb_id,)
         if doc_store_result:
-            error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
+            doc_engine = getattr(settings, "DOC_ENGINE", "") or "doc engine"
+            error_message = f"Insert chunk error: {doc_store_result}, please check log file and {doc_engine} status!"
             raise Exception(error_message)
 
     if task_id and has_canceled(task_id):

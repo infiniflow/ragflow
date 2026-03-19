@@ -35,6 +35,16 @@ infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
   postgres_port: 5432
   db_name: 'default_db'
+qdrant:
+  host: '${QDRANT_HOST:-qdrant}'
+  http_port: ${QDRANT_HTTP_PORT:-6333}
+  grpc_port: ${QDRANT_GRPC_PORT:-6334}
+  https: false
+  prefer_grpc: false
+  timeout: 10
+  sparse_model: '${QDRANT_SPARSE_MODEL:-}'
+  sparse_vocab_size: ${QDRANT_SPARSE_VOCAB_SIZE:-131072}
+  text_index_tokenizer: '${QDRANT_TEXT_INDEX_TOKENIZER:-multilingual}'
 oceanbase:
   scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
   config:

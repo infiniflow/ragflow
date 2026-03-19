@@ -81,6 +81,7 @@ OAUTH_CONFIG = None
 DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
 DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
 DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
+DOC_ENGINE_QDRANT = (DOC_ENGINE.lower() == "qdrant")
 
 
 docStoreConn = None
@@ -119,6 +120,7 @@ OB = {}
 OSS = {}
 OS = {}
 GCS = {}
+QDRANT = {}
 
 DOC_MAXIMUM_SIZE: int = 128 * 1024 * 1024
 DOC_BULK_SIZE: int = 4
@@ -128,6 +130,16 @@ PARALLEL_DEVICES: int = 0
 
 STORAGE_IMPL_TYPE = os.getenv('STORAGE_IMPL', 'MINIO')
 STORAGE_IMPL = None
+
+
+class UnsupportedMessageStoreConnection:
+    supported = False
+
+    def __init__(self, doc_engine: str):
+        self.doc_engine = doc_engine
+
+    def __getattr__(self, name):
+        raise NotImplementedError(f"Message store is not supported for DOC_ENGINE={self.doc_engine}.")
 
 def get_svr_queue_name(priority: int) -> str:
     if priority == 0:
@@ -257,10 +269,11 @@ def init_settings():
     FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, docStoreConn, ES, OB, OS, INFINITY
+    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, DOC_ENGINE_QDRANT, docStoreConn, ES, OB, OS, INFINITY, QDRANT
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch").strip()
     DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
     DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
+    DOC_ENGINE_QDRANT = (DOC_ENGINE.lower() == "qdrant")
     lower_case_doc_engine = DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
         ES = get_base_config("es", {})
@@ -275,6 +288,21 @@ def init_settings():
     elif lower_case_doc_engine == "opensearch":
         OS = get_base_config("os", {})
         docStoreConn = rag.utils.opensearch_conn.OSConnection()
+    elif lower_case_doc_engine == "qdrant":
+        from rag.utils import qdrant_conn as qdrant_conn_module
+
+        QDRANT = get_base_config("qdrant", {
+            "host": "qdrant",
+            "http_port": 6333,
+            "grpc_port": 6334,
+            "https": False,
+            "prefer_grpc": False,
+            "timeout": 10,
+            "sparse_model": "",
+            "sparse_vocab_size": 131072,
+            "text_index_tokenizer": "multilingual",
+        })
+        docStoreConn = qdrant_conn_module.QdrantConnection()
     elif lower_case_doc_engine == "oceanbase":
         OB = get_base_config("oceanbase", {})
         docStoreConn = rag.utils.ob_conn.OBConnection()
@@ -286,18 +314,22 @@ def init_settings():
 
     global msgStoreConn
     # use the same engine for message store
-    if DOC_ENGINE == "elasticsearch":
+    if lower_case_doc_engine == "elasticsearch":
         ES = get_base_config("es", {})
         msgStoreConn = memory_es_conn.ESConnection()
-    elif DOC_ENGINE == "infinity":
+    elif lower_case_doc_engine == "infinity":
         INFINITY = get_base_config("infinity", {
             "uri": "infinity:23817",
             "postgres_port": 5432,
             "db_name": "default_db"
         })
         msgStoreConn = memory_infinity_conn.InfinityConnection()
+    elif lower_case_doc_engine == "qdrant":
+        msgStoreConn = UnsupportedMessageStoreConnection(DOC_ENGINE)
     elif lower_case_doc_engine in ["oceanbase", "seekdb"]:
         msgStoreConn = memory_ob_conn.OBConnection()
+    else:
+        msgStoreConn = None
 
     global AZURE, S3, MINIO, OSS, GCS
     if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
@@ -410,4 +442,3 @@ def _resolve_per_model_config(entry_dict, backup_factory, backup_api_key, backup
 def print_rag_settings():
     logging.info(f"MAX_CONTENT_LENGTH: {DOC_MAXIMUM_SIZE}")
     logging.info(f"MAX_FILE_COUNT_PER_USER: {int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))}")
-

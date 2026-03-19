@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.12, <3.15"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'darwin'",
@@ -6318,6 +6318,7 @@ dependencies = [
     { name = "python-docx" },
     { name = "python-gitlab" },
     { name = "python-pptx" },
+    { name = "qdrant-client" },
     { name = "qianfan" },
     { name = "quart-auth" },
     { name = "quart-cors" },
@@ -6457,6 +6458,7 @@ requires-dist = [
     { name = "python-docx", specifier = ">=1.1.2,<2.0.0" },
     { name = "python-gitlab", specifier = ">=7.0.0" },
     { name = "python-pptx", specifier = ">=1.0.2,<2.0.0" },
+    { name = "qdrant-client", specifier = ">=1.11.0,<2.0.0" },
     { name = "qianfan", specifier = "==0.4.6" },
     { name = "quart-auth", specifier = "==0.11.0" },
     { name = "quart-cors", specifier = "==0.8.0" },

@@ -261,6 +261,9 @@ def query_message(filter_dict: dict, params: dict):
 
 
 def init_message_id_sequence():
+    if not getattr(settings.msgStoreConn, "supported", True):
+        logging.info("Message store is not supported for DOC_ENGINE=%s, skipping message_id initialization.", settings.DOC_ENGINE)
+        return
     message_id_redis_key = "id_generator:memory"
     if REDIS_CONN.exist(message_id_redis_key):
         current_max_id = REDIS_CONN.get(message_id_redis_key)
@@ -309,6 +312,9 @@ def decrease_memory_size_cache(memory_id: str, size: int):
 
 
 def init_memory_size_cache():
+    if not getattr(settings.msgStoreConn, "supported", True):
+        logging.info("Message store is not supported for DOC_ENGINE=%s, skipping memory size cache initialization.", settings.DOC_ENGINE)
+        return
     memory_list = MemoryService.get_all_memory()
     if not memory_list:
         logging.info("No memory found, no need to init memory size.")

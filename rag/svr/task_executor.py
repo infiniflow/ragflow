@@ -71,6 +71,7 @@ from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, \
     email, tag
 from rag.nlp import search, rag_tokenizer, add_positions
+from rag.utils.sparse_vector import attach_sparse_vector, build_sparse_text
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 from common.token_utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
@@ -585,6 +586,8 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         if not c:
             c = "None"
         cnts.append(c)
+    title_texts = list(tts)
+    content_texts = list(cnts)
 
     tk_count = 0
     if len(tts) == len(cnts):
@@ -617,12 +620,20 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     else:
         vects = cnts
 
+    sparse_vectors = []
+    if hasattr(mdl, "supports_sparse") and mdl.supports_sparse():
+        sparse_inputs = [build_sparse_text(title, content) for title, content in zip(title_texts, content_texts)]
+        sparse_vectors, _ = await thread_pool_exec(mdl.encode_sparse, sparse_inputs)
+
     assert len(vects) == len(docs)
     vector_size = 0
     for i, d in enumerate(docs):
         v = vects[i].tolist()
         vector_size = len(v)
         d["q_%d_vec" % len(v)] = v
+        # Future multivector ingestion should attach page/image vectors here alongside text vectors.
+        if sparse_vectors:
+            attach_sparse_vector(d, sparse_vectors[i])
     return tk_count, vector_size
 
 
@@ -698,9 +709,15 @@ async def run_dataflow(task: dict):
                     set_progress(task_id, prog=prog, msg=f"{i + 1} / {len(texts) // settings.EMBEDDING_BATCH_SIZE}")
 
             assert len(vects) == len(chunks)
+            sparse_vectors = []
+            if embedding_model.supports_sparse():
+                sparse_vectors, _ = await thread_pool_exec(embedding_model.encode_sparse, texts)
             for i, ck in enumerate(chunks):
                 v = vects[i].tolist()
                 ck["q_%d_vec" % len(v)] = v
+                # Future multivector ingestion should add visual vectors here for dataflow outputs.
+                if sparse_vectors:
+                    attach_sparse_vector(ck, sparse_vectors[i])
         except TaskCanceledException:
             raise
         except Exception as e:
@@ -934,7 +951,8 @@ async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progre
         if b % 128 == 0:
             progress_callback(prog=0.8 + 0.1 * (b + 1) / len(chunks), msg="")
         if doc_store_result:
-            error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
+            doc_engine = getattr(settings, "DOC_ENGINE", "") or "doc engine"
+            error_message = f"Insert chunk error: {doc_store_result}, please check log file and {doc_engine} status!"
             progress_callback(-1, msg=error_message)
             raise Exception(error_message)
         chunk_ids = [chunk["id"] for chunk in chunks[:b + settings.DOC_BULK_SIZE]]

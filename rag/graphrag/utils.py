@@ -570,7 +570,8 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         if b % 100 == es_bulk_size and callback:
             callback(msg=f"Insert chunks: {b}/{len(chunks)}")
         if doc_store_result:
-            error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
+            doc_engine = getattr(settings, "DOC_ENGINE", "") or "doc engine"
+            error_message = f"Insert chunk error: {doc_store_result}, please check log file and {doc_engine} status!"
             raise Exception(error_message)
     now = asyncio.get_running_loop().time()
     if callback:

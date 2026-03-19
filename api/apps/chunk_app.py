@@ -40,6 +40,7 @@ from api.utils.api_utils import (
 from common.misc_utils import thread_pool_exec
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
+from rag.utils.sparse_vector import attach_sparse_vector, build_sparse_text
 from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
 from common.string_utils import remove_redundant_spaces
@@ -195,6 +196,10 @@ async def set():
             v, c = embd_mdl.encode([doc.name, content_with_weight if not _d.get("question_kwd") else "\n".join(_d["question_kwd"])])
             v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
             _d["q_%d_vec" % len(v)] = v.tolist()
+            if embd_mdl.supports_sparse():
+                sparse_query = build_sparse_text(doc.name, _d.get("question_kwd") or content_with_weight)
+                sparse_vector, _ = embd_mdl.encode_sparse_queries(sparse_query)
+                attach_sparse_vector(_d, sparse_vector)
             settings.docStoreConn.update({"id": req["chunk_id"]}, _d, search.index_name(tenant_id), doc.kb_id)
 
             # update image
@@ -374,6 +379,10 @@ async def create():
             v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
             v = 0.1 * v[0] + 0.9 * v[1]
             d["q_%d_vec" % len(v)] = v.tolist()
+            if embd_mdl.supports_sparse():
+                sparse_query = build_sparse_text(doc.name, d["question_kwd"] or req["content_with_weight"])
+                sparse_vector, _ = embd_mdl.encode_sparse_queries(sparse_query)
+                attach_sparse_vector(d, sparse_vector)
             settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
 
             if image_base64:

@@ -87,6 +87,7 @@ dependencies = [
     "python-pptx>=1.0.2,<2.0.0",
     # "pywencai>=0.13.1,<1.0.0",  # Temporarily disabled: conflicts with agentrun-sdk (pydash>=8), needed for agent/tools/wencai.py
     "qianfan==0.4.6",
+    "qdrant-client>=1.11.0,<2.0.0",
     "quart-auth==0.11.0",
     "quart-cors==0.8.0",
     "ranx==0.3.20",

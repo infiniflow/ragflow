@@ -22,7 +22,8 @@ from dataclasses import dataclass
 
 from rag.nlp import rag_tokenizer, query
 import numpy as np
-from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByExpr, DocStoreConnection
+from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, MatchSparseExpr, OrderByExpr, DocStoreConnection
+from rag.utils.sparse_vector import SPARSE_VECTOR_NAME, dense_vector_field_name
 from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
@@ -43,11 +44,14 @@ class Dealer:
         total: int
         ids: list[str]
         query_vector: list[float] | None = None
+        query_sparse_vector: object | None = None
+        retrieval_vector_field: str | None = None
         field: dict | None = None
         highlight: dict | None = None
         aggregation: list | dict | None = None
         keywords: list[str] | None = None
         group_docs: list[list] | None = None
+        backend_ranked: bool = False
 
     async def get_vector(self, txt, emb_mdl, topk=10, similarity=0.1):
         qv, _ = await thread_pool_exec(emb_mdl.encode_queries, txt)
@@ -56,7 +60,7 @@ class Dealer:
             raise Exception(
                 f"Dealer.get_vector returned array's shape {shape} doesn't match expectation(exact one dimension).")
         embedding_data = [get_float(v) for v in qv]
-        vector_column_name = f"q_{len(embedding_data)}_vec"
+        vector_column_name = dense_vector_field_name(len(embedding_data))
         return MatchDenseExpr(vector_column_name, embedding_data, 'float', 'cosine', topk, {"similarity": similarity})
 
     def get_filters(self, req):
@@ -97,6 +101,9 @@ class Dealer:
 
         qst = req.get("question", "")
         q_vec = []
+        q_sparse_vec = None
+        retrieval_vector_field = None
+        backend_ranked = False
         if not qst:
             if req.get("sort"):
                 orderBy.asc("page_num_int")
@@ -121,11 +128,23 @@ class Dealer:
             else:
                 matchDense = await self.get_vector(qst, emb_mdl, topk, req.get("similarity", 0.1))
                 q_vec = matchDense.embedding_data
+                retrieval_vector_field = matchDense.vector_column_name
                 if not settings.DOC_ENGINE_INFINITY:
-                    src.append(f"q_{len(q_vec)}_vec")
+                    src.append(retrieval_vector_field)
 
-                fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
-                matchExprs = [matchText, matchDense, fusionExpr]
+                matchExprs = [matchText, matchDense]
+                if settings.DOC_ENGINE_QDRANT and hasattr(emb_mdl, "supports_sparse") and emb_mdl.supports_sparse():
+                    # Future multivector retrieval should add the visual query object here.
+                    q_sparse_vec, _ = await thread_pool_exec(emb_mdl.encode_sparse_queries, qst)
+                    if q_sparse_vec is not None and getattr(q_sparse_vec, "indices", None):
+                        matchExprs.append(MatchSparseExpr(SPARSE_VECTOR_NAME, q_sparse_vec, "dot", topk))
+                        fusionExpr = FusionExpr("rrf", topk)
+                        backend_ranked = True
+                    else:
+                        fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
+                else:
+                    fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
+                matchExprs.append(fusionExpr)
 
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit,
                                             idx_names, kb_ids, rank_feature=rank_feature)
@@ -140,7 +159,11 @@ class Dealer:
                     else:
                         matchText, _ = self.qryr.question(qst, min_match=0.1)
                         matchDense.extra_options["similarity"] = 0.17
-                        res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, [matchText, matchDense, fusionExpr],
+                        retry_exprs = [matchText, matchDense]
+                        if q_sparse_vec is not None and getattr(q_sparse_vec, "indices", None):
+                            retry_exprs.append(MatchSparseExpr(SPARSE_VECTOR_NAME, q_sparse_vec, "dot", topk))
+                        retry_exprs.append(fusionExpr)
+                        res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, retry_exprs,
                                                     orderBy, offset, limit, idx_names, kb_ids,
                                                     rank_feature=rank_feature)
                         total = self.dataStore.get_total(res)
@@ -164,10 +187,13 @@ class Dealer:
             total=total,
             ids=ids,
             query_vector=q_vec,
+            query_sparse_vector=q_sparse_vec,
+            retrieval_vector_field=retrieval_vector_field,
             aggregation=aggs,
             highlight=highlight,
             field=self.dataStore.get_fields(res, src + ["_score"]),
-            keywords=keywords
+            keywords=keywords,
+            backend_ranked=backend_ranked,
         )
 
     @staticmethod
@@ -298,9 +324,10 @@ class Dealer:
                rank_feature: dict | None = None
                ):
         _, keywords = self.qryr.question(query)
-        vector_size = len(sres.query_vector)
-        vector_column = f"q_{vector_size}_vec"
-        zero_vector = [0.0] * vector_size
+        if not sres.query_vector:
+            return [], [], []
+        vector_column = sres.retrieval_vector_field or dense_vector_field_name(len(sres.query_vector))
+        zero_vector = [0.0] * len(sres.query_vector)
         ins_embd = []
         for chunk_id in sres.ids:
             vector = sres.field[chunk_id].get(vector_column, zero_vector)
@@ -413,7 +440,7 @@ class Dealer:
                 rank_feature=rank_feature,
             )
         else:
-            if settings.DOC_ENGINE_INFINITY:
+            if settings.DOC_ENGINE_INFINITY or (settings.DOC_ENGINE_QDRANT and sres.backend_ranked):
                 # Don't need rerank here since Infinity normalizes each way score before fusion.
                 sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
                 sim = [s if s is not None else 0.0 for s in sim]
@@ -458,9 +485,8 @@ class Dealer:
         end = begin + page_size
         page_idx = valid_idx[begin:end]
 
-        dim = len(sres.query_vector)
-        vector_column = f"q_{dim}_vec"
-        zero_vector = [0.0] * dim
+        vector_column = sres.retrieval_vector_field
+        zero_vector = [0.0] * len(sres.query_vector or [])
 
         for i in page_idx:
             id = sres.ids[i]
@@ -481,7 +507,8 @@ class Dealer:
                 "similarity": float(sim_np[i]),
                 "vector_similarity": float(vsim[i]),
                 "term_similarity": float(tsim[i]),
-                "vector": chunk.get(vector_column, zero_vector),
+                # Future multivector retrieval may replace this single dense vector field.
+                "vector": chunk.get(vector_column, zero_vector) if vector_column else zero_vector,
                 "positions": position_int,
                 "doc_type_kwd": chunk.get("doc_type_kwd", ""),
                 "mom_id": chunk.get("mom_id", ""),

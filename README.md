@@ -295,6 +295,10 @@ RAGFlow uses Elasticsearch by default for storing full text and vectors. To swit
 > [!WARNING]
 > Switching to Infinity on a Linux/arm64 machine is not yet officially supported.
 
+### Qdrant backend notes
+
+For the Qdrant backend design, setup, validation, and operational notes, see [QDRANT_README.md](./QDRANT_README.md).
+
 ## 🔧 Build a Docker image
 
 This image is approximately 2 GB in size and relies on external LLM and embedding services.
@@ -390,6 +394,7 @@ docker build --platform linux/amd64 \
 
 - [Quickstart](https://ragflow.io/docs/dev/)
 - [Configuration](https://ragflow.io/docs/dev/configurations)
+- [Qdrant backend notes](./QDRANT_README.md)
 - [Release notes](https://ragflow.io/docs/dev/release_notes)
 - [User guides](https://ragflow.io/docs/category/user-guides)
 - [Developer guides](https://ragflow.io/docs/category/developer-guides)

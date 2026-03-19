@@ -96,6 +96,25 @@ services:
       retries: 120
     restart: unless-stopped
 
+  qdrant:
+    profiles:
+      - qdrant
+    image: qdrant/qdrant:latest
+    ports:
+      - ${QDRANT_HTTP_PORT}:6333
+      - ${QDRANT_GRPC_PORT}:6334
+    env_file: .env
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - ragflow
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/collections"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    restart: unless-stopped
+
   oceanbase:
     profiles:
       - oceanbase
@@ -304,6 +323,8 @@ volumes:
   osdata01:
     driver: local
   infinity_data:
+    driver: local
+  qdrant_data:
     driver: local
   ob_data:
     driver: local
