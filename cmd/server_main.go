@@ -246,7 +246,7 @@ func startServer(config *server.Config) {
 				local.SetAdminStatus(0, "")
 			} else {
 				local.SetAdminStatus(1, err.Error())
-				logger.Warn(fmt.Sprintf(err.Error()))
+				//logger.Warn(fmt.Sprintf(err.Error()))
 			}
 		})
 		heartbeatReporter.Start()
