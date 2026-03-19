@@ -1319,6 +1319,7 @@ class LiteLLMBase(ABC):
                     **completion_args,
                     drop_params=True,
                     timeout=self.timeout,
+                    stream_options={"include_usage": True},
                 )
 
                 async for resp in stream:
