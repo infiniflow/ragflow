@@ -26,6 +26,7 @@ import networkx as nx
 from api.db.services.task_service import has_canceled
 from common.connection_utils import timeout
 from common.token_utils import truncate
+from rag.graphrag.llm_protocol import GraphRAGCompletionLLM, unwrap_graphrag_chat_response
 from rag.graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from rag.graphrag.utils import (
     GraphChange,
@@ -39,7 +40,6 @@ from rag.graphrag.utils import (
     split_string_by_multi_markers,
 )
 from common.misc_utils import thread_pool_exec
-from rag.llm.chat_model import Base as CompletionLLM
 from rag.prompts.generator import message_fit_in
 from common.exceptions import TaskCanceledException
 
@@ -50,11 +50,11 @@ MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK = int(os.environ.get("MAX_CONCURRENT_PR
 
 
 class Extractor:
-    _llm: CompletionLLM
+    _llm: GraphRAGCompletionLLM
 
     def __init__(
         self,
-        llm_invoker: CompletionLLM,
+        llm_invoker: GraphRAGCompletionLLM,
         language: str | None = "English",
         entity_types: list[str] | None = None,
     ):
@@ -78,7 +78,8 @@ class Extractor:
                     raise TaskCanceledException(f"Task {task_id} was cancelled")
             try:
                 response = asyncio.run(self._llm.async_chat(system_msg[0]["content"], hist, conf))
-                response = re.sub(r"^.*</think>", "", response[0], flags=re.DOTALL)
+                response = unwrap_graphrag_chat_response(response)
+                response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
                 if response.find("**ERROR**") >= 0:
                     raise Exception(response)
                 set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)
