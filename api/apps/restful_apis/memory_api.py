@@ -266,6 +266,38 @@ async def search_message():
     res = await memory_api_service.search_message(filter_dict, params)
     return get_json_result(message=True, data=res)
 
+
+@manager.route("/messages/graph_search", methods=["GET"])  # noqa: F821
+@login_required
+async def search_graph_message():
+    args = request.args
+    memory_ids = args.getlist("memory_id")
+    if len(memory_ids) == 1 and ',' in memory_ids[0]:
+        memory_ids = memory_ids[0].split(',')
+    query = args.get("query", "").strip()
+    top_n = int(args.get("top_n", 5))
+    if not memory_ids:
+        return get_error_argument_result("memory_ids is required.")
+    if not query:
+        return get_error_argument_result("query is required.")
+    try:
+        res = await memory_api_service.search_graph_message(memory_ids, query, top_n)
+        return get_json_result(message=True, data=res)
+    except Exception as e:
+        logging.error(e)
+        return get_json_result(code=RetCode.SERVER_ERROR, message="Internal server error")
+
+
+@manager.route("/memories/backend/capabilities", methods=["GET"])  # noqa: F821
+@login_required
+async def get_memory_backend_capabilities():
+    try:
+        res = await memory_api_service.get_backend_capabilities()
+        return get_json_result(message=True, data=res)
+    except Exception as e:
+        logging.error(e)
+        return get_json_result(code=RetCode.SERVER_ERROR, message="Internal server error")
+
 @manager.route("/messages", methods=["GET"]) # noqa: F821
 @login_required
 async def get_messages():
