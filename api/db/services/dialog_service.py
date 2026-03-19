@@ -33,6 +33,10 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
+from api.utils.reference_metadata_utils import (
+    enrich_chunks_with_document_metadata,
+    resolve_reference_metadata_preferences,
+)
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from common.time_utils import current_timestamp, datetime_format
@@ -50,57 +54,11 @@ from common import settings
 
 
 def _resolve_reference_metadata(config):
-    """
-    Resolve metadata include/fields from a config object containing:
-    reference_metadata = { include: bool, fields: string[] }.
-    """
-    ref = (config or {}).get("reference_metadata", {})
-    if not isinstance(ref, dict):
-        return False, None
-    include_metadata = bool(ref.get("include", False))
-    fields = ref.get("fields")
-    if fields is None:
-        return include_metadata, None
-    if not isinstance(fields, list):
-        return include_metadata, set()
-    return include_metadata, {f for f in fields if isinstance(f, str)}
+    return resolve_reference_metadata_preferences({}, config)
 
 
 def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
-    """
-    Mutates retrieval chunks in-place by attaching `document_metadata`.
-    """
-    if metadata_fields is not None and not metadata_fields:
-        return
-
-    doc_ids_by_kb = {}
-    for chunk in chunks:
-        kb_id = chunk.get("kb_id")
-        doc_id = chunk.get("doc_id")
-        if not kb_id or not doc_id:
-            continue
-        doc_ids_by_kb.setdefault(kb_id, set()).add(doc_id)
-
-    if not doc_ids_by_kb:
-        return
-
-    meta_by_doc = {}
-    for kb_id, doc_ids in doc_ids_by_kb.items():
-        meta_map = DocMetadataService.get_metadata_for_documents(list(doc_ids), kb_id)
-        if meta_map:
-            meta_by_doc.update(meta_map)
-
-    for chunk in chunks:
-        doc_id = chunk.get("doc_id")
-        if not doc_id:
-            continue
-        meta = meta_by_doc.get(doc_id)
-        if not meta:
-            continue
-        if metadata_fields is not None:
-            meta = {k: v for k, v in meta.items() if k in metadata_fields}
-        if meta:
-            chunk["document_metadata"] = meta
+    enrich_chunks_with_document_metadata(chunks, metadata_fields)
 
 
 class DialogService(CommonService):

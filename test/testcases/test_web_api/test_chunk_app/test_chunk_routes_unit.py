@@ -668,6 +668,24 @@ def test_switch_chunk_success_failure_and_exception_unit(monkeypatch):
 def test_rm_chunk_delete_exception_partial_compensation_and_cleanup_unit(monkeypatch):
     module = _load_chunk_module(monkeypatch)
 
+    guard_calls = {"get_by_id": 0, "delete": 0}
+
+    def _guard_get_by_id(_doc_id):
+        guard_calls["get_by_id"] += 1
+        raise AssertionError("get_by_id should not be called for empty chunk_ids no-op")
+
+    def _guard_delete(*_args, **_kwargs):
+        guard_calls["delete"] += 1
+        raise AssertionError("docStoreConn.delete should not be called for empty chunk_ids no-op")
+
+    monkeypatch.setattr(module.DocumentService, "get_by_id", _guard_get_by_id)
+    monkeypatch.setattr(module.settings.docStoreConn, "delete", _guard_delete)
+    _set_request_json(monkeypatch, module, {"doc_id": "doc-1", "chunk_ids": [], "delete_all": False})
+    res = _run(module.rm())
+    assert res["code"] == 0, res
+    assert guard_calls["get_by_id"] == 0
+    assert guard_calls["delete"] == 0
+
     monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (False, None))
     _set_request_json(monkeypatch, module, {"doc_id": "doc-1", "chunk_ids": ["c1"]})
     res = _run(module.rm())

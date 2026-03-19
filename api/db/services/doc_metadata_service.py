@@ -760,6 +760,34 @@ class DocMetadataService:
             return {}
 
     @classmethod
+    def get_metadata_keys_by_kbs(cls, kb_ids: List[str]) -> List[str]:
+        """
+        Get unique metadata field names across multiple knowledge bases.
+
+        Args:
+            kb_ids: List of knowledge base IDs
+
+        Returns:
+            Sorted list of unique metadata field names
+        """
+        if not kb_ids:
+            return []
+
+        keys: set[str] = set()
+        try:
+            for kb_id in kb_ids:
+                results = cls._search_metadata(kb_id, condition={"kb_id": kb_id})
+                for _doc_id, doc in cls._iter_search_results(results):
+                    doc_meta = cls._extract_metadata(doc)
+                    if not isinstance(doc_meta, dict):
+                        continue
+                    keys.update(str(k) for k in doc_meta.keys())
+            return sorted(keys)
+        except Exception as e:
+            logging.error(f"Error getting metadata keys for KBs {kb_ids}: {e}")
+            return []
+
+    @classmethod
     def get_metadata_for_documents(cls, doc_ids: Optional[List[str]], kb_id: str) -> Dict[str, Dict]:
         """
         Get metadata fields for specific documents.

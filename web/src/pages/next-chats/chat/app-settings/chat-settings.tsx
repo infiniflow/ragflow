@@ -58,7 +58,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         toc_enhance: false,
         reference_metadata: {
           include: false,
-          fields: [],
+          fields: undefined,
         },
       },
       top_n: 8,
@@ -77,6 +77,14 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       values,
       'llm_setting.',
     );
+    const referenceMetadata = nextValues?.prompt_config?.reference_metadata;
+    if (
+      referenceMetadata &&
+      Array.isArray(referenceMetadata.fields) &&
+      referenceMetadata.fields.length === 0
+    ) {
+      referenceMetadata.fields = undefined;
+    }
 
     setDialog({
       ...omit(data, 'operator_permission'),
@@ -93,9 +101,20 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     const llmSettingEnabledValues = setLLMSettingEnabledValues(
       data.llm_setting,
     );
+    const referenceMetadata = data?.prompt_config?.reference_metadata;
+    const normalizedReferenceMetadata =
+      referenceMetadata &&
+      Array.isArray(referenceMetadata.fields) &&
+      referenceMetadata.fields.length === 0
+        ? { ...referenceMetadata, fields: undefined }
+        : referenceMetadata;
 
     const nextData = {
       ...data,
+      prompt_config: {
+        ...data.prompt_config,
+        reference_metadata: normalizedReferenceMetadata,
+      },
       ...llmSettingEnabledValues,
     };
 
