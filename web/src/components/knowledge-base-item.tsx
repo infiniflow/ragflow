@@ -23,7 +23,7 @@ export function useDisableDifferenceEmbeddingDataset() {
 
   useEffect(() => {
     const datasetListMap = datasetListOrigin
-      .filter((x) => x.parser_id !== DocumentParserType.Tag)
+      .filter((x) => x.chunk_method !== DocumentParserType.Tag)
       .map((item: IKnowledge) => {
         return {
           label: item.name,
@@ -36,12 +36,12 @@ export function useDisableDifferenceEmbeddingDataset() {
           ),
           suffix: (
             <div className="text-xs px-4 p-1 bg-bg-card text-text-secondary rounded-lg border border-bg-card">
-              {item.embd_id}
+              {item.embedding_model}
             </div>
           ),
           value: item.id,
           disabled:
-            item.embd_id !== datasetSelectEmbedId &&
+            item.embedding_model !== datasetSelectEmbedId &&
             datasetSelectEmbedId !== '',
         };
       });
@@ -54,7 +54,7 @@ export function useDisableDifferenceEmbeddingDataset() {
   ) => {
     if (value.length) {
       const data = datasetListOrigin?.find((item) => item.id === value[0]);
-      setDatasetSelectEmbedId(data?.embd_id ?? '');
+      setDatasetSelectEmbedId(data?.embedding_model ?? '');
     } else {
       setDatasetSelectEmbedId('');
     }
