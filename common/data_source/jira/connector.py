@@ -20,6 +20,7 @@ from common.data_source.config import (
     INDEX_BATCH_SIZE,
     JIRA_CONNECTOR_LABELS_TO_SKIP,
     JIRA_CONNECTOR_MAX_TICKET_SIZE,
+    JIRA_SYNC_TIME_BUFFER_SECONDS,
     JIRA_TIMEZONE_OFFSET,
     ONE_HOUR,
     DocumentSource,
@@ -95,6 +96,7 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
         scoped_token: bool = False,
         attachment_size_limit: int | None = None,
         timezone_offset: float | None = None,
+        time_buffer_seconds: int | None = JIRA_SYNC_TIME_BUFFER_SECONDS,
     ) -> None:
         if not jira_base_url:
             raise ConnectorValidationError("Jira base URL must be provided.")
@@ -120,6 +122,16 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
         self.timezone_offset = tz_offset_value
         self.timezone = timezone(offset=timedelta(hours=tz_offset_value))
         self._timezone_overridden = timezone_offset is not None
+        if time_buffer_seconds is None:
+            buffer_value = JIRA_SYNC_TIME_BUFFER_SECONDS
+        else:
+            try:
+                buffer_value = int(time_buffer_seconds)
+            except (TypeError, ValueError) as exc:
+                raise ConnectorValidationError(
+                    f"Invalid time_buffer_seconds value ({time_buffer_seconds!r}); expected an integer."
+                ) from exc
+        self.time_buffer_seconds = max(0, buffer_value)
 
     # -------------------------------------------------------------------------
     # Connector lifecycle helpers
@@ -245,7 +257,16 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
         while True:
             attempt += 1
             jql = self._build_jql(attempt_start, end)
-            logger.info(f"[Jira] Executing Jira JQL attempt {attempt} (buffered_retry={retried_with_buffer})[start and end parameters redacted]")
+            adjusted_start = self._adjust_start_for_query(attempt_start)
+            logger.info(
+                "[Jira] Executing Jira JQL attempt %s (buffered_retry=%s, start=%s, adjusted_start=%s, end=%s, overlap_buffer_s=%s)",
+                attempt,
+                retried_with_buffer,
+                attempt_start,
+                adjusted_start,
+                end,
+                self.time_buffer_seconds,
+            )
             try:
                 return (yield from self._load_from_checkpoint_internal(jql, checkpoint, start_filter=start))
             except Exception as exc:
@@ -424,8 +445,9 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
             labels = ", ".join(f'"{label}"' for label in self.labels_to_skip)
             clauses.append(f"labels NOT IN ({labels})")
 
-        if start is not None:
-            clauses.append(f'updated >= "{self._format_jql_time(start)}"')
+        adjusted_start = self._adjust_start_for_query(start)
+        if adjusted_start is not None:
+            clauses.append(f'updated >= "{self._format_jql_time(adjusted_start)}"')
         if end is not None:
             clauses.append(f'updated <= "{self._format_jql_time(end)}"')
 
@@ -436,6 +458,17 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
         if "order by" not in jql.lower():
             jql = f"{jql} ORDER BY updated ASC"
         return jql
+
+    def _adjust_start_for_query(self, start: SecondsSinceUnixEpoch | None) -> SecondsSinceUnixEpoch | None:
+        """Apply a small overlap buffer to protect against minute-precision JQL boundaries."""
+        if start is None:
+            return None
+        start_value = float(start)
+        if start_value <= 0:
+            return start_value
+        if self.time_buffer_seconds <= 0:
+            return start_value
+        return max(0.0, start_value - float(self.time_buffer_seconds))
 
     def _format_jql_time(self, timestamp: SecondsSinceUnixEpoch) -> str:
         dt_utc = datetime.fromtimestamp(float(timestamp), tz=timezone.utc)
