@@ -216,10 +216,11 @@ func Init(configPath string) error {
 		return err
 	}
 
-	docEngine := os.Getenv("DOC_ENGINE")
-	if docEngine == "" {
-		docEngine = "elasticsearch"
+	err = FromEnvironments()
+	if err != nil {
+		return err
 	}
+
 	id := 0
 	for k, v := range globalViper.AllSettings() {
 		configDict, ok := v.(map[string]interface{})
@@ -237,7 +238,7 @@ func Init(configPath string) error {
 			delete(configDict, "http_port")
 		case "es":
 			// Skip if retrieval_type doesn't match doc_engine
-			if docEngine != "elasticsearch" {
+			if globalConfig.DocEngine.Type != "elasticsearch" {
 				continue
 			}
 			hosts := getString(configDict, "hosts")
@@ -259,7 +260,7 @@ func Init(configPath string) error {
 			delete(configDict, "password")
 		case "infinity":
 			// Skip if retrieval_type doesn't match doc_engine
-			if docEngine != "infinity" {
+			if globalConfig.DocEngine.Type != "infinity" {
 				continue
 			}
 			uri := getString(configDict, "uri")
