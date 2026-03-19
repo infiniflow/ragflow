@@ -31,19 +31,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// OSSConfig holds Aliyun OSS storage configuration
-// OSS is compatible with S3 API
-type OSSConfig struct {
-	AccessKeyID      string `mapstructure:"access_key"`        // OSS Access Key ID
-	SecretAccessKey  string `mapstructure:"secret_key"`        // OSS Secret Access Key
-	EndpointURL      string `mapstructure:"endpoint_url"`      // OSS Endpoint (e.g., "https://oss-cn-hangzhou.aliyuncs.com")
-	Region           string `mapstructure:"region"`            // Region (e.g., "cn-hangzhou")
-	Bucket           string `mapstructure:"bucket"`            // Default bucket (optional)
-	PrefixPath       string `mapstructure:"prefix_path"`       // Path prefix (optional)
-	SignatureVersion string `mapstructure:"signature_version"` // Signature version
-	AddressingStyle  string `mapstructure:"addressing_style"`  // Addressing style
-}
-
 // OSSStorage implements Storage interface for Aliyun OSS
 // OSS uses S3-compatible API
 type OSSStorage struct {
