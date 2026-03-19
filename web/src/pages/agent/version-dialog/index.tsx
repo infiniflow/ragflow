@@ -72,7 +72,7 @@ export function VersionDialog({
           </DialogTitle>
         </DialogHeader>
         <section className="flex gap-8 relative">
-          <div className="w-1/3 max-h-[60vh] overflow-auto min-h-[40vh]">
+          <div className="w-72 max-h-[60vh] overflow-auto min-h-[40vh]">
             {loading ? (
               <Spin className="top-1/2"></Spin>
             ) : (
@@ -100,7 +100,7 @@ export function VersionDialog({
             ) : (
               <Card className="h-full">
                 <CardContent className="h-full p-5 flex flex-col">
-                  <section className="flex justify-between">
+                  <section className="flex justify-between pb-2">
                     <div>
                       <div className="flex">
                         <span className="pb-1 truncate">{agent?.title}</span>
@@ -143,6 +143,9 @@ export function VersionDialog({
                         zoomOnDoubleClick={false}
                         preventScrolling={true}
                         minZoom={0.1}
+                        nodesDraggable={false}
+                        nodesConnectable={false}
+                        elementsSelectable={false}
                       >
                         <AgentBackground></AgentBackground>
                         <Spotlight className="z-0" opcity={0.7} coverage={70} />

@@ -2005,6 +2005,7 @@ Adds a chunk to a specified document in a specified dataset.
 - Body:
   - `"content"`: `string`
   - `"important_keywords"`: `list[string]`
+  - `"image_base64"`: `string`
 
 ##### Request example
 
@@ -2015,22 +2016,25 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {
-          "content": "<CHUNK_CONTENT_HERE>"
+          "content": "<CHUNK_CONTENT_HERE>",
+          "image_base64": "<BASE64_ENCODED_IMAGE>"
      }'
 ```
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `document_ids`: (*Path parameter*)  
+- `document_ids`: (*Path parameter*)
   The associated document ID.
-- `"content"`: (*Body parameter*), `string`, *Required*  
+- `"content"`: (*Body parameter*), `string`, *Required*
   The text content of the chunk.
-- `"important_keywords`(*Body parameter*), `list[string]`  
+- `"important_keywords`(*Body parameter*), `list[string]`
   The key terms or phrases to tag with the chunk.
 - `"questions"`(*Body parameter*), `list[string]`
   If there is a given question, the embedded chunks will be based on them
+- `"image_base64"`: (*Body parameter*), `string`
+  A base64-encoded image to associate with the chunk. If the chunk already has an image, the new image will be vertically concatenated below the existing one.
 
 #### Response
 
@@ -2047,6 +2051,7 @@ Success:
             "dataset_id": "72f36e1ebdf411efb7250242ac120006",
             "document_id": "61d68474be0111ef98dd0242ac120006",
             "id": "12ccdc56e59837e5",
+            "image_id": "",
             "important_keywords": [],
             "questions": []
         }
@@ -3909,16 +3914,16 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"session_id"`: `string` (optional)
   - `"inputs"`: `object` (optional)
   - `"user_id"`: `string` (optional)
-  - `"return_trace"`: `boolean` (optional, default `false`) — include execution trace logs.
+  - `"return_trace"`: `boolean` (optional, default `false`) — whether to include execution trace logs. See the `node_finished` event.
   - `"release"`: `boolean` (optional, default `false`) - whether to visit the latest published canvas.
 
 #### Streaming events to handle
 
-When `stream=true`, the server sends Server-Sent Events (SSE). Clients should handle these `event` types:
+When `stream=true`, the server sends Server-Sent Events (SSE). A client should handle these events:
 
-- `message`: streaming content from Message components.
-- `message_end`: end of a Message component; may include `reference`/`attachment`.
-- `node_finished`: a component finishes; `data.inputs/outputs/error/elapsed_time` describe the node result. If `return_trace=true`, the trace is attached inside the same `node_finished` event (`data.trace`).
+- `message`: Streaming content from the **Message** components.
+- `message_end`: End of a **Message** component, which may include `reference`/`attachment`.
+- `node_finished`: A component finishes; `data.inputs/outputs/error/elapsed_time` describes the node result. If a component produces structured output, read it from that component's `data.outputs.structured`. If `return_trace=true`, the trace is attached inside the same `node_finished` event (`data.trace`).
 
 The stream terminates with `[DONE]`.
 
@@ -4197,6 +4202,8 @@ data:[DONE]
 When `extra_body.reference_metadata.include` is `true`, each reference chunk may include a `document_metadata` object.
 
 Non-stream:
+
+If one or more components produce structured output, ensure you set `return_trace=true` and check each component's structured output via `trace`. The top-level `data.structured` field is a shortcut aggregated by `component_id`.
 
 ```json
 {

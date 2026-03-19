@@ -366,6 +366,7 @@ def _load_canvas_module(monkeypatch):
         get_by_id=lambda *_args, **_kwargs: (True, None),
         save_or_replace_latest=lambda *_args, **_kwargs: True,
         build_version_title=lambda *_args, **_kwargs: "stub_version_title",
+        get_latest_version_title=lambda *_args, **_kwargs: "stub_version_title",
     )
     monkeypatch.setitem(sys.modules, "api.db.services.user_canvas_version", canvas_version_mod)
 

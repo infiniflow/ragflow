@@ -337,9 +337,9 @@ func Init(configPath string) error {
 		globalConfig.Admin.Host = "127.0.0.1"
 	}
 	if globalConfig.Admin.Port == 0 {
-		globalConfig.Admin.Port = 9385
+		globalConfig.Admin.Port = 9383
 	} else {
-		globalConfig.Admin.Port += 4
+		globalConfig.Admin.Port += 2
 	}
 
 	// Load REGISTER_ENABLED from environment variable (default: 1)
@@ -414,7 +414,11 @@ func Init(configPath string) error {
 
 	// Map doc_engine section to DocEngineConfig
 	if globalConfig != nil && globalConfig.DocEngine.Type == "" {
-		// Try to map from doc_engine section
+		// Use DOC_ENGINE env var if set
+		if docEngine != "" {
+			globalConfig.DocEngine.Type = EngineType(docEngine)
+		}
+		// Try to map from doc_engine section (overrides env var if present)
 		if v.IsSet("doc_engine") {
 			docEngineConfig := v.Sub("doc_engine")
 			if docEngineConfig != nil {
