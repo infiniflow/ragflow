@@ -6317,6 +6317,38 @@
             "status": "1",
             "rank": "100",
             "llm": []
+        },
+        {
+            "name": "Perplexity",
+            "logo": "",
+            "tags": "TEXT EMBEDDING",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "pplx-embed-v1-0.6b",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "pplx-embed-v1-4b",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "pplx-embed-context-v1-0.6b",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "pplx-embed-context-v1-4b",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                }
+            ]
         }
     ]
 }
