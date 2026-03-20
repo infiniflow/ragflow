@@ -141,3 +141,130 @@ func (dao *TenantLLMDAO) DeleteByTenantID(tenantID string) (int64, error) {
 	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&model.TenantLLM{})
 	return result.RowsAffected, result.Error
 }
+
+// splitModelNameAndFactory splits model name and factory from combined format
+// This matches Python's split_model_name_and_factory logic
+//
+// Parameters:
+//   - modelName: The model name which can be in format "ModelName" or "ModelName@Factory"
+//
+// Returns:
+//   - string: The model name without factory prefix
+//   - string: The factory name (empty string if not specified)
+//
+// Example:
+//
+//	modelName, factory := splitModelNameAndFactory("gpt-4")
+//	// Returns: "gpt-4", ""
+//
+//	modelName, factory := splitModelNameAndFactory("gpt-4@OpenAI")
+//	// Returns: "gpt-4", "OpenAI"
+func splitModelNameAndFactory(modelName string) (string, string) {
+	// Split by "@" separator
+	// Handle cases like "model@factory" or "model@sub@factory"
+	lastAtIndex := -1
+	for i := len(modelName) - 1; i >= 0; i-- {
+		if modelName[i] == '@' {
+			lastAtIndex = i
+			break
+		}
+	}
+
+	// No "@" found, return original name
+	if lastAtIndex == -1 {
+		return modelName, ""
+	}
+
+	// Split into model name and potential factory
+	modelNamePart := modelName[:lastAtIndex]
+	factory := modelName[lastAtIndex+1:]
+
+	// Validate if factory exists in llm_factories table
+	// This matches Python's logic of checking against model providers
+	var factoryCount int64
+	DB.Model(&model.LLMFactories{}).Where("name = ?", factory).Count(&factoryCount)
+
+	// If factory doesn't exist in database, treat the whole string as model name
+	if factoryCount == 0 {
+		return modelName, ""
+	}
+
+	return modelNamePart, factory
+}
+
+// GetByTenantIDAndLLMName gets tenant LLM by tenant ID and LLM name
+// This is used to resolve tenant_llm_id from llm_id
+// It supports both simple model names and factory-prefixed names (e.g., "gpt-4@OpenAI")
+//
+// Parameters:
+//   - tenantID: The tenant identifier
+//   - llmName: The LLM model name (can include factory prefix like "OpenAI@gpt-4")
+//
+// Returns:
+//   - *model.TenantLLM: The tenant LLM record
+//   - error: Error if not found
+//
+// Example:
+//
+//	// Simple model name
+//	tenantLLM, err := dao.GetByTenantIDAndLLMName("tenant123", "gpt-4")
+//
+//	// Model name with factory prefix
+//	tenantLLM, err := dao.GetByTenantIDAndLLMName("tenant123", "gpt-4@OpenAI")
+func (dao *TenantLLMDAO) GetByTenantIDAndLLMName(tenantID string, llmName string) (*model.TenantLLM, error) {
+	var tenantLLM model.TenantLLM
+
+	// Split model name and factory from the combined format
+	modelName, factory := splitModelNameAndFactory(llmName)
+
+	// First attempt: try to find with model name only
+	err := DB.Where("tenant_id = ? AND llm_name = ?", tenantID, modelName).First(&tenantLLM).Error
+	if err == nil {
+		return &tenantLLM, nil
+	}
+
+	// Second attempt: if factory is specified, try with both model name and factory
+	if factory != "" {
+		err = DB.Where("tenant_id = ? AND llm_name = ? AND llm_factory = ?", tenantID, modelName, factory).First(&tenantLLM).Error
+		if err == nil {
+			return &tenantLLM, nil
+		}
+
+		// Special handling for LocalAI and HuggingFace (matching Python logic)
+		// These factories append "___FactoryName" to the model name
+		if factory == "LocalAI" || factory == "HuggingFace" || factory == "OpenAI-API-Compatible" {
+			specialModelName := modelName + "___" + factory
+			err = DB.Where("tenant_id = ? AND llm_name = ?", tenantID, specialModelName).First(&tenantLLM).Error
+			if err == nil {
+				return &tenantLLM, nil
+			}
+		}
+	}
+
+	// Return the last error (record not found)
+	return nil, err
+}
+
+// GetByTenantIDLLMNameAndFactory gets tenant LLM by tenant ID, LLM name and factory
+// This is used when model name includes factory suffix (e.g., "model@factory")
+//
+// Parameters:
+//   - tenantID: The tenant identifier
+//   - llmName: The LLM model name
+//   - factory: The LLM factory name
+//
+// Returns:
+//   - *model.TenantLLM: The tenant LLM record
+//   - error: Error if not found
+//
+// Example:
+//
+//	tenantLLM, err := dao.GetByTenantIDLLMNameAndFactory("tenant123", "gpt-4", "OpenAI")
+func (dao *TenantLLMDAO) GetByTenantIDLLMNameAndFactory(tenantID, llmName, factory string) (*model.TenantLLM, error) {
+	var tenantLLM model.TenantLLM
+	err := DB.Where("tenant_id = ? AND llm_name = ? AND llm_factory = ?", tenantID, llmName, factory).First(&tenantLLM).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tenantLLM, nil
+}

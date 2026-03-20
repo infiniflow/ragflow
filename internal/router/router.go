@@ -38,6 +38,7 @@ type Router struct {
 	connectorHandler     *handler.ConnectorHandler
 	searchHandler        *handler.SearchHandler
 	fileHandler          *handler.FileHandler
+	memoryHandler        *handler.MemoryHandler
 }
 
 // NewRouter create router
@@ -56,6 +57,7 @@ func NewRouter(
 	connectorHandler *handler.ConnectorHandler,
 	searchHandler *handler.SearchHandler,
 	fileHandler *handler.FileHandler,
+	memoryHandler *handler.MemoryHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -72,6 +74,7 @@ func NewRouter(
 		connectorHandler:     connectorHandler,
 		searchHandler:        searchHandler,
 		fileHandler:          fileHandler,
+		memoryHandler:        memoryHandler,
 	}
 }
 
@@ -150,6 +153,28 @@ func (r *Router) Setup(engine *gin.Engine) {
 			authors := v1.Group("/authors")
 			{
 				authors.GET("/:author_id/documents", r.documentHandler.GetDocumentsByAuthorID)
+			}
+
+			// Memory routes
+			memory := v1.Group("/memories")
+			{
+				memory.POST("", r.memoryHandler.CreateMemory)
+				memory.PUT("/:memory_id", r.memoryHandler.UpdateMemory)
+				memory.DELETE("/:memory_id", r.memoryHandler.DeleteMemory)
+				memory.GET("", r.memoryHandler.ListMemories)
+				memory.GET("/:memory_id/config", r.memoryHandler.GetMemoryConfig)
+				memory.GET("/:memory_id", r.memoryHandler.GetMemoryMessages)
+			}
+
+			// Message routes
+			message := v1.Group("/messages")
+			{
+				message.POST("", r.memoryHandler.AddMessage)
+				message.DELETE("/:memory_id/:message_id", r.memoryHandler.ForgetMessage)
+				message.PUT("/:memory_id/:message_id", r.memoryHandler.UpdateMessage)
+				message.GET("/search", r.memoryHandler.SearchMessage)
+				message.GET("", r.memoryHandler.GetMessages)
+				message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			}
 		}
 
@@ -230,6 +255,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			file.GET("/parent_folder", r.fileHandler.GetParentFolder)
 			file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
 		}
+
 	}
 
 	// Handle undefined routes

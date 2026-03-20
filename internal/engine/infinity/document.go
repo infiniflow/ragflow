@@ -45,3 +45,18 @@ func (e *infinityEngine) GetDocument(ctx context.Context, tableName, docID strin
 func (e *infinityEngine) DeleteDocument(ctx context.Context, tableName, docID string) error {
 	return fmt.Errorf("infinity delete not implemented: waiting for official Go SDK")
 }
+
+// UpdateDocument updates a document (partial update)
+func (e *infinityEngine) UpdateDocument(ctx context.Context, tableName, docID string, doc interface{}) error {
+	return fmt.Errorf("infinity update document not implemented: waiting for official Go SDK")
+}
+
+// DeleteByQuery deletes documents matching a query
+func (e *infinityEngine) DeleteByQuery(ctx context.Context, tableName string, query map[string]interface{}) (int64, error) {
+	return 0, fmt.Errorf("infinity delete by query not implemented: waiting for official Go SDK")
+}
+
+// UpdateByQuery updates documents matching a query
+func (e *infinityEngine) UpdateByQuery(ctx context.Context, tableName string, query map[string]interface{}, updateDoc map[string]interface{}) (int64, error) {
+	return 0, fmt.Errorf("infinity update by query not implemented: waiting for official Go SDK")
+}

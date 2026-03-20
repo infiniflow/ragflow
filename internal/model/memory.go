@@ -35,6 +35,7 @@ type Memory struct {
 	Temperature      float64 `gorm:"column:temperature;default:0.5;not null" json:"temperature"`
 	SystemPrompt     *string `gorm:"column:system_prompt;type:longtext" json:"system_prompt,omitempty"`
 	UserPrompt       *string `gorm:"column:user_prompt;type:longtext" json:"user_prompt,omitempty"`
+	OwnerName        *string `gorm:"column:owner_name" json:"owner_name,omitempty"`
 	BaseModel
 }
 

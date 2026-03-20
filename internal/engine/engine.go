@@ -51,6 +51,9 @@ type DocEngine interface {
 	BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error)
 	GetDocument(ctx context.Context, indexName, docID string) (interface{}, error)
 	DeleteDocument(ctx context.Context, indexName, docID string) error
+	UpdateDocument(ctx context.Context, indexName, docID string, doc interface{}) error
+	DeleteByQuery(ctx context.Context, indexName string, query map[string]interface{}) (int64, error)
+	UpdateByQuery(ctx context.Context, indexName string, query map[string]interface{}, updateDoc map[string]interface{}) (int64, error)
 
 	// Health check
 	Ping(ctx context.Context) error
