@@ -495,32 +495,49 @@ func (s *Service) GetUserDetails(username string) (map[string]interface{}, error
 	}, nil
 }
 
+// DeleteUserResult
+type DeleteUserResult struct {
+	Username        string   `json:"username"`
+	TenantLLMCount  int      `json:"tenant_llm_count"`
+	LangfuseCount   int      `json:"langfuse_count"`
+	MetadataTable   string   `json:"metadata_table"`
+	TenantCount     int      `json:"tenant_count"`
+	UserTenantCount int      `json:"user_tenant_count"`
+	UserCount       int      `json:"user_count"`
+	DeletedDetails  []string `json:"deleted_details"`
+}
+
 // DeleteUser delete user with cascade delete of all related data
 // Parameters:
 //   - username: email address of the user to delete
 //
 // Returns:
+//   - *DeleteUserResult
 //   - error: error message
-func (s *Service) DeleteUser(username string) error {
+func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
+	result := &DeleteUserResult{
+		Username:       username,
+		DeletedDetails: []string{fmt.Sprintf("Drop user: %s", username)},
+	}
 	userList, err := s.userDAO.ListByEmail(username)
 	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("User '%s' not found", username)
+		return nil, fmt.Errorf("User '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return fmt.Errorf("Exist more than 1 user: %s!", username)
+		return nil, fmt.Errorf("Exist more than 1 user: %s!", username)
 	}
 
 	user := userList[0]
 
 	// Check if user is active - cannot delete active users
 	if user.IsActive == "1" {
-		return fmt.Errorf("User '%s' is active and can't be deleted. Please deactivate the user first", username)
+		return nil, fmt.Errorf("User '%s' is active and can't be deleted. Please deactivate the user first", username)
 	}
 
 	// Check if user is superuser - cannot delete admin accounts
 	if user.IsSuperuser != nil && *user.IsSuperuser {
-		return fmt.Errorf("Cannot delete admin account")
+		return nil, fmt.Errorf("Cannot delete admin account")
 	}
 
 	// Get user-tenant relations
@@ -541,7 +558,7 @@ func (s *Service) DeleteUser(username string) error {
 	// Start transaction for cascade delete
 	tx := dao.DB.Begin()
 	if tx.Error != nil {
-		return fmt.Errorf("failed to begin transaction: %w", tx.Error)
+		return nil, fmt.Errorf("failed to begin transaction: %w", tx.Error)
 	}
 
 	// Rollback helper function
@@ -551,6 +568,7 @@ func (s *Service) DeleteUser(username string) error {
 		}
 	}
 
+	result.DeletedDetails = append(result.DeletedDetails, "Start to delete owned tenant.")
 	// Delete owned tenant data
 	if ownedTenantID != "" {
 		// 1. Get knowledge base IDs
@@ -628,36 +646,61 @@ func (s *Service) DeleteUser(username string) error {
 			}
 		}
 
+		var tenantLLMCount int64
+		tx.Model(&model.TenantLLM{}).Where("tenant_id = ?", ownedTenantID).Count(&tenantLLMCount)
+		result.TenantLLMCount = int(tenantLLMCount)
+		result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d tenant-LLM records.", tenantLLMCount))
+
+		result.LangfuseCount = 0
+		result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d langfuse records.", result.LangfuseCount))
+
+		metadataTableName := fmt.Sprintf("ragflow_doc_meta_%s", ownedTenantID[:32])
+		result.MetadataTable = metadataTableName
+		result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted metadata table %s.", metadataTableName))
+
 		// 13. Delete tenant LLM configurations
 		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&model.TenantLLM{}); delErr.Error != nil {
 			logger.Warn("failed to delete tenant LLM", zap.Error(delErr.Error))
 		}
 
+		var tenantCount int64
+		tx.Model(&model.Tenant{}).Where("id = ?", ownedTenantID).Count(&tenantCount)
+		result.TenantCount = int(tenantCount)
 		// 14. Delete tenant
 		if delErr := tx.Unscoped().Where("id = ?", ownedTenantID).Delete(&model.Tenant{}); delErr.Error != nil {
 			logger.Warn("failed to delete tenant", zap.Error(delErr.Error))
 		}
+		result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d tenant.", result.TenantCount))
 	}
 
+	var userTenantCount int64
+	tx.Model(&model.UserTenant{}).Where("user_id = ?", user.ID).Count(&userTenantCount)
+	result.UserTenantCount = int(userTenantCount)
+	
 	// 15. Delete user-tenant relations
 	if delErr := tx.Unscoped().Where("user_id = ?", user.ID).Delete(&model.UserTenant{}); delErr.Error != nil {
 		logger.Warn("failed to delete user-tenant relations", zap.Error(delErr.Error))
 	}
+	result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d user-tenant records.", result.UserTenantCount))
 
+	result.UserCount = 1
 	// 16. Finally, hard delete user
 	if delErr := tx.Unscoped().Where("id = ?", user.ID).Delete(&model.User{}); delErr.Error != nil {
 		rollbackTx()
-		return fmt.Errorf("failed to delete user: %w", delErr.Error)
+		return nil, fmt.Errorf("failed to delete user: %w", delErr.Error)
 	}
+	result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d user.", result.UserCount))
 
 	// Commit transaction
 	if commitErr := tx.Commit(); commitErr.Error != nil {
-		return fmt.Errorf("failed to commit transaction: %w", commitErr.Error)
+		return nil, fmt.Errorf("failed to commit transaction: %w", commitErr.Error)
 	}
+
+	result.DeletedDetails = append(result.DeletedDetails, "Delete done!")
 
 	logger.Info("Delete user success with all related data", zap.String("username", username))
 
-	return nil
+	return result, nil
 }
 
 // ChangePassword change user password
