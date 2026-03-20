@@ -18,6 +18,7 @@ package cli
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -167,7 +168,7 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 		return fmt.Errorf("email not provided")
 	}
 
-	password, ok := cmd.Params["email"].(string)
+	password, ok := cmd.Params["password"].(string)
 	if !ok {
 		return fmt.Errorf("email not provided")
 	}
@@ -183,6 +184,11 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 	c.HTTPClient.LoginToken = token
 	fmt.Printf("Login user %s successfully\n", email)
 	return nil
+}
+
+type loginResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
 }
 
 // loginUser performs the actual login request
@@ -210,15 +216,13 @@ func (c *RAGFlowClient) loginUser(email, password string) (string, error) {
 		return "", err
 	}
 
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return "", fmt.Errorf("login failed: invalid JSON response (%w)", err)
+	var result loginResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return "", fmt.Errorf("login failed: invalid JSON (%w)", err)
 	}
 
-	code, ok := resJSON["code"].(int64)
-	if !ok || code != 0 {
-		msg, _ := resJSON["message"].(string)
-		return "", fmt.Errorf("login failed: %s", msg)
+	if result.Code != 0 {
+		return "", fmt.Errorf("login failed: %s", result.Message)
 	}
 
 	token := resp.Headers.Get("Authorization")
