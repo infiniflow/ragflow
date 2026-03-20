@@ -643,6 +643,8 @@ func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (map[string]interface{}, er
 		return c.SearchOnDatasets(cmd)
 	case "list_users":
 		return c.ListUsers(cmd)
+	case "list_services":
+		return c.ListServices(cmd)
 	case "grant_admin":
 		return nil, c.GrantAdmin(cmd)
 	case "revoke_admin":
@@ -663,7 +665,7 @@ func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (map[string]interface{}, er
 	}
 }
 
-type listUserResponse struct {
+type CommonResponse struct {
 	Code    int                      `json:"code"`
 	Data    []map[string]interface{} `json:"data"`
 	Message string                   `json:"message"`
@@ -696,7 +698,7 @@ func (c *RAGFlowClient) ListUsers(cmd *Command) (map[string]interface{}, error) 
 		return nil, fmt.Errorf("failed to list users: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result listUserResponse
+	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
 	}
@@ -941,6 +943,56 @@ func (c *RAGFlowClient) AlterUserPassword(cmd *Command) error {
 
 	fmt.Printf("Password changed for user: %s\n", userName)
 	return nil
+}
+
+type listServicesResponse struct {
+	Code    int                      `json:"code"`
+	Data    []map[string]interface{} `json:"data"`
+	Message string                   `json:"message"`
+}
+
+// ListServices lists all services (admin mode only)
+// Returns (result_map, error) - result_map is non-nil for benchmark mode
+func (c *RAGFlowClient) ListServices(cmd *Command) (map[string]interface{}, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	// Check for benchmark iterations
+	iterations := 1
+	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
+		iterations = val
+	}
+
+	if iterations > 1 {
+		// Benchmark mode - return raw result for benchmark stats
+		return c.HTTPClient.RequestWithIterations("GET", "/admin/services", true, "admin", nil, nil, iterations)
+	}
+
+	resp, err := c.HTTPClient.Request("GET", "/admin/services", true, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list services: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list services: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("list user failed: %s", result.Message)
+	}
+
+	for _, user := range result.Data {
+		delete(user, "extra")
+	}
+
+	PrintTableSimple(result.Data)
+	return nil, nil
 }
 
 // DropUser deletes a user (admin mode only)
