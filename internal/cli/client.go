@@ -167,23 +167,10 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 		return fmt.Errorf("email not provided")
 	}
 
-	// Get password from user input (hidden)
-	var password string
-	if c.PasswordPrompt != nil {
-		pwd, err := c.PasswordPrompt(fmt.Sprintf("password for %s: ", email))
-		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err)
-		}
-		password = pwd
-	} else {
-		fmt.Printf("password for %s: ", email)
-		pwd, err := readPassword()
-		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err)
-		}
-		password = pwd
+	password, ok := cmd.Params["email"].(string)
+	if !ok {
+		return fmt.Errorf("email not provided")
 	}
-	password = strings.TrimSpace(password)
 
 	// Login
 	token, err := c.loginUser(email, password)
@@ -228,7 +215,7 @@ func (c *RAGFlowClient) loginUser(email, password string) (string, error) {
 		return "", fmt.Errorf("login failed: invalid JSON response (%w)", err)
 	}
 
-	code, ok := resJSON["code"].(float64)
+	code, ok := resJSON["code"].(int64)
 	if !ok || code != 0 {
 		msg, _ := resJSON["message"].(string)
 		return "", fmt.Errorf("login failed: %s", msg)

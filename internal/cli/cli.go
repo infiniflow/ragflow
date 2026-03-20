@@ -27,6 +27,7 @@ import (
 	"syscall"
 
 	"github.com/peterh/liner"
+	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 )
 
@@ -352,19 +353,48 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 // Run starts the interactive CLI
 func (c *CLI) Run() error {
 	if c.args.Type == "admin" {
-		input, err := c.line.Prompt("Please input your password")
-		if err != nil {
-			fmt.Printf("Error reading input: %v\n", err)
-			return err
-		}
+		// Allow 3 attempts for password verification
+		maxAttempts := 3
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			var input string
+			var err error
 
-		input = strings.TrimSpace(input)
+			// Check if terminal supports password masking
+			if term.IsTerminal(int(os.Stdin.Fd())) {
+				input, err = c.line.PasswordPrompt("Please input your password: ")
+			} else {
+				// Terminal doesn't support password masking, use regular prompt
+				fmt.Println("Warning: This terminal does not support secure password input")
+				input, err = c.line.Prompt("Please input your password (will be visible): ")
+			}
+			if err != nil {
+				fmt.Printf("Error reading input: %v\n", err)
+				return err
+			}
 
-		if input == "" {
-			return errors.New("no password")
-		}
-		if err = c.VerifyAuth(); err != nil {
-			return err
+			input = strings.TrimSpace(input)
+
+			if input == "" {
+				if attempt < maxAttempts {
+					fmt.Println("Password cannot be empty, please try again")
+					continue
+				}
+				return errors.New("no password provided after 3 attempts")
+			}
+
+			// Set the password for verification
+			c.args.Password = input
+
+			if err = c.VerifyAuth(); err != nil {
+				if attempt < maxAttempts {
+					fmt.Printf("Authentication failed: %v (%d/%d attempts)\n", err, attempt, maxAttempts)
+					continue
+				}
+				return fmt.Errorf("authentication failed after %d attempts: %v", maxAttempts, err)
+			}
+
+			// Authentication successful
+			break
 		}
 	}
 
@@ -576,19 +606,18 @@ func (c *CLI) VerifyAuth() error {
 		return nil
 	}
 
-	// If password is provided via command line, use it for login
-	if c.args.Password != "" && c.args.Username != "" {
-		// Try to login with provided credentials
-		_, err := c.client.ExecuteCommand(NewCommand("login_user"))
-		if err != nil {
-			// Login might require interactive password prompt
-			fmt.Printf("password for %s: ", c.args.Username)
-			password, err := c.client.PasswordPrompt("")
-			if err != nil {
-				return fmt.Errorf("failed to read password: %v", err)
-			}
-			c.args.Password = password
-		}
+	if c.args.Username == "" {
+		return fmt.Errorf("username is required")
 	}
-	return nil
+
+	if c.args.Password == "" {
+		return fmt.Errorf("password is required")
+	}
+
+	// Create login command with username and password
+	cmd := NewCommand("login_user")
+	cmd.Params["email"] = c.args.Username
+	cmd.Params["password"] = c.args.Password
+	_, err := c.client.ExecuteCommand(cmd)
+	return err
 }
