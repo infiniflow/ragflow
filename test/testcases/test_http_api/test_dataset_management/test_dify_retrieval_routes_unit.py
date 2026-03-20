@@ -305,6 +305,58 @@ def test_retrieval_success_with_metadata_and_kg(monkeypatch):
 
 
 @pytest.mark.p2
+def test_retrieval_uses_all_docs_when_metadata_condition_is_absent(monkeypatch):
+    module = _load_dify_retrieval_module(monkeypatch)
+    _set_request_json(
+        monkeypatch,
+        module,
+        {
+            "knowledge_id": "kb-1",
+            "query": "hello",
+            "retrieval_setting": {"score_threshold": 0.1, "top_k": 3},
+        },
+    )
+
+    class _CaptureRetriever:
+        def __init__(self):
+            self.calls = []
+
+        async def retrieval(self, *args, **kwargs):
+            self.calls.append({"args": args, "kwargs": kwargs})
+            return {
+                "chunks": [
+                    {
+                        "doc_id": "doc-1",
+                        "content_with_weight": "chunk-content",
+                        "similarity": 0.8,
+                        "docnm_kwd": "doc-title",
+                        "vector": [0.1],
+                    }
+                ]
+            }
+
+        def retrieval_by_children(self, chunks, _tenant_ids):
+            return chunks
+
+    monkeypatch.setattr(module, "jsonify", lambda payload: payload)
+    monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kbs: [])
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _DummyKB()))
+    monkeypatch.setattr(
+        module.DocumentService,
+        "get_by_id",
+        lambda _doc_id: (True, SimpleNamespace(meta_fields={"origin": "meta-doc-1"})),
+    )
+    monkeypatch.setattr(module, "label_question", lambda *_args, **_kwargs: [])
+
+    retriever = _CaptureRetriever()
+    monkeypatch.setattr(module.settings, "retriever", retriever)
+
+    res = _run(inspect.unwrap(module.retrieval)("tenant-1"))
+    assert len(res["records"]) == 1, res
+    assert retriever.calls[0]["kwargs"]["doc_ids"] is None
+
+
+@pytest.mark.p2
 def test_retrieval_kb_not_found(monkeypatch):
     module = _load_dify_retrieval_module(monkeypatch)
     _set_request_json(monkeypatch, module, {"knowledge_id": "kb-missing", "query": "hello"})

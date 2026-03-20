@@ -125,7 +125,7 @@ async def retrieval(tenant_id):
     metadata_condition = req.get("metadata_condition", {}) or {}
     metas = DocMetadataService.get_flatted_meta_by_kbs([kb_id])
 
-    doc_ids = []
+    doc_ids = None
     try:
 
         e, kb = KnowledgebaseService.get_by_id(kb_id)
@@ -137,7 +137,7 @@ async def retrieval(tenant_id):
             model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, model_config)
         if metadata_condition:
-            doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
+            doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
         if not doc_ids and metadata_condition:
             doc_ids = ["-999"]
         ranks = await settings.retriever.retrieval(
