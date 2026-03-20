@@ -28,7 +28,8 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { omit } from 'lodash';
+import { useCallback, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
@@ -58,16 +59,10 @@ export const useKnowledgeBaseId = (): string => {
 export const useTestRetrieval = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const [values, setValues] = useState<ITestRetrievalRequestBody>();
-  const mountedRef = useRef(false);
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const { filterValue, setFilterValue } = useHandleFilterSubmit();
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-
-  const onPaginationChange = useCallback((page: number, pageSize: number) => {
-    setPage(page);
-    setPageSize(pageSize);
-  }, []);
 
   const queryParams = useMemo(() => {
     return {
@@ -80,37 +75,62 @@ export const useTestRetrieval = () => {
     };
   }, [filterValue, knowledgeBaseId, page, pageSize, values]);
 
-  const {
-    data,
-    isFetching: loading,
-    refetch,
-  } = useQuery<INextTestingResult>({
-    queryKey: [KnowledgeApiAction.TestRetrieval, queryParams, page, pageSize],
-    initialData: {
-      chunks: [],
-      doc_aggs: [],
-      total: 0,
-      isRuned: false,
-    },
-    enabled: false,
-    gcTime: 0,
-    queryFn: async () => {
-      const { data } = await kbService.retrieval_test(queryParams);
+  const mutation = useMutation<INextTestingResult, Error, typeof queryParams>({
+    mutationFn: async (params) => {
+      const { data } = await kbService.retrieval_test(params);
       const result = data?.data ?? {};
       return { ...result, isRuned: true };
     },
   });
 
-  useEffect(() => {
-    if (mountedRef.current && !!queryParams.question) {
-      refetch();
+  const refetch = useCallback(() => {
+    if (queryParams.question) {
+      mutation.mutate(queryParams);
     }
-    mountedRef.current = true;
-  }, [page, pageSize, refetch, filterValue, queryParams]);
+  }, [mutation, queryParams]);
+
+  const onPaginationChange = useCallback(
+    (newPage: number, newPageSize: number) => {
+      setPage(newPage);
+      setPageSize(newPageSize);
+      if (mutation.data && queryParams.question) {
+        const newParams = { ...queryParams, page: newPage, size: newPageSize };
+        mutation.mutate(newParams);
+      }
+    },
+    [mutation, queryParams],
+  );
+
+  const handleFilterSubmit = useCallback(
+    (value: { doc_ids?: string[] }) => {
+      setFilterValue(value);
+      setPage(1);
+      if (mutation.data && queryParams.question) {
+        const newParams = {
+          ...queryParams,
+          doc_ids: value.doc_ids ?? [],
+          page: 1,
+        };
+        mutation.mutate(newParams);
+      }
+    },
+    [mutation, queryParams, setFilterValue],
+  );
+
+  const data = useMemo(
+    () =>
+      mutation.data ?? {
+        chunks: [],
+        doc_aggs: [],
+        total: 0,
+        isRuned: false,
+      },
+    [mutation.data],
+  );
 
   return {
     data,
-    loading,
+    loading: mutation.isPending,
     setValues,
     refetch,
     onPaginationChange,
@@ -147,7 +167,7 @@ export const useFetchNextKnowledgeListByPage = () => {
         page: pagination.current,
         ext: {
           keywords: debouncedSearchString,
-          owner_ids: filterValue.owner,
+          owner_ids: filterValue.owner as string[],
         },
       });
 
@@ -323,8 +343,6 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
     }) => {
       const kbId = params?.kb_id || knowledgeBaseId;
       const {
-        kb_id,
-        name,
         embedding_model,
         chunk_method,
         pipeline_id,
@@ -345,7 +363,7 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
         permission,
         pagerank,
         parser_config: extractParserConfigExt(parser_config),
-        ext,
+        ...omit(ext, ['kb_id']),
       };
       const { data = {} } = await updateKb(kbId, requestBody);
       if (data.code === 0) {
