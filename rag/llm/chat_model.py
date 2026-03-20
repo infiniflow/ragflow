@@ -35,8 +35,6 @@ from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, Supported
 from rag.nlp import is_chinese, is_english
 
 from common.misc_utils import thread_pool_exec
-
-
 class LLMErrorCode(StrEnum):
     ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
     ERROR_AUTHENTICATION = "AUTH_ERROR"
@@ -63,12 +61,12 @@ LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to
 
 
 def _apply_model_family_policies(
-        model_name: str,
-        *,
-        backend: str,
-        provider: SupportedLiteLLMProvider | str | None = None,
-        gen_conf: dict | None = None,
-        request_kwargs: dict | None = None,
+    model_name: str,
+    *,
+    backend: str,
+    provider: SupportedLiteLLMProvider | str | None = None,
+    gen_conf: dict | None = None,
+    request_kwargs: dict | None = None,
 ):
     model_name_lower = (model_name or "").lower()
     sanitized_gen_conf = deepcopy(gen_conf) if gen_conf else {}
@@ -85,8 +83,7 @@ def _apply_model_family_policies(
         return sanitized_gen_conf, sanitized_kwargs
 
     if backend == "litellm":
-        if provider in {SupportedLiteLLMProvider.OpenAI,
-                        SupportedLiteLLMProvider.Azure_OpenAI} and "gpt-5" in model_name_lower:
+        if provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI} and "gpt-5" in model_name_lower:
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
@@ -137,8 +134,7 @@ class Base(ABC):
 
         keywords_mapping = [
             (["quota", "capacity", "credit", "billing", "balance", "欠费"], LLMErrorCode.ERROR_QUOTA),
-            (["rate limit", "429", "tpm limit", "too many requests", "requests per minute"],
-             LLMErrorCode.ERROR_RATE_LIMIT),
+            (["rate limit", "429", "tpm limit", "too many requests", "requests per minute"], LLMErrorCode.ERROR_RATE_LIMIT),
             (["auth", "key", "apikey", "401", "forbidden", "permission"], LLMErrorCode.ERROR_AUTHENTICATION),
             (["invalid", "bad request", "400", "format", "malformed", "parameter"], LLMErrorCode.ERROR_INVALID_REQUEST),
             (["server", "503", "502", "504", "500", "unavailable"], LLMErrorCode.ERROR_SERVER),
@@ -197,8 +193,7 @@ class Base(ABC):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
 
-        request_kwargs = {"model": self.model_name, "messages": history, "stream": True,
-                          "stream_options": {"include_usage": True}, **gen_conf}
+        request_kwargs = {"model": self.model_name, "messages": history, "stream": True, "stream_options": {"include_usage": True}, **gen_conf}
         stop = kwargs.get("stop")
         if stop:
             request_kwargs["stop"] = stop
@@ -215,8 +210,7 @@ class Base(ABC):
                 continue
             if not resp.choices[0].delta.content:
                 resp.choices[0].delta.content = ""
-            _reasoning = getattr(resp.choices[0].delta, "reasoning_content", None) or getattr(resp.choices[0].delta,
-                                                                                              "reasoning", None)
+            _reasoning = getattr(resp.choices[0].delta, "reasoning_content", None) or getattr(resp.choices[0].delta, "reasoning", None)
             if kwargs.get("with_reasoning", True) and _reasoning:
                 ans = ""
                 if not reasoning_start:
@@ -289,8 +283,7 @@ class Base(ABC):
 
         if self._should_retry(error_code):
             delay = self._get_delay()
-            logging.warning(
-                f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
+            logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
             time.sleep(delay)
             return None
 
@@ -306,8 +299,7 @@ class Base(ABC):
 
         if self._should_retry(error_code):
             delay = self._get_delay()
-            logging.warning(
-                f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
+            logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
             await asyncio.sleep(delay)
             return None
 
@@ -316,8 +308,7 @@ class Base(ABC):
         return msg
 
     def _verbose_tool_use(self, name, args, res):
-        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False,
-                                          indent=2) + "</tool_call>"
+        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
 
     def _append_history(self, hist, tool_call, tool_res):
         hist.append(
@@ -365,9 +356,7 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history,
-                                                                               tools=self.tools, tool_choice="auto",
-                                                                               **gen_conf)
+                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
                     if response.usage:
                         prompt_tokens += getattr(response.usage, "prompt_tokens", 0) or 0
                         completion_tokens += getattr(response.usage, "completion_tokens", 0) or 0
@@ -377,10 +366,8 @@ class Base(ABC):
                     if any([not response.choices, not response.choices[0].message]):
                         raise Exception(f"500 response structure error. Response: {response}")
 
-                    if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[
-                        0].message.tool_calls:
-                        _reasoning = getattr(response.choices[0].message, "reasoning_content", None) or getattr(
-                            response.choices[0].message, "reasoning", None)
+                    if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[0].message.tool_calls:
+                        _reasoning = getattr(response.choices[0].message, "reasoning_content", None) or getattr(response.choices[0].message, "reasoning", None)
                         if _reasoning:
                             ans += "<think>" + _reasoning + "</think>"
 
@@ -388,8 +375,7 @@ class Base(ABC):
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
 
-                        return ans, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                                             total_tokens=tk_count or prompt_tokens + completion_tokens)
+                        return ans, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=tk_count or prompt_tokens + completion_tokens)
 
                     for tool_call in response.choices[0].message.tool_calls:
                         logging.info(f"Response {tool_call=}")
@@ -401,8 +387,7 @@ class Base(ABC):
                             ans += self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
                             logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id,
-                                            "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
+                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
                             ans += self._verbose_tool_use(name, {}, str(e))
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
@@ -412,13 +397,11 @@ class Base(ABC):
                 prompt_tokens += token_count.prompt_tokens
                 completion_tokens += token_count.completion_tokens
                 tk_count += token_count.total_tokens
-                return ans, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                                     total_tokens=tk_count or prompt_tokens + completion_tokens)
+                return ans, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=tk_count or prompt_tokens + completion_tokens)
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
-                    return e, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                                       total_tokens=tk_count or prompt_tokens + completion_tokens)
+                    return e, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=tk_count or prompt_tokens + completion_tokens)
 
         assert False, "Shouldn't be here."
 
@@ -440,11 +423,7 @@ class Base(ABC):
                     reasoning_start = False
                     logging.info(f"{tools=}")
 
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history,
-                                                                               stream=True,
-                                                                               stream_options={"include_usage": True},
-                                                                               tools=tools, tool_choice="auto",
-                                                                               **gen_conf)
+                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, stream_options={"include_usage": True}, tools=tools, tool_choice="auto", **gen_conf)
 
                     final_tool_calls = {}
                     answer = ""
@@ -493,8 +472,7 @@ class Base(ABC):
                             yield self._length_stop("")
 
                     if answer:
-                        yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                                       total_tokens=total_tokens or prompt_tokens + completion_tokens)
+                        yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
                         return
 
                     for tool_call in final_tool_calls.values():
@@ -507,17 +485,13 @@ class Base(ABC):
                             yield self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
                             logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id,
-                                            "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
+                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
                             yield self._verbose_tool_use(name, {}, str(e))
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
 
-                response = await self.async_client.chat.completions.create(model=self.model_name, messages=history,
-                                                                           stream=True,
-                                                                           stream_options={"include_usage": True},
-                                                                           tools=tools, tool_choice="auto", **gen_conf)
+                response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, stream_options={"include_usage": True}, tools=tools, tool_choice="auto", **gen_conf)
 
                 async for resp in response:
                     if not hasattr(resp, "choices") or not resp.choices:
@@ -532,8 +506,7 @@ class Base(ABC):
                     total_tokens += num_tokens_from_string(delta.content)
                     yield delta.content
 
-                yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                               total_tokens=total_tokens or prompt_tokens + completion_tokens)
+                yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
                 return
 
             except Exception as e:
@@ -541,8 +514,7 @@ class Base(ABC):
                 if e:
                     logging.error(f"async_chat_streamly failed: {e}")
                     yield e
-                    yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                                   total_tokens=total_tokens or prompt_tokens + completion_tokens)
+                    yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
                     return
 
         assert False, "Shouldn't be here."
@@ -574,8 +546,7 @@ class Base(ABC):
             request_kwargs=kwargs,
         )
 
-        response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, **gen_conf,
-                                                                   **kwargs)
+        response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
         if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
             return "", LLMUsage()
@@ -659,8 +630,7 @@ class BaiChuanChat(Base):
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=history,
-            extra_body={
-                "tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
+            extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
             **gen_conf,
         )
         ans = response.choices[0].message.content.strip()
@@ -682,8 +652,7 @@ class BaiChuanChat(Base):
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=history,
-                extra_body={"tools": [
-                    {"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
+                extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
                 stream=True,
                 **self._format_params(gen_conf),
             )
@@ -953,8 +922,7 @@ class BaiduYiyanChat(Base):
         self.model_name = model_name.lower()
 
     def _clean_conf(self, gen_conf):
-        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty",
-                                                                                         0)) / 2) + 1
+        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         return gen_conf
@@ -963,14 +931,12 @@ class BaiduYiyanChat(Base):
         # TODO(billing): 百度千帆（qianfan SDK）只返回 total_tokens，无 prompt/completion 明细和 cost。
         #   可通过 response body 中 usage 字段进一步解析，待确认 SDK 版本支持后完善。
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
-        response = self.client.do(model=self.model_name, messages=[h for h in history if h["role"] != "system"],
-                                  system=system, **gen_conf).body
+        response = self.client.do(model=self.model_name, messages=[h for h in history if h["role"] != "system"], system=system, **gen_conf).body
         ans = response["result"]
         return ans, total_token_count_from_response(response)
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty",
-                                                                                         0)) / 2) + 1
+        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         ans = ""
@@ -1059,8 +1025,7 @@ class GoogleChat(Base):
             ).json()
             ans = response["content"][0]["text"]
             if response["stop_reason"] == "max_tokens":
-                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
             return (
                 ans,
                 response["usage"]["input_tokens"] + response["usage"]["output_tokens"],
@@ -1078,8 +1043,7 @@ class GoogleChat(Base):
         try:
             from google.genai.types import Content, GenerateContentConfig, Part, ThinkingConfig
         except ImportError as e:
-            logging.error(
-                f"[GoogleChat] Failed to import google-genai: {e}. Please install: pip install google-genai>=1.41.0")
+            logging.error(f"[GoogleChat] Failed to import google-genai: {e}. Please install: pip install google-genai>=1.41.0")
             raise
 
         config_dict = {}
@@ -1165,8 +1129,7 @@ class GoogleChat(Base):
             try:
                 from google.genai.types import Content, GenerateContentConfig, Part, ThinkingConfig
             except ImportError as e:
-                logging.error(
-                    f"[GoogleChat] Failed to import google-genai: {e}. Please install: pip install google-genai>=1.41.0")
+                logging.error(f"[GoogleChat] Failed to import google-genai: {e}. Please install: pip install google-genai>=1.41.0")
                 raise
 
             config_dict = {}
@@ -1197,9 +1160,9 @@ class GoogleChat(Base):
 
             try:
                 for chunk in self.client.models.generate_content_stream(
-                        model=self.model_name,
-                        contents=contents,
-                        config=config,
+                    model=self.model_name,
+                    contents=contents,
+                    config=config,
                 ):
                     text = chunk.text
                     ans = text
@@ -1307,8 +1270,7 @@ class LiteLLMBase(ABC):
 
         keywords_mapping = [
             (["quota", "capacity", "credit", "billing", "balance", "欠费"], LLMErrorCode.ERROR_QUOTA),
-            (["rate limit", "429", "tpm limit", "too many requests", "requests per minute"],
-             LLMErrorCode.ERROR_RATE_LIMIT),
+            (["rate limit", "429", "tpm limit", "too many requests", "requests per minute"], LLMErrorCode.ERROR_RATE_LIMIT),
             (["auth", "key", "apikey", "401", "forbidden", "permission"], LLMErrorCode.ERROR_AUTHENTICATION),
             (["invalid", "bad request", "400", "format", "malformed", "parameter"], LLMErrorCode.ERROR_INVALID_REQUEST),
             (["server", "503", "502", "504", "500", "unavailable"], LLMErrorCode.ERROR_SERVER),
@@ -1350,8 +1312,7 @@ class LiteLLMBase(ABC):
             request_kwargs=kwargs,
         )
 
-        completion_args = self._construct_completion_args(history=hist, stream=False, tools=False,
-                                                          **{**gen_conf, **kwargs})
+        completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **{**gen_conf, **kwargs})
 
         for attempt in range(self.max_retries + 1):
             try:
@@ -1361,8 +1322,7 @@ class LiteLLMBase(ABC):
                     timeout=self.timeout,
                 )
 
-                if any([not response.choices, not response.choices[0].message,
-                        not response.choices[0].message.content]):
+                if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
                     return "", LLMUsage()
                 ans = response.choices[0].message.content.strip()
                 if response.choices[0].finish_reason == "length":
@@ -1494,8 +1454,7 @@ class LiteLLMBase(ABC):
 
         if self._should_retry(error_code):
             delay = self._get_delay()
-            logging.warning(
-                f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
+            logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
             await asyncio.sleep(delay)
             return None
         msg = f"{ERROR_PREFIX}: {error_code} - {str(e)}"
@@ -1503,8 +1462,7 @@ class LiteLLMBase(ABC):
         return msg
 
     def _verbose_tool_use(self, name, args, res):
-        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False,
-                                          indent=2) + "</tool_call>"
+        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
 
     def _append_history(self, hist, tool_call, tool_res):
         hist.append(
@@ -1553,8 +1511,7 @@ class LiteLLMBase(ABC):
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
 
-                    completion_args = self._construct_completion_args(history=history, stream=False, tools=True,
-                                                                      **gen_conf)
+                    completion_args = self._construct_completion_args(history=history, stream=False, tools=True, **gen_conf)
                     response = await litellm.acompletion(
                         **completion_args,
                         drop_params=True,
@@ -1580,8 +1537,7 @@ class LiteLLMBase(ABC):
                         ans += message.content or ""
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
-                        return ans, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                                             total_tokens=tk_count or prompt_tokens + completion_tokens)
+                        return ans, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=tk_count or prompt_tokens + completion_tokens)
 
                     for tool_call in message.tool_calls:
                         logging.info(f"Response {tool_call=}")
@@ -1593,8 +1549,7 @@ class LiteLLMBase(ABC):
                             ans += self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
                             logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id,
-                                            "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
+                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
                             ans += self._verbose_tool_use(name, {}, str(e))
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
@@ -1605,14 +1560,12 @@ class LiteLLMBase(ABC):
                 prompt_tokens += token_count.prompt_tokens
                 completion_tokens += token_count.completion_tokens
                 tk_count += token_count.total_tokens
-                return ans, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                                     total_tokens=tk_count or prompt_tokens + completion_tokens)
+                return ans, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=tk_count or prompt_tokens + completion_tokens)
 
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
-                    return e, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                                       total_tokens=tk_count or prompt_tokens + completion_tokens)
+                    return e, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=tk_count or prompt_tokens + completion_tokens)
 
         assert False, "Shouldn't be here."
 
@@ -1634,8 +1587,7 @@ class LiteLLMBase(ABC):
                     reasoning_start = False
                     logging.info(f"{tools=}")
 
-                    completion_args = self._construct_completion_args(history=history, stream=True, tools=True,
-                                                                      **gen_conf)
+                    completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
                     response = await litellm.acompletion(
                         **completion_args,
                         drop_params=True,
@@ -1684,183 +1636,177 @@ class LiteLLMBase(ABC):
                             yield delta.content
 
                         total_tokens += num_tokens_from_string(delta.content)
-                        total_tokens += num_tokens_from_string(delta.content)
-                    else:
-                        total_tokens = tol
+                            total_tokens += num_tokens_from_string(delta.content)
+                        else:
+                            total_tokens = tol
 
-                    finish_reason = getattr(resp.choices[0], "finish_reason", "")
-                    if finish_reason == "length":
-                        yield self._length_stop("")
+                        finish_reason = getattr(resp.choices[0], "finish_reason", "")
+                        if finish_reason == "length":
+                            yield self._length_stop("")
 
-                if answer:
-                    yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                                   total_tokens=total_tokens or prompt_tokens + completion_tokens)
+                    if answer:
+                        yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
+                        return
+
+                    for tool_call in final_tool_calls.values():
+                        name = tool_call.function.name
+                        try:
+                            args = json_repair.loads(tool_call.function.arguments)
+                            yield self._verbose_tool_use(name, args, "Begin to call...")
+                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
+                            history = self._append_history(history, tool_call, tool_response)
+                            yield self._verbose_tool_use(name, args, tool_response)
+                        except Exception as e:
+                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
+                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
+                            yield self._verbose_tool_use(name, {}, str(e))
+
+                logging.warning(f"Exceed max rounds: {self.max_rounds}")
+                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+
+                completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
+                response = await litellm.acompletion(
+                    **completion_args,
+                    drop_params=True,
+                    timeout=self.timeout,
+                    stream_options={"include_usage": True},
+                )
+
+                async for resp in response:
+                    if not hasattr(resp, "choices") or not resp.choices:
+                        if hasattr(resp, "usage") and resp.usage:
+                            prompt_tokens += getattr(resp.usage, "prompt_tokens", 0) or 0
+                            completion_tokens += getattr(resp.usage, "completion_tokens", 0) or 0
+                            total_tokens += resp.usage.total_tokens or 0
+                        continue
+                    delta = resp.choices[0].delta
+                    if not hasattr(delta, "content") or delta.content is None:
+                        continue
+                    total_tokens += num_tokens_from_string(delta.content)
+                    yield delta.content
+
+                yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
+                return
+
+            except Exception as e:
+                e = await self._exceptions_async(e, attempt)
+                if e:
+                    yield e
+                    yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
                     return
 
-                for tool_call in final_tool_calls.values():
-                    name = tool_call.function.name
-                    try:
-                        args = json_repair.loads(tool_call.function.arguments)
-                        yield self._verbose_tool_use(name, args, "Begin to call...")
-                        tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
-                        history = self._append_history(history, tool_call, tool_response)
-                        yield self._verbose_tool_use(name, args, tool_response)
-                    except Exception as e:
-                        logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                        history.append({"role": "tool", "tool_call_id": tool_call.id,
-                                        "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
-                        yield self._verbose_tool_use(name, {}, str(e))
+        assert False, "Shouldn't be here."
 
-            logging.warning(f"Exceed max rounds: {self.max_rounds}")
-            history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+    def _construct_completion_args(self, history, stream: bool, tools: bool, **kwargs):
+        completion_args = {
+            "model": self.model_name,
+            "messages": history,
+            "api_key": self.api_key,
+            "num_retries": self.max_retries,
+            **kwargs,
+        }
+        if stream:
+            completion_args.update(
+                {
+                    "stream": stream,
+                }
+            )
+        if tools and self.tools:
+            completion_args.update(
+                {
+                    "tools": self.tools,
+                    "tool_choice": "auto",
+                }
+            )
+        if self.provider in FACTORY_DEFAULT_BASE_URL:
+            completion_args.update({"api_base": self.base_url})
+        elif self.provider == SupportedLiteLLMProvider.Bedrock:
+            import boto3
 
-            completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
-            response = await litellm.acompletion(
-                **completion_args,
-                drop_params=True,
-                timeout=self.timeout,
-                stream_options={"include_usage": True},
+            completion_args.pop("api_key", None)
+            completion_args.pop("api_base", None)
+
+            bedrock_key = json.loads(self.api_key)
+            mode = bedrock_key.get("auth_mode")
+            if not mode:
+                logging.error("Bedrock auth_mode is not provided in the key")
+                raise ValueError("Bedrock auth_mode must be provided in the key")
+
+            bedrock_region = bedrock_key.get("bedrock_region")
+
+            if mode == "access_key_secret":
+                completion_args.update({"aws_region_name": bedrock_region})
+                completion_args.update({"aws_access_key_id": bedrock_key.get("bedrock_ak")})
+                completion_args.update({"aws_secret_access_key": bedrock_key.get("bedrock_sk")})
+            elif mode == "iam_role":
+                aws_role_arn = bedrock_key.get("aws_role_arn")
+                sts_client = boto3.client("sts", region_name=bedrock_region)
+                resp = sts_client.assume_role(RoleArn=aws_role_arn, RoleSessionName="BedrockSession")
+                creds = resp["Credentials"]
+                completion_args.update({"aws_region_name": bedrock_region})
+                completion_args.update({"aws_access_key_id": creds["AccessKeyId"]})
+                completion_args.update({"aws_secret_access_key": creds["SecretAccessKey"]})
+                completion_args.update({"aws_session_token": creds["SessionToken"]})
+            else:  # assume_role - use default credential chain (IRSA, instance profile, etc.)
+                completion_args.update({"aws_region_name": bedrock_region})
+
+        elif self.provider == SupportedLiteLLMProvider.OpenRouter:
+            if self.provider_order:
+
+                def _to_order_list(x):
+                    if x is None:
+                        return []
+                    if isinstance(x, str):
+                        return [s.strip() for s in x.split(",") if s.strip()]
+                    if isinstance(x, (list, tuple)):
+                        return [str(s).strip() for s in x if str(s).strip()]
+                    return []
+
+                extra_body = {}
+                provider_cfg = {}
+                provider_order = _to_order_list(self.provider_order)
+                provider_cfg["order"] = provider_order
+                provider_cfg["allow_fallbacks"] = False
+                extra_body["provider"] = provider_cfg
+                completion_args.update({"extra_body": extra_body})
+        elif self.provider == SupportedLiteLLMProvider.GPUStack:
+            completion_args.update(
+                {
+                    "api_base": urljoin(self.base_url, "v1"),
+                }
+            )
+        elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
+            completion_args.pop("api_key", None)
+            completion_args.pop("api_base", None)
+            completion_args.update(
+                {
+                    "api_key": self.api_key,
+                    "api_base": self.base_url,
+                    "api_version": self.api_version,
+                }
             )
 
-            async for resp in response:
-                if not hasattr(resp, "choices") or not resp.choices:
-                    if hasattr(resp, "usage") and resp.usage:
-                        prompt_tokens += getattr(resp.usage, "prompt_tokens", 0) or 0
-                        completion_tokens += getattr(resp.usage, "completion_tokens", 0) or 0
-                        total_tokens += resp.usage.total_tokens or 0
-                    continue
-                delta = resp.choices[0].delta
-                if not hasattr(delta, "content") or delta.content is None:
-                    continue
-                total_tokens += num_tokens_from_string(delta.content)
-                yield delta.content
-
-            yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                           total_tokens=total_tokens or prompt_tokens + completion_tokens)
-            return
-
-        except Exception as e:
-        e = await self._exceptions_async(e, attempt)
-        if e:
-            yield e
-            yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                           total_tokens=total_tokens or prompt_tokens + completion_tokens)
-            return
-
-
-assert False, "Shouldn't be here."
-
-def _construct_completion_args(self, history, stream: bool, tools: bool, **kwargs):
-    completion_args = {
-        "model": self.model_name,
-        "messages": history,
-        "api_key": self.api_key,
-        "num_retries": self.max_retries,
-        **kwargs,
-    }
-    if stream:
-        completion_args.update(
-            {
-                "stream": stream,
-            }
-        )
-    if tools and self.tools:
-        completion_args.update(
-            {
-                "tools": self.tools,
-                "tool_choice": "auto",
-            }
-        )
-    if self.provider in FACTORY_DEFAULT_BASE_URL:
-        completion_args.update({"api_base": self.base_url})
-    elif self.provider == SupportedLiteLLMProvider.Bedrock:
-        import boto3
-
-        completion_args.pop("api_key", None)
-        completion_args.pop("api_base", None)
-
-        bedrock_key = json.loads(self.api_key)
-        mode = bedrock_key.get("auth_mode")
-        if not mode:
-            logging.error("Bedrock auth_mode is not provided in the key")
-            raise ValueError("Bedrock auth_mode must be provided in the key")
-
-        bedrock_region = bedrock_key.get("bedrock_region")
-
-        if mode == "access_key_secret":
-            completion_args.update({"aws_region_name": bedrock_region})
-            completion_args.update({"aws_access_key_id": bedrock_key.get("bedrock_ak")})
-            completion_args.update({"aws_secret_access_key": bedrock_key.get("bedrock_sk")})
-        elif mode == "iam_role":
-            aws_role_arn = bedrock_key.get("aws_role_arn")
-            sts_client = boto3.client("sts", region_name=bedrock_region)
-            resp = sts_client.assume_role(RoleArn=aws_role_arn, RoleSessionName="BedrockSession")
-            creds = resp["Credentials"]
-            completion_args.update({"aws_region_name": bedrock_region})
-            completion_args.update({"aws_access_key_id": creds["AccessKeyId"]})
-            completion_args.update({"aws_secret_access_key": creds["SecretAccessKey"]})
-            completion_args.update({"aws_session_token": creds["SessionToken"]})
-        else:  # assume_role - use default credential chain (IRSA, instance profile, etc.)
-            completion_args.update({"aws_region_name": bedrock_region})
-
-    elif self.provider == SupportedLiteLLMProvider.OpenRouter:
-        if self.provider_order:
-
-            def _to_order_list(x):
-                if x is None:
-                    return []
-                if isinstance(x, str):
-                    return [s.strip() for s in x.split(",") if s.strip()]
-                if isinstance(x, (list, tuple)):
-                    return [str(s).strip() for s in x if str(s).strip()]
-                return []
-
-            extra_body = {}
-            provider_cfg = {}
-            provider_order = _to_order_list(self.provider_order)
-            provider_cfg["order"] = provider_order
-            provider_cfg["allow_fallbacks"] = False
-            extra_body["provider"] = provider_cfg
-            completion_args.update({"extra_body": extra_body})
-    elif self.provider == SupportedLiteLLMProvider.GPUStack:
-        completion_args.update(
-            {
-                "api_base": urljoin(self.base_url, "v1"),
-            }
-        )
-    elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
-        completion_args.pop("api_key", None)
-        completion_args.pop("api_base", None)
-        completion_args.update(
-            {
-                "api_key": self.api_key,
-                "api_base": self.base_url,
-                "api_version": self.api_version,
-            }
-        )
-
-    # Ollama deployments commonly sit behind a reverse proxy that enforces
-    # Bearer auth. Ensure the Authorization header is set when an API key
-    # is provided, while respecting any user-supplied headers. #11350
-    extra_headers = deepcopy(completion_args.get("extra_headers") or {})
-    if self.provider == SupportedLiteLLMProvider.Ollama and self.api_key and "Authorization" not in extra_headers:
-        extra_headers["Authorization"] = f"Bearer {self.api_key}"
-    if extra_headers:
-        completion_args["extra_headers"] = extra_headers
-    return completion_args
-
+        # Ollama deployments commonly sit behind a reverse proxy that enforces
+        # Bearer auth. Ensure the Authorization header is set when an API key
+        # is provided, while respecting any user-supplied headers. #11350
+        extra_headers = deepcopy(completion_args.get("extra_headers") or {})
+        if self.provider == SupportedLiteLLMProvider.Ollama and self.api_key and "Authorization" not in extra_headers:
+            extra_headers["Authorization"] = f"Bearer {self.api_key}"
+        if extra_headers:
+            completion_args["extra_headers"] = extra_headers
+        return completion_args
 
 class RAGconChat(Base):
     """
     RAGcon Chat Provider - routes through LiteLLM proxy
-
+    
     All model types are handled through a unified LiteLLM endpoint.
     Default Base URL: https://connect.ragcon.com/v1
     """
     _FACTORY_NAME = "RAGcon"
-
+    
     def __init__(self, key, model_name, base_url=None, **kwargs):
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
-
+        
         super().__init__(key, model_name, base_url, **kwargs)
