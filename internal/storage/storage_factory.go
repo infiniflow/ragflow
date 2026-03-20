@@ -19,44 +19,25 @@ package storage
 import (
 	"fmt"
 	"os"
+	"ragflow/internal/server"
 	"sync"
 
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
-// StorageFactory creates storage instances based on configuration
-type StorageFactory struct {
-	storageType StorageType
-	storage     Storage
-	config      *StorageConfig
-	mu          sync.RWMutex
-}
-
-// StorageConfig holds all storage-related configurations
-type StorageConfig struct {
-	StorageType string       `mapstructure:"storage_type"`
-	Minio       *MinioConfig `mapstructure:"minio"`
-	S3          *S3Config    `mapstructure:"s3"`
-	OSS         *OSSConfig   `mapstructure:"oss"`
-}
-
-// AzureConfig holds Azure-specific configurations
-type AzureConfig struct {
-	ContainerURL  string `mapstructure:"container_url"`
-	SASToken      string `mapstructure:"sas_token"`
-	AccountURL    string `mapstructure:"account_url"`
-	ClientID      string `mapstructure:"client_id"`
-	Secret        string `mapstructure:"secret"`
-	TenantID      string `mapstructure:"tenant_id"`
-	ContainerName string `mapstructure:"container_name"`
-	AuthorityHost string `mapstructure:"authority_host"`
-}
-
 var (
 	globalFactory *StorageFactory
 	once          sync.Once
 )
+
+// StorageFactory creates storage instances based on configuration
+type StorageFactory struct {
+	storageType StorageType
+	storage     Storage
+	config      *server.StorageConfig
+	mu          sync.RWMutex
+}
 
 // GetStorageFactory returns the singleton storage factory instance
 func GetStorageFactory() *StorageFactory {
@@ -79,7 +60,7 @@ func InitStorageFactory(v *viper.Viper) error {
 		storageType = "MINIO" // Default storage type
 	}
 
-	storageConfig := &StorageConfig{}
+	storageConfig := &server.StorageConfig{}
 	if err := v.UnmarshalKey("storage", storageConfig); err != nil {
 		return fmt.Errorf("failed to unmarshal storage config: %w", err)
 	}
@@ -114,7 +95,7 @@ func (f *StorageFactory) initStorage(storageType string, v *viper.Viper) error {
 }
 
 func (f *StorageFactory) initMinio(v *viper.Viper) error {
-	config := &MinioConfig{}
+	config := &server.MinioConfig{}
 
 	// Try to load from minio section first
 	if v.IsSet("minio") {
@@ -156,7 +137,7 @@ func (f *StorageFactory) initMinio(v *viper.Viper) error {
 }
 
 func (f *StorageFactory) initS3(v *viper.Viper) error {
-	config := &S3Config{}
+	config := &server.S3Config{}
 
 	if v.IsSet("s3") {
 		s3Config := v.Sub("s3")
@@ -188,7 +169,7 @@ func (f *StorageFactory) initS3(v *viper.Viper) error {
 }
 
 func (f *StorageFactory) initOSS(v *viper.Viper) error {
-	config := &OSSConfig{}
+	config := &server.OSSConfig{}
 
 	if v.IsSet("oss") {
 		ossConfig := v.Sub("oss")
@@ -276,20 +257,20 @@ func (f *StorageFactory) SetStorage(storage Storage) {
 }
 
 // StorageTypeMapping returns the storage type mapping (equivalent to Python's storage_mapping)
-var StorageTypeMapping = map[StorageType]func(*StorageConfig) (Storage, error){
-	StorageMinio: func(config *StorageConfig) (Storage, error) {
+var StorageTypeMapping = map[StorageType]func(*server.StorageConfig) (Storage, error){
+	StorageMinio: func(config *server.StorageConfig) (Storage, error) {
 		if config.Minio == nil {
 			return nil, fmt.Errorf("MinIO config not available")
 		}
 		return NewMinioStorage(config.Minio)
 	},
-	StorageAWSS3: func(config *StorageConfig) (Storage, error) {
+	StorageAWSS3: func(config *server.StorageConfig) (Storage, error) {
 		if config.S3 == nil {
 			return nil, fmt.Errorf("S3 config not available")
 		}
 		return NewS3Storage(config.S3)
 	},
-	StorageOSS: func(config *StorageConfig) (Storage, error) {
+	StorageOSS: func(config *server.StorageConfig) (Storage, error) {
 		if config.OSS == nil {
 			return nil, fmt.Errorf("OSS config not available")
 		}
