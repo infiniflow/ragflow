@@ -2,8 +2,10 @@ import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
+import { downloadFileFromBlob } from '@/utils/file-util';
+import request from '@/utils/request';
 import DOMPurify from 'dompurify';
-import { memo, useCallback, useEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
@@ -38,9 +40,120 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '../ui/hover-card';
+import message from '../ui/message';
 import styles from './index.module.less';
 
 const getChunkIndex = (match: string) => parseCitationIndex(match);
+
+const isArtifactUrl = (url?: string) =>
+  Boolean(url && url.includes('/document/artifact/'));
+
+const fetchArtifactBlob = async (url: string): Promise<Blob> => {
+  const response = await request(url, {
+    method: 'GET',
+    responseType: 'blob',
+  });
+
+  return response.data as Blob;
+};
+
+const getArtifactName = (url?: string, fallback?: string) =>
+  fallback || url?.split('/').pop()?.split('?')[0] || 'artifact';
+
+function ArtifactLink({
+  href,
+  className,
+  children,
+}: {
+  href: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const handleClick = useCallback(
+    async (e: React.MouseEvent<HTMLAnchorElement>) => {
+      e.preventDefault();
+      try {
+        const blob = await fetchArtifactBlob(href);
+        const objectUrl = URL.createObjectURL(blob);
+        window.open(objectUrl, '_blank', 'noopener,noreferrer');
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60 * 1000);
+      } catch {
+        message.error('Failed to open artifact');
+      }
+    },
+    [href],
+  );
+
+  return (
+    <a href={href} className={className} onClick={handleClick}>
+      {children}
+    </a>
+  );
+}
+
+function ArtifactImage({
+  src,
+  alt,
+  downloadLabel,
+}: {
+  src: string;
+  alt?: string;
+  downloadLabel: string;
+}) {
+  const [imageSrc, setImageSrc] = useState('');
+
+  useEffect(() => {
+    let objectUrl = '';
+    let active = true;
+
+    const load = async () => {
+      try {
+        const blob = await fetchArtifactBlob(src);
+        objectUrl = URL.createObjectURL(blob);
+        if (active) {
+          setImageSrc(objectUrl);
+        }
+      } catch {
+        message.error('Failed to load artifact image');
+      }
+    };
+
+    load();
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [alt, src]);
+
+  const handleDownload = useCallback(async () => {
+    try {
+      const blob = await fetchArtifactBlob(src);
+      downloadFileFromBlob(blob, getArtifactName(src, alt));
+    } catch {
+      message.error('Failed to download artifact');
+    }
+  }, [alt, src]);
+
+  return (
+    <span className={styles.artifactImageWrapper}>
+      {imageSrc ? (
+        <img src={imageSrc} alt={alt || ''} className={styles.artifactImage} />
+      ) : (
+        <span className={styles.artifactImage} />
+      )}
+      <button
+        type="button"
+        className={styles.artifactDownload}
+        onClick={handleDownload}
+      >
+        {downloadLabel}
+      </button>
+    </span>
+  );
+}
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
 function MarkdownContent({
   reference,
@@ -213,7 +326,7 @@ function MarkdownContent({
 
   const renderReference = useCallback(
     (text: string) => {
-      let replacedText = reactStringReplace(text, currentReg, (match, i) => {
+      const replacedText = reactStringReplace(text, currentReg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
 
         return (
@@ -244,11 +357,44 @@ function MarkdownContent({
         remarkPlugins={[remarkGfm, remarkMath]}
         components={
           {
-            p: ({ children, node, ...props }: any) => (
-              <p {...props}>{children}</p>
-            ),
+            p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
             'custom-typography': ({ children }: { children: string }) =>
               renderReference(children),
+            a({ href, children, ...props }: any) {
+              if (isArtifactUrl(href)) {
+                return (
+                  <ArtifactLink href={href} className={styles.artifactDownload}>
+                    {children}
+                  </ArtifactLink>
+                );
+              }
+              return (
+                <a href={href} {...omit(props, 'node')}>
+                  {children}
+                </a>
+              );
+            },
+            img({ src, alt, ...props }: any) {
+              if (isArtifactUrl(src)) {
+                return (
+                  <ArtifactImage
+                    src={src}
+                    alt={alt || ''}
+                    downloadLabel={t('common.download')}
+                  />
+                );
+              }
+              return (
+                <span className={styles.artifactImageWrapper}>
+                  <img
+                    src={src}
+                    alt={alt || ''}
+                    className={styles.artifactImage}
+                    {...omit(props, 'node')}
+                  />
+                </span>
+              );
+            },
             code(props: any) {
               const { children, className, ...rest } = props;
               const restProps = omit(rest, 'node');
