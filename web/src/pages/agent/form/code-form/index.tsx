@@ -42,6 +42,12 @@ const options = [
 ].map((x) => ({ value: x, label: x }));
 
 const DynamicFieldName = 'outputs';
+const CodeSystemOutputs = {
+  content: {
+    type: 'string',
+    value: '',
+  },
+};
 
 function CodeForm({ node }: INextOperatorForm) {
   const formData = node?.data.form as ICodeForm;
@@ -159,7 +165,12 @@ function CodeForm({ node }: INextOperatorForm) {
         )}
       </FormWrapper>
       <div className="p-5">
-        <Output list={buildOutputList(formData.outputs)}></Output>
+        <Output
+          list={buildOutputList({
+            ...(formData?.outputs ?? {}),
+            ...CodeSystemOutputs,
+          })}
+        ></Output>
       </div>
     </Form>
   );
