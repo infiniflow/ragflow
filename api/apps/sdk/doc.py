@@ -40,6 +40,7 @@ from api.db.joint_services.tenant_model_service import get_model_config_by_id, g
 from common.metadata_utils import meta_filter, convert_conditions
 from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required, \
     get_request_json
+from api.utils.doc_index_utils import build_docstore_rename_fields
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
@@ -283,6 +284,15 @@ async def update_doc(tenant_id, dataset_id, document_id):
         if informs:
             e, file = FileService.get_by_id(informs[0].file_id)
             FileService.update_by_id(file.id, {"name": req["name"]})
+
+        es_body = build_docstore_rename_fields(req["name"])
+        if settings.docStoreConn.index_exist(search.index_name(tenant_id), dataset_id):
+            settings.docStoreConn.update(
+                {"doc_id": document_id},
+                es_body,
+                search.index_name(tenant_id),
+                dataset_id,
+            )
 
     if "parser_config" in req:
         DocumentService.update_parser_config(doc.id, req["parser_config"])
