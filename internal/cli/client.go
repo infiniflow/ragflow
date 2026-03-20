@@ -170,7 +170,13 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 
 	password, ok := cmd.Params["password"].(string)
 	if !ok {
-		return fmt.Errorf("email not provided")
+		// Get password from user input (hidden)
+		fmt.Printf("password for %s: ", email)
+		password, err = readPassword()
+		if err != nil {
+			return fmt.Errorf("failed to read password: %w", err)
+		}
+		password = strings.TrimSpace(password)
 	}
 
 	// Login
@@ -657,6 +663,12 @@ func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (map[string]interface{}, er
 	}
 }
 
+type listUserResponse struct {
+	Code    int                      `json:"code"`
+	Data    []map[string]interface{} `json:"data"`
+	Message string                   `json:"message"`
+}
+
 // ListUsers lists all users (admin mode only)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
 func (c *RAGFlowClient) ListUsers(cmd *Command) (map[string]interface{}, error) {
@@ -684,34 +696,20 @@ func (c *RAGFlowClient) ListUsers(cmd *Command) (map[string]interface{}, error) 
 		return nil, fmt.Errorf("failed to list users: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	var result listUserResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
 	}
 
-	code, ok := resJSON["code"].(float64)
-	if !ok || code != 0 {
-		msg, _ := resJSON["message"].(string)
-		return nil, fmt.Errorf("failed to list users: %s", msg)
+	if result.Code != 0 {
+		return nil, fmt.Errorf("list user failed: %s", result.Message)
 	}
 
-	data, ok := resJSON["data"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format")
+	for _, user := range result.Data {
+		delete(user, "create_date")
 	}
 
-	// Convert to slice of maps and remove sensitive fields
-	tableData := make([]map[string]interface{}, 0, len(data))
-	for _, item := range data {
-		if itemMap, ok := item.(map[string]interface{}); ok {
-			// Remove sensitive fields
-			delete(itemMap, "password")
-			delete(itemMap, "access_token")
-			tableData = append(tableData, itemMap)
-		}
-	}
-
-	PrintTableSimple(tableData)
+	PrintTableSimple(result.Data)
 	return nil, nil
 }
 
