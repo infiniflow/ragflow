@@ -314,11 +314,7 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, common.ErrorCode, e
 // - CodeAuthenticationError (109): Email not registered or password mismatch
 // - CodeServerError (500): Password decryption failure
 // - CodeForbidden (403): Account disabled
-func (s *UserService) LoginByEmail(req *EmailLoginRequest, adminLogin bool) (*model.User, common.ErrorCode, error) {
-	if !adminLogin && req.Email == "admin@ragflow.io" {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("default admin account cannot be used to login normal services")
-	}
-
+func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, common.ErrorCode, error) {
 	user, err := s.userDAO.GetByEmail(req.Email)
 	if err != nil {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("Email: %s is not registered!", req.Email)
