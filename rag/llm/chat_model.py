@@ -30,7 +30,7 @@ import openai
 from openai import AsyncOpenAI, OpenAI
 from strenum import StrEnum
 
-from common.token_utils import num_tokens_from_string, total_token_count_from_response
+from common.token_utils import num_tokens_from_string, total_token_count_from_response, LLMUsage
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
 
@@ -193,14 +193,20 @@ class Base(ABC):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
 
-        request_kwargs = {"model": self.model_name, "messages": history, "stream": True, **gen_conf}
+        request_kwargs = {"model": self.model_name, "messages": history, "stream": True, "stream_options": {"include_usage": True}, **gen_conf}
         stop = kwargs.get("stop")
         if stop:
             request_kwargs["stop"] = stop
 
         response = await self.async_client.chat.completions.create(**request_kwargs)
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens_est = 0
         async for resp in response:
             if not resp.choices:
+                if hasattr(resp, "usage") and resp.usage:
+                    prompt_tokens = getattr(resp.usage, "prompt_tokens", 0) or 0
+                    completion_tokens = getattr(resp.usage, "completion_tokens", 0) or 0
                 continue
             if not resp.choices[0].delta.content:
                 resp.choices[0].delta.content = ""
@@ -214,9 +220,8 @@ class Base(ABC):
             else:
                 reasoning_start = False
                 ans = resp.choices[0].delta.content
-            tol = total_token_count_from_response(resp)
-            if not tol:
-                tol = num_tokens_from_string(resp.choices[0].delta.content)
+            tol = num_tokens_from_string(resp.choices[0].delta.content)
+            total_tokens_est += tol
 
             finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
             if finish_reason == "length":
@@ -225,28 +230,33 @@ class Base(ABC):
                 else:
                     ans += LENGTH_NOTIFICATION_EN
             yield ans, tol
+        total = prompt_tokens + completion_tokens if (prompt_tokens + completion_tokens) else total_tokens_est
+        yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total)
 
     async def async_chat_streamly(self, system, history, gen_conf: dict = {}, **kwargs):
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
-        total_tokens = 0
+        usage = LLMUsage()
 
         for attempt in range(self.max_retries + 1):
             try:
-                async for delta_ans, tol in self._async_chat_streamly(history, gen_conf, **kwargs):
+                async for item in self._async_chat_streamly(history, gen_conf, **kwargs):
+                    if isinstance(item, LLMUsage):
+                        usage = item
+                        break
+                    delta_ans, _ = item
                     ans = delta_ans
-                    total_tokens += tol
                     yield ans
 
-                yield total_tokens
+                yield usage
                 return
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
                     yield e
-                    yield total_tokens
+                    yield usage
                     return
 
     def _length_stop(self, ans):
@@ -337,6 +347,8 @@ class Base(ABC):
             history.insert(0, {"role": "system", "content": system})
 
         ans = ""
+        prompt_tokens = 0
+        completion_tokens = 0
         tk_count = 0
         hist = deepcopy(history)
         for attempt in range(self.max_retries + 1):
@@ -345,7 +357,12 @@ class Base(ABC):
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
                     response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
-                    tk_count += total_token_count_from_response(response)
+                    if response.usage:
+                        prompt_tokens += getattr(response.usage, "prompt_tokens", 0) or 0
+                        completion_tokens += getattr(response.usage, "completion_tokens", 0) or 0
+                        tk_count += response.usage.total_tokens or 0
+                    else:
+                        tk_count += total_token_count_from_response(response)
                     if any([not response.choices, not response.choices[0].message]):
                         raise Exception(f"500 response structure error. Response: {response}")
 
@@ -358,7 +375,7 @@ class Base(ABC):
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
 
-                        return ans, tk_count
+                        return ans, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=tk_count or prompt_tokens + completion_tokens)
 
                     for tool_call in response.choices[0].message.tool_calls:
                         logging.info(f"Response {tool_call=}")
@@ -377,12 +394,14 @@ class Base(ABC):
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
                 response, token_count = await self._async_chat(history, gen_conf)
                 ans += response
-                tk_count += token_count
-                return ans, tk_count
+                prompt_tokens += token_count.prompt_tokens
+                completion_tokens += token_count.completion_tokens
+                tk_count += token_count.total_tokens
+                return ans, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=tk_count or prompt_tokens + completion_tokens)
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
-                    return e, tk_count
+                    return e, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=tk_count or prompt_tokens + completion_tokens)
 
         assert False, "Shouldn't be here."
 
@@ -393,6 +412,8 @@ class Base(ABC):
             history.insert(0, {"role": "system", "content": system})
 
         total_tokens = 0
+        prompt_tokens = 0
+        completion_tokens = 0
         hist = deepcopy(history)
 
         for attempt in range(self.max_retries + 1):
@@ -402,13 +423,17 @@ class Base(ABC):
                     reasoning_start = False
                     logging.info(f"{tools=}")
 
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
+                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, stream_options={"include_usage": True}, tools=tools, tool_choice="auto", **gen_conf)
 
                     final_tool_calls = {}
                     answer = ""
 
                     async for resp in response:
                         if not hasattr(resp, "choices") or not resp.choices:
+                            if hasattr(resp, "usage") and resp.usage:
+                                prompt_tokens += getattr(resp.usage, "prompt_tokens", 0) or 0
+                                completion_tokens += getattr(resp.usage, "completion_tokens", 0) or 0
+                                total_tokens += resp.usage.total_tokens or 0
                             continue
 
                         delta = resp.choices[0].delta
@@ -440,18 +465,14 @@ class Base(ABC):
                             answer += delta.content
                             yield delta.content
 
-                        tol = total_token_count_from_response(resp)
-                        if not tol:
-                            total_tokens += num_tokens_from_string(delta.content)
-                        else:
-                            total_tokens = tol
+                        total_tokens += num_tokens_from_string(delta.content)
 
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
                             yield self._length_stop("")
 
                     if answer:
-                        yield total_tokens
+                        yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
                         return
 
                     for tool_call in final_tool_calls.values():
@@ -470,22 +491,22 @@ class Base(ABC):
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
 
-                response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
+                response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, stream_options={"include_usage": True}, tools=tools, tool_choice="auto", **gen_conf)
 
                 async for resp in response:
                     if not hasattr(resp, "choices") or not resp.choices:
+                        if hasattr(resp, "usage") and resp.usage:
+                            prompt_tokens += getattr(resp.usage, "prompt_tokens", 0) or 0
+                            completion_tokens += getattr(resp.usage, "completion_tokens", 0) or 0
+                            total_tokens += resp.usage.total_tokens or 0
                         continue
                     delta = resp.choices[0].delta
                     if not hasattr(delta, "content") or delta.content is None:
                         continue
-                    tol = total_token_count_from_response(resp)
-                    if not tol:
-                        total_tokens += num_tokens_from_string(delta.content)
-                    else:
-                        total_tokens = tol
+                    total_tokens += num_tokens_from_string(delta.content)
                     yield delta.content
 
-                yield total_tokens
+                yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
                 return
 
             except Exception as e:
@@ -493,7 +514,7 @@ class Base(ABC):
                 if e:
                     logging.error(f"async_chat_streamly failed: {e}")
                     yield e
-                    yield total_tokens
+                    yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
                     return
 
         assert False, "Shouldn't be here."
@@ -504,17 +525,20 @@ class Base(ABC):
             logging.info(f"[INFO] {self.model_name} detected as reasoning model, using async_chat_streamly")
 
             final_ans = ""
-            tol_token = 0
-            async for delta, tol in self._async_chat_streamly(history, gen_conf, with_reasoning=False, **kwargs):
+            final_usage = LLMUsage()
+            async for item in self._async_chat_streamly(history, gen_conf, with_reasoning=False, **kwargs):
+                if isinstance(item, LLMUsage):
+                    final_usage = item
+                    break
+                delta, _ = item
                 if delta.startswith("<think>") or delta.endswith("</think>"):
                     continue
                 final_ans += delta
-                tol_token = tol
 
             if len(final_ans.strip()) == 0:
                 final_ans = "**ERROR**: Empty response from reasoning model"
 
-            return final_ans.strip(), tol_token
+            return final_ans.strip(), final_usage
 
         _, kwargs = _apply_model_family_policies(
             self.model_name,
@@ -525,11 +549,16 @@ class Base(ABC):
         response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
         if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
-            return "", 0
+            return "", LLMUsage()
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
             ans = self._length_stop(ans)
-        return ans, total_token_count_from_response(response)
+        usage = response.usage
+        return ans, LLMUsage(
+            prompt_tokens=usage.prompt_tokens if usage else 0,
+            completion_tokens=usage.completion_tokens if usage else 0,
+            total_tokens=usage.total_tokens if usage else 0,
+        )
 
     async def async_chat(self, system, history, gen_conf={}, **kwargs):
         if system and history and history[0].get("role") != "system":
@@ -542,7 +571,7 @@ class Base(ABC):
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
-                    return e, 0
+                    return e, LLMUsage()
         assert False, "Shouldn't be here."
 
 
@@ -744,6 +773,8 @@ class MistralChat(Base):
         return gen_conf
 
     def _chat(self, history, gen_conf={}, **kwargs):
+        # TODO(billing): Mistral 原生 SDK 只返回 total_tokens，无 prompt/completion 明细和 cost。
+        #   待 mistralai SDK 支持后补充，或改用 LiteLLM 路由统一处理。
         gen_conf = self._clean_conf(gen_conf)
         response = self.client.chat(model=self.model_name, messages=history, **gen_conf)
         ans = response.choices[0].message.content
@@ -823,6 +854,7 @@ class ReplicateChat(Base):
         self.client = Client(api_token=key)
 
     def _chat(self, history, gen_conf={}, **kwargs):
+        # TODO(billing): Replicate 原生 SDK 只能用 tiktoken 估算 total_tokens，无精确明细和 cost。
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
         prompt = "\n".join([item["role"] + ":" + item["content"] for item in history[-5:] if item["role"] != "system"])
         response = self.client.run(
@@ -896,6 +928,8 @@ class BaiduYiyanChat(Base):
         return gen_conf
 
     def _chat(self, history, gen_conf):
+        # TODO(billing): 百度千帆（qianfan SDK）只返回 total_tokens，无 prompt/completion 明细和 cost。
+        #   可通过 response body 中 usage 字段进一步解析，待确认 SDK 版本支持后完善。
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
         response = self.client.do(model=self.model_name, messages=[h for h in history if h["role"] != "system"], system=system, **gen_conf).body
         ans = response["result"]
@@ -976,6 +1010,8 @@ class GoogleChat(Base):
         return gen_conf
 
     def _chat(self, history, gen_conf={}, **kwargs):
+        # TODO(billing): Google Cloud 原生 SDK（google.genai / AnthropicVertex）只返回 total_tokens，
+        #   prompt/completion 明细和 cost 待按各子模型 SDK 的 usage_metadata 字段完善。
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
 
         if "claude" in self.model_name:
@@ -1287,16 +1323,26 @@ class LiteLLMBase(ABC):
                 )
 
                 if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
-                    return "", 0
+                    return "", LLMUsage()
                 ans = response.choices[0].message.content.strip()
                 if response.choices[0].finish_reason == "length":
                     ans = self._length_stop(ans)
 
-                return ans, total_token_count_from_response(response)
+                usage = response.usage
+                try:
+                    cost = litellm.completion_cost(completion_response=response)
+                except Exception:
+                    cost = 0.0
+                return ans, LLMUsage(
+                    prompt_tokens=usage.prompt_tokens if usage else 0,
+                    completion_tokens=usage.completion_tokens if usage else 0,
+                    total_tokens=usage.total_tokens if usage else 0,
+                    cost=cost,
+                )
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
-                    return e, 0
+                    return e, LLMUsage()
 
         assert False, "Shouldn't be here."
 
@@ -1307,6 +1353,7 @@ class LiteLLMBase(ABC):
         gen_conf = self._clean_conf(gen_conf)
         reasoning_start = False
         total_tokens = 0
+        chunks = []  # 收集所有 chunk，流结束后用于计算 cost
 
         completion_args = self._construct_completion_args(history=history, stream=True, tools=False, **gen_conf)
         stop = kwargs.get("stop")
@@ -1319,12 +1366,14 @@ class LiteLLMBase(ABC):
                     **completion_args,
                     drop_params=True,
                     timeout=self.timeout,
+                    stream_options={"include_usage": True},
                 )
 
                 async for resp in stream:
                     if not hasattr(resp, "choices") or not resp.choices:
                         continue
 
+                    chunks.append(resp)
                     delta = resp.choices[0].delta
                     if not hasattr(delta, "content") or delta.content is None:
                         delta.content = ""
@@ -1353,13 +1402,33 @@ class LiteLLMBase(ABC):
                             ans += LENGTH_NOTIFICATION_EN
 
                     yield ans
-                yield total_tokens
+
+                # 流结束：用 stream_chunk_builder 重建完整 response 以获取精确 token 明细和 cost
+                prompt_tokens = 0
+                completion_tokens = 0
+                cost = 0.0
+                try:
+                    full_response = litellm.stream_chunk_builder(chunks, messages=history)
+                    if full_response and full_response.usage:
+                        prompt_tokens = full_response.usage.prompt_tokens or 0
+                        completion_tokens = full_response.usage.completion_tokens or 0
+                        total_tokens = full_response.usage.total_tokens or total_tokens
+                    cost = litellm.completion_cost(completion_response=full_response)
+                except Exception:
+                    pass  # 降级：保留已累计的 total_tokens，cost=0
+
+                yield LLMUsage(
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                    cost=cost,
+                )
                 return
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
                     yield e
-                    yield total_tokens
+                    yield LLMUsage(total_tokens=total_tokens)
                     return
 
     def _length_stop(self, ans):
@@ -1432,6 +1501,8 @@ class LiteLLMBase(ABC):
             history.insert(0, {"role": "system", "content": system})
 
         ans = ""
+        prompt_tokens = 0
+        completion_tokens = 0
         tk_count = 0
         hist = deepcopy(history)
         for attempt in range(self.max_retries + 1):
@@ -1447,7 +1518,12 @@ class LiteLLMBase(ABC):
                         timeout=self.timeout,
                     )
 
-                    tk_count += total_token_count_from_response(response)
+                    if response.usage:
+                        prompt_tokens += getattr(response.usage, "prompt_tokens", 0) or 0
+                        completion_tokens += getattr(response.usage, "completion_tokens", 0) or 0
+                        tk_count += response.usage.total_tokens or 0
+                    else:
+                        tk_count += total_token_count_from_response(response)
 
                     if not hasattr(response, "choices") or not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
@@ -1461,7 +1537,7 @@ class LiteLLMBase(ABC):
                         ans += message.content or ""
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
-                        return ans, tk_count
+                        return ans, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=tk_count or prompt_tokens + completion_tokens)
 
                     for tool_call in message.tool_calls:
                         logging.info(f"Response {tool_call=}")
@@ -1481,13 +1557,15 @@ class LiteLLMBase(ABC):
 
                 response, token_count = await self.async_chat("", history, gen_conf)
                 ans += response
-                tk_count += token_count
-                return ans, tk_count
+                prompt_tokens += token_count.prompt_tokens
+                completion_tokens += token_count.completion_tokens
+                tk_count += token_count.total_tokens
+                return ans, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=tk_count or prompt_tokens + completion_tokens)
 
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
-                    return e, tk_count
+                    return e, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=tk_count or prompt_tokens + completion_tokens)
 
         assert False, "Shouldn't be here."
 
@@ -1498,6 +1576,8 @@ class LiteLLMBase(ABC):
             history.insert(0, {"role": "system", "content": system})
 
         total_tokens = 0
+        prompt_tokens = 0
+        completion_tokens = 0
         hist = deepcopy(history)
 
         for attempt in range(self.max_retries + 1):
@@ -1512,6 +1592,7 @@ class LiteLLMBase(ABC):
                         **completion_args,
                         drop_params=True,
                         timeout=self.timeout,
+                        stream_options={"include_usage": True},
                     )
 
                     final_tool_calls = {}
@@ -1519,6 +1600,10 @@ class LiteLLMBase(ABC):
 
                     async for resp in response:
                         if not hasattr(resp, "choices") or not resp.choices:
+                            if hasattr(resp, "usage") and resp.usage:
+                                prompt_tokens += getattr(resp.usage, "prompt_tokens", 0) or 0
+                                completion_tokens += getattr(resp.usage, "completion_tokens", 0) or 0
+                                total_tokens += resp.usage.total_tokens or 0
                             continue
 
                         delta = resp.choices[0].delta
@@ -1550,8 +1635,7 @@ class LiteLLMBase(ABC):
                             answer += delta.content
                             yield delta.content
 
-                        tol = total_token_count_from_response(resp)
-                        if not tol:
+                        total_tokens += num_tokens_from_string(delta.content)
                             total_tokens += num_tokens_from_string(delta.content)
                         else:
                             total_tokens = tol
@@ -1561,7 +1645,7 @@ class LiteLLMBase(ABC):
                             yield self._length_stop("")
 
                     if answer:
-                        yield total_tokens
+                        yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
                         return
 
                     for tool_call in final_tool_calls.values():
@@ -1585,29 +1669,30 @@ class LiteLLMBase(ABC):
                     **completion_args,
                     drop_params=True,
                     timeout=self.timeout,
+                    stream_options={"include_usage": True},
                 )
 
                 async for resp in response:
                     if not hasattr(resp, "choices") or not resp.choices:
+                        if hasattr(resp, "usage") and resp.usage:
+                            prompt_tokens += getattr(resp.usage, "prompt_tokens", 0) or 0
+                            completion_tokens += getattr(resp.usage, "completion_tokens", 0) or 0
+                            total_tokens += resp.usage.total_tokens or 0
                         continue
                     delta = resp.choices[0].delta
                     if not hasattr(delta, "content") or delta.content is None:
                         continue
-                    tol = total_token_count_from_response(resp)
-                    if not tol:
-                        total_tokens += num_tokens_from_string(delta.content)
-                    else:
-                        total_tokens = tol
+                    total_tokens += num_tokens_from_string(delta.content)
                     yield delta.content
 
-                yield total_tokens
+                yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
                 return
 
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
                     yield e
-                    yield total_tokens
+                    yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
                     return
 
         assert False, "Shouldn't be here."

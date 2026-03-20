@@ -16,6 +16,8 @@
 
 
 import os
+from dataclasses import dataclass
+
 import tiktoken
 
 from common.file_utils import get_project_base_directory
@@ -24,6 +26,21 @@ tiktoken_cache_dir = get_project_base_directory()
 os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
 # encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
 encoder = tiktoken.get_encoding("cl100k_base")
+
+
+@dataclass
+class LLMUsage:
+    """LLM 调用的 token 消耗与计费信息。
+
+    用于替代各处裸 int total_tokens，统一携带输入/输出 token 明细和 cost。
+    - Chat 模式：prompt_tokens / completion_tokens / cost 均有值
+    - Embedding / Rerank 模式：completion_tokens=0，cost 暂为 0
+    - 原生 SDK 模式（Mistral、百度等）：仅 total_tokens 有值，其余为 0
+    """
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cost: float = 0.0
 
 
 def num_tokens_from_string(string: str) -> int:
