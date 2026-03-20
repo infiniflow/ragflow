@@ -133,7 +133,7 @@ func (h *Handler) Login(c *gin.Context) {
 
 	// Use userService.LoginByEmail with adminLogin=true
 	// This allows default admin account to login admin system
-	user, code, err := h.userService.LoginByEmail(&req, true)
+	user, code, err := h.userService.LoginByEmail(&req)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,

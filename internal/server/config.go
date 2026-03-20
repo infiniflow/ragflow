@@ -425,17 +425,17 @@ func FromEnvironments() error {
 	}
 
 	// Storage
-	storageType := strings.ToLower(os.Getenv("STORAGE_IMPL"))
-	switch storageType {
-	case "minio":
-		globalConfig.StorageEngine.Type = StorageMinio
-	case "s3":
-		globalConfig.StorageEngine.Type = StorageS3
-	case "oss":
-		globalConfig.StorageEngine.Type = StorageOSS
-	default:
-		return fmt.Errorf("invalid storage type: %s", storageType)
-	}
+	//storageType := strings.ToLower(os.Getenv("STORAGE_IMPL"))
+	//switch storageType {
+	//case "minio":
+	//	globalConfig.StorageEngine.Type = StorageMinio
+	//case "s3":
+	//	globalConfig.StorageEngine.Type = StorageS3
+	//case "oss":
+	//	globalConfig.StorageEngine.Type = StorageOSS
+	//default:
+	//	return fmt.Errorf("invalid storage type: %s", storageType)
+	//}
 
 	// Language
 	if globalConfig.Language == "" {
