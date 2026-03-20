@@ -197,7 +197,7 @@ func (p *Parser) parseLoginUser() (*Command, error) {
 }
 
 func (p *Parser) parsePingServer() (*Command, error) {
-	cmd := NewCommand("ping_server")
+	cmd := NewCommand("ping")
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
 		return nil, err

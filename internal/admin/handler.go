@@ -109,7 +109,7 @@ func (h *Handler) Health(c *gin.Context) {
 
 // Ping ping endpoint
 func (h *Handler) Ping(c *gin.Context) {
-	successNoData(c, "PONG")
+	successNoData(c, "pong")
 }
 
 // Login handle admin login
