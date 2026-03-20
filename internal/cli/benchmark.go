@@ -250,7 +250,7 @@ func (c *RAGFlowClient) executeBenchmarkSilent(cmd *Command, iterations int) []*
 		var err error
 
 		switch cmd.Type {
-		case "ping_server":
+		case "ping":
 			resp, err = c.HTTPClient.Request("GET", "/system/ping", false, "web", nil, nil)
 		case "list_user_datasets":
 			resp, err = c.HTTPClient.Request("POST", "/kb/list", false, "web", nil, nil)
@@ -290,7 +290,7 @@ func isSuccess(resp *Response, commandType string) bool {
 	}
 
 	switch commandType {
-	case "ping_server":
+	case "ping":
 		return resp.StatusCode == 200 && string(resp.Body) == "pong"
 	case "list_user_datasets", "list_datasets", "search_on_datasets":
 		// Check status code and JSON response code for dataset commands
