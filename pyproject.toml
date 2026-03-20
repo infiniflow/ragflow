@@ -31,6 +31,7 @@ dependencies = [
     "editdistance==0.8.1",
     "elasticsearch-dsl==8.12.0",
     "exceptiongroup>=1.3.0,<2.0.0",
+    "feedparser>=6.0.11,<7.0.0",
     "extract-msg>=0.39.0",
     "ffmpeg-python>=0.2.0",
     "flasgger>=0.9.7.1,<0.10.0",
