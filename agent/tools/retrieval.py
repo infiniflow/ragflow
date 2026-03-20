@@ -273,6 +273,10 @@ class Retrieval(ToolBase, ABC):
         # query message
         filter_dict: dict = {"memory_id": memory_ids}
         if user_id:
+            import re
+            # is variable
+            if re.match(r"^{.*}$", user_id):
+                user_id = self._canvas.get_variable_value(user_id)
             filter_dict["user_id"] = user_id
         message_list = memory_message_service.query_message(filter_dict, {
             "query": query,
