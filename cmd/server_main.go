@@ -10,6 +10,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/server/local"
+	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
 	"syscall"
@@ -117,6 +118,10 @@ func main() {
 		logger.Fatal("Failed to initialize Redis", zap.Error(err))
 	}
 	defer cache.Close()
+
+	if err := storage.InitStorageFactory(); err != nil {
+		logger.Fatal("Failed to initialize storage factory", zap.Error(err))
+	}
 
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
