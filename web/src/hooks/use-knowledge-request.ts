@@ -28,7 +28,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
@@ -58,7 +58,6 @@ export const useKnowledgeBaseId = (): string => {
 export const useTestRetrieval = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const [values, setValues] = useState<ITestRetrievalRequestBody>();
-  const mountedRef = useRef(false);
   const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
 
   const [page, setPage] = useState(1);
@@ -85,14 +84,20 @@ export const useTestRetrieval = () => {
     isFetching: loading,
     refetch,
   } = useQuery<INextTestingResult>({
-    queryKey: [KnowledgeApiAction.TestRetrieval, queryParams, page, pageSize],
+    queryKey: [
+      KnowledgeApiAction.TestRetrieval,
+      knowledgeBaseId,
+      page,
+      pageSize,
+      filterValue.doc_ids,
+    ],
     initialData: {
       chunks: [],
       doc_aggs: [],
       total: 0,
       isRuned: false,
     },
-    enabled: false,
+    enabled: !!values?.question,
     gcTime: 0,
     queryFn: async () => {
       const { data } = await kbService.retrieval_test(queryParams);
@@ -100,13 +105,6 @@ export const useTestRetrieval = () => {
       return { ...result, isRuned: true };
     },
   });
-
-  useEffect(() => {
-    if (mountedRef.current && !!queryParams.question) {
-      refetch();
-    }
-    mountedRef.current = true;
-  }, [page, pageSize, refetch, filterValue, queryParams]);
 
   return {
     data,
