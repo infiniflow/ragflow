@@ -19,6 +19,7 @@ export enum DataSourceKey {
   S3 = 's3',
   NOTION = 'notion',
   DISCORD = 'discord',
+  REST_API = 'rest_api',
   GOOGLE_DRIVE = 'google_drive',
   MOODLE = 'moodle',
   GMAIL = 'gmail',
@@ -93,6 +94,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Gmail',
       description: t(`setting.${DataSourceKey.GMAIL}Description`),
       icon: <SvgIcon name={'data-source/gmail'} width={38} />,
+    },
+    [DataSourceKey.REST_API]: {
+      name: 'REST API',
+      description: t(`setting.${DataSourceKey.REST_API}Description`),
+      icon: <SvgIcon name={'data-source/rest-api'} width={38} />,
     },
     [DataSourceKey.MOODLE]: {
       name: 'Moodle',
@@ -962,6 +968,252 @@ export const DataSourceFormFields = {
       tooltip: t('setting.postgresqlContentColumnsTip'),
     },
   ],
+  [DataSourceKey.REST_API]: [
+    // ── Essential fields ──────────────────────────────────────────────
+    {
+      label: 'Base URL',
+      name: 'config.url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://api.example.com/v1/resources',
+    },
+    {
+      label: 'HTTP Method',
+      name: 'config.method',
+      type: FormFieldType.Select,
+      required: true,
+      options: [
+        { label: 'GET', value: 'GET' },
+        { label: 'POST', value: 'POST' },
+      ],
+      defaultValue: 'GET',
+    },
+    {
+      label: 'Query Parameters',
+      name: 'config.query_params',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: `key=value\none_per_line=true`,
+      tooltip: t('setting.restApiQueryParamsTip'),
+    },
+    {
+      label: 'Auth Type',
+      name: 'config.auth_type',
+      type: FormFieldType.Select,
+      required: true,
+      options: [
+        { label: 'None', value: 'none' },
+        { label: 'API Key (Header)', value: 'api_key_header' },
+        { label: 'Bearer Token', value: 'bearer' },
+        { label: 'Basic Auth', value: 'basic' },
+      ],
+      defaultValue: 'none',
+    },
+    {
+      label: 'API Key Header Name',
+      name: 'config.auth_config.header_name',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'X-API-Key',
+      shouldRender: (values: any) =>
+        values?.config?.auth_type === 'api_key_header',
+    },
+    {
+      label: 'API Key Value',
+      name: 'config.credentials.api_key',
+      type: FormFieldType.Password,
+      required: false,
+      shouldRender: (values: any) =>
+        values?.config?.auth_type === 'api_key_header',
+      customValidate: (val: string, values: any) => {
+        if (values?.config?.auth_type === 'api_key_header' && !val) {
+          return t('setting.restApiValidationApiKeyRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: 'Bearer Token',
+      name: 'config.credentials.token',
+      type: FormFieldType.Password,
+      required: false,
+      shouldRender: (values: any) => values?.config?.auth_type === 'bearer',
+      customValidate: (val: string, values: any) => {
+        if (values?.config?.auth_type === 'bearer' && !val) {
+          return t('setting.restApiValidationBearerTokenRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: 'Username',
+      name: 'config.credentials.username',
+      type: FormFieldType.Text,
+      required: false,
+      shouldRender: (values: any) => values?.config?.auth_type === 'basic',
+    },
+    {
+      label: 'Password',
+      name: 'config.credentials.password',
+      type: FormFieldType.Password,
+      required: false,
+      shouldRender: (values: any) => values?.config?.auth_type === 'basic',
+      customValidate: (val: string, values: any) => {
+        if (values?.config?.auth_type === 'basic' && !val) {
+          return t('setting.restApiValidationBasicPasswordRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: 'Content Fields',
+      name: 'config.content_fields',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'title,body',
+      tooltip: t('setting.restApiContentFieldsTip'),
+    },
+    {
+      label: 'Metadata Fields',
+      name: 'config.metadata_fields',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'author,category',
+      tooltip: t('setting.restApiMetadataFieldsTip'),
+    },
+    {
+      label: 'Pagination Type',
+      name: 'config.pagination_type',
+      type: FormFieldType.Select,
+      required: true,
+      options: [
+        { label: 'None', value: 'none' },
+        { label: 'Page', value: 'page' },
+        { label: 'Offset', value: 'offset' },
+        { label: 'Cursor', value: 'cursor' },
+      ],
+      defaultValue: 'none',
+    },
+    {
+      label: 'Start Page',
+      name: 'config.pagination_config.start_page',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 1,
+      shouldRender: (values: any) => values?.config?.pagination_type === 'page',
+    },
+    {
+      label: 'Offset Param',
+      name: 'config.pagination_config.offset_param',
+      type: FormFieldType.Text,
+      required: false,
+      defaultValue: 'offset',
+      shouldRender: (values: any) =>
+        values?.config?.pagination_type === 'offset',
+    },
+    {
+      label: 'Start Offset',
+      name: 'config.pagination_config.start_offset',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 0,
+      shouldRender: (values: any) =>
+        values?.config?.pagination_type === 'offset',
+    },
+    {
+      label: 'Cursor Param',
+      name: 'config.pagination_config.cursor_param',
+      type: FormFieldType.Text,
+      required: false,
+      defaultValue: 'cursor',
+      shouldRender: (values: any) =>
+        values?.config?.pagination_type === 'cursor',
+    },
+    {
+      label: 'Next Cursor JSONPath',
+      name: 'config.pagination_config.next_cursor_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '$.next_cursor',
+      shouldRender: (values: any) =>
+        values?.config?.pagination_type === 'cursor',
+      tooltip: t('setting.restApiNextCursorPathTip'),
+    },
+    // ── Advanced settings toggle ──────────────────────────────────────
+    {
+      label: 'Advanced Settings',
+      name: 'config.show_advanced',
+      type: FormFieldType.Switch,
+      required: false,
+      defaultValue: false,
+    },
+    // ── Advanced fields (hidden until toggled) ────────────────────────
+    {
+      label: 'Custom Headers (JSON)',
+      name: 'config.headers',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: `{"X-Custom-Header": "value"}`,
+      tooltip: t('setting.restApiHeadersTip'),
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
+    },
+    {
+      label: 'Limit Param',
+      name: 'config.pagination_config.limit_param',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'limit (leave empty if already in Query Parameters)',
+      shouldRender: (values: any) =>
+        !!values?.config?.show_advanced &&
+        values?.config?.pagination_type === 'offset',
+    },
+    {
+      label: 'Initial Cursor',
+      name: 'config.pagination_config.initial_cursor',
+      type: FormFieldType.Text,
+      required: false,
+      shouldRender: (values: any) =>
+        !!values?.config?.show_advanced &&
+        values?.config?.pagination_type === 'cursor',
+    },
+    {
+      label: 'Max Pages',
+      name: 'config.max_pages',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 1000,
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
+    },
+    {
+      label: 'Request Delay (seconds)',
+      name: 'config.request_delay',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 0.5,
+      placeholder: '0.5',
+      tooltip: t('setting.restApiRequestDelayTip'),
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
+    },
+    {
+      label: 'Poll Timestamp Field',
+      name: 'config.poll_timestamp_field',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'updated_at',
+      tooltip: t('setting.restApiPollTimestampFieldTip'),
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
+    },
+    {
+      label: 'Request Body (POST) JSON',
+      name: 'config.request_body',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: `{"status": "published"}`,
+      tooltip: t('setting.restApiRequestBodyTip'),
+      shouldRender: (values: any) =>
+        !!values?.config?.show_advanced && values?.config?.method === 'POST',
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -1301,6 +1553,34 @@ export const DataSourceFormDefaultValues = {
       id_column: '',
       timestamp_column: '',
       credentials: {
+        username: '',
+        password: '',
+      },
+    },
+  },
+  [DataSourceKey.REST_API]: {
+    name: '',
+    source: DataSourceKey.REST_API,
+    config: {
+      url: '',
+      method: 'GET',
+      query_params: '',
+      headers: '',
+      auth_type: 'none',
+      auth_config: {},
+      items_path: '',
+      id_field: '',
+      content_fields: '',
+      metadata_fields: '',
+      pagination_type: 'none',
+      pagination_config: {},
+      poll_timestamp_field: '',
+      request_body: '',
+      request_delay: 0.5,
+      show_advanced: false,
+      credentials: {
+        api_key: '',
+        token: '',
         username: '',
         password: '',
       },

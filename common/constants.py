@@ -116,6 +116,7 @@ class FileSource(StrEnum):
     KNOWLEDGEBASE = "knowledgebase"
     S3 = "s3"
     NOTION = "notion"
+    REST_API = "rest_api"
     DISCORD = "discord"
     CONFLUENCE = "confluence"
     GMAIL = "gmail"
