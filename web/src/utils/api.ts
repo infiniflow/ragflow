@@ -68,6 +68,7 @@ export default {
   deleteKnowledgeGraph: (knowledgeId: string) =>
     `${ExternalApi}${api_host}/datasets/${knowledgeId}/knowledge_graph`,
   getMeta: `${api_host}/kb/get_meta`,
+  getMetaKeys: `${api_host}/kb/get_meta_keys`,
   getKnowledgeBasicInfo: `${api_host}/kb/basic_info`,
   // data pipeline log
   fetchDataPipelineLog: `${api_host}/kb/list_pipeline_logs`,

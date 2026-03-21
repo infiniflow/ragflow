@@ -38,8 +38,20 @@ from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.task_service import TaskService, queue_tasks, cancel_all_task_of
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_tenant_default_model_by_type, get_model_config_by_type_and_name
 from common.metadata_utils import meta_filter, convert_conditions
-from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required, \
-    get_request_json
+from api.utils.reference_metadata_utils import (
+    enrich_chunks_with_document_metadata,
+    resolve_reference_metadata_preferences,
+)
+from api.utils.api_utils import (
+    check_duplicate_ids,
+    construct_json_result,
+    get_error_data_result,
+    get_parser_config,
+    get_request_json,
+    get_result,
+    server_error_response,
+    token_required,
+)
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
@@ -1736,6 +1748,7 @@ async def retrieval_test(tenant_id):
             return get_error_data_result("`highlight` should be a boolean")
     else:
         return get_error_data_result("`highlight` should be a boolean")
+    include_metadata, metadata_fields = resolve_reference_metadata_preferences(req)
     try:
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
@@ -1793,6 +1806,9 @@ async def retrieval_test(tenant_id):
 
         for c in ranks["chunks"]:
             c.pop("vector", None)
+
+        if include_metadata:
+            enrich_chunks_with_document_metadata(ranks["chunks"], metadata_fields)
 
         ##rename keys
         renamed_chunks = []

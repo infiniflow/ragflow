@@ -36,6 +36,7 @@ const {
   listTagByKnowledgeIds,
   setMeta,
   getMeta,
+  getMetaKeys,
   retrievalTestShare,
   getKnowledgeBasicInfo,
   fetchDataPipelineLog,
@@ -158,6 +159,10 @@ const methods = {
   },
   getMeta: {
     url: getMeta,
+    method: 'get',
+  },
+  getMetaKeys: {
+    url: getMetaKeys,
     method: 'get',
   },
   retrievalTestShare: {

@@ -33,6 +33,10 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
+from api.utils.reference_metadata_utils import (
+    enrich_chunks_with_document_metadata,
+    resolve_reference_metadata_preferences,
+)
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from common.time_utils import current_timestamp, datetime_format
@@ -47,6 +51,14 @@ from common.token_utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
 from common.string_utils import remove_redundant_spaces
 from common import settings
+
+
+def _resolve_reference_metadata(config):
+    return resolve_reference_metadata_preferences({}, config)
+
+
+def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
+    enrich_chunks_with_document_metadata(chunks, metadata_fields)
 
 
 class DialogService(CommonService):
@@ -510,6 +522,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         attachments_ = "\n\n".join(text_attachments)
 
     prompt_config = dialog.prompt_config
+    include_reference_metadata, metadata_fields = _resolve_reference_metadata(prompt_config)
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
     logging.debug(f"field_map retrieved: {field_map}")
     # try to use sql if field mapping is good to go
@@ -633,6 +646,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                                                        LLMBundle(dialog.tenant_id, default_chat_model))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
+
+    if include_reference_metadata:
+        _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), metadata_fields)
 
     knowledges = kb_prompt(kbinfos, max_tokens)
     logging.debug("{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
@@ -1361,6 +1377,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     chat_llm_name = search_config.get("chat_id", chat_llm_name)
     rerank_id = search_config.get("rerank_id", "")
     meta_data_filter = search_config.get("meta_data_filter")
+    include_reference_metadata, metadata_fields = _resolve_reference_metadata(search_config)
 
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     embedding_list = list(set([kb.embd_id for kb in kbs]))
@@ -1396,6 +1413,8 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs)
     )
+    if include_reference_metadata:
+        _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), metadata_fields)
 
     knowledges = kb_prompt(kbinfos, max_tokens)
     sys_prompt = PROMPT_JINJA_ENV.from_string(ASK_SUMMARY).render(knowledge="\n".join(knowledges))
