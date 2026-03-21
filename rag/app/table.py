@@ -35,6 +35,7 @@ from rag.nlp import rag_tokenizer, tokenize, tokenize_table
 from deepdoc.parser import ExcelParser
 from common import settings
 
+logger = logging.getLogger(__name__)
 
 class Excel(ExcelParser):
     def __call__(self, fnm, binary=None, from_page=0, to_page=10000000000, callback=None, **kwargs):
@@ -371,6 +372,11 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
 
     Every row in table will be treated as a chunk.
     """
+    _pc0 = kwargs.get("parser_config") or {}
+    logger.info(f"[TABLE_PARSER_DEBUG] parser_config keys: {list(_pc0.keys())}")
+    logger.info(f"[TABLE_PARSER_DEBUG] table_column_mode: {_pc0.get('table_column_mode')}")
+    logger.info(f"[TABLE_PARSER_DEBUG] table_column_roles: {_pc0.get('table_column_roles')}")
+
     tbls = []
     is_english = lang.lower() == "english"
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
@@ -456,22 +462,44 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 txts.extend([str(c) for c in cln if c])
         clmns_map = [(py_clmns[i].lower() + fields_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in
                      range(len(clmns))]
-        # For Infinity/OceanBase: Use original column names as keys since they're stored in chunk_data JSON
-        # For ES/OS: Use full field names with type suffixes (e.g., url_kwd, body_tks)
-        if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
-            # For Infinity/OceanBase: key = original column name, value = display name
-            field_map = {py_clmns[i].lower(): str(clmns[i]).replace("_", " ") for i in range(len(clmns))}
+        # Column roles: only when mode is "manual"; otherwise all columns = both (RAGFlow default)
+        parser_config = kwargs.get("parser_config") or {}
+        if parser_config.get("table_column_mode") == "manual":
+            column_roles = parser_config.get("table_column_roles") or {}
         else:
-            # For ES/OS: key = typed field name, value = display name
-            field_map = {k: v for k, v in clmns_map}
+            column_roles = {}
+        logger.info(
+            f"[TABLE_PARSER_DEBUG] effective table_column_mode={parser_config.get('table_column_mode')!r}, "
+            f"column_roles keys={list(column_roles.keys())}"
+        )
+        # field_map: only columns stored in chunk_data (metadata or both) — used for retrieval/SQL
+        stored_indices = [
+            i for i in range(len(clmns))
+            if column_roles.get(clmns[i], "both") in ("metadata", "both")
+        ]
+        if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
+            field_map = {
+                py_clmns[i].lower(): str(clmns[i]).replace("_", " ")
+                for i in stored_indices
+            }
+        else:
+            field_map = {
+                clmns_map[i][0]: clmns_map[i][1]
+                for i in stored_indices
+            }
         logging.debug(f"Field map: {field_map}")
-        KnowledgebaseService.update_parser_config(kwargs["kb_id"], {"field_map": field_map})
+        KnowledgebaseService.update_parser_config(
+            kwargs["kb_id"],
+            {"field_map": field_map, "table_column_names": list(clmns)},
+        )
 
         eng = lang.lower() == "english"  # is_english(txts)
+        _debug_row_idx = 0
         for ii, row in df.iterrows():
+            _debug_row_idx += 1
             d = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
-            row_fields = []
-            data_json = {}  # For Infinity: Store all columns in a JSON object
+            text_fields = []  # vectorize + both -> content_with_weight
+            stored = {}  # metadata + both -> chunk_data (Infinity) or typed fields (ES)
             for j in range(len(clmns)):
                 if row[clmns[j]] is None:
                     continue
@@ -479,23 +507,38 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                     continue
                 if not isinstance(row[clmns[j]], pd.Series) and pd.isna(row[clmns[j]]):
                     continue
-                # For Infinity/OceanBase: Store in chunk_data JSON column
-                # For Elasticsearch/OpenSearch: Store as individual fields with type suffixes
-                if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
-                    data_json[str(clmns[j])] = row[clmns[j]]
-                else:
-                    fld = clmns_map[j][0]
-                    d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else rag_tokenizer.tokenize(row[clmns[j]])
-                row_fields.append((clmns[j], row[clmns[j]]))
-            if not row_fields:
+                col_name = clmns[j]
+                role = column_roles.get(col_name, "both")
+                if _debug_row_idx == 1:
+                    logger.info(f"[TABLE_PARSER_DEBUG] Column '{col_name}' -> role '{role}'")
+                if role in ("vectorize", "both"):
+                    text_fields.append((col_name, row[col_name]))
+                if role in ("metadata", "both"):
+                    if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
+                        stored[str(col_name)] = row[col_name]
+                    else:
+                        fld = clmns_map[j][0]
+                        stored[fld] = row[col_name] if clmn_tys[j] != "text" else rag_tokenizer.tokenize(row[col_name])
+            if not text_fields and not stored:
                 continue
-            # Add the data JSON field to the document (for Infinity/OceanBase)
             if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
-                d["chunk_data"] = data_json
-            # Format as a structured text for better LLM comprehension
-            # Format each field as "- Field Name: Value" on separate lines
-            formatted_text = "\n".join([f"- {field}: {value}" for field, value in row_fields])
+                if stored:
+                    d["chunk_data"] = stored
+            else:
+                d.update(stored)
+            formatted_text = "\n".join([f"- {field}: {value}" for field, value in text_fields]) if text_fields else ""
             tokenize(d, formatted_text, eng)
+            if _debug_row_idx == 1:
+                logger.info(
+                    f"[TABLE_PARSER_DEBUG] Chunk content_with_weight length: {len(d.get('content_with_weight', '') or '')}"
+                )
+                _cd = d.get("chunk_data")
+                logger.info(
+                    f"[TABLE_PARSER_DEBUG] Chunk chunk_data keys: {list(_cd.keys()) if isinstance(_cd, dict) else 'N/A'}"
+                )
+                if not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE):
+                    _extra = [k for k in d if k not in ("docnm_kwd", "title_tks", "content_with_weight", "content_ltks", "content_sm_ltks")]
+                    logger.info(f"[TABLE_PARSER_DEBUG] Chunk ES extra field keys (sample): {_extra[:20]}")
             res.append(d)
         if tbls:
             doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
