@@ -357,6 +357,7 @@ func (c *RAGFlowClient) ShowCurrentUser(cmd *Command) (map[string]interface{}, e
 
 type ResponseIf interface {
 	Type() string
+	PrintStdout()
 }
 
 type CommonResponse struct {
@@ -369,13 +370,32 @@ func (r *CommonResponse) Type() string {
 	return "common"
 }
 
+func (r *CommonResponse) PrintStdout() {
+	if r.Code == 0 {
+		PrintTableSimple(r.Data)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s", r.Code, r.Message)
+	}
+}
+
 type SimpleResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
 
 func (r *SimpleResponse) Type() string {
-	return "login"
+	return "simple"
+}
+
+func (r *SimpleResponse) PrintStdout() {
+	if r.Code == 0 {
+		fmt.Println("SUCCESS")
+		fmt.Printf("%s", r.Message)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s", r.Code, r.Message)
+	}
 }
 
 type BenchmarkResponse struct {
@@ -387,4 +407,8 @@ type BenchmarkResponse struct {
 
 func (r *BenchmarkResponse) Type() string {
 	return "benchmark"
+}
+
+func (r *BenchmarkResponse) PrintStdout() {
+	fmt.Printf("Duration: %f, success: %d, failure: %d", r.Duration, r.SuccessCount, r.SuccessCount)
 }

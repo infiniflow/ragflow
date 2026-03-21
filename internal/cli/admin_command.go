@@ -31,7 +31,7 @@ func (c *RAGFlowClient) PingAdmin(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to ping: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonResponse
+	var result SimpleResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
 	}

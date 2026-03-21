@@ -439,7 +439,7 @@ func (c *CLI) Run() error {
 		}
 
 		if err = c.execute(input); err != nil {
-			fmt.Printf("Error: %v\n", err)
+			fmt.Printf("CLI error: %v\n", err)
 		}
 	}
 
@@ -463,7 +463,12 @@ func (c *CLI) execute(input string) error {
 	}
 
 	// Execute the command using the client
-	_, err = c.client.ExecuteCommand(cmd)
+	var result ResponseIf
+	result, err = c.client.ExecuteCommand(cmd)
+	if result == nil {
+		return errors.New("null result")
+	}
+	result.PrintStdout()
 	return err
 }
 
