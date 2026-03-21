@@ -381,25 +381,40 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
 
+	// Determine if this is a metadata table
+	isMetadataTable := false
+	for _, idx := range req.IndexNames {
+		if strings.HasPrefix(idx, "ragflow_doc_meta_") {
+			isMetadataTable = true
+			break
+		}
+	}
+
 	// Build output columns
-	// Include all fields needed for retrieval test results
-	outputColumns := []string{
-		"id",
-		"doc_id",
-		"kb_id",
-		"content",
-		"content_ltks",
-		"content_with_weight",
-		"title_tks",
-		"docnm_kwd",
-		"img_id",
-		"available_int",
-		"important_kwd",
-		"position_int",
-		"page_num_int",
-		"doc_type_kwd",
-		"mom_id",
-		"question_tks",
+	// For metadata tables, only use: id, kb_id, meta_fields
+	// For chunk tables, use all the standard fields
+	var outputColumns []string
+	if isMetadataTable {
+		outputColumns = []string{"id", "kb_id", "meta_fields"}
+	} else {
+		outputColumns = []string{
+			"id",
+			"doc_id",
+			"kb_id",
+			"content",
+			"content_ltks",
+			"content_with_weight",
+			"title_tks",
+			"docnm_kwd",
+			"img_id",
+			"available_int",
+			"important_kwd",
+			"position_int",
+			"page_num_int",
+			"doc_type_kwd",
+			"mom_id",
+			"question_tks",
+		}
 	}
 	outputColumns = convertSelectFields(outputColumns)
 
@@ -431,16 +446,31 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 
 	// Build filter string
 	var filterParts []string
-	if len(req.DocIDs) > 0 {
-		if len(req.DocIDs) == 1 {
-			filterParts = append(filterParts, fmt.Sprintf("doc_id = '%s'", req.DocIDs[0]))
+
+	// For metadata tables, add kb_id filter if provided
+	if isMetadataTable && len(req.KbIDs) > 0 && req.KbIDs[0] != "" {
+		kbIDs := req.KbIDs
+		if len(kbIDs) == 1 {
+			filterParts = append(filterParts, fmt.Sprintf("kb_id = '%s'", kbIDs[0]))
 		} else {
-			docIDs := strings.Join(req.DocIDs, "', '")
-			filterParts = append(filterParts, fmt.Sprintf("doc_id IN ('%s')", docIDs))
+			kbIDStr := strings.Join(kbIDs, "', '")
+			filterParts = append(filterParts, fmt.Sprintf("kb_id IN ('%s')", kbIDStr))
 		}
 	}
-	// Default filter for available chunks
-	filterParts = append(filterParts, "available_int=1")
+
+	if len(req.DocIDs) > 0 {
+		if len(req.DocIDs) == 1 {
+			filterParts = append(filterParts, fmt.Sprintf("id = '%s'", req.DocIDs[0]))
+		} else {
+			docIDs := strings.Join(req.DocIDs, "', '")
+			filterParts = append(filterParts, fmt.Sprintf("id IN ('%s')", docIDs))
+		}
+	}
+
+	if !isMetadataTable {
+		// Default filter for available chunks
+		filterParts = append(filterParts, "available_int=1")
+	}
 
 	filterStr := strings.Join(filterParts, " AND ")
 
@@ -693,7 +723,7 @@ func toFloat64(val interface{}) (float64, bool) {
 // executeTableSearch executes search on a single table
 func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName string, outputColumns []string, question string, vector []float64, filterStr string, topK, pageSize, offset int, orderBy *OrderByExpr, rankFeature map[string]float64, similarityThreshold float64, minMatch float64) (*types.SearchResponse, error) {
 	// Debug logging
-	fmt.Printf("[DEBUG] executeTableSearch: question=%s, topK=%d, pageSize=%d, similarityThreshold=%f, rankFeature=%v\n", question, topK, pageSize, similarityThreshold, rankFeature)
+	fmt.Printf("[DEBUG] executeTableSearch: question=%s, topK=%d, pageSize=%d, similarityThreshold=%f, filterStr=%s\n", question, topK, pageSize, similarityThreshold, filterStr)
 
 	// Get table
 	table, err := db.GetTable(tableName)
@@ -804,6 +834,12 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 			sortFields = append(sortFields, [2]interface{}{field.Field, sortType})
 		}
 		table = table.Sort(sortFields)
+	}
+
+	// Add filter when there's no text/vector match (like metadata queries)
+	if !hasTextMatch && !hasVectorMatch && filterStr != "" {
+		fmt.Printf("[DEBUG] Adding filter for no-match query: %s\n", filterStr)
+		table = table.Filter(filterStr)
 	}
 
 	// Set limit and offset
