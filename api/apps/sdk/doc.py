@@ -59,6 +59,7 @@ class Chunk(BaseModel):
     document_id: str = ""
     docnm_kwd: str = ""
     important_keywords: list = Field(default_factory=list)
+    tag_kwd: list = Field(default_factory=list)
     questions: list = Field(default_factory=list)
     question_tks: str = ""
     image_id: str = ""
@@ -1052,6 +1053,11 @@ async def list_chunks(tenant_id, dataset_id, document_id):
                     items:
                       type: string
                     description: Important keywords.
+                  tag_kwd:
+                    type: array
+                    items:
+                      type: string
+                    description: Tag keywords.
                   image_id:
                     type: string
                     description: Image ID associated with the chunk.
@@ -1141,6 +1147,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
                 "document_id": sres.field[id]["doc_id"],
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
                 "important_keywords": sres.field[id].get("important_kwd", []),
+                "tag_kwd": sres.field[id].get("tag_kwd", []),
                 "questions": sres.field[id].get("question_kwd", []),
                 "dataset_id": sres.field[id].get("kb_id", sres.field[id].get("dataset_id")),
                 "image_id": sres.field[id].get("img_id", ""),
@@ -1435,6 +1442,11 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
               items:
                 type: string
               description: Updated important keywords.
+            tag_kwd:
+              type: array
+              items:
+                type: string
+              description: Updated tag keywords.
             available:
               type: boolean
               description: Availability status of the chunk.
