@@ -192,11 +192,6 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 	return nil
 }
 
-type loginResponse struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
 // loginUser performs the actual login request
 func (c *RAGFlowClient) loginUser(email, password string) (string, error) {
 	// Encrypt password using scrypt (same as Python implementation)
@@ -222,7 +217,7 @@ func (c *RAGFlowClient) loginUser(email, password string) (string, error) {
 		return "", err
 	}
 
-	var result loginResponse
+	var result SimpleResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return "", fmt.Errorf("login failed: invalid JSON (%w)", err)
 	}
@@ -289,7 +284,7 @@ func readPasswordFallback() (string, error) {
 
 // ExecuteCommand executes a parsed command
 // Returns benchmark result map for commands that support it (e.g., ping_server with iterations > 1)
-func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (map[string]interface{}, error) {
+func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (ResponseIf, error) {
 	switch c.ServerType {
 	case "admin":
 		// Admin mode: execute command with admin privileges
@@ -300,10 +295,9 @@ func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (map[string]interface{}, er
 	default:
 		return nil, fmt.Errorf("invalid server type: %s", c.ServerType)
 	}
-
 }
 
-func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (map[string]interface{}, error) {
+func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 	switch cmd.Type {
 	case "login_user":
 		return nil, c.LoginUser(cmd)
@@ -318,23 +312,23 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (map[string]interface{
 	case "list_services":
 		return c.ListServices(cmd)
 	case "grant_admin":
-		return nil, c.GrantAdmin(cmd)
+		return c.GrantAdmin(cmd)
 	case "revoke_admin":
-		return nil, c.RevokeAdmin(cmd)
+		return c.RevokeAdmin(cmd)
 	case "create_user":
-		return nil, c.CreateUser(cmd)
+		return c.CreateUser(cmd)
 	case "activate_user":
-		return nil, c.ActivateUser(cmd)
+		return c.ActivateUser(cmd)
 	case "alter_user":
-		return nil, c.AlterUserPassword(cmd)
+		return c.AlterUserPassword(cmd)
 	case "drop_user":
-		return nil, c.DropUser(cmd)
+		return c.DropUser(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}
 }
-func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (map[string]interface{}, error) {
+func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	switch cmd.Type {
 	case "login_user":
 		return nil, c.LoginUser(cmd)
@@ -352,12 +346,6 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (map[string]interface{}
 	}
 }
 
-type CommonResponse struct {
-	Code    int                      `json:"code"`
-	Data    []map[string]interface{} `json:"data"`
-	Message string                   `json:"message"`
-}
-
 // ShowCurrentUser shows the current logged-in user information
 // TODO: Implement showing current user information when API is available
 func (c *RAGFlowClient) ShowCurrentUser(cmd *Command) (map[string]interface{}, error) {
@@ -365,4 +353,38 @@ func (c *RAGFlowClient) ShowCurrentUser(cmd *Command) (map[string]interface{}, e
 	// Currently there is no /admin/user/info or /user/info API available
 	// The /admin/auth API only verifies authorization, does not return user info
 	return nil, fmt.Errorf("command 'SHOW CURRENT USER' is not yet implemented")
+}
+
+type ResponseIf interface {
+	Type() string
+}
+
+type CommonResponse struct {
+	Code    int                      `json:"code"`
+	Data    []map[string]interface{} `json:"data"`
+	Message string                   `json:"message"`
+}
+
+func (r *CommonResponse) Type() string {
+	return "common"
+}
+
+type SimpleResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func (r *SimpleResponse) Type() string {
+	return "login"
+}
+
+type BenchmarkResponse struct {
+	Code         int     `json:"code"`
+	Duration     float64 `json:"duration"`
+	SuccessCount int     `json:"success_count"`
+	FailureCount int     `json:"failure_count"`
+}
+
+func (r *BenchmarkResponse) Type() string {
+	return "benchmark"
 }

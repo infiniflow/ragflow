@@ -7,7 +7,7 @@ import (
 
 // PingServer pings the server to check if it's alive
 // Returns benchmark result map if iterations > 1, otherwise prints status
-func (c *RAGFlowClient) PingAdmin(cmd *Command) (map[string]interface{}, error) {
+func (c *RAGFlowClient) PingAdmin(cmd *Command) (ResponseIf, error) {
 	// Get iterations from command params (for benchmark)
 	iterations := 1
 	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
@@ -16,11 +16,7 @@ func (c *RAGFlowClient) PingAdmin(cmd *Command) (map[string]interface{}, error) 
 
 	if iterations > 1 {
 		// Benchmark mode: multiple iterations
-		result, err := c.HTTPClient.RequestWithIterations("GET", "/admin/ping", false, "web", nil, nil, iterations)
-		if err != nil {
-			return nil, err
-		}
-		return result, nil
+		return c.HTTPClient.RequestWithIterations("GET", "/admin/ping", false, "web", nil, nil, iterations)
 	}
 
 	// Single ping mode
@@ -40,18 +36,12 @@ func (c *RAGFlowClient) PingAdmin(cmd *Command) (map[string]interface{}, error) 
 		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
 	}
 
-	if result.Code == 0 && result.Message == "pong" {
-		fmt.Println("Server is alive")
-	} else {
-		fmt.Printf("Error: %d\n", result.Code)
-	}
-
-	return nil, nil
+	return &result, nil
 }
 
 // ListUsers lists all users (admin mode only)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) ListUsers(cmd *Command) (map[string]interface{}, error) {
+func (c *RAGFlowClient) ListUsers(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
@@ -89,100 +79,94 @@ func (c *RAGFlowClient) ListUsers(cmd *Command) (map[string]interface{}, error) 
 		delete(user, "create_date")
 	}
 
-	PrintTableSimple(result.Data)
-	return nil, nil
+	//PrintTableSimple(result.Data)
+	return &result, nil
 }
 
 // GrantAdmin grants admin privileges to a user (admin mode only)
-func (c *RAGFlowClient) GrantAdmin(cmd *Command) error {
+func (c *RAGFlowClient) GrantAdmin(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
-		return fmt.Errorf("this command is only allowed in ADMIN mode")
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
 	if !ok {
-		return fmt.Errorf("user_name not provided")
+		return nil, fmt.Errorf("user_name not provided")
 	}
 
 	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/users/%s/admin", userName), true, "admin", nil, nil)
 	if err != nil {
-		return fmt.Errorf("failed to grant admin: %w", err)
+		return nil, fmt.Errorf("failed to grant admin: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("failed to grant admin: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to grant admin: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return fmt.Errorf("invalid JSON response: %w", err)
+	var result SimpleResponse
+
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("grant admin failed: invalid JSON (%w)", err)
 	}
 
-	code, ok := resJSON["code"].(float64)
-	if !ok || code != 0 {
-		msg, _ := resJSON["message"].(string)
-		return fmt.Errorf("failed to grant admin: %s", msg)
+	if result.Code != 0 {
+		return nil, fmt.Errorf("grant admin failed: %s", result.Message)
 	}
-
-	fmt.Printf("Admin role granted to user: %s\n", userName)
-	return nil
+	return &result, nil
 }
 
 // RevokeAdmin revokes admin privileges from a user (admin mode only)
-func (c *RAGFlowClient) RevokeAdmin(cmd *Command) error {
+func (c *RAGFlowClient) RevokeAdmin(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
-		return fmt.Errorf("this command is only allowed in ADMIN mode")
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
 	if !ok {
-		return fmt.Errorf("user_name not provided")
+		return nil, fmt.Errorf("user_name not provided")
 	}
 
 	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/users/%s/admin", userName), true, "admin", nil, nil)
 	if err != nil {
-		return fmt.Errorf("failed to revoke admin: %w", err)
+		return nil, fmt.Errorf("failed to revoke admin: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("failed to revoke admin: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to revoke admin: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return fmt.Errorf("invalid JSON response: %w", err)
+	var result SimpleResponse
+
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("revoke admin failed: invalid JSON (%w)", err)
 	}
 
-	code, ok := resJSON["code"].(float64)
-	if !ok || code != 0 {
-		msg, _ := resJSON["message"].(string)
-		return fmt.Errorf("failed to revoke admin: %s", msg)
+	if result.Code != 0 {
+		return nil, fmt.Errorf("revoke admin failed: %s", result.Message)
 	}
-
-	fmt.Printf("Admin role revoked from user: %s\n", userName)
-	return nil
+	return &result, nil
 }
 
 // CreateUser creates a new user (admin mode only)
-func (c *RAGFlowClient) CreateUser(cmd *Command) error {
+func (c *RAGFlowClient) CreateUser(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
-		return fmt.Errorf("this command is only allowed in ADMIN mode")
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
 	if !ok {
-		return fmt.Errorf("user_name not provided")
+		return nil, fmt.Errorf("user_name not provided")
 	}
 
 	password, ok := cmd.Params["password"].(string)
 	if !ok {
-		return fmt.Errorf("password not provided")
+		return nil, fmt.Errorf("password not provided")
 	}
 
 	// Encrypt password using RSA
 	encryptedPassword, err := EncryptPassword(password)
 	if err != nil {
-		return fmt.Errorf("failed to encrypt password: %w", err)
+		return nil, fmt.Errorf("failed to encrypt password: %w", err)
 	}
 
 	payload := map[string]interface{}{
@@ -193,47 +177,44 @@ func (c *RAGFlowClient) CreateUser(cmd *Command) error {
 
 	resp, err := c.HTTPClient.Request("POST", "/admin/users", true, "admin", nil, payload)
 	if err != nil {
-		return fmt.Errorf("failed to create user: %w", err)
+		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("failed to create user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to create user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return fmt.Errorf("invalid JSON response: %w", err)
+	var result SimpleResponse
+
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("create user failed: invalid JSON (%w)", err)
 	}
 
-	code, ok := resJSON["code"].(float64)
-	if !ok || code != 0 {
-		msg, _ := resJSON["message"].(string)
-		return fmt.Errorf("failed to create user: %s", msg)
+	if result.Code != 0 {
+		return nil, fmt.Errorf("create user failed: %s", result.Message)
 	}
-
-	fmt.Printf("User created successfully: %s\n", userName)
-	return nil
+	return &result, nil
 }
 
 // ActivateUser activates or deactivates a user (admin mode only)
-func (c *RAGFlowClient) ActivateUser(cmd *Command) error {
+func (c *RAGFlowClient) ActivateUser(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
-		return fmt.Errorf("this command is only allowed in ADMIN mode")
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
 	if !ok {
-		return fmt.Errorf("user_name not provided")
+		return nil, fmt.Errorf("user_name not provided")
 	}
 
 	activateStatus, ok := cmd.Params["activate_status"].(string)
 	if !ok {
-		return fmt.Errorf("activate_status not provided")
+		return nil, fmt.Errorf("activate_status not provided")
 	}
 
 	// Validate activate_status
 	if activateStatus != "on" && activateStatus != "off" {
-		return fmt.Errorf("activate_status must be 'on' or 'off'")
+		return nil, fmt.Errorf("activate_status must be 'on' or 'off'")
 	}
 
 	payload := map[string]interface{}{
@@ -242,48 +223,45 @@ func (c *RAGFlowClient) ActivateUser(cmd *Command) error {
 
 	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/users/%s/activate", userName), true, "admin", nil, payload)
 	if err != nil {
-		return fmt.Errorf("failed to update user activate status: %w", err)
+		return nil, fmt.Errorf("failed to update user activate status: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("failed to update user activate status: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to update user activate status: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return fmt.Errorf("invalid JSON response: %w", err)
+	var result SimpleResponse
+
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("create user failed: invalid JSON (%w)", err)
 	}
 
-	code, ok := resJSON["code"].(float64)
-	if !ok || code != 0 {
-		msg, _ := resJSON["message"].(string)
-		return fmt.Errorf("failed to update user activate status: %s", msg)
+	if result.Code != 0 {
+		return nil, fmt.Errorf("create user failed: %s", result.Message)
 	}
-
-	fmt.Printf("User '%s' activate status set to '%s'\n", userName, activateStatus)
-	return nil
+	return &result, nil
 }
 
 // AlterUserPassword changes a user's password (admin mode only)
-func (c *RAGFlowClient) AlterUserPassword(cmd *Command) error {
+func (c *RAGFlowClient) AlterUserPassword(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
-		return fmt.Errorf("this command is only allowed in ADMIN mode")
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
 	if !ok {
-		return fmt.Errorf("user_name not provided")
+		return nil, fmt.Errorf("user_name not provided")
 	}
 
 	password, ok := cmd.Params["password"].(string)
 	if !ok {
-		return fmt.Errorf("password not provided")
+		return nil, fmt.Errorf("password not provided")
 	}
 
 	// Encrypt password using RSA
 	encryptedPassword, err := EncryptPassword(password)
 	if err != nil {
-		return fmt.Errorf("failed to encrypt password: %w", err)
+		return nil, fmt.Errorf("failed to encrypt password: %w", err)
 	}
 
 	payload := map[string]interface{}{
@@ -292,26 +270,23 @@ func (c *RAGFlowClient) AlterUserPassword(cmd *Command) error {
 
 	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/users/%s/password", userName), true, "admin", nil, payload)
 	if err != nil {
-		return fmt.Errorf("failed to change user password: %w", err)
+		return nil, fmt.Errorf("failed to change user password: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("failed to change user password: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to change user password: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return fmt.Errorf("invalid JSON response: %w", err)
+	var result SimpleResponse
+
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("create user failed: invalid JSON (%w)", err)
 	}
 
-	code, ok := resJSON["code"].(float64)
-	if !ok || code != 0 {
-		msg, _ := resJSON["message"].(string)
-		return fmt.Errorf("failed to change user password: %s", msg)
+	if result.Code != 0 {
+		return nil, fmt.Errorf("create user failed: %s", result.Message)
 	}
-
-	fmt.Printf("Password changed for user: %s\n", userName)
-	return nil
+	return &result, nil
 }
 
 type listServicesResponse struct {
@@ -322,7 +297,7 @@ type listServicesResponse struct {
 
 // ListServices lists all services (admin mode only)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) ListServices(cmd *Command) (map[string]interface{}, error) {
+func (c *RAGFlowClient) ListServices(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
@@ -365,36 +340,33 @@ func (c *RAGFlowClient) ListServices(cmd *Command) (map[string]interface{}, erro
 }
 
 // DropUser deletes a user (admin mode only)
-func (c *RAGFlowClient) DropUser(cmd *Command) error {
+func (c *RAGFlowClient) DropUser(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
-		return fmt.Errorf("this command is only allowed in ADMIN mode")
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
 	if !ok {
-		return fmt.Errorf("user_name not provided")
+		return nil, fmt.Errorf("user_name not provided")
 	}
 
 	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/users/%s", userName), true, "admin", nil, nil)
 	if err != nil {
-		return fmt.Errorf("failed to delete user: %w", err)
+		return nil, fmt.Errorf("failed to delete user: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("failed to delete user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to delete user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return fmt.Errorf("invalid JSON response: %w", err)
+	var result SimpleResponse
+
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("create user failed: invalid JSON (%w)", err)
 	}
 
-	code, ok := resJSON["code"].(float64)
-	if !ok || code != 0 {
-		msg, _ := resJSON["message"].(string)
-		return fmt.Errorf("failed to delete user: %s", msg)
+	if result.Code != 0 {
+		return nil, fmt.Errorf("create user failed: %s", result.Message)
 	}
-
-	fmt.Printf("User deleted: %s\n", userName)
-	return nil
+	return &result, nil
 }

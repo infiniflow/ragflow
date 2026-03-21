@@ -1,13 +1,14 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
 
 // PingServer pings the server to check if it's alive
 // Returns benchmark result map if iterations > 1, otherwise prints status
-func (c *RAGFlowClient) PingServer(cmd *Command) (map[string]interface{}, error) {
+func (c *RAGFlowClient) PingServer(cmd *Command) (ResponseIf, error) {
 	// Get iterations from command params (for benchmark)
 	iterations := 1
 	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
@@ -16,11 +17,7 @@ func (c *RAGFlowClient) PingServer(cmd *Command) (map[string]interface{}, error)
 
 	if iterations > 1 {
 		// Benchmark mode: multiple iterations
-		result, err := c.HTTPClient.RequestWithIterations("GET", "/system/ping", false, "web", nil, nil, iterations)
-		if err != nil {
-			return nil, err
-		}
-		return result, nil
+		return c.HTTPClient.RequestWithIterations("GET", "/system/ping", false, "web", nil, nil, iterations)
 	}
 
 	// Single ping mode
@@ -31,17 +28,25 @@ func (c *RAGFlowClient) PingServer(cmd *Command) (map[string]interface{}, error)
 		return nil, err
 	}
 
-	if resp.StatusCode == 200 && string(resp.Body) == "pong" {
-		fmt.Println("Server is alive")
-	} else {
-		fmt.Printf("Error: %d\n", resp.StatusCode)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to ping: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
-	return nil, nil
+
+	var result SimpleResponse
+
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("ping server failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("ping server failed: %s", result.Message)
+	}
+	return &result, nil
 }
 
 // ListUserDatasets lists datasets for current user (user mode)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (map[string]interface{}, error) {
+func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -104,7 +109,7 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (map[string]interface{}, 
 
 // ListDatasets lists datasets for a specific user (admin mode)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) ListDatasets(cmd *Command) (map[string]interface{}, error) {
+func (c *RAGFlowClient) ListDatasets(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
@@ -228,7 +233,7 @@ func formatEmptyArray(v interface{}) string {
 
 // SearchOnDatasets searches for chunks in specified datasets
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (map[string]interface{}, error) {
+func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}

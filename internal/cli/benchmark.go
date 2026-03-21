@@ -90,29 +90,20 @@ func (c *RAGFlowClient) runBenchmarkSingle(concurrency, iterations int, nestedCm
 	supportsNative := false
 	if iterations > 1 {
 		result, err := c.ExecuteCommand(nestedCmd)
+		// convert result to BenchmarkResponse
+		benchmarkResponse := result.(*BenchmarkResponse)
 		if err == nil && result != nil {
 			// Command supports benchmark natively
 			supportsNative = true
-			duration, _ := result["duration"].(float64)
-			respList, _ := result["response_list"].([]*Response)
-			responseList = respList
-
-			// Calculate and print results
-			successCount := 0
-			for _, resp := range responseList {
-				if isSuccess(resp, commandType) {
-					successCount++
-				}
-			}
 
 			qps := float64(0)
-			if duration > 0 {
-				qps = float64(iterations) / duration
+			if benchmarkResponse.Duration > 0 {
+				qps = float64(iterations) / benchmarkResponse.Duration
 			}
 
 			fmt.Printf("command: %s, Concurrency: %d, iterations: %d\n", commandType, concurrency, iterations)
 			fmt.Printf("total duration: %.4fs, QPS: %.2f, COMMAND_COUNT: %d, SUCCESS: %d, FAILURE: %d\n",
-				duration, qps, iterations, successCount, iterations-successCount)
+				benchmarkResponse.Duration, qps, iterations, benchmarkResponse.SuccessCount, benchmarkResponse.FailureCount)
 			return nil
 		}
 	}
@@ -123,23 +114,23 @@ func (c *RAGFlowClient) runBenchmarkSingle(concurrency, iterations int, nestedCm
 		delete(nestedCmd.Params, "iterations")
 
 		for i := 0; i < iterations; i++ {
-			singleResult, err := c.ExecuteCommand(nestedCmd)
-			if err != nil {
-				// Command failed, add a failed response
-				responseList = append(responseList, &Response{StatusCode: 0})
-				continue
-			}
+			//singleResult, err := c.ExecuteCommand(nestedCmd)
+			//if err != nil {
+			//	// Command failed, add a failed response
+			//	responseList = append(responseList, &Response{StatusCode: 0})
+			//	continue
+			//}
 
 			// For commands that return a single response (like ping with iterations=1)
-			if singleResult != nil {
-				if respList, ok := singleResult["response_list"].([]*Response); ok {
-					responseList = append(responseList, respList...)
-				}
-			} else {
-				// Command executed successfully but returned no data
-				// Mark as success for now
-				responseList = append(responseList, &Response{StatusCode: 200, Body: []byte("pong")})
-			}
+			//if singleResult != nil {
+			//	if respList, ok := singleResult["response_list"].([]*Response); ok {
+			//		responseList = append(responseList, respList...)
+			//	}
+			//} else {
+			//	// Command executed successfully but returned no data
+			//	// Mark as success for now
+			//	responseList = append(responseList, &Response{StatusCode: 200, Body: []byte("pong")})
+			//}
 		}
 	}
 
