@@ -855,7 +855,7 @@ print("Async bulk parsing cancelled.")
 ### Add chunk
 
 ```python
-Document.add_chunk(content:str, important_keywords:list[str] = [], image_base64:str = None) -> Chunk
+Document.add_chunk(content:str, important_keywords:list[str] = [], image_base64:str = None, *, tag_kwd:list[str] = []) -> Chunk
 ```
 
 Adds a chunk to the current document.
@@ -874,6 +874,10 @@ The key terms or phrases to tag with the chunk.
 
 A base64-encoded image to associate with the chunk. If the chunk already has an image, the new image will be vertically concatenated below the existing one.
 
+##### tag_kwd: `list[str]`
+
+Tag keywords to associate with the chunk.
+
 #### Returns
 
 - Success: A `Chunk` object.
@@ -884,6 +888,7 @@ A `Chunk` object contains the following attributes:
 - `id`: `str`: The chunk ID.
 - `content`: `str` The text content of the chunk.
 - `important_keywords`: `list[str]` A list of key terms or phrases tagged with the chunk.
+- `tag_kwd`: `list[str]` A list of tag keywords associated with the chunk.
 - `image_id`: `str` The image ID associated with the chunk (empty string if no image).
 - `create_time`: `str` The time when the chunk was created (added to the document).
 - `create_timestamp`: `float` The timestamp representing the creation time of the chunk, expressed in seconds since January 1, 1970.
@@ -1024,6 +1029,7 @@ A dictionary representing the attributes to update, with the following keys:
 
 - `"content"`: `str` The text content of the chunk.
 - `"important_keywords"`: `list[str]` A list of key terms or phrases to tag with the chunk.
+- `"tag_kwd"`: `list[str]` A list of tag keywords to associate with the chunk.
 - `"available"`: `bool` The chunk's availability status in the dataset. Value options:
   - `False`: Unavailable
   - `True`: Available (default)
