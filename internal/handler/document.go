@@ -203,11 +203,21 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 // @Param page query int false "page number" default(1)
 // @Param page_size query int false "items per page" default(10)
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/documents [get]
+// @Router /api/v1/document/list [post]
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	kbID := c.Query("kb_id")
+	if kbID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    1,
+			"message": "Lack of KB ID",
+			"data":    false,
+		})
 		return
 	}
 
@@ -221,20 +231,41 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		pageSize = 10
 	}
 
-	documents, total, err := h.documentService.ListDocuments(page, pageSize)
+	// Use kbID to filter documents
+	documents, total, err := h.documentService.ListDocumentsByKBID(kbID, page, pageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to get documents",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    1,
+			"message": "failed to get documents",
+			"data":    map[string]interface{}{"total": 0, "docs": []interface{}{}},
 		})
 		return
 	}
 
+	docs := make([]map[string]interface{}, 0, len(documents))
+	for _, doc := range documents {
+		metaFields, err := h.documentService.GetDocumentMetadataByID(doc.ID)
+		if err != nil {
+			metaFields = make(map[string]interface{})
+		}
+
+		docs = append(docs, map[string]interface{}{
+			"id":          doc.ID,
+			"name":        doc.Name,
+			"size":        doc.Size,
+			"type":        doc.Type,
+			"status":      doc.Status,
+			"created_at":  doc.CreatedAt,
+			"meta_fields": metaFields,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
 		"data": gin.H{
-			"items":     documents,
-			"total":     total,
-			"page":      page,
-			"page_size": pageSize,
+			"total": total,
+			"docs":  docs,
 		},
 	})
 }
@@ -290,6 +321,54 @@ func (h *DocumentHandler) GetDocumentsByAuthorID(c *gin.Context) {
 			"total":     total,
 			"page":      page,
 			"page_size": pageSize,
+		},
+	})
+}
+
+// MetadataSummary handles the metadata summary request
+func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var requestBody struct {
+		KBID   string   `json:"kb_id" binding:"required"`
+		DocIDs []string `json:"doc_ids"`
+	}
+
+	if err := c.ShouldBindJSON(&requestBody); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "kb_id is required",
+		})
+		return
+	}
+
+	kbID := requestBody.KBID
+	if kbID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "kb_id is required",
+		})
+		return
+	}
+
+	summary, err := h.documentService.GetMetadataSummary(kbID, requestBody.DocIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    1,
+			"message": "Failed to get metadata summary: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data": gin.H{
+			"summary": summary,
 		},
 	})
 }
