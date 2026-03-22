@@ -42,6 +42,7 @@ from rag.nlp import search
 import memory.utils.es_conn as memory_es_conn
 import memory.utils.infinity_conn as memory_infinity_conn
 import memory.utils.ob_conn as memory_ob_conn
+from memory.backend import create_memory_backend
 
 LLM = None
 LLM_FACTORY = None
@@ -81,10 +82,12 @@ OAUTH_CONFIG = None
 DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
 DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
 DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
+MEMORY_BACKEND = os.getenv("MEMORY_BACKEND", "default")
 
 
 docStoreConn = None
 msgStoreConn = None
+memoryBackend = None
 
 retriever = None
 kg_retriever = None
@@ -257,10 +260,11 @@ def init_settings():
     FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, docStoreConn, ES, OB, OS, INFINITY
+    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, MEMORY_BACKEND, docStoreConn, ES, OB, OS, INFINITY
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch").strip()
     DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
     DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
+    MEMORY_BACKEND = os.environ.get("MEMORY_BACKEND", "default").strip()
     lower_case_doc_engine = DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
         ES = get_base_config("es", {})
@@ -284,12 +288,12 @@ def init_settings():
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
-    global msgStoreConn
+    global msgStoreConn, memoryBackend
     # use the same engine for message store
-    if DOC_ENGINE == "elasticsearch":
+    if lower_case_doc_engine == "elasticsearch":
         ES = get_base_config("es", {})
         msgStoreConn = memory_es_conn.ESConnection()
-    elif DOC_ENGINE == "infinity":
+    elif lower_case_doc_engine == "infinity":
         INFINITY = get_base_config("infinity", {
             "uri": "infinity:23817",
             "postgres_port": 5432,
@@ -298,6 +302,15 @@ def init_settings():
         msgStoreConn = memory_infinity_conn.InfinityConnection()
     elif lower_case_doc_engine in ["oceanbase", "seekdb"]:
         msgStoreConn = memory_ob_conn.OBConnection()
+    else:
+        raise Exception(f"Not supported memory engine: {DOC_ENGINE}")
+
+    memoryBackend = create_memory_backend(
+        doc_engine=DOC_ENGINE,
+        backend_mode=MEMORY_BACKEND,
+        connector=msgStoreConn,
+    )
+    logging.info("Memory backend initialized: mode=%s engine=%s", MEMORY_BACKEND, DOC_ENGINE)
 
     global AZURE, S3, MINIO, OSS, GCS
     if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:

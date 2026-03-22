@@ -19,7 +19,14 @@ from api.db.services.memory_service import MemoryService
 from api.db.services.user_service import UserTenantService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.task_service import TaskService
-from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default, queue_save_to_memory_task, query_message
+from api.db.joint_services.memory_message_service import (
+    get_memory_size_cache,
+    judge_system_prompt_is_default,
+    queue_save_to_memory_task,
+    query_message,
+    query_graph_message,
+    get_memory_backend_capabilities,
+)
 from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
 from memory.services.messages import MessageService
@@ -301,6 +308,14 @@ async def search_message(filter_dict: dict, params: dict):
     }
     """
     return query_message(filter_dict, params)
+
+
+async def search_graph_message(memory_ids: list[str], query: str, top_n: int = 5):
+    return query_graph_message(memory_ids, query, top_n)
+
+
+async def get_backend_capabilities():
+    return get_memory_backend_capabilities()
 
 
 async def get_messages(memory_ids: list[str], agent_id: str = "", session_id: str = "", limit: int = 10):

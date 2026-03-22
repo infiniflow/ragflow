@@ -160,6 +160,10 @@ dependencies = [
 ]
 
 [dependency-groups]
+powermem = [
+    "powermem",
+]
+
 test = [
     "hypothesis>=6.132.0",
     "openpyxl>=3.1.5",

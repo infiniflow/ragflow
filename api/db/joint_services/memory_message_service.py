@@ -195,7 +195,7 @@ async def embed_and_save(memory, message_list: list[dict], task_id: str=None):
             return False, error_msg
 
     new_msg_size = sum([MessageService.calculate_message_size(m) for m in message_list])
-    current_memory_size = get_memory_size_cache(memory.tenant_id, memory.id)
+    current_memory_size = get_memory_size_cache(memory.id, memory.tenant_id)
     if new_msg_size + current_memory_size > memory.memory_size:
         size_to_delete = current_memory_size + new_msg_size - memory.memory_size
         if memory.forgetting_policy == "FIFO":
@@ -258,6 +258,16 @@ def query_message(filter_dict: dict, params: dict):
     fusion_expr = FusionExpr("weighted_sum", params["top_n"], {"weights": ",".join([str(1 - keywords_similarity_weight), str(keywords_similarity_weight)])})
 
     return MessageService.search_message(memory_ids, condition_dict, uids, [match_text, match_dense, fusion_expr], params["top_n"])
+
+
+def query_graph_message(memory_ids: list[str], query: str, top_n: int = 5):
+    if not memory_ids or not query:
+        return []
+    return MessageService.graph_search(memory_ids=memory_ids, query=query, top_n=top_n)
+
+
+def get_memory_backend_capabilities():
+    return MessageService.backend_capabilities()
 
 
 def init_message_id_sequence():

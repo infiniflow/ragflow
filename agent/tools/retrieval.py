@@ -284,6 +284,10 @@ class Retrieval(ToolBase, ABC):
             "keywords_similarity_weight": self._param.keywords_similarity_weight,
             "top_n": self._param.top_n
         })
+        if self._param.use_kg:
+            graph_messages = memory_message_service.query_graph_message(memory_ids, query, self._param.top_n)
+            if graph_messages:
+                message_list = [*graph_messages, *message_list]
         if not message_list:
             self.set_output("formalized_content", self._param.empty_response)
             return ""
