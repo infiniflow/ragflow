@@ -88,6 +88,8 @@ def message_fit_in(msg, max_length=4000):
 
     ll = num_tokens_from_string(msg_[0]["content"])
     ll2 = num_tokens_from_string(msg_[-1]["content"])
+    if ll + ll2 == 0:
+        return 0, msg
     if ll / (ll + ll2) > 0.8:
         m = msg_[0]["content"]
         m = encoder.decode(encoder.encode(m)[: max_length - ll2])
@@ -95,7 +97,7 @@ def message_fit_in(msg, max_length=4000):
         return max_length, msg
 
     m = msg_[-1]["content"]
-    m = encoder.decode(encoder.encode(m)[: max_length - ll2])
+    m = encoder.decode(encoder.encode(m)[: max_length - ll])
     msg[-1]["content"] = m
     return max_length, msg
 
