@@ -215,6 +215,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenOn, Value: ident}
 	case "SET":
 		return Token{Type: TokenSet, Value: ident}
+	case "UNSET":
+		return Token{Type: TokenUnset, Value: ident}
 	case "RESET":
 		return Token{Type: TokenReset, Value: ident}
 	case "VERSION":

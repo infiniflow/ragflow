@@ -31,12 +31,13 @@ type HTTPClient struct {
 	Host           string
 	Port           int
 	APIVersion     string
-	APIKey         string
+	APIToken       string
 	LoginToken     string
 	ConnectTimeout time.Duration
 	ReadTimeout    time.Duration
 	VerifySSL      bool
 	client         *http.Client
+	useAPIToken    bool
 }
 
 // NewHTTPClient creates a new HTTP client
@@ -85,8 +86,8 @@ func (c *HTTPClient) Headers(authKind string, extra map[string]string) map[strin
 	headers := make(map[string]string)
 	switch authKind {
 	case "api":
-		if c.APIKey != "" {
-			headers["Authorization"] = fmt.Sprintf("Bearer %s", c.APIKey)
+		if c.APIToken != "" {
+			headers["Authorization"] = fmt.Sprintf("Bearer %s", c.APIToken)
 		}
 	case "web", "admin":
 		if c.LoginToken != "" {
@@ -118,6 +119,68 @@ func (r *Response) JSON() (map[string]interface{}, error) {
 
 // Request makes an HTTP request
 func (c *HTTPClient) Request(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
+	url := c.BuildURL(path, useAPIBase)
+	mergedHeaders := c.Headers(authKind, headers)
+
+	var body io.Reader
+	if jsonBody != nil {
+		jsonData, err := json.Marshal(jsonBody)
+		if err != nil {
+			return nil, err
+		}
+		body = bytes.NewReader(jsonData)
+		if mergedHeaders == nil {
+			mergedHeaders = make(map[string]string)
+		}
+		mergedHeaders["Content-Type"] = "application/json"
+	}
+
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range mergedHeaders {
+		req.Header.Set(k, v)
+	}
+
+	var resp *http.Response
+	startTime := time.Now()
+	resp, err = c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	duration := time.Since(startTime).Seconds()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Response{
+		StatusCode: resp.StatusCode,
+		Body:       respBody,
+		Headers:    resp.Header.Clone(),
+		Duration:   duration,
+	}, nil
+}
+
+// Request makes an HTTP request
+func (c *HTTPClient) RequestDuelURL(method, webPath string, apiPath string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
+	var path string
+	var useAPIBase bool
+	var authKind string
+	if c.useAPIToken {
+		path = apiPath
+		useAPIBase = true
+		authKind = "api"
+	} else {
+		path = webPath
+		useAPIBase = false
+		authKind = "web"
+	}
+
 	url := c.BuildURL(path, useAPIBase)
 	mergedHeaders := c.Headers(authKind, headers)
 

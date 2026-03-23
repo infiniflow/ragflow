@@ -97,6 +97,7 @@ const (
 	TokenPing
 	TokenToken
 	TokenTokens
+	TokenUnset
 
 	// Literals
 	TokenIdentifier

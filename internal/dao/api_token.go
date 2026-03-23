@@ -47,7 +47,7 @@ func (dao *APITokenDAO) DeleteByTenantID(tenantID string) (int64, error) {
 }
 
 // GetByToken gets API token by access key
-func (dao *APITokenDAO) GetUserByAccessKey(token string) (*model.APIToken, error) {
+func (dao *APITokenDAO) GetUserByAPIToken(token string) (*model.APIToken, error) {
 	var apiToken model.APIToken
 	err := DB.Where("token = ?", token).First(&apiToken).Error
 	if err != nil {

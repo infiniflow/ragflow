@@ -924,10 +924,10 @@ func (s *UserService) SetTenantInfo(userID string, req *SetTenantInfoRequest) er
 	return nil
 }
 
-// GetUserByAccessKey gets user by access key from Authorization header
+// GetUserByAPIToken gets user by access key from Authorization header
 // This is used for API token authentication
 // The authorization parameter should be in format: "Bearer <token>" or just "<token>"
-func (s *UserService) GetUserByAccessKey(authorization string) (*model.User, common.ErrorCode, error) {
+func (s *UserService) GetUserByAPIToken(authorization string) (*model.User, common.ErrorCode, error) {
 	if authorization == "" {
 		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
 	}
@@ -946,7 +946,7 @@ func (s *UserService) GetUserByAccessKey(authorization string) (*model.User, com
 
 	// Query API token from database
 	apiTokenDAO := dao.NewAPITokenDAO()
-	userToken, err := apiTokenDAO.GetUserByAccessKey(token)
+	userToken, err := apiTokenDAO.GetUserByAPIToken(token)
 	if err != nil {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token")
 	}

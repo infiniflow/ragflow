@@ -36,7 +36,7 @@ type ConfigFile struct {
 	Host     string `yaml:"host"`
 	User     string `yaml:"user"`
 	Password string `yaml:"password"`
-	APIKey   string `yaml:"api_key"`
+	APIToken string `yaml:"api_token"`
 }
 
 // ConnectionArgs holds the parsed command line arguments
@@ -195,10 +195,10 @@ func buildArgsFromConfig(config *ConfigFile, remainingArgs []string) (*Connectio
 	// Apply auth info from config
 	result.Username = config.User
 	result.Password = config.Password
-	result.Key = config.APIKey
+	result.Key = config.APIToken
 
 	// Determine mode: if config has auth info, use user mode
-	if config.User != "" || config.APIKey != "" {
+	if config.User != "" || config.APIToken != "" {
 		result.Type = "user"
 	} else {
 		result.Type = "admin"
@@ -286,7 +286,7 @@ Configuration File:
     host: 127.0.0.1:9380
     user: your-email@example.com
     password: your-password
-    api_key: your-api-key
+    api_token: your-api-token
 
   When using a config file, you cannot use other command line flags except -help.
   The command line is only for the SQL command.
@@ -549,6 +549,9 @@ Commands (User Mode):
   LIST TOKENS;                                           - List API tokens
   CREATE TOKEN;                                          - Create new API token
   DROP TOKEN 'token_value';                              - Delete an API token
+  SET TOKEN 'token_value';                               - Set and validate API token
+  SHOW TOKEN;                                            - Show current API token
+  UNSET TOKEN;                                           - Remove current API token
 
 Commands (Admin Mode):
   LIST USERS;                                            - List all users

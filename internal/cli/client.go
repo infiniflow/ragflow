@@ -350,6 +350,12 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListTokens(cmd)
 	case "drop_token":
 		return c.DropToken(cmd)
+	case "set_token":
+		return c.SetToken(cmd)
+	case "show_token":
+		return c.ShowToken(cmd)
+	case "unset_token":
+		return c.UnsetToken(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)

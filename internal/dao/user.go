@@ -45,7 +45,7 @@ func (dao *UserDAO) GetByID(id uint) (*model.User, error) {
 
 func (dao *UserDAO) GetByTenantID(tenantID string) (*model.User, error) {
 	var user model.User
-	err := DB.First(&user, tenantID).Error
+	err := DB.Where("id = ?", tenantID).First(&user).Error
 	if err != nil {
 		return nil, err
 	}

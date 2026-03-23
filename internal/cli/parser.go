@@ -102,6 +102,8 @@ func (p *Parser) parseSQLCommand() (*Command, error) {
 		return p.parseRevokeCommand()
 	case TokenSet:
 		return p.parseSetCommand()
+	case TokenUnset:
+		return p.parseUnsetCommand()
 	case TokenReset:
 		return p.parseResetCommand()
 	case TokenGenerate:
@@ -454,6 +456,12 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 			return nil, err
 		}
 		return NewCommand("show_version"), nil
+	case TokenToken:
+		p.nextToken()
+		if err := p.expectSemicolon(); err != nil {
+			return nil, err
+		}
+		return NewCommand("show_token"), nil
 	case TokenCurrent:
 		p.nextToken()
 		if p.curToken.Type != TokenUser {
@@ -1209,6 +1217,9 @@ func (p *Parser) parseSetCommand() (*Command, error) {
 	if p.curToken.Type == TokenDefault {
 		return p.parseSetDefault()
 	}
+	if p.curToken.Type == TokenToken {
+		return p.parseSetToken()
+	}
 
 	return nil, fmt.Errorf("unknown SET target: %s", p.curToken.Value)
 }
@@ -1269,6 +1280,24 @@ func (p *Parser) parseSetDefault() (*Command, error) {
 	cmd := NewCommand("set_default_model")
 	cmd.Params["model_type"] = modelType
 	cmd.Params["model_id"] = modelID
+
+	p.nextToken()
+	if err := p.expectSemicolon(); err != nil {
+		return nil, err
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseSetToken() (*Command, error) {
+	p.nextToken() // consume TOKEN
+
+	tokenValue, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("set_token")
+	cmd.Params["token"] = tokenValue
 
 	p.nextToken()
 	if err := p.expectSemicolon(); err != nil {
@@ -1519,6 +1548,8 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 		return p.parseDropCommand()
 	case TokenSet:
 		return p.parseSetCommand()
+	case TokenUnset:
+		return p.parseUnsetCommand()
 	case TokenReset:
 		return p.parseResetCommand()
 	case TokenList:
@@ -1598,6 +1629,20 @@ func (p *Parser) parseRestartCommand() (*Command, error) {
 		return nil, err
 	}
 	return cmd, nil
+}
+
+func (p *Parser) parseUnsetCommand() (*Command, error) {
+	p.nextToken() // consume UNSET
+
+	if p.curToken.Type != TokenToken {
+		return nil, fmt.Errorf("expected TOKEN after UNSET")
+	}
+	p.nextToken()
+
+	if err := p.expectSemicolon(); err != nil {
+		return nil, err
+	}
+	return NewCommand("unset_token"), nil
 }
 
 func tokenTypeToString(t int) string {

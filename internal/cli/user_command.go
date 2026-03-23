@@ -467,3 +467,105 @@ func (c *RAGFlowClient) DropToken(cmd *Command) (ResponseIf, error) {
 
 	return &result, nil
 }
+
+// SetToken sets the API token after validating it
+func (c *RAGFlowClient) SetToken(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	token, ok := cmd.Params["token"].(string)
+	if !ok {
+		return nil, fmt.Errorf("token not provided")
+	}
+
+	// Save current token to restore if validation fails
+	savedToken := c.HTTPClient.APIToken
+	savedUseAPIToken := c.HTTPClient.useAPIToken
+
+	// Set the new token temporarily for validation
+	c.HTTPClient.APIToken = token
+	c.HTTPClient.useAPIToken = true
+
+	// Validate token by calling list tokens API
+	resp, err := c.HTTPClient.Request("GET", "/tokens", true, "api", nil, nil)
+	if err != nil {
+		// Restore original token on error
+		c.HTTPClient.APIToken = savedToken
+		c.HTTPClient.useAPIToken = savedUseAPIToken
+		return nil, fmt.Errorf("failed to validate token: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		// Restore original token on error
+		c.HTTPClient.APIToken = savedToken
+		c.HTTPClient.useAPIToken = savedUseAPIToken
+		return nil, fmt.Errorf("token validation failed: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		// Restore original token on error
+		c.HTTPClient.APIToken = savedToken
+		c.HTTPClient.useAPIToken = savedUseAPIToken
+		return nil, fmt.Errorf("token validation failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		// Restore original token on error
+		c.HTTPClient.APIToken = savedToken
+		c.HTTPClient.useAPIToken = savedUseAPIToken
+		return nil, fmt.Errorf("token validation failed: %s", result.Message)
+	}
+
+	// Token is valid, keep it set
+	var successResult SimpleResponse
+	successResult.Code = 0
+	successResult.Message = "API token set successfully"
+
+	return &successResult, nil
+}
+
+// ShowToken displays the current API token
+func (c *RAGFlowClient) ShowToken(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	if c.HTTPClient.APIToken == "" {
+		return nil, fmt.Errorf("no API token is currently set")
+	}
+
+	//fmt.Printf("Token: %s\n", c.HTTPClient.APIToken)
+
+	var result CommonResponse
+	result.Code = 0
+	result.Message = ""
+	result.Data = []map[string]interface{}{
+		{
+			"token": c.HTTPClient.APIToken,
+		},
+	}
+
+	return &result, nil
+}
+
+// UnsetToken removes the current API token
+func (c *RAGFlowClient) UnsetToken(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	if c.HTTPClient.APIToken == "" {
+		return nil, fmt.Errorf("no API token is currently set")
+	}
+
+	c.HTTPClient.APIToken = ""
+	c.HTTPClient.useAPIToken = false
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "API token unset successfully"
+
+	return &result, nil
+}
