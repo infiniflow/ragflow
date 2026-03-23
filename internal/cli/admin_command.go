@@ -339,6 +339,50 @@ func (c *RAGFlowClient) ListServices(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// ListServices lists all services (admin mode only)
+// Returns (result_map, error) - result_map is non-nil for benchmark mode
+func (c *RAGFlowClient) ShowService(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	serviceIndex := cmd.Params["number"].(int)
+
+	// Check for benchmark iterations
+	iterations := 1
+	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
+		iterations = val
+	}
+
+	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+
+	if iterations > 1 {
+		// Benchmark mode - return raw result for benchmark stats
+		return c.HTTPClient.RequestWithIterations("GET", endPoint, true, "admin", nil, nil, iterations)
+	}
+
+	resp, err := c.HTTPClient.Request("GET", endPoint, true, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show service: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ShowResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("list user failed: %s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // DropUser deletes a user (admin mode only)
 func (c *RAGFlowClient) DropUser(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {

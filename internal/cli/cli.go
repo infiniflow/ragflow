@@ -439,7 +439,7 @@ func (c *CLI) Run() error {
 		}
 
 		if err = c.execute(input); err != nil {
-			fmt.Printf("CLI error: %v\n", err)
+			fmt.Printf("CLI error:` %v\n", err)
 		}
 	}
 

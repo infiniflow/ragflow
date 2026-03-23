@@ -323,6 +323,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AlterUserPassword(cmd)
 	case "drop_user":
 		return c.DropUser(cmd)
+	case "show_service":
+		return c.ShowService(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
@@ -441,4 +443,30 @@ func (r *BenchmarkResponse) PrintOut() {
 
 func (r *BenchmarkResponse) TimeCost() float64 {
 	return r.Duration
+}
+
+type ShowResponse struct {
+	Code     int                    `json:"code"`
+	Data     map[string]interface{} `json:"data"`
+	Message  string                 `json:"message"`
+	Duration float64
+}
+
+func (r *ShowResponse) Type() string {
+	return "show"
+}
+
+func (r *ShowResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ShowResponse) PrintOut() {
+	if r.Code == 0 {
+		table := make([]map[string]interface{}, 0)
+		table = append(table, r.Data)
+		PrintTableSimple(table)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s", r.Code, r.Message)
+	}
 }
