@@ -465,10 +465,9 @@ func (c *CLI) execute(input string) error {
 	// Execute the command using the client
 	var result ResponseIf
 	result, err = c.client.ExecuteCommand(cmd)
-	if result == nil {
-		return errors.New("null result")
+	if result != nil {
+		result.PrintStdout()
 	}
-	result.PrintStdout()
 	return err
 }
 

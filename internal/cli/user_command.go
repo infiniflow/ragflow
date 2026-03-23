@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -33,14 +32,8 @@ func (c *RAGFlowClient) PingServer(cmd *Command) (ResponseIf, error) {
 	}
 
 	var result SimpleResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("ping server failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("ping server failed: %s", result.Message)
-	}
+	result.Message = string(resp.Body)
+	result.Code = 0
 	return &result, nil
 }
 

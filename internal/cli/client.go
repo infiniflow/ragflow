@@ -336,8 +336,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.PingServer(cmd)
 	case "benchmark":
 		return nil, c.RunBenchmark(cmd)
-	case "list_datasets":
-		return c.ListDatasets(cmd)
+	case "list_user_datasets":
+		return c.ListUserDatasets(cmd)
 	case "search_on_datasets":
 		return c.SearchOnDatasets(cmd)
 	// TODO: Implement other commands
