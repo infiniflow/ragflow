@@ -335,8 +335,8 @@ func (c *RAGFlowClient) ListServices(cmd *Command) (ResponseIf, error) {
 		delete(user, "extra")
 	}
 
-	PrintTableSimple(result.Data)
-	return nil, nil
+	result.Duration = resp.Duration
+	return &result, nil
 }
 
 // DropUser deletes a user (admin mode only)

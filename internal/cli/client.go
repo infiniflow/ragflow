@@ -304,7 +304,7 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 	case "ping":
 		return c.PingAdmin(cmd)
 	case "benchmark":
-		return nil, c.RunBenchmark(cmd)
+		return c.RunBenchmark(cmd)
 	case "list_user_datasets":
 		return c.ListUserDatasets(cmd)
 	case "list_users":
@@ -335,7 +335,7 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "ping":
 		return c.PingServer(cmd)
 	case "benchmark":
-		return nil, c.RunBenchmark(cmd)
+		return c.RunBenchmark(cmd)
 	case "list_user_datasets":
 		return c.ListUserDatasets(cmd)
 	case "search_on_datasets":
@@ -421,7 +421,7 @@ func (r *BenchmarkResponse) Type() string {
 }
 
 func (r *BenchmarkResponse) PrintOut() {
-	fmt.Printf("Duration: %f, success: %d, failure: %d", r.Duration, r.SuccessCount, r.SuccessCount)
+	fmt.Printf("Duration: %f, success: %d, failure: %d\n", r.Duration, r.SuccessCount, r.FailureCount)
 }
 
 func (r *BenchmarkResponse) TimeCost() float64 {

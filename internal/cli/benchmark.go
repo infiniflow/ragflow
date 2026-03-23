@@ -34,7 +34,7 @@ type BenchmarkResult struct {
 }
 
 // RunBenchmark runs a benchmark with the given concurrency and iterations
-func (c *RAGFlowClient) RunBenchmark(cmd *Command) error {
+func (c *RAGFlowClient) RunBenchmark(cmd *Command) (ResponseIf, error) {
 	concurrency, ok := cmd.Params["concurrency"].(int)
 	if !ok {
 		concurrency = 1
@@ -47,11 +47,11 @@ func (c *RAGFlowClient) RunBenchmark(cmd *Command) error {
 
 	nestedCmd, ok := cmd.Params["command"].(*Command)
 	if !ok {
-		return fmt.Errorf("benchmark command not found")
+		return nil, fmt.Errorf("benchmark command not found")
 	}
 
 	if concurrency < 1 {
-		return fmt.Errorf("concurrency must be greater than 0")
+		return nil, fmt.Errorf("concurrency must be greater than 0")
 	}
 
 	// Add iterations to the nested command
@@ -59,13 +59,13 @@ func (c *RAGFlowClient) RunBenchmark(cmd *Command) error {
 	nestedCmd.Benchmark = true
 
 	if concurrency == 1 {
-		return c.runBenchmarkSingle(concurrency, iterations, nestedCmd)
+		return c.runBenchmarkSingle(iterations, nestedCmd)
 	}
 	return c.runBenchmarkConcurrent(concurrency, iterations, nestedCmd)
 }
 
 // runBenchmarkSingle runs benchmark with single concurrency (sequential execution)
-func (c *RAGFlowClient) runBenchmarkSingle(concurrency, iterations int, nestedCmd *Command) error {
+func (c *RAGFlowClient) runBenchmarkSingle(iterations int, nestedCmd *Command) (*BenchmarkResponse, error) {
 	commandType := nestedCmd.Type
 
 	// For search_on_datasets, convert dataset names to IDs first
@@ -77,7 +77,7 @@ func (c *RAGFlowClient) runBenchmarkSingle(concurrency, iterations int, nestedCm
 			name = strings.TrimSpace(name)
 			id, err := c.getDatasetID(name)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			datasetIDs = append(datasetIDs, id)
 		}
@@ -96,26 +96,50 @@ func (c *RAGFlowClient) runBenchmarkSingle(concurrency, iterations int, nestedCm
 				qps = float64(iterations) / benchmarkResponse.Duration
 			}
 
-			fmt.Printf("command: %s, Concurrency: %d, iterations: %d\n", commandType, concurrency, iterations)
+			fmt.Printf("command: %s, iterations: %d\n", commandType, iterations)
 			fmt.Printf("total duration: %.4fs, QPS: %.2f, COMMAND_COUNT: %d, SUCCESS: %d, FAILURE: %d\n",
 				benchmarkResponse.Duration, qps, iterations, benchmarkResponse.SuccessCount, benchmarkResponse.FailureCount)
-			return nil
+			return benchmarkResponse, nil
 		}
 	} else {
 		result, err := c.ExecuteCommand(nestedCmd)
 		if err != nil {
 			fmt.Printf("fail to execute: %s", commandType)
-			return err
+			return nil, err
 		}
 
-		fmt.Printf("command: %s, duration: %.4fs, SUCCESS\n", commandType, result.TimeCost())
+		var benchmarkResponse BenchmarkResponse
+		switch result.Type() {
+		case "common":
+			commonResponse := result.(*CommonResponse)
+			benchmarkResponse.Code = commonResponse.Code
+			benchmarkResponse.Duration = commonResponse.Duration
+			if commonResponse.Code == 0 {
+				benchmarkResponse.SuccessCount = 1
+			} else {
+				benchmarkResponse.FailureCount = 1
+			}
+		case "simple":
+			simpleResponse := result.(*SimpleResponse)
+			benchmarkResponse.Code = simpleResponse.Code
+			benchmarkResponse.Duration = simpleResponse.Duration
+			if simpleResponse.Code == 0 {
+				benchmarkResponse.SuccessCount = 1
+			} else {
+				benchmarkResponse.FailureCount = 1
+			}
+		default:
+			return nil, fmt.Errorf("unsupported command type: %s", result.Type())
+		}
+
+		return &benchmarkResponse, nil
 	}
 
-	return nil
+	return nil, nil
 }
 
 // runBenchmarkConcurrent runs benchmark with multiple concurrent workers
-func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Command) error {
+func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Command) (*BenchmarkResponse, error) {
 	results := make([]map[string]interface{}, concurrency)
 	var wg sync.WaitGroup
 
@@ -128,7 +152,7 @@ func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nest
 			name = strings.TrimSpace(name)
 			id, err := c.getDatasetID(name)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			datasetIDs = append(datasetIDs, id)
 		}
@@ -187,7 +211,7 @@ func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nest
 	fmt.Printf("total duration: %.4fs, QPS: %.2f, COMMAND_COUNT: %d, SUCCESS: %d, FAILURE: %d\n",
 		totalDuration, qps, totalCommands, successCount, totalCommands-successCount)
 
-	return nil
+	return nil, nil
 }
 
 // executeBenchmarkSilent executes a command for benchmark without printing output
