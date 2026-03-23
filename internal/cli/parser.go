@@ -208,7 +208,6 @@ func (p *Parser) parsePingServer() (*Command, error) {
 func (p *Parser) parseRegisterCommand() (*Command, error) {
 	cmd := NewCommand("register_user")
 
-	p.nextToken() // consume REGISTER
 	if err := p.expectPeek(TokenUser); err != nil {
 		return nil, err
 	}

@@ -59,7 +59,7 @@ func NewUserService() *UserService {
 // RegisterRequest registration request
 type RegisterRequest struct {
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Password string `json:"password" binding:"required,min=1"`
 	Nickname string `json:"nickname"`
 }
 
@@ -122,7 +122,8 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 		return nil, common.CodeServerError, fmt.Errorf("Fail to decrypt password")
 	}
 
-	hashedPassword, err := s.HashPassword(decryptedPassword)
+	var hashedPassword string
+	hashedPassword, err = s.HashPassword(decryptedPassword)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -227,20 +228,20 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	userTenantDAO := dao.NewUserTenantDAO()
 	fileDAO := dao.NewFileDAO()
 
-	if err := s.userDAO.Create(user); err != nil {
+	if err = s.userDAO.Create(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	if err := tenantDAO.Create(tenant); err != nil {
-		err := s.userDAO.DeleteByID(userID)
+	if err = tenantDAO.Create(tenant); err != nil {
+		err = s.userDAO.DeleteByID(userID)
 		if err != nil {
 			return nil, 0, err
 		}
 		return nil, common.CodeServerError, fmt.Errorf("failed to create tenant: %w", err)
 	}
 
-	if err := userTenantDAO.Create(userTenant); err != nil {
-		err := s.userDAO.DeleteByID(userID)
+	if err = userTenantDAO.Create(userTenant); err != nil {
+		err = s.userDAO.DeleteByID(userID)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -251,8 +252,8 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 		return nil, common.CodeServerError, fmt.Errorf("failed to create user tenant relation: %w", err)
 	}
 
-	if err := fileDAO.Create(rootFile); err != nil {
-		err := s.userDAO.DeleteByID(userID)
+	if err = fileDAO.Create(rootFile); err != nil {
+		err = s.userDAO.DeleteByID(userID)
 		if err != nil {
 			return nil, 0, err
 		}

@@ -38,6 +38,68 @@ func (c *RAGFlowClient) PingServer(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+func (c *RAGFlowClient) RegisterUser(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	// Check for benchmark iterations
+	var ok bool
+	_, ok = cmd.Params["iterations"].(int)
+	if ok {
+		return nil, fmt.Errorf("failed to register user in benchmark statement")
+	}
+
+	var email string
+	email, ok = cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no email")
+	}
+
+	var password string
+	password, ok = cmd.Params["password"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no password")
+	}
+
+	var nickname string
+	nickname, ok = cmd.Params["nickname"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no nickname")
+	}
+
+	payload := map[string]interface{}{
+		"email":    email,
+		"password": password,
+		"nickname": nickname,
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/user/register", false, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list users: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list users: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("list user failed: %s", result.Message)
+	}
+
+	for _, user := range result.Data {
+		delete(user, "create_date")
+	}
+
+	//PrintTableSimple(result.Data)
+	return &result, nil
+}
+
 // ListUserDatasets lists datasets for current user (user mode)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
 func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {

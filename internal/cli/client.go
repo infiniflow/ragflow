@@ -332,6 +332,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 }
 func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	switch cmd.Type {
+	case "register_user":
+		return c.RegisterUser(cmd)
 	case "login_user":
 		return nil, c.LoginUser(cmd)
 	case "ping":
