@@ -6379,7 +6379,7 @@ Failure:
 
 **POST** `/v1/document/upload_info`
 
-Uploads a file and creates the respective document
+Uploads a file and creates the respective document.
 
 #### Request
 
@@ -6391,7 +6391,7 @@ Uploads a file and creates the respective document
 - Form:
   - `'file=@{FILE_PATH}'` (mutually exclusive with `url`)
 - Query:
-  - `url`: URL to crawl and convert into a runtime attachment (mutually exclusive with `file`)
+  - `url`: URL to crawl and convert to a runtime attachment (mutually exclusive with `file`).
 
 ##### Request example
 
@@ -6415,10 +6415,10 @@ curl --request POST \
 
 ##### Request parameters
 
-- `'file'`: (*Form parameter*), `file`, *Optional*
-  The file to upload. Mutually exclusive with `url`.
-- `url`: (*Query parameter*), `string`, *Optional*
-  A URL to crawl and store as an attachment. Mutually exclusive with `file`. One of `file` or `url` is required.
+- `'file'`: (*Form parameter*), `file`, *Optional*  
+  The file to upload. Mutually exclusive with `url`; either `file` or `url` must be provided.
+- `url`: (*Query parameter*), `string`, *Optional*  
+  A URL to crawl and store as an attachment. Mutually exclusive with `file`; either `url` or `file` must be provided.
 
 #### Response
 
@@ -6456,7 +6456,7 @@ Failure:
 
 **GET** `/v1/document/download/{attachment_id}`
 
-Downloads a runtime attachment previously uploaded via [Upload document](#upload-document).
+Downloads a runtime attachment previously uploaded via the [Upload document](#upload-document) method.
 
 #### Request
 
@@ -6478,9 +6478,9 @@ curl --request GET \
 
 ##### Request parameters
 
-- `attachment_id`: (*Path parameter*), `string`, *Required*
-  The `id` value returned by the Upload document response.
-- `ext`: (*Query parameter*), `string`, *Optional*
+- `attachment_id`: (*Path parameter*), `string`, *Required*  
+  The `id` value returned by the response of the [Upload document](#upload-document) method.
+- `ext`: (*Query parameter*), `string`, *Optional*  
   File extension used to set the response Content-Type. Defaults to `markdown`.
 
 #### Response
