@@ -466,7 +466,7 @@ func (c *CLI) execute(input string) error {
 	var result ResponseIf
 	result, err = c.client.ExecuteCommand(cmd)
 	if result != nil {
-		result.PrintStdout()
+		result.PrintOut()
 	}
 	return err
 }

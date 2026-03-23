@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -56,7 +57,7 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 	}
 
 	// Normal mode
-	resp, err := c.HTTPClient.Request("POST", "/kb/list", false, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/datasets", true, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
@@ -65,39 +66,17 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
 	}
 
-	code, ok := resJSON["code"].(float64)
-	if !ok || code != 0 {
-		msg, _ := resJSON["message"].(string)
-		return nil, fmt.Errorf("failed to list datasets: %s", msg)
+	if result.Code != 0 {
+		return nil, fmt.Errorf("list user failed: %s", result.Message)
 	}
+	result.Duration = resp.Duration
 
-	data, ok := resJSON["data"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format")
-	}
-
-	kbs, ok := data["kbs"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format: kbs not found")
-	}
-
-	// Convert to slice of maps
-	tableData := make([]map[string]interface{}, 0, len(kbs))
-	for _, kb := range kbs {
-		if kbMap, ok := kb.(map[string]interface{}); ok {
-			// Remove avatar field
-			delete(kbMap, "avatar")
-			tableData = append(tableData, kbMap)
-		}
-	}
-
-	PrintTableSimple(tableData)
-	return nil, nil
+	return &result, nil
 }
 
 // ListDatasets lists datasets for a specific user (admin mode)

@@ -357,20 +357,26 @@ func (c *RAGFlowClient) ShowCurrentUser(cmd *Command) (map[string]interface{}, e
 
 type ResponseIf interface {
 	Type() string
-	PrintStdout()
+	PrintOut()
+	TimeCost() float64
 }
 
 type CommonResponse struct {
-	Code    int                      `json:"code"`
-	Data    []map[string]interface{} `json:"data"`
-	Message string                   `json:"message"`
+	Code     int                      `json:"code"`
+	Data     []map[string]interface{} `json:"data"`
+	Message  string                   `json:"message"`
+	Duration float64
 }
 
 func (r *CommonResponse) Type() string {
 	return "common"
 }
 
-func (r *CommonResponse) PrintStdout() {
+func (r *CommonResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *CommonResponse) PrintOut() {
 	if r.Code == 0 {
 		PrintTableSimple(r.Data)
 	} else {
@@ -380,15 +386,20 @@ func (r *CommonResponse) PrintStdout() {
 }
 
 type SimpleResponse struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code     int    `json:"code"`
+	Message  string `json:"message"`
+	Duration float64
 }
 
 func (r *SimpleResponse) Type() string {
 	return "simple"
 }
 
-func (r *SimpleResponse) PrintStdout() {
+func (r *SimpleResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *SimpleResponse) PrintOut() {
 	if r.Code == 0 {
 		fmt.Println("SUCCESS")
 		fmt.Printf("%s", r.Message)
@@ -409,6 +420,10 @@ func (r *BenchmarkResponse) Type() string {
 	return "benchmark"
 }
 
-func (r *BenchmarkResponse) PrintStdout() {
+func (r *BenchmarkResponse) PrintOut() {
 	fmt.Printf("Duration: %f, success: %d, failure: %d", r.Duration, r.SuccessCount, r.SuccessCount)
+}
+
+func (r *BenchmarkResponse) TimeCost() float64 {
+	return r.Duration
 }

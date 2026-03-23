@@ -104,6 +104,7 @@ type Response struct {
 	StatusCode int
 	Body       []byte
 	Headers    http.Header
+	Duration   float64
 }
 
 // JSON parses the response body as JSON
@@ -142,11 +143,14 @@ func (c *HTTPClient) Request(method, path string, useAPIBase bool, authKind stri
 		req.Header.Set(k, v)
 	}
 
-	resp, err := c.client.Do(req)
+	var resp *http.Response
+	startTime := time.Now()
+	resp, err = c.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	duration := time.Since(startTime).Seconds()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -157,6 +161,7 @@ func (c *HTTPClient) Request(method, path string, useAPIBase bool, authKind stri
 		StatusCode: resp.StatusCode,
 		Body:       respBody,
 		Headers:    resp.Header.Clone(),
+		Duration:   duration,
 	}, nil
 }
 

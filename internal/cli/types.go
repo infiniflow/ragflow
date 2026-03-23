@@ -18,8 +18,9 @@ package cli
 
 // Command represents a parsed command from the CLI
 type Command struct {
-	Type   string
-	Params map[string]interface{}
+	Type      string
+	Benchmark bool
+	Params    map[string]interface{}
 }
 
 // Token types for the lexer
