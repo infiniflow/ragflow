@@ -187,7 +187,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		return
 	}
 
-	user, code, err := h.userService.LoginByEmail(&req, false)
+	user, code, err := h.userService.LoginByEmail(&req)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
