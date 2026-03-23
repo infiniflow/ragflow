@@ -380,6 +380,13 @@
             "url" : "https://dashscope.aliyuncs.com/compatible-mode/v1",
             "llm": [
                 {
+                    "llm_name": "qwen3.5-122b-a10b",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "Moonshot-Kimi-K2-Instruct",
                     "tags": "LLM,CHAT,128K",
                     "max_tokens": 131072,
@@ -6317,6 +6324,38 @@
             "status": "1",
             "rank": "100",
             "llm": []
+        },
+        {
+            "name": "Perplexity",
+            "logo": "",
+            "tags": "TEXT EMBEDDING",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "pplx-embed-v1-0.6b",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "pplx-embed-v1-4b",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "pplx-embed-context-v1-0.6b",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "pplx-embed-context-v1-4b",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                }
+            ]
         }
     ]
 }

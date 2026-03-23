@@ -10,6 +10,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/server/local"
+	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
 	"syscall"
@@ -118,6 +119,10 @@ func main() {
 	}
 	defer cache.Close()
 
+	if err := storage.InitStorageFactory(); err != nil {
+		logger.Fatal("Failed to initialize storage factory", zap.Error(err))
+	}
+
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
 	if err := server.InitVariables(cache.Get()); err != nil {
@@ -159,6 +164,7 @@ func startServer(config *server.Config) {
 	// Initialize service layer
 	userService := service.NewUserService()
 	documentService := service.NewDocumentService()
+	datasetsService := service.NewDatasetsService()
 	kbService := service.NewKnowledgebaseService()
 	chunkService := service.NewChunkService()
 	llmService := service.NewLLMService()
@@ -175,8 +181,9 @@ func startServer(config *server.Config) {
 	userHandler := handler.NewUserHandler(userService)
 	tenantHandler := handler.NewTenantHandler(tenantService, userService)
 	documentHandler := handler.NewDocumentHandler(documentService)
+	datasetsHandler := handler.NewDatasetsHandler(datasetsService)
 	systemHandler := handler.NewSystemHandler(systemService)
-	kbHandler := handler.NewKnowledgebaseHandler(kbService, userService)
+	kbHandler := handler.NewKnowledgebaseHandler(kbService, userService, documentService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
@@ -186,7 +193,7 @@ func startServer(config *server.Config) {
 	fileHandler := handler.NewFileHandler(fileService, userService)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

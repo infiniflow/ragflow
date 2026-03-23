@@ -28,6 +28,7 @@ type Router struct {
 	userHandler          *handler.UserHandler
 	tenantHandler        *handler.TenantHandler
 	documentHandler      *handler.DocumentHandler
+	datasetsHandler      *handler.DatasetsHandler
 	systemHandler        *handler.SystemHandler
 	knowledgebaseHandler *handler.KnowledgebaseHandler
 	chunkHandler         *handler.ChunkHandler
@@ -45,6 +46,7 @@ func NewRouter(
 	userHandler *handler.UserHandler,
 	tenantHandler *handler.TenantHandler,
 	documentHandler *handler.DocumentHandler,
+	datasetsHandler *handler.DatasetsHandler,
 	systemHandler *handler.SystemHandler,
 	knowledgebaseHandler *handler.KnowledgebaseHandler,
 	chunkHandler *handler.ChunkHandler,
@@ -60,6 +62,7 @@ func NewRouter(
 		userHandler:          userHandler,
 		tenantHandler:        tenantHandler,
 		documentHandler:      documentHandler,
+		datasetsHandler:      datasetsHandler,
 		systemHandler:        systemHandler,
 		knowledgebaseHandler: knowledgebaseHandler,
 		chunkHandler:         chunkHandler,
@@ -135,6 +138,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
 			}
 
+			// RESTful dataset routes
+			datasets := v1.Group("/datasets")
+			{
+				datasets.GET("", r.datasetsHandler.ListDatasets)
+				datasets.POST("", r.datasetsHandler.CreateDataset)
+				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
+			}
+
 			// Author routes
 			authors := v1.Group("/authors")
 			{
@@ -164,6 +175,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 				kbByID.GET("/knowledge_graph", r.knowledgebaseHandler.KnowledgeGraph)
 				kbByID.DELETE("/knowledge_graph", r.knowledgebaseHandler.DeleteKnowledgeGraph)
 			}
+		}
+
+		// Document routes
+		doc := authorized.Group("/v1/document")
+		{
+			doc.POST("/list", r.documentHandler.ListDocuments)
+			doc.POST("/metadata/summary", r.documentHandler.MetadataSummary)
 		}
 
 		// Chunk routes

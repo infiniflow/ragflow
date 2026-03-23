@@ -36,7 +36,7 @@ func (dao *DocumentDAO) Create(document *model.Document) error {
 // GetByID get document by ID
 func (dao *DocumentDAO) GetByID(id string) (*model.Document, error) {
 	var document model.Document
-	err := DB.Preload("Author").First(&document, "id = ?", id).Error
+	err := DB.First(&document, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +77,19 @@ func (dao *DocumentDAO) List(offset, limit int) ([]*model.Document, int64, error
 	}
 
 	err := DB.Preload("Author").Offset(offset).Limit(limit).Find(&documents).Error
+	return documents, total, err
+}
+
+// ListByKBID list documents by knowledge base ID
+func (dao *DocumentDAO) ListByKBID(kbID string, offset, limit int) ([]*model.Document, int64, error) {
+	var documents []*model.Document
+	var total int64
+
+	if err := DB.Model(&model.Document{}).Where("kb_id = ?", kbID).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := DB.Where("kb_id = ?", kbID).Offset(offset).Limit(limit).Find(&documents).Error
 	return documents, total, err
 }
 

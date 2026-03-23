@@ -133,7 +133,7 @@ func (h *Handler) Login(c *gin.Context) {
 
 	// Use userService.LoginByEmail with adminLogin=true
 	// This allows default admin account to login admin system
-	user, code, err := h.userService.LoginByEmail(&req, true)
+	user, code, err := h.userService.LoginByEmail(&req)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
@@ -266,12 +266,18 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.DeleteUser(username); err != nil {
+	result, err := h.service.DeleteUser(username)
+	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
 	}
 
-	successNoData(c, "User deleted successfully")
+	detailsMsg := "Successfully deleted user. Details:\n"
+	for _, detail := range result.DeletedDetails {
+		detailsMsg += detail + "\n"
+	}
+
+	successNoData(c, detailsMsg)
 }
 
 // ChangePasswordHTTPRequest change password request
@@ -473,7 +479,14 @@ func (h *Handler) ListRoles(c *gin.Context) {
 		return
 	}
 
-	success(c, roles, "")
+	if roles == nil {
+		roles = []map[string]interface{}{}
+	}
+
+	success(c, gin.H{
+		"roles": roles,
+		"total": len(roles),
+	}, "")
 }
 
 // CreateRoleHTTPRequest create role request
