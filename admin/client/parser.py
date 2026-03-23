@@ -77,6 +77,9 @@ sql_command: login_user
            | drop_user_dataset
            | list_user_datasets
            | list_user_dataset_files
+           | list_user_dataset_documents
+           | list_user_datasets_metadata
+           | list_user_documents_metadata_summary
            | list_user_agents
            | list_user_chats
            | create_user_chat
@@ -161,10 +164,14 @@ DEFAULT: "DEFAULT"i
 CHATS: "CHATS"i
 CHAT: "CHAT"i
 FILES: "FILES"i
+DOCUMENTS: "DOCUMENTS"i
+METADATA: "METADATA"i
+SUMMARY: "SUMMARY"i
 AS: "AS"i
 PARSE: "PARSE"i
 IMPORT: "IMPORT"i
 INTO: "INTO"i
+IN: "IN"i
 WITH: "WITH"i
 PARSER: "PARSER"i
 PIPELINE: "PIPELINE"i
@@ -299,6 +306,9 @@ create_user_dataset_with_parser: CREATE DATASET quoted_string WITH EMBEDDING quo
 create_user_dataset_with_pipeline: CREATE DATASET quoted_string WITH EMBEDDING quoted_string PIPELINE quoted_string ";" 
 drop_user_dataset: DROP DATASET quoted_string ";"
 list_user_dataset_files: LIST FILES OF DATASET quoted_string ";"
+list_user_dataset_documents: LIST DOCUMENTS OF DATASET quoted_string ";"
+list_user_datasets_metadata: LIST METADATA OF DATASETS quoted_string ("," quoted_string)* ";"
+list_user_documents_metadata_summary: LIST METADATA SUMMARY OF DATASET quoted_string (DOCUMENTS quoted_string ("," quoted_string)*)? ";"
 list_user_agents: LIST AGENTS ";"
 list_user_chats: LIST CHATS ";"
 create_user_chat: CREATE CHAT quoted_string ";"
@@ -591,6 +601,28 @@ class RAGFlowCLITransformer(Transformer):
     def list_user_dataset_files(self, items):
         dataset_name = items[4].children[0].strip("'\"")
         return {"type": "list_user_dataset_files", "dataset_name": dataset_name}
+
+    def list_user_dataset_documents(self, items):
+        dataset_name = items[4].children[0].strip("'\"")
+        return {"type": "list_user_dataset_documents", "dataset_name": dataset_name}
+
+    def list_user_datasets_metadata(self, items):
+        dataset_names = []
+        dataset_names.append(items[4].children[0].strip("'\""))
+        for i in range(5, len(items)):
+            if items[i] and hasattr(items[i], 'children') and items[i].children:
+                dataset_names.append(items[i].children[0].strip("'\""))
+        return {"type": "list_user_datasets_metadata", "dataset_names": dataset_names}
+
+    def list_user_documents_metadata_summary(self, items):
+        dataset_name = items[5].children[0].strip("'\"")
+        doc_ids = []
+        if len(items) > 6 and items[6] == "DOCUMENTS":
+            for i in range(7, len(items)):
+                if items[i] and hasattr(items[i], 'children') and items[i].children:
+                    doc_id = items[i].children[0].strip("'\"")
+                    doc_ids.append(doc_id)
+        return {"type": "list_user_documents_metadata_summary", "dataset_name": dataset_name, "document_ids": doc_ids}
 
     def list_user_agents(self, items):
         return {"type": "list_user_agents"}
