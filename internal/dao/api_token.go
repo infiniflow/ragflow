@@ -65,6 +65,12 @@ func (dao *APITokenDAO) DeleteByDialogIDs(dialogIDs []string) (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
+// DeleteByTenantIDAndToken deletes a specific API token by tenant ID and token value
+func (dao *APITokenDAO) DeleteByTenantIDAndToken(tenantID, token string) (int64, error) {
+	result := DB.Unscoped().Where("tenant_id = ? AND token = ?", tenantID, token).Delete(&model.APIToken{})
+	return result.RowsAffected, result.Error
+}
+
 // API4ConversationDAO API for conversation data access object
 type API4ConversationDAO struct{}
 
