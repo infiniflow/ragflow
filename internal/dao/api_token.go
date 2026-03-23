@@ -46,6 +46,16 @@ func (dao *APITokenDAO) DeleteByTenantID(tenantID string) (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
+// GetByToken gets API token by access key
+func (dao *APITokenDAO) GetUserByAccessKey(token string) (*model.APIToken, error) {
+	var apiToken model.APIToken
+	err := DB.Where("token = ?", token).First(&apiToken).Error
+	if err != nil {
+		return nil, err
+	}
+	return &apiToken, nil
+}
+
 // DeleteByDialogIDs deletes API tokens by dialog IDs (hard delete)
 func (dao *APITokenDAO) DeleteByDialogIDs(dialogIDs []string) (int64, error) {
 	if len(dialogIDs) == 0 {

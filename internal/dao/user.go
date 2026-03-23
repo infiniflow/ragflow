@@ -43,6 +43,15 @@ func (dao *UserDAO) GetByID(id uint) (*model.User, error) {
 	return &user, nil
 }
 
+func (dao *UserDAO) GetByTenantID(tenantID string) (*model.User, error) {
+	var user model.User
+	err := DB.First(&user, tenantID).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
 // GetByUsername get user by username
 func (dao *UserDAO) GetByUsername(username string) (*model.User, error) {
 	var user model.User
