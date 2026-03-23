@@ -334,6 +334,34 @@ class Base(ABC):
             hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
         return hist
 
+    def _append_history_batch(self, hist, results):
+        """
+        Append a batch of tool calls to history following the OpenAI protocol:
+        one assistant message containing all tool_calls, followed by one tool message per call.
+        results: list of (tool_call, name, args, result, error)
+        """
+        hist.append({
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "index": tc.index,
+                    "id": tc.id,
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    "type": "function",
+                }
+                for tc, _, _, _, _ in results
+            ],
+        })
+        for tc, _, _, result, err in results:
+            if err:
+                content = str(err)
+            elif isinstance(result, dict):
+                content = json.dumps(result, ensure_ascii=False)
+            else:
+                content = str(result)
+            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
+        return hist
+
     def bind_tools(self, toolcall_session, tools):
         if not (toolcall_session and tools):
             return
@@ -377,18 +405,24 @@ class Base(ABC):
 
                         return ans, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=tk_count or prompt_tokens + completion_tokens)
 
-                    for tool_call in response.choices[0].message.tool_calls:
-                        logging.info(f"Response {tool_call=}")
-                        name = tool_call.function.name
+                    async def _exec_tool(tc):
+                        name = tc.function.name
                         try:
-                            args = json_repair.loads(tool_call.function.arguments)
-                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
-                            history = self._append_history(history, tool_call, tool_response)
-                            ans += self._verbose_tool_use(name, args, tool_response)
+                            args = json_repair.loads(tc.function.arguments)
+                            if hasattr(self.toolcall_session, "tool_call_async"):
+                                result = await self.toolcall_session.tool_call_async(name, args)
+                            else:
+                                result = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
+                            return tc, name, args, result, None
                         except Exception as e:
-                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
-                            ans += self._verbose_tool_use(name, {}, str(e))
+                            logging.exception(f"Tool call failed: {tc}")
+                            return tc, name, {}, None, e
+
+                    logging.info(f"Response tool_calls={response.choices[0].message.tool_calls}")
+                    results = await asyncio.gather(*[_exec_tool(tc) for tc in response.choices[0].message.tool_calls])
+                    history = self._append_history_batch(history, results)
+                    for tc, name, args, result, err in results:
+                        ans += self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
@@ -419,9 +453,9 @@ class Base(ABC):
         for attempt in range(self.max_retries + 1):
             history = deepcopy(hist)
             try:
-                for _ in range(self.max_rounds + 1):
+                for _round in range(self.max_rounds + 1):
                     reasoning_start = False
-                    logging.info(f"{tools=}")
+                    logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
 
                     response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, stream_options={"include_usage": True}, tools=tools, tool_choice="auto", **gen_conf)
 
@@ -471,22 +505,36 @@ class Base(ABC):
                         if finish_reason == "length":
                             yield self._length_stop("")
 
-                    if answer:
-                        yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
+                    if answer and not final_tool_calls:
+                        logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
+                        yield total_tokens
                         return
 
-                    for tool_call in final_tool_calls.values():
-                        name = tool_call.function.name
+                    async def _exec_tool(tc):
+                        name = tc.function.name
                         try:
-                            args = json_repair.loads(tool_call.function.arguments)
-                            yield self._verbose_tool_use(name, args, "Begin to call...")
-                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
-                            history = self._append_history(history, tool_call, tool_response)
-                            yield self._verbose_tool_use(name, args, tool_response)
+                            args = json_repair.loads(tc.function.arguments)
+                            if hasattr(self.toolcall_session, "tool_call_async"):
+                                result = await self.toolcall_session.tool_call_async(name, args)
+                            else:
+                                result = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
+                            return tc, name, args, result, None
                         except Exception as e:
-                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
-                            yield self._verbose_tool_use(name, {}, str(e))
+                            logging.exception(f"Tool call failed: {tc}")
+                            return tc, name, {}, None, e
+
+                    tcs = list(final_tool_calls.values())
+                    logging.info(f"[ToolLoop] round={_round} executing {len(tcs)} tool(s): {[tc.function.name for tc in tcs]}")
+                    for tc in tcs:
+                        try:
+                            args = json_repair.loads(tc.function.arguments)
+                        except Exception:
+                            args = {}
+                        yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
+                    results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
+                    history = self._append_history_batch(history, results)
+                    for tc, name, args, result, err in results:
+                        yield self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
@@ -1488,6 +1536,34 @@ class LiteLLMBase(ABC):
             hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
         return hist
 
+    def _append_history_batch(self, hist, results):
+        """
+        Append a batch of tool calls to history following the OpenAI protocol:
+        one assistant message containing all tool_calls, followed by one tool message per call.
+        results: list of (tool_call, name, args, result, error)
+        """
+        hist.append({
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "index": tc.index,
+                    "id": tc.id,
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    "type": "function",
+                }
+                for tc, _, _, _, _ in results
+            ],
+        })
+        for tc, _, _, result, err in results:
+            if err:
+                content = str(err)
+            elif isinstance(result, dict):
+                content = json.dumps(result, ensure_ascii=False)
+            else:
+                content = str(result)
+            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
+        return hist
+
     def bind_tools(self, toolcall_session, tools):
         if not (toolcall_session and tools):
             return
@@ -1539,18 +1615,24 @@ class LiteLLMBase(ABC):
                             ans = self._length_stop(ans)
                         return ans, LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=tk_count or prompt_tokens + completion_tokens)
 
-                    for tool_call in message.tool_calls:
-                        logging.info(f"Response {tool_call=}")
-                        name = tool_call.function.name
+                    async def _exec_tool(tc):
+                        name = tc.function.name
                         try:
-                            args = json_repair.loads(tool_call.function.arguments)
-                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
-                            history = self._append_history(history, tool_call, tool_response)
-                            ans += self._verbose_tool_use(name, args, tool_response)
+                            args = json_repair.loads(tc.function.arguments)
+                            if hasattr(self.toolcall_session, "tool_call_async"):
+                                result = await self.toolcall_session.tool_call_async(name, args)
+                            else:
+                                result = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
+                            return tc, name, args, result, None
                         except Exception as e:
-                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
-                            ans += self._verbose_tool_use(name, {}, str(e))
+                            logging.exception(f"Tool call failed: {tc}")
+                            return tc, name, {}, None, e
+
+                    logging.info(f"Response tool_calls={message.tool_calls}")
+                    results = await asyncio.gather(*[_exec_tool(tc) for tc in message.tool_calls])
+                    history = self._append_history_batch(history, results)
+                    for tc, name, args, result, err in results:
+                        ans += self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
@@ -1583,9 +1665,9 @@ class LiteLLMBase(ABC):
         for attempt in range(self.max_retries + 1):
             history = deepcopy(hist)
             try:
-                for _ in range(self.max_rounds + 1):
+                for _round in range(self.max_rounds + 1):
                     reasoning_start = False
-                    logging.info(f"{tools=}")
+                    logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
 
                     completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
                     response = await litellm.acompletion(
@@ -1644,22 +1726,36 @@ class LiteLLMBase(ABC):
                         if finish_reason == "length":
                             yield self._length_stop("")
 
-                    if answer:
+                    if answer and not final_tool_calls:
+                        logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
                         yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
                         return
 
-                    for tool_call in final_tool_calls.values():
-                        name = tool_call.function.name
+                    async def _exec_tool(tc):
+                        name = tc.function.name
                         try:
-                            args = json_repair.loads(tool_call.function.arguments)
-                            yield self._verbose_tool_use(name, args, "Begin to call...")
-                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
-                            history = self._append_history(history, tool_call, tool_response)
-                            yield self._verbose_tool_use(name, args, tool_response)
+                            args = json_repair.loads(tc.function.arguments)
+                            if hasattr(self.toolcall_session, "tool_call_async"):
+                                result = await self.toolcall_session.tool_call_async(name, args)
+                            else:
+                                result = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
+                            return tc, name, args, result, None
                         except Exception as e:
-                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
-                            yield self._verbose_tool_use(name, {}, str(e))
+                            logging.exception(f"Tool call failed: {tc}")
+                            return tc, name, {}, None, e
+
+                    tcs = list(final_tool_calls.values())
+                    logging.info(f"[ToolLoop] round={_round} executing {len(tcs)} tool(s): {[tc.function.name for tc in tcs]}")
+                    for tc in tcs:
+                        try:
+                            args = json_repair.loads(tc.function.arguments)
+                        except Exception:
+                            args = {}
+                        yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
+                    results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
+                    history = self._append_history_batch(history, results)
+                    for tc, name, args, result, err in results:
+                        yield self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})

@@ -183,7 +183,7 @@ func startServer(config *server.Config) {
 	documentHandler := handler.NewDocumentHandler(documentService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService)
 	systemHandler := handler.NewSystemHandler(systemService)
-	kbHandler := handler.NewKnowledgebaseHandler(kbService, userService)
+	kbHandler := handler.NewKnowledgebaseHandler(kbService, userService, documentService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
