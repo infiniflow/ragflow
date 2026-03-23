@@ -167,7 +167,7 @@ func (c *HTTPClient) Request(method, path string, useAPIBase bool, authKind stri
 }
 
 // Request makes an HTTP request
-func (c *HTTPClient) RequestDuelURL(method, webPath string, apiPath string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
+func (c *HTTPClient) RequestWith2URL(method, webPath string, apiPath string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
 	var path string
 	var useAPIBase bool
 	var authKind string
