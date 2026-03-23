@@ -546,6 +546,9 @@ Commands (User Mode):
   LIST CHATS;                                            - List user chats
   LIST MODEL PROVIDERS;                                  - List model providers
   LIST DEFAULT MODELS;                                   - List default models
+  LIST TOKENS;                                           - List API tokens
+  CREATE TOKEN;                                          - Create new API token
+  DROP TOKEN 'token_value';                              - Delete an API token
 
 Commands (Admin Mode):
   LIST USERS;                                            - List all users

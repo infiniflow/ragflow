@@ -285,6 +285,12 @@ func (p *Parser) parseListCommand() (*Command, error) {
 			return nil, err
 		}
 		return NewCommand("list_configs"), nil
+	case TokenTokens:
+		p.nextToken()
+		if err := p.expectSemicolon(); err != nil {
+			return nil, err
+		}
+		return NewCommand("list_tokens"), nil
 	case TokenEnvs:
 		p.nextToken()
 		if err := p.expectSemicolon(); err != nil {
@@ -570,9 +576,21 @@ func (p *Parser) parseCreateCommand() (*Command, error) {
 		return p.parseCreateDataset()
 	case TokenChat:
 		return p.parseCreateChat()
+	case TokenToken:
+		return p.parseCreateToken()
 	default:
 		return nil, fmt.Errorf("unknown CREATE target: %s", p.curToken.Value)
 	}
+}
+
+func (p *Parser) parseCreateToken() (*Command, error) {
+	p.nextToken() // consume TOKEN
+
+	if err := p.expectSemicolon(); err != nil {
+		return nil, err
+	}
+
+	return NewCommand("create_token"), nil
 }
 
 func (p *Parser) parseCreateUser() (*Command, error) {
@@ -742,9 +760,29 @@ func (p *Parser) parseDropCommand() (*Command, error) {
 		return p.parseDropChat()
 	case TokenKey:
 		return p.parseDropKey()
+	case TokenToken:
+		return p.parseDropToken()
 	default:
 		return nil, fmt.Errorf("unknown DROP target: %s", p.curToken.Value)
 	}
+}
+
+func (p *Parser) parseDropToken() (*Command, error) {
+	p.nextToken() // consume TOKEN
+
+	tokenValue, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("drop_token")
+	cmd.Params["token"] = tokenValue
+
+	p.nextToken()
+	if err := p.expectSemicolon(); err != nil {
+		return nil, err
+	}
+	return cmd, nil
 }
 
 func (p *Parser) parseDropUser() (*Command, error) {

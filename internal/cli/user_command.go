@@ -377,3 +377,93 @@ func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 	PrintTableSimple(tableData)
 	return nil, nil
 }
+
+// CreateToken creates a new API token
+func (c *RAGFlowClient) CreateToken(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/tokens", true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create token: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var createResult CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &createResult); err != nil {
+		return nil, fmt.Errorf("create token failed: invalid JSON (%w)", err)
+	}
+
+	if createResult.Code != 0 {
+		return nil, fmt.Errorf("%s", createResult.Message)
+	}
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "Token created successfully"
+
+	return &result, nil
+}
+
+// ListTokens lists all API tokens for the current user
+func (c *RAGFlowClient) ListTokens(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	resp, err := c.HTTPClient.Request("GET", "/tokens", true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tokens: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list tokens: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list tokens failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	return &result, nil
+}
+
+// DropToken deletes an API token
+func (c *RAGFlowClient) DropToken(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	token, ok := cmd.Params["token"].(string)
+	if !ok {
+		return nil, fmt.Errorf("token not provided")
+	}
+
+	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/tokens/%s", token), true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop token: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to drop token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("drop token failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	return &result, nil
+}

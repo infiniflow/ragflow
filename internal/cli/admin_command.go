@@ -370,7 +370,7 @@ func (c *RAGFlowClient) ShowService(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to show service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result ShowResponse
+	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("show service failed: invalid JSON (%w)", err)
 	}

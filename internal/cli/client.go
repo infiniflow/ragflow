@@ -344,6 +344,12 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListUserDatasets(cmd)
 	case "search_on_datasets":
 		return c.SearchOnDatasets(cmd)
+	case "create_token":
+		return c.CreateToken(cmd)
+	case "list_tokens":
+		return c.ListTokens(cmd)
+	case "drop_token":
+		return c.DropToken(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
@@ -389,6 +395,32 @@ func (r *CommonResponse) PrintOut() {
 	}
 }
 
+type CommonDataResponse struct {
+	Code     int                    `json:"code"`
+	Data     map[string]interface{} `json:"data"`
+	Message  string                 `json:"message"`
+	Duration float64
+}
+
+func (r *CommonDataResponse) Type() string {
+	return "show"
+}
+
+func (r *CommonDataResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *CommonDataResponse) PrintOut() {
+	if r.Code == 0 {
+		table := make([]map[string]interface{}, 0)
+		table = append(table, r.Data)
+		PrintTableSimple(table)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s", r.Code, r.Message)
+	}
+}
+
 type SimpleResponse struct {
 	Code     int    `json:"code"`
 	Message  string `json:"message"`
@@ -406,10 +438,9 @@ func (r *SimpleResponse) TimeCost() float64 {
 func (r *SimpleResponse) PrintOut() {
 	if r.Code == 0 {
 		fmt.Println("SUCCESS")
-		fmt.Printf("%s", r.Message)
 	} else {
 		fmt.Println("ERROR")
-		fmt.Printf("%d, %s", r.Code, r.Message)
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
 }
 
@@ -468,30 +499,4 @@ func (r *BenchmarkResponse) PrintOut() {
 
 func (r *BenchmarkResponse) TimeCost() float64 {
 	return r.Duration
-}
-
-type ShowResponse struct {
-	Code     int                    `json:"code"`
-	Data     map[string]interface{} `json:"data"`
-	Message  string                 `json:"message"`
-	Duration float64
-}
-
-func (r *ShowResponse) Type() string {
-	return "show"
-}
-
-func (r *ShowResponse) TimeCost() float64 {
-	return r.Duration
-}
-
-func (r *ShowResponse) PrintOut() {
-	if r.Code == 0 {
-		table := make([]map[string]interface{}, 0)
-		table = append(table, r.Data)
-		PrintTableSimple(table)
-	} else {
-		fmt.Println("ERROR")
-		fmt.Printf("%d, %s", r.Code, r.Message)
-	}
 }
