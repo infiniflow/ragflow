@@ -1402,9 +1402,9 @@ def migrate_add_unique_email(migrator):
                 # Non-unique index exists (e.g. from old peewee index=True); drop it so
                 # the upcoming ADD UNIQUE INDEX does not hit MySQL error 1061 "Duplicate key name".
                 DB.execute_sql(f"ALTER TABLE `user` DROP INDEX `{index_name}`")
-                logging.info("Dropped non-unique index '%s' on user.email before adding unique index", index_name)
+                logging.info(f"Dropped non-unique index '{index_name}' on user.email before adding unique index")
     except Exception as ex:
-        logging.warning("Failed to check/prepare email index on user table: %s, continuing with migration", ex)
+        logging.warning(f"Failed to check/prepare email index on user table: {ex}, continuing with migration")
 
     # step 1: rename duplicate rows so the UNIQUE constraint can be applied
     try:
