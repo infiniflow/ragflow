@@ -152,6 +152,8 @@ public:
 
     OpenCC* opencc_{nullptr};
 
+    mutable std::vector<char> lowercase_string_buffer_;
+
     bool fine_grained_{false};
 
     bool enable_position_{false};
