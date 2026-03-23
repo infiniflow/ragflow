@@ -6464,8 +6464,8 @@ Downloads a runtime attachment previously uploaded via the [Upload document](#up
 - URL: `/v1/document/download/{attachment_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
-- Query parameters:
-  - `ext`: (*Optional*) File extension hint (e.g. `pdf`, `markdown`). Defaults to `markdown`.
+- Query parameter:
+  - `ext`: `string` (Optional)
 
 ##### Request example
 
@@ -6479,15 +6479,21 @@ curl --request GET \
 ##### Request parameters
 
 - `attachment_id`: (*Path parameter*), `string`, *Required*  
-  The `id` value returned by the response of the [Upload document](#upload-document) method.
+  The `id` value returned by the [Upload document](#upload-document) method.
 - `ext`: (*Query parameter*), `string`, *Optional*  
-  File extension used to set the response Content-Type. Defaults to `markdown`.
+  A file extension hint specifying the response's Content-Type. Defaults to `"markdown"`. Available values:  
+  - `"markdown"`
+  - `"html"`
+  - `"pdf"`
+  - `"docx"`
+  - `"xlsx"`
+  - `"csv"`
 
 #### Response
 
 Success:
 
-Returns the file content as a binary stream with appropriate Content-Type headers.
+Returns the file content as a binary stream with the relevant Content-Type header.
 
 Failure:
 
