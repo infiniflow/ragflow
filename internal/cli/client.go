@@ -413,6 +413,29 @@ func (r *SimpleResponse) PrintOut() {
 	}
 }
 
+type RegisterResponse struct {
+	Code     int    `json:"code"`
+	Message  string `json:"message"`
+	Duration float64
+}
+
+func (r *RegisterResponse) Type() string {
+	return "register"
+}
+
+func (r *RegisterResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *RegisterResponse) PrintOut() {
+	if r.Code == 0 {
+		fmt.Println("Register successfully")
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s", r.Code, r.Message)
+	}
+}
+
 type BenchmarkResponse struct {
 	Code         int     `json:"code"`
 	Duration     float64 `json:"duration"`

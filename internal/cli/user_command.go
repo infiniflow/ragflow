@@ -76,24 +76,20 @@ func (c *RAGFlowClient) RegisterUser(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.HTTPClient.Request("POST", "/user/register", false, "admin", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list users: %w", err)
+		return nil, fmt.Errorf("failed to register user: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list users: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to register user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonResponse
+	var result RegisterResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("register user failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
-		return nil, fmt.Errorf("list user failed: %s", result.Message)
-	}
-
-	for _, user := range result.Data {
-		delete(user, "create_date")
+		return nil, fmt.Errorf("%s", result.Message)
 	}
 
 	//PrintTableSimple(result.Data)
@@ -134,7 +130,7 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 	}
 
 	if result.Code != 0 {
-		return nil, fmt.Errorf("list user failed: %s", result.Message)
+		return nil, fmt.Errorf("%s", result.Message)
 	}
 	result.Duration = resp.Duration
 

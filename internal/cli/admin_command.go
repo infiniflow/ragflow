@@ -72,7 +72,7 @@ func (c *RAGFlowClient) ListUsers(cmd *Command) (ResponseIf, error) {
 	}
 
 	if result.Code != 0 {
-		return nil, fmt.Errorf("list user failed: %s", result.Message)
+		return nil, fmt.Errorf("%s", result.Message)
 	}
 
 	for _, user := range result.Data {
@@ -110,7 +110,7 @@ func (c *RAGFlowClient) GrantAdmin(cmd *Command) (ResponseIf, error) {
 	}
 
 	if result.Code != 0 {
-		return nil, fmt.Errorf("grant admin failed: %s", result.Message)
+		return nil, fmt.Errorf("%s", result.Message)
 	}
 	return &result, nil
 }
@@ -142,7 +142,7 @@ func (c *RAGFlowClient) RevokeAdmin(cmd *Command) (ResponseIf, error) {
 	}
 
 	if result.Code != 0 {
-		return nil, fmt.Errorf("revoke admin failed: %s", result.Message)
+		return nil, fmt.Errorf("%s", result.Message)
 	}
 	return &result, nil
 }
@@ -191,7 +191,7 @@ func (c *RAGFlowClient) CreateUser(cmd *Command) (ResponseIf, error) {
 	}
 
 	if result.Code != 0 {
-		return nil, fmt.Errorf("create user failed: %s", result.Message)
+		return nil, fmt.Errorf("%s", result.Message)
 	}
 	return &result, nil
 }
@@ -223,21 +223,21 @@ func (c *RAGFlowClient) ActivateUser(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/users/%s/activate", userName), true, "admin", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update user activate status: %w", err)
+		return nil, fmt.Errorf("failed to update user status: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to update user activate status: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to update user status: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result SimpleResponse
 
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("create user failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("update user status failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
-		return nil, fmt.Errorf("create user failed: %s", result.Message)
+		return nil, fmt.Errorf("%s", result.Message)
 	}
 	return &result, nil
 }
@@ -280,11 +280,11 @@ func (c *RAGFlowClient) AlterUserPassword(cmd *Command) (ResponseIf, error) {
 	var result SimpleResponse
 
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("create user failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("change user password failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
-		return nil, fmt.Errorf("create user failed: %s", result.Message)
+		return nil, fmt.Errorf("%s", result.Message)
 	}
 	return &result, nil
 }
@@ -328,7 +328,7 @@ func (c *RAGFlowClient) ListServices(cmd *Command) (ResponseIf, error) {
 	}
 
 	if result.Code != 0 {
-		return nil, fmt.Errorf("list user failed: %s", result.Message)
+		return nil, fmt.Errorf("%s", result.Message)
 	}
 
 	for _, user := range result.Data {
@@ -372,11 +372,11 @@ func (c *RAGFlowClient) ShowService(cmd *Command) (ResponseIf, error) {
 
 	var result ShowResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("show service failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
-		return nil, fmt.Errorf("list user failed: %s", result.Message)
+		return nil, fmt.Errorf("%s", result.Message)
 	}
 
 	result.Duration = resp.Duration
@@ -396,21 +396,21 @@ func (c *RAGFlowClient) DropUser(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/users/%s", userName), true, "admin", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete user: %w", err)
+		return nil, fmt.Errorf("failed to drop user: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to delete user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to drop user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result SimpleResponse
 
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("create user failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("drop user failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
-		return nil, fmt.Errorf("create user failed: %s", result.Message)
+		return nil, fmt.Errorf("%s", result.Message)
 	}
 	return &result, nil
 }
