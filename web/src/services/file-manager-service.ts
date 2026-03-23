@@ -23,7 +23,7 @@ const methods = {
   },
   removeFile: {
     url: removeFile,
-    method: 'post',
+    method: 'delete',
   },
   uploadFile: {
     url: uploadFile,
@@ -31,7 +31,7 @@ const methods = {
   },
   renameFile: {
     url: renameFile,
-    method: 'post',
+    method: 'put',
   },
   getAllParentFolder: {
     url: getAllParentFolder,

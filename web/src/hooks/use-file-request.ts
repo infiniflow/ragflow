@@ -119,7 +119,8 @@ export const useCreateFolder = () => {
     mutationKey: [FileApiAction.CreateFolder],
     mutationFn: async (params: { parentId: string; name: string }) => {
       const { data } = await fileManagerService.createFolder({
-        ...params,
+        name: params.name,
+        parent_id: params.parentId,
         type: 'folder',
       });
       if (data.code === 0) {
@@ -143,9 +144,10 @@ export const useFetchParentFolderList = () => {
     initialData: [],
     enabled: !!id,
     queryFn: async () => {
-      const { data } = await fileManagerService.getAllParentFolder({
-        fileId: id,
-      });
+      const { data } = await fileManagerService.getAllParentFolder(
+        {},
+        `${id}/ancestors`,
+      );
 
       return data?.data?.parent_folders?.toReversed() ?? [];
     },
@@ -221,7 +223,9 @@ export const useDeleteFile = () => {
   } = useMutation({
     mutationKey: [FileApiAction.DeleteFile],
     mutationFn: async (params: { fileIds: string[]; parentId: string }) => {
-      const { data } = await fileManagerService.removeFile(params);
+      const { data } = await fileManagerService.removeFile({
+        ids: params.fileIds,
+      });
       if (data.code === 0) {
         message.success(t('message.deleted'));
         setPaginationParams(1); // TODO: There should be a better way to paginate the request list
@@ -262,7 +266,10 @@ export const useRenameFile = () => {
   } = useMutation({
     mutationKey: [FileApiAction.RenameFile],
     mutationFn: async (params: { fileId: string; name: string }) => {
-      const { data } = await fileManagerService.renameFile(params);
+      const { data } = await fileManagerService.renameFile(
+        { name: params.name },
+        params.fileId,
+      );
       if (data.code === 0) {
         message.success(t('message.renamed'));
         queryClient.invalidateQueries({

@@ -6309,14 +6309,14 @@ Explanation:
 
 ### Upload file
 
-**POST** `/api/v1/file/upload`
+**POST** `/api/v1/files`
 
 Uploads one or multiple files to the system.
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/file/upload`
+- URL: `/api/v1/files`
 - Headers:
   - `'Content-Type: multipart/form-data'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -6328,7 +6328,7 @@ Uploads one or multiple files to the system.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/file/upload \
+     --url http://{address}/api/v1/files \
      --header 'Content-Type: multipart/form-data' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --form 'file=@./test1.txt' \
@@ -6377,34 +6377,48 @@ Failure:
 
 ### Upload document
 
-**POST** `/api/v1/file/upload_info`
+**POST** `/v1/document/upload_info`
 
 Uploads a file and creates the respective document
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/file/upload_info`
+- URL: `/v1/document/upload_info`
 - Headers:
-  - `'Content-Type: multipart/form-data`
+  - `'Content-Type: multipart/form-data'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Form:
-  - `'file=@{FILE_PATH}'`
+  - `'file=@{FILE_PATH}'` (mutually exclusive with `url`)
+- Query:
+  - `url`: URL to crawl and convert into a runtime attachment (mutually exclusive with `file`)
 
 ##### Request example
 
+Upload a local file:
+
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/file/upload_info \
+     --url http://{address}/v1/document/upload_info \
      --header 'Content-Type: multipart/form-data' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --form 'file=@./test1.pdf'
 ```
 
+Crawl a URL:
+
+```bash
+curl --request POST \
+     --url 'http://{address}/v1/document/upload_info?url=https://example.com/page' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
 ##### Request parameters
 
-- `'file'`: (*Form parameter*), `file`, *Required*  
-  The file to upload.
+- `'file'`: (*Form parameter*), `file`, *Optional*
+  The file to upload. Mutually exclusive with `url`.
+- `url`: (*Query parameter*), `string`, *Optional*
+  A URL to crawl and store as an attachment. Mutually exclusive with `file`. One of `file` or `url` is required.
 
 #### Response
 
@@ -6415,7 +6429,7 @@ Success:
     "code": 0,
     "data": {
       "created_at": 1772451421.7924063,
-      "created by": "be951084066611f18f5f00155d2f98f4",
+      "created_by": "be951084066611f18f5f00155d2f98f4",
       "extension": "pdf",
       "id": "2143a03d162c11f1b80f00155d334d02",
       "mime_type": "application/pdf",
@@ -6438,16 +6452,64 @@ Failure:
 
 ---
 
+### Download attachment
+
+**GET** `/v1/document/download/{attachment_id}`
+
+Downloads a runtime attachment previously uploaded via [Upload document](#upload-document).
+
+#### Request
+
+- Method: GET
+- URL: `/v1/document/download/{attachment_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Query parameters:
+  - `ext`: (*Optional*) File extension hint (e.g. `pdf`, `markdown`). Defaults to `markdown`.
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url 'http://{address}/v1/document/download/{attachment_id}?ext=pdf' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --output ./downloaded_attachment.pdf
+```
+
+##### Request parameters
+
+- `attachment_id`: (*Path parameter*), `string`, *Required*
+  The `id` value returned by the Upload document response.
+- `ext`: (*Query parameter*), `string`, *Optional*
+  File extension used to set the response Content-Type. Defaults to `markdown`.
+
+#### Response
+
+Success:
+
+Returns the file content as a binary stream with appropriate Content-Type headers.
+
+Failure:
+
+```json
+{
+    "code": 500,
+    "message": "Internal server error"
+}
+```
+
+---
+
 ### Create file or folder
 
-**POST** `/api/v1/file/create`
+**POST** `/api/v1/files`
 
 Creates a new file or folder in the system.
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/file/create`
+- URL: `/api/v1/files`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -6460,12 +6522,12 @@ Creates a new file or folder in the system.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/file/create \
+     --url http://{address}/api/v1/files \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
           "name": "New Folder",
-          "type": "FOLDER",
+          "type": "folder",
           "parent_id": "{folder_id}"
      }'
 ```
@@ -6478,8 +6540,8 @@ curl --request POST \
   The parent folder ID. If not specified, the file/folder will be created in the root folder.
 - `"type"`: (*Body parameter*), `string`  
   The type of the file to create. Available options:
-  - `"FOLDER"`: Create a folder
-  - `"VIRTUAL"`: Create a virtual file
+  - `"folder"`: Create a folder
+  - `"virtual"`: Create a virtual file
 
 #### Response
 
@@ -6491,7 +6553,7 @@ Success:
     "data": {
         "id": "b330ec2e91ec11efbc510242ac120004",
         "name": "New Folder",
-        "type": "FOLDER",
+        "type": "folder",
         "parent_id": "527fa74891e811ef9c650242ac120006",
         "size": 0,
         "create_time": 1729763127646
@@ -6512,14 +6574,14 @@ Failure:
 
 ### List files
 
-**GET** `/api/v1/file/list?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+**GET** `/api/v1/files?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
 
 Lists files and folders under a specific folder.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/file/list?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+- URL: `/api/v1/files?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -6527,7 +6589,7 @@ Lists files and folders under a specific folder.
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/api/v1/file/list?parent_id={folder_id}&page=1&page_size=15' \
+     --url 'http://{address}/api/v1/files?parent_id={folder_id}&page=1&page_size=15' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -6587,14 +6649,14 @@ Failure:
 
 ### Get root folder
 
-**GET** `/api/v1/file/root_folder`
+**GET** `/api/v1/files/root`
 
 Retrieves the user's root folder information.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/file/root_folder`
+- URL: `/api/v1/files/root`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -6602,7 +6664,7 @@ Retrieves the user's root folder information.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/file/root_folder \
+     --url http://{address}/api/v1/files/root \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -6621,7 +6683,7 @@ Success:
         "root_folder": {
             "id": "527fa74891e811ef9c650242ac120006",
             "name": "root",
-            "type": "FOLDER"
+            "type": "folder"
         }
     }
 }
@@ -6631,14 +6693,14 @@ Success:
 
 ### Get parent folder
 
-**GET** `/api/v1/file/parent_folder?file_id={file_id}`
+**GET** `/api/v1/files/{file_id}/parent`
 
 Retrieves the immediate parent folder information of a specified file.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/file/parent_folder?file_id={file_id}`
+- URL: `/api/v1/files/{file_id}/parent`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -6646,13 +6708,13 @@ Retrieves the immediate parent folder information of a specified file.
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/api/v1/file/parent_folder?file_id={file_id}' \
+     --url 'http://{address}/api/v1/files/{file_id}/parent' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
 ##### Request parameters
 
-- `file_id`: (*Filter parameter*), `string`, *Required*  
+- `file_id`: (*Path parameter*), `string`, *Required*  
   The ID of the file whose immediate parent folder to retrieve.
 
 #### Response
@@ -6684,14 +6746,14 @@ Failure:
 
 ### Get all parent folders
 
-**GET** `/api/v1/file/all_parent_folder?file_id={file_id}`
+**GET** `/api/v1/files/{file_id}/ancestors`
 
 Retrieves all parent folders of a specified file in the folder hierarchy.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/file/all_parent_folder?file_id={file_id}`
+- URL: `/api/v1/files/{file_id}/ancestors`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -6699,13 +6761,13 @@ Retrieves all parent folders of a specified file in the folder hierarchy.
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/api/v1/file/all_parent_folder?file_id={file_id}' \
+     --url 'http://{address}/api/v1/files/{file_id}/ancestors' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
 ##### Request parameters
 
-- `file_id`: (*Filter parameter*), `string`, *Required*  
+- `file_id`: (*Path parameter*), `string`, *Required*  
   The ID of the file whose parent folders to retrieve.
 
 #### Response
@@ -6743,35 +6805,35 @@ Failure:
 
 ### Delete files
 
-**POST** `/api/v1/file/rm`
+**DELETE** `/api/v1/files`
 
 Deletes one or multiple files or folders.
 
 #### Request
 
-- Method: POST
-- URL: `/api/v1/file/rm`
+- Method: DELETE
+- URL: `/api/v1/files`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"file_ids"`: `list[string]`
+  - `"ids"`: `list[string]`
 
 ##### Request example
 
 ```bash
-curl --request POST \
-     --url http://{address}/api/v1/file/rm \
+curl --request DELETE \
+     --url http://{address}/api/v1/files \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
-          "file_ids": ["file_id_1", "file_id_2"]
+          "ids": ["file_id_1", "file_id_2"]
      }'
 ```
 
 ##### Request parameters
 
-- `"file_ids"`: (*Body parameter*), `list[string]`, *Required*  
+- `"ids"`: (*Body parameter*), `list[string]`, *Required*  
   The IDs of the files or folders to delete.
 
 #### Response
@@ -6798,37 +6860,35 @@ Failure:
 
 ### Rename file
 
-**POST** `/api/v1/file/rename`
+**PUT** `/api/v1/files/{file_id}`
 
 Renames a file or folder.
 
 #### Request
 
-- Method: POST
-- URL: `/api/v1/file/rename`
+- Method: PUT
+- URL: `/api/v1/files/{file_id}`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"file_id"`: `string`
   - `"name"`: `string`
 
 ##### Request example
 
 ```bash
-curl --request POST \
-     --url http://{address}/api/v1/file/rename \
+curl --request PUT \
+     --url http://{address}/api/v1/files/{file_id} \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
-          "file_id": "{file_id}",
           "name": "new_name.txt"
      }'
 ```
 
 ##### Request parameters
 
-- `"file_id"`: (*Body parameter*), `string`, *Required*  
+- `file_id`: (*Path parameter*), `string`, *Required*  
   The ID of the file or folder to rename.
 - `"name"`: (*Body parameter*), `string`, *Required*  
   The new name for the file or folder. Note: Changing file extensions is *not* supported.
@@ -6866,14 +6926,14 @@ or
 
 ### Download file
 
-**GET** `/api/v1/file/get/{file_id}`
+**GET** `/api/v1/files/{file_id}`
 
 Downloads a file from the system.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/file/get/{file_id}`
+- URL: `/api/v1/files/{file_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -6881,7 +6941,7 @@ Downloads a file from the system.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/file/get/{file_id} \
+     --url http://{address}/api/v1/files/{file_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --output ./downloaded_file.txt
 ```
@@ -6910,14 +6970,14 @@ Failure:
 
 ### Move files
 
-**POST** `/api/v1/file/mv`
+**POST** `/api/v1/files/move`
 
 Moves one or multiple files or folders to a specified folder.
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/file/mv`
+- URL: `/api/v1/files/move`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -6929,7 +6989,7 @@ Moves one or multiple files or folders to a specified folder.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/file/mv \
+     --url http://{address}/api/v1/files/move \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
@@ -6978,14 +7038,14 @@ or
 
 ### Convert files to documents and link them to datasets
 
-**POST** `/api/v1/file/convert`
+**POST** `/v1/file2document/convert`
 
 Converts files to documents and links them to specified datasets.
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/file/convert`
+- URL: `/v1/file2document/convert`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -6997,7 +7057,7 @@ Converts files to documents and links them to specified datasets.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/file/convert \
+     --url http://{address}/v1/file2document/convert \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{

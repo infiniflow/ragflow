@@ -143,6 +143,10 @@ def _load_file2document_module(monkeypatch):
         def get_by_id(_file_id):
             return True, _DummyFile(_file_id, _FileType.DOC.value)
 
+        @staticmethod
+        def get_parser(_file_type, _file_name, parser_id):
+            return parser_id
+
     file_service_mod.FileService = _StubFileService
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
     services_pkg.file_service = file_service_mod
@@ -284,7 +288,14 @@ def test_convert_branch_matrix_unit(monkeypatch):
         "get_by_id",
         lambda _file_id: (True, _DummyFile("inner-1", module.FileType.DOC.value, name="inner.txt", location="inner.loc", size=2)),
     )
-    monkeypatch.setattr(module.DocumentService, "insert", lambda _payload: SimpleNamespace(id="doc-new"))
+    inserted = {}
+
+    def _insert(payload):
+        inserted.update(payload)
+        return SimpleNamespace(id="doc-new")
+
+    monkeypatch.setattr(module.DocumentService, "insert", _insert)
+    monkeypatch.setattr(module.FileService, "get_parser", lambda _ft, _name, _parser_id: "picked-parser")
     monkeypatch.setattr(
         module.File2DocumentService,
         "insert",
@@ -293,6 +304,8 @@ def test_convert_branch_matrix_unit(monkeypatch):
     res = _run(module.convert())
     assert res["code"] == 0
     assert res["data"] == [{"file_id": "inner-1", "document_id": "doc-new"}]
+    assert inserted["parser_id"] == "picked-parser"
+    assert inserted["pipeline_id"] == "p1"
 
     req_state["file_ids"] = ["f1"]
     monkeypatch.setattr(
