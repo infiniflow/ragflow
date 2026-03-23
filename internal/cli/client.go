@@ -414,6 +414,7 @@ type BenchmarkResponse struct {
 	Duration     float64 `json:"duration"`
 	SuccessCount int     `json:"success_count"`
 	FailureCount int     `json:"failure_count"`
+	Concurrency  int
 }
 
 func (r *BenchmarkResponse) Type() string {
@@ -421,7 +422,21 @@ func (r *BenchmarkResponse) Type() string {
 }
 
 func (r *BenchmarkResponse) PrintOut() {
-	fmt.Printf("Duration: %f, success: %d, failure: %d\n", r.Duration, r.SuccessCount, r.FailureCount)
+	if r.Code != 0 {
+		fmt.Printf("ERROR, Code: %d\n", r.Code)
+		return
+	}
+
+	iterations := r.SuccessCount + r.FailureCount
+	if r.Concurrency == 1 {
+		if iterations == 1 {
+			fmt.Printf("Latency: %fs\n", r.Duration)
+		} else {
+			fmt.Printf("Latency: %fs, QPS: %.1f, SUCCESS: %d, FAILURE: %d\n", r.Duration, float64(iterations)/r.Duration, r.SuccessCount, r.FailureCount)
+		}
+	} else {
+		fmt.Printf("Concurrency: %d, Latency: %fs, QPS: %.1f, SUCCESS: %d, FAILURE: %d\n", r.Concurrency, r.Duration, float64(iterations)/r.Duration, r.SuccessCount, r.FailureCount)
+	}
 }
 
 func (r *BenchmarkResponse) TimeCost() float64 {

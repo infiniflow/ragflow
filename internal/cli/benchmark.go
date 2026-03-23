@@ -56,7 +56,6 @@ func (c *RAGFlowClient) RunBenchmark(cmd *Command) (ResponseIf, error) {
 
 	// Add iterations to the nested command
 	nestedCmd.Params["iterations"] = iterations
-	nestedCmd.Benchmark = true
 
 	if concurrency == 1 {
 		return c.runBenchmarkSingle(iterations, nestedCmd)
@@ -89,51 +88,42 @@ func (c *RAGFlowClient) runBenchmarkSingle(iterations int, nestedCmd *Command) (
 		result, err := c.ExecuteCommand(nestedCmd)
 		// convert result to BenchmarkResponse
 		benchmarkResponse := result.(*BenchmarkResponse)
-		if err == nil && result != nil {
-			// Command supports benchmark natively
-			qps := float64(0)
-			if benchmarkResponse.Duration > 0 {
-				qps = float64(iterations) / benchmarkResponse.Duration
-			}
-
-			fmt.Printf("command: %s, iterations: %d\n", commandType, iterations)
-			fmt.Printf("total duration: %.4fs, QPS: %.2f, COMMAND_COUNT: %d, SUCCESS: %d, FAILURE: %d\n",
-				benchmarkResponse.Duration, qps, iterations, benchmarkResponse.SuccessCount, benchmarkResponse.FailureCount)
-			return benchmarkResponse, nil
-		}
-	} else {
-		result, err := c.ExecuteCommand(nestedCmd)
-		if err != nil {
-			fmt.Printf("fail to execute: %s", commandType)
-			return nil, err
-		}
-
-		var benchmarkResponse BenchmarkResponse
-		switch result.Type() {
-		case "common":
-			commonResponse := result.(*CommonResponse)
-			benchmarkResponse.Code = commonResponse.Code
-			benchmarkResponse.Duration = commonResponse.Duration
-			if commonResponse.Code == 0 {
-				benchmarkResponse.SuccessCount = 1
-			} else {
-				benchmarkResponse.FailureCount = 1
-			}
-		case "simple":
-			simpleResponse := result.(*SimpleResponse)
-			benchmarkResponse.Code = simpleResponse.Code
-			benchmarkResponse.Duration = simpleResponse.Duration
-			if simpleResponse.Code == 0 {
-				benchmarkResponse.SuccessCount = 1
-			} else {
-				benchmarkResponse.FailureCount = 1
-			}
-		default:
-			return nil, fmt.Errorf("unsupported command type: %s", result.Type())
-		}
-
-		return &benchmarkResponse, nil
+		benchmarkResponse.Concurrency = 1
+		return benchmarkResponse, err
 	}
+
+	result, err := c.ExecuteCommand(nestedCmd)
+	if err != nil {
+		fmt.Printf("fail to execute: %s", commandType)
+		return nil, err
+	}
+
+	var benchmarkResponse BenchmarkResponse
+	switch result.Type() {
+	case "common":
+		commonResponse := result.(*CommonResponse)
+		benchmarkResponse.Code = commonResponse.Code
+		benchmarkResponse.Duration = commonResponse.Duration
+		if commonResponse.Code == 0 {
+			benchmarkResponse.SuccessCount = 1
+		} else {
+			benchmarkResponse.FailureCount = 1
+		}
+	case "simple":
+		simpleResponse := result.(*SimpleResponse)
+		benchmarkResponse.Code = simpleResponse.Code
+		benchmarkResponse.Duration = simpleResponse.Duration
+		if simpleResponse.Code == 0 {
+			benchmarkResponse.SuccessCount = 1
+		} else {
+			benchmarkResponse.FailureCount = 1
+		}
+
+	default:
+		return nil, fmt.Errorf("unsupported command type: %s", result.Type())
+	}
+	benchmarkResponse.Concurrency = 1
+	return &benchmarkResponse, nil
 
 	return nil, nil
 }
