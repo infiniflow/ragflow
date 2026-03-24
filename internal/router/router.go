@@ -202,6 +202,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 		}
 
+		// Document routes
+		doc := authorized.Group("/v1/document")
+		{
+			doc.POST("/list", r.documentHandler.ListDocuments)
+			doc.POST("/metadata/summary", r.documentHandler.MetadataSummary)
+		}
+
 		// Chunk routes
 		chunk := authorized.Group("/v1/chunk")
 		{

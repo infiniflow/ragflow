@@ -672,6 +672,8 @@ class UpdateDatasetReq(CreateDatasetReq):
     dataset_id: Annotated[str, Field(...)]
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(default="")]
     pagerank: Annotated[int, Field(default=0, ge=0, le=100)]
+    language: Annotated[str | None, Field(default=None, max_length=32)]
+    connectors: Annotated[list[dict[str, Any]], Field(default_factory=list)]
 
     @field_validator("dataset_id", mode="before")
     @classmethod
