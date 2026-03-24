@@ -17,12 +17,15 @@ import json
 import copy
 import re
 import time
+from typing import Any
 
 import os
 import tempfile
 import logging
 
+from pydantic import BaseModel, ConfigDict, Field
 from quart import Response, jsonify, request
+from quart_schema import DataSource, document_querystring, document_request, document_response, tag
 
 from common.token_utils import num_tokens_from_string
 
@@ -54,9 +57,269 @@ from common.constants import RetCode, LLMType, StatusEnum
 from common import settings
 
 
+class ErrorResponse(BaseModel):
+    code: int = Field(description="Response code.")
+    message: str = Field(description="Response message.")
+    data: Any | None = Field(default=None, description="Response payload.")
+
+
+class MessageRecord(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    role: str | None = Field(default=None, description="Message role.")
+    content: Any | None = Field(default=None, description="Message content.")
+
+
+class SessionRecord(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str = Field(description="Session ID.")
+    name: str | None = Field(default=None, description="Session name.")
+    user_id: str | None = Field(default=None, description="Associated user ID.")
+    messages: list[MessageRecord] | None = Field(default=None, description="Session messages.")
+    chat_id: str | None = Field(default=None, description="Chat assistant ID.")
+    agent_id: str | None = Field(default=None, description="Agent ID.")
+    source: str | None = Field(default=None, description="Session source.")
+    dsl: Any | None = Field(default=None, description="Agent DSL state.")
+
+
+class SessionCreateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"name": "New session", "user_id": "user_123"}})
+
+    name: str | None = Field(default=None, description="Session display name. Defaults to `New session`.")
+    user_id: str | None = Field(default=None, description="Optional user ID associated with the session.")
+
+
+class SessionCreateResponse(BaseModel):
+    code: int = Field(description="Response code.")
+    message: str = Field(description="Response message.")
+    data: SessionRecord = Field(description="Created session.")
+
+
+class AgentSessionCreateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"user_id": "user_123", "release": False}})
+
+    user_id: str | None = Field(default=None, description="Optional user ID associated with the session.")
+    release: bool | None = Field(default=None, description="Whether to use the published agent release.")
+
+
+class SessionUpdateBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"name": "Renamed session"}})
+
+    name: str | None = Field(default=None, description="Updated session name.")
+    user_id: str | None = Field(default=None, description="Updated user ID.")
+
+
+class GenericSuccessResponse(BaseModel):
+    code: int = Field(description="Response code.")
+    message: str = Field(description="Response message.")
+    data: Any | None = Field(default=None, description="Response payload.")
+
+
+class ChatCompletionBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"question": "What is RAGFlow?", "stream": True}})
+
+    question: str | None = Field(default=None, description="User question.")
+    session_id: str | None = Field(default=None, description="Existing session ID.")
+    stream: bool | None = Field(default=True, description="Whether to stream the completion as SSE.")
+    metadata_condition: dict[str, Any] | None = Field(default=None, description="Optional metadata filter object.")
+
+
+class OpenAIMessage(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    role: str = Field(description="Message role.")
+    content: Any = Field(description="Message content.")
+
+
+class OpenAIReferenceMetadata(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    include: bool | None = Field(default=None, description="Whether to include document metadata in references.")
+    fields: list[str] | None = Field(default=None, description="Metadata fields to include.")
+
+
+class OpenAIExtraBody(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    reference: bool | None = Field(default=None, description="Whether to include references in the response.")
+    reference_metadata: OpenAIReferenceMetadata | None = Field(default=None, description="Reference metadata options.")
+    metadata_condition: dict[str, Any] | None = Field(default=None, description="Optional metadata filter object.")
+
+
+class OpenAIChatCompletionBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={"example": {"model": "model", "messages": [{"role": "user", "content": "Hello"}], "stream": True}},
+    )
+
+    model: str = Field(description="Model identifier.")
+    messages: list[OpenAIMessage] = Field(description="OpenAI-style message list.")
+    stream: bool | None = Field(default=True, description="Whether to stream the response.")
+    extra_body: OpenAIExtraBody | None = Field(default=None, description="Additional RAGFlow options.")
+
+
+class AgentCompletionBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"stream": True, "return_trace": False}})
+
+    stream: bool | None = Field(default=True, description="Whether to stream the response.")
+    return_trace: bool | None = Field(default=False, description="Whether to include node execution trace.")
+    session_id: str | None = Field(default=None, description="Existing agent session ID.")
+
+
+class SessionListQuery(BaseModel):
+    id: str | None = Field(default=None, description="Optional session ID filter.")
+    name: str | None = Field(default=None, description="Optional session name filter.")
+    page: int | None = Field(default=1, description="Page number.")
+    page_size: int | None = Field(default=30, description="Number of items per page.")
+    orderby: str | None = Field(default="create_time", description="Sort field.")
+    user_id: str | None = Field(default=None, description="Optional user ID filter.")
+    desc: bool | None = Field(default=True, description="Whether sorting is descending.")
+
+
+class AgentSessionListQuery(BaseModel):
+    id: str | None = Field(default=None, description="Optional session ID filter.")
+    user_id: str | None = Field(default=None, description="Optional user ID filter.")
+    page: int | None = Field(default=1, description="Page number.")
+    page_size: int | None = Field(default=30, description="Number of items per page.")
+    orderby: str | None = Field(default="update_time", description="Sort field.")
+    desc: bool | None = Field(default=True, description="Whether sorting is descending.")
+    dsl: bool | None = Field(default=True, description="Whether to include the agent DSL in the response.")
+
+
+class SessionListResponse(BaseModel):
+    code: int = Field(description="Response code.")
+    message: str = Field(description="Response message.")
+    data: list[SessionRecord] = Field(description="Sessions list.")
+
+
+class SessionDeleteBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"ids": ["session_1", "session_2"]}})
+
+    ids: list[str] | None = Field(default=None, description="Optional list of session IDs to delete. Omit to delete all.")
+
+
+class AskAboutBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={"example": {"question": "What is this about?", "dataset_ids": ["dataset_123"]}},
+    )
+
+    question: str = Field(description="User question.")
+    dataset_ids: list[str] = Field(description="Dataset IDs to query.")
+
+
+class RelatedQuestionsBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"question": "neovim install", "industry": "software"}})
+
+    question: str = Field(description="Seed question or keywords.")
+    industry: str | None = Field(default=None, description="Optional industry context.")
+
+
+class StringListResponse(BaseModel):
+    code: int = Field(description="Response code.")
+    message: str = Field(description="Response message.")
+    data: list[str] = Field(description="Generated related questions.")
+
+
+class ChatbotCompletionBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"question": "What is RAGFlow?", "stream": True}})
+
+    question: str | None = Field(default=None, description="User question.")
+    stream: bool | None = Field(default=True, description="Whether to stream the response.")
+    quote: bool | None = Field(default=False, description="Whether to include references.")
+
+
+class ChatbotInfoData(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    title: str | None = Field(default=None, description="Chatbot title.")
+    avatar: str | None = Field(default=None, description="Chatbot avatar.")
+    prologue: str | None = Field(default=None, description="Chatbot prologue.")
+    has_tavily_key: bool | None = Field(default=None, description="Whether Tavily integration is configured.")
+
+
+class ChatbotInfoResponse(BaseModel):
+    code: int = Field(description="Response code.")
+    message: str = Field(description="Response message.")
+    data: ChatbotInfoData = Field(description="Chatbot metadata.")
+
+
+class AgentInputsData(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    title: str | None = Field(default=None, description="Agent title.")
+    avatar: str | None = Field(default=None, description="Agent avatar.")
+    inputs: Any | None = Field(default=None, description="Agent input form schema.")
+    prologue: str | None = Field(default=None, description="Agent prologue.")
+    mode: str | None = Field(default=None, description="Agent interaction mode.")
+
+
+class AgentInputsResponse(BaseModel):
+    code: int = Field(description="Response code.")
+    message: str = Field(description="Response message.")
+    data: AgentInputsData = Field(description="Agent input metadata.")
+
+
+class SearchbotsAskBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"question": "What is RAGFlow?", "kb_ids": ["kb_123"]}})
+
+    question: str = Field(description="User question.")
+    kb_ids: list[str] = Field(description="Knowledge base IDs.")
+    search_id: str | None = Field(default=None, description="Optional search app ID.")
+
+
+class RetrievalTestBody(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={"example": {"kb_id": ["kb_123"], "question": "What is this about?", "page": 1, "size": 30}},
+    )
+
+    kb_id: str | list[str] = Field(description="Knowledge base ID or list of IDs.")
+    question: str = Field(description="User question.")
+    page: int | None = Field(default=1, description="Page number.")
+    size: int | None = Field(default=30, description="Page size.")
+
+
+class SearchDetailQuery(BaseModel):
+    search_id: str = Field(description="Search app ID.")
+
+
+class MindmapBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"question": "What is RAGFlow?", "kb_ids": ["kb_123"]}})
+
+    question: str = Field(description="User question.")
+    kb_ids: list[str] = Field(description="Knowledge base IDs.")
+    search_id: str | None = Field(default=None, description="Optional search app ID.")
+
+
+class Sequence2TxtForm(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"stream": "false"}})
+
+    file: bytes = Field(description="Audio file (multipart/form-data).")
+    stream: str | None = Field(default=None, description="Whether to stream transcription events (`true`/`false`).")
+
+
+class Sequence2TxtResponse(BaseModel):
+    code: int = Field(description="Response code.")
+    message: str = Field(description="Response message.")
+    data: dict[str, str] = Field(description="Transcription result payload.")
+
+
+class TTSBody(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"text": "Hello world"}})
+
+    text: str = Field(description="Text to synthesize.")
+
+
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Sessions"])
+@document_request(SessionCreateBody, source=DataSource.JSON)
+@document_response(SessionCreateResponse)
+@document_response(ErrorResponse, 400)
 async def create(tenant_id, chat_id):
+    """Create a session for a chat assistant."""
     req = await get_request_json()
     req["dialog_id"] = chat_id
     dia = DialogService.query(tenant_id=tenant_id, id=req["dialog_id"], status=StatusEnum.VALID.value)
@@ -85,7 +348,12 @@ async def create(tenant_id, chat_id):
 
 @manager.route("/agents/<agent_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Agent Sessions"])
+@document_request(AgentSessionCreateBody, source=DataSource.JSON)
+@document_response(SessionCreateResponse)
+@document_response(ErrorResponse, 400)
 async def create_agent_session(tenant_id, agent_id):
+    """Create a session for an agent."""
     req = await get_request_json()
     user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
     release_mode = bool(req.get("release", request.args.get("release", False)))
@@ -123,7 +391,12 @@ async def create_agent_session(tenant_id, agent_id):
 
 @manager.route("/chats/<chat_id>/sessions/<session_id>", methods=["PUT"])  # noqa: F821
 @token_required
+@tag(["SDK Sessions"])
+@document_request(SessionUpdateBody, source=DataSource.JSON)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def update(tenant_id, chat_id, session_id):
+    """Update a chat session."""
     req = await get_request_json()
     req["dialog_id"] = chat_id
     conv_id = session_id
@@ -145,7 +418,12 @@ async def update(tenant_id, chat_id, session_id):
 
 @manager.route("/chats/<chat_id>/completions", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Chat Completions"])
+@document_request(ChatCompletionBody, source=DataSource.JSON)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def chat_completion(tenant_id, chat_id):
+    """Run a chat completion for a chat assistant. Returns SSE when `stream=true`."""
     req = await get_request_json()
     if not req:
         req = {"question": ""}
@@ -197,6 +475,10 @@ async def chat_completion(tenant_id, chat_id):
 @manager.route("/chats_openai/<chat_id>/chat/completions", methods=["POST"])  # noqa: F821
 @validate_request("model", "messages")  # noqa: F821
 @token_required
+@tag(["SDK Chat Completions"])
+@document_request(OpenAIChatCompletionBody, source=DataSource.JSON)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def chat_completion_openai_like(tenant_id, chat_id):
     """
     OpenAI-like chat completion API that simulates the behavior of OpenAI's completions endpoint.
@@ -489,7 +771,12 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 @manager.route("/agents_openai/<agent_id>/chat/completions", methods=["POST"])  # noqa: F821
 @validate_request("model", "messages")  # noqa: F821
 @token_required
+@tag(["SDK Agent Completions"])
+@document_request(OpenAIChatCompletionBody, source=DataSource.JSON)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def agents_completion_openai_compatibility(tenant_id, agent_id):
+    """OpenAI-compatible chat completion endpoint for agents."""
     req = await get_request_json()
     messages = req.get("messages", [])
     if not messages:
@@ -548,7 +835,12 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
 
 @manager.route("/agents/<agent_id>/completions", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Agent Completions"])
+@document_request(AgentCompletionBody, source=DataSource.JSON)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def agent_completions(tenant_id, agent_id):
+    """Run an agent completion. Returns SSE when `stream=true`."""
     req = await get_request_json()
     return_trace = bool(req.get("return_trace", False))
 
@@ -634,7 +926,12 @@ async def agent_completions(tenant_id, agent_id):
 
 @manager.route("/chats/<chat_id>/sessions", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Sessions"])
+@document_querystring(SessionListQuery)
+@document_response(SessionListResponse)
+@document_response(ErrorResponse, 400)
 async def list_session(tenant_id, chat_id):
+    """List sessions for a chat assistant."""
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message=f"You don't own the assistant {chat_id}.")
     id = request.args.get("id")
@@ -688,7 +985,12 @@ async def list_session(tenant_id, chat_id):
 
 @manager.route("/agents/<agent_id>/sessions", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Agent Sessions"])
+@document_querystring(AgentSessionListQuery)
+@document_response(SessionListResponse)
+@document_response(ErrorResponse, 400)
 async def list_agent_session(tenant_id, agent_id):
+    """List sessions for an agent."""
     if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
         return get_error_data_result(message=f"You don't own the agent {agent_id}.")
     id = request.args.get("id")
@@ -751,7 +1053,12 @@ async def list_agent_session(tenant_id, agent_id):
 
 @manager.route("/chats/<chat_id>/sessions", methods=["DELETE"])  # noqa: F821
 @token_required
+@tag(["SDK Sessions"])
+@document_request(SessionDeleteBody, source=DataSource.JSON)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def delete(tenant_id, chat_id):
+    """Delete one or more chat sessions."""
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message="You don't own the chat")
 
@@ -803,7 +1110,12 @@ async def delete(tenant_id, chat_id):
 
 @manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])  # noqa: F821
 @token_required
+@tag(["SDK Agent Sessions"])
+@document_request(SessionDeleteBody, source=DataSource.JSON)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def delete_agent_session(tenant_id, agent_id):
+    """Delete one or more agent sessions."""
     errors = []
     success_count = 0
     req = await get_request_json()
@@ -856,7 +1168,12 @@ async def delete_agent_session(tenant_id, agent_id):
 
 @manager.route("/sessions/ask", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Sessions"])
+@document_request(AskAboutBody, source=DataSource.JSON)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def ask_about(tenant_id):
+    """Ask a question against one or more datasets. Returns SSE."""
     req = await get_request_json()
     if not req.get("question"):
         return get_error_data_result("`question` is required.")
@@ -895,7 +1212,12 @@ async def ask_about(tenant_id):
 
 @manager.route("/sessions/related_questions", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Sessions"])
+@document_request(RelatedQuestionsBody, source=DataSource.JSON)
+@document_response(StringListResponse)
+@document_response(ErrorResponse, 400)
 async def related_questions(tenant_id):
+    """Generate related questions for a query."""
     req = await get_request_json()
     if not req.get("question"):
         return get_error_data_result("`question` is required.")
@@ -947,7 +1269,12 @@ Related search terms:
 
 
 @manager.route("/chatbots/<dialog_id>/completions", methods=["POST"])  # noqa: F821
+@tag(["SDK Chatbots"])
+@document_request(ChatbotCompletionBody, source=DataSource.JSON)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def chatbot_completions(dialog_id):
+    """Run a completion against a shared chatbot. Returns SSE when `stream=true`."""
     req = await get_request_json()
 
     token = request.headers.get("Authorization").split()
@@ -975,7 +1302,11 @@ async def chatbot_completions(dialog_id):
     return None
 
 @manager.route("/chatbots/<dialog_id>/info", methods=["GET"])  # noqa: F821
+@tag(["SDK Chatbots"])
+@document_response(ChatbotInfoResponse)
+@document_response(ErrorResponse, 400)
 async def chatbots_inputs(dialog_id):
+    """Get metadata for a shared chatbot."""
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -999,7 +1330,12 @@ async def chatbots_inputs(dialog_id):
 
 
 @manager.route("/agentbots/<agent_id>/completions", methods=["POST"])  # noqa: F821
+@tag(["SDK Agentbots"])
+@document_request(AgentCompletionBody, source=DataSource.JSON)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def agent_bot_completions(agent_id):
+    """Run a completion against a shared agent bot. Returns SSE when `stream=true`."""
     req = await get_request_json()
 
     token = request.headers.get("Authorization").split()
@@ -1044,7 +1380,11 @@ async def agent_bot_completions(agent_id):
     return None
 
 @manager.route("/agentbots/<agent_id>/inputs", methods=["GET"])  # noqa: F821
+@tag(["SDK Agentbots"])
+@document_response(AgentInputsResponse)
+@document_response(ErrorResponse, 400)
 async def begin_inputs(agent_id):
+    """Get begin-node inputs for a shared agent bot."""
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -1065,7 +1405,12 @@ async def begin_inputs(agent_id):
 
 @manager.route("/searchbots/ask", methods=["POST"])  # noqa: F821
 @validate_request("question", "kb_ids")
+@tag(["SDK Searchbots"])
+@document_request(SearchbotsAskBody, source=DataSource.JSON)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def ask_about_embedded():
+    """Ask a question against embedded search bots. Returns SSE."""
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -1104,7 +1449,12 @@ async def ask_about_embedded():
 
 @manager.route("/searchbots/retrieval_test", methods=["POST"])  # noqa: F821
 @validate_request("kb_id", "question")
+@tag(["SDK Searchbots"])
+@document_request(RetrievalTestBody, source=DataSource.JSON)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def retrieval_test_embedded():
+    """Run a retrieval test against embedded search bots."""
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -1236,7 +1586,12 @@ async def retrieval_test_embedded():
 
 @manager.route("/searchbots/related_questions", methods=["POST"])  # noqa: F821
 @validate_request("question")
+@tag(["SDK Searchbots"])
+@document_request(RelatedQuestionsBody, source=DataSource.JSON)
+@document_response(StringListResponse)
+@document_response(ErrorResponse, 400)
 async def related_questions_embedded():
+    """Generate related questions for an embedded search bot query."""
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -1284,7 +1639,12 @@ Related search terms:
 
 
 @manager.route("/searchbots/detail", methods=["GET"])  # noqa: F821
+@tag(["SDK Searchbots"])
+@document_querystring(SearchDetailQuery)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def detail_share_embedded():
+    """Get details for a shared search bot."""
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -1316,7 +1676,12 @@ async def detail_share_embedded():
 
 @manager.route("/searchbots/mindmap", methods=["POST"])  # noqa: F821
 @validate_request("question", "kb_ids")
+@tag(["SDK Searchbots"])
+@document_request(MindmapBody, source=DataSource.JSON)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def mindmap():
+    """Generate a mindmap for an embedded search bot query."""
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
@@ -1338,7 +1703,12 @@ async def mindmap():
 
 @manager.route("/sequence2txt", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Audio"])
+@document_request(Sequence2TxtForm, source=DataSource.FORM_MULTIPART)
+@document_response(Sequence2TxtResponse)
+@document_response(ErrorResponse, 400)
 async def sequence2txt(tenant_id):
+    """Transcribe an audio file to text. Returns SSE when `stream=true`."""
     req = await request.form
     stream_mode = req.get("stream", "false").lower() == "true"
     files = await request.files
@@ -1393,7 +1763,12 @@ async def sequence2txt(tenant_id):
 
 @manager.route("/tts", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Audio"])
+@document_request(TTSBody, source=DataSource.JSON)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def tts(tenant_id):
+    """Convert text to speech and stream audio output."""
     req = await get_request_json()
     text = req["text"]
 
