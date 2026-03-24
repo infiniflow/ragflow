@@ -514,66 +514,13 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 //   - message: true
 //   - data.messages: Array of message objects
 //   - data.storage_type: Storage type
+//
+// TODO: Implementation pending - depends on CanvasService and TaskService
 func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
-	// Get memory_id from URL path
-	memoryID := c.Param("memory_id")
-	if memoryID == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "memory_id is required",
-			"data":    nil,
-		})
-		return
-	}
-
-	// Parse query parameters
-	agentIDsParam := c.Query("agent_id")
-	keywords := c.Query("keywords")
-	pageStr := c.DefaultQuery("page", "1")
-	pageSizeStr := c.DefaultQuery("page_size", "50")
-
-	// Convert pagination parameters to integers
-	page, _ := strconv.Atoi(pageStr)
-	pageSize, _ := strconv.Atoi(pageSizeStr)
-
-	// Parse agent_id parameter (supports comma separation)
-	var agentIDs []string
-	if agentIDsParam != "" {
-		if strings.Contains(agentIDsParam, ",") {
-			agentIDs = strings.Split(agentIDsParam, ",")
-		} else {
-			agentIDs = []string{agentIDsParam}
-		}
-	}
-
-	// Call service layer to get memory messages
-	result, err := h.memoryService.GetMemoryMessages(memoryID, agentIDs, keywords, page, pageSize)
-	if err != nil {
-		errMsg := err.Error()
-		// Check if it's a "not found" error
-		if strings.Contains(errMsg, "not found") {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeNotFound,
-				"message": errMsg,
-				"data":    nil,
-			})
-			return
-		}
-
-		// Other errors return server error
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": errMsg,
-			"data":    nil,
-		})
-		return
-	}
-
-	// Return success response
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": true,
-		"data":    result,
+		"code":    common.CodeServerError,
+		"message": "GetMemoryMessages not implemented - pending CanvasService and TaskService dependencies",
+		"data":    nil,
 	})
 }
 
@@ -593,82 +540,11 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 //   - agent_response (required): Agent response
 //   - user_id (optional): User ID
 //
-// Business Logic:
-//  1. Validate that all memories exist
-//  2. Create message record for each memory
-//  3. Generate embedding vectors
-//  4. Save to vector database
-//  5. Create asynchronous task
+// TODO: Implementation pending - depends on embedding engine
 func (h *MemoryHandler) AddMessage(c *gin.Context) {
-	// Define request struct
-	var req struct {
-		MemoryID      interface{} `json:"memory_id"`      // Supports string or string array
-		AgentID       string      `json:"agent_id"`       // Agent ID (required)
-		SessionID     string      `json:"session_id"`     // Session ID (required)
-		UserInput     string      `json:"user_input"`     // User input (required)
-		AgentResponse string      `json:"agent_response"` // Agent response (required)
-		UserID        string      `json:"user_id"`        // User ID (optional)
-	}
-
-	// Parse JSON request body
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-			"data":    nil,
-		})
-		return
-	}
-
-	// Handle memory_id parameter (supports single value or array)
-	var memoryIDs []string
-	switch v := req.MemoryID.(type) {
-	case string:
-		// Single memory_id
-		memoryIDs = []string{v}
-	case []interface{}:
-		// memory_id array
-		for _, id := range v {
-			if strID, ok := id.(string); ok {
-				memoryIDs = append(memoryIDs, strID)
-			}
-		}
-	}
-
-	// Build message dictionary
-	messageDict := map[string]interface{}{
-		"agent_id":       req.AgentID,
-		"session_id":     req.SessionID,
-		"user_input":     req.UserInput,
-		"agent_response": req.AgentResponse,
-		"user_id":        req.UserID,
-	}
-
-	// Call service layer to add messages
-	success, msg, err := h.memoryService.AddMessage(memoryIDs, messageDict)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": err.Error(),
-			"data":    nil,
-		})
-		return
-	}
-
-	// Check if partially successful
-	if !success {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": msg,
-			"data":    nil,
-		})
-		return
-	}
-
-	// Return success response
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": msg,
+		"code":    common.CodeServerError,
+		"message": "AddMessage not implemented - pending embedding engine dependency",
 		"data":    nil,
 	})
 }
@@ -683,50 +559,12 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 // Parameter Format:
 //   - memory_id: Memory ID
 //   - message_id: Message ID (integer)
+//
+// TODO: Implementation pending - depends on embedding engine
 func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
-	// Get memory_id and message_id from URL path
-	// Path format: /:memory_id/:message_id (e.g., abc123/456)
-	memoryID := c.Param("memory_id")
-	messageIDStr := c.Param("message_id")
-
-	// Convert message_id to integer
-	messageID, err := strconv.Atoi(messageIDStr)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "message_id must be an integer",
-			"data":    nil,
-		})
-		return
-	}
-
-	// Call service layer to soft-delete message
-	success, err := h.memoryService.ForgetMessage(memoryID, messageID)
-	if err != nil {
-		errMsg := err.Error()
-		// Check if it's a "not found" error
-		if strings.Contains(errMsg, "not found") {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeNotFound,
-				"message": errMsg,
-				"data":    nil,
-			})
-			return
-		}
-
-		// Other errors return server error
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": errMsg,
-			"data":    nil,
-		})
-		return
-	}
-
-	// Return success response
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": success,
+		"code":    common.CodeServerError,
+		"message": "ForgetMessage not implemented - pending embedding engine dependency",
 		"data":    nil,
 	})
 }
@@ -740,64 +578,12 @@ func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
 //
 // Request Parameters (JSON Body):
 //   - status (required): Message status, boolean
+//
+// TODO: Implementation pending - depends on embedding engine
 func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
-	// Get memory_id and message_id from URL path
-	// Path format: /:memory_id/:message_id (e.g., abc123/456)
-	memoryID := c.Param("memory_id")
-	messageIDStr := c.Param("message_id")
-
-	// Convert message_id to integer
-	messageID, err := strconv.Atoi(messageIDStr)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "message_id must be an integer",
-			"data":    nil,
-		})
-		return
-	}
-
-	// Parse request body
-	var req struct {
-		Status bool `json:"status"` // Status, must be boolean
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-			"data":    nil,
-		})
-		return
-	}
-
-	// Call service layer to update message status
-	success, err := h.memoryService.UpdateMessageStatus(memoryID, messageID, req.Status)
-	if err != nil {
-		errMsg := err.Error()
-		// Check if it's a "not found" error
-		if strings.Contains(errMsg, "not found") {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeNotFound,
-				"message": errMsg,
-				"data":    nil,
-			})
-			return
-		}
-
-		// Other errors return server error
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": errMsg,
-			"data":    nil,
-		})
-		return
-	}
-
-	// Return success response
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": success,
+		"code":    common.CodeServerError,
+		"message": "UpdateMessage not implemented - pending embedding engine dependency",
 		"data":    nil,
 	})
 }
@@ -819,64 +605,13 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 //   - agent_id (optional): Agent ID filter
 //   - session_id (optional): Session ID filter
 //   - user_id (optional): User ID filter
+//
+// TODO: Implementation pending - depends on embedding engine
 func (h *MemoryHandler) SearchMessage(c *gin.Context) {
-	// Parse query parameters
-	memoryIDsParam := c.Query("memory_id")
-	query := c.Query("query")
-	similarityThresholdStr := c.DefaultQuery("similarity_threshold", "0.2")
-	keywordsSimilarityWeightStr := c.DefaultQuery("keywords_similarity_weight", "0.7")
-	topNStr := c.DefaultQuery("top_n", "5")
-	agentID := c.Query("agent_id")
-	sessionID := c.Query("session_id")
-	userID := c.Query("user_id")
-
-	// Convert numeric parameters
-	similarityThreshold, _ := strconv.ParseFloat(similarityThresholdStr, 64)
-	keywordsSimilarityWeight, _ := strconv.ParseFloat(keywordsSimilarityWeightStr, 64)
-	topN, _ := strconv.Atoi(topNStr)
-
-	// Parse memory_id parameter
-	var memoryIDs []string
-	if memoryIDsParam != "" {
-		if strings.Contains(memoryIDsParam, ",") {
-			memoryIDs = strings.Split(memoryIDsParam, ",")
-		} else {
-			memoryIDs = []string{memoryIDsParam}
-		}
-	}
-
-	// Build filter condition dictionary
-	filterDict := map[string]interface{}{
-		"memory_id":  memoryIDs,
-		"agent_id":   agentID,
-		"session_id": sessionID,
-		"user_id":    userID,
-	}
-
-	// Build search parameter dictionary
-	params := map[string]interface{}{
-		"query":                      query,
-		"similarity_threshold":       similarityThreshold,
-		"keywords_similarity_weight": keywordsSimilarityWeight,
-		"top_n":                      topN,
-	}
-
-	// Call service layer to search messages
-	result, err := h.memoryService.SearchMessage(filterDict, params)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": err.Error(),
-			"data":    nil,
-		})
-		return
-	}
-
-	// Return success response
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": true,
-		"data":    result,
+		"code":    common.CodeServerError,
+		"message": "SearchMessage not implemented - pending embedding engine dependency",
+		"data":    nil,
 	})
 }
 
@@ -892,53 +627,13 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 //   - agent_id (optional): Agent ID filter
 //   - session_id (optional): Session ID filter
 //   - limit (optional): Number of results to return, default 10
+//
+// TODO: Implementation pending - depends on embedding engine
 func (h *MemoryHandler) GetMessages(c *gin.Context) {
-	// Parse query parameters
-	memoryIDsParam := c.Query("memory_id")
-	agentID := c.DefaultQuery("agent_id", "")
-	sessionID := c.DefaultQuery("session_id", "")
-	limitStr := c.DefaultQuery("limit", "10")
-
-	// Convert limit parameter
-	limit, _ := strconv.Atoi(limitStr)
-	if limit < 1 {
-		limit = 10
-	}
-
-	// Validate memory_id parameter
-	if memoryIDsParam == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "memory_ids is required",
-			"data":    nil,
-		})
-		return
-	}
-
-	// Parse memory_id parameter
-	var memoryIDs []string
-	if strings.Contains(memoryIDsParam, ",") {
-		memoryIDs = strings.Split(memoryIDsParam, ",")
-	} else {
-		memoryIDs = []string{memoryIDsParam}
-	}
-
-	// Call service layer to get message list
-	result, err := h.memoryService.GetMessages(memoryIDs, agentID, sessionID, limit)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": err.Error(),
-			"data":    nil,
-		})
-		return
-	}
-
-	// Return success response
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": true,
-		"data":    result,
+		"code":    common.CodeServerError,
+		"message": "GetMessages not implemented - pending embedding engine dependency",
+		"data":    nil,
 	})
 }
 
@@ -952,51 +647,13 @@ func (h *MemoryHandler) GetMessages(c *gin.Context) {
 // Parameter Format:
 //   - memory_id: Memory ID
 //   - message_id: Message ID (integer)
+//
+// TODO: Implementation pending - depends on embedding engine
 func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
-	// Get memory_id and message_id from URL path
-	// Path format: /:memory_id/:message_id/content (e.g., abc123/456/content)
-	memoryID := c.Param("memory_id")
-	messageIDStr := c.Param("message_id")
-
-	// Convert message_id to integer
-	messageID, err := strconv.Atoi(messageIDStr)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "message_id must be an integer",
-			"data":    nil,
-		})
-		return
-	}
-
-	// Call service layer to get message content
-	result, err := h.memoryService.GetMessageContent(memoryID, messageID)
-	if err != nil {
-		errMsg := err.Error()
-		// Check if it's a "not found" error
-		if strings.Contains(errMsg, "not found") {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeNotFound,
-				"message": errMsg,
-				"data":    nil,
-			})
-			return
-		}
-
-		// Other errors return server error
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": errMsg,
-			"data":    nil,
-		})
-		return
-	}
-
-	// Return success response
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": true,
-		"data":    result,
+		"code":    common.CodeServerError,
+		"message": "GetMessageContent not implemented - pending embedding engine dependency",
+		"data":    nil,
 	})
 }
 
