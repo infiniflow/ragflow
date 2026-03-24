@@ -77,10 +77,60 @@ def open_user_settings(page, base_url: str) -> None:
     wait_for_path_prefix(page, "/user-setting", timeout_ms=5000)
 
 
-def needs_selection(combobox, option_text: str) -> bool:
-    """Return True when the combobox does not already show the option text."""
+def _clean_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value or "").strip()
+
+
+def _has_malformed_model_suffix(value: str) -> bool:
+    return "#" in (value or "")
+
+
+def _is_expected_selected(current_text: str, expected_value_prefix: str, option_text: str) -> bool:
+    current = _clean_text(current_text)
+    expected_prefix = _clean_text(expected_value_prefix)
+    expected_label = _clean_text(option_text)
+
+    if not current:
+        return False
+    if _has_malformed_model_suffix(current):
+        return False
+
+    # When a canonical model prefix is provided (model@factory), prefer strict matching.
+    if "@" in expected_prefix:
+        if "@" not in current:
+            return False
+        return current.lower().startswith(expected_prefix.lower())
+
+    return expected_label and expected_label.lower() in current.lower()
+
+
+def needs_selection(combobox, expected_value_prefix: str, option_text: str) -> bool:
+    """Return True when the combobox should be reselected."""
     current_text = combobox.inner_text().strip()
-    return option_text not in current_text
+    return not _is_expected_selected(current_text, expected_value_prefix, option_text)
+
+
+def _assert_selected_option_value(
+    selected_value: str | None,
+    expected_value_prefix: str,
+    option_text: str,
+) -> None:
+    if not selected_value:
+        return
+
+    if _has_malformed_model_suffix(selected_value):
+        raise AssertionError(
+            "Selected combobox option contains malformed model suffix '#': "
+            f"value={selected_value!r} option_text={option_text!r}"
+        )
+
+    expected_prefix = _clean_text(expected_value_prefix)
+    if expected_prefix and not selected_value.lower().startswith(expected_prefix.lower()):
+        raise AssertionError(
+            "Selected combobox option does not match expected canonical prefix: "
+            f"expected_prefix={expected_prefix!r} selected_value={selected_value!r} "
+            f"option_text={option_text!r}"
+        )
 
 
 def click_with_retry(page, expect, locator_factory, attempts: int, timeout_ms: int) -> None:
@@ -230,7 +280,7 @@ def select_default_model(
     timeout_ms: int,
 ) -> tuple[str, str | None]:
     """Select and persist a default model."""
-    if not needs_selection(combobox, option_text):
+    if not needs_selection(combobox, value_prefix, option_text):
         try:
             current_text = combobox.inner_text().strip()
         except Exception:
@@ -263,6 +313,17 @@ def select_default_model(
         if not selected[0]:
             raise
 
+    _assert_selected_option_value(selected[1], value_prefix, option_text)
+
     expected_text = selected[0] or option_text
     expect(combobox).to_contain_text(expected_text, timeout=timeout_ms)
+    try:
+        current_text = combobox.inner_text().strip()
+    except Exception:
+        current_text = expected_text
+    if _has_malformed_model_suffix(current_text):
+        raise AssertionError(
+            "Combobox text still contains malformed model suffix '#': "
+            f"text={current_text!r} expected={expected_text!r}"
+        )
     return selected

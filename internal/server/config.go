@@ -18,6 +18,7 @@ package server
 
 import (
 	"fmt"
+	"net/mail"
 	"net/url"
 	"os"
 	"strconv"
@@ -33,21 +34,30 @@ const DefaultConnectTimeout = 5 * time.Second
 
 // Config application configuration
 type Config struct {
-	Server          ServerConfig           `mapstructure:"server"`
-	Database        DatabaseConfig         `mapstructure:"database"`
-	Redis           RedisConfig            `mapstructure:"redis"`
-	Log             LogConfig              `mapstructure:"log"`
-	DocEngine       DocEngineConfig        `mapstructure:"doc_engine"`
-	RegisterEnabled int                    `mapstructure:"register_enabled"`
-	OAuth           map[string]OAuthConfig `mapstructure:"oauth"`
-	Admin           AdminConfig            `mapstructure:"admin"`
-	UserDefaultLLM  UserDefaultLLMConfig   `mapstructure:"user_default_llm"`
+	Server           ServerConfig           `mapstructure:"server"`
+	Database         DatabaseConfig         `mapstructure:"database"`
+	Redis            RedisConfig            `mapstructure:"redis"`
+	Log              LogConfig              `mapstructure:"log"`
+	DocEngine        DocEngineConfig        `mapstructure:"doc_engine"`
+	StorageEngine    StorageConfig          `mapstructure:"storage_engine"`
+	RegisterEnabled  int                    `mapstructure:"register_enabled"`
+	OAuth            map[string]OAuthConfig `mapstructure:"oauth"`
+	Admin            AdminConfig            `mapstructure:"admin"`
+	UserDefaultLLM   UserDefaultLLMConfig   `mapstructure:"user_default_llm"`
+	DefaultSuperUser DefaultSuperUser       `mapstructure:"default_super_user"`
+	Language         string                 `mapstructure:"language"`
 }
 
 // AdminConfig admin server configuration
 type AdminConfig struct {
 	Host string `mapstructure:"host"`
 	Port int    `mapstructure:"http_port"`
+}
+
+type DefaultSuperUser struct {
+	Email    string `mapstructure:"email"`
+	Password string `mapstructure:"password"`
+	Nickname string `mapstructure:"nickname"`
 }
 
 // UserDefaultLLMConfig user default LLM configuration
@@ -130,6 +140,59 @@ type InfinityConfig struct {
 	DBName       string `mapstructure:"db_name"`
 }
 
+type StorageType string
+
+// StorageConfig holds all storage-related configurations
+type StorageConfig struct {
+	Type  StorageType  `mapstructure:"type"`
+	Minio *MinioConfig `mapstructure:"minio"`
+	S3    *S3Config    `mapstructure:"s3"`
+	OSS   *OSSConfig   `mapstructure:"oss"`
+}
+
+const (
+	StorageOSS   StorageType = "oss"
+	StorageS3    StorageType = "s3"
+	StorageMinio StorageType = "minio"
+)
+
+// OSSConfig holds Aliyun OSS storage configuration
+// OSS is compatible with S3 API
+type OSSConfig struct {
+	AccessKey        string `mapstructure:"access_key"`        // OSS Access Key ID
+	SecretKey        string `mapstructure:"secret_key"`        // OSS Secret Access Key
+	EndpointURL      string `mapstructure:"endpoint_url"`      // OSS Endpoint (e.g., "https://oss-cn-hangzhou.aliyuncs.com")
+	Region           string `mapstructure:"region"`            // Region (e.g., "cn-hangzhou")
+	Bucket           string `mapstructure:"bucket"`            // Default bucket (optional)
+	PrefixPath       string `mapstructure:"prefix_path"`       // Path prefix (optional)
+	SignatureVersion string `mapstructure:"signature_version"` // Signature version
+	AddressingStyle  string `mapstructure:"addressing_style"`  // Addressing style
+}
+
+// MinioConfig holds MinIO storage configuration
+type MinioConfig struct {
+	Host       string `mapstructure:"host"`        // MinIO server host (e.g., "localhost:9000")
+	User       string `mapstructure:"user"`        // Access key
+	Password   string `mapstructure:"password"`    // Secret key
+	Secure     bool   `mapstructure:"secure"`      // Use HTTPS
+	Verify     bool   `mapstructure:"verify"`      // Verify SSL certificates
+	Bucket     string `mapstructure:"bucket"`      // Default bucket (optional)
+	PrefixPath string `mapstructure:"prefix_path"` // Path prefix (optional)
+}
+
+// S3Config holds AWS S3 storage configuration
+type S3Config struct {
+	AccessKey        string `mapstructure:"access_key"`        // AWS Access Key ID
+	SecretKey        string `mapstructure:"secret_key"`        // AWS Secret Access Key
+	Region           string `mapstructure:"region_name"`       // AWS Region
+	SessionToken     string `mapstructure:"session_token"`     // AWS Session Token (optional)
+	EndpointURL      string `mapstructure:"endpoint_url"`      // Custom endpoint (optional)
+	SignatureVersion string `mapstructure:"signature_version"` // Signature version
+	AddressingStyle  string `mapstructure:"addressing_style"`  // Addressing style
+	Bucket           string `mapstructure:"bucket"`            // Default bucket (optional)
+	PrefixPath       string `mapstructure:"prefix_path"`       // Path prefix (optional)
+}
+
 // RedisConfig Redis configuration
 type RedisConfig struct {
 	Host     string `mapstructure:"host"`
@@ -147,42 +210,17 @@ var (
 
 // Init initialize configuration
 func Init(configPath string) error {
-	v := viper.New()
 
-	// Set configuration file path
-	if configPath != "" {
-		v.SetConfigFile(configPath)
-	} else {
-		// Try to load service_conf.yaml from conf directory first
-		v.SetConfigName("service_conf")
-		v.SetConfigType("yaml")
-		v.AddConfigPath("./conf")
-		v.AddConfigPath(".")
-		v.AddConfigPath("./config")
-		v.AddConfigPath("./internal/config")
-		v.AddConfigPath("/etc/ragflow/")
+	err := FromConfigFile("")
+	if err != nil {
+		return err
 	}
 
-	// Read environment variables
-	v.SetEnvPrefix("RAGFLOW")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
-
-	// Read configuration file
-	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return fmt.Errorf("read config file error: %w", err)
-		}
-		zapLogger.Info("Config file not found, using environment variables only")
+	err = FromEnvironments()
+	if err != nil {
+		return err
 	}
 
-	// Save viper instance
-	globalViper = v
-
-	docEngine := os.Getenv("DOC_ENGINE")
-	if docEngine == "" {
-		docEngine = "elasticsearch"
-	}
 	id := 0
 	for k, v := range globalViper.AllSettings() {
 		configDict, ok := v.(map[string]interface{})
@@ -200,7 +238,7 @@ func Init(configPath string) error {
 			delete(configDict, "http_port")
 		case "es":
 			// Skip if retrieval_type doesn't match doc_engine
-			if docEngine != "elasticsearch" {
+			if globalConfig.DocEngine.Type != "elasticsearch" {
 				continue
 			}
 			hosts := getString(configDict, "hosts")
@@ -222,7 +260,7 @@ func Init(configPath string) error {
 			delete(configDict, "password")
 		case "infinity":
 			// Skip if retrieval_type doesn't match doc_engine
-			if docEngine != "infinity" {
+			if globalConfig.DocEngine.Type != "infinity" {
 				continue
 			}
 			uri := getString(configDict, "uri")
@@ -326,6 +364,125 @@ func Init(configPath string) error {
 		id++
 	}
 
+	return nil
+}
+
+func FromEnvironments() error {
+	// Doc engine
+	docEngine := strings.ToLower(os.Getenv("DOC_ENGINE"))
+	switch docEngine {
+	case "infinity":
+		globalConfig.DocEngine.Type = EngineInfinity
+	case "":
+		// Default
+		if globalConfig.DocEngine.Type == "" {
+			globalConfig.DocEngine.Type = EngineElasticsearch
+		}
+	case "elasticsearch":
+		globalConfig.DocEngine.Type = EngineElasticsearch
+	case "opensearch":
+	case "oceanbase":
+		return fmt.Errorf("not implemented: %s", docEngine)
+	default:
+		return fmt.Errorf("invalid doc engine: %s", docEngine)
+	}
+
+	// Default super user email
+	globalConfig.DefaultSuperUser.Email = "admin@ragflow.io"
+	superUserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
+	if superUserEmail != "" {
+		_, err := mail.ParseAddress(superUserEmail)
+		if err != nil {
+			return fmt.Errorf("invalid super user email: %s", superUserEmail)
+		}
+		globalConfig.DefaultSuperUser.Email = superUserEmail
+	}
+
+	globalConfig.DefaultSuperUser.Password = "admin"
+	superUserPassword := os.Getenv("DEFAULT_SUPERUSER_PASSWORD")
+	if superUserPassword != "" {
+		globalConfig.DefaultSuperUser.Password = superUserPassword
+	}
+
+	globalConfig.DefaultSuperUser.Nickname = "admin"
+	superUserNickname := os.Getenv("DEFAULT_SUPERUSER_NICKNAME")
+	if superUserNickname != "" {
+		globalConfig.DefaultSuperUser.Nickname = superUserNickname
+	}
+
+	// Meta database
+	databaseType := strings.ToLower(os.Getenv("DB_TYPE"))
+	switch databaseType {
+	case "mysql":
+		globalConfig.Database.Driver = "mysql"
+	case "":
+		// Default
+		if globalConfig.Database.Driver == "" {
+			globalConfig.Database.Driver = "mysql"
+		}
+	default:
+		return fmt.Errorf("invalid database type: %s", databaseType)
+	}
+
+	// Storage
+	storageType := strings.ToLower(os.Getenv("STORAGE_IMPL"))
+	switch storageType {
+	case "minio":
+		globalConfig.StorageEngine.Type = StorageMinio
+	case "s3":
+		globalConfig.StorageEngine.Type = StorageS3
+	case "oss":
+		globalConfig.StorageEngine.Type = StorageOSS
+	case "":
+		// Default
+		if globalConfig.StorageEngine.Type == "" {
+			globalConfig.StorageEngine.Type = StorageMinio
+		}
+	default:
+		return fmt.Errorf("invalid storage type: %s", storageType)
+	}
+
+	// Language
+	if globalConfig.Language == "" {
+		globalConfig.Language = GetLanguage()
+	}
+
+	return nil
+}
+
+func FromConfigFile(configPath string) error {
+	v := viper.New()
+
+	// Set configuration file path
+	if configPath != "" {
+		v.SetConfigFile(configPath)
+	} else {
+		// Try to load service_conf.yaml from conf directory first
+		v.SetConfigName("service_conf")
+		v.SetConfigType("yaml")
+		v.AddConfigPath("./conf")
+		v.AddConfigPath(".")
+		v.AddConfigPath("./config")
+		v.AddConfigPath("./internal/config")
+		v.AddConfigPath("/etc/ragflow/")
+	}
+
+	// Read environment variables
+	v.SetEnvPrefix("RAGFLOW")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	// Read configuration file
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return fmt.Errorf("read config file error: %w", err)
+		}
+		zapLogger.Info("Config file not found, using environment variables only")
+	}
+
+	// Save viper instance
+	globalViper = v
+
 	// Unmarshal configuration to globalConfig
 	// Note: This will only unmarshal fields that match the Config struct
 	if err := v.Unmarshal(&globalConfig); err != nil {
@@ -337,9 +494,9 @@ func Init(configPath string) error {
 		globalConfig.Admin.Host = "127.0.0.1"
 	}
 	if globalConfig.Admin.Port == 0 {
-		globalConfig.Admin.Port = 9385
+		globalConfig.Admin.Port = 9383
 	} else {
-		globalConfig.Admin.Port += 4
+		globalConfig.Admin.Port += 2
 	}
 
 	// Load REGISTER_ENABLED from environment variable (default: 1)
@@ -414,7 +571,6 @@ func Init(configPath string) error {
 
 	// Map doc_engine section to DocEngineConfig
 	if globalConfig != nil && globalConfig.DocEngine.Type == "" {
-		// Try to map from doc_engine section
 		if v.IsSet("doc_engine") {
 			docEngineConfig := v.Sub("doc_engine")
 			if docEngineConfig != nil {
@@ -448,6 +604,56 @@ func Init(configPath string) error {
 						URI:          infConfig.GetString("uri"),
 						PostgresPort: infConfig.GetInt("postgres_port"),
 						DBName:       infConfig.GetString("db_name"),
+					}
+				}
+			}
+		}
+	}
+
+	if globalConfig != nil && globalConfig.StorageEngine.Type == "" {
+		// Also check legacy es section for backward compatibility
+		if v.IsSet("minio") {
+			minioConfig := v.Sub("minio")
+			if minioConfig != nil {
+				if globalConfig.StorageEngine.Minio == nil {
+					globalConfig.StorageEngine.Minio = &MinioConfig{
+						Host:       minioConfig.GetString("host"),
+						User:       minioConfig.GetString("user"),
+						Password:   minioConfig.GetString("password"),
+						Secure:     minioConfig.GetBool("secure"),
+						PrefixPath: minioConfig.GetString("prefix_path"),
+						Verify:     minioConfig.GetBool("verify"),
+						Bucket:     minioConfig.GetString("bucket"),
+					}
+				}
+			}
+		}
+
+		if v.IsSet("s3") {
+			s3Config := v.Sub("s3")
+			if s3Config != nil {
+				if globalConfig.StorageEngine.S3 == nil {
+					globalConfig.StorageEngine.S3 = &S3Config{
+						AccessKey: s3Config.GetString("access_key"),
+						SecretKey: s3Config.GetString("secret_key"),
+						Region:    s3Config.GetString("region"),
+					}
+				}
+			}
+		}
+
+		if v.IsSet("oss") {
+			ossConfig := v.Sub("oss")
+			if ossConfig != nil {
+				if globalConfig.StorageEngine.OSS == nil {
+					globalConfig.StorageEngine.OSS = &OSSConfig{
+						AccessKey:        ossConfig.GetString("access_key"),
+						SecretKey:        ossConfig.GetString("secret_key"),
+						EndpointURL:      ossConfig.GetString("endpoint_url"),
+						Region:           ossConfig.GetString("region"),
+						Bucket:           ossConfig.GetString("bucket"),
+						SignatureVersion: ossConfig.GetString("signature_version"),
+						AddressingStyle:  ossConfig.GetString("addressing_style"),
 					}
 				}
 			}
@@ -578,4 +784,21 @@ func getInt(m map[string]interface{}, key string) int {
 		return int(v)
 	}
 	return 0
+}
+
+func GetLanguage() string {
+	lang := os.Getenv("LANG")
+	if lang == "" {
+		lang = os.Getenv("LANGUAGE")
+	}
+
+	lang = strings.ToLower(lang)
+
+	if strings.Contains(lang, "zh_") ||
+		strings.Contains(lang, "zh-") ||
+		strings.HasPrefix(lang, "zh") {
+		return "Chinese"
+	}
+
+	return "English"
 }

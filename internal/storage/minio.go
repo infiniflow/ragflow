@@ -22,6 +22,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"ragflow/internal/server"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -29,27 +30,16 @@ import (
 	"go.uber.org/zap"
 )
 
-// MinioConfig holds MinIO storage configuration
-type MinioConfig struct {
-	Host       string `mapstructure:"host"`        // MinIO server host (e.g., "localhost:9000")
-	User       string `mapstructure:"user"`        // Access key
-	Password   string `mapstructure:"password"`    // Secret key
-	Secure     bool   `mapstructure:"secure"`      // Use HTTPS
-	Verify     bool   `mapstructure:"verify"`      // Verify SSL certificates
-	Bucket     string `mapstructure:"bucket"`      // Default bucket (optional)
-	PrefixPath string `mapstructure:"prefix_path"` // Path prefix (optional)
-}
-
 // MinioStorage implements Storage interface for MinIO
 type MinioStorage struct {
 	client     *minio.Client
 	bucket     string
 	prefixPath string
-	config     *MinioConfig
+	config     *server.MinioConfig
 }
 
 // NewMinioStorage creates a new MinIO storage instance
-func NewMinioStorage(config *MinioConfig) (*MinioStorage, error) {
+func NewMinioStorage(config *server.MinioConfig) (*MinioStorage, error) {
 	storage := &MinioStorage{
 		bucket:     config.Bucket,
 		prefixPath: config.PrefixPath,

@@ -250,7 +250,9 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
         session_id = get_uuid()
         canvas = Canvas(dsl, tenant_id, agent_id, canvas_id=cvs.id, custom_header=custom_header)
         canvas.reset()
-        conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id, "message": [], "source": "agent", "dsl": dsl, "reference": []}
+        # Get the version title based on release_mode
+        version_title = UserCanvasVersionService.get_latest_version_title(cvs.id, release_mode=release_mode == "true")
+        conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id, "message": [], "source": "agent", "dsl": dsl, "reference": [], "version_title": version_title}
         API4ConversationService.save(**conv)
         conv = API4Conversation(**conv)
 

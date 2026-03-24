@@ -20,24 +20,66 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/server"
+	"strconv"
+	"strings"
+
+	infinity "github.com/infiniflow/infinity-go-sdk"
 )
 
-// Engine Infinity engine implementation
-// Note: Infinity Go SDK is not yet available. This is a placeholder implementation.
+// infinityClient Infinity SDK client wrapper
+type infinityClient struct {
+	conn   *infinity.InfinityConnection
+	dbName string
+}
+
+// NewInfinityClient creates a new Infinity client using the SDK
+func NewInfinityClient(cfg *server.InfinityConfig) (*infinityClient, error) {
+	// Parse URI like "localhost:23817" to get IP and port
+	host := "127.0.0.1"
+	port := 23817
+
+	if cfg.URI != "" {
+		parts := strings.Split(cfg.URI, ":")
+		if len(parts) == 2 {
+			host = parts[0]
+			if p, err := strconv.Atoi(parts[1]); err == nil {
+				port = p
+			}
+		}
+	}
+
+	conn, err := infinity.Connect(infinity.NetworkAddress{IP: host, Port: port})
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Infinity: %w", err)
+	}
+
+	return &infinityClient{
+		conn:   conn,
+		dbName: cfg.DBName,
+	}, nil
+}
+
+// Engine Infinity engine implementation using Go SDK
 type infinityEngine struct {
 	config *server.InfinityConfig
+	client *infinityClient
 }
 
 // NewEngine creates an Infinity engine
-// Note: This is a placeholder implementation waiting for official Infinity Go SDK
 func NewEngine(cfg interface{}) (*infinityEngine, error) {
 	infConfig, ok := cfg.(*server.InfinityConfig)
 	if !ok {
 		return nil, fmt.Errorf("invalid infinity config type, expected *config.InfinityConfig")
 	}
 
+	client, err := NewInfinityClient(infConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	engine := &infinityEngine{
 		config: infConfig,
+		client: client,
 	}
 
 	return engine, nil
@@ -48,12 +90,22 @@ func (e *infinityEngine) Type() string {
 	return "infinity"
 }
 
-// Ping health check
+// Ping checks if Infinity is accessible
 func (e *infinityEngine) Ping(ctx context.Context) error {
-	return fmt.Errorf("infinity engine not implemented: waiting for official Go SDK")
+	if e.client == nil || e.client.conn == nil {
+		return fmt.Errorf("Infinity client not initialized")
+	}
+	if !e.client.conn.IsConnected() {
+		return fmt.Errorf("Infinity not connected")
+	}
+	return nil
 }
 
-// Close closes the connection
+// Close closes the Infinity connection
 func (e *infinityEngine) Close() error {
+	if e.client != nil && e.client.conn != nil {
+		_, err := e.client.conn.Disconnect()
+		return err
+	}
 	return nil
 }

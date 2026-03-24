@@ -165,6 +165,7 @@ jobs:
           python3 run_tests.py
 
       - name: Start ragflow:nightly
+        working-directory: docker
         run: |
           # Determine runner number (default to 1 if not found)
           RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
@@ -186,42 +187,43 @@ jobs:
           ADMIN_SVR_HTTP_PORT=$((9381 + RUNNER_NUM * 10))
           SVR_MCP_PORT=$((9382 + RUNNER_NUM * 10))
           GO_HTTP_PORT=$((9384 + RUNNER_NUM * 10))
-          GO_ADMIN_PORT=$((9385 + RUNNER_NUM * 10))
+          GO_ADMIN_PORT=$((9383 + RUNNER_NUM * 10))
           SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + RUNNER_NUM * 10))
           SVR_WEB_HTTP_PORT=$((80 + RUNNER_NUM * 10))
           SVR_WEB_HTTPS_PORT=$((443 + RUNNER_NUM * 10))
 
-          # Persist computed ports into docker/.env so docker-compose uses the correct host bindings
-          echo "" >> docker/.env
-          echo -e "ES_PORT=${ES_PORT}" >> docker/.env
-          echo -e "OS_PORT=${OS_PORT}" >> docker/.env
-          echo -e "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}" >> docker/.env
-          echo -e "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}" >> docker/.env
-          echo -e "INFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}" >> docker/.env
-          echo -e "EXPOSE_MYSQL_PORT=${EXPOSE_MYSQL_PORT}" >> docker/.env
-          echo -e "MINIO_PORT=${MINIO_PORT}" >> docker/.env
-          echo -e "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}" >> docker/.env
-          echo -e "REDIS_PORT=${REDIS_PORT}" >> docker/.env
-          echo -e "TEI_PORT=${TEI_PORT}" >> docker/.env
-          echo -e "KIBANA_PORT=${KIBANA_PORT}" >> docker/.env
-          echo -e "SVR_HTTP_PORT=${SVR_HTTP_PORT}" >> docker/.env
-          echo -e "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}" >> docker/.env
-          echo -e "SVR_MCP_PORT=${SVR_MCP_PORT}" >> docker/.env
-          echo -e "GO_HTTP_PORT=${GO_HTTP_PORT}" >> docker/.env
-          echo -e "GO_ADMIN_PORT=${GO_ADMIN_PORT}" >> docker/.env
-          echo -e "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}" >> docker/.env
-          echo -e "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}" >> docker/.env
-          echo -e "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}" >> docker/.env
+          # Persist computed ports into .env so docker-compose uses the correct host bindings
+          echo "" >> .env
+          echo -e "ES_PORT=${ES_PORT}" >> .env
+          echo -e "OS_PORT=${OS_PORT}" >> .env
+          echo -e "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}" >> .env
+          echo -e "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}" >> .env
+          echo -e "INFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}" >> .env
+          echo -e "EXPOSE_MYSQL_PORT=${EXPOSE_MYSQL_PORT}" >> .env
+          echo -e "MINIO_PORT=${MINIO_PORT}" >> .env
+          echo -e "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}" >> .env
+          echo -e "REDIS_PORT=${REDIS_PORT}" >> .env
+          echo -e "TEI_PORT=${TEI_PORT}" >> .env
+          echo -e "KIBANA_PORT=${KIBANA_PORT}" >> .env
+          echo -e "SVR_HTTP_PORT=${SVR_HTTP_PORT}" >> .env
+          echo -e "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}" >> .env
+          echo -e "SVR_MCP_PORT=${SVR_MCP_PORT}" >> .env
+          echo -e "GO_HTTP_PORT=${GO_HTTP_PORT}" >> .env
+          echo -e "GO_ADMIN_PORT=${GO_ADMIN_PORT}" >> .env
+          echo -e "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}" >> .env
+          echo -e "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}" >> .env
+          echo -e "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}" >> .env
 
-          echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> docker/.env
-          echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env
-          echo -e "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> docker/.env
+          echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> .env
+          echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> .env
+          echo -e "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> .env
           echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
           # Patch entrypoint.sh for coverage
-          sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' docker/entrypoint.sh
+          sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
 
-          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
+          sudo docker compose -f docker-compose.yml -p ${GITHUB_RUN_ID} up -d
+          cd ..
           uv sync --python 3.12 --group test --frozen && uv pip install -e sdk/python
 
       - name: Run sdk tests against Elasticsearch
@@ -241,7 +243,7 @@ jobs:
             sleep 5
           done
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api 2>&1 | tee es_web_api_test.log
-          
+
       - name: Run http api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
@@ -592,9 +594,10 @@ jobs:
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
+        working-directory: docker
         run: |
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
-          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
+          sudo docker compose -f docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
           if [[ -n ${RAGFLOW_IMAGE} ]]; then
             sudo docker rmi -f ${RAGFLOW_IMAGE}

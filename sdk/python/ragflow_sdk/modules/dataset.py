@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+from typing import Any
 from .base import Base
 from .document import Document
 
@@ -154,3 +154,23 @@ class DataSet(Base):
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))
+
+    def get_auto_metadata(self) -> dict[str, Any]:
+        """
+        Retrieve auto-metadata configuration for a dataset via SDK.
+        """
+        res = self.get(f"/datasets/{self.id}/auto_metadata")
+        res = res.json()
+        if res.get("code") == 0:
+            return res["data"]
+        raise Exception(res["message"])
+
+    def update_auto_metadata(self, **config: Any) -> dict[str, Any]:
+        """
+        Update auto-metadata configuration for a dataset via SDK.
+        """
+        res = self.put(f"/datasets/{self.id}/auto_metadata", config)
+        res = res.json()
+        if res.get("code") == 0:
+            return res["data"]
+        raise Exception(res["message"])

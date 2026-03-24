@@ -31,9 +31,9 @@ type PasswordPromptFunc func(prompt string) (string, error)
 
 // RAGFlowClient handles API interactions with the RAGFlow server
 type RAGFlowClient struct {
-	HTTPClient        *HTTPClient
-	ServerType        string           // "admin" or "user"
-	PasswordPrompt    PasswordPromptFunc // Function for password input
+	HTTPClient     *HTTPClient
+	ServerType     string             // "admin" or "user"
+	PasswordPrompt PasswordPromptFunc // Function for password input
 }
 
 // NewRAGFlowClient creates a new RAGFlow client
@@ -489,6 +489,28 @@ func (c *RAGFlowClient) getDatasetID(datasetName string) (string, error) {
 	return "", fmt.Errorf("dataset '%s' not found", datasetName)
 }
 
+// formatEmptyArray converts empty arrays to "[]" string
+func formatEmptyArray(v interface{}) string {
+	if v == nil {
+		return "[]"
+	}
+	switch val := v.(type) {
+	case []interface{}:
+		if len(val) == 0 {
+			return "[]"
+		}
+	case []string:
+		if len(val) == 0 {
+			return "[]"
+		}
+	case []int:
+		if len(val) == 0 {
+			return "[]"
+		}
+	}
+	return fmt.Sprintf("%v", v)
+}
+
 // SearchOnDatasets searches for chunks in specified datasets
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
 func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (map[string]interface{}, error) {
@@ -581,6 +603,22 @@ func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (map[string]interface{}, 
 				"similarity":        chunkMap["similarity"],
 				"term_similarity":   chunkMap["term_similarity"],
 				"vector_similarity": chunkMap["vector_similarity"],
+			}
+			// Add optional fields that may be empty arrays
+			if v, ok := chunkMap["doc_type_kwd"]; ok {
+				row["doc_type_kwd"] = formatEmptyArray(v)
+			}
+			if v, ok := chunkMap["important_kwd"]; ok {
+				row["important_kwd"] = formatEmptyArray(v)
+			}
+			if v, ok := chunkMap["mom_id"]; ok {
+				row["mom_id"] = formatEmptyArray(v)
+			}
+			if v, ok := chunkMap["positions"]; ok {
+				row["positions"] = formatEmptyArray(v)
+			}
+			if v, ok := chunkMap["content_ltks"]; ok {
+				row["content_ltks"] = v
 			}
 			tableData = append(tableData, row)
 		}

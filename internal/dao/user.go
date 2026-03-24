@@ -124,6 +124,6 @@ func (dao *UserDAO) HardDelete(id string) error {
 // Returns all users matching the given email address
 func (dao *UserDAO) ListByEmail(email string) ([]*model.User, error) {
 	var users []*model.User
-	err := DB.Where("email = ? AND (status != ? OR status IS NULL)", email, "0").Find(&users).Error
+	err := DB.Where("email = ?", email).Find(&users).Error
 	return users, err
 }

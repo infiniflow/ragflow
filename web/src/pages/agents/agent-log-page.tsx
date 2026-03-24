@@ -1,4 +1,3 @@
-import TimeRangePicker from '@/components/originui/time-range-picker';
 import { PageHeader } from '@/components/page-header';
 import {
   Breadcrumb,
@@ -11,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { DatePickerWithRange } from '@/components/ui/range-picker';
 import { Spin } from '@/components/ui/spin';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentLog } from '@/hooks/use-agent-request';
@@ -19,6 +19,7 @@ import {
   IAgentLogResponse,
 } from '@/interfaces/database/agent';
 import { IReferenceObject } from '@/interfaces/database/chat';
+import { formatDate } from '@/utils/date';
 import { useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -34,6 +35,7 @@ import {
 } from '../../components/ui/table';
 import { useFetchDataOnMount } from '../agent/hooks/use-fetch-data';
 import { AgentLogDetailModal } from './agent-log-detail-modal';
+import { useExportAgentLogToCSV } from './hooks/use-export-agent-log';
 const getStartOfToday = (): Date => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -45,6 +47,7 @@ const getEndOfToday = (): Date => {
   today.setHours(23, 59, 59, 999);
   return today;
 };
+
 const AgentLogPage: React.FC = () => {
   const { t } = useTranslation();
   const { navigateToAgents, navigateToAgent } = useNavigatePage();
@@ -64,18 +67,18 @@ const AgentLogPage: React.FC = () => {
 
   const columns = [
     {
-      title: 'ID',
+      title: t('flow.id'),
       dataIndex: 'id',
       key: 'id',
     },
     {
-      title: 'User ID',
+      title: t('flow.userId'),
       dataIndex: 'user_id',
       key: 'user_id',
       render: (text: string) => <span>{text}</span>,
     },
     {
-      title: 'Title',
+      title: t('flow.logTitle'),
       dataIndex: 'title',
       key: 'title',
       render: (_text: string, record: IAgentLogResponse) => (
@@ -85,7 +88,7 @@ const AgentLogPage: React.FC = () => {
       ),
     },
     {
-      title: 'State',
+      title: t('flow.state'),
       dataIndex: 'state',
       key: 'state',
       render: (_text: string, record: IAgentLogResponse) => (
@@ -96,41 +99,45 @@ const AgentLogPage: React.FC = () => {
       ),
     },
     {
-      title: 'Number',
+      title: t('flow.number'),
       dataIndex: 'round',
       key: 'round',
     },
     {
-      title: 'Latest Date',
+      title: t('flow.latestDate'),
       dataIndex: 'update_date',
       key: 'update_date',
       sortable: true,
+      render(text: string) {
+        return formatDate(text);
+      },
     },
     {
-      title: 'Create Date',
+      title: t('flow.createDate'),
       dataIndex: 'create_date',
       key: 'create_date',
       sortable: true,
+      render(text: string) {
+        return formatDate(text);
+      },
     },
     {
-      title: 'Version',
-      dataIndex: 'version',
-      key: 'version',
+      title: t('flow.version.version'),
+      dataIndex: 'version_title',
+      key: 'version_title',
     },
   ];
 
   const { data: logData, loading } = useFetchAgentLog(searchParams);
   const { sessions: data, total } = logData || {};
+  const { handleExport, loading: exportLoading } = useExportAgentLogToCSV();
   const [currentDate, setCurrentDate] = useState<DateRange>({
     from: searchParams.from_date,
     to: searchParams.to_date,
   });
   const [keywords, setKeywords] = useState(searchParams.keywords);
-  const handleDateRangeChange = ({
-    from: startDate,
-    to: endDate,
-  }: DateRange) => {
-    setCurrentDate({ from: startDate, to: endDate });
+  const handleDateRangeChange = (dateRange: DateRange) => {
+    setCurrentDate({ from: dateRange.from, to: dateRange.to });
   };
 
   const [pagination, setPagination] = useState<{
@@ -158,7 +165,6 @@ const AgentLogPage: React.FC = () => {
   } | null>({ orderby: init.orderby, desc: init.desc ? true : false });
 
   const handlePageChange = (current?: number, pageSize?: number) => {
-    console.log('current', current, 'pageSize', pageSize);
     let page = current || 1;
     if (pagination.pageSize !== pageSize) {
       page = 1;
@@ -219,6 +225,16 @@ const AgentLogPage: React.FC = () => {
     }
   };
 
+  const onExportClick = () => {
+    handleExport({
+      keywords: searchParams.keywords,
+      from_date: searchParams.from_date,
+      to_date: searchParams.to_date,
+      orderby: searchParams.orderby,
+      desc: searchParams.desc,
+    });
+  };
+
   return (
     <div className=" text-white">
       <PageHeader>
@@ -246,7 +262,9 @@ const AgentLogPage: React.FC = () => {
 
           <div className="flex justify-end space-x-2 mb-4 text-foreground">
             <div className="flex items-center space-x-2">
-              <Button>{t('flow.export')}</Button>
+              <Button onClick={onExportClick} loading={exportLoading}>
+                {t('flow.export')}
+              </Button>
               <span>ID/Title</span>
               <SearchInput
                 value={keywords}
@@ -258,10 +276,14 @@ const AgentLogPage: React.FC = () => {
             </div>
             <div className="flex items-center space-x-2">
               <span className="whitespace-nowrap">Latest Date</span>
-              <TimeRangePicker
-                onSelect={handleDateRangeChange}
-                selectDateRange={currentDate}
-              />
+              <DatePickerWithRange
+                required
+                selected={currentDate}
+                onSelect={(range) =>
+                  range.from &&
+                  handleDateRangeChange({ from: range.from, to: range.to })
+                }
+              ></DatePickerWithRange>
             </div>
             <button
               type="button"

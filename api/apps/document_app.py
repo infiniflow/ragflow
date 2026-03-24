@@ -18,36 +18,38 @@ import os.path
 import pathlib
 import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from quart import request, make_response
+
+from quart import make_response, request
+
 from api.apps import current_user, login_required
 from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, FileType
 from api.db.db_models import Task
 from api.db.services import duplicate_name
-from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.doc_metadata_service import DocMetadataService
-from common.metadata_utils import meta_filter, convert_conditions, turn2jsonschema
+from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.db.services.user_service import UserTenantService
-from common.misc_utils import get_uuid, thread_pool_exec
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
+    get_request_json,
     server_error_response,
     validate_request,
-    get_request_json,
 )
 from api.utils.file_utils import filename_type, thumbnail
-from common.file_utils import get_project_base_directory
-from common.constants import RetCode, VALID_TASK_STATUS, ParserType, TaskStatus
 from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers, html2pdf, is_valid_url
-from deepdoc.parser.html_parser import RAGFlowHtmlParser
-from rag.nlp import search, rag_tokenizer
 from common import settings
+from common.constants import SANDBOX_ARTIFACT_BUCKET, VALID_TASK_STATUS, ParserType, RetCode, TaskStatus
+from common.file_utils import get_project_base_directory
+from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
+from common.misc_utils import get_uuid, thread_pool_exec
+from deepdoc.parser.html_parser import RAGFlowHtmlParser
+from rag.nlp import rag_tokenizer, search
 
 
 def _is_safe_download_filename(name: str) -> bool:
@@ -75,6 +77,7 @@ async def upload():
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
 
     file_objs = files.getlist("file")
+
     def _close_file_objs(objs):
         for obj in objs:
             try:
@@ -84,6 +87,7 @@ async def upload():
                     obj.stream.close()
                 except Exception:
                     pass
+
     for file_obj in file_objs:
         if file_obj.filename == "":
             _close_file_objs(file_objs)
@@ -239,7 +243,6 @@ async def list_docs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-        
     tenants = UserTenantService.query(user_id=current_user.id)
     for tenant in tenants:
         if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
@@ -608,6 +611,7 @@ async def run():
     req = await get_request_json()
     uid = current_user.id
     try:
+
         def _run_sync():
             for doc_id in req["doc_ids"]:
                 if not DocumentService.accessible(doc_id, uid):
@@ -670,6 +674,7 @@ async def rename():
     req = await get_request_json()
     uid = current_user.id
     try:
+
         def _rename_sync():
             if not DocumentService.accessible(req["doc_id"], uid):
                 return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
@@ -827,6 +832,44 @@ async def get_image(image_id):
         return server_error_response(e)
 
 
+ARTIFACT_CONTENT_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".svg": "image/svg+xml",
+    ".pdf": "application/pdf",
+    ".csv": "text/csv",
+    ".json": "application/json",
+    ".html": "text/html",
+}
+
+
+@manager.route("/artifact/<filename>", methods=["GET"])  # noqa: F821
+@login_required
+async def get_artifact(filename):
+    try:
+        bucket = SANDBOX_ARTIFACT_BUCKET
+        # Validate filename: must be uuid hex + allowed extension, nothing else
+        basename = os.path.basename(filename)
+        if basename != filename or "/" in filename or "\\" in filename:
+            return get_data_error_result(message="Invalid filename.")
+        ext = os.path.splitext(basename)[1].lower()
+        if ext not in ARTIFACT_CONTENT_TYPES:
+            return get_data_error_result(message="Invalid file type.")
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, basename)
+        if not data:
+            return get_data_error_result(message="Artifact not found.")
+        content_type = ARTIFACT_CONTENT_TYPES.get(ext, "application/octet-stream")
+        response = await make_response(data)
+        safe_filename = re.sub(r"[^\w.\-]", "_", basename)
+        apply_safe_file_response_headers(response, content_type, ext)
+        if not response.headers.get("Content-Disposition"):
+            response.headers.set("Content-Disposition", f'inline; filename="{safe_filename}"')
+        return response
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route("/upload_and_parse", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id")
@@ -942,8 +985,8 @@ async def set_meta():
 @manager.route("/upload_info", methods=["POST"])  # noqa: F821
 async def upload_info():
     files = await request.files
-    file = files['file'] if files and files.get("file") else None
+    file = files["file"] if files and files.get("file") else None
     try:
         return get_json_result(data=FileService.upload_info(current_user.id, file, request.args.get("url")))
     except Exception as e:
-        return  server_error_response(e)
+        return server_error_response(e)

@@ -163,9 +163,11 @@ FIELD_MAP_EN = {
 }
 
 
-def _is_english(lang: str) -> bool:
-    """Determine if the language parameter indicates English"""
-    return lang.lower() in ("english", "en")
+def _is_english(lang: str | None) -> bool:
+    """Determine if the language parameter indicates English."""
+    if not isinstance(lang, str):
+        return False
+    return lang.strip().lower() in ("english", "en")
 
 
 def get_field_map(lang: str) -> dict:
