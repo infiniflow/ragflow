@@ -172,16 +172,6 @@ def list_files(tenant_id: str, args: dict):
     return True, {"total": total, "files": files, "parent_folder": parent_folder.to_json()}
 
 
-def get_root_folder(tenant_id: str):
-    """
-    Get root folder for a tenant.
-
-    :param tenant_id: tenant ID
-    :return: (success, result)
-    """
-    root_folder = FileService.get_root_folder(tenant_id)
-    return True, {"root_folder": root_folder}
-
 
 def get_parent_folder(file_id: str):
     """

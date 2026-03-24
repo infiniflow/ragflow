@@ -196,31 +196,6 @@ async def delete(tenant_id: str = None):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/files/root", methods=["GET"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-def root_folder(tenant_id: str = None):
-    """
-    Get the root folder.
-    ---
-    tags:
-      - Files
-    security:
-      - ApiKeyAuth: []
-    responses:
-      200:
-        description: Root folder information.
-    """
-    try:
-        success, result = file_api_service.get_root_folder(tenant_id)
-        if success:
-            return get_result(data=result)
-        else:
-            return get_error_data_result(message=result)
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
-
 
 @manager.route("/files/move", methods=["POST"])  # noqa: F821
 @login_required
