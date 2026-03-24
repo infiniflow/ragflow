@@ -440,6 +440,19 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
     # Field type suffixes for database columns
     # Maps data types to their database field suffixes
     fields_map = {"text": "_tks", "int": "_long", "keyword": "_kwd", "float": "_flt", "datetime": "_dt", "bool": "_kwd"}
+    parser_config = kwargs.get("parser_config") or {}
+    if parser_config.get("table_column_mode") == "manual":
+        column_roles = parser_config.get("table_column_roles") or {}
+    else:
+        column_roles = {}
+    logger.debug(
+        f"[TABLE_PARSER_DEBUG] effective table_column_mode={parser_config.get('table_column_mode')!r}, "
+        f"column_roles keys={list(column_roles.keys())}"
+    )
+
+    # Pass 1: infer columns per sheet (multi-sheet Excel => multiple DataFrames). Merge field_map and
+    # table_column_names, then update KB once so the UI role selector sees all columns, not only the last sheet.
+    sheet_specs = []
     for df in dfs:
         for n in ["id", "_id", "index", "idx"]:
             if n in df.columns:
@@ -462,16 +475,6 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 txts.extend([str(c) for c in cln if c])
         clmns_map = [(py_clmns[i].lower() + fields_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in
                      range(len(clmns))]
-        # Column roles: only when mode is "manual"; otherwise all columns = both (RAGFlow default)
-        parser_config = kwargs.get("parser_config") or {}
-        if parser_config.get("table_column_mode") == "manual":
-            column_roles = parser_config.get("table_column_roles") or {}
-        else:
-            column_roles = {}
-        logger.debug(
-            f"[TABLE_PARSER_DEBUG] effective table_column_mode={parser_config.get('table_column_mode')!r}, "
-            f"column_roles keys={list(column_roles.keys())}"
-        )
         # field_map: only columns stored in chunk_data (metadata or both) — used for retrieval/SQL
         stored_indices = [
             i for i in range(len(clmns))
@@ -487,13 +490,41 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 clmns_map[i][0]: clmns_map[i][1]
                 for i in stored_indices
             }
-        logging.debug(f"Field map: {field_map}")
-        KnowledgebaseService.update_parser_config(
-            kwargs["kb_id"],
-            {"field_map": field_map, "table_column_names": list(clmns)},
+        logging.debug(f"Field map (sheet): {field_map}")
+        sheet_specs.append(
+            {
+                "df": df,
+                "clmns": clmns,
+                "clmn_tys": clmn_tys,
+                "clmns_map": clmns_map,
+                "py_clmns": py_clmns,
+                "field_map": field_map,
+            }
         )
 
-        eng = lang.lower() == "english"  # is_english(txts)
+    merged_field_map = {}
+    merged_table_column_names = []
+    seen_col = set()
+    for spec in sheet_specs:
+        merged_field_map.update(spec["field_map"])
+        for col in spec["clmns"]:
+            if col not in seen_col:
+                seen_col.add(col)
+                merged_table_column_names.append(col)
+
+    logging.debug(f"Field map (merged across sheets): {merged_field_map}")
+    KnowledgebaseService.update_parser_config(
+        kwargs["kb_id"],
+        {"field_map": merged_field_map, "table_column_names": merged_table_column_names},
+    )
+
+    eng = lang.lower() == "english"  # is_english(txts)
+    for spec in sheet_specs:
+        df = spec["df"]
+        clmns = spec["clmns"]
+        clmn_tys = spec["clmn_tys"]
+        clmns_map = spec["clmns_map"]
+        py_clmns = spec["py_clmns"]
         _debug_row_idx = 0
         for ii, row in df.iterrows():
             _debug_row_idx += 1
@@ -547,9 +578,9 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                     _extra = [k for k in d if k not in ("docnm_kwd", "title_tks", "content_with_weight", "content_ltks", "content_sm_ltks")]
                     logger.debug(f"[TABLE_PARSER_DEBUG] Chunk ES extra field keys (sample): {_extra[:20]}")
             res.append(d)
-        if tbls:
-            doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
-            res.extend(tokenize_table(tbls, doc, is_english))
+    if tbls:
+        doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
+        res.extend(tokenize_table(tbls, doc, is_english))
     callback(0.35, "")
 
     return res
