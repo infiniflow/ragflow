@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -781,3 +781,40 @@ class BaseListReq(BaseModel):
 class ListDatasetReq(BaseListReq):
     include_parsing_status: Annotated[bool, Field(default=False)]
     ext: Annotated[dict, Field(default={})]
+
+
+# ---- File Management Request Models ----
+
+class CreateFolderReq(Base):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(...)]
+    parent_id: Annotated[str | None, Field(default=None)]
+    type: Annotated[str | None, Field(default=None)]
+
+
+class DeleteFileReq(Base):
+    ids: Annotated[list[str], Field(min_length=1)]
+
+
+class MoveFileReq(Base):
+    src_file_ids: Annotated[list[str], Field(min_length=1)]
+    dest_file_id: Annotated[str | None, Field(default=None)]
+    new_name: Annotated[str | None, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(default=None)]
+
+    @model_validator(mode='after')
+    def check_operation(self):
+        if not self.dest_file_id and not self.new_name:
+            raise ValueError("At least one of dest_file_id or new_name must be provided")
+        if self.new_name and len(self.src_file_ids) > 1:
+            raise ValueError("new_name can only be used with a single file")
+        return self
+
+
+class ListFileReq(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    parent_id: Annotated[str | None, Field(default=None)]
+    keywords: Annotated[str, Field(default="")]
+    page: Annotated[int, Field(default=1, ge=1)]
+    page_size: Annotated[int, Field(default=15, ge=1, le=100)]
+    orderby: Annotated[str, Field(default="create_time")]
+    desc: Annotated[bool, Field(default=True)]
