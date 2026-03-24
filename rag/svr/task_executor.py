@@ -111,24 +111,40 @@ def _field_map_typed_key_for_column(field_map: dict, col: str) -> str | None:
 
 def _probe_es_typed_key_for_column(col: str, sample_chunk: dict) -> str | None:
     """
-    When field_map is missing/stale, find ES field key on chunk by table-parser suffix convention
-    (see rag/app/table.py fields_map: _tks, _dt, _long, _flt, _kwd).
+    When field_map is missing/stale, try to infer the ES field key present on a chunk.
+    Table chunks use normalized/pinyin keys of the form <normalized_base><suffix>, where suffix is
+    one of: _raw, _tks, _dt, _long, _flt, _kwd (see rag/app/table.py). Probing only
+    ``{original_col}_tks`` fails for non-ASCII headers (pinyin base). We therefore inspect keys on
+    the sample chunk and compare normalized bases to the requested column name. DB reload of
+    field_map in aggregate_table_manual_doc_metadata remains the primary fix for pinyin mapping.
     """
     if not col or not isinstance(sample_chunk, dict):
         return None
-    base = str(col).strip()
-    candidates = [
-        f"{base}_raw",
-        f"{base}_tks",
-        f"{base}_dt",
-        f"{base}_long",
-        f"{base}_flt",
-        f"{base}_kwd",
-        base,
-    ]
-    for k in candidates:
-        if k in sample_chunk:
-            return k
+    base_raw = str(col).strip()
+    if not base_raw:
+        return None
+    base_norm = base_raw.replace("_", " ").strip().lower().replace(" ", "")
+    suffixes = ("_tks", "_raw", "_dt", "_long", "_flt", "_kwd")
+    # First pass: direct key matches (case-insensitive / simple normalization).
+    for key in sample_chunk.keys():
+        key_s = str(key)
+        if not key_s:
+            continue
+        key_norm = key_s.strip().lower()
+        if key_norm == base_raw.lower() or key_norm.replace("_", "").replace(" ", "") == base_norm:
+            return key_s
+    # Second pass: suffix-based matches against normalized bases (handles pinyin keys vs display names when aligned).
+    for key in sample_chunk.keys():
+        key_s = str(key)
+        if not key_s:
+            continue
+        key_lower = key_s.lower()
+        for sfx in suffixes:
+            if key_lower.endswith(sfx):
+                core = key_lower[: -len(sfx)]
+                core_norm = core.replace("_", "").replace(" ", "")
+                if core_norm == base_norm:
+                    return key_s
     return None
 
 
