@@ -1,6 +1,7 @@
 // src/pages/next-search/search-setting.tsx
 
 import { AvatarUpload } from '@/components/avatar-upload';
+import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import {
   LlmSettingFieldItems,
   LlmSettingSchema,
@@ -21,24 +22,16 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import {
-  MultiSelect,
-  MultiSelectOptionType,
-} from '@/components/ui/multi-select';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  useFetchKnowledgeList,
-  useFetchKnowledgeMetadataKeys,
-} from '@/hooks/use-knowledge-request';
+import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
 import {
   useComposeLlmOptionsByModelTypes,
   useSelectLlmOptionsByModelType,
 } from '@/hooks/use-llm-request';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
-import { IKnowledge } from '@/interfaces/database/knowledge';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
@@ -124,8 +117,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
     resolver: zodResolver(SearchSettingFormSchema),
   });
 
-  const [datasetList, setDatasetList] = useState<MultiSelectOptionType[]>([]);
-  const [datasetSelectEmbdId, setDatasetSelectEmbdId] = useState('');
   const { t } = useTranslation();
   const descriptionDefaultValue = t('search.descriptionValue');
   const resetForm = useCallback(() => {
@@ -194,40 +185,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       setWidth0('w-[440px]');
     }
   }, [open]);
-
-  const { list: datasetListOrigin } = useFetchKnowledgeList();
-
-  useEffect(() => {
-    const datasetListMap = datasetListOrigin.map((item: IKnowledge) => {
-      return {
-        label: item.name,
-        suffix: (
-          <div className="text-xs px-4 p-1 bg-bg-card text-text-secondary rounded-lg border border-bg-card">
-            {item.embd_id}
-          </div>
-        ),
-        value: item.id,
-        disabled:
-          item.embd_id !== datasetSelectEmbdId && datasetSelectEmbdId !== '',
-      };
-    });
-    setDatasetList(datasetListMap);
-  }, [datasetListOrigin, datasetSelectEmbdId]);
-
-  const handleDatasetSelectChange = (
-    value: string[],
-    onChange: (value: string[]) => void,
-  ) => {
-    console.log(value);
-    if (value.length) {
-      const data = datasetListOrigin?.find((item) => item.id === value[0]);
-      setDatasetSelectEmbdId(data?.embd_id ?? '');
-    } else {
-      setDatasetSelectEmbdId('');
-    }
-    formMethods.setValue('search_config.kb_ids', value);
-    onChange?.(value);
-  };
 
   const allOptions = useSelectLlmOptionsByModelType();
   const rerankModelOptions = useMemo(() => {
@@ -423,37 +380,10 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-            {/* Datasets */}
-            <FormField
-              control={formMethods.control}
+            <KnowledgeBaseFormField
               name="search_config.kb_ids"
-              rules={{ required: 'Datasets is required' }}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    <span className="text-destructive mr-1"> *</span>
-                    {t('search.datasets')}
-                  </FormLabel>
-                  <FormControl className="bg-bg-input">
-                    <MultiSelect
-                      data-testid="search-datasets-combobox"
-                      options={datasetList}
-                      onValueChange={(value) => {
-                        handleDatasetSelectChange(value, field.onChange);
-                      }}
-                      showSelectAll={false}
-                      placeholder={t('chat.knowledgeBasesMessage')}
-                      maxCount={10}
-                      defaultValue={field.value}
-                      popoverTestId="datasets-options"
-                      optionTestIdPrefix="datasets"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              required
+            ></KnowledgeBaseFormField>
             <MetadataFilter prefix="search_config."></MetadataFilter>
             <FormField
               control={formMethods.control}

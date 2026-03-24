@@ -174,6 +174,21 @@ class TestDatasetUpdate:
         assert res["message"] == f"Dataset name '{name}' already exists", res
 
     @pytest.mark.p2
+    def test_language_and_connectors_supported(self, HttpApiAuth, add_dataset_func):
+        dataset_id = add_dataset_func
+        payload = {
+            "name": "language_connectors_supported",
+            "description": "",
+            "chunk_method": "naive",
+            "language": "English",
+            "connectors": [],
+        }
+        res = update_dataset(HttpApiAuth, dataset_id, payload)
+        assert res["code"] == 0, res
+        assert res["data"]["language"] == "English", res
+        assert res["data"]["connectors"] == [], res
+
+    @pytest.mark.p2
     def test_avatar(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         fn = create_image_file(tmp_path / "ragflow_test.png")
