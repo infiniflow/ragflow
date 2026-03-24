@@ -188,6 +188,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		chunk := authorized.Group("/v1/chunk")
 		{
 			chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
+			chunk.GET("/get", r.chunkHandler.Get)
+			chunk.POST("/list", r.chunkHandler.List)
 		}
 
 		// LLM routes
