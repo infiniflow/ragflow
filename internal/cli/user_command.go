@@ -67,6 +67,7 @@ func (c *RAGFlowClient) ShowServerVersion(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("show version failed: invalid JSON (%w)", err)
 	}
 	result.Key = "version"
+	result.Duration = resp.Duration
 
 	return &result, nil
 }
@@ -124,8 +125,8 @@ func (c *RAGFlowClient) RegisterUser(cmd *Command) (ResponseIf, error) {
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
+	result.Duration = resp.Duration
 
-	//PrintTableSimple(result.Data)
 	return &result, nil
 }
 
@@ -381,7 +382,7 @@ func (c *RAGFlowClient) CreateToken(cmd *Command) (ResponseIf, error) {
 	var result SimpleResponse
 	result.Code = 0
 	result.Message = "Token created successfully"
-
+	result.Duration = resp.Duration
 	return &result, nil
 }
 
@@ -408,7 +409,7 @@ func (c *RAGFlowClient) ListTokens(cmd *Command) (ResponseIf, error) {
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
-
+	result.Duration = resp.Duration
 	return &result, nil
 }
 
@@ -440,7 +441,7 @@ func (c *RAGFlowClient) DropToken(cmd *Command) (ResponseIf, error) {
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
-
+	result.Duration = resp.Duration
 	return &result, nil
 }
 
@@ -498,7 +499,7 @@ func (c *RAGFlowClient) SetToken(cmd *Command) (ResponseIf, error) {
 	var successResult SimpleResponse
 	successResult.Code = 0
 	successResult.Message = "API token set successfully"
-
+	successResult.Duration = resp.Duration
 	return &successResult, nil
 }
 
@@ -522,7 +523,7 @@ func (c *RAGFlowClient) ShowToken(cmd *Command) (ResponseIf, error) {
 			"token": c.HTTPClient.APIToken,
 		},
 	}
-
+	result.Duration = 0
 	return &result, nil
 }
 
@@ -542,6 +543,6 @@ func (c *RAGFlowClient) UnsetToken(cmd *Command) (ResponseIf, error) {
 	var result SimpleResponse
 	result.Code = 0
 	result.Message = "API token unset successfully"
-
+	result.Duration = 0
 	return &result, nil
 }

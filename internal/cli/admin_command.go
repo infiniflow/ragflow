@@ -35,7 +35,7 @@ func (c *RAGFlowClient) PingAdmin(cmd *Command) (ResponseIf, error) {
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
 	}
-
+	result.Duration = resp.Duration
 	return &result, nil
 }
 
@@ -71,7 +71,7 @@ func (c *RAGFlowClient) ShowAdminVersion(cmd *Command) (ResponseIf, error) {
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
-
+	result.Duration = resp.Duration
 	return &result, nil
 }
 
@@ -115,7 +115,7 @@ func (c *RAGFlowClient) ListUsers(cmd *Command) (ResponseIf, error) {
 		delete(user, "create_date")
 	}
 
-	//PrintTableSimple(result.Data)
+	result.Duration = resp.Duration
 	return &result, nil
 }
 
@@ -148,6 +148,7 @@ func (c *RAGFlowClient) GrantAdmin(cmd *Command) (ResponseIf, error) {
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
+	result.Duration = resp.Duration
 	return &result, nil
 }
 
@@ -180,6 +181,7 @@ func (c *RAGFlowClient) RevokeAdmin(cmd *Command) (ResponseIf, error) {
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
+	result.Duration = resp.Duration
 	return &result, nil
 }
 
@@ -229,6 +231,7 @@ func (c *RAGFlowClient) CreateUser(cmd *Command) (ResponseIf, error) {
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
+	result.Duration = resp.Duration
 	return &result, nil
 }
 
@@ -275,6 +278,7 @@ func (c *RAGFlowClient) ActivateUser(cmd *Command) (ResponseIf, error) {
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
+	result.Duration = resp.Duration
 	return &result, nil
 }
 
@@ -322,6 +326,7 @@ func (c *RAGFlowClient) AlterUserPassword(cmd *Command) (ResponseIf, error) {
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
+	result.Duration = resp.Duration
 	return &result, nil
 }
 
@@ -446,6 +451,7 @@ func (c *RAGFlowClient) DropUser(cmd *Command) (ResponseIf, error) {
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
+	result.Duration = resp.Duration
 	return &result, nil
 }
 
@@ -478,6 +484,7 @@ func (c *RAGFlowClient) ShowUser(cmd *Command) (ResponseIf, error) {
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
+	result.Duration = resp.Duration
 	return &result, nil
 }
 

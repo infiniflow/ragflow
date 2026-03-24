@@ -118,14 +118,29 @@ func (c *RAGFlowClient) runBenchmarkSingle(iterations int, nestedCmd *Command) (
 		} else {
 			benchmarkResponse.FailureCount = 1
 		}
-
+	case "show":
+		dataResponse := result.(*CommonDataResponse)
+		benchmarkResponse.Code = dataResponse.Code
+		benchmarkResponse.Duration = dataResponse.Duration
+		if dataResponse.Code == 0 {
+			benchmarkResponse.SuccessCount = 1
+		} else {
+			benchmarkResponse.FailureCount = 1
+		}
+	case "data":
+		kvResponse := result.(*KeyValueResponse)
+		benchmarkResponse.Code = kvResponse.Code
+		benchmarkResponse.Duration = kvResponse.Duration
+		if kvResponse.Code == 0 {
+			benchmarkResponse.SuccessCount = 1
+		} else {
+			benchmarkResponse.FailureCount = 1
+		}
 	default:
 		return nil, fmt.Errorf("unsupported command type: %s", result.Type())
 	}
 	benchmarkResponse.Concurrency = 1
 	return &benchmarkResponse, nil
-
-	return nil, nil
 }
 
 // runBenchmarkConcurrent runs benchmark with multiple concurrent workers
