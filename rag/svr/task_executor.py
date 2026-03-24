@@ -204,12 +204,12 @@ def aggregate_table_manual_doc_metadata(chunks: list, task: dict) -> dict:
     Collect unique values per metadata/both column across chunks for document-level metadata.
     Used when table_column_mode == manual (parallel to LLM gen_metadata, no schema required).
     """
-    logging.info(
+    logging.debug(
         f"[TABLE_META_DEBUG] aggregate_table_manual_doc_metadata called with {len(chunks)} chunks"
     )
     eff = merge_table_parser_config_from_kb(task)
     if eff.get("table_column_mode") != "manual":
-        logging.info(
+        logging.debug(
             f"[TABLE_META_DEBUG] skip aggregate: table_column_mode={eff.get('table_column_mode')!r}"
         )
         return {}
@@ -227,7 +227,7 @@ def aggregate_table_manual_doc_metadata(chunks: list, task: dict) -> dict:
         # Fallback to previous behavior when we don't have an explicit column list.
         meta_cols = [c for c, r in roles.items() if r in ("metadata", "both")]
     if not meta_cols:
-        logging.info(
+        logging.debug(
             "[TABLE_META_DEBUG] skip aggregate: no metadata/both columns "
             f"(table_column_names_present={bool(table_column_names)})"
         )
@@ -244,22 +244,26 @@ def aggregate_table_manual_doc_metadata(chunks: list, task: dict) -> dict:
                 reloaded = fresh_pc.get("field_map") or {}
                 if reloaded:
                     fm = reloaded
-                    logging.info(
+                    logging.debug(
                         f"[TABLE_META_DEBUG] reloaded field_map from DB: {len(fm)} entries"
                     )
                 else:
-                    logging.info(
+                    logging.debug(
                         "[TABLE_META_DEBUG] KB reload: parser_config has no field_map yet; "
                         "will use ES key probe on chunk dicts if applicable"
                     )
         except Exception as e:
-            logging.warning(f"[TABLE_META_DEBUG] failed to reload field_map from DB: {e}")
+            logging.debug(
+                "[TABLE_META_DEBUG] failed to reload field_map from DB: %s",
+                e,
+                exc_info=True,
+            )
     if not fm and not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE):
-        logging.info(
+        logging.debug(
             "[TABLE_META_DEBUG] field_map empty on task snapshot — will use ES key probe on chunk dicts; "
             f"kb_parser_config keys={list((task.get('kb_parser_config') or {}).keys())}"
         )
-    logging.info(
+    logging.debug(
         f"[TABLE_META_DEBUG] meta_cols={meta_cols}, field_map entries={len(fm)}, "
         f"infinity={settings.DOC_ENGINE_INFINITY}, oceanbase={settings.DOC_ENGINE_OCEANBASE}"
     )
@@ -270,7 +274,7 @@ def aggregate_table_manual_doc_metadata(chunks: list, task: dict) -> dict:
             for k in sample_ck.keys()
             if not (str(k).startswith("q_") and str(k).endswith("_vec"))
         ][:50]
-        logging.info(f"[TABLE_META_DEBUG] first chunk non-vector keys (sample): {sk}")
+        logging.debug(f"[TABLE_META_DEBUG] first chunk non-vector keys (sample): {sk}")
 
     # Resolve ES field key per column once (field_map when present+valid; else suffix probe on sample chunk)
     es_col_keys: dict[str, tuple[str | None, str]] = {}
@@ -278,7 +282,7 @@ def aggregate_table_manual_doc_metadata(chunks: list, task: dict) -> dict:
         for col in meta_cols:
             tk, src = _resolve_es_chunk_field_key(col, fm, sample_ck)
             es_col_keys[col] = (tk, src)
-            logging.info(
+            logging.debug(
                 f"[TABLE_META_DEBUG] column '{col}' -> ES key {tk!r} (source={src})"
             )
 
@@ -302,7 +306,7 @@ def aggregate_table_manual_doc_metadata(chunks: list, task: dict) -> dict:
                 tk, _src = es_col_keys.get(col, (None, "none"))
                 if not tk:
                     if i == 0:
-                        logging.info(
+                        logging.debug(
                             f"[TABLE_META_DEBUG] no resolved ES key for column '{col}'"
                         )
                     continue
@@ -316,7 +320,7 @@ def aggregate_table_manual_doc_metadata(chunks: list, task: dict) -> dict:
                     from_tks = tk.endswith("_tks")
                 else:
                     if i == 0:
-                        logging.info(
+                        logging.debug(
                             f"[TABLE_META_DEBUG] chunk missing ES field {tk!r}"
                             f"{' and ' + raw_k + ' (raw)' if raw_k else ''} for column '{col}'"
                         )
@@ -326,13 +330,19 @@ def aggregate_table_manual_doc_metadata(chunks: list, task: dict) -> dict:
                     acc[col].append(s)
 
     for col, vals in acc.items():
-        logging.info(f"[TABLE_META_DEBUG] Column '{col}' values found (count={len(vals)}): {vals[:20]}{'...' if len(vals) > 20 else ''}")
+        logging.debug(
+            f"[TABLE_META_DEBUG] Column '{col}' values found (count={len(vals)}): "
+            f"{vals[:20]}{'...' if len(vals) > 20 else ''}"
+        )
 
     out = {}
     for col, vals in acc.items():
         if vals:
             out[col] = dedupe_list(vals)
-    logging.info(f"[TABLE_META_DEBUG] aggregated metadata dict keys={list(out.keys())}, sizes={[len(v) for v in out.values()]}")
+    logging.debug(
+        f"[TABLE_META_DEBUG] aggregated metadata dict keys={list(out.keys())}, "
+        f"sizes={[len(v) for v in out.values()]}"
+    )
     return out
 
 
@@ -526,7 +536,7 @@ async def build_chunks(task, progress_callback):
     # chunk tasks carry document-level parser_config only — merge KB keys so manual roles apply.
     parser_config_for_chunk = merge_table_parser_config_from_kb(task)
     if task.get("parser_id", "").lower() == "table" and task.get("kb_parser_config"):
-        logging.info(
+        logging.debug(
             "[TASK_EXECUTOR_DEBUG] table parser: merged KB keys into parser_config for chunk; "
             f"mode={parser_config_for_chunk.get('table_column_mode')}, "
             f"roles_keys={list((parser_config_for_chunk.get('table_column_roles') or {}).keys())}"
@@ -1444,36 +1454,40 @@ async def do_handle_task(task):
         # Table parser (manual): push metadata/both column values to document-level metadata for UI / chat filters
         if task.get("parser_id", "").lower() == "table":
             eff_pc = merge_table_parser_config_from_kb(task)
-            logging.info(
+            logging.debug(
                 f"[TABLE_META_DEBUG] table post-index: table_column_mode={eff_pc.get('table_column_mode')!r}"
             )
             if eff_pc.get("table_column_mode") == "manual":
                 try:
                     agg = aggregate_table_manual_doc_metadata(chunks, task)
-                    logging.info(f"[TABLE_META_DEBUG] aggregated metadata: {agg}")
+                    logging.debug(f"[TABLE_META_DEBUG] aggregated metadata: {agg}")
                     if not agg:
-                        logging.info(
+                        logging.debug(
                             "[TABLE_META_DEBUG] skip update_document_metadata: empty aggregate (see logs above)"
                         )
                     if agg:
                         existing = DocMetadataService.get_document_metadata(task_doc_id)
                         existing = existing if isinstance(existing, dict) else {}
                         merged = update_metadata_to(dict(existing), agg)
-                        logging.info(
+                        logging.debug(
                             f"[TABLE_META_DEBUG] calling update_document_metadata for doc_id={task_doc_id}, "
                             f"meta_fields keys={list(merged.keys())}"
                         )
                         try:
                             DocMetadataService.update_document_metadata(task_doc_id, merged)
-                            logging.info("[TABLE_META_DEBUG] update_document_metadata succeeded")
+                            logging.debug("[TABLE_META_DEBUG] update_document_metadata succeeded")
                         except Exception as ue:
                             logging.error(
-                                f"[TABLE_META_DEBUG] update_document_metadata FAILED: {ue}",
+                                "update_document_metadata failed (table parser, doc_id=%s): %s",
+                                task_doc_id,
+                                ue,
                                 exc_info=True,
                             )
                 except Exception as e:
                     logging.exception(
-                        f"[TABLE_META_DEBUG] Table parser document metadata aggregation failed: {e}"
+                        "Table parser document metadata aggregation failed (doc_id=%s): %s",
+                        task_doc_id,
+                        e,
                     )
 
         progress_callback(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))

@@ -373,9 +373,9 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
     Every row in table will be treated as a chunk.
     """
     _pc0 = kwargs.get("parser_config") or {}
-    logger.info(f"[TABLE_PARSER_DEBUG] parser_config keys: {list(_pc0.keys())}")
-    logger.info(f"[TABLE_PARSER_DEBUG] table_column_mode: {_pc0.get('table_column_mode')}")
-    logger.info(f"[TABLE_PARSER_DEBUG] table_column_roles: {_pc0.get('table_column_roles')}")
+    logger.debug(f"[TABLE_PARSER_DEBUG] parser_config keys: {list(_pc0.keys())}")
+    logger.debug(f"[TABLE_PARSER_DEBUG] table_column_mode: {_pc0.get('table_column_mode')}")
+    logger.debug(f"[TABLE_PARSER_DEBUG] table_column_roles: {_pc0.get('table_column_roles')}")
 
     tbls = []
     is_english = lang.lower() == "english"
@@ -468,7 +468,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
             column_roles = parser_config.get("table_column_roles") or {}
         else:
             column_roles = {}
-        logger.info(
+        logger.debug(
             f"[TABLE_PARSER_DEBUG] effective table_column_mode={parser_config.get('table_column_mode')!r}, "
             f"column_roles keys={list(column_roles.keys())}"
         )
@@ -510,7 +510,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 col_name = clmns[j]
                 role = column_roles.get(col_name, "both")
                 if _debug_row_idx == 1:
-                    logger.info(f"[TABLE_PARSER_DEBUG] Column '{col_name}' -> role '{role}'")
+                    logger.debug(f"[TABLE_PARSER_DEBUG] Column '{col_name}' -> role '{role}'")
                 if role in ("vectorize", "both"):
                     text_fields.append((col_name, row[col_name]))
                 if role in ("metadata", "both"):
@@ -536,16 +536,16 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
             formatted_text = "\n".join([f"- {field}: {value}" for field, value in text_fields]) if text_fields else ""
             tokenize(d, formatted_text, eng)
             if _debug_row_idx == 1:
-                logger.info(
+                logger.debug(
                     f"[TABLE_PARSER_DEBUG] Chunk content_with_weight length: {len(d.get('content_with_weight', '') or '')}"
                 )
                 _cd = d.get("chunk_data")
-                logger.info(
+                logger.debug(
                     f"[TABLE_PARSER_DEBUG] Chunk chunk_data keys: {list(_cd.keys()) if isinstance(_cd, dict) else 'N/A'}"
                 )
                 if not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE):
                     _extra = [k for k in d if k not in ("docnm_kwd", "title_tks", "content_with_weight", "content_ltks", "content_sm_ltks")]
-                    logger.info(f"[TABLE_PARSER_DEBUG] Chunk ES extra field keys (sample): {_extra[:20]}")
+                    logger.debug(f"[TABLE_PARSER_DEBUG] Chunk ES extra field keys (sample): {_extra[:20]}")
             res.append(d)
         if tbls:
             doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
