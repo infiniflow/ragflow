@@ -46,12 +46,28 @@ func (dao *APITokenDAO) DeleteByTenantID(tenantID string) (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
+// GetByToken gets API token by access key
+func (dao *APITokenDAO) GetUserByAPIToken(token string) (*model.APIToken, error) {
+	var apiToken model.APIToken
+	err := DB.Where("token = ?", token).First(&apiToken).Error
+	if err != nil {
+		return nil, err
+	}
+	return &apiToken, nil
+}
+
 // DeleteByDialogIDs deletes API tokens by dialog IDs (hard delete)
 func (dao *APITokenDAO) DeleteByDialogIDs(dialogIDs []string) (int64, error) {
 	if len(dialogIDs) == 0 {
 		return 0, nil
 	}
 	result := DB.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&model.APIToken{})
+	return result.RowsAffected, result.Error
+}
+
+// DeleteByTenantIDAndToken deletes a specific API token by tenant ID and token value
+func (dao *APITokenDAO) DeleteByTenantIDAndToken(tenantID, token string) (int64, error) {
+	result := DB.Unscoped().Where("tenant_id = ? AND token = ?", tenantID, token).Delete(&model.APIToken{})
 	return result.RowsAffected, result.Error
 }
 

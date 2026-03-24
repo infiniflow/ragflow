@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -77,7 +77,7 @@ async def convert():
                     doc = DocumentService.insert({
                         "id": get_uuid(),
                         "kb_id": kb.id,
-                        "parser_id": kb.parser_id,
+                        "parser_id": FileService.get_parser(file.type, file.name, kb.parser_id),
                         "pipeline_id": kb.pipeline_id,
                         "parser_config": kb.parser_config,
                         "created_by": current_user.id,
