@@ -217,6 +217,27 @@ def aggregate_table_manual_doc_metadata(chunks: list, task: dict) -> dict:
         )
         return {}
     fm = (task.get("kb_parser_config") or {}).get("field_map") or {}
+    kb_id = task.get("kb_id")
+    if not fm and kb_id:
+        try:
+            from api.db.services.knowledgebase_service import KnowledgebaseService
+
+            ok, kb = KnowledgebaseService.get_by_id(kb_id)
+            if ok and kb:
+                fresh_pc = kb.parser_config or {}
+                reloaded = fresh_pc.get("field_map") or {}
+                if reloaded:
+                    fm = reloaded
+                    logging.info(
+                        f"[TABLE_META_DEBUG] reloaded field_map from DB: {len(fm)} entries"
+                    )
+                else:
+                    logging.info(
+                        "[TABLE_META_DEBUG] KB reload: parser_config has no field_map yet; "
+                        "will use ES key probe on chunk dicts if applicable"
+                    )
+        except Exception as e:
+            logging.warning(f"[TABLE_META_DEBUG] failed to reload field_map from DB: {e}")
     if not fm and not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE):
         logging.info(
             "[TABLE_META_DEBUG] field_map empty on task snapshot — will use ES key probe on chunk dicts; "
