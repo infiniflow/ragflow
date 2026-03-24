@@ -191,8 +191,9 @@ func (p *Parser) parseLoginUser() (*Command, error) {
 	cmd.Params["email"] = email
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 
 	return cmd, nil
@@ -201,8 +202,9 @@ func (p *Parser) parseLoginUser() (*Command, error) {
 func (p *Parser) parsePingServer() (*Command, error) {
 	cmd := NewCommand("ping")
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -246,8 +248,9 @@ func (p *Parser) parseRegisterCommand() (*Command, error) {
 	cmd.Params["password"] = password
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 
 	return cmd, nil
@@ -259,44 +262,51 @@ func (p *Parser) parseListCommand() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenServices:
 		p.nextToken()
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
+		// Semicolon is optional for SHOW TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
 		}
 		return NewCommand("list_services"), nil
 	case TokenUsers:
 		p.nextToken()
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
+		// Semicolon is optional for SHOW TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
 		}
 		return NewCommand("list_users"), nil
 	case TokenRoles:
 		p.nextToken()
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
+		// Semicolon is optional for SHOW TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
 		}
 		return NewCommand("list_roles"), nil
 	case TokenVars:
 		p.nextToken()
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
+		// Semicolon is optional for SHOW TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
 		}
 		return NewCommand("list_variables"), nil
 	case TokenConfigs:
 		p.nextToken()
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
+		// Semicolon is optional for SHOW TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
 		}
 		return NewCommand("list_configs"), nil
 	case TokenTokens:
 		p.nextToken()
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
+		// Semicolon is optional for SHOW TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
 		}
 		return NewCommand("list_tokens"), nil
 	case TokenEnvs:
 		p.nextToken()
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
+		// Semicolon is optional for SHOW TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
 		}
 		return NewCommand("list_environments"), nil
 	case TokenDatasets:
@@ -311,8 +321,9 @@ func (p *Parser) parseListCommand() (*Command, error) {
 		return p.parseListDefaultModels()
 	case TokenChats:
 		p.nextToken()
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
+		// Semicolon is optional for SHOW TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
 		}
 		return NewCommand("list_user_chats"), nil
 	case TokenFiles:
@@ -341,8 +352,9 @@ func (p *Parser) parseListDatasets() (*Command, error) {
 		p.nextToken()
 	}
 
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -368,8 +380,9 @@ func (p *Parser) parseListAgents() (*Command, error) {
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -390,8 +403,9 @@ func (p *Parser) parseListKeys() (*Command, error) {
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -402,8 +416,9 @@ func (p *Parser) parseListModelProviders() (*Command, error) {
 		return nil, fmt.Errorf("expected PROVIDERS")
 	}
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return NewCommand("list_user_model_providers"), nil
 }
@@ -414,8 +429,9 @@ func (p *Parser) parseListDefaultModels() (*Command, error) {
 		return nil, fmt.Errorf("expected MODELS")
 	}
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return NewCommand("list_user_default_models"), nil
 }
@@ -440,8 +456,9 @@ func (p *Parser) parseListFiles() (*Command, error) {
 	cmd.Params["dataset_name"] = datasetName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -452,14 +469,16 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenVersion:
 		p.nextToken()
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
+		// Semicolon is optional for SHOW TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
 		}
 		return NewCommand("show_version"), nil
 	case TokenToken:
 		p.nextToken()
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
+		// Semicolon is optional for SHOW TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
 		}
 		return NewCommand("show_token"), nil
 	case TokenCurrent:
@@ -468,8 +487,9 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 			return nil, fmt.Errorf("expected USER after CURRENT")
 		}
 		p.nextToken()
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
+		// Semicolon is optional for SHOW TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
 		}
 		return NewCommand("show_current_user"), nil
 	case TokenUser:
@@ -498,8 +518,9 @@ func (p *Parser) parseShowUser() (*Command, error) {
 		cmd := NewCommand("show_user_permission")
 		cmd.Params["user_name"] = userName
 		p.nextToken()
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
+		// Semicolon is optional for SHOW TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
 		}
 		return cmd, nil
 	}
@@ -513,8 +534,9 @@ func (p *Parser) parseShowUser() (*Command, error) {
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -530,8 +552,9 @@ func (p *Parser) parseShowRole() (*Command, error) {
 	cmd.Params["role_name"] = roleName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -547,8 +570,9 @@ func (p *Parser) parseShowVariable() (*Command, error) {
 	cmd.Params["var_name"] = varName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -564,8 +588,9 @@ func (p *Parser) parseShowService() (*Command, error) {
 	cmd.Params["number"] = serviceNum
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -594,8 +619,9 @@ func (p *Parser) parseCreateCommand() (*Command, error) {
 func (p *Parser) parseCreateToken() (*Command, error) {
 	p.nextToken() // consume TOKEN
 
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 
 	return NewCommand("create_token"), nil
@@ -620,8 +646,9 @@ func (p *Parser) parseCreateUser() (*Command, error) {
 	cmd.Params["role"] = "user"
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -647,8 +674,9 @@ func (p *Parser) parseCreateRole() (*Command, error) {
 		p.nextToken()
 	}
 
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -676,8 +704,9 @@ func (p *Parser) parseCreateModelProvider() (*Command, error) {
 	cmd.Params["provider_key"] = providerKey
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -729,8 +758,9 @@ func (p *Parser) parseCreateDataset() (*Command, error) {
 		return nil, fmt.Errorf("expected PARSER or PIPELINE")
 	}
 
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -746,8 +776,9 @@ func (p *Parser) parseCreateChat() (*Command, error) {
 	cmd.Params["chat_name"] = chatName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -787,8 +818,9 @@ func (p *Parser) parseDropToken() (*Command, error) {
 	cmd.Params["token"] = tokenValue
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -804,8 +836,9 @@ func (p *Parser) parseDropUser() (*Command, error) {
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -821,8 +854,9 @@ func (p *Parser) parseDropRole() (*Command, error) {
 	cmd.Params["role_name"] = roleName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -843,8 +877,9 @@ func (p *Parser) parseDropModelProvider() (*Command, error) {
 	cmd.Params["provider_name"] = providerName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -860,8 +895,9 @@ func (p *Parser) parseDropDataset() (*Command, error) {
 	cmd.Params["dataset_name"] = datasetName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -877,8 +913,9 @@ func (p *Parser) parseDropChat() (*Command, error) {
 	cmd.Params["chat_name"] = chatName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -906,8 +943,9 @@ func (p *Parser) parseDropKey() (*Command, error) {
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -950,8 +988,9 @@ func (p *Parser) parseAlterUser() (*Command, error) {
 		cmd.Params["password"] = password
 
 		p.nextToken()
-		if err := p.expectSemicolon(); err != nil {
-			return nil, err
+		// Semicolon is optional for SHOW TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
 		}
 		return cmd, nil
 	}
@@ -981,8 +1020,9 @@ func (p *Parser) parseAlterUser() (*Command, error) {
 	cmd.Params["role_name"] = roleName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1006,8 +1046,9 @@ func (p *Parser) parseActivateUser() (*Command, error) {
 	cmd.Params["activate_status"] = status
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1039,8 +1080,9 @@ func (p *Parser) parseAlterRole() (*Command, error) {
 	cmd.Params["description"] = description
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1066,8 +1108,9 @@ func (p *Parser) parseGrantAdmin() (*Command, error) {
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1109,8 +1152,9 @@ func (p *Parser) parseGrantPermission() (*Command, error) {
 	cmd.Params["role_name"] = roleName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1136,8 +1180,9 @@ func (p *Parser) parseRevokeAdmin() (*Command, error) {
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1179,8 +1224,9 @@ func (p *Parser) parseRevokePermission() (*Command, error) {
 	cmd.Params["role_name"] = roleName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1242,8 +1288,9 @@ func (p *Parser) parseSetVariable() (*Command, error) {
 	cmd.Params["var_value"] = varValue
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1282,8 +1329,9 @@ func (p *Parser) parseSetDefault() (*Command, error) {
 	cmd.Params["model_id"] = modelID
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1300,8 +1348,9 @@ func (p *Parser) parseSetToken() (*Command, error) {
 	cmd.Params["token"] = tokenValue
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1336,8 +1385,9 @@ func (p *Parser) parseResetCommand() (*Command, error) {
 	cmd.Params["model_type"] = modelType
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1366,8 +1416,9 @@ func (p *Parser) parseGenerateCommand() (*Command, error) {
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1399,8 +1450,9 @@ func (p *Parser) parseImportCommand() (*Command, error) {
 	cmd.Params["dataset_name"] = datasetName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1432,8 +1484,9 @@ func (p *Parser) parseSearchCommand() (*Command, error) {
 	cmd.Params["datasets"] = datasets
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1470,8 +1523,9 @@ func (p *Parser) parseParseDataset() (*Command, error) {
 	cmd.Params["method"] = method
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1502,8 +1556,9 @@ func (p *Parser) parseParseDocs() (*Command, error) {
 	cmd.Params["dataset_name"] = datasetName
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1581,8 +1636,9 @@ func (p *Parser) parseStartupCommand() (*Command, error) {
 	cmd.Params["number"] = serviceNum
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1603,8 +1659,9 @@ func (p *Parser) parseShutdownCommand() (*Command, error) {
 	cmd.Params["number"] = serviceNum
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1625,8 +1682,9 @@ func (p *Parser) parseRestartCommand() (*Command, error) {
 	cmd.Params["number"] = serviceNum
 
 	p.nextToken()
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return cmd, nil
 }
@@ -1639,8 +1697,9 @@ func (p *Parser) parseUnsetCommand() (*Command, error) {
 	}
 	p.nextToken()
 
-	if err := p.expectSemicolon(); err != nil {
-		return nil, err
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 	return NewCommand("unset_token"), nil
 }

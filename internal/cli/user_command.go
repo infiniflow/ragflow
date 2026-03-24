@@ -20,7 +20,7 @@ func (c *RAGFlowClient) PingServer(cmd *Command) (ResponseIf, error) {
 		return c.HTTPClient.RequestWithIterations("GET", "/system/ping", false, "web", nil, nil, iterations)
 	}
 
-	// Single ping mode
+	// Single mode
 	resp, err := c.HTTPClient.Request("GET", "/system/ping", false, "web", nil, nil)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
@@ -35,6 +35,39 @@ func (c *RAGFlowClient) PingServer(cmd *Command) (ResponseIf, error) {
 	var result SimpleResponse
 	result.Message = string(resp.Body)
 	result.Code = 0
+	return &result, nil
+}
+
+// Show server version to show RAGFlow server version
+// Returns benchmark result map if iterations > 1, otherwise prints status
+func (c *RAGFlowClient) ShowServerVersion(cmd *Command) (ResponseIf, error) {
+	// Get iterations from command params (for benchmark)
+	iterations := 1
+	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
+		iterations = val
+	}
+
+	if iterations > 1 {
+		// Benchmark mode: multiple iterations
+		return c.HTTPClient.RequestWithIterations("GET", "/system/version", false, "web", nil, nil, iterations)
+	}
+
+	// Single mode
+	resp, err := c.HTTPClient.Request("GET", "/system/version", false, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show version: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show version: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result KeyValueResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("show version failed: invalid JSON (%w)", err)
+	}
+	result.Key = "version"
+
 	return &result, nil
 }
 

@@ -19,7 +19,7 @@ func (c *RAGFlowClient) PingAdmin(cmd *Command) (ResponseIf, error) {
 		return c.HTTPClient.RequestWithIterations("GET", "/admin/ping", false, "web", nil, nil, iterations)
 	}
 
-	// Single ping mode
+	// Single mode
 	resp, err := c.HTTPClient.Request("GET", "/admin/ping", true, "web", nil, nil)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
@@ -34,6 +34,42 @@ func (c *RAGFlowClient) PingAdmin(cmd *Command) (ResponseIf, error) {
 	var result SimpleResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
+	}
+
+	return &result, nil
+}
+
+// Show admin version to show RAGFlow admin version
+// Returns benchmark result map if iterations > 1, otherwise prints status
+func (c *RAGFlowClient) ShowAdminVersion(cmd *Command) (ResponseIf, error) {
+	// Get iterations from command params (for benchmark)
+	iterations := 1
+	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
+		iterations = val
+	}
+
+	if iterations > 1 {
+		// Benchmark mode: multiple iterations
+		return c.HTTPClient.RequestWithIterations("GET", "/admin/version", false, "web", nil, nil, iterations)
+	}
+
+	// Single mode
+	resp, err := c.HTTPClient.Request("GET", "/admin/version", true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show admin version: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show admin version: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("show admin version failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
 	}
 
 	return &result, nil

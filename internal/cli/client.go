@@ -325,6 +325,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.DropUser(cmd)
 	case "show_service":
 		return c.ShowService(cmd)
+	case "show_version":
+		return c.ShowAdminVersion(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
@@ -356,6 +358,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowToken(cmd)
 	case "unset_token":
 		return c.UnsetToken(cmd)
+	case "show_version":
+		return c.ShowServerVersion(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
@@ -397,7 +401,7 @@ func (r *CommonResponse) PrintOut() {
 		PrintTableSimple(r.Data)
 	} else {
 		fmt.Println("ERROR")
-		fmt.Printf("%d, %s", r.Code, r.Message)
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
 }
 
@@ -423,7 +427,7 @@ func (r *CommonDataResponse) PrintOut() {
 		PrintTableSimple(table)
 	} else {
 		fmt.Println("ERROR")
-		fmt.Printf("%d, %s", r.Code, r.Message)
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
 }
 
@@ -469,7 +473,7 @@ func (r *RegisterResponse) PrintOut() {
 		fmt.Println("Register successfully")
 	} else {
 		fmt.Println("ERROR")
-		fmt.Printf("%d, %s", r.Code, r.Message)
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
 }
 
@@ -505,4 +509,34 @@ func (r *BenchmarkResponse) PrintOut() {
 
 func (r *BenchmarkResponse) TimeCost() float64 {
 	return r.Duration
+}
+
+type KeyValueResponse struct {
+	Code     int    `json:"code"`
+	Key      string `json:"key"`
+	Value    string `json:"data"`
+	Duration float64
+}
+
+func (r *KeyValueResponse) Type() string {
+	return "data"
+}
+
+func (r *KeyValueResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *KeyValueResponse) PrintOut() {
+	if r.Code == 0 {
+		table := make([]map[string]interface{}, 0)
+		// insert r.key and r.value into table
+		table = append(table, map[string]interface{}{
+			"key":   r.Key,
+			"value": r.Value,
+		})
+		PrintTableSimple(table)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d\n", r.Code)
+	}
 }
