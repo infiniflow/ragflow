@@ -34,8 +34,9 @@ const (
 	MemoryTypeProcedural = 0b1000 // Procedural memory (binary: 1000)
 )
 
-// memoryTypeMap maps memory type names to bit flags
-var memoryTypeMap = map[string]int{
+// MemoryTypeMap maps memory type names to bit flags
+// Exported for use by service package
+var MemoryTypeMap = map[string]int{
 	"raw":        MemoryTypeRaw,
 	"semantic":   MemoryTypeSemantic,
 	"episodic":   MemoryTypeEpisodic,
@@ -57,11 +58,39 @@ func CalculateMemoryType(memoryTypeNames []string) int64 {
 	memoryType := 0
 	for _, name := range memoryTypeNames {
 		lowerName := strings.ToLower(name)
-		if mt, ok := memoryTypeMap[lowerName]; ok {
+		if mt, ok := MemoryTypeMap[lowerName]; ok {
 			memoryType |= mt
 		}
 	}
 	return int64(memoryType)
+}
+
+// GetMemoryTypeHuman converts memory type bit flags to human-readable names
+//
+// Parameters:
+//   - memoryType: Bit flags integer representing memory types
+//
+// Returns:
+//   - []string: Array of human-readable memory type names
+//
+// Example:
+//
+//	GetMemoryTypeHuman(3) returns ["raw", "semantic"]
+func GetMemoryTypeHuman(memoryType int64) []string {
+	var result []string
+	if memoryType&int64(MemoryTypeRaw) != 0 {
+		result = append(result, "raw")
+	}
+	if memoryType&int64(MemoryTypeSemantic) != 0 {
+		result = append(result, "semantic")
+	}
+	if memoryType&int64(MemoryTypeEpisodic) != 0 {
+		result = append(result, "episodic")
+	}
+	if memoryType&int64(MemoryTypeProcedural) != 0 {
+		result = append(result, "procedural")
+	}
+	return result
 }
 
 // MemoryDAO handles all Memory-related database operations

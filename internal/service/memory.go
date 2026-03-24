@@ -38,38 +38,12 @@ const (
 	MemorySizeLimit = 5242880
 )
 
-// MemoryType represents different types of memory using bit flags
-// Multiple types can be combined using bitwise OR operations
-type MemoryType int
-
-const (
-	// MemoryTypeRaw represents raw memory type (binary: 0001)
-	MemoryTypeRaw MemoryType = 0b0001
-	// MemoryTypeSemantic represents semantic memory type (binary: 0010)
-	MemoryTypeSemantic MemoryType = 0b0010
-	// MemoryTypeEpisodic represents episodic memory type (binary: 0100)
-	MemoryTypeEpisodic MemoryType = 0b0100
-	// MemoryTypeProcedural represents procedural memory type (binary: 1000)
-	MemoryTypeProcedural MemoryType = 0b1000
-)
-
-// memoryTypeMap maps memory type names to their corresponding bit flag values
-var memoryTypeMap = map[string]MemoryType{
-	"raw":        MemoryTypeRaw,
-	"semantic":   MemoryTypeSemantic,
-	"episodic":   MemoryTypeEpisodic,
-	"procedural": MemoryTypeProcedural,
-}
-
-// validMemoryTypes defines which memory types are valid
-var validMemoryTypes = map[MemoryType]bool{
-	MemoryTypeRaw:        true,
-	MemoryTypeSemantic:   true,
-	MemoryTypeEpisodic:   true,
-	MemoryTypeProcedural: true,
-}
+// Note: MemoryType, MemoryTypeRaw, MemoryTypeSemantic, MemoryTypeEpisodic,
+// MemoryTypeProcedural, and CalculateMemoryType are defined in the dao package
+// and imported as dao.MemoryType, dao.MemoryTypeRaw, etc.
 
 // TenantPermission defines the access permission levels for memory resources
+// Note: This type is specific to the service layer
 type TenantPermission string
 
 const (
@@ -101,67 +75,9 @@ var validForgettingPolicies = map[ForgettingPolicy]bool{
 	ForgettingPolicyFIFO: true,
 }
 
-// CalculateMemoryType converts memory type names array to bit flags integer
 //
-// Parameters:
-//   - memoryTypeNames: Array of memory type names (e.g., ["raw", "semantic"])
-//
-// Returns:
-//   - int64: Bit flags integer representing the combined memory types
-//
-// Example:
-//
-//	CalculateMemoryType([]string{"raw", "semantic"}) returns 3 (0b0011)
-func CalculateMemoryType(memoryTypeNames []string) int64 {
-	memoryType := 0
-	for _, name := range memoryTypeNames {
-		lowerName := strings.ToLower(name)
-		if mt, ok := memoryTypeMap[lowerName]; ok {
-			memoryType |= int(mt)
-		}
-	}
-	return int64(memoryType)
-}
-
-// GetMemoryTypeHuman converts memory type bit flags to human-readable names
-//
-// Parameters:
-//   - memoryType: Bit flags integer representing memory types
-//
-// Returns:
-//   - []string: Array of memory type names
-//
-// Example:
-//
-//	GetMemoryTypeHuman(3) returns ["raw", "semantic"]
-func GetMemoryTypeHuman(memoryType int64) []string {
-	var result []string
-	for mt, valid := range validMemoryTypes {
-		if valid && int64(memoryType)&int64(mt) != 0 {
-			result = append(result, mt.Name())
-		}
-	}
-	return result
-}
-
-// Name returns the string representation of a MemoryType
-//
-// Returns:
-//   - string: The memory type name ("raw", "semantic", "episodic", "procedural", or "unknown")
-func (m MemoryType) Name() string {
-	switch m {
-	case MemoryTypeRaw:
-		return "raw"
-	case MemoryTypeSemantic:
-		return "semantic"
-	case MemoryTypeEpisodic:
-		return "episodic"
-	case MemoryTypeProcedural:
-		return "procedural"
-	default:
-		return "unknown"
-	}
-}
+// Note: CalculateMemoryType and GetMemoryTypeHuman functions have been moved to dao package
+// Use dao.CalculateMemoryType() and dao.GetMemoryTypeHuman() instead
 
 // PromptAssembler handles the assembly of system prompts for memory extraction
 type PromptAssembler struct{}
@@ -263,7 +179,7 @@ func getTypesToExtract(requestedTypes []string) []string {
 	for _, rt := range requestedTypes {
 		lowerRT := strings.ToLower(rt)
 		if lowerRT != "raw" {
-			if _, ok := memoryTypeMap[lowerRT]; ok {
+			if _, ok := dao.MemoryTypeMap[lowerRT]; ok {
 				types[lowerRT] = true
 			}
 		}
@@ -549,7 +465,7 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 	memoryTypeSet := make(map[string]bool)
 	for _, mt := range req.MemoryType {
 		lowerMT := strings.ToLower(mt)
-		if _, ok := memoryTypeMap[lowerMT]; !ok {
+		if _, ok := dao.MemoryTypeMap[lowerMT]; !ok {
 			return nil, fmt.Errorf("memory type '%s' is not supported", mt)
 		}
 		memoryTypeSet[lowerMT] = true
@@ -568,7 +484,7 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 		return nil, fmt.Errorf("memory name %s exceeds limit of %d", memoryName, MemoryNameLimit)
 	}
 
-	memoryTypeInt := CalculateMemoryType(uniqueMemoryTypes)
+	memoryTypeInt := dao.CalculateMemoryType(uniqueMemoryTypes)
 	timestamp := time.Now().UnixMilli()
 
 	systemPrompt := PromptAssembler{}.AssembleSystemPrompt(uniqueMemoryTypes)
@@ -688,7 +604,7 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 		memoryTypeSet := make(map[string]bool)
 		for _, mt := range req.MemoryType {
 			lowerMT := strings.ToLower(mt)
-			if _, ok := memoryTypeMap[lowerMT]; !ok {
+			if _, ok := dao.MemoryTypeMap[lowerMT]; !ok {
 				return nil, fmt.Errorf("memory type '%s' is not supported", mt)
 			}
 			memoryTypeSet[lowerMT] = true
@@ -767,7 +683,7 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 
 	if _, ok := updateDict["memory_type"]; ok {
 		if _, ok := updateDict["system_prompt"]; !ok {
-			memoryTypes := GetMemoryTypeHuman(currentMemory.MemoryType)
+			memoryTypes := dao.GetMemoryTypeHuman(currentMemory.MemoryType)
 			if len(memoryTypes) > 0 && currentMemory.SystemPrompt != nil {
 				defaultPrompt := PromptAssembler{}.AssembleSystemPrompt(memoryTypes)
 				if *currentMemory.SystemPrompt == defaultPrompt {
@@ -966,7 +882,7 @@ func isList(v interface{}) bool {
 //
 //	resp := formatRetDataFromMemory(memoryModel)
 func formatRetDataFromMemory(memory *model.Memory) *CreateMemoryResponse {
-	memoryTypes := GetMemoryTypeHuman(memory.MemoryType)
+	memoryTypes := dao.GetMemoryTypeHuman(memory.MemoryType)
 
 	var createDateStr, updateDateStr *string
 	if memory.CreateDate != nil {
