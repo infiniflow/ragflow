@@ -1,5 +1,5 @@
 import { Images } from '@/constants/common';
-import { api_host } from '@/utils/api';
+import { ExternalApi, api_host } from '@/utils/api';
 import { useParams, useSearchParams } from 'react-router';
 // import Docx from './docx';
 // import Excel from './excel';
@@ -24,12 +24,16 @@ const DocumentViewer = () => {
   const { id: documentId } = useParams();
   const [currentQueryParameters] = useSearchParams();
   const ext = currentQueryParameters.get('ext');
-  const prefix = currentQueryParameters.get('prefix');
-  const api = `${api_host}/${prefix || 'file'}/get/${documentId}`;
+  const resource =
+    currentQueryParameters.get('resource') === 'files' ? 'files' : 'document';
+  const api =
+    resource === 'files'
+      ? `${ExternalApi}${api_host}/files/${documentId}`
+      : `${api_host}/document/get/${documentId}`;
   // request.head
 
   if (ext === 'html' && documentId) {
-    previewHtmlFile(documentId);
+    previewHtmlFile(documentId, resource);
     return;
   }
 
