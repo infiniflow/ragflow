@@ -499,7 +499,11 @@ class Base(ABC):
                             answer += delta.content
                             yield delta.content
 
-                        total_tokens += num_tokens_from_string(delta.content)
+                        tol = total_token_count_from_response(resp)
+                        if not tol:
+                            total_tokens += num_tokens_from_string(delta.content)
+                        else:
+                            total_tokens = tol
 
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
@@ -507,7 +511,7 @@ class Base(ABC):
 
                     if answer and not final_tool_calls:
                         logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
-                        yield total_tokens
+                        yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
                         return
 
                     async def _exec_tool(tc):
@@ -541,20 +545,26 @@ class Base(ABC):
 
                 response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, stream_options={"include_usage": True}, tools=tools, tool_choice="auto", **gen_conf)
 
+                tokens_from_api = 0
                 async for resp in response:
                     if not hasattr(resp, "choices") or not resp.choices:
                         if hasattr(resp, "usage") and resp.usage:
                             prompt_tokens += getattr(resp.usage, "prompt_tokens", 0) or 0
                             completion_tokens += getattr(resp.usage, "completion_tokens", 0) or 0
-                            total_tokens += resp.usage.total_tokens or 0
+                            tokens_from_api += resp.usage.total_tokens or 0
                         continue
                     delta = resp.choices[0].delta
                     if not hasattr(delta, "content") or delta.content is None:
+                        # fallback: 部分模型将 usage 嵌在 delta chunk 而非独立 chunk
+                        tol = total_token_count_from_response(resp)
+                        if tol:
+                            tokens_from_api = tol
                         continue
                     total_tokens += num_tokens_from_string(delta.content)
                     yield delta.content
 
-                yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
+                final_total = tokens_from_api or total_tokens
+                yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=final_total or prompt_tokens + completion_tokens)
                 return
 
             except Exception as e:
@@ -1717,7 +1727,8 @@ class LiteLLMBase(ABC):
                             answer += delta.content
                             yield delta.content
 
-                        total_tokens += num_tokens_from_string(delta.content)
+                        tol = total_token_count_from_response(resp)
+                        if not tol:
                             total_tokens += num_tokens_from_string(delta.content)
                         else:
                             total_tokens = tol
@@ -1768,20 +1779,26 @@ class LiteLLMBase(ABC):
                     stream_options={"include_usage": True},
                 )
 
+                tokens_from_api = 0
                 async for resp in response:
                     if not hasattr(resp, "choices") or not resp.choices:
                         if hasattr(resp, "usage") and resp.usage:
                             prompt_tokens += getattr(resp.usage, "prompt_tokens", 0) or 0
                             completion_tokens += getattr(resp.usage, "completion_tokens", 0) or 0
-                            total_tokens += resp.usage.total_tokens or 0
+                            tokens_from_api += resp.usage.total_tokens or 0
                         continue
                     delta = resp.choices[0].delta
                     if not hasattr(delta, "content") or delta.content is None:
+                        # fallback: 部分模型将 usage 嵌在 delta chunk 而非独立 chunk
+                        tol = total_token_count_from_response(resp)
+                        if tol:
+                            tokens_from_api = tol
                         continue
                     total_tokens += num_tokens_from_string(delta.content)
                     yield delta.content
 
-                yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens or prompt_tokens + completion_tokens)
+                final_total = tokens_from_api or total_tokens
+                yield LLMUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=final_total or prompt_tokens + completion_tokens)
                 return
 
             except Exception as e:
