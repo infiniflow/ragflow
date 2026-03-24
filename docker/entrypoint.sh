@@ -55,7 +55,7 @@ MCP_JSON_RESPONSE_FLAG="--json-response"
 #   2. Otherwise, use the full MD5 hash of the hostname (32 hex chars)
 # -----------------------------------------------------------------------------
 CURRENT_HOSTNAME="$(hostname)"
-if [ ${CURRENT_HOSTNAME} -le 32 ]; then
+if [ ${#CURRENT_HOSTNAME#} -le 32 ]; then
   DEFAULT_HOST_ID="$CURRENT_HOSTNAME"
 else
   DEFAULT_HOST_ID="$(echo -n "$CURRENT_HOSTNAME" | md5sum | cut -d ' ' -f 1)"
