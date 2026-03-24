@@ -144,7 +144,7 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("POST", "/kb/list", false, "web", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/datasets", true, "web", nil, nil, iterations)
 	}
 
 	// Normal mode
@@ -168,63 +168,6 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 	result.Duration = resp.Duration
 
 	return &result, nil
-}
-
-// ListDatasets lists datasets for a specific user (admin mode)
-// Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) ListDatasets(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	// Check for benchmark iterations
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	if iterations > 1 {
-		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), true, "admin", nil, nil, iterations)
-	}
-
-	fmt.Printf("Listing all datasets of user: %s\n", userName)
-
-	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), true, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list datasets: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	data, ok := resJSON["data"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format")
-	}
-
-	// Convert to slice of maps and remove avatar
-	tableData := make([]map[string]interface{}, 0, len(data))
-	for _, item := range data {
-		if itemMap, ok := item.(map[string]interface{}); ok {
-			delete(itemMap, "avatar")
-			tableData = append(tableData, itemMap)
-		}
-	}
-
-	PrintTableSimple(tableData)
-	return nil, nil
 }
 
 // getDatasetID gets dataset ID by name

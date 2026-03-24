@@ -191,17 +191,15 @@ func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nest
 	}
 
 	totalCommands := iterations * concurrency
-	qps := float64(0)
-	if totalDuration > 0 {
-		qps = float64(totalCommands) / totalDuration
-	}
 
-	// Print results
-	fmt.Printf("command: %s, Concurrency: %d, iterations: %d\n", commandType, concurrency, iterations)
-	fmt.Printf("total duration: %.4fs, QPS: %.2f, COMMAND_COUNT: %d, SUCCESS: %d, FAILURE: %d\n",
-		totalDuration, qps, totalCommands, successCount, totalCommands-successCount)
+	var benchmarkResponse BenchmarkResponse
+	benchmarkResponse.Duration = totalDuration
+	benchmarkResponse.Code = 0
+	benchmarkResponse.SuccessCount = successCount
+	benchmarkResponse.FailureCount = totalCommands - successCount
+	benchmarkResponse.Concurrency = concurrency
 
-	return nil, nil
+	return &benchmarkResponse, nil
 }
 
 // executeBenchmarkSilent executes a command for benchmark without printing output

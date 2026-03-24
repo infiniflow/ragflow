@@ -327,6 +327,12 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowService(cmd)
 	case "show_version":
 		return c.ShowAdminVersion(cmd)
+	case "show_user":
+		return c.ShowUser(cmd)
+	case "list_datasets":
+		return c.ListDatasets(cmd)
+	case "list_agents":
+		return c.ListAgents(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
