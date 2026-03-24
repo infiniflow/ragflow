@@ -198,9 +198,23 @@ def aggregate_table_manual_doc_metadata(chunks: list, task: dict) -> dict:
         )
         return {}
     roles = eff.get("table_column_roles") or {}
-    meta_cols = [c for c, r in roles.items() if r in ("metadata", "both")]
+    table_column_names = eff.get("table_column_names") or []
+    # Build meta_cols from the full column list when available, applying the same
+    # defaulting behavior as the table parser (role defaults to "both").
+    if table_column_names:
+        meta_cols = [
+            col
+            for col in table_column_names
+            if roles.get(col, "both") in ("metadata", "both")
+        ]
+    else:
+        # Fallback to previous behavior when we don't have an explicit column list.
+        meta_cols = [c for c, r in roles.items() if r in ("metadata", "both")]
     if not meta_cols:
-        logging.info("[TABLE_META_DEBUG] skip aggregate: no metadata/both columns in roles")
+        logging.info(
+            "[TABLE_META_DEBUG] skip aggregate: no metadata/both columns "
+            f"(table_column_names_present={bool(table_column_names)})"
+        )
         return {}
     fm = (task.get("kb_parser_config") or {}).get("field_map") or {}
     if not fm and not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE):
