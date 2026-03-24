@@ -333,6 +333,12 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListDatasets(cmd)
 	case "list_agents":
 		return c.ListAgents(cmd)
+	case "create_token":
+		return c.CreateAdminToken(cmd)
+	case "list_tokens":
+		return c.ListAdminTokens(cmd)
+	case "drop_token":
+		return c.DropAdminToken(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)

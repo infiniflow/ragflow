@@ -399,7 +399,7 @@ func (p *Parser) parseListKeys() (*Command, error) {
 		return nil, err
 	}
 
-	cmd := NewCommand("list_keys")
+	cmd := NewCommand("list_tokens")
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()
@@ -922,7 +922,7 @@ func (p *Parser) parseDropChat() (*Command, error) {
 
 func (p *Parser) parseDropKey() (*Command, error) {
 	p.nextToken() // consume KEY
-	key, err := p.parseQuotedString()
+	token, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -938,8 +938,8 @@ func (p *Parser) parseDropKey() (*Command, error) {
 		return nil, err
 	}
 
-	cmd := NewCommand("drop_key")
-	cmd.Params["key"] = key
+	cmd := NewCommand("drop_token")
+	cmd.Params["token"] = token
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()
@@ -1412,7 +1412,7 @@ func (p *Parser) parseGenerateCommand() (*Command, error) {
 		return nil, err
 	}
 
-	cmd := NewCommand("generate_key")
+	cmd := NewCommand("generate_token")
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()

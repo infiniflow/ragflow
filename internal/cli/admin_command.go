@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 )
 
 // PingServer pings the server to check if it's alive
@@ -799,7 +800,7 @@ func (c *RAGFlowClient) ListAgents(cmd *Command) (ResponseIf, error) {
 	return nil, nil
 }
 
-// GrantPermission grants permission to a user (admin mode only)
+// GrantPermission grants permission to a role (admin mode only)
 func (c *RAGFlowClient) GrantPermission(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
@@ -810,30 +811,95 @@ func (c *RAGFlowClient) GrantPermission(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/users/%s/admin", userName), true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/keys", userName), true, "admin", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to grant admin: %w", err)
+		return nil, fmt.Errorf("failed to list tokens: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to grant admin: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to list tokens: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
-
+	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("grant admin failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("list tokens failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
+
+	// Remove extra field from data
+	for _, item := range result.Data {
+		delete(item, "extra")
+	}
+
 	result.Duration = resp.Duration
 	return &result, nil
 }
 
-// RevokePermission revokes permission from a user (admin mode only)
+// RevokePermission revokes permission from a role (admin mode only)
 func (c *RAGFlowClient) RevokePermission(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	roleName, ok := cmd.Params["role_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("role_name not provided")
+	}
+
+	resource, ok := cmd.Params["resource"].(string)
+	if !ok {
+		return nil, fmt.Errorf("resource not provided")
+	}
+
+	actionsRaw, ok := cmd.Params["actions"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("actions not provided")
+	}
+
+	actions := make([]string, 0, len(actionsRaw))
+	for _, action := range actionsRaw {
+		if actionStr, ok := action.(string); ok {
+			actions = append(actions, actionStr)
+		}
+	}
+
+	payload := map[string]interface{}{
+		"resource": resource,
+		"actions":  actions,
+	}
+
+	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/roles/%s/permission", roleName), true, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to revoke permission: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to revoke permission: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("revoke permission failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	// Remove extra field from data
+	for _, item := range result.Data {
+		delete(item, "extra")
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AlterUserRole alters user's role (admin mode only)
+func (c *RAGFlowClient) AlterUserRole(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
@@ -843,24 +909,193 @@ func (c *RAGFlowClient) RevokePermission(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/users/%s/admin", userName), true, "admin", nil, nil)
+	roleName, ok := cmd.Params["role_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("role_name not provided")
+	}
+
+	payload := map[string]interface{}{
+		"role_name": roleName,
+	}
+
+	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/users/%s/role", userName), true, "admin", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to revoke admin: %w", err)
+		return nil, fmt.Errorf("failed to alter user role: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to revoke admin: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to alter user role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
-
+	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("revoke admin failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("alter user role failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
+
+	// Remove extra field from data
+	for _, item := range result.Data {
+		delete(item, "extra")
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// ShowUserPermission shows user's permissions (admin mode only)
+func (c *RAGFlowClient) ShowUserPermission(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
+	}
+
+	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/permission", userName), true, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show user permission: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show user permission: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("show user permission failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	// Remove extra field from data
+	for _, item := range result.Data {
+		delete(item, "extra")
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// CreateAdminToken generates an API token for a user (admin mode only)
+func (c *RAGFlowClient) CreateAdminToken(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
+	}
+
+	resp, err := c.HTTPClient.Request("POST", fmt.Sprintf("/admin/users/%s/keys", userName), true, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate token: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to generate token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("generate token failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	// Remove extra field from data
+	for _, item := range result.Data {
+		delete(item, "extra")
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// ListAdminTokens lists all API tokens for a user (admin mode only)
+func (c *RAGFlowClient) ListAdminTokens(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
+	}
+
+	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/keys", userName), true, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tokens: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list tokens: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list tokens failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	// Remove extra field from data
+	for _, item := range result.Data {
+		delete(item, "extra")
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// DropToken drops an API token for a user (admin mode only)
+func (c *RAGFlowClient) DropAdminToken(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
+	}
+
+	token, ok := cmd.Params["token"].(string)
+	if !ok {
+		return nil, fmt.Errorf("token not provided")
+	}
+
+	// URL encode the token to handle special characters
+	encodedToken := url.QueryEscape(token)
+
+	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/users/%s/keys/%s", userName, encodedToken), true, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop token: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to drop token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("drop token failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
 	result.Duration = resp.Duration
 	return &result, nil
 }
