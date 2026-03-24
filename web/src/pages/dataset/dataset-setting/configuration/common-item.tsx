@@ -69,7 +69,7 @@ export function ChunkMethodItem(props: IProps) {
   return (
     <FormField
       control={form.control}
-      name={'chunk_method'}
+      name={'parser_id'}
       render={({ field }) => (
         <FormItem className=" items-center space-y-1">
           <div className={line === 1 ? 'flex items-center' : ''}>
