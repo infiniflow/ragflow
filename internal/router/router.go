@@ -116,6 +116,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// User set tenant info endpoint
 		authorized.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
 
+		// System token endpoints (requires authentication)
+		authorized.GET("/v1/system/token_list", r.systemHandler.ListTokens)
+		authorized.POST("/v1/system/new_token", r.systemHandler.CreateToken)
+		authorized.DELETE("/v1/system/token/:token", r.systemHandler.DeleteToken)
+
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
 		{
@@ -127,6 +132,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 			//	users.GET("", r.userHandler.ListUsers)
 			//	users.GET("/:id", r.userHandler.GetUserByID)
 			//}
+
+			apiTokens := v1.Group("/tokens")
+			{
+				apiTokens.POST("", r.systemHandler.CreateToken)
+				apiTokens.GET("", r.systemHandler.ListTokens)
+				apiTokens.DELETE("/:token", r.systemHandler.DeleteToken)
+			}
 
 			// Document routes
 			documents := v1.Group("/documents")
