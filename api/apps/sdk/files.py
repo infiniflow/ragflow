@@ -250,7 +250,7 @@ async def create(tenant_id):
     """
     req = await get_request_json()
     pf_id = req.get("parent_id")
-    input_file_type = req.get("type")
+    input_file_type = (req.get("type") or "").lower()
     if not pf_id:
         root_folder = FileService.get_root_folder(tenant_id)
         pf_id = root_folder["id"]
@@ -264,8 +264,14 @@ async def create(tenant_id):
 
         if input_file_type == FileType.FOLDER.value:
             file_type = FileType.FOLDER.value
-        else:
+        elif input_file_type == FileType.VIRTUAL.value:
             file_type = FileType.VIRTUAL.value
+        else:
+            return get_json_result(
+                data=False,
+                message="Invalid file type!",
+                code=RetCode.ARGUMENT_ERROR,
+            )
 
         file = FileService.insert({
             "id": get_uuid(),
