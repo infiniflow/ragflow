@@ -14,7 +14,12 @@
 #  limitations under the License.
 #
 import logging
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 from quart import request
+from quart_schema import document_querystring, document_request, document_response, tag
+
 from api.db.services.dialog_service import DialogService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.tenant_llm_service import TenantLLMService
@@ -24,9 +29,119 @@ from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_result, token_required, get_request_json
 
 
+class ErrorResponse(BaseModel):
+    code: int
+    message: str
+    data: Any | None = None
+
+
+class ChatLlmDoc(BaseModel):
+    model_name: str | None = Field(default=None, description="Chat model identifier.")
+    model_type: str | None = Field(default=None, description="Model type, usually `chat`.")
+    model_config = ConfigDict(extra="allow")
+
+
+class ChatPromptVariableDoc(BaseModel):
+    key: str = Field(description="Prompt variable name.")
+    optional: bool = Field(default=False, description="Whether the variable is optional.")
+    model_config = ConfigDict(extra="allow")
+
+
+class ChatPromptDoc(BaseModel):
+    prompt: str | None = Field(default=None, description="System prompt template.")
+    opener: str | None = Field(default=None, description="Conversation opener.")
+    variables: list[ChatPromptVariableDoc] | None = Field(default=None, description="Prompt variables.")
+    empty_response: str | None = Field(default=None, description="Fallback response when nothing is found.")
+    show_quote: bool | None = Field(default=None, description="Whether to include references/quotes.")
+    tts: bool | None = Field(default=None, description="Whether text-to-speech is enabled.")
+    refine_multiturn: bool | None = Field(default=None, description="Whether multi-turn refinement is enabled.")
+    similarity_threshold: float | None = Field(default=None, description="Retrieval similarity threshold.")
+    keywords_similarity_weight: float | None = Field(default=None, description="Weight for keyword similarity.")
+    top_n: int | None = Field(default=None, description="Number of chunks to keep after recall.")
+    top_k: int | None = Field(default=None, description="Number of chunks to recall before rerank.")
+    rerank_model: str | None = Field(default=None, description="Rerank model identifier.")
+    model_config = ConfigDict(extra="allow")
+
+
+class ChatCreateBodyDoc(BaseModel):
+    name: str = Field(description="Chat assistant name.")
+    dataset_ids: list[str] | None = Field(default=None, description="Optional dataset IDs attached to the chat.")
+    avatar: str | None = Field(default=None, description="Optional avatar/icon.")
+    description: str | None = Field(default=None, description="Optional description.")
+    llm: ChatLlmDoc | None = Field(default=None, description="Optional LLM configuration.")
+    prompt: ChatPromptDoc | None = Field(default=None, description="Optional prompt configuration.")
+    top_n: int | None = Field(default=None, description="Optional retrieval top_n override.")
+    top_k: int | None = Field(default=None, description="Optional retrieval top_k override.")
+    rerank_id: str | None = Field(default=None, description="Optional rerank model identifier.")
+    model_config = ConfigDict(extra="allow")
+
+
+class ChatUpdateBodyDoc(BaseModel):
+    name: str | None = Field(default=None, description="Updated chat assistant name.")
+    dataset_ids: list[str] | None = Field(default=None, description="Updated dataset IDs for the chat.")
+    avatar: str | None = Field(default=None, description="Updated avatar/icon.")
+    description: str | None = Field(default=None, description="Updated description.")
+    llm: ChatLlmDoc | None = Field(default=None, description="Updated LLM configuration.")
+    prompt: ChatPromptDoc | None = Field(default=None, description="Updated prompt configuration.")
+    show_quotation: bool | None = Field(default=None, description="Whether to show citations in answers.")
+    top_n: int | None = Field(default=None, description="Optional retrieval top_n override.")
+    top_k: int | None = Field(default=None, description="Optional retrieval top_k override.")
+    rerank_id: str | None = Field(default=None, description="Optional rerank model identifier.")
+    model_config = ConfigDict(extra="allow")
+
+
+class ChatDeleteBodyDoc(BaseModel):
+    ids: list[str] | None = Field(default=None, description="Chat IDs to delete.")
+    delete_all: bool | None = Field(default=None, description="Delete all chats owned by the current user when true.")
+
+
+class ChatListQueryDoc(BaseModel):
+    id: str | None = Field(default=None, description="Optional chat ID filter.")
+    name: str | None = Field(default=None, description="Optional chat name filter.")
+    page: int | None = Field(default=1, description="Page number.")
+    page_size: int | None = Field(default=30, description="Number of chats per page.")
+    orderby: str | None = Field(default="create_time", description="Field used for ordering.")
+    desc: bool | None = Field(default=True, description="Whether results are in descending order.")
+
+
+class ChatRecordDoc(BaseModel):
+    id: str
+    name: str
+    avatar: str | None = None
+    description: str | None = None
+    dataset_ids: list[str] | None = None
+    datasets: list[dict[str, Any]] | None = None
+    llm: dict[str, Any] | None = None
+    prompt: dict[str, Any] | None = None
+    model_config = ConfigDict(extra="allow")
+
+
+class ChatResponseDoc(BaseModel):
+    code: int = 0
+    data: ChatRecordDoc
+    message: str = "success"
+
+
+class ChatListResponseDoc(BaseModel):
+    code: int = 0
+    data: list[ChatRecordDoc]
+    message: str = "success"
+
+
+class GenericSuccessResponse(BaseModel):
+    code: int = 0
+    data: Any | None = None
+    message: str = "success"
+
+
 @manager.route("/chats", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Chats"])
+@document_request(ChatCreateBodyDoc)
+@document_response(ChatResponseDoc)
+@document_response(ErrorResponse, 400)
 async def create(tenant_id):
+    """Create a new chat assistant."""
     req = await get_request_json()
     ids = [i for i in req.get("dataset_ids", []) if i]
     for kb_id in ids:
@@ -145,7 +260,12 @@ async def create(tenant_id):
 
 @manager.route("/chats/<chat_id>", methods=["PUT"])  # noqa: F821
 @token_required
+@tag(["SDK Chats"])
+@document_request(ChatUpdateBodyDoc)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def update(tenant_id, chat_id):
+    """Update a chat assistant."""
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message="You do not own the chat")
     req = await get_request_json()
@@ -230,7 +350,12 @@ async def update(tenant_id, chat_id):
 
 @manager.route("/chats", methods=["DELETE"])  # noqa: F821
 @token_required
+@tag(["SDK Chats"])
+@document_request(ChatDeleteBodyDoc)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def delete_chats(tenant_id):
+    """Delete one or more chat assistants."""
     errors = []
     success_count = 0
     req = await get_request_json()
@@ -274,7 +399,12 @@ async def delete_chats(tenant_id):
 
 @manager.route("/chats", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Chats"])
+@document_querystring(ChatListQueryDoc)
+@document_response(ChatListResponseDoc)
+@document_response(ErrorResponse, 400)
 def list_chat(tenant_id):
+    """List chat assistants."""
     id = request.args.get("id")
     name = request.args.get("name")
     if id or name:
