@@ -121,17 +121,13 @@ def _load_file_api_module(monkeypatch):
     async def _delete_files(_tenant_id, _ids):
         return True, True
 
-    async def _move_files(_tenant_id, _src_file_ids, _dest_file_id):
-        return True, True
-
-    async def _rename_file(_tenant_id, _file_id, _name):
+    async def _move_files(_tenant_id, _src_file_ids, _dest_file_id=None, _new_name=None):
         return True, True
 
     file_api_service_mod.upload_file = _upload_file
     file_api_service_mod.create_folder = _create_folder
     file_api_service_mod.list_files = lambda _tenant_id, _args: (True, {"files": [], "total": 0})
     file_api_service_mod.delete_files = _delete_files
-    file_api_service_mod.get_root_folder = lambda _tenant_id: (True, {"root_folder": {"id": "root"}})
     file_api_service_mod.move_files = _move_files
     file_api_service_mod.get_file_content = lambda _tenant_id, _file_id: (
         True,
@@ -139,7 +135,6 @@ def _load_file_api_module(monkeypatch):
     )
     file_api_service_mod.get_parent_folder = lambda _file_id: (True, {"parent_folder": {"id": "parent1"}})
     file_api_service_mod.get_all_parent_folders = lambda _file_id: (True, {"parent_folders": [{"id": "root"}]})
-    file_api_service_mod.rename_file = _rename_file
     monkeypatch.setitem(sys.modules, "api.apps.services.file_api_service", file_api_service_mod)
     services_pkg.file_api_service = file_api_service_mod
 
@@ -170,7 +165,6 @@ def _load_file_api_module(monkeypatch):
     validation_mod.DeleteFileReq = object
     validation_mod.ListFileReq = object
     validation_mod.MoveFileReq = object
-    validation_mod.RenameFileReq = object
 
     async def _validate_json_request(_request, _schema):
         return {}, None
@@ -279,15 +273,37 @@ def test_move_uses_new_payload_shape(monkeypatch):
 
     seen = {}
 
-    async def _move_files(tenant_id, src_file_ids, dest_file_id):
-        seen["args"] = (tenant_id, src_file_ids, dest_file_id)
+    async def _move_files(tenant_id, src_file_ids, dest_file_id=None, new_name=None):
+        seen["args"] = (tenant_id, src_file_ids, dest_file_id, new_name)
         return True, True
 
     monkeypatch.setattr(module, "validate_and_parse_json_request", _validate)
     monkeypatch.setattr(module.file_api_service, "move_files", _move_files)
 
     res = _run(module.move("tenant1"))
-    assert seen["args"] == ("tenant1", ["f1"], "pf2")
+    assert seen["args"] == ("tenant1", ["f1"], "pf2", None)
+    assert res["code"] == 0
+    assert res["data"] is True
+
+
+@pytest.mark.p2
+def test_rename_via_move_route(monkeypatch):
+    module = _load_file_api_module(monkeypatch)
+
+    async def _validate(_request, _schema):
+        return {"src_file_ids": ["file1"], "new_name": "renamed.txt"}, None
+
+    seen = {}
+
+    async def _move_files(tenant_id, src_file_ids, dest_file_id=None, new_name=None):
+        seen["args"] = (tenant_id, src_file_ids, dest_file_id, new_name)
+        return True, True
+
+    monkeypatch.setattr(module, "validate_and_parse_json_request", _validate)
+    monkeypatch.setattr(module.file_api_service, "move_files", _move_files)
+
+    res = _run(module.move("tenant1"))
+    assert seen["args"] == ("tenant1", ["file1"], None, "renamed.txt")
     assert res["code"] == 0
     assert res["data"] is True
 
@@ -323,23 +339,3 @@ def test_parent_and_ancestors_use_new_routes(monkeypatch):
     assert ancestors_res["data"]["parent_folders"][0]["id"] == "root"
 
 
-@pytest.mark.p2
-def test_rename_uses_path_id(monkeypatch):
-    module = _load_file_api_module(monkeypatch)
-
-    async def _validate(_request, _schema):
-        return {"name": "renamed.txt"}, None
-
-    seen = {}
-
-    async def _rename_file(tenant_id, file_id, name):
-        seen["args"] = (tenant_id, file_id, name)
-        return True, True
-
-    monkeypatch.setattr(module, "validate_and_parse_json_request", _validate)
-    monkeypatch.setattr(module.file_api_service, "rename_file", _rename_file)
-
-    res = _run(module.rename("tenant1", "file1"))
-    assert seen["args"] == ("tenant1", "file1", "renamed.txt")
-    assert res["code"] == 0
-    assert res["data"] is True

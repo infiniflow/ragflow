@@ -262,15 +262,15 @@ def test_delete_files_checks_team_permission(monkeypatch):
 
 
 @pytest.mark.p2
-def test_rename_file_rejects_extension_change(monkeypatch):
+def test_move_files_rejects_extension_change_in_new_name(monkeypatch):
     module = _load_file_api_service(monkeypatch)
     monkeypatch.setattr(
         module.FileService,
-        "get_by_id",
-        lambda _file_id: (True, _DummyFile("file1", module.FileType.DOC.value, name="a.txt")),
+        "get_by_ids",
+        lambda _ids: [_DummyFile("file1", module.FileType.DOC.value, name="a.txt")],
     )
 
-    ok, message = _run(module.rename_file("tenant1", "file1", "a.pdf"))
+    ok, message = _run(module.move_files("tenant1", ["file1"], new_name="a.pdf"))
     assert ok is False
     assert message == "The extension of file can't be changed"
 
@@ -308,6 +308,32 @@ def test_move_files_handles_dest_and_storage_move(monkeypatch):
     assert data is True
     assert moved == [("src", "old", "dest", "a.txt")]
     assert updated == [("file1", {"parent_id": "dest", "location": "a.txt"})]
+
+
+@pytest.mark.p2
+def test_move_files_renames_in_place_without_storage_move(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+    db_updates = []
+    doc_updates = []
+
+    monkeypatch.setattr(
+        module.FileService,
+        "get_by_ids",
+        lambda _ids: [_DummyFile("file1", module.FileType.DOC.value, parent_id="pf1", name="a.txt")],
+    )
+    monkeypatch.setattr(module.FileService, "update_by_id", lambda file_id, data: db_updates.append((file_id, data)) or True)
+    monkeypatch.setattr(
+        module.File2DocumentService,
+        "get_by_file_id",
+        lambda _file_id: [SimpleNamespace(document_id="doc1")],
+    )
+    monkeypatch.setattr(module.DocumentService, "update_by_id", lambda doc_id, data: doc_updates.append((doc_id, data)) or True)
+
+    ok, data = _run(module.move_files("tenant1", ["file1"], new_name="b.txt"))
+    assert ok is True
+    assert data is True
+    assert db_updates == [("file1", {"name": "b.txt"})]
+    assert doc_updates == [("doc1", {"name": "b.txt"})]
 
 
 @pytest.mark.p2

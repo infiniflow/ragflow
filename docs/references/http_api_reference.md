@@ -6653,50 +6653,6 @@ Failure:
 
 ---
 
-### Get root folder
-
-**GET** `/api/v1/files/root`
-
-Retrieves the user's root folder information.
-
-#### Request
-
-- Method: GET
-- URL: `/api/v1/files/root`
-- Headers:
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-
-##### Request example
-
-```bash
-curl --request GET \
-     --url http://{address}/api/v1/files/root \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
-```
-
-##### Request parameters
-
-No parameters required.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code": 0,
-    "data": {
-        "root_folder": {
-            "id": "527fa74891e811ef9c650242ac120006",
-            "name": "root",
-            "type": "folder"
-        }
-    }
-}
-```
-
----
-
 ### Get parent folder
 
 **GET** `/api/v1/files/{file_id}/parent`
@@ -6864,72 +6820,6 @@ Failure:
 
 ---
 
-### Rename file
-
-**PUT** `/api/v1/files/{file_id}`
-
-Renames a file or folder.
-
-#### Request
-
-- Method: PUT
-- URL: `/api/v1/files/{file_id}`
-- Headers:
-  - `'Content-Type: application/json'`
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-- Body:
-  - `"name"`: `string`
-
-##### Request example
-
-```bash
-curl --request PUT \
-     --url http://{address}/api/v1/files/{file_id} \
-     --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer <YOUR_API_KEY>' \
-     --data '{
-          "name": "new_name.txt"
-     }'
-```
-
-##### Request parameters
-
-- `file_id`: (*Path parameter*), `string`, *Required*  
-  The ID of the file or folder to rename.
-- `"name"`: (*Body parameter*), `string`, *Required*  
-  The new name for the file or folder. Note: Changing file extensions is *not* supported.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code": 0,
-    "data": true
-}
-```
-
-Failure:
-
-```json
-{
-    "code": 400,
-    "message": "The extension of file can't be changed"
-}
-```
-
-or
-
-```json
-{
-    "code": 409,
-    "message": "Duplicated file name in the same folder."
-}
-```
-
----
-
 ### Download file
 
 **GET** `/api/v1/files/{file_id}`
@@ -6974,11 +6864,15 @@ Failure:
 
 ---
 
-### Move files
+### Move or rename files
 
 **POST** `/api/v1/files/move`
 
-Moves one or multiple files or folders to a specified folder.
+Moves and/or renames files or folders. Follows Linux `mv` semantics: at least one of `dest_file_id` or `new_name` must be provided.
+
+- `dest_file_id` only: move files to a new folder, names unchanged.
+- `new_name` only: rename a single file or folder in place, no storage operation.
+- Both: move and rename simultaneously.
 
 #### Request
 
@@ -6988,10 +6882,13 @@ Moves one or multiple files or folders to a specified folder.
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"src_file_ids"`: `list[string]`
-  - `"dest_file_id"`: `string`
+  - `"src_file_ids"`: `list[string]`, *Required*
+  - `"dest_file_id"`: `string`, *Optional*
+  - `"new_name"`: `string`, *Optional*
 
-##### Request example
+##### Request examples
+
+Move files to a folder:
 
 ```bash
 curl --request POST \
@@ -7004,12 +6901,27 @@ curl --request POST \
      }'
 ```
 
+Rename a file in place:
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/files/move \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "src_file_ids": ["{file_id}"],
+          "new_name": "new_name.txt"
+     }'
+```
+
 ##### Request parameters
 
-- `"src_file_ids"`: (*Body parameter*), `list[string]`, *Required*  
-  The IDs of the files or folders to move.
-- `"dest_file_id"`: (*Body parameter*), `string`, *Required*  
-  The ID of the destination folder.
+- `"src_file_ids"`: (*Body parameter*), `list[string]`, *Required*
+  The IDs of the files or folders to move or rename.
+- `"dest_file_id"`: (*Body parameter*), `string`, *Optional*
+  The ID of the destination folder. Omit to rename in place.
+- `"new_name"`: (*Body parameter*), `string`, *Optional*
+  New name for the file or folder. Only valid when `src_file_ids` contains a single entry. Note: Changing file extensions is *not* supported.
 
 #### Response
 
@@ -7036,7 +6948,16 @@ or
 ```json
 {
     "code": 404,
-    "message": "Parent Folder not found!"
+    "message": "Parent folder not found!"
+}
+```
+
+or
+
+```json
+{
+    "code": 400,
+    "message": "The extension of file can't be changed"
 }
 ```
 

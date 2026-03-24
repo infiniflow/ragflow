@@ -164,7 +164,6 @@ export default {
   listFile: `${ExternalApi}${api_host}/files`,
   uploadFile: `${ExternalApi}${api_host}/files`,
   removeFile: `${ExternalApi}${api_host}/files`,
-  renameFile: `${ExternalApi}${api_host}/files`,
   getAllParentFolder: `${ExternalApi}${api_host}/files`,
   createFolder: `${ExternalApi}${api_host}/files`,
   connectFileToKnowledge: `${api_host}/file2document/convert`,

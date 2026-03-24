@@ -31,7 +31,6 @@ from api.utils.validation_utils import (
     DeleteFileReq,
     ListFileReq,
     MoveFileReq,
-    RenameFileReq,
     validate_and_parse_json_request,
     validate_and_parse_request_args,
 )
@@ -202,7 +201,11 @@ async def delete(tenant_id: str = None):
 @add_tenant_id_to_kwargs
 async def move(tenant_id: str = None):
     """
-    Move files to a destination folder.
+    Move and/or rename files. Follows Linux mv semantics:
+    at least one of dest_file_id or new_name must be provided.
+    - dest_file_id only: move files to a new folder (names unchanged).
+    - new_name only: rename a single file in place (no storage operation).
+    - both: move and rename simultaneously.
     ---
     tags:
       - Files
@@ -216,14 +219,18 @@ async def move(tenant_id: str = None):
           type: object
           required:
             - src_file_ids
-            - dest_file_id
           properties:
             src_file_ids:
               type: array
               items:
                 type: string
+              description: List of source file IDs. Required.
             dest_file_id:
               type: string
+              description: Destination folder ID. Optional; omit to rename in place.
+            new_name:
+              type: string
+              description: New file name. Optional; only valid for a single source file.
     responses:
       200:
         description: Successful operation.
@@ -233,7 +240,9 @@ async def move(tenant_id: str = None):
         return get_error_argument_result(err)
 
     try:
-        success, result = await file_api_service.move_files(tenant_id, req["src_file_ids"], req["dest_file_id"])
+        success, result = await file_api_service.move_files(
+            tenant_id, req["src_file_ids"], req.get("dest_file_id"), req.get("new_name")
+        )
         if success:
             return get_result(data=result)
         else:
@@ -353,47 +362,3 @@ def ancestors(tenant_id: str = None, file_id: str = None):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/files/<file_id>", methods=["PUT"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-async def rename(tenant_id: str = None, file_id: str = None):
-    """
-    Rename a file.
-    ---
-    tags:
-      - Files
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: file_id
-        type: string
-        required: true
-      - in: body
-        name: body
-        required: true
-        schema:
-          type: object
-          required:
-            - name
-          properties:
-            name:
-              type: string
-              description: New file name.
-    responses:
-      200:
-        description: Successful operation.
-    """
-    req, err = await validate_and_parse_json_request(request, RenameFileReq)
-    if err is not None:
-        return get_error_argument_result(err)
-
-    try:
-        success, result = await file_api_service.rename_file(tenant_id, file_id, req["name"])
-        if success:
-            return get_result(data=result)
-        else:
-            return get_error_data_result(message=result)
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")

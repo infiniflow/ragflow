@@ -78,7 +78,8 @@ export const useUploadFile = () => {
 
 export interface IMoveFileBody {
   src_file_ids: string[];
-  dest_file_id: string; // target folder id
+  dest_file_id?: string;
+  new_name?: string;
 }
 
 export const useMoveFile = () => {
@@ -266,10 +267,10 @@ export const useRenameFile = () => {
   } = useMutation({
     mutationKey: [FileApiAction.RenameFile],
     mutationFn: async (params: { fileId: string; name: string }) => {
-      const { data } = await fileManagerService.renameFile(
-        { name: params.name },
-        params.fileId,
-      );
+      const { data } = await fileManagerService.moveFile({
+        src_file_ids: [params.fileId],
+        new_name: params.name,
+      });
       if (data.code === 0) {
         message.success(t('message.renamed'));
         queryClient.invalidateQueries({

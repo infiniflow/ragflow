@@ -793,13 +793,18 @@ class DeleteFileReq(Base):
     ids: Annotated[list[str], Field(min_length=1)]
 
 
-class RenameFileReq(Base):
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(...)]
-
-
 class MoveFileReq(Base):
     src_file_ids: Annotated[list[str], Field(min_length=1)]
-    dest_file_id: Annotated[str, Field(min_length=1)]
+    dest_file_id: Annotated[str | None, Field(default=None)]
+    new_name: Annotated[str | None, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(default=None)]
+
+    @model_validator(mode='after')
+    def check_operation(self):
+        if not self.dest_file_id and not self.new_name:
+            raise ValueError("At least one of dest_file_id or new_name must be provided")
+        if self.new_name and len(self.src_file_ids) > 1:
+            raise ValueError("new_name can only be used with a single file")
+        return self
 
 
 class ListFileReq(BaseModel):
