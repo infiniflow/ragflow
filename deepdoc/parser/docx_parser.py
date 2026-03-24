@@ -26,7 +26,7 @@ from docx.image.exceptions import (
     UnexpectedEndOfFileError,
     UnrecognizedImageError,
 )
-from rag.utils.lazy_image import LazyDocxImage
+from rag.utils.lazy_image import LazyImage
 
 class RAGFlowDocxParser:
     def get_picture(self, document, paragraph):
@@ -66,7 +66,7 @@ class RAGFlowDocxParser:
                 image_blobs.append(image_blob)
         if not image_blobs:
             return None
-        return LazyDocxImage(image_blobs)
+        return LazyImage(image_blobs)
 
 
     def __extract_table_content(self, tb):
