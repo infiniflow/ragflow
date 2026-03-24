@@ -118,6 +118,7 @@ def _probe_es_typed_key_for_column(col: str, sample_chunk: dict) -> str | None:
         return None
     base = str(col).strip()
     candidates = [
+        f"{base}_raw",
         f"{base}_tks",
         f"{base}_dt",
         f"{base}_long",
@@ -161,6 +162,25 @@ def _value_to_meta_string(val) -> str | None:
         s = val.strip()
         return s if s else None
     return str(val)
+
+
+def _es_raw_field_key_from_typed(tk: str | None) -> str | None:
+    """ES text columns use *_tks (tokenized); raw display value is stored as {same_base}_raw (see rag/app/table.py)."""
+    if not tk or not tk.endswith("_tks"):
+        return None
+    return tk[: -len("_tks")] + "_raw"
+
+
+def _es_field_value_to_doc_metadata(val, *, from_tks_fallback: bool) -> str | None:
+    """Prefer raw strings; for legacy *_tks tokenized fields, normalize list/str to a single display string."""
+    if val is None:
+        return None
+    if from_tks_fallback and isinstance(val, list):
+        parts = [str(x).strip() for x in val if x is not None and str(x).strip()]
+        if not parts:
+            return None
+        return " ".join(parts)
+    return _value_to_meta_string(val)
 
 
 def aggregate_table_manual_doc_metadata(chunks: list, task: dict) -> dict:
@@ -235,13 +255,22 @@ def aggregate_table_manual_doc_metadata(chunks: list, task: dict) -> dict:
                             f"[TABLE_META_DEBUG] no resolved ES key for column '{col}'"
                         )
                     continue
-                if tk not in ck:
+                raw_k = _es_raw_field_key_from_typed(tk)
+                val = None
+                from_tks = False
+                if raw_k and raw_k in ck:
+                    val = ck[raw_k]
+                elif tk in ck:
+                    val = ck[tk]
+                    from_tks = tk.endswith("_tks")
+                else:
                     if i == 0:
                         logging.info(
-                            f"[TABLE_META_DEBUG] chunk missing ES field {tk!r} for column '{col}'"
+                            f"[TABLE_META_DEBUG] chunk missing ES field {tk!r}"
+                            f"{' and ' + raw_k + ' (raw)' if raw_k else ''} for column '{col}'"
                         )
                     continue
-                s = _value_to_meta_string(ck[tk])
+                s = _es_field_value_to_doc_metadata(val, from_tks_fallback=from_tks)
                 if s is not None:
                     acc[col].append(s)
 

@@ -518,7 +518,14 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                         stored[str(col_name)] = row[col_name]
                     else:
                         fld = clmns_map[j][0]
-                        stored[fld] = row[col_name] if clmn_tys[j] != "text" else rag_tokenizer.tokenize(row[col_name])
+                        if clmn_tys[j] != "text":
+                            stored[fld] = row[col_name]
+                        else:
+                            cell = row[col_name]
+                            stored[fld] = rag_tokenizer.tokenize(cell)
+                            raw_s = str(cell).strip() if cell is not None else ""
+                            if raw_s:
+                                stored[f"{py_clmns[j].lower()}_raw"] = raw_s
             if not text_fields and not stored:
                 continue
             if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
