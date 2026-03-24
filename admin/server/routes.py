@@ -36,7 +36,7 @@ admin_bp = Blueprint("admin", __name__, url_prefix="/api/v1/admin")
 
 @admin_bp.route("/ping", methods=["GET"])
 def ping():
-    return success_response("PONG")
+    return success_response(message="pong")
 
 
 @admin_bp.route("/login", methods=["POST"])
