@@ -3,6 +3,16 @@ package cli
 import "fmt"
 
 // Command parsers
+func (p *Parser) parseLogout() (*Command, error) {
+	cmd := NewCommand("logout")
+	p.nextToken()
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
 func (p *Parser) parseLoginUser() (*Command, error) {
 	cmd := NewCommand("login_user")
 

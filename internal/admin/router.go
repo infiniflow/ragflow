@@ -43,7 +43,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Public routes
 		admin.GET("/ping", r.handler.Ping)
 		admin.POST("/login", r.handler.Login)
-		admin.GET("/logout", r.handler.Logout)
 
 		admin.POST("/reports", r.handler.Reports)
 
@@ -51,6 +50,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		protected := admin.Group("")
 		protected.Use(r.handler.AuthMiddleware())
 		{
+
+			protected.GET("/logout", r.handler.Logout)
 			// Auth
 			protected.GET("/auth", r.handler.AuthCheck)
 

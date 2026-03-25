@@ -26,6 +26,7 @@ type Command struct {
 const (
 	// Keywords
 	TokenLogin = iota
+	TokenLogout
 	TokenRegister
 	TokenList
 	TokenServices
