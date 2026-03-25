@@ -478,6 +478,11 @@ class Dealer:
                 "positions": position_int,
                 "doc_type_kwd": chunk.get("doc_type_kwd", ""),
                 "mom_id": chunk.get("mom_id", ""),
+                "youtube_url": chunk.get("youtube_url", ""),
+                "video_id": chunk.get("video_id", ""),
+                "video_title": chunk.get("video_title", ""),
+                "timestamp_seconds": chunk.get("timestamp_seconds", 0),
+                "transcript_segment": chunk.get("transcript_segment", ""),
             }
             if highlight and sres.highlight:
                 if id in sres.highlight:
