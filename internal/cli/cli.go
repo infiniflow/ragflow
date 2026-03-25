@@ -160,12 +160,12 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	// Define flags
 	host := fs.String("h", "127.0.0.1", "Admin or RAGFlow service host")
 	port := fs.Int("p", -1, "Admin or RAGFlow service port (default: 9381 for admin, 9380 for user)")
+	username := fs.String("u", "", "Username (email). In admin mode defaults to admin@ragflow.io, in user mode required")
 	password := fs.String("w", "", "Superuser password")
 	key := fs.String("k", "", "API key for authentication")
 	_ = fs.String("f", "", "Path to config file (YAML format)") // Already parsed above
 	adminMode := fs.Bool("admin", false, "Run in admin mode (default)")
 	_ = fs.Bool("user", false, "Run in user mode")
-	username := fs.String("u", "", "Username (email). In admin mode defaults to admin@ragflow.io, in user mode required")
 
 	// Parse the arguments
 	if err = fs.Parse(args); err != nil {
@@ -250,7 +250,7 @@ func buildArgsFromFlags(host *string, port *int, password *string, key *string, 
 
 	// Get command from remaining args (no need for quotes or semicolon)
 	if len(remainingArgs) > 0 {
-		result.Command = strings.Join(remainingArgs, " ") + ";"
+		result.Command = strings.Join(remainingArgs, " ")
 	}
 
 	return result, nil
@@ -332,7 +332,7 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 	client.HTTPClient.Port = args.Port
 
 	// Set prompt based on server type
-	prompt := "RAGFlow> "
+	prompt := "RAGFlow(user)> "
 	if serverType == "admin" {
 		prompt = "RAGFlow(admin)> "
 	}
@@ -485,7 +485,7 @@ func (c *CLI) handleMetaCommand(cmd *Command) error {
 		fmt.Println("Switched to ADMIN mode")
 	case "user":
 		c.client.ServerType = "user"
-		c.prompt = "RAGFlow> "
+		c.prompt = "RAGFlow(user)> "
 		fmt.Println("Switched to USER mode")
 	case "host":
 		if len(args) == 0 {
