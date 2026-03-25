@@ -274,7 +274,9 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
             wait_for_server "http://127.0.0.1:9380/healthz" "ragflow_server"
             echo "Starting RAGFlow server in hybrid mode..."
             bin/server_main &
-        fi
+        else
+            echo "Starting RAGFlow server in python mode..."
+        if
         wait;
         sleep 1;
     done &
@@ -297,7 +299,9 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
             wait_for_server "http://127.0.0.1:9381/api/v1/admin/ping" "admin_server"
             echo "Starting Admin server in hybrid mode..."
             bin/admin_server &
-        fi
+        else
+            echo "Starting Admin server in python mode..."
+        if
         wait;
         sleep 1;
     done &
