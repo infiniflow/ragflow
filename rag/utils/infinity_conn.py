@@ -269,6 +269,8 @@ class InfinityConnection(InfinityConnectionBase):
                     try:
                         kb_res, extra_result = builder.option({"total_hits_count": True}).to_df()
                     except InfinityException as e:
+                        if e.error_code != 3052:
+                            raise
                         self.logger.warning(f"INFINITY search failed on table {table_name} (error {e.error_code}): {e}. Skipping.")
                         continue
                     if extra_result:
