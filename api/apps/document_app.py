@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -761,7 +761,6 @@ async def download_attachment(attachment_id):
 @login_required
 @validate_request("doc_id")
 async def change_parser():
-
     req = await get_request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
@@ -979,10 +978,34 @@ async def set_meta():
 
 
 @manager.route("/upload_info", methods=["POST"])  # noqa: F821
+@login_required
 async def upload_info():
     files = await request.files
-    file = files["file"] if files and files.get("file") else None
+    file_objs = files.getlist("file") if files and files.get("file") else []
+    url = request.args.get("url")
+
+    if file_objs and url:
+        return get_json_result(
+            data=False,
+            message="Provide either multipart file(s) or ?url=..., not both.",
+            code=RetCode.BAD_REQUEST,
+        )
+
+    if not file_objs and not url:
+        return get_json_result(
+            data=False,
+            message="Missing input: provide multipart file(s) or url",
+            code=RetCode.BAD_REQUEST,
+        )
+
     try:
-        return get_json_result(data=FileService.upload_info(current_user.id, file, request.args.get("url")))
+        if url and not file_objs:
+            return get_json_result(data=FileService.upload_info(current_user.id, None, url))
+
+        if len(file_objs) == 1:
+            return get_json_result(data=FileService.upload_info(current_user.id, file_objs[0], None))
+
+        results = [FileService.upload_info(current_user.id, f, None) for f in file_objs]
+        return get_json_result(data=results)
     except Exception as e:
         return server_error_response(e)

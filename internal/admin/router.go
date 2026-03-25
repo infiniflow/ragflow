@@ -67,9 +67,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/users/:username/agents", r.handler.GetUserAgents)
 
 			// API Keys
-			protected.GET("/users/:username/keys", r.handler.GetUserAPIKeys)
-			protected.POST("/users/:username/keys", r.handler.GenerateUserAPIKey)
-			protected.DELETE("/users/:username/keys/:key", r.handler.DeleteUserAPIKey)
+			protected.GET("/users/:username/keys", r.handler.ListUserAPITokens)
+			protected.GET("/users/:username/tokens", r.handler.ListUserAPITokens)
+			protected.POST("/users/:username/keys", r.handler.GenerateUserAPIToken)
+			protected.POST("/users/:username/tokens", r.handler.GenerateUserAPIToken)
+			protected.DELETE("/users/:username/keys/:token", r.handler.DeleteUserAPIToken)
+			protected.DELETE("/users/:username/tokens/:token", r.handler.DeleteUserAPIToken)
 
 			// Role management
 			protected.GET("/roles", r.handler.ListRoles)
