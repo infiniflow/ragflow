@@ -165,7 +165,7 @@ class TestChunksDeletion:
             pytest.param("not json", 100, """UnboundLocalError("local variable \'duplicate_messages\' referenced before assignment")""", 5, marks=pytest.mark.skip(reason="pull/6376")),
             pytest.param(lambda r: {"chunk_ids": r[:1]}, 0, "", 3, marks=pytest.mark.p3),
             pytest.param(lambda r: {"chunk_ids": r}, 0, "", 0, marks=pytest.mark.p1),
-            pytest.param({"chunk_ids": []}, 0, "", 5, marks=pytest.mark.p3),
+            pytest.param({"chunk_ids": []}, 0, "", 4, marks=pytest.mark.p3),
         ],
     )
     def test_basic_scenarios(self, WebApiAuth, add_chunks_func, payload, expected_code, expected_message, remaining):
