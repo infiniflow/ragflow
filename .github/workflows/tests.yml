@@ -420,7 +420,7 @@ jobs:
 
       - name: Start ragflow:nightly for Elasticsearch
         run: |
-          sed -i '1i DOC_ENGINE=elasticsearch' docker/.env
+          echo -e "DOC_ENGINE=elasticsearch" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
 
       - name: Run sdk tests against Elasticsearch
