@@ -227,7 +227,7 @@ jobs:
 
       - name: Start ragflow:nightly for Infinity
         run: |
-          sed -i '1i DOC_ENGINE=infinity' docker/.env
+          sed -i 's/^DOC_ENGINE=.*$/DOC_ENGINE=infinity/' docker/.env
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
 
       - name: Run sdk tests against Infinity
@@ -420,7 +420,7 @@ jobs:
 
       - name: Start ragflow:nightly for Elasticsearch
         run: |
-          echo -e "DOC_ENGINE=elasticsearch" >> docker/.env
+          sed -i 's/^DOC_ENGINE=.*$/DOC_ENGINE=elasticsearch/' docker/.env
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
 
       - name: Run sdk tests against Elasticsearch
