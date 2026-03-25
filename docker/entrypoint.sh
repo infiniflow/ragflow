@@ -266,42 +266,57 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
     /usr/sbin/nginx
 
-    echo "Starting ragflow_server..."
     while true; do
+        echo "Attempt to start RAGFlow server..."
         "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
-
-        if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
-            wait_for_server "http://127.0.0.1:9380/healthz" "ragflow_server"
-            echo "Starting RAGFlow server in hybrid mode..."
-            bin/server_main &
-        else
-            echo "Starting RAGFlow server in python mode..."
-        fi
+        echo "Start RAGFlow python server in background."
         wait;
         sleep 1;
     done &
 fi
 
-if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
-    echo "Starting data sync..."
+if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+        while true; do
+            echo "Attempt to start RAGFlow go server..."
+            wait_for_server "http://127.0.0.1:9384/healthz" "ragflow_server"
+            echo "Starting RAGFlow go server..."
+            bin/server_main &
+            wait;
+            sleep 1;
+        done &
+    fi
+fi
+
+
+if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
+
     while true; do
-        "$PY" rag/svr/sync_data_source.py &
+        echo "Attempt to start Admin python server..."
+        "$PY" admin/server/admin_server.py &
+        echo "Starting Admin python server..."
         wait;
         sleep 1;
     done &
 fi
 
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
-    echo "Starting admin_server..."
-    while true; do
-        "$PY" admin/server/admin_server.py &
-        if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
-            wait_for_server "http://127.0.0.1:9381/api/v1/admin/ping" "admin_server"
-            echo "Starting Admin server in hybrid mode..."
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+        while true; do
+            echo "Attempt to starting Admin go server..."
+            wait_for_server "http://127.0.0.1:9383/api/v1/admin/ping" "admin_server"
+            echo "Starting Admin go server..."
             bin/admin_server &
-        else
-            echo "Starting Admin server in python mode..."
-        fi
+            wait;
+            sleep 1;
+        done &
+    fi
+fi
+
+if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
+    echo "Starting data sync..."
+    while true; do
+        "$PY" rag/svr/sync_data_source.py &
         wait;
         sleep 1;
     done &
