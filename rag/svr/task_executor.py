@@ -250,6 +250,7 @@ async def build_chunks(task, progress_callback):
         return []
 
     chunker = FACTORY[task["parser_id"].lower()]
+    st = timer()
     # ── video: URL-only document, no binary stored in MinIO ───────────────
     if task["parser_id"].lower() == ParserType.VIDEO.value:
         binary = None
