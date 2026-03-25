@@ -22,11 +22,21 @@ import (
 	"unicode"
 )
 
-// PrintTableSimple prints data in a simple table format
+// PrintTableSimple prints data in a simple table format (default: table format with borders)
 // Similar to Python's _print_table_simple
 func PrintTableSimple(data []map[string]interface{}) {
+	PrintTableSimpleByFormat(data, OutputFormatTable)
+}
+
+// PrintTableSimpleByFormat prints data in the specified format
+// Supports: table (with borders), plain (no borders, space-separated), json (reserved)
+func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat) {
 	if len(data) == 0 {
-		fmt.Println("No data to print")
+		if format == OutputFormatPlain {
+			fmt.Println("(empty)")
+		} else {
+			fmt.Println("No data to print")
+		}
 		return
 	}
 
@@ -69,43 +79,86 @@ func PrintTableSimple(data []map[string]interface{}) {
 		colWidths[col] = maxWidth
 	}
 
-	// Generate separator
-	separatorParts := make([]string, 0, len(columns))
-	for _, col := range columns {
-		separatorParts = append(separatorParts, strings.Repeat("-", colWidths[col]+2))
-	}
-	separator := "+" + strings.Join(separatorParts, "+") + "+"
-
-	// Print header
-	fmt.Println(separator)
-	headerParts := make([]string, 0, len(columns))
-	for _, col := range columns {
-		headerParts = append(headerParts, fmt.Sprintf(" %-*s ", colWidths[col], col))
-	}
-	fmt.Println("|" + strings.Join(headerParts, "|") + "|")
-	fmt.Println(separator)
-
-	// Print data rows
-	for _, item := range data {
-		rowParts := make([]string, 0, len(columns))
+	if format == OutputFormatPlain {
+		// Plain mode: no borders, space-separated (similar to ov CLI)
+		// Print header
+		headerParts := make([]string, 0, len(columns))
 		for _, col := range columns {
-			value := fmt.Sprintf("%v", item[col])
-			valueWidth := getStringWidth(value)
-			// Truncate if too long
-			if valueWidth > colWidths[col] {
-				runes := []rune(value)
-				truncated := truncateString(runes, colWidths[col])
-				value = truncated
-				valueWidth = getStringWidth(value)
-			}
-			// Pad to column width
-			padding := colWidths[col] - valueWidth + len(value)
-			rowParts = append(rowParts, fmt.Sprintf(" %-*s ", padding, value))
+			headerParts = append(headerParts, padCell(col, colWidths[col], false))
 		}
-		fmt.Println("|" + strings.Join(rowParts, "|") + "|")
-	}
+		fmt.Println(strings.Join(headerParts, "  "))
 
-	fmt.Println(separator)
+		// Print data rows
+		for _, item := range data {
+			rowParts := make([]string, 0, len(columns))
+			for _, col := range columns {
+				value := fmt.Sprintf("%v", item[col])
+				valueWidth := getStringWidth(value)
+				// Truncate if too long
+				if valueWidth > colWidths[col] {
+					runes := []rune(value)
+					truncated := truncateString(runes, colWidths[col])
+					value = truncated
+					valueWidth = getStringWidth(value)
+				}
+				// Pad to column width
+				rowParts = append(rowParts, padCell(value, colWidths[col], false))
+			}
+			fmt.Println(strings.Join(rowParts, "  "))
+		}
+	} else {
+		// Normal mode: with borders
+		// Generate separator
+		separatorParts := make([]string, 0, len(columns))
+		for _, col := range columns {
+			separatorParts = append(separatorParts, strings.Repeat("-", colWidths[col]+2))
+		}
+		separator := "+" + strings.Join(separatorParts, "+") + "+"
+
+		// Print header
+		fmt.Println(separator)
+		headerParts := make([]string, 0, len(columns))
+		for _, col := range columns {
+			headerParts = append(headerParts, fmt.Sprintf(" %-*s ", colWidths[col], col))
+		}
+		fmt.Println("|" + strings.Join(headerParts, "|") + "|")
+		fmt.Println(separator)
+
+		// Print data rows
+		for _, item := range data {
+			rowParts := make([]string, 0, len(columns))
+			for _, col := range columns {
+				value := fmt.Sprintf("%v", item[col])
+				valueWidth := getStringWidth(value)
+				// Truncate if too long
+				if valueWidth > colWidths[col] {
+					runes := []rune(value)
+					truncated := truncateString(runes, colWidths[col])
+					value = truncated
+					valueWidth = getStringWidth(value)
+				}
+				// Pad to column width
+				padding := colWidths[col] - valueWidth + len(value)
+				rowParts = append(rowParts, fmt.Sprintf(" %-*s ", padding, value))
+			}
+			fmt.Println("|" + strings.Join(rowParts, "|") + "|")
+		}
+
+		fmt.Println(separator)
+	}
+}
+
+// padCell pads a string to the specified width for alignment
+func padCell(content string, width int, alignRight bool) string {
+	contentWidth := getStringWidth(content)
+	if contentWidth >= width {
+		return content
+	}
+	padding := width - contentWidth
+	if alignRight {
+		return strings.Repeat(" ", padding) + content
+	}
+	return content + strings.Repeat(" ", padding)
 }
 
 // getStringWidth calculates the display width of a string

@@ -39,16 +39,26 @@ type ConfigFile struct {
 	APIToken string `yaml:"api_token"`
 }
 
+// OutputFormat represents the output format type
+type OutputFormat string
+
+const (
+	OutputFormatTable OutputFormat = "table" // Table format with borders
+	OutputFormatPlain OutputFormat = "plain" // Plain text, space-separated (no borders)
+	OutputFormatJSON  OutputFormat = "json"  // JSON format (reserved for future use)
+)
+
 // ConnectionArgs holds the parsed command line arguments
 type ConnectionArgs struct {
-	Host     string
-	Port     int
-	Password string
-	Key      string
-	Type     string
-	Username string
-	Command  string
-	ShowHelp bool
+	Host         string
+	Port         int
+	Password     string
+	Key          string
+	Type         string
+	Username     string
+	Command      string
+	ShowHelp     bool
+	OutputFormat OutputFormat // Output format: table, plain, json
 }
 
 // LoadDefaultConfigFile reads the rf.yml file from current directory if it exists
@@ -120,6 +130,10 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 		} else if arg == "-f" && i+1 < len(args) {
 			configFilePath = args[i+1]
 			i++
+		} else if (arg == "-o" || arg == "--output") && i+1 < len(args) {
+			// -o/--output is allowed with config file, skip it and its value
+			i++
+			continue
 		} else if strings.HasPrefix(arg, "-") && arg != "-f" {
 			// Check if it's a flag (not a command)
 			if arg == "-h" || arg == "-p" || arg == "-w" || arg == "-k" ||
@@ -166,6 +180,7 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	_ = fs.Bool("admin", false, "Run in admin mode (default)")
 	userMode := fs.Bool("user", false, "Run in user mode")
 	username := fs.String("u", "", "Username (email). In admin mode defaults to admin@ragflow.io, in user mode required")
+	outputFormat := fs.String("o", "table", "Output format: table, plain (json reserved for future)")
 
 	// Parse the arguments
 	if err = fs.Parse(args); err != nil {
@@ -173,11 +188,11 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	}
 
 	// Otherwise, use command line flags
-	return buildArgsFromFlags(host, port, password, key, userMode, username, fs.Args())
+	return buildArgsFromFlags(host, port, password, key, userMode, username, outputFormat, fs.Args())
 }
 
 // buildArgsFromConfig builds ConnectionArgs from config file
-func buildArgsFromConfig(config *ConfigFile, remainingArgs []string) (*ConnectionArgs, error) {
+func buildArgsFromConfig(config *ConfigFile, args []string) (*ConnectionArgs, error) {
 	result := &ConnectionArgs{}
 
 	// Parse host:port from config file
@@ -214,22 +229,57 @@ func buildArgsFromConfig(config *ConfigFile, remainingArgs []string) (*Connectio
 		}
 	}
 
+	// Filter out -f flag and its value from args to get the actual command
+	// Also parse -o/--output format flag
+	var commandArgs []string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-f" && i+1 < len(args) {
+			// Skip -f and its value
+			i++
+			continue
+		} else if (args[i] == "-o" || args[i] == "--output") && i+1 < len(args) {
+			// Parse output format
+			format := args[i+1]
+			switch format {
+			case "plain":
+				result.OutputFormat = OutputFormatPlain
+			case "json":
+				result.OutputFormat = OutputFormatJSON
+			default:
+				result.OutputFormat = OutputFormatTable
+			}
+			i++
+			continue
+		}
+		commandArgs = append(commandArgs, args[i])
+	}
+
 	// Get command from remaining args (no need for quotes or semicolon)
-	if len(remainingArgs) > 0 {
-		result.Command = strings.Join(remainingArgs, " ") + ";"
+	if len(commandArgs) > 0 {
+		result.Command = strings.Join(commandArgs, " ") + ";"
 	}
 
 	return result, nil
 }
 
 // buildArgsFromFlags builds ConnectionArgs from command line flags
-func buildArgsFromFlags(host *string, port *int, password *string, key *string, userMode *bool, username *string, remainingArgs []string) (*ConnectionArgs, error) {
+func buildArgsFromFlags(host *string, port *int, password *string, key *string, userMode *bool, username *string, outputFormat *string, remainingArgs []string) (*ConnectionArgs, error) {
 	result := &ConnectionArgs{
 		Host:     *host,
 		Port:     *port,
 		Password: *password,
 		Key:      *key,
 		Username: *username,
+	}
+
+	// Parse output format
+	switch *outputFormat {
+	case "plain":
+		result.OutputFormat = OutputFormatPlain
+	case "json":
+		result.OutputFormat = OutputFormatJSON
+	default:
+		result.OutputFormat = OutputFormatTable
 	}
 
 	// Determine mode
@@ -268,15 +318,16 @@ func PrintUsage() {
 Usage: ragflow_cli [options] [command]
 
 Options:
-  -h string    Admin or RAGFlow service host (default "127.0.0.1")
-  -p int       Admin or RAGFlow service port (default 9381 for admin, 9380 for user)
-  -w string    Superuser password
-  -k string    API key for authentication
-  -f string    Path to config file (YAML format)
-  -admin       Run in admin mode (default)
-  -user        Run in user mode
-  -u string    Username (email). In admin mode defaults to admin@ragflow.io
-  --help        Show this help message
+  -h string        Admin or RAGFlow service host (default "127.0.0.1")
+  -p int           Admin or RAGFlow service port (default 9381 for admin, 9380 for user)
+  -w string        Superuser password
+  -k string        API key for authentication
+  -f string        Path to config file (YAML format)
+  -admin           Run in admin mode (default)
+  -user            Run in user mode
+  -u string        Username (email). In admin mode defaults to admin@ragflow.io
+  -o, --output     Output format: table, plain (json reserved for future use)
+  --help           Show this help message
 
 Configuration File:
   The CLI will automatically read rf.yml from the current directory if it exists.
@@ -305,11 +356,12 @@ const historyFileName = ".ragflow_cli_history"
 
 // CLI represents the command line interface
 type CLI struct {
-	client  *RAGFlowClient
-	prompt  string
-	running bool
-	line    *liner.State
-	args    *ConnectionArgs
+	client       *RAGFlowClient
+	prompt       string
+	running      bool
+	line         *liner.State
+	args         *ConnectionArgs
+	outputFormat OutputFormat // Output format
 }
 
 // NewCLI creates a new CLI instance
@@ -336,6 +388,23 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 	client.HTTPClient.Host = args.Host
 	client.HTTPClient.Port = args.Port
 
+	// Apply API token if provided (from config file)
+	if args.Key != "" {
+		client.HTTPClient.APIToken = args.Key
+		client.HTTPClient.useAPIToken = true
+	}
+
+	// Set output format
+	client.OutputFormat = args.OutputFormat
+
+	// Auto-login if user and password are provided (from config file)
+	if args.Username != "" && args.Password != "" && args.Key == "" {
+		if err := client.LoginUserInteractive(args.Username, args.Password); err != nil {
+			line.Close()
+			return nil, fmt.Errorf("auto-login failed: %w", err)
+		}
+	}
+
 	// Set prompt based on server type
 	prompt := "RAGFlow> "
 	if serverType == "admin" {
@@ -343,10 +412,11 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 	}
 
 	return &CLI{
-		prompt: prompt,
-		client: client,
-		line:   line,
-		args:   args,
+		prompt:       prompt,
+		client:       client,
+		line:         line,
+		args:         args,
+		outputFormat: args.OutputFormat,
 	}, nil
 }
 
@@ -466,6 +536,8 @@ func (c *CLI) execute(input string) error {
 	var result ResponseIf
 	result, err = c.client.ExecuteCommand(cmd)
 	if result != nil {
+		// Set output format for the result
+		result.SetOutputFormat(c.outputFormat)
 		result.PrintOut()
 	}
 	return err
@@ -579,7 +651,10 @@ For more information, see documentation.
 
 // Cleanup performs cleanup before exit
 func (c *CLI) Cleanup() {
-	fmt.Println("\nCleaning up...")
+	// Close liner to restore terminal settings
+	if c.line != nil {
+		c.line.Close()
+	}
 }
 
 // RunInteractive runs the CLI in interactive mode
@@ -603,6 +678,9 @@ func RunInteractive() error {
 
 // RunSingleCommand executes a single command and exits
 func (c *CLI) RunSingleCommand(command string) error {
+	// Ensure cleanup is called on exit to restore terminal settings
+	defer c.Cleanup()
+
 	// Execute the command
 	if err := c.execute(command); err != nil {
 		return err

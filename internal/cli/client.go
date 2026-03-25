@@ -35,6 +35,7 @@ type RAGFlowClient struct {
 	HTTPClient     *HTTPClient
 	ServerType     string             // "admin" or "user"
 	PasswordPrompt PasswordPromptFunc // Function for password input
+	OutputFormat   OutputFormat       // Output format: table, plain, json
 }
 
 // NewRAGFlowClient creates a new RAGFlow client
@@ -391,13 +392,15 @@ type ResponseIf interface {
 	Type() string
 	PrintOut()
 	TimeCost() float64
+	SetOutputFormat(format OutputFormat)
 }
 
 type CommonResponse struct {
-	Code     int                      `json:"code"`
-	Data     []map[string]interface{} `json:"data"`
-	Message  string                   `json:"message"`
-	Duration float64
+	Code         int                      `json:"code"`
+	Data         []map[string]interface{} `json:"data"`
+	Message      string                   `json:"message"`
+	Duration     float64
+	outputFormat OutputFormat
 }
 
 func (r *CommonResponse) Type() string {
@@ -408,9 +411,13 @@ func (r *CommonResponse) TimeCost() float64 {
 	return r.Duration
 }
 
+func (r *CommonResponse) SetOutputFormat(format OutputFormat) {
+	r.outputFormat = format
+}
+
 func (r *CommonResponse) PrintOut() {
 	if r.Code == 0 {
-		PrintTableSimple(r.Data)
+		PrintTableSimpleByFormat(r.Data, r.outputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
@@ -418,10 +425,11 @@ func (r *CommonResponse) PrintOut() {
 }
 
 type CommonDataResponse struct {
-	Code     int                    `json:"code"`
-	Data     map[string]interface{} `json:"data"`
-	Message  string                 `json:"message"`
-	Duration float64
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	outputFormat OutputFormat
 }
 
 func (r *CommonDataResponse) Type() string {
@@ -432,11 +440,15 @@ func (r *CommonDataResponse) TimeCost() float64 {
 	return r.Duration
 }
 
+func (r *CommonDataResponse) SetOutputFormat(format OutputFormat) {
+	r.outputFormat = format
+}
+
 func (r *CommonDataResponse) PrintOut() {
 	if r.Code == 0 {
 		table := make([]map[string]interface{}, 0)
 		table = append(table, r.Data)
-		PrintTableSimple(table)
+		PrintTableSimpleByFormat(table, r.outputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
@@ -444,9 +456,10 @@ func (r *CommonDataResponse) PrintOut() {
 }
 
 type SimpleResponse struct {
-	Code     int    `json:"code"`
-	Message  string `json:"message"`
-	Duration float64
+	Code         int    `json:"code"`
+	Message      string `json:"message"`
+	Duration     float64
+	outputFormat OutputFormat
 }
 
 func (r *SimpleResponse) Type() string {
@@ -455,6 +468,10 @@ func (r *SimpleResponse) Type() string {
 
 func (r *SimpleResponse) TimeCost() float64 {
 	return r.Duration
+}
+
+func (r *SimpleResponse) SetOutputFormat(format OutputFormat) {
+	r.outputFormat = format
 }
 
 func (r *SimpleResponse) PrintOut() {
@@ -467,9 +484,10 @@ func (r *SimpleResponse) PrintOut() {
 }
 
 type RegisterResponse struct {
-	Code     int    `json:"code"`
-	Message  string `json:"message"`
-	Duration float64
+	Code         int    `json:"code"`
+	Message      string `json:"message"`
+	Duration     float64
+	outputFormat OutputFormat
 }
 
 func (r *RegisterResponse) Type() string {
@@ -478,6 +496,10 @@ func (r *RegisterResponse) Type() string {
 
 func (r *RegisterResponse) TimeCost() float64 {
 	return r.Duration
+}
+
+func (r *RegisterResponse) SetOutputFormat(format OutputFormat) {
+	r.outputFormat = format
 }
 
 func (r *RegisterResponse) PrintOut() {
@@ -495,10 +517,15 @@ type BenchmarkResponse struct {
 	SuccessCount int     `json:"success_count"`
 	FailureCount int     `json:"failure_count"`
 	Concurrency  int
+	outputFormat OutputFormat
 }
 
 func (r *BenchmarkResponse) Type() string {
 	return "benchmark"
+}
+
+func (r *BenchmarkResponse) SetOutputFormat(format OutputFormat) {
+	r.outputFormat = format
 }
 
 func (r *BenchmarkResponse) PrintOut() {
@@ -524,10 +551,11 @@ func (r *BenchmarkResponse) TimeCost() float64 {
 }
 
 type KeyValueResponse struct {
-	Code     int    `json:"code"`
-	Key      string `json:"key"`
-	Value    string `json:"data"`
-	Duration float64
+	Code         int    `json:"code"`
+	Key          string `json:"key"`
+	Value        string `json:"data"`
+	Duration     float64
+	outputFormat OutputFormat
 }
 
 func (r *KeyValueResponse) Type() string {
@@ -538,6 +566,10 @@ func (r *KeyValueResponse) TimeCost() float64 {
 	return r.Duration
 }
 
+func (r *KeyValueResponse) SetOutputFormat(format OutputFormat) {
+	r.outputFormat = format
+}
+
 func (r *KeyValueResponse) PrintOut() {
 	if r.Code == 0 {
 		table := make([]map[string]interface{}, 0)
@@ -546,7 +578,7 @@ func (r *KeyValueResponse) PrintOut() {
 			"key":   r.Key,
 			"value": r.Value,
 		})
-		PrintTableSimple(table)
+		PrintTableSimpleByFormat(table, r.outputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d\n", r.Code)
