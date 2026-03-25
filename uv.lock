@@ -1000,9 +1000,9 @@ wheels = [
 name = "chardet"
 version = "5.2.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f3/0d/f7b6ab21ec75897ed80c17d79b15951a719226b9fababf1e40ea74d69079/chardet-5.2.0.tar.gz", hash = "sha256:1b3b6ff479a8c414bc3fa2c0852995695c4a026dcd6d0633b2dd092ca39c1cf7" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f3/0d/f7b6ab21ec75897ed80c17d79b15951a719226b9fababf1e40ea74d69079/chardet-5.2.0.tar.gz", hash = "sha256:1b3b6ff479a8c414bc3fa2c0852995695c4a026dcd6d0633b2dd092ca39c1cf7", size = 2069618, upload-time = "2023-08-01T19:23:02.662Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/38/6f/f5fbc992a329ee4e0f288c1fe0e2ad9485ed064cac731ed2fe47dcc38cbf/chardet-5.2.0-py3-none-any.whl", hash = "sha256:e1cf59446890a00105fe7b7912492ea04b6e6f06d4b742b2c788469e34c82970" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/38/6f/f5fbc992a329ee4e0f288c1fe0e2ad9485ed064cac731ed2fe47dcc38cbf/chardet-5.2.0-py3-none-any.whl", hash = "sha256:e1cf59446890a00105fe7b7912492ea04b6e6f06d4b742b2c788469e34c82970", size = 199385, upload-time = "2023-08-01T19:23:00.661Z" },
 ]
 
 [[package]]
@@ -6253,6 +6253,7 @@ test = [
     { name = "reportlab" },
     { name = "requests" },
     { name = "requests-toolbelt" },
+    { name = "youtube-transcript-api" },
 ]
 
 [package.metadata]
@@ -6389,6 +6390,7 @@ test = [
     { name = "reportlab", specifier = ">=4.4.1" },
     { name = "requests", specifier = ">=2.32.2" },
     { name = "requests-toolbelt", specifier = ">=1.0.0" },
+    { name = "youtube-transcript-api", specifier = ">=0.6.0" },
 ]
 
 [[package]]
@@ -8356,6 +8358,19 @@ dependencies = [
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a3/c1/2ef5acda45a71297f4be22e205359e0f93b0171f2b6ebdd681362e725686/yfinance-0.2.65.tar.gz", hash = "sha256:3d465e58c49be9d61f9862829de3e00bef6b623809f32f4efb5197b62fc60485", size = 128666, upload-time = "2025-07-06T16:20:12.769Z" }
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c9/1e/631c80e0f97aef46eb73549b9b0f60d94057294e040740f4cad0cb1f48e4/yfinance-0.2.65-py2.py3-none-any.whl", hash = "sha256:7be13abb0d80a17230bf798e9c6a324fa2bef0846684a6d4f7fa2abd21938963", size = 119438, upload-time = "2025-07-06T16:20:11.251Z" },
+]
+
+[[package]]
+name = "youtube-transcript-api"
+version = "1.2.4"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "defusedxml" },
+    { name = "requests" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/60/43/4104185a2eaa839daa693b30e15c37e7e58795e8e09ec414f22b3db54bec/youtube_transcript_api-1.2.4.tar.gz", hash = "sha256:b72d0e96a335df599d67cee51d49e143cff4f45b84bcafc202ff51291603ddcd", size = 469839, upload-time = "2026-01-29T09:09:17.088Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/be/95/129ea37efd6cd6ed00f62baae6543345c677810b8a3bf0026756e1d3cf3c/youtube_transcript_api-1.2.4-py3-none-any.whl", hash = "sha256:03878759356da5caf5edac77431780b91448fb3d8c21d4496015bdc8a7bc43ff", size = 485227, upload-time = "2026-01-29T09:09:15.427Z" },
 ]
 
 [[package]]
