@@ -19,10 +19,9 @@ package handler
 import (
 	"net/http"
 	"ragflow/internal/server"
+	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
-
-	"ragflow/internal/service"
 )
 
 // SystemHandler system handler
