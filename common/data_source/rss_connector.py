@@ -1,4 +1,6 @@
 import hashlib
+import ipaddress
+import socket
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from time import struct_time
@@ -12,6 +14,52 @@ import requests
 from common.data_source.config import INDEX_BATCH_SIZE, REQUEST_TIMEOUT_SECONDS, DocumentSource
 from common.data_source.interfaces import LoadConnector, PollConnector
 from common.data_source.models import Document, GenerateDocumentsOutput, SecondsSinceUnixEpoch
+
+MAX_REDIRECTS = 5
+
+
+def _is_private_ip(ip: str) -> bool:
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+        return ip_obj.is_private or ip_obj.is_link_local or ip_obj.is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_url_no_ssrf(url: str) -> None:
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("URL must have a valid hostname")
+
+    try:
+        ip = socket.gethostbyname(hostname)
+        if _is_private_ip(ip):
+            raise ValueError(f"URL resolves to private/internal IP address: {ip}")
+    except socket.gaierror as e:
+        raise ValueError(f"Failed to resolve hostname: {hostname}") from e
+
+
+def _validate_redirect_chain(url: str, max_redirects: int = MAX_REDIRECTS) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("URL must use http or https scheme")
+
+    session = requests.Session()
+    session.max_redirects = max_redirects
+
+    try:
+        response = session.get(url, timeout=REQUEST_TIMEOUT_SECONDS, allow_redirects=True)
+        final_url = response.url
+
+        final_parsed = urlparse(final_url)
+        if final_parsed.hostname:
+            _validate_url_no_ssrf(final_url)
+        return final_url
+    except requests.exceptions.TooManyRedirects:
+        raise ValueError(f"Too many redirects (max {max_redirects})")
+    except requests.exceptions.RequestException as e:
+        raise ValueError(f"Failed to fetch URL: {e}") from e
 
 
 class RSSConnector(LoadConnector, PollConnector):
@@ -70,20 +118,24 @@ class RSSConnector(LoadConnector, PollConnector):
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("feed_url must be a valid http or https URL")
 
+        _validate_url_no_ssrf(self.feed_url)
+
     def _read_feed(self, require_entries: bool) -> Any:
         self._validate_feed_url()
 
-        response = requests.get(self.feed_url, timeout=min(REQUEST_TIMEOUT_SECONDS, 15))
+        validated_url = _validate_redirect_chain(self.feed_url)
+
+        response = requests.get(validated_url, timeout=REQUEST_TIMEOUT_SECONDS, allow_redirects=True)
         response.raise_for_status()
 
         feed = feedparser.parse(response.content)
-        if require_entries and not feed.entries:
-            raise ValueError("RSS feed contains no entries")
         if getattr(feed, "bozo", False) and not feed.entries:
             error = getattr(feed, "bozo_exception", None)
             if error:
                 raise ValueError(f"Failed to parse RSS feed: {error}") from error
             raise ValueError("Failed to parse RSS feed")
+        if require_entries and not feed.entries:
+            raise ValueError("RSS feed contains no entries")
 
         return feed
 
