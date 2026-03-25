@@ -697,3 +697,113 @@ def trace_raptor(tenant_id,dataset_id):
         return get_error_data_result(message="RAPTOR Task Not Found or Error Occurred")
 
     return get_result(data=task.to_dict())
+
+@manager.route("/datasets/<dataset_id>/videos", methods=["POST"])  # noqa: F821
+@token_required
+async def ingest_video(tenant_id, dataset_id):
+    """
+    Register a YouTube video URL as a document in a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset (must have chunk_method=video).
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - url
+          properties:
+            url:
+              type: string
+              description: YouTube video URL.
+            title:
+              type: string
+              description: Optional human-readable title for the video.
+    responses:
+      200:
+        description: Document registered and ready to parse.
+    """
+    import re
+    from pathlib import Path
+    from api.db import FileType
+    from api.utils.file_utils import filename_type
+    from common.misc_utils import get_uuid
+
+    req = await request.get_json()
+    if not req or "url" not in req:
+        return get_error_data_result(message="Missing required field: url")
+
+    youtube_url: str = req["url"].strip()
+    video_title: str = req.get("title", "").strip()
+
+    # Validate it looks like a YouTube URL
+    if not re.search(r"(?:youtube\.com/watch|youtu\.be/)", youtube_url):
+        return get_error_data_result(message="url must be a YouTube URL (youtube.com/watch or youtu.be)")
+
+    # Authorise access to the dataset
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return get_error_data_result(message="Invalid dataset ID")
+
+    if kb.parser_id != "video":
+        return get_error_data_result(
+            message=f"Dataset chunk_method is '{kb.parser_id}', expected 'video'. "
+                    "Create the dataset with chunk_method='video' first."
+        )
+
+    # Build the document record — no file binary, no MinIO upload
+    doc_id = get_uuid()
+    parser_config = dict(kb.parser_config or {})
+    if video_title:
+        parser_config["video_title"] = video_title
+
+    doc = {
+        "id": doc_id,
+        "kb_id": kb.id,
+        "parser_id": "video",
+        "pipeline_id": kb.pipeline_id,
+        "parser_config": parser_config,
+        "created_by": tenant_id,
+        "type": FileType.DOC.value,
+        "name": youtube_url,           # URL stored as document name — passed to video.chunk()
+        "source_type": "local",
+        "suffix": "url",
+        "location": youtube_url,       # URL stored as location — bypassed in task_executor
+        "size": 0,
+        "thumbnail": "",
+    }
+
+    try:
+        DocumentService.insert(doc)
+    except Exception as e:
+        return get_error_data_result(message=f"Failed to register video document: {e}")
+
+    # Return same shape as the file upload endpoint
+    return get_result(data=[{
+        "id": doc_id,
+        "name": youtube_url,
+        "chunk_method": "video",
+        "dataset_id": dataset_id,
+        "location": youtube_url,
+        "size": 0,
+        "suffix": "url",
+        "type": FileType.DOC.value,
+        "source_type": "local",
+        "run": "UNSTART",
+        "thumbnail": "",
+        "pipeline_id": kb.pipeline_id,
+        "parser_config": parser_config,
+        "created_by": tenant_id,
+    }])
