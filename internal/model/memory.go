@@ -35,11 +35,19 @@ type Memory struct {
 	Temperature      float64 `gorm:"column:temperature;default:0.5;not null" json:"temperature"`
 	SystemPrompt     *string `gorm:"column:system_prompt;type:longtext" json:"system_prompt,omitempty"`
 	UserPrompt       *string `gorm:"column:user_prompt;type:longtext" json:"user_prompt,omitempty"`
-	OwnerName        *string `gorm:"column:owner_name" json:"owner_name,omitempty"`
 	BaseModel
 }
 
 // TableName specify table name
 func (Memory) TableName() string {
 	return "memory"
+}
+
+// MemoryListItem represents a memory record with owner name from JOIN query.
+// Uses struct embedding to extend Memory struct with owner_name from user table JOIN.
+// Note: MemoryType is kept as int64 from Memory embedding; conversion to []string
+// happens in the Service layer via CreateMemoryResponse.
+type MemoryListItem struct {
+	Memory
+	OwnerName *string `json:"owner_name,omitempty"`
 }

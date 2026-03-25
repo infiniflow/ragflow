@@ -360,51 +360,11 @@ type UpdateMemoryRequest struct {
 }
 
 // CreateMemoryResponse defines the response structure for memory operations
+// Uses struct embedding to extend Memory struct with API-specific fields
 type CreateMemoryResponse struct {
-	// ID is the unique memory identifier
-	ID string `json:"id"`
-	// Name is the memory name
-	Name string `json:"name"`
-	// Avatar is the avatar URL (optional)
-	Avatar *string `json:"avatar,omitempty"`
-	// TenantID is the tenant identifier
-	TenantID string `json:"tenant_id"`
-	// OwnerName is the owner's name (optional)
-	OwnerName *string `json:"owner_name,omitempty"`
-	// MemoryType is the array of memory type names
+	model.Memory
+	OwnerName  *string  `json:"owner_name,omitempty"`
 	MemoryType []string `json:"memory_type"`
-	// StorageType is the storage type (e.g., "table")
-	StorageType string `json:"storage_type"`
-	// EmbdID is the embedding model ID
-	EmbdID string `json:"embd_id"`
-	// LLMID is the language model ID
-	LLMID string `json:"llm_id"`
-	// TenantEmbdID is the tenant-specific embedding model ID (optional)
-	TenantEmbdID *string `json:"tenant_embd_id,omitempty"`
-	// TenantLLMID is the tenant-specific language model ID (optional)
-	TenantLLMID *string `json:"tenant_llm_id,omitempty"`
-	// Permissions is the permission level
-	Permissions string `json:"permissions"`
-	// Description is the memory description (optional)
-	Description *string `json:"description,omitempty"`
-	// MemorySize is the memory size in bytes
-	MemorySize int64 `json:"memory_size"`
-	// ForgettingPolicy is the forgetting policy
-	ForgettingPolicy string `json:"forgetting_policy"`
-	// Temperature is the temperature value
-	Temperature float64 `json:"temperature"`
-	// SystemPrompt is the system prompt (optional)
-	SystemPrompt *string `json:"system_prompt,omitempty"`
-	// UserPrompt is the user prompt (optional)
-	UserPrompt *string `json:"user_prompt,omitempty"`
-	// CreateTime is the creation timestamp in milliseconds (optional)
-	CreateTime *int64 `json:"create_time,omitempty"`
-	// CreateDate is the creation date string (optional)
-	CreateDate *string `json:"create_date,omitempty"`
-	// UpdateTime is the update timestamp in milliseconds (optional)
-	UpdateTime *int64 `json:"update_time,omitempty"`
-	// UpdateDate is the update date string (optional)
-	UpdateDate *string `json:"update_date,omitempty"`
 }
 
 // ListMemoryResponse defines the response structure for listing memories
@@ -780,7 +740,11 @@ func (s *MemoryService) ListMemories(userID string, tenantIDs []string, memoryTy
 
 	memoryList := make([]map[string]interface{}, 0, len(memories))
 	for _, m := range memories {
-		resp := formatRetDataFromMemory(m)
+		resp := formatRetDataFromMemoryListItem(m)
+		var createDateStr *string
+		if resp.CreateTime != nil {
+			createDateStr = formatDateToString(*resp.CreateTime)
+		}
 		memoryMap := map[string]interface{}{
 			"id":           resp.ID,
 			"name":         resp.Name,
@@ -792,7 +756,7 @@ func (s *MemoryService) ListMemories(userID string, tenantIDs []string, memoryTy
 			"permissions":  resp.Permissions,
 			"description":  resp.Description,
 			"create_time":  resp.CreateTime,
-			"create_date":  resp.CreateDate,
+			"create_date":  createDateStr,
 		}
 		memoryList = append(memoryList, memoryMap)
 	}
@@ -820,7 +784,7 @@ func (s *MemoryService) GetMemoryConfig(memoryID string) (*CreateMemoryResponse,
 	if err != nil {
 		return nil, fmt.Errorf("memory '%s' not found", memoryID)
 	}
-	return formatRetDataFromMemory(memory), nil
+	return formatRetDataFromMemoryListItem(memory), nil
 }
 
 // TODO: GetMemoryMessages - Implementation pending - depends on CanvasService and TaskService
@@ -884,50 +848,45 @@ func isList(v interface{}) bool {
 func formatRetDataFromMemory(memory *model.Memory) *CreateMemoryResponse {
 	memoryTypes := dao.GetMemoryTypeHuman(memory.MemoryType)
 
-	var createDateStr, updateDateStr *string
-	if memory.CreateDate != nil {
-		s := memory.CreateDate.Format("2006-01-02 15:04:05")
-		createDateStr = &s
+	resp := &CreateMemoryResponse{
+		Memory:     *memory,
+		OwnerName:  nil,
+		MemoryType: memoryTypes,
 	}
-	if memory.UpdateDate != nil {
-		s := memory.UpdateDate.Format("2006-01-02 15:04:05")
-		updateDateStr = &s
-	}
+	return resp
+}
 
-	// Convert tenant model IDs from int64 to string for response
-	var tenantEmbdIDStr *string
-	if memory.TenantEmbdID != nil {
-		s := strconv.FormatInt(*memory.TenantEmbdID, 10)
-		tenantEmbdIDStr = &s
+func formatDateToString(t int64) *string {
+	if t == 0 {
+		return nil
 	}
-	var tenantLLMIDStr *string
-	if memory.TenantLLMID != nil {
-		s := strconv.FormatInt(*memory.TenantLLMID, 10)
-		tenantLLMIDStr = &s
+	// Database stores timestamps in milliseconds, convert to seconds
+	if t > 1e10 {
+		t = t / 1000
 	}
+	timeObj := time.Unix(t, 0)
+	s := timeObj.Format("2006-01-02 15:04:05")
+	return &s
+}
 
-	return &CreateMemoryResponse{
-		ID:               memory.ID,
-		Name:             memory.Name,
-		Avatar:           memory.Avatar,
-		TenantID:         memory.TenantID,
-		OwnerName:        memory.OwnerName,
-		MemoryType:       memoryTypes,
-		StorageType:      memory.StorageType,
-		EmbdID:           memory.EmbdID,
-		TenantEmbdID:     tenantEmbdIDStr,
-		LLMID:            memory.LLMID,
-		TenantLLMID:      tenantLLMIDStr,
-		Permissions:      memory.Permissions,
-		Description:      memory.Description,
-		MemorySize:       memory.MemorySize,
-		ForgettingPolicy: memory.ForgettingPolicy,
-		Temperature:      memory.Temperature,
-		SystemPrompt:     memory.SystemPrompt,
-		UserPrompt:       memory.UserPrompt,
-		CreateTime:       memory.CreateTime,
-		CreateDate:       createDateStr,
-		UpdateTime:       memory.UpdateTime,
-		UpdateDate:       updateDateStr,
+// formatRetDataFromMemoryListItem converts a MemoryListItem to CreateMemoryResponse
+// This function is used for both list and detail memory responses where owner_name is from JOIN query
+//
+// Parameters:
+//   - memory: MemoryListItem pointer with owner_name from JOIN
+//
+// Returns:
+//   - *CreateMemoryResponse: Formatted response with owner_name populated
+//
+// Example:
+//
+//	resp := formatRetDataFromMemoryListItem(memoryItem)
+func formatRetDataFromMemoryListItem(memory *model.MemoryListItem) *CreateMemoryResponse {
+	memoryTypes := dao.GetMemoryTypeHuman(memory.MemoryType)
+	resp := &CreateMemoryResponse{
+		Memory:     memory.Memory,
+		OwnerName:  memory.OwnerName,
+		MemoryType: memoryTypes,
 	}
+	return resp
 }

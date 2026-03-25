@@ -242,28 +242,43 @@ func (dao *MemoryDAO) DeleteByID(id string) error {
 //   - id: Memory ID
 //
 // Returns:
-//   - *model.Memory: Memory model pointer with OwnerName populated
+//   - *model.MemoryListItem: Memory detail with owner name populated
 //   - error: Database operation error
 //
 // Example:
 //
 //	memory, err := dao.GetWithOwnerNameByID("memory123")
-func (dao *MemoryDAO) GetWithOwnerNameByID(id string) (*model.Memory, error) {
-	var memory model.Memory
-	err := DB.Table("memory m").
-		Select("m.*, u.nickname as owner_name").
-		Joins("LEFT JOIN user u ON m.tenant_id = u.id").
-		Where("m.id = ?", id).
-		First(&memory).Error
-	if err != nil {
+func (dao *MemoryDAO) GetWithOwnerNameByID(id string) (*model.MemoryListItem, error) {
+	querySQL := `
+		SELECT m.id, m.name, m.avatar, m.tenant_id, m.memory_type,
+			m.storage_type, m.embd_id, m.tenant_embd_id, m.llm_id, m.tenant_llm_id,
+			m.permissions, m.description, m.memory_size, m.forgetting_policy,
+			m.temperature, m.system_prompt, m.user_prompt, m.create_time, m.create_date,
+			m.update_time, m.update_date,
+			u.nickname as owner_name
+		FROM memory m
+		LEFT JOIN user u ON m.tenant_id = u.id
+		WHERE m.id = ?
+	`
+
+	var rawResult struct {
+		model.Memory
+		OwnerName *string `gorm:"column:owner_name"`
+	}
+
+	if err := DB.Raw(querySQL, id).Scan(&rawResult).Error; err != nil {
 		return nil, err
 	}
-	return &memory, nil
+
+	return &model.MemoryListItem{
+		Memory:    rawResult.Memory,
+		OwnerName: rawResult.OwnerName,
+	}, nil
 }
 
 // GetByFilter retrieves memories with optional filters
 // Supports filtering by tenant_id, memory_type, storage_type, and keywords
-// Returns paginated results
+// Returns paginated results with owner_name from user table JOIN
 //
 // Parameters:
 //   - tenantIDs: Array of tenant IDs to filter by (empty means all tenants)
@@ -274,43 +289,82 @@ func (dao *MemoryDAO) GetWithOwnerNameByID(id string) (*model.Memory, error) {
 //   - pageSize: Number of items per page
 //
 // Returns:
-//   - []*model.Memory: Memory model pointer array
+//   - []*model.MemoryListItem: Memory list items with owner name populated
 //   - int64: Total count of matching memories
 //   - error: Database operation error
 //
 // Example:
 //
 //	memories, total, err := dao.GetByFilter([]string{"tenant1"}, []string{"semantic"}, "table", "test", 1, 10)
-func (dao *MemoryDAO) GetByFilter(tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int) ([]*model.Memory, int64, error) {
-	query := DB.Table("memory m").
-		Select("m.*, u.nickname as owner_name").
-		Joins("LEFT JOIN user u ON m.tenant_id = u.id")
+func (dao *MemoryDAO) GetByFilter(tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int) ([]*model.MemoryListItem, int64, error) {
+	var conditions []string
+	var args []interface{}
 
 	if len(tenantIDs) > 0 {
-		query = query.Where("m.tenant_id IN ?", tenantIDs)
+		conditions = append(conditions, "m.tenant_id IN ?")
+		args = append(args, tenantIDs)
 	}
 
 	if len(memoryTypes) > 0 {
 		memoryTypeInt := CalculateMemoryType(memoryTypes)
-		query = query.Where("m.memory_type & ? > 0", memoryTypeInt)
+		conditions = append(conditions, "m.memory_type & ? > 0")
+		args = append(args, memoryTypeInt)
 	}
 
 	if storageType != "" {
-		query = query.Where("m.storage_type = ?", storageType)
+		conditions = append(conditions, "m.storage_type = ?")
+		args = append(args, storageType)
 	}
 
 	if keywords != "" {
-		query = query.Where("m.name LIKE ?", "%"+keywords+"%")
+		conditions = append(conditions, "m.name LIKE ?")
+		args = append(args, "%"+keywords+"%")
 	}
 
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = "WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM memory m %s", whereClause)
 	var total int64
-	countQuery := query
-	if err := countQuery.Count(&total).Error; err != nil {
+	if err := DB.Raw(countSQL, args...).Scan(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	var memories []*model.Memory
 	offset := (page - 1) * pageSize
-	err := query.Order("m.update_time DESC").Offset(offset).Limit(pageSize).Find(&memories).Error
-	return memories, total, err
+	querySQL := fmt.Sprintf(`
+		SELECT m.id, m.name, m.avatar, m.tenant_id, m.memory_type,
+			m.storage_type, m.embd_id, m.tenant_embd_id, m.llm_id, m.tenant_llm_id,
+			m.permissions, m.description, m.memory_size, m.forgetting_policy,
+			m.temperature, m.system_prompt, m.user_prompt, m.create_time, m.create_date,
+			m.update_time, m.update_date,
+			u.nickname as owner_name
+		FROM memory m
+		LEFT JOIN user u ON m.tenant_id = u.id
+		%s
+		ORDER BY m.update_time DESC
+		LIMIT ? OFFSET ?
+	`, whereClause)
+
+	queryArgs := append(args, pageSize, offset)
+
+	var rawResults []struct {
+		model.Memory
+		OwnerName *string `gorm:"column:owner_name"`
+	}
+
+	if err := DB.Raw(querySQL, queryArgs...).Scan(&rawResults).Error; err != nil {
+		return nil, 0, err
+	}
+
+	memories := make([]*model.MemoryListItem, len(rawResults))
+	for i, r := range rawResults {
+		memories[i] = &model.MemoryListItem{
+			Memory:    r.Memory,
+			OwnerName: r.OwnerName,
+		}
+	}
+
+	return memories, total, nil
 }
