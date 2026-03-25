@@ -12,8 +12,10 @@
 5. [Health Checks](#health-checks)
 6. [Corporate Network (Kaspersky SSL)](#corporate-network-kaspersky-ssl)
 7. [API Usage](#api-usage)
-8. [GCP Production Deployment](#gcp-production-deployment)
-9. [Upgrading](#upgrading)
+8. [YouTube Video Ingestion](#youtube-video-ingestion)
+9. [GCP Production Deployment](#gcp-production-deployment)
+10. [Development Workflow](#development-workflow)
+11. [Upgrading](#upgrading)
 
 ---
 
@@ -56,7 +58,7 @@ wsl --shutdown
 cd ~
 git clone https://github.com/R-Oussama-INFOMINEO/ragflow.git
 cd ragflow
-git checkout local/v0.24.0-infinity
+git checkout feature/youtube-ingestion
 ```
 
 ### 3. Pull images and start the stack
@@ -66,6 +68,12 @@ cd docker
 docker compose -f docker-compose.yml pull
 docker compose -f docker-compose.yml up -d
 ```
+
+> The stack uses the custom image `ragflow-stellantis:v0.24.0` defined in `docker/.env`.
+> If this image is not available locally, build it first:
+> ```bash
+> cd ~/ragflow && docker build -f Dockerfile.custom -t ragflow-stellantis:v0.24.0 .
+> ```
 
 ### 4. Apply the embedding model fix (run once after first start)
 
@@ -100,7 +108,7 @@ All configuration lives in `docker/.env`. Key settings for this deployment:
 | Setting | Value | Notes |
 |---|---|---|
 | `DOC_ENGINE` | `infinity` | Vector DB backend (not Elasticsearch) |
-| `RAGFLOW_IMAGE` | `infiniflow/ragflow:v0.24.0` | Pinned release |
+| `RAGFLOW_IMAGE` | `ragflow-stellantis:v0.24.0` | Custom image with video ingestion baked in |
 | `COMPOSE_PROFILES` | includes `tei-cpu` | Enables local CPU embedding |
 | `TEI_MODEL` | `BAAI/bge-small-en-v1.5` | CPU-friendly, ~1.2GB RAM |
 | `DOC_BULK_SIZE` | `4` | Chunk commit batch size |
@@ -175,6 +183,21 @@ then access the UI at `http://localhost:8080`.
 
 ---
 
+### Fix 4 — Custom image not found
+
+**Symptom:** Stack fails to start with `pull access denied for ragflow-stellantis`.
+
+**Cause:** The custom image hasn't been built locally yet.
+
+**Fix:**
+```bash
+cd ~/ragflow && docker build -f Dockerfile.custom -t ragflow-stellantis:v0.24.0 .
+```
+
+This takes 2–3 minutes and layers on top of `infiniflow/ragflow:v0.24.0`.
+
+---
+
 ## Health Checks
 
 Run after stack startup to verify all services:
@@ -194,6 +217,14 @@ docker logs --tail=5 docker-tei-cpu-1 | grep -E "Ready|Error"
 
 # Infinity
 docker inspect docker-infinity-1 --format='{{.State.Health.Status}}'
+
+# Video parser registration
+docker exec docker-ragflow-cpu-1 /ragflow/.venv/bin/python3 -c "
+from common.constants import ParserType
+from rag.svr.task_executor import FACTORY
+assert ParserType.VIDEO.value in FACTORY
+print('Video parser: OK')
+" 2>&1 | grep "Video parser"
 ```
 
 ---
@@ -203,6 +234,9 @@ docker inspect docker-infinity-1 --format='{{.State.Health.Status}}'
 If your machine uses Kaspersky Endpoint Security with SSL inspection
 (common in corporate environments), the RagFlow container cannot reach
 external APIs (Gemini, HuggingFace) without trusting the Kaspersky CA certificate.
+
+> ⚠️ The SSL fix is only needed for **LLM/chat calls** (Gemini API).
+> YouTube transcript ingestion does NOT require the SSL fix.
 
 ### Export the certificate (Windows PowerShell)
 
@@ -303,6 +337,205 @@ for chunk in response.json()["data"]["chunks"]:
 
 ---
 
+## YouTube Video Ingestion
+
+This deployment includes a custom YouTube transcript ingestion pipeline built on top of RagFlow v0.24.0.
+
+### Architecture
+
+```
+YouTube URL
+    │
+    ▼
+POST /api/v1/datasets/{id}/videos          ← new endpoint
+    │
+    ▼
+task_executor.py (parser_id="video")
+    │  bypasses MinIO — no file upload
+    ▼
+rag/app/video.py
+    │  youtube-transcript-api → 315 raw cues
+    │  merge into 60-second overlapping segments
+    │  tokenize via rag_tokenizer
+    ▼
+TEI embedding (BAAI/bge-small-en-v1.5@Builtin)
+    ▼
+Infinity vector store
+    │  stores: youtube_url, video_id, video_title,
+    │          timestamp_seconds, transcript_segment
+    ▼
+POST /api/v1/retrieval
+    │  returns all video metadata fields per chunk
+    ▼
+chunk with timestamp deep-link (&t=60s)
+```
+
+### Files modified / created
+
+| File | Change |
+|---|---|
+| `common/constants.py` | Added `ParserType.VIDEO = "video"` |
+| `rag/app/video.py` | New parser — transcript download, segmentation, tokenization |
+| `rag/svr/task_executor.py` | Registered video parser in FACTORY; bypass MinIO for video tasks |
+| `rag/nlp/search.py` | Added video fields to Infinity retrieval field list and response dict |
+| `api/apps/sdk/dataset.py` | New `POST /datasets/{id}/videos` endpoint |
+| `api/apps/sdk/doc.py` | Extended `Chunk` model and both serializers with video fields |
+| `api/utils/validation_utils.py` | Added `"video"` to `chunk_method` validator |
+| `api/utils/api_utils.py` | Added `"video": None` to `get_parser_config` map |
+| `api/db/init_data.py` | Added `video:Video` to tenant `parser_ids` |
+| `conf/infinity_mapping.json` | Added 5 video columns to Infinity schema |
+| `Dockerfile.custom` | Custom image layer — bakes in all changes + youtube-transcript-api |
+
+### Step-by-step ingestion workflow
+
+**Step 1 — Create a video dataset**
+
+```bash
+API_KEY="your_api_key"
+
+curl -s -X POST "http://localhost:9380/api/v1/datasets" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Car_Reviews",
+    "chunk_method": "video",
+    "embedding_model": "BAAI/bge-small-en-v1.5@Builtin"
+  }' | python3 -m json.tool
+```
+
+Save the returned `id` as `DATASET_ID`.
+
+**Step 2 — Ingest a YouTube video**
+
+```bash
+curl -s -X POST "http://localhost:9380/api/v1/datasets/${DATASET_ID}/videos" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.youtube.com/watch?v=VIDEO_ID",
+    "title": "Human-readable title for this video"
+  }' | python3 -m json.tool
+```
+
+Save the returned `id` as `DOC_ID`.
+
+**Step 3 — Trigger processing**
+
+```bash
+curl -s -X POST "http://localhost:9380/api/v1/datasets/${DATASET_ID}/chunks" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d "{\"document_ids\": [\"${DOC_ID}\"]}" | python3 -m json.tool
+```
+
+Processing takes 10–30 seconds. Monitor with:
+```bash
+docker logs docker-ragflow-cpu-1 --tail=5 -f 2>&1 | grep -i "done\|fail\|video"
+```
+
+**Step 4 — Query with timestamp deep-links**
+
+```bash
+curl -s -X POST "http://localhost:9380/api/v1/retrieval" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"question\": \"engine performance and fuel economy\",
+    \"dataset_ids\": [\"${DATASET_ID}\"],
+    \"similarity_threshold\": 0.1,
+    \"top_n\": 3
+  }" | python3 -m json.tool
+```
+
+### Retrieval response fields
+
+Each chunk in the retrieval response includes these video-specific fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `youtube_url` | string | Original YouTube URL |
+| `video_id` | string | 11-character YouTube video ID |
+| `video_title` | string | Title provided at ingestion time |
+| `timestamp_seconds` | integer | Start time of this segment in the video |
+| `transcript_segment` | string | Deep-link URL (`&t=Xs`) to jump to exact moment |
+
+### Example retrieval response (video chunk)
+
+```json
+{
+  "content": "it rides on the stellantis CMP platform which is shared with the Peugeot 208...",
+  "document_keyword": "https://www.youtube.com/watch?v=QFzEVtY_1lQ",
+  "youtube_url": "https://www.youtube.com/watch?v=QFzEVtY_1lQ",
+  "video_id": "QFzEVtY_1lQ",
+  "video_title": "Vauxhall Corsa 2024 review",
+  "timestamp_seconds": 121,
+  "transcript_segment": "https://www.youtube.com/watch?v=QFzEVtY_1lQ&t=121s",
+  "similarity": 0.699,
+  "positions": []
+}
+```
+
+### Python ingestion helper
+
+```python
+import requests
+
+BASE_URL = "http://localhost:9380"
+API_KEY = "your_api_key"
+HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+
+def create_video_dataset(name: str) -> str:
+    resp = requests.post(f"{BASE_URL}/api/v1/datasets", headers=HEADERS, json={
+        "name": name,
+        "chunk_method": "video",
+        "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
+    })
+    return resp.json()["data"]["id"]
+
+def ingest_video(dataset_id: str, url: str, title: str) -> str:
+    resp = requests.post(
+        f"{BASE_URL}/api/v1/datasets/{dataset_id}/videos",
+        headers=HEADERS,
+        json={"url": url, "title": title},
+    )
+    doc_id = resp.json()["data"][0]["id"]
+    # trigger processing
+    requests.post(
+        f"{BASE_URL}/api/v1/datasets/{dataset_id}/chunks",
+        headers=HEADERS,
+        json={"document_ids": [doc_id]},
+    )
+    return doc_id
+
+def retrieve(dataset_id: str, question: str, top_n: int = 5) -> list:
+    resp = requests.post(f"{BASE_URL}/api/v1/retrieval", headers=HEADERS, json={
+        "question": question,
+        "dataset_ids": [dataset_id],
+        "similarity_threshold": 0.1,
+        "top_n": top_n,
+    })
+    return resp.json()["data"]["chunks"]
+
+# Usage
+ds_id = create_video_dataset("Car_Reviews")
+ingest_video(ds_id, "https://www.youtube.com/watch?v=QFzEVtY_1lQ", "Vauxhall Corsa 2024 review")
+
+# Wait for processing, then query
+chunks = retrieve(ds_id, "engine performance")
+for c in chunks:
+    print(f"[{c['timestamp_seconds']}s] {c['content'][:100]}")
+    print(f"  Watch: {c['transcript_segment']}")
+```
+
+### Requirements and constraints
+
+- Videos must have English captions (manual or auto-generated)
+- `youtube-transcript-api` is baked into `ragflow-stellantis:v0.24.0` — no manual install needed
+- The dataset must be created with `chunk_method: "video"` — the UI dropdown does not show `video` (UI is hardcoded); always use the API
+- On GCP with `bge-m3`, re-index from scratch — `parser_id` stays `"video"`, no code changes needed
+
+---
+
 ## GCP Production Deployment
 
 > 🚧 This section will be updated after GCP deployment is completed.
@@ -311,6 +544,7 @@ for chunk in response.json()["data"]["chunks"]:
 
 | Setting | Local value | GCP value |
 |---|---|---|
+| `RAGFLOW_IMAGE` | `ragflow-stellantis:v0.24.0` | rebuild from `Dockerfile.custom` on GCP |
 | `TEI_MODEL` | `BAAI/bge-small-en-v1.5` | `BAAI/bge-m3` |
 | `COMPOSE_PROFILES` | `tei-cpu` | `tei-gpu` |
 | `DOC_BULK_SIZE` | `4` | `16` (higher throughput) |
@@ -328,12 +562,58 @@ from scratch on the GCP instance. Do not migrate data volumes from local to GCP.
 ### GCP prerequisites (to be documented)
 
 - [ ] GCP project with required APIs enabled
-- [ ] Terraform service account with appropriate IAM roles
+- [ ] Terraform service account with appropriate IAM roles (`stellantis-terraform-sa@stellantis-490509.iam.gserviceaccount.com`)
 - [ ] Gemini API key (restricted to Generative Language API)
 - [ ] GCS bucket for Terraform state (optional)
 - [ ] VM instance with GPU support (for bge-m3 embedding)
 - [ ] Docker and Docker Compose installed on GCP VM
 - [ ] Firewall rules for ports 80, 443, 9380
+- [ ] Build `ragflow-stellantis:v0.24.0` image on the GCP VM
+
+---
+
+## Development Workflow
+
+### Making code changes
+
+When modifying Python source files, the container must be restarted to pick up changes. Use the helper script:
+
+```bash
+bash docker/deploy-local.sh
+```
+
+This restarts the container and re-copies all modified source files in one command.
+
+### Rebuilding the custom Docker image
+
+After significant changes that should be permanent (not just for a session):
+
+```bash
+cd ~/ragflow
+docker build -f Dockerfile.custom -t ragflow-stellantis:v0.24.0 .
+```
+
+Then restart the stack:
+```bash
+cd docker && docker compose -f docker-compose.yml down && docker compose -f docker-compose.yml up -d
+```
+
+### Files tracked by deploy-local.sh
+
+The script re-copies these files on every deploy:
+
+```
+common/constants.py
+rag/app/video.py
+rag/svr/task_executor.py
+rag/nlp/search.py
+api/apps/sdk/dataset.py
+api/apps/sdk/doc.py
+api/utils/validation_utils.py
+api/utils/api_utils.py
+api/db/init_data.py
+conf/infinity_mapping.json
+```
 
 ---
 
@@ -353,16 +633,18 @@ git tag | grep v0
 # Create a new branch for the new version
 git checkout -b local/v0.XX.0-infinity upstream/v0.XX.0
 
+# Cherry-pick our video ingestion commits onto the new base
+git cherry-pick af81ef57a..e2802acea
+
 # Re-apply your .env changes
 cp docker/.env.backup docker/.env
-# Then manually re-apply the configuration changes
+# Update RAGFLOW_IMAGE to new version, rebuild custom image
 
 # Push to your fork
 git push origin local/v0.XX.0-infinity
 ```
 
-> Never merge directly into `main` — keep your custom branch separate
-> so upstream changes are easy to track.
+> The video ingestion commits are isolated and additive — they should cherry-pick cleanly onto any future v0.2X release with minimal conflicts.
 
 ---
 
@@ -386,8 +668,11 @@ docker logs -f docker-infinity-1      # Vector DB
 
 # Check disk usage
 docker system df
+
+# Re-deploy source files without full rebuild (dev only)
+bash docker/deploy-local.sh
 ```
 
 ---
 
-*Last updated: March 2026 | RagFlow v0.24.0 | Branch: `local/v0.24.0-infinity`*
+*Last updated: March 2026 | RagFlow v0.24.0 | Branch: `feature/youtube-ingestion`*
