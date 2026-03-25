@@ -373,6 +373,11 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.UnsetToken(cmd)
 	case "show_version":
 		return c.ShowServerVersion(cmd)
+	// ContextEngine commands
+	case "ce_ls":
+		return c.CEList(cmd)
+	case "ce_search":
+		return c.CESearch(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
@@ -583,4 +588,140 @@ func (r *KeyValueResponse) PrintOut() {
 		fmt.Println("ERROR")
 		fmt.Printf("%d\n", r.Code)
 	}
+}
+
+// ==================== ContextEngine Commands ====================
+
+// CEListResponse represents the response for ls command
+type CEListResponse struct {
+	Code         int                      `json:"code"`
+	Data         []map[string]interface{} `json:"data"`
+	Message      string                   `json:"message"`
+	Duration     float64
+	outputFormat OutputFormat
+}
+
+func (r *CEListResponse) Type() string { return "ce_ls" }
+func (r *CEListResponse) TimeCost() float64 { return r.Duration }
+func (r *CEListResponse) SetOutputFormat(format OutputFormat) { r.outputFormat = format }
+func (r *CEListResponse) PrintOut() {
+	if r.Code == 0 {
+		PrintTableSimpleByFormat(r.Data, r.outputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+// CEList handles the ls command - lists datasets (currently only supports datasets)
+func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
+	path, _ := cmd.Params["path"].(string)
+
+	// Build query params
+	queryParams := ""
+	if path != "" && path != "." {
+		queryParams = "?path=" + path
+	}
+
+	// Try web auth (LoginToken) first, then api auth (APIToken)
+	var resp *Response
+	var err error
+	if c.HTTPClient.LoginToken != "" {
+		resp, err = c.HTTPClient.Request("GET", "/contextfs/ls"+queryParams, true, "web", nil, nil)
+	} else if c.HTTPClient.APIToken != "" {
+		resp, err = c.HTTPClient.Request("GET", "/contextfs/ls"+queryParams, true, "api", nil, nil)
+	} else {
+		return nil, fmt.Errorf("no authentication token available")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var result CEListResponse
+	result.outputFormat = c.OutputFormat
+	result.Duration = resp.Duration
+
+	var jsonResp struct {
+		Code    int                    `json:"code"`
+		Data    []map[string]interface{} `json:"data"`
+		Message string                 `json:"message"`
+	}
+	if err := json.Unmarshal(resp.Body, &jsonResp); err != nil {
+		return nil, err
+	}
+
+	result.Code = jsonResp.Code
+	result.Message = jsonResp.Message
+	result.Data = jsonResp.Data
+
+	return &result, nil
+}
+
+// CESearchResponse represents the response for search command
+type CESearchResponse struct {
+	Code         int                      `json:"code"`
+	Data         []map[string]interface{} `json:"data"`
+	Total        int                      `json:"total"`
+	Message      string                   `json:"message"`
+	Duration     float64
+	outputFormat OutputFormat
+}
+
+func (r *CESearchResponse) Type() string { return "ce_search" }
+func (r *CESearchResponse) TimeCost() float64 { return r.Duration }
+func (r *CESearchResponse) SetOutputFormat(format OutputFormat) { r.outputFormat = format }
+func (r *CESearchResponse) PrintOut() {
+	if r.Code == 0 {
+		fmt.Printf("Found %d results:\n", r.Total)
+		PrintTableSimpleByFormat(r.Data, r.outputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+// CESearch handles the search command
+func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
+	query, _ := cmd.Params["query"].(string)
+	path, _ := cmd.Params["path"].(string)
+
+	reqBody := map[string]interface{}{
+		"query": query,
+		"path":  path,
+	}
+
+	// Try web auth (LoginToken) first, then api auth (APIToken)
+	var resp *Response
+	var err error
+	if c.HTTPClient.LoginToken != "" {
+		resp, err = c.HTTPClient.Request("POST", "/contextfs/search", true, "web", nil, reqBody)
+	} else if c.HTTPClient.APIToken != "" {
+		resp, err = c.HTTPClient.Request("POST", "/contextfs/search", true, "api", nil, reqBody)
+	} else {
+		return nil, fmt.Errorf("no authentication token available")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var result CESearchResponse
+	result.outputFormat = c.OutputFormat
+	result.Duration = resp.Duration
+
+	var jsonResp struct {
+		Code    int                      `json:"code"`
+		Data    []map[string]interface{} `json:"data"`
+		Total   int                      `json:"total"`
+		Message string                   `json:"message"`
+	}
+	if err := json.Unmarshal(resp.Body, &jsonResp); err != nil {
+		return nil, err
+	}
+
+	result.Code = jsonResp.Code
+	result.Message = jsonResp.Message
+	result.Data = jsonResp.Data
+	result.Total = jsonResp.Total
+
+	return &result, nil
 }

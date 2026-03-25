@@ -18,9 +18,11 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
-	"unicode"
 )
+
+const maxColWidth = 256
 
 // PrintTableSimple prints data in a simple table format (default: table format with borders)
 // Similar to Python's _print_table_simple
@@ -30,6 +32,10 @@ func PrintTableSimple(data []map[string]interface{}) {
 
 // PrintTableSimpleByFormat prints data in the specified format
 // Supports: table (with borders), plain (no borders, space-separated), json (reserved)
+// - Column names in lowercase
+// - Two spaces between columns
+// - Numeric columns right-aligned
+// - URI/path columns not truncated
 func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat) {
 	if len(data) == 0 {
 		if format == OutputFormatPlain {
@@ -62,16 +68,40 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 		}
 	}
 
-	// Calculate column widths
+	// Analyze columns: check if numeric and if URI column
+	colIsNumeric := make(map[string]bool)
+	colIsURI := make(map[string]bool)
+	for _, col := range columns {
+		colLower := strings.ToLower(col)
+		if colLower == "uri" || colLower == "path" || colLower == "id" {
+			colIsURI[col] = true
+		}
+		// Check if all values are numeric
+		isNumeric := true
+		for _, item := range data {
+			if val, ok := item[col]; ok {
+				if !isNumericValue(val) {
+					isNumeric = false
+					break
+				}
+			}
+		}
+		colIsNumeric[col] = isNumeric
+	}
+
+	// Calculate column widths (capped at maxColWidth)
 	colWidths := make(map[string]int)
 	for _, col := range columns {
-		maxWidth := getStringWidth(col)
+		maxWidth := getStringWidth(strings.ToLower(col))
 		for _, item := range data {
-			value := fmt.Sprintf("%v", item[col])
+			value := formatValue(item[col])
 			valueWidth := getStringWidth(value)
 			if valueWidth > maxWidth {
 				maxWidth = valueWidth
 			}
+		}
+		if maxWidth > maxColWidth {
+			maxWidth = maxColWidth
 		}
 		if maxWidth < 2 {
 			maxWidth = 2
@@ -80,11 +110,12 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 	}
 
 	if format == OutputFormatPlain {
-		// Plain mode: no borders, space-separated (similar to ov CLI)
-		// Print header
+		// Plain mode: no borders, space-separated (ov CLI compatible)
+		// Print header (lowercase column names, right-aligned for numeric columns)
 		headerParts := make([]string, 0, len(columns))
 		for _, col := range columns {
-			headerParts = append(headerParts, padCell(col, colWidths[col], false))
+			// Header follows the same alignment as data (right-aligned for numeric columns)
+			headerParts = append(headerParts, padCell(strings.ToLower(col), colWidths[col], colIsNumeric[col]))
 		}
 		fmt.Println(strings.Join(headerParts, "  "))
 
@@ -92,17 +123,23 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 		for _, item := range data {
 			rowParts := make([]string, 0, len(columns))
 			for _, col := range columns {
-				value := fmt.Sprintf("%v", item[col])
-				valueWidth := getStringWidth(value)
-				// Truncate if too long
-				if valueWidth > colWidths[col] {
-					runes := []rune(value)
-					truncated := truncateString(runes, colWidths[col])
-					value = truncated
-					valueWidth = getStringWidth(value)
+				value := formatValue(item[col])
+				isURI := colIsURI[col]
+				isNumeric := colIsNumeric[col]
+
+				// URI columns: never truncate, no padding if too long
+				if isURI && getStringWidth(value) > colWidths[col] {
+					rowParts = append(rowParts, value)
+				} else {
+					// Normal cell: truncate if too long, then pad
+					valueWidth := getStringWidth(value)
+					if valueWidth > colWidths[col] {
+						runes := []rune(value)
+						value = truncateStringByWidth(runes, colWidths[col])
+						valueWidth = getStringWidth(value)
+					}
+					rowParts = append(rowParts, padCell(value, colWidths[col], isNumeric))
 				}
-				// Pad to column width
-				rowParts = append(rowParts, padCell(value, colWidths[col], false))
 			}
 			fmt.Println(strings.Join(rowParts, "  "))
 		}
@@ -128,13 +165,12 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 		for _, item := range data {
 			rowParts := make([]string, 0, len(columns))
 			for _, col := range columns {
-				value := fmt.Sprintf("%v", item[col])
+				value := formatValue(item[col])
 				valueWidth := getStringWidth(value)
 				// Truncate if too long
 				if valueWidth > colWidths[col] {
 					runes := []rune(value)
-					truncated := truncateString(runes, colWidths[col])
-					value = truncated
+					value = truncateStringByWidth(runes, colWidths[col])
 					valueWidth = getStringWidth(value)
 				}
 				// Pad to column width
@@ -146,6 +182,63 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 
 		fmt.Println(separator)
 	}
+}
+
+// formatValue formats a value for display
+func formatValue(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	switch val := v.(type) {
+	case string:
+		return val
+	case int:
+		return strconv.Itoa(val)
+	case int64:
+		return strconv.FormatInt(val, 10)
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(val)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+// isNumericValue checks if a value is numeric
+func isNumericValue(v interface{}) bool {
+	if v == nil {
+		return false
+	}
+	switch val := v.(type) {
+	case int, int8, int16, int32, int64:
+		return true
+	case uint, uint8, uint16, uint32, uint64:
+		return true
+	case float32, float64:
+		return true
+	case string:
+		_, err := strconv.ParseFloat(val, 64)
+		return err == nil
+	default:
+		return false
+	}
+}
+
+// truncateStringByWidth truncates a string to fit within maxWidth display width
+func truncateStringByWidth(runes []rune, maxWidth int) string {
+	width := 0
+	for i, r := range runes {
+		if isHalfWidth(r) {
+			width++
+		} else {
+			width += 2
+		}
+		if width > maxWidth-3 {
+			return string(runes[:i]) + "..."
+		}
+	}
+	return string(runes)
 }
 
 // padCell pads a string to the specified width for alignment
@@ -187,34 +280,4 @@ func isHalfWidth(r rune) bool {
 	return false
 }
 
-// truncateString truncates a string to fit within maxWidth display width
-func truncateString(runes []rune, maxWidth int) string {
-	width := 0
-	for i, r := range runes {
-		if isHalfWidth(r) {
-			width++
-		} else {
-			width += 2
-		}
-		if width > maxWidth-3 {
-			return string(runes[:i]) + "..."
-		}
-	}
-	return string(runes)
-}
 
-// getMax returns the maximum of two integers
-func getMax(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-// isWideChar checks if a character is wide (CJK, etc.)
-func isWideChar(r rune) bool {
-	return unicode.Is(unicode.Han, r) ||
-		unicode.Is(unicode.Hiragana, r) ||
-		unicode.Is(unicode.Katakana, r) ||
-		unicode.Is(unicode.Hangul, r)
-}

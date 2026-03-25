@@ -19,6 +19,7 @@ package router
 import (
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/contextfs"
 	"ragflow/internal/handler"
 )
 
@@ -158,12 +159,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 			}
 
-			// Author routes
-			authors := v1.Group("/authors")
-			{
-				authors.GET("/:author_id/documents", r.documentHandler.GetDocumentsByAuthorID)
-			}
+		// Author routes
+		authors := v1.Group("/authors")
+		{
+			authors.GET("/:author_id/documents", r.documentHandler.GetDocumentsByAuthorID)
 		}
+
+		// ContextFS routes - ContextEngine filesystem API
+		contextfsHandler := contextfs.NewHandler()
+		contextfsHandler.RegisterRoutes(v1)
+	}
 
 		// Knowledge base routes
 		kb := authorized.Group("/v1/kb")
