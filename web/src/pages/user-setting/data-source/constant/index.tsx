@@ -243,7 +243,7 @@ export const DataSourceFormFields = {
       required: false,
       validation: {
         min: 1,
-        message: 'Batch Size must be greater than 0',
+        message: 'Batch Size must be at least 1',
       },
     },
   ],

@@ -7,8 +7,6 @@ from types import ModuleType
 
 import pytest
 
-pytest.importorskip("feedparser")
-
 import common
 
 repo_root = Path(__file__).resolve().parents[3]
