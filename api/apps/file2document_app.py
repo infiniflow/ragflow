@@ -88,7 +88,7 @@ async def convert():
 
         # Validate all files exist before starting any work
         for file_id in file_ids:
-            if file_id not in files_set:
+            if not files_set.get(file_id):
                 return get_data_error_result(message="File not found!")
 
         # Validate all kb_ids exist before scheduling background work

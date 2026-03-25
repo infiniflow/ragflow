@@ -230,7 +230,7 @@ def _load_user_app(monkeypatch):
             return True
 
         @staticmethod
-        def get_api_key(tenant_id, model_name):
+        def get_api_key(tenant_id, model_name, model_type=None):
             return _MockTableObject(
                 id=1,
                 tenant_id=tenant_id,
