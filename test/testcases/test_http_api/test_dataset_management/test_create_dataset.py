@@ -23,7 +23,7 @@ from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
 
-from test_http_api.common import create_dataset
+from test_http_api.common import create_dataset, delete_all_datasets
 
 
 @pytest.mark.usefixtures("clear_datasets")
@@ -94,8 +94,9 @@ class TestDatasetCreate:
     @pytest.mark.p1
     @given(name=valid_names())
     @example("a" * 128)
-    @settings(max_examples=20)
+    @settings(max_examples=20, deadline=None)
     def test_name(self, HttpApiAuth, name):
+        delete_all_datasets(HttpApiAuth)
         res = create_dataset(HttpApiAuth, {"name": name})
         assert res["code"] == 0, res
         assert res["data"]["name"] == name, res
