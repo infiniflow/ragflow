@@ -3,25 +3,36 @@ import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { useBuildQueryVariableOptions } from '@/pages/agent/hooks/use-get-begin-query';
 import { toLower } from 'lodash';
-import { useEffect, useMemo, useState } from 'react';
-import { useFormContext } from 'react-hook-form';
+import { useMemo } from 'react';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { RAGFlowAvatar } from './ragflow-avatar';
 import { FormControl, FormField, FormItem, FormLabel } from './ui/form';
-import { MultiSelect, MultiSelectOptionType } from './ui/multi-select';
+import { MultiSelect } from './ui/multi-select';
 
 function buildQueryVariableOptionsByShowVariable(showVariable?: boolean) {
   return showVariable ? useBuildQueryVariableOptions : () => [];
 }
 
-export function useDisableDifferenceEmbeddingDataset() {
-  const [datasetOptions, setDatasetOptions] = useState<MultiSelectOptionType[]>(
-    [],
+function DatasetLabel({ text }: { text: string }) {
+  return (
+    <div className="text-xs px-3 p-1 bg-bg-card text-text-secondary rounded-lg border border-bg-card">
+      {text}
+    </div>
   );
-  const [datasetSelectEmbedId, setDatasetSelectEmbedId] = useState('');
-  const { list: datasetListOrigin } = useFetchKnowledgeList(true);
+}
 
-  useEffect(() => {
+export function useDisableDifferenceEmbeddingDataset(name: string) {
+  const { list: datasetListOrigin } = useFetchKnowledgeList(true);
+  const form = useFormContext();
+  const datasetId = useWatch({ name, control: form.control });
+
+  const selectedEmbedId = useMemo(() => {
+    const data = datasetListOrigin?.find((item) => item.id === datasetId?.[0]);
+    return data?.embedding_model ?? '';
+  }, [datasetId, datasetListOrigin]);
+
+  const nextOptions = useMemo(() => {
     const datasetListMap = datasetListOrigin
       .filter((x) => x.chunk_method !== DocumentParserType.Tag)
       .map((item: IKnowledge) => {
@@ -35,48 +46,38 @@ export function useDisableDifferenceEmbeddingDataset() {
             />
           ),
           suffix: (
-            <div className="text-xs px-4 p-1 bg-bg-card text-text-secondary rounded-lg border border-bg-card">
-              {item.embedding_model}
-            </div>
+            <section className="flex gap-2">
+              <DatasetLabel text={item.nickname} />
+              <DatasetLabel text={item.embedding_model} />
+            </section>
           ),
           value: item.id,
           disabled:
-            item.embedding_model !== datasetSelectEmbedId &&
-            datasetSelectEmbedId !== '',
+            item.embedding_model !== selectedEmbedId && selectedEmbedId !== '',
         };
       });
-    setDatasetOptions(datasetListMap);
-  }, [datasetListOrigin, datasetSelectEmbedId]);
 
-  const handleDatasetSelectChange = (
-    value: string[],
-    onChange: (value: string[]) => void,
-  ) => {
-    if (value.length) {
-      const data = datasetListOrigin?.find((item) => item.id === value[0]);
-      setDatasetSelectEmbedId(data?.embedding_model ?? '');
-    } else {
-      setDatasetSelectEmbedId('');
-    }
-    onChange?.(value);
-  };
+    return datasetListMap;
+  }, [datasetListOrigin, selectedEmbedId]);
 
   return {
-    datasetOptions,
-    handleDatasetSelectChange,
+    datasetOptions: nextOptions,
   };
 }
 
 export function KnowledgeBaseFormField({
   showVariable = false,
+  name = 'kb_ids',
+  required = false,
 }: {
   showVariable?: boolean;
+  name: string;
+  required?: boolean;
 }) {
   const form = useFormContext();
   const { t } = useTranslation();
 
-  const { datasetOptions, handleDatasetSelectChange } =
-    useDisableDifferenceEmbeddingDataset();
+  const { datasetOptions } = useDisableDifferenceEmbeddingDataset(name);
 
   const nextOptions = buildQueryVariableOptionsByShowVariable(showVariable)();
 
@@ -114,19 +115,17 @@ export function KnowledgeBaseFormField({
   return (
     <FormField
       control={form.control}
-      name="kb_ids"
+      name={name}
       render={({ field }) => (
         <FormItem>
-          <FormLabel tooltip={t('chat.knowledgeBasesTip')}>
+          <FormLabel tooltip={t('chat.knowledgeBasesTip')} required={required}>
             {t('chat.knowledgeBases')}
           </FormLabel>
           <FormControl>
             <MultiSelect
               data-testid="chat-datasets-combobox"
               options={options}
-              onValueChange={(value) => {
-                handleDatasetSelectChange(value, field.onChange);
-              }}
+              onValueChange={field.onChange}
               placeholder={t('chat.knowledgeBasesPlaceholder')}
               variant="inverted"
               maxCount={100}

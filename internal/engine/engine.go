@@ -49,8 +49,10 @@ type DocEngine interface {
 	// Document operations
 	IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error
 	BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error)
-	GetDocument(ctx context.Context, indexName, docID string) (interface{}, error)
 	DeleteDocument(ctx context.Context, indexName, docID string) error
+
+    // Chunk operations
+    GetChunk(ctx context.Context, indexName, chunkID string, kbIDs []string) (interface{}, error)
 
 	// Health check
 	Ping(ctx context.Context) error
