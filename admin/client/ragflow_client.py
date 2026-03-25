@@ -63,7 +63,7 @@ class RAGFlowClient:
             print("Can't access server for login (connection failed)")
             return
 
-        email : str = command["email"]
+        email: str = command["email"]
         user_password = getpass.getpass(f"password for {email}: ").strip()
         try:
             token = login_user(self.http_client, self.server_type, email, user_password)
@@ -597,7 +597,8 @@ class RAGFlowClient:
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
         license = command["license"]
-        response = self.http_client.request("POST", "/admin/license", json_body={"license": license}, use_api_base=True, auth_kind="admin")
+        response = self.http_client.request("POST", "/admin/license", json_body={"license": license}, use_api_base=True,
+                                            auth_kind="admin")
         res_json = response.json()
         if response.status_code == 200:
             print("Set license successfully")
@@ -609,7 +610,9 @@ class RAGFlowClient:
             print("This command is only allowed in ADMIN mode")
         value1 = command["value1"]
         value2 = command["value2"]
-        response = self.http_client.request("POST", "/admin/license/config", json_body={"value1": value1, "value2": value2}, use_api_base=True, auth_kind="admin")
+        response = self.http_client.request("POST", "/admin/license/config",
+                                            json_body={"value1": value1, "value2": value2}, use_api_base=True,
+                                            auth_kind="admin")
         res_json = response.json()
         if response.status_code == 200:
             print("Set license successfully")
@@ -635,7 +638,6 @@ class RAGFlowClient:
             print(res_json["data"])
         else:
             print(f"Fail to show license, code: {res_json['code']}, message: {res_json['message']}")
-
 
     def list_server_configs(self, command):
         """List server configs by calling /system/configs API and flattening the JSON response."""
@@ -825,6 +827,130 @@ class RAGFlowClient:
             return
         self._print_table_simple(res_json)
 
+    def list_user_dataset_documents(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+
+        dataset_name = command_dict["dataset_name"]
+        dataset_id = self._get_dataset_id(dataset_name)
+        if dataset_id is None:
+            return
+
+        docs = self._list_documents(dataset_name, dataset_id)
+        if docs is None:
+            return
+
+        if not docs:
+            print(f"No documents found in dataset {dataset_name}")
+            return
+
+        print(f"Documents in dataset: {dataset_name}")
+        print("-" * 60)
+        # Select key fields for display
+        display_docs = []
+        for doc in docs:
+            meta_fields = doc.get("meta_fields", {})
+            # Convert meta_fields dict to string for display
+            meta_fields_str = ""
+            if meta_fields:
+                meta_fields_str = str(meta_fields)
+            display_doc = {
+                "name": doc.get("name", ""),
+                "id": doc.get("id", ""),
+                "size": doc.get("size", 0),
+                "status": doc.get("status", ""),
+                "created_at": doc.get("created_at", ""),
+            }
+            if meta_fields_str:
+                display_doc["meta_fields"] = meta_fields_str
+            display_docs.append(display_doc)
+        self._print_table_simple(display_docs)
+
+    def list_user_datasets_metadata(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        dataset_names = command_dict["dataset_names"]
+        valid_datasets = []
+        for dataset_name in dataset_names:
+            dataset_id = self._get_dataset_id(dataset_name)
+            if dataset_id is None:
+                print(f"Dataset not found: {dataset_name}")
+                continue
+            valid_datasets.append((dataset_name, dataset_id))
+
+        if not valid_datasets:
+            print("No valid datasets found")
+            return
+
+        dataset_ids = [dataset_id for _, dataset_id in valid_datasets]
+        kb_ids_param = ",".join(dataset_ids)
+        response = self.http_client.request("GET", f"/kb/get_meta?kb_ids={kb_ids_param}",
+                                            use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code != 200:
+            print(f"Fail to get metadata, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            return
+
+        meta = res_json.get("data", {})
+        if not meta:
+            print("No metadata found")
+            return
+
+        table_data = []
+        for field_name, values_dict in meta.items():
+            for value, docs in values_dict.items():
+                table_data.append({
+                    "field": field_name,
+                    "value": value,
+                    "doc_ids": ", ".join(docs)
+                })
+        self._print_table_simple(table_data)
+
+    def list_user_documents_metadata_summary(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        dataset_name = command_dict["dataset_name"]
+        doc_ids = command_dict.get("document_ids", [])
+
+        kb_id = self._get_dataset_id(dataset_name)
+        if kb_id is None:
+            return
+
+        payload = {"kb_id": kb_id}
+        if doc_ids:
+            payload["doc_ids"] = doc_ids
+        response = self.http_client.request("POST", "/document/metadata/summary", json_body=payload,
+                                            use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            summary = res_json.get("data", {}).get("summary", {})
+            if not summary:
+                if doc_ids:
+                    print(f"No metadata summary found for documents: {', '.join(doc_ids)}")
+                else:
+                    print(f"No metadata summary found in dataset {dataset_name}")
+                return
+            if doc_ids:
+                print(f"Metadata summary for document(s): {', '.join(doc_ids)}")
+            else:
+                print(f"Metadata summary for all documents in dataset: {dataset_name}")
+            print("-" * 60)
+            for field_name, field_info in summary.items():
+                field_type = field_info.get("type", "unknown")
+                values = field_info.get("values", [])
+                print(f"\nField: {field_name} (type: {field_type})")
+                print(f"  Total unique values: {len(values)}")
+                if values:
+                    print("  Values:")
+                    for value, count in values:
+                        print(f"    {value}: {count}")
+        else:
+            print(f"Fail to get metadata summary, code: {res_json.get('code')}, message: {res_json.get('message')}")
+
     def list_user_agents(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
@@ -1013,7 +1139,8 @@ class RAGFlowClient:
         if response.status_code == 200 and res_json["code"] == 0:
             print(f"Success to create chat session for chat: {chat_name}")
         else:
-            print(f"Fail to create chat session for chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to create chat session for chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def drop_chat_session(self, command):
         if self.server_type != "user":
@@ -1040,7 +1167,8 @@ class RAGFlowClient:
         if response.status_code == 200 and res_json["code"] == 0:
             print(f"Success to drop chat session '{session_id}' from chat: {chat_name}")
         else:
-            print(f"Fail to drop chat session '{session_id}' from chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to drop chat session '{session_id}' from chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def list_chat_sessions(self, command):
         if self.server_type != "user":
@@ -1094,7 +1222,8 @@ class RAGFlowClient:
             try:
                 data_json = json.loads(data_str)
                 if data_json.get("code") != 0:
-                    print(f"\nFail to chat on session, code: {data_json.get('code')}, message: {data_json.get('message', '')}")
+                    print(
+                        f"\nFail to chat on session, code: {data_json.get('code')}, message: {data_json.get('message', '')}")
                     return
                 # Check if it's the final message
                 if data_json.get("data") is True:
@@ -1305,6 +1434,61 @@ class RAGFlowClient:
                 print(
                     f"Fail to search datasets: {dataset_names}, code: {res_json['code']}, message: {res_json['message']}")
 
+    def get_chunk(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        chunk_id = command_dict["chunk_id"]
+        response = self.http_client.request("GET", f"/chunk/get?chunk_id={chunk_id}", use_api_base=False,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            if res_json["code"] == 0:
+                self._print_key_value(res_json["data"])
+            else:
+                print(f"Fail to get chunk, code: {res_json['code']}, message: {res_json['message']}")
+        else:
+            print(f"Fail to get chunk, code: {res_json['code']}, message: {res_json['message']}")
+
+    def list_chunks(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        doc_id = command_dict["doc_id"]
+        payload = {
+            "doc_id": doc_id,
+        }
+
+        # Add optional parameters (only if explicitly provided)
+        if "page" in command_dict:
+            payload["page"] = command_dict["page"]
+        if "size" in command_dict:
+            payload["size"] = command_dict["size"]
+        if "keywords" in command_dict and command_dict["keywords"]:
+            payload["keywords"] = command_dict["keywords"]
+        if "available_int" in command_dict:
+            payload["available_int"] = command_dict["available_int"]
+
+        response = self.http_client.request("POST", "/chunk/list", json_body=payload, use_api_base=False,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            if res_json["code"] == 0:
+                chunks = res_json["data"]["chunks"]
+                if chunks:
+                    for i, chunk in enumerate(chunks):
+                        print(f"\n--- Chunk {i+1} ---")
+                        for key, value in chunk.items():
+                            print(f"  {key}: {value}")
+                else:
+                    print("No chunks found")
+            else:
+                print(f"Fail to list chunks, code: {res_json['code']}, message: {res_json['message']}")
+        else:
+            print(f"Fail to list chunks, code: {res_json['code']}, message: {res_json['message']}")
+
     def show_version(self, command):
         if self.server_type == "admin":
             response = self.http_client.request("GET", "/admin/version", use_api_base=True, auth_kind="admin")
@@ -1489,6 +1673,14 @@ class RAGFlowClient:
 
         print(separator)
 
+    def _print_key_value(self, data: dict):
+        """Print data as key-value pairs (one per line)"""
+        if not data:
+            print("No data to print")
+            return
+        for key, value in data.items():
+            print(f"{key}: {value}")
+
 
 def run_command(client: RAGFlowClient, command_dict: dict):
     command_type = command_dict["type"]
@@ -1598,6 +1790,12 @@ def run_command(client: RAGFlowClient, command_dict: dict):
             client.drop_user_dataset(command_dict)
         case "list_user_dataset_files":
             return client.list_user_dataset_files(command_dict)
+        case "list_user_dataset_documents":
+            return client.list_user_dataset_documents(command_dict)
+        case "list_user_datasets_metadata":
+            return client.list_user_datasets_metadata(command_dict)
+        case "list_user_documents_metadata_summary":
+            return client.list_user_documents_metadata_summary(command_dict)
         case "list_user_agents":
             return client.list_user_agents(command_dict)
         case "list_user_chats":
@@ -1626,6 +1824,10 @@ def run_command(client: RAGFlowClient, command_dict: dict):
             client.import_docs_into_dataset(command_dict)
         case "search_on_datasets":
             return client.search_on_datasets(command_dict)
+        case "get_chunk":
+            return client.get_chunk(command_dict)
+        case "list_chunks":
+            return client.list_chunks(command_dict)
         case "meta":
             _handle_meta_command(command_dict)
         case _:
@@ -1676,6 +1878,15 @@ REVOKE ADMIN <user>
 GENERATE KEY FOR USER <user>
 LIST KEYS OF <user>
 DROP KEY <key> OF <user>
+
+User Commands (use -t user):
+LIST DATASETS
+LIST DOCUMENTS OF DATASET <dataset>
+SEARCH <query> ON DATASETS <dataset>
+LIST METADATA OF DATASETS <dataset>[, <dataset>]*
+LIST METADATA SUMMARY OF DATASET <dataset> DOCUMENTS <doc_id>[, <doc_id>]*
+GET CHUNK <chunk_id>
+LIST CHUNKS OF DOCUMENT <doc_id> [PAGE <page>] [SIZE <size>] [KEYWORDS <keywords>] [AVAILABLE <0|1>]
 
 Meta Commands:
 \\?, \\h, \\help     Show this help

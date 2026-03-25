@@ -77,6 +77,9 @@ sql_command: login_user
            | drop_user_dataset
            | list_user_datasets
            | list_user_dataset_files
+           | list_user_dataset_documents
+           | list_user_datasets_metadata
+           | list_user_documents_metadata_summary
            | list_user_agents
            | list_user_chats
            | create_user_chat
@@ -88,6 +91,8 @@ sql_command: login_user
            | parse_dataset_async
            | import_docs_into_dataset
            | search_on_datasets
+           | get_chunk
+           | list_chunks
            | create_chat_session
            | drop_chat_session
            | list_chat_sessions
@@ -161,10 +166,15 @@ DEFAULT: "DEFAULT"i
 CHATS: "CHATS"i
 CHAT: "CHAT"i
 FILES: "FILES"i
+DOCUMENT: "DOCUMENT"i
+DOCUMENTS: "DOCUMENTS"i
+METADATA: "METADATA"i
+SUMMARY: "SUMMARY"i
 AS: "AS"i
 PARSE: "PARSE"i
 IMPORT: "IMPORT"i
 INTO: "INTO"i
+IN: "IN"i
 WITH: "WITH"i
 PARSER: "PARSER"i
 PIPELINE: "PIPELINE"i
@@ -187,6 +197,13 @@ FINGERPRINT: "FINGERPRINT"i
 LICENSE: "LICENSE"i
 CHECK: "CHECK"i
 CONFIG: "CONFIG"i
+CHUNK: "CHUNK"i
+CHUNKS: "CHUNKS"i
+GET: "GET"i
+PAGE: "PAGE"i
+SIZE: "SIZE"i
+KEYWORDS: "KEYWORDS"i
+AVAILABLE: "AVAILABLE"i
 
 login_user: LOGIN USER quoted_string ";"
 list_services: LIST SERVICES ";"
@@ -299,6 +316,9 @@ create_user_dataset_with_parser: CREATE DATASET quoted_string WITH EMBEDDING quo
 create_user_dataset_with_pipeline: CREATE DATASET quoted_string WITH EMBEDDING quoted_string PIPELINE quoted_string ";" 
 drop_user_dataset: DROP DATASET quoted_string ";"
 list_user_dataset_files: LIST FILES OF DATASET quoted_string ";"
+list_user_dataset_documents: LIST DOCUMENTS OF DATASET quoted_string ";"
+list_user_datasets_metadata: LIST METADATA OF DATASETS quoted_string ("," quoted_string)* ";"
+list_user_documents_metadata_summary: LIST METADATA SUMMARY OF DATASET quoted_string (DOCUMENTS quoted_string ("," quoted_string)*)? ";"
 list_user_agents: LIST AGENTS ";"
 list_user_chats: LIST CHATS ";"
 create_user_chat: CREATE CHAT quoted_string ";"
@@ -311,6 +331,8 @@ list_user_model_providers: LIST MODEL PROVIDERS ";"
 list_user_default_models: LIST DEFAULT MODELS ";"
 import_docs_into_dataset: IMPORT quoted_string INTO DATASET quoted_string ";"
 search_on_datasets: SEARCH quoted_string ON DATASETS quoted_string ";"
+get_chunk: GET CHUNK quoted_string ";"
+list_chunks: LIST CHUNKS OF DOCUMENT quoted_string ("PAGE" NUMBER)? ("SIZE" NUMBER)? ("KEYWORDS" quoted_string)? ("AVAILABLE" NUMBER)? ";"
 
 parse_dataset_docs: PARSE quoted_string OF DATASET quoted_string ";"
 parse_dataset_sync: PARSE DATASET quoted_string SYNC ";"
@@ -592,6 +614,28 @@ class RAGFlowCLITransformer(Transformer):
         dataset_name = items[4].children[0].strip("'\"")
         return {"type": "list_user_dataset_files", "dataset_name": dataset_name}
 
+    def list_user_dataset_documents(self, items):
+        dataset_name = items[4].children[0].strip("'\"")
+        return {"type": "list_user_dataset_documents", "dataset_name": dataset_name}
+
+    def list_user_datasets_metadata(self, items):
+        dataset_names = []
+        dataset_names.append(items[4].children[0].strip("'\""))
+        for i in range(5, len(items)):
+            if items[i] and hasattr(items[i], 'children') and items[i].children:
+                dataset_names.append(items[i].children[0].strip("'\""))
+        return {"type": "list_user_datasets_metadata", "dataset_names": dataset_names}
+
+    def list_user_documents_metadata_summary(self, items):
+        dataset_name = items[5].children[0].strip("'\"")
+        doc_ids = []
+        if len(items) > 6 and items[6] == "DOCUMENTS":
+            for i in range(7, len(items)):
+                if items[i] and hasattr(items[i], 'children') and items[i].children:
+                    doc_id = items[i].children[0].strip("'\"")
+                    doc_ids.append(doc_id)
+        return {"type": "list_user_documents_metadata_summary", "dataset_name": dataset_name, "document_ids": doc_ids}
+
     def list_user_agents(self, items):
         return {"type": "list_user_agents"}
 
@@ -665,6 +709,28 @@ class RAGFlowCLITransformer(Transformer):
             datasets = datasets[0]
             datasets = datasets.split(" ")
         return {"type": "search_on_datasets", "datasets": datasets, "question": question}
+
+    def get_chunk(self, items):
+        chunk_id = items[2].children[0].strip("'\"")
+        return {"type": "get_chunk", "chunk_id": chunk_id}
+
+    def list_chunks(self, items):
+        doc_id = items[4].children[0].strip("'\"")
+        result = {"type": "list_chunks", "doc_id": doc_id}
+
+        # Parse optional parameters: PAGE, SIZE, KEYWORDS, AVAILABLE
+        # items structure varies based on which params are present
+        for i, item in enumerate(items):
+            if str(item) == "PAGE":
+                result["page"] = int(items[i + 1])
+            elif str(item) == "SIZE":
+                result["size"] = int(items[i + 1])
+            elif str(item) == "KEYWORDS":
+                result["keywords"] = items[i + 1].children[0].strip("'\"")
+            elif str(item) == "AVAILABLE":
+                result["available_int"] = int(items[i + 1])
+
+        return result
 
     def benchmark(self, items):
         concurrency: int = int(items[1])

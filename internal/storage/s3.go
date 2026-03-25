@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"ragflow/internal/server"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -36,15 +37,13 @@ type S3Storage struct {
 	client     *s3.Client
 	bucket     string
 	prefixPath string
-	config     *S3Config
+	config     *server.S3Config
 }
 
 // NewS3Storage creates a new S3 storage instance
-func NewS3Storage(config *S3Config) (*S3Storage, error) {
+func NewS3Storage(config *server.S3Config) (*S3Storage, error) {
 	storage := &S3Storage{
-		bucket:     config.Bucket,
-		prefixPath: config.PrefixPath,
-		config:     config,
+		config: config,
 	}
 
 	if err := storage.connect(); err != nil {
@@ -65,10 +64,10 @@ func (s *S3Storage) connect() error {
 	}
 
 	// Configure credentials if provided
-	if s.config.AccessKeyID != "" && s.config.SecretAccessKey != "" {
+	if s.config.AccessKey != "" && s.config.SecretKey != "" {
 		creds := credentials.NewStaticCredentialsProvider(
-			s.config.AccessKeyID,
-			s.config.SecretAccessKey,
+			s.config.AccessKey,
+			s.config.SecretKey,
 			s.config.SessionToken,
 		)
 		opts = append(opts, config.WithCredentialsProvider(creds))

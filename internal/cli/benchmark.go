@@ -34,7 +34,7 @@ type BenchmarkResult struct {
 }
 
 // RunBenchmark runs a benchmark with the given concurrency and iterations
-func (c *RAGFlowClient) RunBenchmark(cmd *Command) error {
+func (c *RAGFlowClient) RunBenchmark(cmd *Command) (ResponseIf, error) {
 	concurrency, ok := cmd.Params["concurrency"].(int)
 	if !ok {
 		concurrency = 1
@@ -47,28 +47,25 @@ func (c *RAGFlowClient) RunBenchmark(cmd *Command) error {
 
 	nestedCmd, ok := cmd.Params["command"].(*Command)
 	if !ok {
-		return fmt.Errorf("benchmark command not found")
+		return nil, fmt.Errorf("benchmark command not found")
 	}
 
 	if concurrency < 1 {
-		return fmt.Errorf("concurrency must be greater than 0")
+		return nil, fmt.Errorf("concurrency must be greater than 0")
 	}
 
 	// Add iterations to the nested command
 	nestedCmd.Params["iterations"] = iterations
 
 	if concurrency == 1 {
-		return c.runBenchmarkSingle(concurrency, iterations, nestedCmd)
+		return c.runBenchmarkSingle(iterations, nestedCmd)
 	}
 	return c.runBenchmarkConcurrent(concurrency, iterations, nestedCmd)
 }
 
 // runBenchmarkSingle runs benchmark with single concurrency (sequential execution)
-func (c *RAGFlowClient) runBenchmarkSingle(concurrency, iterations int, nestedCmd *Command) error {
+func (c *RAGFlowClient) runBenchmarkSingle(iterations int, nestedCmd *Command) (*BenchmarkResponse, error) {
 	commandType := nestedCmd.Type
-
-	startTime := time.Now()
-	responseList := make([]*Response, 0, iterations)
 
 	// For search_on_datasets, convert dataset names to IDs first
 	if commandType == "search_on_datasets" && iterations > 1 {
@@ -79,7 +76,7 @@ func (c *RAGFlowClient) runBenchmarkSingle(concurrency, iterations int, nestedCm
 			name = strings.TrimSpace(name)
 			id, err := c.getDatasetID(name)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			datasetIDs = append(datasetIDs, id)
 		}
@@ -87,86 +84,67 @@ func (c *RAGFlowClient) runBenchmarkSingle(concurrency, iterations int, nestedCm
 	}
 
 	// Check if command supports native benchmark (iterations > 1)
-	supportsNative := false
 	if iterations > 1 {
 		result, err := c.ExecuteCommand(nestedCmd)
-		if err == nil && result != nil {
-			// Command supports benchmark natively
-			supportsNative = true
-			duration, _ := result["duration"].(float64)
-			respList, _ := result["response_list"].([]*Response)
-			responseList = respList
+		// convert result to BenchmarkResponse
+		benchmarkResponse := result.(*BenchmarkResponse)
+		benchmarkResponse.Concurrency = 1
+		return benchmarkResponse, err
+	}
 
-			// Calculate and print results
-			successCount := 0
-			for _, resp := range responseList {
-				if isSuccess(resp, commandType) {
-					successCount++
-				}
-			}
+	result, err := c.ExecuteCommand(nestedCmd)
+	if err != nil {
+		fmt.Printf("fail to execute: %s", commandType)
+		return nil, err
+	}
 
-			qps := float64(0)
-			if duration > 0 {
-				qps = float64(iterations) / duration
-			}
-
-			fmt.Printf("command: %s, Concurrency: %d, iterations: %d\n", commandType, concurrency, iterations)
-			fmt.Printf("total duration: %.4fs, QPS: %.2f, COMMAND_COUNT: %d, SUCCESS: %d, FAILURE: %d\n",
-				duration, qps, iterations, successCount, iterations-successCount)
-			return nil
+	var benchmarkResponse BenchmarkResponse
+	switch result.Type() {
+	case "common":
+		commonResponse := result.(*CommonResponse)
+		benchmarkResponse.Code = commonResponse.Code
+		benchmarkResponse.Duration = commonResponse.Duration
+		if commonResponse.Code == 0 {
+			benchmarkResponse.SuccessCount = 1
+		} else {
+			benchmarkResponse.FailureCount = 1
 		}
-	}
-
-	// Manual execution: run iterations times
-	if !supportsNative {
-		// Remove iterations param to avoid native benchmark
-		delete(nestedCmd.Params, "iterations")
-
-		for i := 0; i < iterations; i++ {
-			singleResult, err := c.ExecuteCommand(nestedCmd)
-			if err != nil {
-				// Command failed, add a failed response
-				responseList = append(responseList, &Response{StatusCode: 0})
-				continue
-			}
-
-			// For commands that return a single response (like ping with iterations=1)
-			if singleResult != nil {
-				if respList, ok := singleResult["response_list"].([]*Response); ok {
-					responseList = append(responseList, respList...)
-				}
-			} else {
-				// Command executed successfully but returned no data
-				// Mark as success for now
-				responseList = append(responseList, &Response{StatusCode: 200, Body: []byte("pong")})
-			}
+	case "simple":
+		simpleResponse := result.(*SimpleResponse)
+		benchmarkResponse.Code = simpleResponse.Code
+		benchmarkResponse.Duration = simpleResponse.Duration
+		if simpleResponse.Code == 0 {
+			benchmarkResponse.SuccessCount = 1
+		} else {
+			benchmarkResponse.FailureCount = 1
 		}
-	}
-
-	duration := time.Since(startTime).Seconds()
-
-	successCount := 0
-	for _, resp := range responseList {
-		if isSuccess(resp, commandType) {
-			successCount++
+	case "show":
+		dataResponse := result.(*CommonDataResponse)
+		benchmarkResponse.Code = dataResponse.Code
+		benchmarkResponse.Duration = dataResponse.Duration
+		if dataResponse.Code == 0 {
+			benchmarkResponse.SuccessCount = 1
+		} else {
+			benchmarkResponse.FailureCount = 1
 		}
+	case "data":
+		kvResponse := result.(*KeyValueResponse)
+		benchmarkResponse.Code = kvResponse.Code
+		benchmarkResponse.Duration = kvResponse.Duration
+		if kvResponse.Code == 0 {
+			benchmarkResponse.SuccessCount = 1
+		} else {
+			benchmarkResponse.FailureCount = 1
+		}
+	default:
+		return nil, fmt.Errorf("unsupported command type: %s", result.Type())
 	}
-
-	qps := float64(0)
-	if duration > 0 {
-		qps = float64(iterations) / duration
-	}
-
-	// Print results
-	fmt.Printf("command: %s, Concurrency: %d, iterations: %d\n", commandType, concurrency, iterations)
-	fmt.Printf("total duration: %.4fs, QPS: %.2f, COMMAND_COUNT: %d, SUCCESS: %d, FAILURE: %d\n",
-		duration, qps, iterations, successCount, iterations-successCount)
-
-	return nil
+	benchmarkResponse.Concurrency = 1
+	return &benchmarkResponse, nil
 }
 
 // runBenchmarkConcurrent runs benchmark with multiple concurrent workers
-func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Command) error {
+func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Command) (*BenchmarkResponse, error) {
 	results := make([]map[string]interface{}, concurrency)
 	var wg sync.WaitGroup
 
@@ -179,7 +157,7 @@ func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nest
 			name = strings.TrimSpace(name)
 			id, err := c.getDatasetID(name)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			datasetIDs = append(datasetIDs, id)
 		}
@@ -228,17 +206,15 @@ func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nest
 	}
 
 	totalCommands := iterations * concurrency
-	qps := float64(0)
-	if totalDuration > 0 {
-		qps = float64(totalCommands) / totalDuration
-	}
 
-	// Print results
-	fmt.Printf("command: %s, Concurrency: %d, iterations: %d\n", commandType, concurrency, iterations)
-	fmt.Printf("total duration: %.4fs, QPS: %.2f, COMMAND_COUNT: %d, SUCCESS: %d, FAILURE: %d\n",
-		totalDuration, qps, totalCommands, successCount, totalCommands-successCount)
+	var benchmarkResponse BenchmarkResponse
+	benchmarkResponse.Duration = totalDuration
+	benchmarkResponse.Code = 0
+	benchmarkResponse.SuccessCount = successCount
+	benchmarkResponse.FailureCount = totalCommands - successCount
+	benchmarkResponse.Concurrency = concurrency
 
-	return nil
+	return &benchmarkResponse, nil
 }
 
 // executeBenchmarkSilent executes a command for benchmark without printing output
@@ -250,7 +226,7 @@ func (c *RAGFlowClient) executeBenchmarkSilent(cmd *Command, iterations int) []*
 		var err error
 
 		switch cmd.Type {
-		case "ping_server":
+		case "ping":
 			resp, err = c.HTTPClient.Request("GET", "/system/ping", false, "web", nil, nil)
 		case "list_user_datasets":
 			resp, err = c.HTTPClient.Request("POST", "/kb/list", false, "web", nil, nil)
@@ -290,7 +266,7 @@ func isSuccess(resp *Response, commandType string) bool {
 	}
 
 	switch commandType {
-	case "ping_server":
+	case "ping":
 		return resp.StatusCode == 200 && string(resp.Body) == "pong"
 	case "list_user_datasets", "list_datasets", "search_on_datasets":
 		// Check status code and JSON response code for dataset commands

@@ -676,7 +676,7 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 	var userTenantCount int64
 	tx.Model(&model.UserTenant{}).Where("user_id = ?", user.ID).Count(&userTenantCount)
 	result.UserTenantCount = int(userTenantCount)
-	
+
 	// 15. Delete user-tenant relations
 	if delErr := tx.Unscoped().Where("user_id = ?", user.ID).Delete(&model.UserTenant{}); delErr.Error != nil {
 		logger.Warn("failed to delete user-tenant relations", zap.Error(delErr.Error))
@@ -868,20 +868,20 @@ func (s *Service) GetUserAgents(username string) ([]map[string]interface{}, erro
 
 // API Key methods
 
-// GetUserAPIKeys get user API keys
-func (s *Service) GetUserAPIKeys(username string) ([]map[string]interface{}, error) {
+// ListUserAPITokens get user API keys
+func (s *Service) ListUserAPITokens(username string) ([]map[string]interface{}, error) {
 	// TODO: Implement get API keys
 	return []map[string]interface{}{}, nil
 }
 
-// GenerateUserAPIKey generate API key for user
-func (s *Service) GenerateUserAPIKey(username string) (map[string]interface{}, error) {
+// GenerateUserAPIToken generate API key for user
+func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{}, error) {
 	// TODO: Implement generate API key
 	return map[string]interface{}{}, nil
 }
 
-// DeleteUserAPIKey delete user API key
-func (s *Service) DeleteUserAPIKey(username, key string) error {
+// DeleteUserAPIToken delete user API key
+func (s *Service) DeleteUserAPIToken(username, key string) error {
 	// TODO: Implement delete API key
 	return nil
 }
