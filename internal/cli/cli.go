@@ -163,8 +163,8 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	password := fs.String("w", "", "Superuser password")
 	key := fs.String("k", "", "API key for authentication")
 	_ = fs.String("f", "", "Path to config file (YAML format)") // Already parsed above
-	_ = fs.Bool("admin", false, "Run in admin mode (default)")
-	userMode := fs.Bool("user", false, "Run in user mode")
+	adminMode := fs.Bool("admin", false, "Run in admin mode (default)")
+	_ = fs.Bool("user", false, "Run in user mode")
 	username := fs.String("u", "", "Username (email). In admin mode defaults to admin@ragflow.io, in user mode required")
 
 	// Parse the arguments
@@ -173,7 +173,7 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	}
 
 	// Otherwise, use command line flags
-	return buildArgsFromFlags(host, port, password, key, userMode, username, fs.Args())
+	return buildArgsFromFlags(host, port, password, key, adminMode, username, fs.Args())
 }
 
 // buildArgsFromConfig builds ConnectionArgs from config file
@@ -223,7 +223,7 @@ func buildArgsFromConfig(config *ConfigFile, remainingArgs []string) (*Connectio
 }
 
 // buildArgsFromFlags builds ConnectionArgs from command line flags
-func buildArgsFromFlags(host *string, port *int, password *string, key *string, userMode *bool, username *string, remainingArgs []string) (*ConnectionArgs, error) {
+func buildArgsFromFlags(host *string, port *int, password *string, key *string, adminMode *bool, username *string, remainingArgs []string) (*ConnectionArgs, error) {
 	result := &ConnectionArgs{
 		Host:     *host,
 		Port:     *port,
@@ -233,24 +233,19 @@ func buildArgsFromFlags(host *string, port *int, password *string, key *string, 
 	}
 
 	// Determine mode
-	if *userMode {
-		result.Type = "user"
-	} else {
+	if *adminMode {
 		result.Type = "admin"
-	}
-
-	// Set default port based on type if not specified
-	if result.Port == -1 {
-		if result.Type == "admin" {
+		if result.Port == -1 {
 			result.Port = 9383
-		} else {
+		}
+		if result.Username == "" {
+			result.Username = "admin@ragflow.io"
+		}
+	} else {
+		result.Type = "user"
+		if result.Port == -1 {
 			result.Port = 9384
 		}
-	}
-
-	// Determine username based on mode
-	if result.Type == "admin" && result.Username == "" {
-		result.Username = "admin@ragflow.io"
 	}
 
 	// Get command from remaining args (no need for quotes or semicolon)
