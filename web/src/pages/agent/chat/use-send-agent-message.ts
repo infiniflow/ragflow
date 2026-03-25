@@ -26,7 +26,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
 import { AgentChatLogContext } from '../context';
@@ -272,6 +272,10 @@ export const useSendAgentMessage = ({
     removeFile,
   } = useSetUploadResponseData();
 
+  const [searchParams] = useSearchParams();
+
+  const userId = searchParams.get('userId');
+
   const { stopMessage } = useStopMessage();
 
   const stopConversation = useCallback(() => {
@@ -315,6 +319,10 @@ export const useSendAgentMessage = ({
         if (releaseMode) {
           params.release = releaseMode;
         }
+
+        if (userId) {
+          params.user_id = userId;
+        }
       }
 
       try {
@@ -341,12 +349,13 @@ export const useSendAgentMessage = ({
       beginParams,
       uploadResponseList,
       sessionId,
+      releaseMode,
+      userId,
       send,
       clearUploadResponseList,
       setValue,
       removeLatestMessage,
       refetch,
-      releaseMode,
     ],
   );
 

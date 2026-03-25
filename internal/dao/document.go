@@ -36,7 +36,7 @@ func (dao *DocumentDAO) Create(document *model.Document) error {
 // GetByID get document by ID
 func (dao *DocumentDAO) GetByID(id string) (*model.Document, error) {
 	var document model.Document
-	err := DB.Preload("Author").First(&document, "id = ?", id).Error
+	err := DB.First(&document, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -78,4 +78,41 @@ func (dao *DocumentDAO) List(offset, limit int) ([]*model.Document, int64, error
 
 	err := DB.Preload("Author").Offset(offset).Limit(limit).Find(&documents).Error
 	return documents, total, err
+}
+
+// ListByKBID list documents by knowledge base ID
+func (dao *DocumentDAO) ListByKBID(kbID string, offset, limit int) ([]*model.Document, int64, error) {
+	var documents []*model.Document
+	var total int64
+
+	if err := DB.Model(&model.Document{}).Where("kb_id = ?", kbID).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := DB.Where("kb_id = ?", kbID).Offset(offset).Limit(limit).Find(&documents).Error
+	return documents, total, err
+}
+
+// DeleteByTenantID deletes all documents by tenant ID (hard delete)
+func (dao *DocumentDAO) DeleteByTenantID(tenantID string) (int64, error) {
+	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&model.Document{})
+	return result.RowsAffected, result.Error
+}
+
+// GetAllDocIDsByKBIDs gets all document IDs by knowledge base IDs
+func (dao *DocumentDAO) GetAllDocIDsByKBIDs(kbIDs []string) ([]map[string]string, error) {
+	var docs []struct {
+		ID  string `gorm:"column:id"`
+		KbID string `gorm:"column:kb_id"`
+	}
+	err := DB.Model(&model.Document{}).Select("id, kb_id").Where("kb_id IN ?", kbIDs).Find(&docs).Error
+	if err != nil {
+		return nil, err
+	}
+	
+	result := make([]map[string]string, len(docs))
+	for i, doc := range docs {
+		result[i] = map[string]string{"id": doc.ID, "kb_id": doc.KbID}
+	}
+	return result, nil
 }

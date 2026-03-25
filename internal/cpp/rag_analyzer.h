@@ -121,7 +121,8 @@ private:
             std::vector<std::vector<std::pair<std::string, int>>>& token_list,
             std::vector<std::string>& best_tokens,
             double& max_score,
-            bool memo_all) const;
+            bool memo_all,
+            int depth = 0) const;
 
     void TokenizeInner(std::vector<std::string>& res, const std::string& L) const;
 
@@ -135,7 +136,7 @@ public:
     [[nodiscard]] std::vector<std::pair<std::vector<std::string_view>, double>> GetBestTokensTopN(
         std::string_view chars, uint32_t n) const;
 
-    static const size_t term_string_buffer_limit_ = 4096 * 3;
+    static constexpr size_t term_string_buffer_limit_ = 4096 * 3;
 
     std::string dict_path_;
 
@@ -150,6 +151,8 @@ public:
     std::unique_ptr<Stemmer> stemmer_;
 
     OpenCC* opencc_{nullptr};
+
+    mutable std::vector<char> lowercase_string_buffer_;
 
     bool fine_grained_{false};
 

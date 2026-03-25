@@ -494,12 +494,14 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     retriever = settings.retriever
     questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
-    attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else []
+    attachments = None
+    if "doc_ids" in kwargs:
+        attachments = [doc_id for doc_id in kwargs["doc_ids"].split(",") if doc_id]
     attachments_= ""
     image_attachments = []
     image_files = []
     if "doc_ids" in messages[-1]:
-        attachments = messages[-1]["doc_ids"]
+        attachments = [doc_id for doc_id in messages[-1]["doc_ids"] if doc_id]
     if "files" in messages[-1]:
         if llm_type == "chat":
             text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
@@ -559,7 +561,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     kbinfos = {"total": 0, "chunks": [], "doc_aggs": []}
     knowledges = []
 
-    if attachments is not None and "knowledge" in param_keys:
+    if "knowledge" in param_keys:
         logging.debug("Proceeding with retrieval")
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         knowledges = []

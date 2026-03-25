@@ -1,7 +1,6 @@
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { MessageType } from '@/constants/chat';
-import { LanguageTranslationMap } from '@/constants/common';
 import { FormInstance } from '@/interfaces/antd-compat';
 import { Pagination } from '@/interfaces/common';
 import { ResponseType } from '@/interfaces/database/base';
@@ -56,9 +55,9 @@ export const useChangeLanguage = () => {
   const { saveSetting } = useSaveSetting();
 
   const changeLanguage = (lng: string) => {
-    const targetLng =
-      LanguageTranslationMap[lng as keyof typeof LanguageTranslationMap];
-    changeLanguageAsync(targetLng);
+    // const targetLng = LanguageTranslationMap[lng as keyof typeof LanguageTranslationMap];
+
+    changeLanguageAsync(lng);
     saveSetting({ language: lng });
   };
 

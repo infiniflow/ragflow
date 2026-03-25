@@ -3,8 +3,10 @@ import {
   useResetAgent,
   useSetAgent,
 } from '@/hooks/use-agent-request';
-import { GlobalVariableType } from '@/interfaces/database/agent';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import {
+  GlobalVariableType,
+  RAGFlowNodeType,
+} from '@/interfaces/database/agent';
 import { formatDate } from '@/utils/date';
 import { useDebounceEffect } from 'ahooks';
 import { useCallback, useEffect, useState } from 'react';

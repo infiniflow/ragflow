@@ -181,7 +181,7 @@ def set_tenant_info():
     return None
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_create_branches(monkeypatch):
     module = _load_kb_module(monkeypatch)
 
@@ -211,7 +211,7 @@ def test_create_branches(monkeypatch):
     assert "save boom" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_update_branches(monkeypatch):
     module = _load_kb_module(monkeypatch)
     update_route = _unwrap_route(module.update)
@@ -326,7 +326,7 @@ def test_update_branches(monkeypatch):
     assert "update boom" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_update_metadata_setting_not_found(monkeypatch):
     module = _load_kb_module(monkeypatch)
     _set_request_json(monkeypatch, module, {"kb_id": "missing-kb", "metadata": {}})
@@ -336,7 +336,7 @@ def test_update_metadata_setting_not_found(monkeypatch):
     assert "Database error" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_detail_branches(monkeypatch):
     module = _load_kb_module(monkeypatch)
 
@@ -380,7 +380,7 @@ def test_detail_branches(monkeypatch):
     assert "detail boom" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_list_kbs_owner_ids_and_desc(monkeypatch):
     module = _load_kb_module(monkeypatch)
 
@@ -414,7 +414,7 @@ def test_list_kbs_owner_ids_and_desc(monkeypatch):
     assert "list boom" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_rm_and_rm_sync_branches(monkeypatch):
     module = _load_kb_module(monkeypatch)
 
@@ -491,7 +491,7 @@ def test_rm_and_rm_sync_branches(monkeypatch):
     assert "rm boom" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_tags_and_meta_branches(monkeypatch):
     module = _load_kb_module(monkeypatch)
 
@@ -560,7 +560,7 @@ def test_tags_and_meta_branches(monkeypatch):
     assert res["data"]["finished"] == 1, res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_knowledge_graph_branches(monkeypatch):
     module = _load_kb_module(monkeypatch)
 
@@ -636,7 +636,7 @@ def test_knowledge_graph_branches(monkeypatch):
     assert res["data"] is True, res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_list_pipeline_logs_validation_branches(monkeypatch):
     module = _load_kb_module(monkeypatch)
 
@@ -681,7 +681,7 @@ def test_list_pipeline_logs_validation_branches(monkeypatch):
     assert "Create data filter is abnormal." in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_list_pipeline_logs_filter_and_exception_branches(monkeypatch):
     module = _load_kb_module(monkeypatch)
 
@@ -718,7 +718,7 @@ def test_list_pipeline_logs_filter_and_exception_branches(monkeypatch):
     assert "logs boom" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_list_pipeline_dataset_logs_branches(monkeypatch):
     module = _load_kb_module(monkeypatch)
 
@@ -792,7 +792,7 @@ def test_list_pipeline_dataset_logs_branches(monkeypatch):
     assert "dataset logs boom" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_pipeline_log_detail_and_delete_routes_branches(monkeypatch):
     module = _load_kb_module(monkeypatch)
 
@@ -841,7 +841,7 @@ def test_pipeline_log_detail_and_delete_routes_branches(monkeypatch):
     assert res["data"]["id"] == "log-1", res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 @pytest.mark.parametrize(
     "route_name,task_attr,response_key,task_type",
     [
@@ -914,7 +914,7 @@ def test_run_pipeline_task_routes_branch_matrix(monkeypatch, route_name, task_at
     assert queue_calls["doc_ids"] == ["doc-1", "doc-2"], queue_calls
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 @pytest.mark.parametrize(
     "route_name,task_attr,empty_on_missing_task,error_text",
     [
@@ -970,7 +970,7 @@ def test_trace_pipeline_task_routes_branch_matrix(monkeypatch, route_name, task_
     assert res["data"]["id"] == "task-1", res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_unbind_task_branch_matrix(monkeypatch):
     module = _load_kb_module(monkeypatch)
     route = inspect.unwrap(module.delete_kb_task)
@@ -1060,10 +1060,15 @@ def test_unbind_task_branch_matrix(monkeypatch):
     assert "cannot delete task" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_check_embedding_similarity_threshold_matrix_unit(monkeypatch):
     module = _load_kb_module(monkeypatch)
     route = inspect.unwrap(module.check_embedding)
+    monkeypatch.setattr(
+        module,
+        "get_model_config_by_type_and_name",
+        lambda *_args, **_kwargs: {"llm_factory": "test", "llm_name": "emb-1", "model_type": module.LLMType.EMBEDDING.value},
+    )
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, SimpleNamespace(tenant_id="tenant-1")))
     monkeypatch.setattr(module.search, "index_name", lambda _tenant_id: "idx")
 
@@ -1224,10 +1229,15 @@ def test_check_embedding_similarity_threshold_matrix_unit(monkeypatch):
     assert res["data"]["summary"]["avg_cos_sim"] > 0.9, res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_check_embedding_error_and_empty_sample_paths_unit(monkeypatch):
     module = _load_kb_module(monkeypatch)
     route = inspect.unwrap(module.check_embedding)
+    monkeypatch.setattr(
+        module,
+        "get_model_config_by_type_and_name",
+        lambda *_args, **_kwargs: {"llm_factory": "test", "llm_name": "emb-1", "model_type": module.LLMType.EMBEDDING.value},
+    )
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, SimpleNamespace(tenant_id="tenant-1")))
     monkeypatch.setattr(module.search, "index_name", lambda _tenant_id: "idx")
     monkeypatch.setattr(module.random, "sample", lambda population, k: list(population)[:k])

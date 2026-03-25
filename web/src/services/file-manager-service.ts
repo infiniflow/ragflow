@@ -6,7 +6,6 @@ const {
   listFile,
   removeFile,
   uploadFile,
-  renameFile,
   getAllParentFolder,
   createFolder,
   connectFileToKnowledge,
@@ -23,14 +22,10 @@ const methods = {
   },
   removeFile: {
     url: removeFile,
-    method: 'post',
+    method: 'delete',
   },
   uploadFile: {
     url: uploadFile,
-    method: 'post',
-  },
-  renameFile: {
-    url: renameFile,
     method: 'post',
   },
   getAllParentFolder: {

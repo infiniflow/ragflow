@@ -1,4 +1,4 @@
-import { IGraph } from '@/interfaces/database/flow';
+import { IGraph } from '@/interfaces/database/agent';
 import { useCallback } from 'react';
 import useGraphStore from '../store';
 

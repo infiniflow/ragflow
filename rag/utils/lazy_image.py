@@ -6,7 +6,7 @@ from PIL import Image
 from rag.nlp import concat_img
 
 
-class LazyDocxImage:
+class LazyImage:
     def __init__(self, blobs, source=None):
         self._blobs = [b for b in (blobs or []) if b]
         self.source = source
@@ -31,7 +31,7 @@ class LazyDocxImage:
             try:
                 image = Image.open(BytesIO(blob)).convert("RGB")
             except Exception as e:
-                logging.info(f"LazyDocxImage: skip bad image blob: {e}")
+                logging.info(f"LazyImage: skip bad image blob: {e}")
                 continue
 
             if res_img is None:
@@ -91,33 +91,36 @@ class LazyDocxImage:
     @staticmethod
     def merge(a, b):
         """
-        Merge two LazyDocxImage instances by combining their blob lists.
+        Merge two LazyImage instances by combining their blob lists.
         """
-        a_blobs = a._blobs if isinstance(a, LazyDocxImage) else []
-        b_blobs = b._blobs if isinstance(b, LazyDocxImage) else []
+        a_blobs = a._blobs if isinstance(a, LazyImage) else []
+        b_blobs = b._blobs if isinstance(b, LazyImage) else []
         combined = a_blobs + b_blobs
         if not combined:
             return None
-        merged = LazyDocxImage(combined)
+        merged = LazyImage(combined)
         return merged
+
+
+LazyDocxImage = LazyImage
 
 
 def ensure_pil_image(img):
     if isinstance(img, Image.Image):
         return img
-    if isinstance(img, LazyDocxImage):
+    if isinstance(img, LazyImage):
         return img.to_pil()
     return None
 
 
 def is_image_like(img):
-    return isinstance(img, Image.Image) or isinstance(img, LazyDocxImage)
+    return isinstance(img, Image.Image) or isinstance(img, LazyImage)
 
 
 def open_image_for_processing(img, *, allow_bytes=False):
     if isinstance(img, Image.Image):
         return img, False
-    if isinstance(img, LazyDocxImage):
+    if isinstance(img, LazyImage):
         return img.to_pil_detached(), True
     if allow_bytes and isinstance(img, (bytes, bytearray)):
         try:

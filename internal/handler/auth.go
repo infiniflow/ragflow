@@ -17,8 +17,11 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/logger"
+	"ragflow/internal/server/local"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -53,18 +56,33 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		// Get user by access token
 		user, code, err := h.userService.GetUserByToken(token)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"code":    code,
-				"message": "Invalid access token",
-			})
-			c.Abort()
-			return
+			user, code, err = h.userService.GetUserByAPIToken(token)
+			if err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"code":    code,
+					"message": "Invalid access token",
+				})
+				c.Abort()
+				return
+			}
 		}
 
 		if *user.IsSuperuser {
 			c.JSON(http.StatusForbidden, gin.H{
 				"code":    common.CodeForbidden,
-				"message": "Super user should access the URL",
+				"message": "Super user shouldn't access the URL",
+			})
+			return
+		}
+
+		if !local.IsAdminAvailable() {
+			license := local.GetAdminStatus()
+			errMsg := fmt.Sprintf("server license %s", license.Reason)
+			logger.Warn(errMsg)
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"code":    common.CodeUnauthorized,
+				"message": errMsg,
+				"data":    "No",
 			})
 			return
 		}
@@ -74,8 +92,4 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		c.Set("email", user.Email)
 		c.Next()
 	}
-}
-
-func (h *AuthHandler) LoginByEmail1(c *gin.Context) {
-	println("hello")
 }

@@ -522,15 +522,21 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_unfinished_docs(cls):
-        fields = [cls.model.id, cls.model.process_begin_at, cls.model.parser_config, cls.model.progress_msg, cls.model.run, cls.model.parser_id]
-        unfinished_task_query = Task.select(Task.doc_id).where((Task.progress >= 0) & (Task.progress < 1))
+        fields = [cls.model.id, cls.model.process_begin_at, cls.model.parser_config, cls.model.progress_msg,
+                  cls.model.run, cls.model.parser_id]
+        unfinished_task_query = Task.select(Task.doc_id).where(
+            (Task.progress >= 0) & (Task.progress < 1)
+        )
+        docs_with_non_failed_tasks = Task.select(Task.doc_id).where(Task.progress >= 0).distinct()
 
         docs = cls.model.select(*fields).where(
             cls.model.status == StatusEnum.VALID.value,
             ~(cls.model.type == FileType.VIRTUAL.value),
             ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value)),
-            (((cls.model.progress < 1) & (cls.model.progress > 0)) | (cls.model.id.in_(unfinished_task_query))),
-        )  # including unfinished tasks like GraphRAG, RAPTOR and Mindmap
+            (((cls.model.progress < 1) & (cls.model.progress > 0)) |
+             (cls.model.id.in_(unfinished_task_query)) |
+             ((cls.model.progress == -1) & (cls.model.run == TaskStatus.FAIL.value) &
+              (cls.model.id.in_(docs_with_non_failed_tasks)))))  # including GraphRAG/RAPTOR/Mindmap; re-sync failed docs
         return list(docs.dicts())
 
     @classmethod
@@ -850,6 +856,8 @@ class DocumentService(CommonService):
                 elif finished:
                     prg = 1
                     status = TaskStatus.DONE.value
+                elif not finished:
+                    status = TaskStatus.RUNNING.value
 
                 # only for special task and parsed docs and unfinished
                 freeze_progress = special_task_running and doc_progress >= 1 and not finished

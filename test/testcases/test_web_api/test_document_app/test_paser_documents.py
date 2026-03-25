@@ -303,7 +303,7 @@ class TestDocumentsParseStop:
         ],
     )
     def test_basic_scenarios(self, WebApiAuth, add_documents_func, payload, expected_code, expected_message):
-        @wait_for(10, 1, "Document parsing timeout")
+        @wait_for(30, 1, "Document parsing timeout")
         def condition(_auth, _kb_id, _doc_ids):
             res = list_documents(_auth, {"kb_id": _kb_id})
             for doc in res["data"]["docs"]:

@@ -1785,21 +1785,26 @@ class RAGFlowPdfParser:
                     logging.debug("No valid local positions for table/figure; skip insertion.")
                     continue
 
-                bboxes = [(i, (b["page_number"], b["x0"], b["x1"], b["top"], b["bottom"])) for i, b in enumerate(self.boxes)]
-                dists = [
-                    (min_rectangle_distance((pn, left, right, top + self.page_cum_height[pn], bott + self.page_cum_height[pn]), rect), i)
-                    for i, rect in bboxes
-                    for pn, left, right, top, bott in local_poss
-                ]
-                min_i = np.argmin(dists, axis=0)[0]
-                min_i, rect = bboxes[dists[min_i][-1]]
                 if isinstance(txt, list):
                     txt = "\n".join(txt)
                 pn, left, right, top, bott = local_poss[0]
-                if self.boxes[min_i]["bottom"] < top + self.page_cum_height[pn]:
-                    min_i += 1
+                insert_at = len(self.boxes)
+                bboxes = [(i, (b["page_number"], b["x0"], b["x1"], b["top"], b["bottom"])) for i, b in enumerate(self.boxes)]
+                if bboxes:
+                    dists = [
+                        (min_rectangle_distance((cand_pn, cand_left, cand_right, cand_top + self.page_cum_height[cand_pn], cand_bott + self.page_cum_height[cand_pn]), rect), i)
+                        for i, rect in bboxes
+                        for cand_pn, cand_left, cand_right, cand_top, cand_bott in local_poss
+                    ]
+                    if dists:
+                        nearest_bbox_idx = int(np.argmin([dist for dist, _ in dists]))
+                        insert_at, _ = bboxes[dists[nearest_bbox_idx][-1]]
+                        if self.boxes[insert_at]["bottom"] < top + self.page_cum_height[pn]:
+                            insert_at += 1
+                else:
+                    logging.debug("No text boxes available; append %s block directly.", layout_type)
                 self.boxes.insert(
-                    min_i,
+                    insert_at,
                     {
                         "page_number": pn + 1,
                         "x0": left,

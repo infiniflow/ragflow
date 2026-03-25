@@ -288,22 +288,25 @@ class AsanaAPI:
         project_emails = set()
 
         for pid in project_ids:
+            pid = pid.strip()
+            if not pid:
+                continue
             project = self.project_api.get_project(
                 pid,
                 opts={"opt_fields": "team,privacy_setting"}
             )
 
-            if project["privacy_setting"] == "private":
+            if project.get("privacy_setting") == "private":
                 if team_id and project.get("team", {}).get("gid") != team_id:
                     continue
 
-            memberships = self.project_memberships_api.get_project_membership(
+            memberships = self.project_memberships_api.get_project_memberships_for_project(
                 pid,
                 opts={"opt_fields": "user.gid,user.email"}
             )
 
             for m in memberships:
-                email = m["user"].get("email")
+                email = (m.get("user") or {}).get("email")
                 if email:
                     project_emails.add(email)
 
@@ -338,9 +341,11 @@ class AsanaConnector(LoadConnector, PollConnector):
     ) -> None:
         self.workspace_id = asana_workspace_id
         self.project_ids_to_index: list[str] | None = (
-            asana_project_ids.split(",") if asana_project_ids else None
+            [project_id.strip() for project_id in asana_project_ids.split(",") if project_id.strip()]
+            if asana_project_ids
+            else None
         )
-        self.asana_team_id = asana_team_id if asana_team_id else None
+        self.asana_team_id = asana_team_id.strip() if asana_team_id and asana_team_id.strip() else None
         self.batch_size = batch_size
         self.continue_on_failure = continue_on_failure
         self.size_threshold = None

@@ -124,6 +124,7 @@ export function ActionCell({
         <NewDocumentLink
           documentId={documentId}
           documentName={record.name}
+          resource="files"
           className="text-text-sub-title-invert"
         >
           <Button

@@ -147,7 +147,7 @@ const routeConfigOptions = [
     path: Routes.Root,
     layout: false,
     Component: () => import('@/layouts/root-layout'),
-    loader: ({ request }) => {
+    loader: ({ request }: { request: Request }) => {
       const url = new URL(request.url);
       const auth = url.searchParams.get('auth');
       if (auth) {
@@ -261,10 +261,12 @@ const routeConfigOptions = [
             path: `${Routes.UserSetting}/profile`,
             Component: () => import('@/pages/user-setting/profile'),
           },
+          /*
           {
             path: `${Routes.UserSetting}/locale`,
             Component: () => import('@/pages/user-setting/setting-locale'),
           },
+          */
           {
             path: `${Routes.UserSetting}/model`,
             Component: () => import('@/pages/user-setting/setting-model'),

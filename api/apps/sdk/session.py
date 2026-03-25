@@ -32,6 +32,7 @@ from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService, completion_openai
 from api.db.services.canvas_service import completion as agent_completion
 from api.db.services.conversation_service import ConversationService
+from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.db.services.conversation_service import async_iframe_completion as iframe_completion
 from api.db.services.conversation_service import async_completion as rag_completion
 from api.db.services.dialog_service import DialogService, async_ask, async_chat, gen_mindmap
@@ -87,24 +88,34 @@ async def create(tenant_id, chat_id):
 async def create_agent_session(tenant_id, agent_id):
     req = await get_request_json()
     user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
-    release_mode = req.get("release", request.args.get("release", False))
-    e, cvs = UserCanvasService.get_by_id(agent_id)
-    if not e:
-        return get_error_data_result("Agent not found.")
+    release_mode = bool(req.get("release", request.args.get("release", False)))
+
     if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
         return get_error_data_result("You cannot access the agent.")
-    if not isinstance(cvs.dsl, str):
-        cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
-    if release_mode and not bool(cvs.release):
-        raise PermissionError("No available published version")
+    try:
+        cvs, dsl = UserCanvasService.get_agent_dsl_with_release(agent_id, release_mode, tenant_id)
+    except LookupError:
+        return get_error_data_result("Agent not found.")
+    except PermissionError as e:
+        return get_error_data_result(str(e))
+
     session_id = get_uuid()
-    canvas = Canvas(cvs.dsl, tenant_id, agent_id, canvas_id=cvs.id)
+    canvas = Canvas(dsl, tenant_id, agent_id, canvas_id=cvs.id)
     canvas.reset()
 
     cvs.dsl = json.loads(str(canvas))
-    conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id,
-            "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
+    # Get the version title based on release_mode
+    version_title = UserCanvasVersionService.get_latest_version_title(cvs.id, release_mode=release_mode)
+    conv = {
+        "id": session_id,
+        "dialog_id": cvs.id,
+        "user_id": user_id,
+        "message": [{"role": "assistant", "content": canvas.get_prologue()}],
+        "source": "agent",
+        "dsl": cvs.dsl,
+        "version_title": version_title
+    }
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
     return get_result(data=conv)
@@ -596,11 +607,12 @@ async def agent_completions(tenant_id, agent_id):
                 reference.update(ans["data"]["reference"])
 
             if ans.get("event") == "node_finished":
-                node_out = ans.get("data", {}).get("outputs", {})
-                if node_out.get("structured"):
-                    structured_output = node_out["structured"]
+                data = ans.get("data", {})
+                node_out = data.get("outputs", {})
+                component_id = data.get("component_id")
+                if component_id is not None and "structured" in node_out:
+                    structured_output[component_id] = copy.deepcopy(node_out["structured"])
                 if return_trace:
-                    data = ans.get("data", {})
                     trace_items.append(
                         {
                             "component_id": data.get("component_id"),

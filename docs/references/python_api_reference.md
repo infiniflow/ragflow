@@ -855,7 +855,7 @@ print("Async bulk parsing cancelled.")
 ### Add chunk
 
 ```python
-Document.add_chunk(content:str, important_keywords:list[str] = []) -> Chunk
+Document.add_chunk(content:str, important_keywords:list[str] = [], image_base64:str = None) -> Chunk
 ```
 
 Adds a chunk to the current document.
@@ -870,6 +870,10 @@ The text content of the chunk.
 
 The key terms or phrases to tag with the chunk.
 
+##### image_base64: `str`
+
+A base64-encoded image to associate with the chunk. If the chunk already has an image, the new image will be vertically concatenated below the existing one.
+
 #### Returns
 
 - Success: A `Chunk` object.
@@ -880,6 +884,7 @@ A `Chunk` object contains the following attributes:
 - `id`: `str`: The chunk ID.
 - `content`: `str` The text content of the chunk.
 - `important_keywords`: `list[str]` A list of key terms or phrases tagged with the chunk.
+- `image_id`: `str` The image ID associated with the chunk (empty string if no image).
 - `create_time`: `str` The time when the chunk was created (added to the document).
 - `create_timestamp`: `float` The timestamp representing the creation time of the chunk, expressed in seconds since January 1, 1970.
 - `dataset_id`: `str` The ID of the associated dataset.
@@ -900,6 +905,16 @@ dataset = datasets[0]
 doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
 chunk = doc.add_chunk(content="xxxxxxx")
+```
+
+Adding a chunk with an image:
+
+```python
+import base64
+
+with open("image.jpg", "rb") as f:
+    img_b64 = base64.b64encode(f.read()).decode()
+chunk = doc.add_chunk(content="description of image", image_base64=img_b64)
 ```
 
 ---

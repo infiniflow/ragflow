@@ -22,6 +22,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"ragflow/internal/logger"
@@ -29,6 +30,7 @@ import (
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 
+	"go.uber.org/zap"
 	gormLogger "gorm.io/gorm/logger"
 
 	"gorm.io/driver/mysql"
@@ -90,6 +92,7 @@ func InitDB() error {
 		NowFunc: func() time.Time {
 			return time.Now().Local()
 		},
+		TranslateError: true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to connect database: %w", err)
@@ -145,7 +148,7 @@ func InitDB() error {
 	}
 
 	for _, m := range models {
-		if err := DB.AutoMigrate(m); err != nil {
+		if err = autoMigrateSafely(DB, m); err != nil {
 			return fmt.Errorf("failed to migrate model %T: %w", m, err)
 		}
 	}
@@ -162,6 +165,34 @@ func InitDB() error {
 // GetDB get database instance
 func GetDB() *gorm.DB {
 	return DB
+}
+
+// autoMigrateSafely runs AutoMigrate and ignores duplicate index errors
+// This handles cases where indexes already exist (e.g., created by Python backend)
+func autoMigrateSafely(db *gorm.DB, model interface{}) error {
+	err := db.AutoMigrate(model)
+	if err == nil {
+		return nil
+	}
+
+	// Check if error is MySQL duplicate index error (Error 1061)
+	errStr := err.Error()
+	if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
+		logger.Info("Index already exists, skipping", zap.String("error", errStr))
+		return nil
+	}
+
+	if strings.Contains(errStr, "Error 1060") && strings.Contains(errStr, "Duplicate column name") {
+		logger.Info("Column already exists, skipping", zap.String("error", errStr))
+		return nil
+	}
+
+	if strings.Contains(errStr, "Error 1050") && strings.Contains(errStr, "Table") {
+		logger.Info("Table already exists, skipping", zap.String("error", errStr))
+		return nil
+	}
+
+	return err
 }
 
 // InitLLMFactory initializes LLM factories and models from JSON file.

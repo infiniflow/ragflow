@@ -17,7 +17,9 @@
 package dao
 
 import (
+	"path"
 	"ragflow/internal/model"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -263,37 +265,56 @@ func (dao *KnowledgebaseDAO) Accessible4Deletion(kbID, userID string) bool {
 // DuplicateName generates a unique name by appending parentheses if name already exists
 // This matches the Python duplicate_name function behavior
 func (dao *KnowledgebaseDAO) DuplicateName(name, tenantID string) string {
-	var existingNames []string
-	DB.Model(&model.Knowledgebase{}).
-		Where("name LIKE ? AND tenant_id = ? AND status = ?", name+"%", tenantID, string(model.StatusValid)).
-		Pluck("name", &existingNames)
+	const maxRetries = 1000
 
-	if len(existingNames) == 0 {
-		return name
-	}
-
-	nameSet := make(map[string]bool)
-	for _, n := range existingNames {
-		nameSet[strings.ToLower(n)] = true
-	}
-
-	if !nameSet[strings.ToLower(name)] {
-		return name
-	}
-
-	for i := 1; ; i++ {
-		newName := name + " " + strings.Repeat("(", i) + strings.Repeat(")", i)
-		if !nameSet[strings.ToLower(newName)] {
-			return newName
+	currentName := name
+	for retries := 0; retries < maxRetries; retries++ {
+		var count int64
+		err := DB.Model(&model.Knowledgebase{}).
+			Where("LOWER(name) = ? AND tenant_id = ? AND status = ?", strings.ToLower(currentName), tenantID, string(model.StatusValid)).
+			Count(&count).Error
+		if err != nil || count == 0 {
+			return currentName
 		}
+
+		suffix := path.Ext(currentName)
+		stem := strings.TrimSuffix(currentName, suffix)
+		mainPart, counter := splitNameCounter(stem)
+		nextCounter := 1
+		if counter > 0 {
+			nextCounter = counter + 1
+		}
+
+		currentName = mainPart + "(" + strconv.Itoa(nextCounter) + ")" + suffix
 	}
+
+	return currentName
+}
+
+func splitNameCounter(name string) (string, int) {
+	if !strings.HasSuffix(name, ")") {
+		return name, 0
+	}
+
+	leftBracketIndex := strings.LastIndex(name, "(")
+	if leftBracketIndex < 0 || leftBracketIndex >= len(name)-1 {
+		return name, 0
+	}
+
+	counterValue := name[leftBracketIndex+1 : len(name)-1]
+	counter, err := strconv.Atoi(counterValue)
+	if err != nil {
+		return name, 0
+	}
+
+	return strings.TrimRight(name[:leftBracketIndex], " "), counter
 }
 
 // AtomicIncreaseDocNumByID atomically increments the document count
 // This matches the Python atomic_increase_doc_num_by_id method
 func (dao *KnowledgebaseDAO) AtomicIncreaseDocNumByID(kbID string) error {
 	now := time.Now().Unix()
-	nowDate := time.Now()
+	nowDate := time.Now().Truncate(time.Second)
 	return DB.Model(&model.Knowledgebase{}).
 		Where("id = ?", kbID).
 		Updates(map[string]interface{}{
@@ -307,7 +328,7 @@ func (dao *KnowledgebaseDAO) AtomicIncreaseDocNumByID(kbID string) error {
 // This matches the Python decrease_document_num_in_delete method
 func (dao *KnowledgebaseDAO) DecreaseDocumentNum(kbID string, docNum, chunkNum, tokenNum int64) error {
 	now := time.Now().Unix()
-	nowDate := time.Now()
+	nowDate := time.Now().Truncate(time.Second)
 	return DB.Model(&model.Knowledgebase{}).
 		Where("id = ?", kbID).
 		Updates(map[string]interface{}{
@@ -493,4 +514,19 @@ func mergeConfig(old, new map[string]interface{}) map[string]interface{} {
 	}
 
 	return result
+}
+
+// DeleteByTenantID deletes all knowledge bases by tenant ID (hard delete)
+func (dao *KnowledgebaseDAO) DeleteByTenantID(tenantID string) (int64, error) {
+	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&model.Knowledgebase{})
+	return result.RowsAffected, result.Error
+}
+
+// GetKBIDsByTenantID gets all knowledge base IDs by tenant ID
+func (dao *KnowledgebaseDAO) GetKBIDsByTenantIDSimple(tenantID string) ([]string, error) {
+	var kbIDs []string
+	err := DB.Model(&model.Knowledgebase{}).
+		Where("tenant_id = ?", tenantID).
+		Pluck("id", &kbIDs).Error
+	return kbIDs, err
 }

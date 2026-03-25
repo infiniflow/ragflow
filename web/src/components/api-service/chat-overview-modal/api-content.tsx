@@ -26,8 +26,9 @@ const ApiContent = ({ id, idKey }: { id?: string; idKey: string }) => {
   const isDarkTheme = useIsDarkTheme();
 
   return (
-    <div className="pb-2 flex flex-col w-full">
-      <BackendServiceApi show={showApiKeyModal}></BackendServiceApi>
+    <div className="flex flex-col w-full">
+      <BackendServiceApi show={showApiKeyModal} />
+
       <div className="text-left py-4">
         <Button onClick={tocVisible ? hideToc : showToc}>
           {tocVisible ? t('hideToc') : t('showToc')}

@@ -10,7 +10,7 @@ interface IProps extends React.PropsWithChildren {
   color?: string;
   documentName: string;
   documentId?: string;
-  prefix?: string;
+  resource?: 'document' | 'files';
   className?: string;
 }
 
@@ -21,13 +21,13 @@ const NewDocumentLink = ({
   color = 'rgb(15, 79, 170)',
   documentId,
   documentName,
-  prefix = 'file',
+  resource = 'document',
   className,
 }: IProps) => {
   let nextLink = link;
   const extension = getExtension(documentName);
   if (!link) {
-    nextLink = `/document/${documentId}?ext=${extension}&prefix=${prefix}`;
+    nextLink = `/document/${documentId}?ext=${extension}&resource=${resource}`;
   }
 
   return (

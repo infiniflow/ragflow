@@ -103,3 +103,8 @@ func (dao *TenantDAO) Delete(id string) error {
 func (dao *TenantDAO) Update(id string, updates map[string]interface{}) error {
 	return DB.Model(&model.Tenant{}).Where("id = ?", id).Updates(updates).Error
 }
+
+// HardDelete hard deletes a tenant by ID
+func (dao *TenantDAO) HardDelete(id string) error {
+	return DB.Unscoped().Where("id = ?", id).Delete(&model.Tenant{}).Error
+}

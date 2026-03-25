@@ -33,6 +33,7 @@ export enum AgentGlobals {
   SysConversationTurns = 'sys.conversation_turns',
   SysFiles = 'sys.files',
   SysHistory = 'sys.history',
+  SysDate = 'sys.date',
 }
 
 export const AgentGlobalsSysQueryWithBrace = `{${AgentGlobals.SysQuery}}`;
@@ -272,5 +273,6 @@ export const EmptyDsl = {
     [AgentGlobals.SysConversationTurns]: 0,
     [AgentGlobals.SysFiles]: [],
     [AgentGlobals.SysHistory]: [],
+    [AgentGlobals.SysDate]: '',
   },
 };

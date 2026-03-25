@@ -34,24 +34,33 @@ from api.utils.file_utils import (
 class TestFilenameType:
     """Edge cases and robustness for filename_type."""
 
-    @pytest.mark.parametrize("filename,expected", [
-        ("doc.pdf", FileType.PDF.value),
-        ("a.PDF", FileType.PDF.value),
-        ("x.png", FileType.VISUAL.value),
-        ("file.docx", FileType.DOC.value),
-        ("a/b/c.pdf", FileType.PDF.value),
-        ("path/to/file.txt", FileType.DOC.value),
-    ])
+    @pytest.mark.parametrize(
+        "filename,expected",
+        [
+            ("doc.pdf", FileType.PDF.value),
+            ("a.PDF", FileType.PDF.value),
+            ("x.png", FileType.VISUAL.value),
+            ("file.docx", FileType.DOC.value),
+            ("a/b/c.pdf", FileType.PDF.value),
+            ("path/to/file.txt", FileType.DOC.value),
+            ("book.epub", FileType.DOC.value),
+            ("BOOK.EPUB", FileType.DOC.value),
+            ("path/to/book.epub", FileType.DOC.value),
+        ],
+    )
     def test_valid_filenames(self, filename, expected):
         assert filename_type(filename) == expected
 
-    @pytest.mark.parametrize("filename", [
-        None,
-        "",
-        "   ",
-        123,
-        [],
-    ])
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            None,
+            "",
+            "   ",
+            123,
+            [],
+        ],
+    )
     def test_invalid_or_empty_returns_other(self, filename):
         assert filename_type(filename) == FileType.OTHER.value
 
@@ -62,16 +71,19 @@ class TestFilenameType:
 class TestSanitizePath:
     """Edge cases for sanitize_path."""
 
-    @pytest.mark.parametrize("raw,expected", [
-        (None, ""),
-        ("", ""),
-        ("  ", ""),
-        (42, ""),
-        ("a/b", "a/b"),
-        ("a/../b", "a/b"),
-        ("/leading/", "leading"),
-        ("\\mixed\\path", "mixed/path"),
-    ])
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            (None, ""),
+            ("", ""),
+            ("  ", ""),
+            (42, ""),
+            ("a/b", "a/b"),
+            ("a/../b", "a/b"),
+            ("/leading/", "leading"),
+            ("\\mixed\\path", "mixed/path"),
+        ],
+    )
     def test_sanitize_cases(self, raw, expected):
         assert sanitize_path(raw) == expected
 
@@ -88,6 +100,7 @@ class TestReadPotentialBrokenPdf:
     def test_non_len_raises_or_returns_empty(self):
         class NoLen:
             pass
+
         result = read_potential_broken_pdf(NoLen())
         assert result == b""
 
@@ -120,7 +133,11 @@ class TestThumbnail:
 
     def test_valid_img_returns_base64_prefix(self):
         from api.constants import IMG_BASE64_PREFIX
-        result = thumbnail("x.png", b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82")
+
+        result = thumbnail(
+            "x.png",
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82",
+        )
         assert result.startswith(IMG_BASE64_PREFIX) or result == ""
 
 

@@ -28,6 +28,7 @@ type Router struct {
 	userHandler          *handler.UserHandler
 	tenantHandler        *handler.TenantHandler
 	documentHandler      *handler.DocumentHandler
+	datasetsHandler      *handler.DatasetsHandler
 	systemHandler        *handler.SystemHandler
 	knowledgebaseHandler *handler.KnowledgebaseHandler
 	chunkHandler         *handler.ChunkHandler
@@ -45,6 +46,7 @@ func NewRouter(
 	userHandler *handler.UserHandler,
 	tenantHandler *handler.TenantHandler,
 	documentHandler *handler.DocumentHandler,
+	datasetsHandler *handler.DatasetsHandler,
 	systemHandler *handler.SystemHandler,
 	knowledgebaseHandler *handler.KnowledgebaseHandler,
 	chunkHandler *handler.ChunkHandler,
@@ -60,6 +62,7 @@ func NewRouter(
 		userHandler:          userHandler,
 		tenantHandler:        tenantHandler,
 		documentHandler:      documentHandler,
+		datasetsHandler:      datasetsHandler,
 		systemHandler:        systemHandler,
 		knowledgebaseHandler: knowledgebaseHandler,
 		chunkHandler:         chunkHandler,
@@ -93,12 +96,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// User login by email endpoint
 	engine.POST("/v1/user/login", r.userHandler.LoginByEmail)
 
+	// User logout endpoint
+	engine.GET("/v1/user/logout", r.userHandler.Logout)
+
 	// Protected routes
 	authorized := engine.Group("")
 	authorized.Use(r.authHandler.AuthMiddleware())
 	{
-		// User logout endpoint
-		authorized.GET("/v1/user/logout", r.userHandler.Logout)
 		// User info endpoint
 		authorized.GET("/v1/user/info", r.userHandler.Info)
 		// User tenant info endpoint
@@ -112,16 +116,28 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// User set tenant info endpoint
 		authorized.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
 
+		// System token endpoints (requires authentication)
+		authorized.GET("/v1/system/token_list", r.systemHandler.ListTokens)
+		authorized.POST("/v1/system/new_token", r.systemHandler.CreateToken)
+		authorized.DELETE("/v1/system/token/:token", r.systemHandler.DeleteToken)
+
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
 		{
 			// User routes
-			users := v1.Group("/users")
+			//users := v1.Group("/users")
+			//{
+			//	users.POST("/register", r.userHandler.Register)
+			//	users.POST("/login", r.userHandler.Login)
+			//	users.GET("", r.userHandler.ListUsers)
+			//	users.GET("/:id", r.userHandler.GetUserByID)
+			//}
+
+			apiTokens := v1.Group("/tokens")
 			{
-				users.POST("/register", r.userHandler.Register)
-				users.POST("/login", r.userHandler.Login)
-				users.GET("", r.userHandler.ListUsers)
-				users.GET("/:id", r.userHandler.GetUserByID)
+				apiTokens.POST("", r.systemHandler.CreateToken)
+				apiTokens.GET("", r.systemHandler.ListTokens)
+				apiTokens.DELETE("/:token", r.systemHandler.DeleteToken)
 			}
 
 			// Document routes
@@ -132,6 +148,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
+			}
+
+			// RESTful dataset routes
+			datasets := v1.Group("/datasets")
+			{
+				datasets.GET("", r.datasetsHandler.ListDatasets)
+				datasets.POST("", r.datasetsHandler.CreateDataset)
+				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 			}
 
 			// Author routes
@@ -165,10 +189,19 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 		}
 
+		// Document routes
+		doc := authorized.Group("/v1/document")
+		{
+			doc.POST("/list", r.documentHandler.ListDocuments)
+			doc.POST("/metadata/summary", r.documentHandler.MetadataSummary)
+		}
+
 		// Chunk routes
 		chunk := authorized.Group("/v1/chunk")
 		{
 			chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
+			chunk.GET("/get", r.chunkHandler.Get)
+			chunk.POST("/list", r.chunkHandler.List)
 		}
 
 		// LLM routes

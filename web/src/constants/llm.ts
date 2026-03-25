@@ -65,6 +65,7 @@ export enum LLMFactory {
   N1n = 'n1n',
   Avian = 'Avian',
   RAGcon = 'RAGcon',
+  Perplexity = 'Perplexity',
 }
 
 // Please lowercase the file name
@@ -135,6 +136,7 @@ export const IconMap = {
   [LLMFactory.N1n]: 'n1n',
   [LLMFactory.Avian]: 'avian',
   [LLMFactory.RAGcon]: 'ragcon',
+  [LLMFactory.Perplexity]: 'perplexity',
 };
 
 export const APIMapUrl = {
@@ -188,4 +190,6 @@ export const APIMapUrl = {
   [LLMFactory.PaddleOCR]: 'https://www.paddleocr.ai/latest/',
   [LLMFactory.N1n]: 'https://docs.n1n.ai',
   [LLMFactory.Avian]: 'https://avian.io',
+  [LLMFactory.Perplexity]:
+    'https://docs.perplexity.ai/docs/embeddings/quickstart',
 };

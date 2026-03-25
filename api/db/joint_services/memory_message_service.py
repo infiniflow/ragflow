@@ -66,7 +66,7 @@ async def save_to_memory(memory_id: str, message_dict: dict):
         "message_type": MemoryType.RAW.name.lower(),
         "source_id": 0,
         "memory_id": memory_id,
-        "user_id": "",
+        "user_id": message_dict.get("user_id", ""),
         "agent_id": message_dict["agent_id"],
         "session_id": message_dict["session_id"],
         "content": f"User Input: {message_dict.get('user_input')}\nAgent Response: {message_dict.get('agent_response')}",
@@ -79,7 +79,7 @@ async def save_to_memory(memory_id: str, message_dict: dict):
         "message_type": content["message_type"],
         "source_id": raw_message_id,
         "memory_id": memory_id,
-        "user_id": "",
+        "user_id": message_dict.get("user_id", ""),
         "agent_id": message_dict["agent_id"],
         "session_id": message_dict["session_id"],
         "content": content["content"],
@@ -121,7 +121,7 @@ async def save_extracted_to_memory_only(memory_id: str, message_dict, source_mes
         "message_type": content["message_type"],
         "source_id": source_message_id,
         "memory_id": memory_id,
-        "user_id": "",
+        "user_id": message_dict.get("user_id", ""),
         "agent_id": message_dict["agent_id"],
         "session_id": message_dict["session_id"],
         "content": content["content"],
@@ -227,6 +227,7 @@ def query_message(filter_dict: dict, params: dict):
         "memory_id": List[str],
         "agent_id": optional
         "session_id": optional
+        "user_id": optional
     }
     :param params: {
         "query": question str,
@@ -374,7 +375,7 @@ async def queue_save_to_memory_task(memory_ids: list[str], message_dict: dict):
             "message_type": MemoryType.RAW.name.lower(),
             "source_id": 0,
             "memory_id": memory_id,
-            "user_id": "",
+            "user_id": message_dict.get("user_id", ""),
             "agent_id": message_dict["agent_id"],
             "session_id": message_dict["session_id"],
             "content": f"User Input: {message_dict.get('user_input')}\nAgent Response: {message_dict.get('agent_response')}",

@@ -28,7 +28,6 @@ from typing import Any
 
 import requests
 from quart import (
-    Response,
     jsonify,
     request,
     has_app_context,
@@ -231,6 +230,17 @@ def active_required(func):
             return await func(*args, **kwargs)
         return func(*args, **kwargs)
 
+    return wrapper
+
+
+def add_tenant_id_to_kwargs(func):
+    @wraps(func)
+    async def wrapper(**kwargs):
+        from api.apps import current_user
+        kwargs["tenant_id"] = current_user.id
+        if inspect.iscoroutinefunction(func):
+            return await func(**kwargs)
+        return func(**kwargs)
     return wrapper
 
 
@@ -513,7 +523,7 @@ def check_duplicate_ids(ids, id_type="item"):
     return list(set(ids)), duplicate_messages
 
 
-def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, Response | None]:
+def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, str | None]:
     from api.db.services.llm_service import LLMService
     from api.db.services.tenant_llm_service import TenantLLMService
 
@@ -559,13 +569,16 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, R
 
         is_builtin_model = llm_factory == "Builtin"
         if not (is_builtin_model or is_tenant_model or in_llm_service):
-            return False, get_error_argument_result(f"Unsupported model: <{embd_id}>")
+            return False, f"Unsupported model: <{embd_id}>"
 
         if not (is_builtin_model or is_tenant_model):
-            return False, get_error_argument_result(f"Unauthorized model: <{embd_id}>")
+            return False, f"Unauthorized model: <{embd_id}>"
     except OperationalError as e:
         logging.exception(e)
-        return False, get_error_data_result(message="Database operation failed")
+        return False, "Database operation failed"
+    except Exception as e:
+        logging.exception(e)
+        return False, "Internal server error"
 
     return True, None
 

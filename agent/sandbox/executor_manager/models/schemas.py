@@ -21,6 +21,13 @@ from pydantic import BaseModel, Field, field_validator
 from models.enums import ResourceLimitType, ResultStatus, RuntimeErrorType, SupportLanguage, UnauthorizedAccessType
 
 
+class ArtifactItem(BaseModel):
+    name: str
+    mime_type: str
+    size: int
+    content_b64: str
+
+
 class CodeExecutionResult(BaseModel):
     status: ResultStatus
     stdout: str
@@ -36,6 +43,9 @@ class CodeExecutionResult(BaseModel):
     resource_limit_type: Optional[ResourceLimitType] = None
     unauthorized_access_type: Optional[UnauthorizedAccessType] = None
     runtime_error_type: Optional[RuntimeErrorType] = None
+
+    # File artifacts produced by code execution (images, PDFs, CSVs, etc.)
+    artifacts: list[ArtifactItem] = []
 
 
 class CodeExecutionRequest(BaseModel):

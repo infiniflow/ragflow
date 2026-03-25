@@ -105,8 +105,6 @@ const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
               const isObject = typeof option === 'object';
               const actualValue = isObject ? option.value : option;
 
-              console.log(actualValue);
-
               return (
                 <Button
                   key={actualValue}

@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ from pydantic import (
     ValidationError,
     field_validator,
     model_validator,
+    ValidationInfo
 )
 from pydantic_core import PydanticCustomError
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
@@ -162,6 +163,15 @@ def validate_and_parse_request_args(request: Request, validator: type[BaseModel]
         - Preserves type conversion from Pydantic validation
     """
     args = request.args.to_dict(flat=True)
+
+    # Handle ext parameter: parse JSON string to dict if it's a string
+    if 'ext' in args and isinstance(args['ext'], str):
+        import json
+        try:
+            args['ext'] = json.loads(args['ext'])
+        except json.JSONDecodeError:
+            pass  # Keep the string and let validation handle the error
+
     try:
         if extras is not None:
             args.update(extras)
@@ -336,6 +346,7 @@ class RaptorConfig(Base):
     max_cluster: Annotated[int, Field(default=64, ge=1, le=1024)]
     random_seed: Annotated[int, Field(default=0, ge=0)]
     auto_disable_for_structured_data: Annotated[bool, Field(default=True)]
+    ext: Annotated[dict, Field(default={})]
 
 
 class GraphragConfig(Base):
@@ -377,6 +388,7 @@ class ParserConfig(Base):
     filename_embd_weight: Annotated[float | None, Field(default=0.1, ge=0.0, le=1.0)]
     task_page_size: Annotated[int | None, Field(default=None, ge=1)]
     pages: Annotated[list[list[int]] | None, Field(default=None)]
+    ext: Annotated[dict, Field(default={})]
 
 
 class CreateDatasetReq(Base):
@@ -390,6 +402,25 @@ class CreateDatasetReq(Base):
     pipeline_id: Annotated[str | None, Field(default=None, min_length=32, max_length=32, serialization_alias="pipeline_id")]
     parser_config: Annotated[ParserConfig | None, Field(default=None)]
     auto_metadata_config: Annotated[AutoMetadataConfig | None, Field(default=None)]
+    ext: Annotated[dict, Field(default={})]
+
+    @field_validator("pipeline_id", mode="before")
+    @classmethod
+    def handle_pipeline_id(cls, v: str | None, info: ValidationInfo):
+        if v is None:
+            return v
+        if info.data.get("chunk_method") is not None and isinstance(v, str):
+            v = None
+        return v
+
+    @field_validator("parse_type", mode="before")
+    @classmethod
+    def handle_parse_type(cls, v: int | None, info: ValidationInfo):
+        if v is None:
+            return v
+        if info.data.get("chunk_method") is not None and isinstance(v, int):
+            v = None
+        return v
 
     @field_validator("avatar", mode="after")
     @classmethod
@@ -641,6 +672,8 @@ class UpdateDatasetReq(CreateDatasetReq):
     dataset_id: Annotated[str, Field(...)]
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(default="")]
     pagerank: Annotated[int, Field(default=0, ge=0, le=100)]
+    language: Annotated[str | None, Field(default=None, max_length=32)]
+    connectors: Annotated[list[dict[str, Any]], Field(default_factory=list)]
 
     @field_validator("dataset_id", mode="before")
     @classmethod
@@ -747,3 +780,41 @@ class BaseListReq(BaseModel):
 
 class ListDatasetReq(BaseListReq):
     include_parsing_status: Annotated[bool, Field(default=False)]
+    ext: Annotated[dict, Field(default={})]
+
+
+# ---- File Management Request Models ----
+
+class CreateFolderReq(Base):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(...)]
+    parent_id: Annotated[str | None, Field(default=None)]
+    type: Annotated[str | None, Field(default=None)]
+
+
+class DeleteFileReq(Base):
+    ids: Annotated[list[str], Field(min_length=1)]
+
+
+class MoveFileReq(Base):
+    src_file_ids: Annotated[list[str], Field(min_length=1)]
+    dest_file_id: Annotated[str | None, Field(default=None)]
+    new_name: Annotated[str | None, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(default=None)]
+
+    @model_validator(mode='after')
+    def check_operation(self):
+        if not self.dest_file_id and not self.new_name:
+            raise ValueError("At least one of dest_file_id or new_name must be provided")
+        if self.new_name and len(self.src_file_ids) > 1:
+            raise ValueError("new_name can only be used with a single file")
+        return self
+
+
+class ListFileReq(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    parent_id: Annotated[str | None, Field(default=None)]
+    keywords: Annotated[str, Field(default="")]
+    page: Annotated[int, Field(default=1, ge=1)]
+    page_size: Annotated[int, Field(default=15, ge=1, le=100)]
+    orderby: Annotated[str, Field(default="create_time")]
+    desc: Annotated[bool, Field(default=True)]

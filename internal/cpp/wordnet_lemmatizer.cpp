@@ -182,28 +182,14 @@ std::vector<std::string> WordNetLemmatizer::Morphy(const std::string &form, cons
         return FilterForms(forms, pos);
     }
 
-    // Apply morphological rules with recursion (like Java version)
+    // Apply morphological rules (only ONE level, not recursive like Java)
+    // This matches Python NLTK WordNet behavior
     std::vector<std::string> forms = CollectSubstitutions(form, pos);
     std::vector<std::string> combined_forms = forms;
     combined_forms.push_back(form);
 
-    // First attempt with original form and first-level substitutions
     auto results = FilterForms(combined_forms, pos);
-    if (!results.empty()) {
-        return results;
-    }
-
-    // Recursively apply rules (Java version's while loop)
-    while (!forms.empty()) {
-        forms = CollectSubstitutions(forms, pos);
-        results = FilterForms(forms, pos);
-        if (!results.empty()) {
-            return results;
-        }
-    }
-
-    // Return empty result if no valid lemma found
-    return {};
+    return results;
 }
 
 std::string WordNetLemmatizer::Lemmatize(const std::string &form, const std::string &pos) {
@@ -211,13 +197,33 @@ std::string WordNetLemmatizer::Lemmatize(const std::string &form, const std::str
     if (!pos.empty()) {
         parts_of_speech.push_back(pos);
     } else {
-        parts_of_speech = POS_LIST;
+        // Use only NOUN to match Python NLTK default behavior
+        parts_of_speech = {NOUN};
     }
 
     for (const auto &part : parts_of_speech) {
         auto analyses = Morphy(form, part);
         if (!analyses.empty()) {
-            return analyses[0];
+            // Python NLTK returns the SHORTEST lemma: min(lemmas, key=len)
+            // For "as" -> ["as", "a"] -> returns "a"
+            // For "data" -> ["data", "datum"] -> returns "data"
+            // For "men" -> ["men", "man"] -> returns "men" (original form preferred when same length)
+            std::string shortest = analyses[0];
+            for (const auto &analysis : analyses) {
+                if (analysis.length() < shortest.length()) {
+                    shortest = analysis;
+                }
+            }
+            // If original form is in the results and has same length as shortest, prefer original form
+            if (shortest != form) {
+                for (const auto &analysis : analyses) {
+                    if (analysis == form && analysis.length() == shortest.length()) {
+                        shortest = analysis;
+                        break;
+                    }
+                }
+            }
+            return shortest;
         }
     }
 

@@ -94,7 +94,7 @@ export default function ListFilterBar({
 
   return (
     <div className={cn('flex justify-between items-center', className)}>
-      <div className="text-2xl font-semibold flex items-center gap-2.5">
+      <h1 className="text-2xl font-semibold flex items-center gap-2.5">
         {typeof icon === 'string' ? (
           // <IconFont name={icon} className="size-6"></IconFont>
           <HomeIcon
@@ -105,11 +105,11 @@ export default function ListFilterBar({
           icon
         )}
         {leftPanel || title}
-      </div>
+      </h1>
 
       <div className="flex gap-4 items-center" role="toolbar">
         {preChildren}
-        {showFilter && (
+        {filters?.length && showFilter && (
           <FilterPopover
             value={value}
             onChange={onChange}

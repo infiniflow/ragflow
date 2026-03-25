@@ -88,11 +88,8 @@ export function TestingResult({
           <>
             <section className="px-5 pb-5 flex flex-col gap-5 overflow-auto h-full scrollbar-thin">
               {data.chunks?.map((x) => (
-                <article>
-                  <Card
-                    key={x.chunk_id}
-                    className="px-5 py-2.5 bg-transparent shadow-none"
-                  >
+                <article key={x.chunk_id}>
+                  <Card className="px-5 py-2.5 bg-transparent shadow-none">
                     <ChunkTitle item={x}></ChunkTitle>
                     <p className="!mt-2.5"> {x.content_with_weight}</p>
                   </Card>

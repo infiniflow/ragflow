@@ -33,11 +33,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
         ids=["empty_auth", "invalid_api_token"],
@@ -76,7 +76,7 @@ class TestRquest:
     def test_payload_empty(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         res = update_dataset(HttpApiAuth, dataset_id, {})
-        assert res["code"] == 101, res
+        assert res["code"] == 102, res
         assert res["message"] == "No properties were modified", res
 
     @pytest.mark.p3
@@ -172,6 +172,21 @@ class TestDatasetUpdate:
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 102, res
         assert res["message"] == f"Dataset name '{name}' already exists", res
+
+    @pytest.mark.p2
+    def test_language_and_connectors_supported(self, HttpApiAuth, add_dataset_func):
+        dataset_id = add_dataset_func
+        payload = {
+            "name": "language_connectors_supported",
+            "description": "",
+            "chunk_method": "naive",
+            "language": "English",
+            "connectors": [],
+        }
+        res = update_dataset(HttpApiAuth, dataset_id, payload)
+        assert res["code"] == 0, res
+        assert res["data"]["language"] == "English", res
+        assert res["data"]["connectors"] == [], res
 
     @pytest.mark.p2
     def test_avatar(self, HttpApiAuth, add_dataset_func, tmp_path):
@@ -313,7 +328,7 @@ class TestDatasetUpdate:
         dataset_id = add_dataset_func
         payload = {"name": name, "embedding_model": embedding_model}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
-        assert res["code"] == 101, res
+        assert res["code"] == 102, res
         if "tenant_no_auth" in name:
             assert res["message"] == f"Unauthorized model: <{embedding_model}>", res
         else:
@@ -494,7 +509,7 @@ class TestDatasetUpdate:
         dataset_id = add_dataset_func
         payload = {"pagerank": 50}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
-        assert res["code"] == 101, res
+        assert res["code"] == 102, res
         assert res["message"] == "'pagerank' can only be set when doc_engine is elasticsearch", res
 
     @pytest.mark.p2

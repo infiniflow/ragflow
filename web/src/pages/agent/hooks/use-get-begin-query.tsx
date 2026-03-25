@@ -1,7 +1,7 @@
 import { AgentGlobals, AgentStructuredOutputField } from '@/constants/agent';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { DefaultOptionType } from '@/interfaces/antd-compat';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
   buildNodeOutputOptions,
   buildOutputOptions,

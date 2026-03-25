@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"ragflow/internal/common"
 	"ragflow/internal/server"
+	"ragflow/internal/server/local"
+	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
 	"syscall"
@@ -117,11 +119,18 @@ func main() {
 	}
 	defer cache.Close()
 
+	if err := storage.InitStorageFactory(); err != nil {
+		logger.Fatal("Failed to initialize storage factory", zap.Error(err))
+	}
+
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
 	if err := server.InitVariables(cache.Get()); err != nil {
 		logger.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
+
+	// Initialize admin status (default: unavailable=1)
+	local.InitAdminStatus(1, "admin server not connected")
 
 	// Initialize tokenizer (rag_analyzer)
 	tokenizerCfg := &tokenizer.PoolConfig{
@@ -155,6 +164,7 @@ func startServer(config *server.Config) {
 	// Initialize service layer
 	userService := service.NewUserService()
 	documentService := service.NewDocumentService()
+	datasetsService := service.NewDatasetsService()
 	kbService := service.NewKnowledgebaseService()
 	chunkService := service.NewChunkService()
 	llmService := service.NewLLMService()
@@ -171,8 +181,9 @@ func startServer(config *server.Config) {
 	userHandler := handler.NewUserHandler(userService)
 	tenantHandler := handler.NewTenantHandler(tenantService, userService)
 	documentHandler := handler.NewDocumentHandler(documentService)
+	datasetsHandler := handler.NewDatasetsHandler(datasetsService)
 	systemHandler := handler.NewSystemHandler(systemService)
-	kbHandler := handler.NewKnowledgebaseHandler(kbService, userService)
+	kbHandler := handler.NewKnowledgebaseHandler(kbService, userService, documentService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
@@ -182,7 +193,7 @@ func startServer(config *server.Config) {
 	fileHandler := handler.NewFileHandler(fileService, userService)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
@@ -212,7 +223,7 @@ func startServer(config *server.Config) {
 				"     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /\n" +
 				"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
 		)
-		logger.Info(fmt.Sprintf("Version: %s", utility.GetRAGFlowVersion()))
+		logger.Info(fmt.Sprintf("RAGFlow Go Version: %s", utility.GetRAGFlowVersion()))
 		logger.Info(fmt.Sprintf("Server starting on port: %d", config.Server.Port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatal("Failed to start server", zap.Error(err))
@@ -238,8 +249,11 @@ func startServer(config *server.Config) {
 	} else {
 		// Start heartbeat reporter with 30 seconds interval
 		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
-			if err := heartbeatService.SendHeartbeat(); err != nil {
-				logger.Warn("Failed to send heartbeat", zap.Error(err))
+			if err = heartbeatService.SendHeartbeat(); err == nil {
+				local.SetAdminStatus(0, "")
+			} else {
+				local.SetAdminStatus(1, err.Error())
+				//logger.Warn(fmt.Sprintf(err.Error()))
 			}
 		})
 		heartbeatReporter.Start()

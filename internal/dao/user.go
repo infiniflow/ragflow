@@ -43,6 +43,15 @@ func (dao *UserDAO) GetByID(id uint) (*model.User, error) {
 	return &user, nil
 }
 
+func (dao *UserDAO) GetByTenantID(tenantID string) (*model.User, error) {
+	var user model.User
+	err := DB.Where("id = ?", tenantID).First(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
 // GetByUsername get user by username
 func (dao *UserDAO) GetByUsername(username string) (*model.User, error) {
 	var user model.User
@@ -90,11 +99,11 @@ func (dao *UserDAO) List(offset, limit int) ([]*model.User, int64, error) {
 	var total int64
 
 	// Only count users with status != "0" (not deleted)
-	if err := DB.Model(&model.User{}).Where("status != ? OR status IS NULL", "0").Count(&total).Error; err != nil {
+	if err := DB.Model(&model.User{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	query := DB.Model(&model.User{}).Where("status != ? OR status IS NULL", "0")
+	query := DB.Model(&model.User{})
 	if offset > 0 {
 		query = query.Offset(offset)
 	}
@@ -115,10 +124,15 @@ func (dao *UserDAO) DeleteByID(id string) error {
 	return DB.Model(&model.User{}).Where("id = ?", id).Update("status", "0").Error
 }
 
+// HardDelete hard delete user by string ID
+func (dao *UserDAO) HardDelete(id string) error {
+	return DB.Unscoped().Where("id = ?", id).Delete(&model.User{}).Error
+}
+
 // ListByEmail list users by email (only active users with status != "0")
 // Returns all users matching the given email address
 func (dao *UserDAO) ListByEmail(email string) ([]*model.User, error) {
 	var users []*model.User
-	err := DB.Where("email = ? AND (status != ? OR status IS NULL)", email, "0").Find(&users).Error
+	err := DB.Where("email = ?", email).Find(&users).Error
 	return users, err
 }

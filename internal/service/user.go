@@ -17,6 +17,7 @@
 package service
 
 import (
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
@@ -58,7 +59,7 @@ func NewUserService() *UserService {
 // RegisterRequest registration request
 type RegisterRequest struct {
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Password string `json:"password" binding:"required,min=1"`
 	Nickname string `json:"nickname"`
 }
 
@@ -121,7 +122,8 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 		return nil, common.CodeServerError, fmt.Errorf("Fail to decrypt password")
 	}
 
-	hashedPassword, err := s.HashPassword(decryptedPassword)
+	var hashedPassword string
+	hashedPassword, err = s.HashPassword(decryptedPassword)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -149,7 +151,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	now := time.Now().Unix()
 	user.CreateTime = &now
 	user.UpdateTime = &now
-	now_date := time.Now()
+	now_date := time.Now().Truncate(time.Second)
 	user.CreateDate = &now_date
 	user.UpdateDate = &now_date
 	user.LastLoginTime = &now_date
@@ -226,20 +228,20 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	userTenantDAO := dao.NewUserTenantDAO()
 	fileDAO := dao.NewFileDAO()
 
-	if err := s.userDAO.Create(user); err != nil {
+	if err = s.userDAO.Create(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	if err := tenantDAO.Create(tenant); err != nil {
-		err := s.userDAO.DeleteByID(userID)
+	if err = tenantDAO.Create(tenant); err != nil {
+		err = s.userDAO.DeleteByID(userID)
 		if err != nil {
 			return nil, 0, err
 		}
 		return nil, common.CodeServerError, fmt.Errorf("failed to create tenant: %w", err)
 	}
 
-	if err := userTenantDAO.Create(userTenant); err != nil {
-		err := s.userDAO.DeleteByID(userID)
+	if err = userTenantDAO.Create(userTenant); err != nil {
+		err = s.userDAO.DeleteByID(userID)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -250,8 +252,8 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 		return nil, common.CodeServerError, fmt.Errorf("failed to create user tenant relation: %w", err)
 	}
 
-	if err := fileDAO.Create(rootFile); err != nil {
-		err := s.userDAO.DeleteByID(userID)
+	if err = fileDAO.Create(rootFile); err != nil {
+		err = s.userDAO.DeleteByID(userID)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -313,11 +315,7 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, common.ErrorCode, e
 // - CodeAuthenticationError (109): Email not registered or password mismatch
 // - CodeServerError (500): Password decryption failure
 // - CodeForbidden (403): Account disabled
-func (s *UserService) LoginByEmail(req *EmailLoginRequest, adminLogin bool) (*model.User, common.ErrorCode, error) {
-	if !adminLogin && req.Email == "admin@ragflow.io" {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("default admin account cannot be used to login normal services")
-	}
-
+func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, common.ErrorCode, error) {
 	user, err := s.userDAO.GetByEmail(req.Email)
 	if err != nil {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("Email: %s is not registered!", req.Email)
@@ -342,7 +340,7 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest, adminLogin bool) (*mo
 
 	now := time.Now().Unix()
 	user.UpdateTime = &now
-	now_date := time.Now()
+	now_date := time.Now().Truncate(time.Second)
 	user.UpdateDate = &now_date
 	if err := s.userDAO.Update(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
@@ -399,16 +397,29 @@ func (s *UserService) ListUsers(page, pageSize int) ([]*UserResponse, int64, com
 	return responses, total, common.CodeSuccess, nil
 }
 
-// HashPassword generate password hash
+// HashPassword generate password hash using scrypt (werkzeug compatible)
+// The password should already be base64 encoded (from decrypt process)
+// Werkzeug default format: scrypt:32768:8:1$base64(salt)$hex(hash)
+// IMPORTANT: werkzeug uses the base64-encoded salt string as UTF-8 bytes, NOT the decoded bytes
 func (s *UserService) HashPassword(password string) (string, error) {
-	salt := s.generateSalt()
-	hash, err := scrypt.Key([]byte(password), salt, 32768, 8, 1, 64)
+	// Generate random bytes (12 bytes will produce 16-char base64 string)
+	randomBytes, err := s.generateSalt()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to generate salt: %w", err)
 	}
 
-	// Return werkzeug format: scrypt:n:r:p$salt$hash
-	return fmt.Sprintf("scrypt:32768:8:1$%s$%x", string(salt), hash), nil
+	// Encode to base64 string (this will be 16 characters)
+	saltB64 := base64.StdEncoding.EncodeToString(randomBytes)
+
+	// Use scrypt with werkzeug default parameters: N=32768, r=8, p=1, keyLen=64
+	// IMPORTANT: werkzeug uses the base64 string as UTF-8 bytes, NOT the decoded bytes
+	hash, err := scrypt.Key([]byte(password), []byte(saltB64), 32768, 8, 1, 64)
+	if err != nil {
+		return "", fmt.Errorf("failed to compute scrypt hash: %w", err)
+	}
+
+	// Format: scrypt:n:r:p$base64(salt)$hex(hash)
+	return fmt.Sprintf("scrypt:32768:8:1$%s$%x", saltB64, hash), nil
 }
 
 // VerifyPassword verify password
@@ -481,9 +492,10 @@ func (s *UserService) verifyPBKDF2Password(hashedPassword, password string) bool
 }
 
 // verifyScryptPassword verifies password using scrypt format
-// Format: scrypt:n:r:p$salt$hash
+// Format: scrypt:n:r:p$base64(salt)$hex(hash)
+// IMPORTANT: werkzeug uses the base64-encoded salt string as UTF-8 bytes, NOT the decoded bytes
 func (s *UserService) verifyScryptPassword(hashedPassword, password string) bool {
-	// Parse hash format: scrypt:n:r:p$salt$hash
+	// Parse hash format: scrypt:n:r:p$base64(salt)$hex(hash)
 	parts := strings.Split(hashedPassword, "$")
 	if len(parts) != 3 {
 		return false
@@ -507,24 +519,36 @@ func (s *UserService) verifyScryptPassword(hashedPassword, password string) bool
 		return false
 	}
 
-	saltStr := parts[1]
+	saltB64 := parts[1]
 	hashHex := parts[2]
 
-	// Compute password hash
-	computed, err := scrypt.Key([]byte(password), []byte(saltStr), int(n), int(r), int(p), len(hashHex)/2)
+	// IMPORTANT: werkzeug uses the base64 string as UTF-8 bytes, NOT decoded bytes
+	// This is the key difference from standard implementations
+	salt := []byte(saltB64)
+
+	// Decode expected hash from hex
+	expectedHash, err := hex.DecodeString(hashHex)
 	if err != nil {
 		return false
 	}
 
-	decodedHash, err := hex.DecodeString(hashHex)
+	// Compute password hash
+	computed, err := scrypt.Key([]byte(password), salt, int(n), int(r), int(p), len(expectedHash))
+	if err != nil {
+		return false
+	}
 
 	// Constant time comparison
-	return s.constantTimeCompare(decodedHash, computed)
+	return s.constantTimeCompare(expectedHash, computed)
 }
 
-// generateSalt generate salt
-func (s *UserService) generateSalt() []byte {
-	return []byte("random_salt_for_user") // TODO: use random salt
+// generateSalt generates a random 12-byte salt (werkzeug default)
+func (s *UserService) generateSalt() ([]byte, error) {
+	salt := make([]byte, 12)
+	if _, err := rand.Read(salt); err != nil {
+		return nil, fmt.Errorf("failed to generate random salt: %w", err)
+	}
+	return salt, nil
 }
 
 // constantTimeCompare constant time comparison
@@ -898,4 +922,45 @@ func (s *UserService) SetTenantInfo(userID string, req *SetTenantInfoRequest) er
 	}
 
 	return nil
+}
+
+// GetUserByAPIToken gets user by access key from Authorization header
+// This is used for API token authentication
+// The authorization parameter should be in format: "Bearer <token>" or just "<token>"
+func (s *UserService) GetUserByAPIToken(authorization string) (*model.User, common.ErrorCode, error) {
+	if authorization == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
+	}
+
+	// Split authorization header to get the token
+	// Expected format: "Bearer <token>" or "<token>"
+	parts := strings.Split(authorization, " ")
+	var token string
+	if len(parts) == 2 {
+		token = parts[1]
+	} else if len(parts) == 1 {
+		token = parts[0]
+	} else {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+	}
+
+	// Query API token from database
+	apiTokenDAO := dao.NewAPITokenDAO()
+	userToken, err := apiTokenDAO.GetUserByAPIToken(token)
+	if err != nil {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token")
+	}
+
+	// Get user by tenant_id from API token
+	user, err := s.userDAO.GetByTenantID(userToken.TenantID)
+	if err != nil {
+		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for this access token")
+	}
+
+	// Check if user's access_token is empty
+	if user.AccessToken == nil || *user.AccessToken == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("user has empty access_token in database")
+	}
+
+	return user, common.CodeSuccess, nil
 }

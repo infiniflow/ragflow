@@ -1,6 +1,5 @@
 import message from '@/components/ui/message';
 import { Modal } from '@/components/ui/modal/modal';
-import { LanguageTranslationMap } from '@/constants/common';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
 import { ITenantInfo } from '@/interfaces/database/knowledge';
@@ -12,7 +11,11 @@ import {
   IUserInfo,
 } from '@/interfaces/database/user-setting';
 import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
-import { changeLanguageAsync } from '@/locales/config';
+import {
+  changeLanguageAsync,
+  DEFAULT_LANGUAGE_CODE,
+  supportedLanguages,
+} from '@/locales/config';
 import { Routes } from '@/routes';
 import userService, {
   addTenantUser,
@@ -47,24 +50,28 @@ export const enum UserSettingApiAction {
 }
 
 export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
-  const { i18n } = useTranslation();
-
   const { data, isFetching: loading } = useQuery({
     queryKey: [UserSettingApiAction.UserInfo],
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
       const { data } = await userService.user_info();
+
       if (data.code === 0) {
         const targetLng =
-          LanguageTranslationMap[
-            data.data.language as keyof typeof LanguageTranslationMap
-          ];
+          supportedLanguages.find((lang) => lang.code === data.data.language)
+            ?.code ?? DEFAULT_LANGUAGE_CODE;
+
         if (targetLng) {
           await changeLanguageAsync(targetLng);
         }
+
+        return Object.assign({}, data.data, {
+          language: targetLng,
+        });
       }
-      return data?.data ?? {};
+
+      return data.data ?? {};
     },
   });
 

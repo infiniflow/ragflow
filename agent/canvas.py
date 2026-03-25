@@ -15,6 +15,7 @@
 #
 import asyncio
 import base64
+import datetime
 import inspect
 import binascii
 import json
@@ -287,7 +288,8 @@ class Canvas(Graph):
             "sys.user_id": tenant_id,
             "sys.conversation_turns": 0,
             "sys.files": [],
-            "sys.history": []
+            "sys.history": [],
+            "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         }
         self.variables = {}
         super().__init__(dsl, tenant_id, task_id, custom_header=custom_header)
@@ -300,13 +302,16 @@ class Canvas(Graph):
             self.globals = self.dsl["globals"]
             if "sys.history" not in self.globals:
                 self.globals["sys.history"] = []
+            if "sys.date" not in self.globals:
+                self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         else:
             self.globals = {
             "sys.query": "",
             "sys.user_id": "",
             "sys.conversation_turns": 0,
             "sys.files": [],
-            "sys.history": []
+            "sys.history": [],
+            "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         }
         if "variables" in self.dsl:
             self.variables = self.dsl["variables"]
@@ -368,6 +373,7 @@ class Canvas(Graph):
                     self.globals[k] = ""
 
     async def run(self, **kwargs):
+        self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         st = time.perf_counter()
         self._loop = asyncio.get_running_loop()
         self.message_id = get_uuid()

@@ -199,6 +199,7 @@ class SelfManagedProvider(SandboxProvider):
                     "memory_used_kb": result.get("memory_used_kb"),
                     "detail": result.get("detail"),
                     "instance_id": instance_id,
+                    "artifacts": result.get("artifacts", []),
                 }
             )
 

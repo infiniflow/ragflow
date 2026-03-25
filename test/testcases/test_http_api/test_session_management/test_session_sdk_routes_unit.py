@@ -543,12 +543,15 @@ def test_create_and_update_guard_matrix(monkeypatch):
     assert "Fail to create a session" in res["message"]
 
     monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args()))
-    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (False, None))
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [SimpleNamespace(id="agent-1")])
+
+    def _raise_lookup(*_args, **_kwargs):
+        raise LookupError("Agent not found.")
+
+    monkeypatch.setattr(module.UserCanvasService, "get_agent_dsl_with_release", _raise_lookup)
     res = _run(inspect.unwrap(module.create_agent_session)("tenant-1", "agent-1"))
     assert res["message"] == "Agent not found."
 
-    canvas = SimpleNamespace(dsl="{}", id="agent-1")
-    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, canvas))
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [])
     res = _run(inspect.unwrap(module.create_agent_session)("tenant-1", "agent-1"))
     assert res["message"] == "You cannot access the agent."
@@ -859,7 +862,18 @@ def test_agent_completions_stream_and_nonstream_unit(monkeypatch):
 
     async def _agent_stream(*_args, **_kwargs):
         yield "data:not-json"
-        yield "data:" + json.dumps({"event": "node_finished", "data": {"component_id": "c1"}})
+        yield "data:" + json.dumps(
+            {
+                "event": "node_finished",
+                "data": {"component_id": "c1", "outputs": {"structured": {"alpha": 1}}},
+            }
+        )
+        yield "data:" + json.dumps(
+            {
+                "event": "node_finished",
+                "data": {"component_id": "c2", "outputs": {"structured": {}}},
+            }
+        )
         yield "data:" + json.dumps({"event": "other", "data": {}})
         yield "data:" + json.dumps({"event": "message", "data": {"content": "hello"}})
 
@@ -875,14 +889,36 @@ def test_agent_completions_stream_and_nonstream_unit(monkeypatch):
 
     async def _agent_nonstream(*_args, **_kwargs):
         yield "data:" + json.dumps({"event": "message", "data": {"content": "A", "reference": {"doc": "r"}}})
-        yield "data:" + json.dumps({"event": "node_finished", "data": {"component_id": "c2"}})
+        yield "data:" + json.dumps(
+            {
+                "event": "node_finished",
+                "data": {"component_id": "c2", "outputs": {"structured": {"foo": "bar"}}},
+            }
+        )
+        yield "data:" + json.dumps(
+            {
+                "event": "node_finished",
+                "data": {"component_id": "c3", "outputs": {"structured": {"baz": 1}}},
+            }
+        )
+        yield "data:" + json.dumps(
+            {
+                "event": "node_finished",
+                "data": {"component_id": "c4", "outputs": {"structured": {}}},
+            }
+        )
 
     monkeypatch.setattr(module, "agent_completion", _agent_nonstream)
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"stream": False, "return_trace": True}))
     res = _run(inspect.unwrap(module.agent_completions)("tenant-1", "agent-1"))
     assert res["data"]["data"]["content"] == "A"
     assert res["data"]["data"]["reference"] == {"doc": "r"}
-    assert res["data"]["data"]["trace"][0]["component_id"] == "c2"
+    assert res["data"]["data"]["structured"] == {
+        "c2": {"foo": "bar"},
+        "c3": {"baz": 1},
+        "c4": {},
+    }
+    assert [item["component_id"] for item in res["data"]["data"]["trace"]] == ["c2", "c3", "c4"]
 
     async def _agent_nonstream_broken(*_args, **_kwargs):
         yield "data:{"

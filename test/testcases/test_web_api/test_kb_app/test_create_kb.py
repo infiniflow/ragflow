@@ -16,7 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import create_kb
+from common import create_dataset
 from configs import DATASET_NAME_LIMIT, INVALID_API_TOKEN
 from hypothesis import example, given, settings
 from libs.auth import RAGFlowWebApiAuth
@@ -35,7 +35,7 @@ class TestAuthorization:
         ids=["empty_auth", "invalid_api_token"],
     )
     def test_auth_invalid(self, invalid_auth, expected_code, expected_message):
-        res = create_kb(invalid_auth, {"name": "auth_test"})
+        res = create_dataset(invalid_auth, {"name": "auth_test"})
         assert res["code"] == expected_code, res
         assert res["message"] == expected_message, res
 
@@ -46,14 +46,14 @@ class TestCapability:
     def test_create_kb_1k(self, WebApiAuth):
         for i in range(1_000):
             payload = {"name": f"dataset_{i}"}
-            res = create_kb(WebApiAuth, payload)
+            res = create_dataset(WebApiAuth, payload)
             assert res["code"] == 0, f"Failed to create dataset {i}"
 
     @pytest.mark.p3
     def test_create_kb_concurrent(self, WebApiAuth):
         count = 100
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(create_kb, WebApiAuth, {"name": f"dataset_{i}"}) for i in range(count)]
+            futures = [executor.submit(create_dataset, WebApiAuth, {"name": f"dataset_{i}"}) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
@@ -66,44 +66,44 @@ class TestDatasetCreate:
     @example("a" * 128)
     @settings(max_examples=20)
     def test_name(self, WebApiAuth, name):
-        res = create_kb(WebApiAuth, {"name": name})
+        res = create_dataset(WebApiAuth, {"name": name})
         assert res["code"] == 0, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "name, expected_message",
         [
-            ("", "Dataset name can't be empty."),
-            (" ", "Dataset name can't be empty."),
-            ("a" * (DATASET_NAME_LIMIT + 1), "Dataset name length is 129 which is large than 128"),
-            (0, "Dataset name must be string."),
-            (None, "Dataset name must be string."),
+            ("", "Field: <name> - Message: <String should have at least 1 character>"),
+            (" ", "Field: <name> - Message: <String should have at least 1 character>"),
+            ("a" * (DATASET_NAME_LIMIT + 1), "Field: <name> - Message: <String should have at most 128 characters>"),
+            (0, "Field: <name> - Message: <Input should be a valid string>"),
+            (None, "Field: <name> - Message: <Input should be a valid string>"),
         ],
         ids=["empty_name", "space_name", "too_long_name", "invalid_name", "None_name"],
     )
     def test_name_invalid(self, WebApiAuth, name, expected_message):
         payload = {"name": name}
-        res = create_kb(WebApiAuth, payload)
-        assert res["code"] == 102, res
+        res = create_dataset(WebApiAuth, payload)
+        assert res["code"] == 101, res
         assert expected_message in res["message"], res
 
     @pytest.mark.p3
     def test_name_duplicated(self, WebApiAuth):
         name = "duplicated_name"
         payload = {"name": name}
-        res = create_kb(WebApiAuth, payload)
+        res = create_dataset(WebApiAuth, payload)
         assert res["code"] == 0, res
 
-        res = create_kb(WebApiAuth, payload)
+        res = create_dataset(WebApiAuth, payload)
         assert res["code"] == 0, res
 
     @pytest.mark.p3
     def test_name_case_insensitive(self, WebApiAuth):
         name = "CaseInsensitive"
         payload = {"name": name.upper()}
-        res = create_kb(WebApiAuth, payload)
+        res = create_dataset(WebApiAuth, payload)
         assert res["code"] == 0, res
 
         payload = {"name": name.lower()}
-        res = create_kb(WebApiAuth, payload)
+        res = create_dataset(WebApiAuth, payload)
         assert res["code"] == 0, res

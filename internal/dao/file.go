@@ -200,6 +200,28 @@ func (dao *FileDAO) Create(file *model.File) error {
 	return DB.Create(file).Error
 }
 
+// DeleteByTenantID deletes all files by tenant ID (hard delete)
+func (dao *FileDAO) DeleteByTenantID(tenantID string) (int64, error) {
+	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&model.File{})
+	return result.RowsAffected, result.Error
+}
+
+// DeleteByIDs deletes files by IDs (hard delete)
+func (dao *FileDAO) DeleteByIDs(ids []string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := DB.Unscoped().Where("id IN ?", ids).Delete(&model.File{})
+	return result.RowsAffected, result.Error
+}
+
+// GetAllIDsByTenantID gets all file IDs by tenant ID
+func (dao *FileDAO) GetAllIDsByTenantID(tenantID string) ([]string, error) {
+	var ids []string
+	err := DB.Model(&model.File{}).Where("tenant_id = ?", tenantID).Pluck("id", &ids).Error
+	return ids, err
+}
+
 // generateUUID generates a UUID
 func generateUUID() string {
 	id := uuid.New().String()

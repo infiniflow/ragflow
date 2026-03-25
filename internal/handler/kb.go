@@ -28,15 +28,17 @@ import (
 
 // KnowledgebaseHandler handles knowledge base HTTP requests
 type KnowledgebaseHandler struct {
-	kbService   *service.KnowledgebaseService
-	userService *service.UserService
+	kbService       *service.KnowledgebaseService
+	userService     *service.UserService
+	documentService *service.DocumentService
 }
 
 // NewKnowledgebaseHandler creates a new knowledge base handler
-func NewKnowledgebaseHandler(kbService *service.KnowledgebaseService, userService *service.UserService) *KnowledgebaseHandler {
+func NewKnowledgebaseHandler(kbService *service.KnowledgebaseService, userService *service.UserService, documentService *service.DocumentService) *KnowledgebaseHandler {
 	return &KnowledgebaseHandler{
-		kbService:   kbService,
-		userService: userService,
+		kbService:       kbService,
+		userService:     userService,
+		documentService: documentService,
 	}
 }
 
@@ -581,7 +583,13 @@ func (h *KnowledgebaseHandler) GetMeta(c *gin.Context) {
 		}
 	}
 
-	jsonResponse(c, common.CodeSuccess, map[string]interface{}{}, "success")
+	meta, err := h.documentService.GetMetadataByKBs(kbIDs)
+	if err != nil {
+		jsonError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, meta, "success")
 }
 
 // GetBasicInfo handles the get basic info request

@@ -332,6 +332,53 @@ def _response_data(payload: dict | None) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _is_malformed_tenant_model_value(value: str | None) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    if "#" in text:
+        return True
+    if "@" in text:
+        if text.count("@") != 1:
+            return True
+        model_name, factory = text.rsplit("@", 1)
+        if not model_name or not factory:
+            return True
+    return False
+
+
+def _normalize_tenant_model_value(value: str | None) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if "#" in text:
+        text = text.split("#", 1)[0].strip()
+    if not text:
+        return ""
+    if "@" in text:
+        if text.count("@") != 1:
+            return ""
+        model_name, factory = text.rsplit("@", 1)
+        if not model_name or not factory:
+            return ""
+    return text
+
+
+def _provider_has_model(my_llms_data: dict, provider: str, model_name: str) -> bool:
+    if not isinstance(my_llms_data, dict):
+        return False
+    provider_data = my_llms_data.get(provider)
+    if not isinstance(provider_data, dict):
+        return False
+    llms = provider_data.get("llm")
+    if not isinstance(llms, list):
+        return False
+    for model in llms:
+        if str(model.get("name") or "").strip() == model_name:
+            return True
+    return False
+
+
 def _extract_auth_header_from_page(page) -> str:
     token = page.evaluate(
         """
@@ -1007,19 +1054,73 @@ def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dic
     if not tenant_id:
         raise RuntimeError(f"tenant_info missing tenant_id: {tenant_data}")
 
-    if not tenant_data.get("llm_id"):
-        llm_id = "glm-4-flash@ZHIPU-AI" if "ZHIPU-AI" in my_llms_data else None
-        if not llm_id:
-            pytest.skip(
-                "Provider exists but no default llm_id could be inferred for tenant setup."
-            )
+    current_llm = str(tenant_data.get("llm_id") or "").strip()
+    current_embd = str(tenant_data.get("embd_id") or "").strip()
+    current_img2txt = str(tenant_data.get("img2txt_id") or "").strip()
+    current_asr = str(tenant_data.get("asr_id") or "").strip()
+    current_rerank = str(tenant_data.get("rerank_id") or "").strip()
+    current_tts = str(tenant_data.get("tts_id") or "").strip()
+
+    target_llm = current_llm
+    if not target_llm or _is_malformed_tenant_model_value(target_llm):
+        target_llm = _normalize_tenant_model_value(current_llm)
+        if not target_llm and _provider_has_model(my_llms_data, "ZHIPU-AI", "glm-4-flash"):
+            target_llm = "glm-4-flash@ZHIPU-AI"
+    if not target_llm:
+        pytest.skip(
+            "Provider exists but no canonical default llm_id could be inferred for tenant setup."
+        )
+
+    target_embd = current_embd
+    if not target_embd or _is_malformed_tenant_model_value(target_embd):
+        target_embd = _normalize_tenant_model_value(current_embd)
+        if not target_embd and _provider_has_model(my_llms_data, "ZHIPU-AI", "embedding-2"):
+            target_embd = "embedding-2@ZHIPU-AI"
+        if not target_embd:
+            target_embd = "BAAI/bge-small-en-v1.5@Builtin"
+
+    target_img2txt = current_img2txt
+    if _is_malformed_tenant_model_value(target_img2txt):
+        target_img2txt = _normalize_tenant_model_value(current_img2txt)
+        if not target_img2txt and _provider_has_model(my_llms_data, "ZHIPU-AI", "glm-4.5v"):
+            target_img2txt = "glm-4.5v@ZHIPU-AI"
+    target_img2txt = target_img2txt or ""
+
+    target_asr = current_asr
+    if _is_malformed_tenant_model_value(target_asr):
+        target_asr = _normalize_tenant_model_value(current_asr)
+        if not target_asr and _provider_has_model(my_llms_data, "ZHIPU-AI", "glm-asr"):
+            target_asr = "glm-asr@ZHIPU-AI"
+    target_asr = target_asr or ""
+
+    target_rerank = current_rerank
+    if _is_malformed_tenant_model_value(target_rerank):
+        target_rerank = _normalize_tenant_model_value(current_rerank)
+    target_rerank = target_rerank or ""
+
+    target_tts = current_tts
+    if _is_malformed_tenant_model_value(target_tts):
+        target_tts = _normalize_tenant_model_value(current_tts)
+    target_tts = target_tts or ""
+
+    should_update_tenant_defaults = (
+        target_llm != current_llm
+        or target_embd != current_embd
+        or target_img2txt != current_img2txt
+        or target_asr != current_asr
+        or target_rerank != current_rerank
+        or target_tts != current_tts
+    )
+
+    if should_update_tenant_defaults:
         tenant_payload = {
             "tenant_id": tenant_id,
-            "llm_id": llm_id,
-            "embd_id": tenant_data.get("embd_id") or "BAAI/bge-small-en-v1.5@Builtin",
-            "img2txt_id": tenant_data.get("img2txt_id") or "",
-            "asr_id": tenant_data.get("asr_id") or "",
-            "tts_id": tenant_data.get("tts_id"),
+            "llm_id": target_llm,
+            "embd_id": target_embd,
+            "img2txt_id": target_img2txt,
+            "asr_id": target_asr,
+            "rerank_id": target_rerank,
+            "tts_id": target_tts,
         }
         _, set_tenant_payload = _api_request_json(
             _build_url(base_url, "/v1/user/set_tenant_info"),
@@ -1033,6 +1134,7 @@ def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dic
         "tenant_id": tenant_id,
         "has_provider": True,
         "created_provider": created_provider,
+        "normalized_defaults": should_update_tenant_defaults,
         "llm_factories": list(my_llms_data.keys()) if isinstance(my_llms_data, dict) else [],
     }
 

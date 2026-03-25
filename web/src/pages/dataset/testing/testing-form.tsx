@@ -127,7 +127,7 @@ export default function TestingForm({
           <div className="mt-2.5 text-end">
             <ButtonLoading
               type="submit"
-              disabled={!!!trim(question)}
+              disabled={!trim(question)}
               loading={loading}
             >
               {/* {!loading && <CirclePlay />} */}

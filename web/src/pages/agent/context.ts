@@ -1,6 +1,6 @@
 import { INodeEvent } from '@/hooks/use-send-message';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { IMessage } from '@/interfaces/database/chat';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { HandleType, Position } from '@xyflow/react';
 import { Dispatch, SetStateAction, createContext } from 'react';
 import { useAddNode } from './hooks/use-add-node';

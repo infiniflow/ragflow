@@ -93,7 +93,8 @@ const buttonVariants = cva(
 
         // Static
         // Button has no interaction transitions
-        static: 'text-text-secondary',
+        static:
+          'text-text-secondary hover:text-text-primary focus-visible:text-text-primary',
       },
       size: {
         auto: '',

@@ -23,7 +23,7 @@ export function DatasetCard({
     <HomeCard
       data={{
         ...dataset,
-        description: `${dataset.doc_num} ${t('knowledgeDetails.files')}`,
+        description: `${dataset.document_count} ${t('knowledgeDetails.files')}`,
       }}
       moreDropdown={
         <DatasetDropdown

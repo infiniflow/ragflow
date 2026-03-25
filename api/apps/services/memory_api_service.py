@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -291,6 +291,7 @@ async def search_message(filter_dict: dict, params: dict):
         "memory_id": list[str],
         "agent_id": str,
         "session_id": str
+        "user_id": str
     }
     :param params: {
         "query": str,

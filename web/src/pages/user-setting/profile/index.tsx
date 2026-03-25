@@ -19,11 +19,16 @@ import { TimezoneList } from '@/pages/user-setting/constants';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { Loader2Icon, PenLine } from 'lucide-react';
-import { FC, useEffect } from 'react';
+import { FC, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { ProfileSettingWrapperCard } from '../components/user-setting-header';
 import { EditType, modalTitle, useProfile } from './hooks/use-profile';
+
+const timezoneOptions = TimezoneList.map(({ name }) => ({
+  value: name,
+  label: name,
+}));
 
 const baseSchema = z.object({
   userName: z
@@ -75,6 +80,7 @@ const passwordSchema = baseSchema
       });
     }
   });
+
 const ProfilePage: FC = () => {
   const { t } = useTranslate('setting');
 
@@ -115,6 +121,11 @@ const ProfilePage: FC = () => {
   //       </>
   //     );
   //   };
+
+  const timezone = useMemo(() => {
+    const tz = TimezoneList.find((tz) => tz.name === profile.timeZone);
+    return tz?.name ?? '';
+  }, [profile.timeZone]);
 
   return (
     // <div className="h-full w-full text-text-secondary relative flex flex-col gap-4">
@@ -172,8 +183,8 @@ const ProfilePage: FC = () => {
             {t('timezone')}
           </label>
           <div className="flex-1 flex items-center gap-4">
-            <div className="text-sm text-text-primary border border-border-button flex-1 rounded-md py-1.5 px-2">
-              {profile.timeZone}
+            <div className="text-sm text-text-primary border border-border-button flex-1 rounded-md py-1.5 px-2 empty:before:content-['_'] empty:before:whitespace-pre">
+              {timezone}
             </div>
             <Button
               variant="outline"
@@ -276,9 +287,7 @@ const ProfilePage: FC = () => {
                           {t('timezone')}
                         </FormLabel>
                         <SelectWithSearch
-                          options={TimezoneList.map((timeStr) => {
-                            return { value: timeStr, label: timeStr };
-                          })}
+                          options={timezoneOptions}
                           placeholder="Select a timeZone"
                           onChange={field.onChange}
                           value={field.value}

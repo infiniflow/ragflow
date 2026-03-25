@@ -27,7 +27,7 @@ from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, HtmlParser
 from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper
 from PIL import Image
-from rag.utils.lazy_image import LazyDocxImage
+from rag.utils.lazy_image import LazyImage
 
 
 class Pdf(PdfParser):
@@ -89,7 +89,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         sections = [
             (item[0], item[1] if item[1] is not None else "")
             for item in sections
-            if not isinstance(item[1], (Image.Image, LazyDocxImage))
+            if not isinstance(item[1], (Image.Image, LazyImage))
         ]
         callback(0.8, "Finish parsing.")
 

@@ -405,7 +405,10 @@ class LLMBundle(LLM4Tenant):
     async def async_chat_streamly(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
         total_tokens = 0
         ans = ""
-        if self.is_tools and getattr(self.mdl, "is_tools", False) and hasattr(self.mdl, "async_chat_streamly_with_tools"):
+        _bundle_is_tools = self.is_tools
+        _mdl_is_tools = getattr(self.mdl, "is_tools", False)
+        _has_with_tools = hasattr(self.mdl, "async_chat_streamly_with_tools")
+        if _bundle_is_tools and _mdl_is_tools and _has_with_tools:
             stream_fn = getattr(self.mdl, "async_chat_streamly_with_tools", None)
         elif hasattr(self.mdl, "async_chat_streamly"):
             stream_fn = getattr(self.mdl, "async_chat_streamly", None)
@@ -425,7 +428,7 @@ class LLMBundle(LLM4Tenant):
                         total_tokens = txt
                         break
 
-                    if txt.endswith("</think>"):
+                    if txt.endswith("</think>") and ans.endswith("</think>"):
                         ans = ans[: -len("</think>")]
 
                     if not self.verbose_tool_use:
@@ -468,7 +471,7 @@ class LLMBundle(LLM4Tenant):
                         total_tokens = txt
                         break
 
-                    if txt.endswith("</think>"):
+                    if txt.endswith("</think>") and ans.endswith("</think>"):
                         ans = ans[: -len("</think>")]
 
                     if not self.verbose_tool_use:

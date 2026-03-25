@@ -101,6 +101,20 @@ def document_app_module(monkeypatch):
 
     deepdoc_html_module.RAGFlowHtmlParser = _StubHtmlParser
     monkeypatch.setitem(sys.modules, "deepdoc.parser.html_parser", deepdoc_html_module)
+    deepdoc_mineru_module = ModuleType("deepdoc.parser.mineru_parser")
+
+    class _StubMinerUParser:
+        pass
+
+    deepdoc_mineru_module.MinerUParser = _StubMinerUParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.mineru_parser", deepdoc_mineru_module)
+    deepdoc_paddleocr_module = ModuleType("deepdoc.parser.paddleocr_parser")
+
+    class _StubPaddleOCRParser:
+        pass
+
+    deepdoc_paddleocr_module.PaddleOCRParser = _StubPaddleOCRParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.paddleocr_parser", deepdoc_paddleocr_module)
     monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
 
     stub_apps = ModuleType("api.apps")

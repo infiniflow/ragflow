@@ -26,7 +26,7 @@ const mergeFilterValue = (
   filterValue: FilterValue,
   ids: string[],
 ): FilterValue => {
-  let value = {} as FilterValue;
+  const value = {} as FilterValue;
   for (const key in filterValue) {
     if (Array.isArray(filterValue[key])) {
       const keyIds = filterValue[key] as string[];
@@ -52,7 +52,7 @@ export function useHandleFilterSubmit() {
     if (!filters?.length || !filterValue) {
       return;
     }
-    let validFields = filters.reduce((pre, cur) => {
+    const validFields = filters.reduce((pre, cur) => {
       return [...pre, ...getFilterIds(cur as FilterType)];
     }, [] as string[]);
     if (!validFields.length) {
