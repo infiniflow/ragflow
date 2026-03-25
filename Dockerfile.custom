@@ -1,0 +1,21 @@
+# Lightweight custom layer on top of the official RagFlow image.
+# Adds youtube-transcript-api and our custom source files.
+FROM infiniflow/ragflow:v0.24.0
+
+USER root
+WORKDIR /ragflow
+
+# Install youtube-transcript-api into the venv
+RUN /ragflow/.venv/bin/pip3 install youtube-transcript-api==1.2.4 --quiet
+
+# Copy our custom source files
+COPY common/constants.py         /ragflow/common/constants.py
+COPY rag/app/video.py            /ragflow/rag/app/video.py
+COPY rag/svr/task_executor.py    /ragflow/rag/svr/task_executor.py
+COPY rag/nlp/search.py           /ragflow/rag/nlp/search.py
+COPY api/apps/sdk/dataset.py     /ragflow/api/apps/sdk/dataset.py
+COPY api/apps/sdk/doc.py         /ragflow/api/apps/sdk/doc.py
+COPY api/utils/validation_utils.py /ragflow/api/utils/validation_utils.py
+COPY api/utils/api_utils.py      /ragflow/api/utils/api_utils.py
+COPY api/db/init_data.py         /ragflow/api/db/init_data.py
+COPY conf/infinity_mapping.json  /ragflow/conf/infinity_mapping.json
