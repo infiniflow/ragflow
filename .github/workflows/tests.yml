@@ -412,20 +412,16 @@ jobs:
 
       - name: Stop ragflow:nightly for Infinity
         if: always()  # always run this step even if previous steps failed
-        working-directory: docker
         run: |
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
-          sudo docker compose -f docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
-          if [[ -n ${RAGFLOW_IMAGE} ]]; then
-            sudo docker rmi -f ${RAGFLOW_IMAGE}
-          fi
 
       - name: Start ragflow:nightly for Elasticsearch
         working-directory: docker
         run: |
           sed -i '1i DOC_ENGINE=elasticsearch' docker/.env
-          sudo docker compose -f docker-compose.yml -p ${GITHUB_RUN_ID} up -d
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
 
       - name: Run sdk tests against Elasticsearch
         run: |
@@ -605,6 +601,9 @@ jobs:
       - name: Stop ragflow:nightly for Elasticsearch
         if: always()  # always run this step even if previous steps failed
         run: |
+          # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
-
+          if [[ -n ${RAGFLOW_IMAGE} ]]; then
+            sudo docker rmi -f ${RAGFLOW_IMAGE}
+          fi
