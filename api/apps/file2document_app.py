@@ -15,6 +15,7 @@
 #
 
 import asyncio
+import logging
 from pathlib import Path
 
 from api.db.services.file2document_service import File2DocumentService
@@ -39,15 +40,18 @@ def _convert_files(file_ids, kb_ids, user_id):
             if not e:
                 continue
             tenant_id = DocumentService.get_tenant_id(doc_id)
-            if tenant_id:
-                DocumentService.remove_document(doc, tenant_id)
+            if not tenant_id:
+                logging.warning("tenant_id not found for doc_id=%s, skipping remove_document", doc_id)
+                continue
+            DocumentService.remove_document(doc, tenant_id)
         File2DocumentService.delete_by_file_id(id)
+
+        e, file = FileService.get_by_id(id)
+        if not e:
+            continue
 
         for kb_id in kb_ids:
             e, kb = KnowledgebaseService.get_by_id(kb_id)
-            if not e:
-                continue
-            e, file = FileService.get_by_id(id)
             if not e:
                 continue
             doc = DocumentService.insert({
@@ -87,6 +91,12 @@ async def convert():
             if file_id not in files_set:
                 return get_data_error_result(message="File not found!")
 
+        # Validate all kb_ids exist before scheduling background work
+        for kb_id in kb_ids:
+            e, _ = KnowledgebaseService.get_by_id(kb_id)
+            if not e:
+                return get_data_error_result(message="Can't find this dataset!")
+
         # Expand folders to their innermost file IDs
         all_file_ids = []
         for file_id in file_ids:
@@ -100,8 +110,10 @@ async def convert():
         # Run the blocking DB work in a thread so the event loop is not blocked.
         # For large folders this prevents 504 Gateway Timeout by returning as
         # soon as the background task is scheduled.
-        asyncio.get_running_loop().run_in_executor(
-            None, _convert_files, all_file_ids, kb_ids, user_id
+        loop = asyncio.get_running_loop()
+        future = loop.run_in_executor(None, _convert_files, all_file_ids, kb_ids, user_id)
+        future.add_done_callback(
+            lambda f: logging.error("_convert_files failed: %s", f.exception()) if f.exception() else None
         )
         return get_json_result(data=True)
     except Exception as e:
