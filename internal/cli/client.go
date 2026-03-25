@@ -333,8 +333,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListDatasets(cmd)
 	case "list_agents":
 		return c.ListAgents(cmd)
-	case "create_token":
-		return c.CreateAdminToken(cmd)
+	case "generate_token":
+		return c.GenerateAdminToken(cmd)
 	case "list_tokens":
 		return c.ListAdminTokens(cmd)
 	case "drop_token":
