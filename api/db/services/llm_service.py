@@ -94,9 +94,12 @@ class LLMBundle(LLM4Tenant):
 
     def _log_usage(self, model_type: str, usage: LLMUsage):
         """将本次 LLM 调用的 token 消耗写入明细日志表，失败只记日志不影响主流程。"""
+        tenant_llm_id = self.model_config.get("id")
+        if not tenant_llm_id:
+            return
         LLMUsageLogService.create(
             tenant_id=self.tenant_id,
-            tenant_llm_id=self.model_config["id"],
+            tenant_llm_id=tenant_llm_id,
             model_type=model_type,
             user_id=self.user_id,
             biz_type=self.biz_type,
