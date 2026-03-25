@@ -68,7 +68,7 @@ from api.db.services.file2document_service import File2DocumentService
 from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, \
-    email, tag
+    email, tag, video
 from rag.nlp import search, rag_tokenizer, add_positions
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 from common.token_utils import num_tokens_from_string, truncate
@@ -97,7 +97,8 @@ FACTORY = {
     ParserType.AUDIO.value: audio,
     ParserType.EMAIL.value: email,
     ParserType.KG.value: naive,
-    ParserType.TAG.value: tag
+    ParserType.TAG.value: tag,
+    ParserType.VIDEO.value: video
 }
 
 TASK_TYPE_TO_PIPELINE_TASK_TYPE = {
@@ -249,23 +250,27 @@ async def build_chunks(task, progress_callback):
         return []
 
     chunker = FACTORY[task["parser_id"].lower()]
-    try:
-        st = timer()
-        bucket, name = File2DocumentService.get_storage_address(doc_id=task["doc_id"])
-        binary = await get_storage_binary(bucket, name)
-        logging.info("From minio({}) {}/{}".format(timer() - st, task["location"], task["name"]))
-    except TimeoutError:
-        progress_callback(-1, "Internal server error: Fetch file from minio timeout. Could you try it again.")
-        logging.exception(
-            "Minio {}/{} got timeout: Fetch file from minio timeout.".format(task["location"], task["name"]))
-        raise
-    except Exception as e:
-        if re.search("(No such file|not found)", str(e)):
-            progress_callback(-1, "Can not find file <%s> from minio. Could you try it again?" % task["name"])
-        else:
-            progress_callback(-1, "Get file from minio: %s" % str(e).replace("'", ""))
-        logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
-        raise
+    # ── video: URL-only document, no binary stored in MinIO ───────────────
+    if task["parser_id"].lower() == ParserType.VIDEO.value:
+        binary = None
+    else:
+        try:
+            st = timer()
+            bucket, name = File2DocumentService.get_storage_address(doc_id=task["doc_id"])
+            binary = await get_storage_binary(bucket, name)
+            logging.info("From minio({}) {}/{}".format(timer() - st, task["location"], task["name"]))
+        except TimeoutError:
+            progress_callback(-1, "Internal server error: Fetch file from minio timeout. Could you try it again.")
+            logging.exception(
+                "Minio {}/{} got timeout: Fetch file from minio timeout.".format(task["location"], task["name"]))
+            raise
+        except Exception as e:
+            if re.search("(No such file|not found)", str(e)):
+                progress_callback(-1, "Can not find file <%s> from minio. Could you try it again?" % task["name"])
+            else:
+                progress_callback(-1, "Get file from minio: %s" % str(e).replace("'", ""))
+            logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
+            raise
 
     try:
         async with chunk_limiter:
