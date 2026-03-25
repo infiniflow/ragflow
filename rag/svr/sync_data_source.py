@@ -1432,7 +1432,7 @@ async def main():
                                   __/ |
                                  |___/
     """)
-    logging.info(f"RAGFlow version: {get_ragflow_version()}")
+    logging.info(f"RAGFlow data sync version: {get_ragflow_version()}")
     show_configs()
     settings.init_settings()
     if sys.platform != "win32":
