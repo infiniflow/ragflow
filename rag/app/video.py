@@ -218,9 +218,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100_000,
         d["video_title"] = video_title
         d["timestamp_seconds"] = seg["timestamp_seconds"]
         d["transcript_segment"] = deeplink
-        # ── positional shim: map minute-bucket → fake page number ──────────
-        # existing retrieval code reads `positions`; this keeps it working
-        d["positions"] = [seg["timestamp_seconds"] // 60]
+        # video has no page geometry — omit positions entirely so
+        # add_positions() is not called; timestamp_seconds serves the same role
         chunks.append(d)
 
     logger.info(
