@@ -136,7 +136,7 @@ public:
     [[nodiscard]] std::vector<std::pair<std::vector<std::string_view>, double>> GetBestTokensTopN(
         std::string_view chars, uint32_t n) const;
 
-    static const size_t term_string_buffer_limit_ = 4096 * 3;
+    static constexpr size_t term_string_buffer_limit_ = 4096 * 3;
 
     std::string dict_path_;
 
@@ -151,6 +151,8 @@ public:
     std::unique_ptr<Stemmer> stemmer_;
 
     OpenCC* opencc_{nullptr};
+
+    mutable std::vector<char> lowercase_string_buffer_;
 
     bool fine_grained_{false};
 
