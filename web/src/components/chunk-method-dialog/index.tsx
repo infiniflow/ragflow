@@ -181,7 +181,7 @@ export function ChunkMethodDialog({
   });
 
   const selectedTag = useWatch({
-    name: 'chunk_method',
+    name: 'parser_id',
     control: form.control,
   });
   const isMineruSelected =
