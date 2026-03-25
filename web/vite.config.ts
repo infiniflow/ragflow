@@ -49,6 +49,21 @@ export default defineConfig(({ mode }) => {
       },
     },
     hybrid: {
+      '/v1/system/token_list': {
+        target: 'http://127.0.0.1:9384/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/v1/system/new_token': {
+        target: 'http://127.0.0.1:9384/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/v1/system/token': {
+        target: 'http://127.0.0.1:9384/',
+        changeOrigin: true,
+        ws: true,
+      },
       '/v1/system/config': {
         target: 'http://127.0.0.1:9384/',
         changeOrigin: true,

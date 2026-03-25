@@ -95,6 +95,9 @@ const (
 	TokenSync
 	TokenBenchmark
 	TokenPing
+	TokenToken
+	TokenTokens
+	TokenUnset
 
 	// Literals
 	TokenIdentifier
