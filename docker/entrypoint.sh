@@ -234,8 +234,9 @@ function ensure_docling() {
 }
 
 function ensure_db_init() {
-  echo "Initializing database tables..."
-  "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
+    echo "Initializing database tables..."
+    "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
+    echo "Database tables initialized."
 }
 
 function wait_for_server() {
@@ -268,9 +269,8 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 
     while true; do
         echo "Attempt to start RAGFlow server..."
-        "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
+        "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
         echo "Start RAGFlow python server in background."
-        wait;
         sleep 1;
     done &
 fi
@@ -279,10 +279,9 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
         while true; do
             echo "Attempt to start RAGFlow go server..."
-            wait_for_server "http://127.0.0.1:9384/healthz" "ragflow_server"
+            wait_for_server "http://127.0.0.1:9380/healthz" "ragflow_server"
             echo "Starting RAGFlow go server..."
-            bin/server_main &
-            wait;
+            bin/server_main
             sleep 1;
         done &
     fi
@@ -290,12 +289,10 @@ fi
 
 
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
-
     while true; do
         echo "Attempt to start Admin python server..."
-        "$PY" admin/server/admin_server.py &
-        echo "Starting Admin python server..."
-        wait;
+        "$PY" admin/server/admin_server.py
+        echo "Starting Admin python server in background"
         sleep 1;
     done &
 fi
@@ -304,10 +301,9 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
         while true; do
             echo "Attempt to starting Admin go server..."
-            wait_for_server "http://127.0.0.1:9383/api/v1/admin/ping" "admin_server"
+            wait_for_server "http://127.0.0.1:9381/api/v1/admin/ping" "admin_server"
             echo "Starting Admin go server..."
-            bin/admin_server &
-            wait;
+            bin/admin_server
             sleep 1;
         done &
     fi
