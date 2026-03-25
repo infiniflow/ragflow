@@ -419,7 +419,6 @@ jobs:
           sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
 
       - name: Start ragflow:nightly for Elasticsearch
-        working-directory: docker
         run: |
           sed -i '1i DOC_ENGINE=elasticsearch' docker/.env
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d

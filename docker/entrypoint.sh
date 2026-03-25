@@ -270,12 +270,10 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     while true; do
         echo "Attempt to start RAGFlow server..."
         "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
-        echo "Start RAGFlow python server in background."
+        echo "RAGFlow python server started."
         sleep 1;
     done &
-fi
 
-if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
         while true; do
             echo "Attempt to start RAGFlow go server..."
@@ -292,12 +290,10 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     while true; do
         echo "Attempt to start Admin python server..."
         "$PY" admin/server/admin_server.py
-        echo "Starting Admin python server in background"
+        echo "Admin python server started"
         sleep 1;
     done &
-fi
 
-if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
         while true; do
             echo "Attempt to starting Admin go server..."
