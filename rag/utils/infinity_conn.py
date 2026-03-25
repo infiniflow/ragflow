@@ -266,7 +266,11 @@ class InfinityConnection(InfinityConnectionBase):
                     if order_by.fields:
                         builder.sort(order_by_expr_list)
                     builder.offset(offset).limit(limit)
-                    kb_res, extra_result = builder.option({"total_hits_count": True}).to_df()
+                    try:
+                        kb_res, extra_result = builder.option({"total_hits_count": True}).to_df()
+                    except InfinityException as e:
+                        self.logger.warning(f"INFINITY search failed on table {table_name} (error {e.error_code}): {e}. Skipping.")
+                        continue
                     if extra_result:
                         total_hits_count += int(extra_result["total_hits_count"])
                     self.logger.debug(f"INFINITY search table: {str(table_name)}, result: {str(kb_res)}")
