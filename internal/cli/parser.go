@@ -45,7 +45,7 @@ func (p *Parser) nextToken() {
 }
 
 // Parse parses the input and returns a Command
-func (p *Parser) Parse() (*Command, error) {
+func (p *Parser) Parse(adminCommand bool) (*Command, error) {
 	if p.curToken.Type == TokenEOF {
 		return nil, nil
 	}
@@ -56,7 +56,7 @@ func (p *Parser) Parse() (*Command, error) {
 	}
 
 	// Parse SQL-like command
-	return p.parseSQLCommand()
+	return p.parseSQLCommand(adminCommand)
 }
 
 func (p *Parser) parseMetaCommand() (*Command, error) {
@@ -76,7 +76,7 @@ func (p *Parser) parseMetaCommand() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseSQLCommand() (*Command, error) {
+func (p *Parser) parseSQLCommand(adminCommand bool) (*Command, error) {
 	if p.curToken.Type != TokenIdentifier && !isKeyword(p.curToken.Type) {
 		return nil, fmt.Errorf("expected command, got %s", p.curToken.Value)
 	}
@@ -87,7 +87,7 @@ func (p *Parser) parseSQLCommand() (*Command, error) {
 	case TokenPing:
 		return p.parsePingServer()
 	case TokenList:
-		return p.parseListCommand()
+		return p.parseListCommand(adminCommand)
 	case TokenShow:
 		return p.parseShowCommand()
 	case TokenCreate:
@@ -115,7 +115,7 @@ func (p *Parser) parseSQLCommand() (*Command, error) {
 	case TokenParse:
 		return p.parseParseCommand()
 	case TokenBenchmark:
-		return p.parseBenchmarkCommand()
+		return p.parseBenchmarkCommand(adminCommand)
 	case TokenRegister:
 		return p.parseRegisterCommand()
 	case TokenStartup:
@@ -256,7 +256,7 @@ func (p *Parser) parseRegisterCommand() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseListCommand() (*Command, error) {
+func (p *Parser) parseListCommand(adminCommand bool) (*Command, error) {
 	p.nextToken() // consume LIST
 
 	switch p.curToken.Type {
@@ -307,7 +307,7 @@ func (p *Parser) parseListCommand() (*Command, error) {
 	case TokenAgents:
 		return p.parseListAgents()
 	case TokenTokens:
-		return p.parseListTokens()
+		return p.parseListTokens(adminCommand)
 	case TokenModel:
 		return p.parseListModelProviders()
 	case TokenDefault:
@@ -380,8 +380,12 @@ func (p *Parser) parseListAgents() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseListTokens() (*Command, error) {
+func (p *Parser) parseListTokens(adminCommand bool) (*Command, error) {
 	p.nextToken() // consume TOKENS
+	if !adminCommand {
+		// user mode
+		return NewCommand("list_tokens"), nil
+	}
 	if p.curToken.Type != TokenOf {
 		return nil, fmt.Errorf("expected OF")
 	}
@@ -922,8 +926,6 @@ func (p *Parser) parseDropChat() (*Command, error) {
 	}
 	return cmd, nil
 }
-
-
 
 func (p *Parser) parseAlterCommand() (*Command, error) {
 	p.nextToken() // consume ALTER
@@ -1538,7 +1540,7 @@ func (p *Parser) parseParseDocs() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseBenchmarkCommand() (*Command, error) {
+func (p *Parser) parseBenchmarkCommand(adminCommand bool) (*Command, error) {
 	cmd := NewCommand("benchmark")
 
 	p.nextToken() // consume BENCHMARK
@@ -1557,7 +1559,7 @@ func (p *Parser) parseBenchmarkCommand() (*Command, error) {
 
 	p.nextToken()
 	// Parse user_statement
-	nestedCmd, err := p.parseUserStatement()
+	nestedCmd, err := p.parseUserStatement() // Not only user statement
 	if err != nil {
 		return nil, err
 	}
@@ -1583,7 +1585,7 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 	case TokenReset:
 		return p.parseResetCommand()
 	case TokenList:
-		return p.parseListCommand()
+		return p.parseListCommand(false)
 	case TokenParse:
 		return p.parseParseCommand()
 	case TokenImport:

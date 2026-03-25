@@ -108,7 +108,7 @@ func parseHostPort(hostPort string) (string, int, error) {
 
 // ParseConnectionArgs parses command line arguments similar to Python's parse_connection_args
 func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
-	// First, scan args to check for help and config file
+	// First, scan args to check for help, config file, and admin mode
 	var configFilePath string
 
 	for i := 0; i < len(args); i++ {
@@ -225,12 +225,25 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 		}
 	}
 
-	// Validate mutual exclusivity: -t and (-u, -p) are mutually exclusive
-	hasToken := result.APIToken != ""
-	hasUserPass := result.UserName != "" || result.Password != ""
+	if result.UserName == "" && result.Password != "" {
+		return nil, fmt.Errorf("username (-u/--user) is required when using password (-p/--password)")
+	}
 
-	if hasToken && hasUserPass {
-		return nil, fmt.Errorf("cannot use both API token (-t/--token) and username/password (-u/--user, -p/--password). Please use one authentication method")
+	if result.AdminMode {
+		result.APIToken = ""
+		if result.UserName == "" {
+			result.UserName = "admin@ragflow.io"
+			result.Password = ""
+		}
+	} else {
+		// For user mode
+		// Validate mutual exclusivity: -t and (-u, -p) are mutually exclusive
+		hasToken := result.APIToken != ""
+		hasUserPass := result.UserName != "" || result.Password != ""
+
+		if hasToken && hasUserPass {
+			return nil, fmt.Errorf("cannot use both API token (-t/--token) and username/password (-u/--user, -p/--password). Please use one authentication method")
+		}
 	}
 
 	// Get command from remaining args (non-flag arguments)
@@ -447,7 +460,7 @@ func (c *CLI) Run() error {
 
 func (c *CLI) execute(input string) error {
 	p := NewParser(input)
-	cmd, err := p.Parse()
+	cmd, err := p.Parse(c.args.AdminMode)
 	if err != nil {
 		return err
 	}
