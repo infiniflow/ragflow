@@ -276,7 +276,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
             bin/server_main &
         else
             echo "Starting RAGFlow server in python mode..."
-        if
+        fi
         wait;
         sleep 1;
     done &
@@ -301,7 +301,7 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
             bin/admin_server &
         else
             echo "Starting Admin server in python mode..."
-        if
+        fi
         wait;
         sleep 1;
     done &
