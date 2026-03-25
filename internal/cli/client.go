@@ -18,13 +18,17 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
+
+	ce "ragflow/internal/cli/contextengine"
 )
 
 // PasswordPromptFunc is a function type for password input
@@ -36,6 +40,7 @@ type RAGFlowClient struct {
 	ServerType     string             // "admin" or "user"
 	PasswordPrompt PasswordPromptFunc // Function for password input
 	OutputFormat   OutputFormat       // Output format: table, plain, json
+	ContextEngine  *ce.Engine         // Context Engine for virtual filesystem
 }
 
 // NewRAGFlowClient creates a new RAGFlow client
@@ -48,10 +53,54 @@ func NewRAGFlowClient(serverType string) *RAGFlowClient {
 		httpClient.Port = 9380
 	}
 
-	return &RAGFlowClient{
+	client := &RAGFlowClient{
 		HTTPClient: httpClient,
 		ServerType: serverType,
 	}
+
+	// Initialize Context Engine
+	client.initContextEngine()
+
+	return client
+}
+
+// initContextEngine initializes the Context Engine with all providers
+func (c *RAGFlowClient) initContextEngine() {
+	engine := ce.NewEngine()
+
+	// Register providers
+	engine.RegisterProvider(ce.NewDatasetProvider(&httpClientAdapter{c.HTTPClient}))
+
+	c.ContextEngine = engine
+}
+
+// httpClientAdapter adapts HTTPClient to ce.HTTPClientInterface
+type httpClientAdapter struct {
+	client *HTTPClient
+}
+
+func (a *httpClientAdapter) Request(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*ce.HTTPResponse, error) {
+	// Auto-detect auth kind based on available tokens
+	// If authKind is "auto" or empty, determine based on token availability
+	if authKind == "auto" || authKind == "" {
+		if a.client.useAPIToken && a.client.APIToken != "" {
+			authKind = "api"
+		} else if a.client.LoginToken != "" {
+			authKind = "web"
+		} else {
+			authKind = "web" // default
+		}
+	}
+	resp, err := a.client.Request(method, path, useAPIBase, authKind, headers, jsonBody)
+	if err != nil {
+		return nil, err
+	}
+	return &ce.HTTPResponse{
+		StatusCode: resp.StatusCode,
+		Body:       resp.Body,
+		Headers:    resp.Headers,
+		Duration:   resp.Duration,
+	}, nil
 }
 
 // LoginUserInteractive performs interactive login with username and password
@@ -613,48 +662,84 @@ func (r *CEListResponse) PrintOut() {
 	}
 }
 
-// CEList handles the ls command - lists datasets (currently only supports datasets)
+// CEList handles the ls command - lists nodes using Context Engine
 func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
+	// Get path from command params, default to "datasets"
 	path, _ := cmd.Params["path"].(string)
-
-	// Build query params
-	queryParams := ""
-	if path != "" && path != "." {
-		queryParams = "?path=" + path
+	if path == "" {
+		path = "datasets"
 	}
 
-	// Try web auth (LoginToken) first, then api auth (APIToken)
-	var resp *Response
-	var err error
-	if c.HTTPClient.LoginToken != "" {
-		resp, err = c.HTTPClient.Request("GET", "/contextfs/ls"+queryParams, true, "web", nil, nil)
-	} else if c.HTTPClient.APIToken != "" {
-		resp, err = c.HTTPClient.Request("GET", "/contextfs/ls"+queryParams, true, "api", nil, nil)
-	} else {
-		return nil, fmt.Errorf("no authentication token available")
+	// Parse options
+	opts := &ce.ListOptions{}
+	if recursive, ok := cmd.Params["recursive"].(bool); ok {
+		opts.Recursive = recursive
 	}
+	if limit, ok := cmd.Params["limit"].(int); ok {
+		opts.Limit = limit
+	}
+	if offset, ok := cmd.Params["offset"].(int); ok {
+		opts.Offset = offset
+	}
+
+	// Execute list command through Context Engine
+	ctx := context.Background()
+	result, err := c.ContextEngine.List(ctx, path, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	var result CEListResponse
-	result.outputFormat = c.OutputFormat
-	result.Duration = resp.Duration
+	// Convert to response
+	var response CEListResponse
+	response.outputFormat = c.OutputFormat
+	response.Code = 0
+	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
 
-	var jsonResp struct {
-		Code    int                    `json:"code"`
-		Data    []map[string]interface{} `json:"data"`
-		Message string                 `json:"message"`
+	return &response, nil
+}
+
+// getStringValue safely converts interface{} to string
+func getStringValue(v interface{}) string {
+	if v == nil {
+		return ""
 	}
-	if err := json.Unmarshal(resp.Body, &jsonResp); err != nil {
-		return nil, err
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+// formatTimeValue converts a timestamp (milliseconds or string) to readable format
+func formatTimeValue(v interface{}) string {
+	if v == nil {
+		return ""
 	}
 
-	result.Code = jsonResp.Code
-	result.Message = jsonResp.Message
-	result.Data = jsonResp.Data
+	var ts int64
+	switch val := v.(type) {
+	case float64:
+		ts = int64(val)
+	case int64:
+		ts = val
+	case int:
+		ts = int64(val)
+	case string:
+		// Try to parse as number
+		if _, err := fmt.Sscanf(val, "%d", &ts); err != nil {
+			// If it's already a formatted date string, return as is
+			return val
+		}
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 
-	return &result, nil
+	// Convert milliseconds to seconds if timestamp is in milliseconds (13 digits)
+	if ts > 1e12 {
+		ts = ts / 1000
+	}
+
+	t := time.Unix(ts, 0)
+	return t.Format("2006-01-02 15:04:05")
 }
 
 // CESearchResponse represents the response for search command
@@ -680,48 +765,42 @@ func (r *CESearchResponse) PrintOut() {
 	}
 }
 
-// CESearch handles the search command
+// CESearch handles the search command using Context Engine
 func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
-	query, _ := cmd.Params["query"].(string)
+	// Get path and query from command params
 	path, _ := cmd.Params["path"].(string)
+	if path == "" {
+		path = "datasets"
+	}
+	query, _ := cmd.Params["query"].(string)
 
-	reqBody := map[string]interface{}{
-		"query": query,
-		"path":  path,
+	// Parse options
+	opts := &ce.SearchOptions{
+		Query: query,
+	}
+	if limit, ok := cmd.Params["limit"].(int); ok {
+		opts.Limit = limit
+	}
+	if offset, ok := cmd.Params["offset"].(int); ok {
+		opts.Offset = offset
+	}
+	if recursive, ok := cmd.Params["recursive"].(bool); ok {
+		opts.Recursive = recursive
 	}
 
-	// Try web auth (LoginToken) first, then api auth (APIToken)
-	var resp *Response
-	var err error
-	if c.HTTPClient.LoginToken != "" {
-		resp, err = c.HTTPClient.Request("POST", "/contextfs/search", true, "web", nil, reqBody)
-	} else if c.HTTPClient.APIToken != "" {
-		resp, err = c.HTTPClient.Request("POST", "/contextfs/search", true, "api", nil, reqBody)
-	} else {
-		return nil, fmt.Errorf("no authentication token available")
-	}
+	// Execute search command through Context Engine
+	ctx := context.Background()
+	result, err := c.ContextEngine.Search(ctx, path, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	var result CESearchResponse
-	result.outputFormat = c.OutputFormat
-	result.Duration = resp.Duration
+	// Convert to response
+	var response CESearchResponse
+	response.outputFormat = c.OutputFormat
+	response.Code = 0
+	response.Total = result.Total
+	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
 
-	var jsonResp struct {
-		Code    int                      `json:"code"`
-		Data    []map[string]interface{} `json:"data"`
-		Total   int                      `json:"total"`
-		Message string                   `json:"message"`
-	}
-	if err := json.Unmarshal(resp.Body, &jsonResp); err != nil {
-		return nil, err
-	}
-
-	result.Code = jsonResp.Code
-	result.Message = jsonResp.Message
-	result.Data = jsonResp.Data
-	result.Total = jsonResp.Total
-
-	return &result, nil
+	return &response, nil
 }

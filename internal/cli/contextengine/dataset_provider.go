@@ -1,0 +1,643 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package context
+
+import (
+	stdctx "context"
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// HTTPClientInterface defines the interface needed from HTTPClient
+type HTTPClientInterface interface {
+	Request(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*HTTPResponse, error)
+}
+
+// HTTPResponse represents an HTTP response
+type HTTPResponse struct {
+	StatusCode int
+	Body       []byte
+	Headers    map[string][]string
+	Duration   float64
+}
+
+// DatasetProvider handles datasets and their documents
+// Path structure:
+//   - datasets/              -> List all datasets
+//   - datasets/{name}        -> Get dataset info
+//   - datasets/{name}/files  -> List documents in dataset
+//   - datasets/{name}/files/{doc_name} -> Get document info
+type DatasetProvider struct {
+	BaseProvider
+	httpClient HTTPClientInterface
+}
+
+// NewDatasetProvider creates a new DatasetProvider
+func NewDatasetProvider(httpClient HTTPClientInterface) *DatasetProvider {
+	return &DatasetProvider{
+		BaseProvider: BaseProvider{
+			name:        "datasets",
+			description: "Dataset management provider",
+			rootPath:    "datasets",
+		},
+		httpClient: httpClient,
+	}
+}
+
+// Supports returns true if this provider can handle the given path
+func (p *DatasetProvider) Supports(path string) bool {
+	normalized := normalizePath(path)
+	return normalized == "datasets" || strings.HasPrefix(normalized, "datasets/")
+}
+
+// List lists nodes at the given path
+func (p *DatasetProvider) List(ctx stdctx.Context, subPath string, opts *ListOptions) (*Result, error) {
+	// subPath is the path relative to "datasets/"
+	// Empty subPath means list all datasets
+	// "{name}/files" means list documents in a dataset
+
+	if subPath == "" {
+		return p.listDatasets(ctx, opts)
+	}
+
+	parts := SplitPath(subPath)
+	if len(parts) == 1 {
+		// datasets/{name} - return dataset info as a single node
+		return p.getDatasetNode(ctx, parts[0])
+	}
+
+	if len(parts) == 2 && parts[1] == "files" {
+		// datasets/{name}/files - list documents
+		return p.listDocuments(ctx, parts[0], opts)
+	}
+
+	if len(parts) == 3 && parts[1] == "files" {
+		// datasets/{name}/files/{doc_name} - get document info
+		return p.getDocumentNode(ctx, parts[0], parts[2])
+	}
+
+	return nil, fmt.Errorf("invalid path: %s", subPath)
+}
+
+// Search searches for datasets or documents
+func (p *DatasetProvider) Search(ctx stdctx.Context, subPath string, opts *SearchOptions) (*Result, error) {
+	if opts.Query == "" {
+		return p.List(ctx, subPath, &ListOptions{
+			Limit:  opts.Limit,
+			Offset: opts.Offset,
+		})
+	}
+
+	// If searching under a specific dataset's files
+	parts := SplitPath(subPath)
+	if len(parts) >= 2 && parts[1] == "files" {
+		datasetName := parts[0]
+		return p.searchDocuments(ctx, datasetName, opts)
+	}
+
+	// Otherwise search datasets
+	return p.searchDatasets(ctx, opts)
+}
+
+// Mkdir creates a new dataset or directory structure
+func (p *DatasetProvider) Mkdir(ctx stdctx.Context, subPath string, params map[string]interface{}) (*Node, error) {
+	if subPath == "" {
+		return nil, fmt.Errorf("cannot create dataset without a name")
+	}
+
+	parts := SplitPath(subPath)
+	if len(parts) == 1 {
+		// Create dataset
+		return p.createDataset(ctx, parts[0], params)
+	}
+
+	return nil, fmt.Errorf("mkdir only supports creating datasets at the root level")
+}
+
+// Get retrieves a single node
+func (p *DatasetProvider) Get(ctx stdctx.Context, subPath string) (*Node, error) {
+	if subPath == "" {
+		return nil, fmt.Errorf("cannot get root datasets node")
+	}
+
+	parts := SplitPath(subPath)
+	if len(parts) == 1 {
+		return p.getDataset(ctx, parts[0])
+	}
+
+	if len(parts) == 3 && parts[1] == "files" {
+		return p.getDocument(ctx, parts[0], parts[2])
+	}
+
+	return nil, fmt.Errorf("not found: %s", subPath)
+}
+
+// Cat retrieves document content (not implemented for datasets)
+func (p *DatasetProvider) Cat(ctx stdctx.Context, subPath string) ([]byte, error) {
+	return nil, fmt.Errorf("cat not supported for datasets provider")
+}
+
+// Put creates or updates a resource
+func (p *DatasetProvider) Put(ctx stdctx.Context, subPath string, content []byte, params map[string]interface{}) (*Node, error) {
+	return nil, fmt.Errorf("put not yet implemented for datasets provider")
+}
+
+// Rm removes a dataset or document
+func (p *DatasetProvider) Rm(ctx stdctx.Context, subPath string, recursive bool) error {
+	if subPath == "" {
+		return fmt.Errorf("cannot remove root datasets node")
+	}
+
+	parts := SplitPath(subPath)
+	if len(parts) == 1 {
+		return p.deleteDataset(ctx, parts[0])
+	}
+
+	if len(parts) == 3 && parts[1] == "files" {
+		return p.deleteDocument(ctx, parts[0], parts[2])
+	}
+
+	return fmt.Errorf("invalid path for removal: %s", subPath)
+}
+
+// ==================== Dataset Operations ====================
+
+func (p *DatasetProvider) listDatasets(ctx stdctx.Context, opts *ListOptions) (*Result, error) {
+	resp, err := p.httpClient.Request("GET", "/datasets", true, "auto", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var apiResp struct {
+		Code    int                      `json:"code"`
+		Data    []map[string]interface{} `json:"data"`
+		Message string                   `json:"message"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
+		return nil, err
+	}
+
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("API error: %s", apiResp.Message)
+	}
+
+	nodes := make([]*Node, 0, len(apiResp.Data))
+	for _, ds := range apiResp.Data {
+		node := p.datasetToNode(ds)
+		nodes = append(nodes, node)
+	}
+
+	return &Result{
+		Nodes: nodes,
+		Total: len(nodes),
+	}, nil
+}
+
+func (p *DatasetProvider) getDatasetNode(ctx stdctx.Context, name string) (*Result, error) {
+	node, err := p.getDataset(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{
+		Nodes: []*Node{node},
+		Total: 1,
+	}, nil
+}
+
+func (p *DatasetProvider) getDataset(ctx stdctx.Context, name string) (*Node, error) {
+	// First list all datasets to find the one with matching name
+	resp, err := p.httpClient.Request("GET", "/datasets", true, "auto", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var apiResp struct {
+		Code    int                      `json:"code"`
+		Data    []map[string]interface{} `json:"data"`
+		Message string                   `json:"message"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
+		return nil, err
+	}
+
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("API error: %s", apiResp.Message)
+	}
+
+	for _, ds := range apiResp.Data {
+		if getString(ds["name"]) == name {
+			return p.datasetToNode(ds), nil
+		}
+	}
+
+	return nil, fmt.Errorf("%s: dataset '%s'", ErrNotFound, name)
+}
+
+func (p *DatasetProvider) createDataset(ctx stdctx.Context, name string, params map[string]interface{}) (*Node, error) {
+	payload := map[string]interface{}{
+		"name": name,
+	}
+
+	// Add optional parameters
+	if params != nil {
+		if embedding, ok := params["embedding_model"]; ok {
+			payload["embedding_model"] = embedding
+		}
+		if parser, ok := params["parser_config"]; ok {
+			payload["parser_config"] = parser
+		}
+		if parserMethod, ok := params["parser_method"]; ok {
+			payload["parser_method"] = parserMethod
+		}
+	}
+
+	resp, err := p.httpClient.Request("POST", "/datasets", true, "auto", nil, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	var apiResp struct {
+		Code    int                    `json:"code"`
+		Data    map[string]interface{} `json:"data"`
+		Message string                 `json:"message"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
+		return nil, err
+	}
+
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("API error: %s", apiResp.Message)
+	}
+
+	return p.datasetToNode(apiResp.Data), nil
+}
+
+func (p *DatasetProvider) deleteDataset(ctx stdctx.Context, name string) error {
+	// First get the dataset ID
+	node, err := p.getDataset(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	datasetID := getString(node.Metadata["id"])
+	if datasetID == "" {
+		return fmt.Errorf("dataset ID not found")
+	}
+
+	resp, err := p.httpClient.Request("DELETE", fmt.Sprintf("/datasets/%s", datasetID), true, "auto", nil, nil)
+	if err != nil {
+		return err
+	}
+
+	var apiResp struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
+		return err
+	}
+
+	if apiResp.Code != 0 {
+		return fmt.Errorf("API error: %s", apiResp.Message)
+	}
+
+	return nil
+}
+
+func (p *DatasetProvider) searchDatasets(ctx stdctx.Context, opts *SearchOptions) (*Result, error) {
+	// Get all datasets and filter client-side
+	allResult, err := p.listDatasets(ctx, &ListOptions{
+		Limit:  opts.Limit,
+		Offset: opts.Offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if opts.Query == "" {
+		return allResult, nil
+	}
+
+	queryLower := strings.ToLower(opts.Query)
+	filtered := make([]*Node, 0)
+	for _, node := range allResult.Nodes {
+		if strings.Contains(strings.ToLower(node.Name), queryLower) {
+			filtered = append(filtered, node)
+		}
+	}
+
+	return &Result{
+		Nodes: filtered,
+		Total: len(filtered),
+	}, nil
+}
+
+// ==================== Document Operations ====================
+
+func (p *DatasetProvider) listDocuments(ctx stdctx.Context, datasetName string, opts *ListOptions) (*Result, error) {
+	// First get the dataset ID
+	ds, err := p.getDataset(ctx, datasetName)
+	if err != nil {
+		return nil, err
+	}
+
+	datasetID := getString(ds.Metadata["id"])
+	if datasetID == "" {
+		return nil, fmt.Errorf("dataset ID not found")
+	}
+
+	// Build query parameters
+	params := make(map[string]string)
+	if opts != nil {
+		if opts.Limit > 0 {
+			params["page_size"] = fmt.Sprintf("%d", opts.Limit)
+		}
+		if opts.Offset > 0 {
+			params["page"] = fmt.Sprintf("%d", opts.Offset/opts.Limit+1)
+		}
+	}
+
+	path := fmt.Sprintf("/datasets/%s/documents", datasetID)
+	resp, err := p.httpClient.Request("GET", path, true, "auto", params, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var apiResp struct {
+		Code    int                      `json:"code"`
+		Data    struct {
+			Docs []map[string]interface{} `json:"docs"`
+		} `json:"data"`
+		Message string `json:"message"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
+		return nil, err
+	}
+
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("API error: %s", apiResp.Message)
+	}
+
+	nodes := make([]*Node, 0, len(apiResp.Data.Docs))
+	for _, doc := range apiResp.Data.Docs {
+		node := p.documentToNode(doc, datasetName)
+		nodes = append(nodes, node)
+	}
+
+	return &Result{
+		Nodes: nodes,
+		Total: len(nodes),
+	}, nil
+}
+
+func (p *DatasetProvider) getDocumentNode(ctx stdctx.Context, datasetName, docName string) (*Result, error) {
+	node, err := p.getDocument(ctx, datasetName, docName)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{
+		Nodes: []*Node{node},
+		Total: 1,
+	}, nil
+}
+
+func (p *DatasetProvider) getDocument(ctx stdctx.Context, datasetName, docName string) (*Node, error) {
+	// List all documents and find the matching one
+	result, err := p.listDocuments(ctx, datasetName, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, node := range result.Nodes {
+		if node.Name == docName {
+			return node, nil
+		}
+	}
+
+	return nil, fmt.Errorf("%s: document '%s' in dataset '%s'", ErrNotFound, docName, datasetName)
+}
+
+func (p *DatasetProvider) searchDocuments(ctx stdctx.Context, datasetName string, opts *SearchOptions) (*Result, error) {
+	// Get all documents and filter client-side
+	allResult, err := p.listDocuments(ctx, datasetName, &ListOptions{
+		Limit:  opts.Limit,
+		Offset: opts.Offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if opts.Query == "" {
+		return allResult, nil
+	}
+
+	queryLower := strings.ToLower(opts.Query)
+	filtered := make([]*Node, 0)
+	for _, node := range allResult.Nodes {
+		if strings.Contains(strings.ToLower(node.Name), queryLower) {
+			filtered = append(filtered, node)
+		}
+	}
+
+	return &Result{
+		Nodes: filtered,
+		Total: len(filtered),
+	}, nil
+}
+
+func (p *DatasetProvider) deleteDocument(ctx stdctx.Context, datasetName, docName string) error {
+	// First get the document to get its ID
+	doc, err := p.getDocument(ctx, datasetName, docName)
+	if err != nil {
+		return err
+	}
+
+	docID := getString(doc.Metadata["id"])
+	if docID == "" {
+		return fmt.Errorf("document ID not found")
+	}
+
+	// Get dataset ID
+	ds, err := p.getDataset(ctx, datasetName)
+	if err != nil {
+		return err
+	}
+
+	datasetID := getString(ds.Metadata["id"])
+	if datasetID == "" {
+		return fmt.Errorf("dataset ID not found")
+	}
+
+	path := fmt.Sprintf("/datasets/%s/documents", datasetID)
+	payload := map[string]interface{}{
+		"ids": []string{docID},
+	}
+
+	resp, err := p.httpClient.Request("DELETE", path, true, "auto", nil, payload)
+	if err != nil {
+		return err
+	}
+
+	var apiResp struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
+		return err
+	}
+
+	if apiResp.Code != 0 {
+		return fmt.Errorf("API error: %s", apiResp.Message)
+	}
+
+	return nil
+}
+
+// ==================== Helper Functions ====================
+
+func (p *DatasetProvider) datasetToNode(ds map[string]interface{}) *Node {
+	name := getString(ds["name"])
+	node := &Node{
+		Name:     name,
+		Path:     "/datasets/" + name,
+		Type:     NodeTypeDataset,
+		Metadata: ds,
+	}
+
+	// Parse timestamps - try multiple field names
+	if createTime, ok := ds["create_time"]; ok && createTime != nil {
+		node.CreatedAt = parseTime(createTime)
+	} else if createDate, ok := ds["create_date"]; ok && createDate != nil {
+		node.CreatedAt = parseTime(createDate)
+	}
+
+	if updateTime, ok := ds["update_time"]; ok && updateTime != nil {
+		node.UpdatedAt = parseTime(updateTime)
+	} else if updateDate, ok := ds["update_date"]; ok && updateDate != nil {
+		node.UpdatedAt = parseTime(updateDate)
+	}
+
+	return node
+}
+
+func (p *DatasetProvider) documentToNode(doc map[string]interface{}, datasetName string) *Node {
+	name := getString(doc["name"])
+	node := &Node{
+		Name:     name,
+		Path:     "/datasets/" + datasetName + "/files/" + name,
+		Type:     NodeTypeDocument,
+		Metadata: doc,
+	}
+
+	// Parse size
+	if size, ok := doc["size"]; ok {
+		node.Size = int64(getFloat(size))
+	}
+
+	// Parse timestamps
+	if createTime, ok := doc["create_time"]; ok {
+		node.CreatedAt = parseTime(createTime)
+	}
+	if updateTime, ok := doc["update_time"]; ok {
+		node.UpdatedAt = parseTime(updateTime)
+	}
+
+	return node
+}
+
+func getString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+func getFloat(v interface{}) float64 {
+	if v == nil {
+		return 0
+	}
+	switch val := v.(type) {
+	case float64:
+		return val
+	case float32:
+		return float64(val)
+	case int:
+		return float64(val)
+	case int64:
+		return float64(val)
+	default:
+		return 0
+	}
+}
+
+func parseTime(v interface{}) time.Time {
+	if v == nil {
+		return time.Time{}
+	}
+
+	var ts int64
+	switch val := v.(type) {
+	case float64:
+		ts = int64(val)
+	case int64:
+		ts = val
+	case int:
+		ts = int64(val)
+	case string:
+		// Trim quotes if present
+		val = strings.Trim(val, `"`)
+		// Try to parse as number (timestamp)
+		if parsed, err := strconv.ParseInt(val, 10, 64); err == nil {
+			ts = parsed
+		} else {
+			// If it's already a formatted date string, try parsing it
+			formats := []string{
+				"2006-01-02 15:04:05",
+				"2006-01-02T15:04:05",
+				"2006-01-02T15:04:05Z",
+				"2006-01-02",
+			}
+			for _, format := range formats {
+				if t, err := time.Parse(format, val); err == nil {
+					return t
+				}
+			}
+			return time.Time{}
+		}
+	default:
+		return time.Time{}
+	}
+
+	// Convert milliseconds to seconds if timestamp is in milliseconds (13 digits)
+	if ts > 1e12 {
+		ts = ts / 1000
+	}
+
+	return time.Unix(ts, 0)
+}

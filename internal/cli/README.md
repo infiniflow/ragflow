@@ -28,12 +28,46 @@ go build -o ragflow_cli ./cmd/ragflow_cli.go
 
 ```
 internal/cli/
-├── cli.go           # Main CLI loop and interaction
-├── parser/          # Command parser package
-│   ├── types.go     # Token and Command types
-│   ├── lexer.go     # Lexical analyzer
-│   └── parser.go    # Recursive descent parser
+├── cli.go              # Main CLI loop and interaction
+├── client.go           # RAGFlowClient with Context Engine integration
+├── http_client.go      # HTTP client for API communication
+├── parser/             # Command parser package
+│   ├── types.go        # Token and Command types
+│   ├── lexer.go        # Lexical analyzer
+│   └── parser.go       # Recursive descent parser
+└── contextengine/      # Context Engine (Virtual Filesystem)
+    ├── engine.go       # Core engine: path resolution, command routing
+    ├── types.go        # Node, Command, Result types
+    ├── provider.go     # Provider interface definition
+    ├── dataset_provider.go  # Dataset provider implementation
+    └── utils.go        # Helper functions
 ```
+
+## Context Engine
+
+The Context Engine provides a unified virtual filesystem interface over RAGFlow's RESTful APIs.
+
+### Design Principles
+
+1. **No Server-Side Changes**: All logic implemented client-side using existing APIs
+2. **Provider Pattern**: Modular providers for different resource types (datasets, files, etc.)
+3. **Unified Interface**: Common `ls`, `search`, `mkdir` commands across all providers
+4. **Path-Based Navigation**: Virtual paths like `/datasets`, `/datasets/{name}/files`
+
+### Supported Paths
+
+| Path | Description |
+|------|-------------|
+| `/datasets` | List all datasets |
+| `/datasets/{name}` | Get dataset info |
+| `/datasets/{name}/files` | List documents in dataset |
+| `/datasets/{name}/files/{doc}` | Get document info |
+
+### Commands
+
+- `ls [path]` - List nodes at path
+- `search [path] WHERE query='...'` - Search nodes
+- `mkdir [path]` - Create new resource (dataset)
 
 ## Command Examples
 
@@ -70,6 +104,13 @@ DROP DATASET 'my_dataset';
 SET DEFAULT LLM 'gpt-4';
 SET DEFAULT EMBEDDING 'text-embedding-ada-002';
 RESET DEFAULT LLM;
+
+-- Context Engine (Virtual Filesystem)
+ls datasets;                              -- List all datasets
+ls datasets/my_dataset;                   -- Show dataset info
+ls datasets/my_dataset/files;             -- List documents in dataset
+search datasets WHERE query='test';       -- Search datasets
+mkdir datasets/new_dataset;               -- Create new dataset
 
 -- Meta commands
 \?          -- Show help

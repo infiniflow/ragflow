@@ -41,11 +41,6 @@ user_id/
                     └── {skill_name}.md         # Agent level of memory on Skills usage
 ```
 
-## API Endpoints
-
-- `GET /contextfs/ls` - List directory contents
-- `POST /contextfs/mkdir` - Create directory
-- `POST /contextfs/search` - Search content
 
 ## Supported Commands
 

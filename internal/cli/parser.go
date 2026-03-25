@@ -1746,7 +1746,9 @@ func (p *Parser) parseCEListCommand() (*Command, error) {
 	cmd := NewCommand("ce_ls")
 
 	// Check if there's a path argument
-	if p.curToken.Type == TokenIdentifier || p.curToken.Type == TokenQuotedString {
+	// Also accept TokenDatasets since "datasets" is a keyword but can be a path
+	if p.curToken.Type == TokenIdentifier || p.curToken.Type == TokenQuotedString ||
+		p.curToken.Type == TokenDatasets {
 		path := p.curToken.Value
 		// Remove quotes if present
 		if p.curToken.Type == TokenQuotedString {
@@ -1755,8 +1757,8 @@ func (p *Parser) parseCEListCommand() (*Command, error) {
 		cmd.Params["path"] = path
 		p.nextToken()
 	} else {
-		// Default to current directory
-		cmd.Params["path"] = "."
+		// Default to "datasets" root
+		cmd.Params["path"] = "datasets"
 	}
 
 	// Optional semicolon
