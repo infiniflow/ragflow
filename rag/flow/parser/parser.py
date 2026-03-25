@@ -31,7 +31,7 @@ from api.db.joint_services.tenant_model_service import get_model_config_by_type_
 from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid
-from deepdoc.parser import ExcelParser
+from deepdoc.parser import ExcelParser, HtmlParser, TxtParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
@@ -77,6 +77,14 @@ class ParserParam(ProcessParamBase):
                 "text",
                 "json",
             ],
+            "code": [
+                "text",
+                "json",
+            ],
+            "html": [
+                "text",
+                "json",
+            ],
             "audio": [
                 "json",
             ],
@@ -115,6 +123,28 @@ class ParserParam(ProcessParamBase):
             "text&markdown": {
                 "suffix": ["md", "markdown", "mdx", "txt"],
                 "output_format": "json",
+            },
+            "code": {
+                "suffix": [
+                    "py",
+                    "js",
+                    "java",
+                    "c",
+                    "cpp",
+                    "h",
+                    "php",
+                    "go",
+                    "ts",
+                    "sh",
+                    "cs",
+                    "kt",
+                    "sql",
+                ],
+                "output_format": "text",
+            },
+            "html": {
+                "suffix": ["htm", "html"],
+                "output_format": "text",
             },
             "slides": {
                 "parse_method": "deepdoc",  # deepdoc/tcadp_parser
@@ -214,6 +244,16 @@ class ParserParam(ProcessParamBase):
         if text_config:
             text_output_format = text_config.get("output_format", "")
             self.check_valid_value(text_output_format, "Text output format abnormal.", self.allowed_output_format["text&markdown"])
+
+        code_config = self.setups.get("code", "")
+        if code_config:
+            code_output_format = code_config.get("output_format", "")
+            self.check_valid_value(code_output_format, "Code output format abnormal.", self.allowed_output_format["code"])
+
+        html_config = self.setups.get("html", "")
+        if html_config:
+            html_output_format = html_config.get("output_format", "")
+            self.check_valid_value(html_output_format, "HTML output format abnormal.", self.allowed_output_format["html"])
 
         audio_config = self.setups.get("audio", "")
         if audio_config:
@@ -315,6 +355,42 @@ class Parser(ProcessBase):
         h2_level = sorted_levels[-2] if h2_level == sorted_levels[-1] and len(sorted_levels) > 2 else h2_level
 
         return {txt for level, txt in normalized_lines if level <= h2_level}
+
+    @staticmethod
+    def _section_text(section):
+        if isinstance(section, (tuple, list)):
+            text = section[0] if section else ""
+        else:
+            text = section
+
+        if not isinstance(text, str):
+            return ""
+
+        return text if text.strip() else ""
+
+    def _set_text_sections_output(self, setup_key, sections, title_lines=None):
+        conf = self._param.setups[setup_key]
+        texts = []
+        for section in sections or []:
+            text = self._section_text(section)
+            if text:
+                texts.append(text)
+
+        if conf.get("output_format") == "json":
+            title_texts = set()
+            if title_lines and "title" in conf.get("preprocess", []):
+                title_texts = self._extract_title_texts(title_lines)
+
+            results = []
+            for text in texts:
+                item = {"text": text}
+                if title_texts and text.strip() in title_texts:
+                    item["title"] = True
+                results.append(item)
+            self.set_output("json", results)
+            return
+
+        self.set_output("text", "\n".join(texts))
 
     def _pdf(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
@@ -821,6 +897,28 @@ class Parser(ProcessBase):
         else:
             self.set_output("text", "\n".join([section_text for section_text, _ in sections]))
 
+    def _code(self, name, blob, **kwargs):
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on a code or plain text file.")
+        conf = self._param.setups["code"]
+        self.set_output("output_format", conf["output_format"])
+
+        sections = TxtParser()(
+            name,
+            blob,
+            conf.get("chunk_token_num", 128),
+            conf.get("delimiter", "\n!?;。；！？"),
+        )
+        self._set_text_sections_output("code", sections)
+
+    def _html(self, name, blob, **kwargs):
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on an HTML document.")
+        conf = self._param.setups["html"]
+        self.set_output("output_format", conf["output_format"])
+
+        sections = HtmlParser()(name, blob, int(conf.get("chunk_token_num", 512)))
+        title_lines = self._extract_markdown_title_lines(sections)
+        self._set_text_sections_output("html", sections, title_lines=title_lines)
+
     def _image(self, name, blob, **kwargs):
         from deepdoc.vision import OCR
 
@@ -1046,6 +1144,8 @@ class Parser(ProcessBase):
         function_map = {
             "pdf": self._pdf,
             "text&markdown": self._markdown,
+            "code": self._code,
+            "html": self._html,
             "spreadsheet": self._spreadsheet,
             "slides": self._slides,
             "word": self._word,

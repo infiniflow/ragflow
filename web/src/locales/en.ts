@@ -2243,6 +2243,8 @@ This process aggregates variables from multiple branches into a single variable 
         image: 'Image',
         email: 'Email',
         'text&markdown': 'Text & Markup',
+        code: 'Code',
+        html: 'HTML',
         word: 'Word',
         slides: 'PPTX',
         audio: 'Audio',

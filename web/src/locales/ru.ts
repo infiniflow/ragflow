@@ -1846,6 +1846,8 @@ export default {
         image: 'Изображение',
         email: 'Email',
         'text&markdown': 'Текст и разметка',
+        code: 'Code',
+        html: 'HTML',
         word: 'Word',
         slides: 'PPTX',
         audio: 'Аудио',

@@ -2080,6 +2080,8 @@ export default {
         image: 'صورة',
         email: 'بريد إلكتروني',
         'text&markdown': 'النص والترميز',
+        code: 'Code',
+        html: 'HTML',
         word: 'كلمة',
         slides: 'PPTX',
         audio: 'صوتي',
