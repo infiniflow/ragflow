@@ -46,6 +46,9 @@ def _fetch_transcript(video_id: str) -> list:
     Fetch raw transcript entries from YouTube.
     Returns list of {"text": str, "start": float, "duration": float}.
     Raises RuntimeError on failure.
+
+    Compatible with youtube-transcript-api >= 1.0.0 (instance-method API).
+    Preference order: manual EN → auto-generated EN → first available language.
     """
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
@@ -60,8 +63,17 @@ def _fetch_transcript(video_id: str) -> list:
             "Run: pip install youtube-transcript-api"
         )
 
+    api = YouTubeTranscriptApi()
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        # fast path: directly fetch English transcript
+        fetched = api.fetch(video_id, languages=("en",))
+        return fetched.to_raw_data()
+    except Exception:
+        pass
+
+    # fallback: inspect available transcripts and pick best option
+    try:
+        transcript_list = api.list(video_id)
         try:
             transcript = transcript_list.find_manually_created_transcript(["en"])
         except NoTranscriptFound:
@@ -70,7 +82,8 @@ def _fetch_transcript(video_id: str) -> list:
             except NoTranscriptFound:
                 available = [t.language_code for t in transcript_list]
                 transcript = transcript_list.find_generated_transcript(available)
-        return transcript.fetch()
+        fetched = api.fetch(video_id, languages=(transcript.language_code,))
+        return fetched.to_raw_data()
     except TranscriptsDisabled:
         raise RuntimeError(f"Transcripts disabled for video {video_id}")
     except VideoUnavailable:
@@ -190,13 +203,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100_000,
     chunks = []
     for seg in segments:
         deeplink = f"https://www.youtube.com/watch?v={video_id}&t={seg['timestamp_seconds']}s"
-        d = tokenize(seg["text"], {
+        d = {
             "docnm_kwd": filename,
             "title_tks": rag_tokenizer.tokenize(
                 re.sub(r"\.[a-zA-Z]+$", "", filename)
             ),
-        }, pattern=r"[^\u4e00-\u9fa5a-zA-Z0-9]")
+        }
         d["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(d["title_tks"])
+        tokenize(d, seg["text"], lang.lower() == "english")
         d["content_with_weight"] = seg["text"]
         # ── video-specific metadata ────────────────────────────────────────
         d["youtube_url"] = youtube_url
