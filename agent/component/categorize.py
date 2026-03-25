@@ -24,7 +24,7 @@ from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
 from agent.component.llm import LLMParam, LLM
 from common.connection_utils import timeout
-from rag.llm.chat_model import ERROR_PREFIX
+from rag.llm.retry import ERROR_PREFIX
 
 
 class CategorizeParam(LLMParam):
