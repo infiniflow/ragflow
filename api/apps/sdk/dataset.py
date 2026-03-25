@@ -96,7 +96,7 @@ async def create(tenant_id):
             chunk_method:
               type: string
               enum: ["naive", "book", "email", "laws", "manual", "one", "paper",
-                     "picture", "presentation", "qa", "table", "tag"]
+                     "picture", "presentation", "qa", "table", "tag", "video"]
               description: Chunking method; if omitted, defaults to "naive".
             parser_config:
               type: object
@@ -307,7 +307,7 @@ async def update(tenant_id, dataset_id):
             chunk_method:
               type: string
               enum: ["naive", "book", "email", "laws", "manual", "one", "paper",
-                     "picture", "presentation", "qa", "table", "tag"
+                     "picture", "presentation", "qa", "table", "tag", "video"
                      ]
               description: Updated chunking method.
             pagerank:
