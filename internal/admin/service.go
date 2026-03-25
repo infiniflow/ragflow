@@ -870,19 +870,117 @@ func (s *Service) GetUserAgents(username string) ([]map[string]interface{}, erro
 
 // ListUserAPITokens get user API keys
 func (s *Service) ListUserAPITokens(username string) ([]map[string]interface{}, error) {
-	// TODO: Implement get API keys
-	return []map[string]interface{}{}, nil
+	// 1. Get user details
+	user, err := s.userDAO.GetByEmail(username)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	// 2. Get user's tenants
+	userTenants, err := s.userTenantDAO.GetByUserID(user.ID)
+	if err != nil || len(userTenants) == 0 {
+		return nil, fmt.Errorf("tenant not found")
+	}
+
+	tenantID := userTenants[0].TenantID
+
+	// 3. Get API tokens by tenant ID
+	tokens, err := s.apiTokenDAO.GetByTenantID(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get API tokens: %w", err)
+	}
+
+	// 4. Convert to map slice
+	result := make([]map[string]interface{}, 0, len(tokens))
+	for _, token := range tokens {
+		result = append(result, map[string]interface{}{
+			"tenant_id":   token.TenantID,
+			"token":       token.Token,
+			"beta":        token.Beta,
+			"dialog_id":   token.DialogID,
+			"source":      token.Source,
+			"create_time": token.CreateTime,
+			"create_date": token.CreateDate,
+			"update_time": token.UpdateTime,
+			"update_date": token.UpdateDate,
+		})
+	}
+
+	return result, nil
 }
 
 // GenerateUserAPIToken generate API key for user
 func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{}, error) {
-	// TODO: Implement generate API key
-	return map[string]interface{}{}, nil
+	// 1. Get user details
+	user, err := s.userDAO.GetByEmail(username)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	// 2. Get user's tenants
+	userTenants, err := s.userTenantDAO.GetByUserID(user.ID)
+	if err != nil || len(userTenants) == 0 {
+		return nil, fmt.Errorf("tenant not found")
+	}
+
+	tenantID := userTenants[0].TenantID
+
+	// 3. Generate API token
+	key := utility.GenerateAPIToken()
+	beta := utility.GenerateBetaAPIToken(key)
+	now := time.Now()
+	nowUnix := now.Unix()
+
+	apiToken := &model.APIToken{
+		TenantID: tenantID,
+		Token:    key,
+		Beta:     &beta,
+	}
+	apiToken.CreateTime = &nowUnix
+	apiToken.CreateDate = &now
+
+	// 4. Save API token
+	if err := s.apiTokenDAO.Create(apiToken); err != nil {
+		return nil, fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	return map[string]interface{}{
+		"tenant_id":   tenantID,
+		"token":       key,
+		"beta":        beta,
+		"create_time": apiToken.CreateTime,
+		"create_date": apiToken.CreateDate,
+		"update_time": apiToken.UpdateTime,
+		"update_date": apiToken.UpdateDate,
+	}, nil
 }
 
 // DeleteUserAPIToken delete user API key
 func (s *Service) DeleteUserAPIToken(username, key string) error {
-	// TODO: Implement delete API key
+	// 1. Get user details
+	user, err := s.userDAO.GetByEmail(username)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	// 2. Get user's tenants
+	userTenants, err := s.userTenantDAO.GetByUserID(user.ID)
+	if err != nil || len(userTenants) == 0 {
+		return fmt.Errorf("tenant not found")
+	}
+
+	tenantID := userTenants[0].TenantID
+
+	// 3. Delete API token
+	rowsAffected, err := s.apiTokenDAO.DeleteByTenantIDAndToken(tenantID, key)
+	if err != nil {
+		return fmt.Errorf("failed to delete API key: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("API key not found or could not be deleted")
+	}
+
 	return nil
 }
 
