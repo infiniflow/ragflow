@@ -20,6 +20,7 @@ import (
 	stdctx "context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Engine is the core of the Context Engine
@@ -102,13 +103,83 @@ func (e *Engine) resolveProvider(path string) (Provider, string, error) {
 }
 
 // List lists nodes at the given path
+// If path is empty, returns:
+//   1. Built-in providers (e.g., datasets)
+//   2. Top-level directories from files provider (if any)
 func (e *Engine) List(ctx stdctx.Context, path string, opts *ListOptions) (*Result, error) {
+	// If path is empty, return list of providers and files root directories
+	if path == "" || path == "/" {
+		return e.listRoot(ctx, opts)
+	}
+
 	provider, subPath, err := e.resolveProvider(path)
 	if err != nil {
+		// If not found, try to find in files provider as a fallback
+		// This allows "ls myfolder" to work as "ls files/myskills"
+		if fileProvider := e.getFileProvider(); fileProvider != nil {
+			result, ferr := fileProvider.List(ctx, path, opts)
+			if ferr == nil {
+				return result, nil
+			}
+		}
 		return nil, err
 	}
 
 	return provider.List(ctx, subPath, opts)
+}
+
+// listRoot returns the root listing:
+// 1. Built-in providers (datasets, etc.)
+// 2. Top-level directories from files provider
+func (e *Engine) listRoot(ctx stdctx.Context, opts *ListOptions) (*Result, error) {
+	nodes := make([]*Node, 0)
+
+	// Add built-in providers first
+	for _, p := range e.providers {
+		// Skip files provider from this list - we'll add its children instead
+		if p.Name() == "files" {
+			continue
+		}
+		nodes = append(nodes, &Node{
+			Name:      p.Name(),
+			Path:      "/" + p.Name(),
+			Type:      NodeTypeDirectory,
+			CreatedAt: time.Now(),
+			Metadata: map[string]interface{}{
+				"description": p.Description(),
+			},
+		})
+	}
+
+	// Add top-level directories from files provider
+	if fileProvider := e.getFileProvider(); fileProvider != nil {
+		filesResult, err := fileProvider.List(ctx, "", opts)
+		if err == nil {
+			for _, node := range filesResult.Nodes {
+				// Only add directories, not files
+				if node.Type == NodeTypeDirectory {
+					// Remove the /files/ prefix from path
+					node.Path = strings.TrimPrefix(node.Path, "/files/")
+					nodes = append(nodes, node)
+				}
+			}
+		}
+	}
+
+	return &Result{
+		Nodes: nodes,
+		Total: len(nodes),
+	}, nil
+}
+
+// getFileProvider returns the files provider if registered
+func (e *Engine) getFileProvider() Provider {
+	for _, p := range e.providers {
+		if p.Name() == "files" {
+			return p
+		}
+	}
+	return nil
 }
 
 // Search searches for nodes matching the query
@@ -135,6 +206,13 @@ func (e *Engine) Mkdir(ctx stdctx.Context, path string, params map[string]interf
 func (e *Engine) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 	provider, subPath, err := e.resolveProvider(path)
 	if err != nil {
+		// Try to find in files provider as a fallback
+		if fileProvider := e.getFileProvider(); fileProvider != nil {
+			content, ferr := fileProvider.Cat(ctx, path)
+			if ferr == nil {
+				return content, nil
+			}
+		}
 		return nil, err
 	}
 

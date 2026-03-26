@@ -131,9 +131,34 @@ func (p *DatasetProvider) Mkdir(ctx stdctx.Context, subPath string, params map[s
 	return nil, fmt.Errorf("mkdir only supports creating datasets at the root level")
 }
 
-// Cat retrieves document content (not implemented for datasets)
+// Cat retrieves document content
+// For datasets:
+//   - cat datasets          -> Error: datasets is a directory, not a file
+//   - cat datasets/kb_name  -> Error: kb_name is a directory, not a file
+//   - cat datasets/kb_name/files/doc_name -> Would retrieve document content (if implemented)
 func (p *DatasetProvider) Cat(ctx stdctx.Context, subPath string) ([]byte, error) {
-	return nil, fmt.Errorf("cat not supported for datasets provider")
+	if subPath == "" {
+		return nil, fmt.Errorf("'datasets' is a directory, not a file")
+	}
+
+	parts := SplitPath(subPath)
+	if len(parts) == 1 {
+		// datasets/{name} - this is a dataset (directory)
+		return nil, fmt.Errorf("'%s' is a directory, not a file", parts[0])
+	}
+
+	if len(parts) == 2 && parts[1] == "files" {
+		// datasets/{name}/files - this is a directory
+		return nil, fmt.Errorf("'%s/files' is a directory, not a file", parts[0])
+	}
+
+	if len(parts) == 3 && parts[1] == "files" {
+		// datasets/{name}/files/{doc_name} - this could be a document
+		// For now, document content retrieval is not implemented
+		return nil, fmt.Errorf("document content retrieval not yet implemented for '%s'", parts[2])
+	}
+
+	return nil, fmt.Errorf("invalid path for cat: %s", subPath)
 }
 
 // Rm removes a dataset or document

@@ -17,6 +17,10 @@
 package service
 
 import (
+	"strings"
+
+	"github.com/google/uuid"
+
 	"ragflow/internal/dao"
 	"ragflow/internal/model"
 )
@@ -217,4 +221,93 @@ func (s *FileService) GetAllParentFolders(fileID string) ([]map[string]interface
 	}
 
 	return result, nil
+}
+
+// GetFileByID gets file by ID
+func (s *FileService) GetFileByID(fileID string) (map[string]interface{}, error) {
+	file, err := s.fileDAO.GetByID(fileID)
+	if err != nil {
+		return nil, err
+	}
+
+	fileInfo := s.toFileInfo(file)
+
+	// If folder, calculate size and check for child folders
+	if file.Type == "folder" {
+		folderSize, err := s.fileDAO.GetFolderSize(file.ID)
+		if err == nil {
+			fileInfo.Size = folderSize
+		}
+		hasChild, err := s.fileDAO.HasChildFolder(file.ID)
+		if err == nil {
+			fileInfo.HasChildFolder = hasChild
+		}
+		fileInfo.KbsInfo = []map[string]interface{}{}
+	} else {
+		// Get KB info for non-folder files
+		kbsInfo, err := s.file2DocumentDAO.GetKBInfoByFileID(file.ID)
+		if err != nil {
+			kbsInfo = []map[string]interface{}{}
+		}
+		fileInfo.KbsInfo = kbsInfo
+	}
+
+	return s.fileInfoToResponse(fileInfo), nil
+}
+
+// CreateFolder creates a new folder
+func (s *FileService) CreateFolder(tenantID, name, parentID, fileType string) (map[string]interface{}, error) {
+	// If parent_id is empty, get root folder
+	if parentID == "" {
+		rootFolder, err := s.fileDAO.GetRootFolder(tenantID)
+		if err != nil {
+			return nil, err
+		}
+		parentID = rootFolder.ID
+	}
+
+	// Check if parent folder exists
+	if _, err := s.fileDAO.GetByID(parentID); err != nil {
+		return nil, err
+	}
+
+	// Determine file type
+	ft := fileType
+	if ft == "" {
+		ft = "folder"
+	}
+
+	// Create file model
+	file := &model.File{
+		ID:        generateFileUUID(),
+		ParentID:  parentID,
+		TenantID:  tenantID,
+		CreatedBy: tenantID,
+		Name:      name,
+		Type:      ft,
+		Size:      0,
+	}
+	file.SourceType = ""
+
+	// Save to database
+	if err := s.fileDAO.Create(file); err != nil {
+		return nil, err
+	}
+
+	return s.toFileResponse(file), nil
+}
+
+// DeleteFiles deletes files by IDs
+func (s *FileService) DeleteFiles(fileIDs []string) error {
+	if len(fileIDs) == 0 {
+		return nil
+	}
+	_, err := s.fileDAO.DeleteByIDs(fileIDs)
+	return err
+}
+
+// generateFileUUID generates a UUID for file
+func generateFileUUID() string {
+	id := uuid.New().String()
+	return strings.ReplaceAll(id, "-", "")
 }

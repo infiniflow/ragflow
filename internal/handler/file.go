@@ -226,3 +226,142 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 		"message": "success",
 	})
 }
+
+// GetFile gets file by ID
+// @Summary Get File
+// @Description Get file information by file ID
+// @Tags file
+// @Accept json
+// @Produce json
+// @Param id query string true "file ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/file/get [get]
+func (h *FileHandler) GetFile(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	// Get file_id from query
+	fileID := c.Query("id")
+	if fileID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "id is required",
+		})
+		return
+	}
+
+	// Get file
+	file, err := h.fileService.GetFileByID(fileID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    file,
+		"message": "success",
+	})
+}
+
+// CreateFolder creates a new folder
+// @Summary Create Folder
+// @Description Create a new folder under specified parent folder
+// @Tags file
+// @Accept json
+// @Produce json
+// @Param name body string true "folder name"
+// @Param parent_id body string false "parent folder ID (default: root)"
+// @Param type body string false "file type (default: folder)"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/file/create [post]
+func (h *FileHandler) CreateFolder(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	userID := user.ID
+
+	// Parse request body
+	var req struct {
+		Name     string `json:"name" binding:"required"`
+		ParentID string `json:"parent_id"`
+		Type     string `json:"type"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	// Create folder
+	file, err := h.fileService.CreateFolder(userID, req.Name, req.ParentID, req.Type)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    file,
+		"message": "success",
+	})
+}
+
+// DeleteFiles deletes files by IDs
+// @Summary Delete Files
+// @Description Delete files or folders by their IDs
+// @Tags file
+// @Accept json
+// @Produce json
+// @Param ids body []string true "list of file IDs to delete"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/file/delete [post]
+func (h *FileHandler) DeleteFiles(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	// Parse request body
+	var req struct {
+		IDs []string `json:"ids" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	// Delete files
+	if err := h.fileService.DeleteFiles(req.IDs); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    true,
+		"message": "success",
+	})
+}

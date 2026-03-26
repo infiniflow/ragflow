@@ -439,6 +439,7 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 	// Create context engine and register providers
 	engine := contextengine.NewEngine()
 	engine.RegisterProvider(contextengine.NewDatasetProvider(&httpClientAdapter{client: client.HTTPClient}))
+	engine.RegisterProvider(contextengine.NewFileProvider(&httpClientAdapter{client: client.HTTPClient}))
 
 	return &CLI{
 		prompt:        prompt,
@@ -672,11 +673,17 @@ func (c *CLI) executeContextEngine(input string) error {
 		if len(cmdArgs) == 0 {
 			return fmt.Errorf("cat requires a path argument")
 		}
-		ceCmd = &contextengine.Command{
-			Type:   contextengine.CommandCat,
-			Path:   cmdArgs[0],
-			Params: map[string]interface{}{},
+		// Handle cat command directly since it returns []byte, not *Result
+		content, err := c.contextEngine.Cat(context.Background(), cmdArgs[0])
+		if err != nil {
+			return err
 		}
+		if content == nil || len(content) == 0 {
+			fmt.Println("(empty file)")
+		} else {
+			fmt.Println(string(content))
+		}
+		return nil
 	case "rm", "del", "delete":
 		if len(cmdArgs) == 0 {
 			return fmt.Errorf("rm requires a path argument")
@@ -796,7 +803,8 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 	case contextengine.CommandRm:
 		fmt.Println("Removed successfully")
 	case contextengine.CommandCat:
-		// Cat output is handled differently
+		// Cat output is handled differently - it returns []byte, not *Result
+		// This case should not be reached in normal flow since Cat returns []byte directly
 		fmt.Println("Content retrieved")
 	}
 }
@@ -880,17 +888,25 @@ SQL Commands (use quotes):
   ... and more SQL commands
 
 Context Engine Commands (no quotes):
-  ls [path]                    - List resources (e.g., ls datasets)
+  ls [path]                    - List resources
+                                 e.g., ls datasets          - List all datasets
+                                 e.g., ls datasets/kb1      - Show dataset info
+                                 e.g., ls files             - List files in root folder
+                                 e.g., ls files/docs        - List files in 'docs' folder
   list [path]                  - Same as ls
   search [path] [query]        - Search resources (e.g., search datasets "keyword")
   mkdir <path>                 - Create a resource (e.g., mkdir datasets/new_ds)
-  cat <path>                   - Show resource content
+  cat <path>                   - Show file content
+                                 e.g., cat files/docs/file.txt  - Show file content
+                                 Note: cat datasets or cat datasets/kb1 will error
   rm [-r] <path>               - Remove a resource
 
 Examples:
   ragflow_cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
   ragflow_cli -f rf.yml ls datasets            # Context Engine mode (no quotes)
-  ragflow_cli -f rf.yml search datasets "doc"  # Search in datasets
+  ragflow_cli -f rf.yml ls files               # List files in root
+  ragflow_cli -f rf.yml cat datasets           # Error: datasets is a directory
+  ragflow_cli -f rf.yml ls files/myfolder      # List folder contents
 
 For more information, see documentation.
 `

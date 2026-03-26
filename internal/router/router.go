@@ -250,6 +250,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			file.GET("/root_folder", r.fileHandler.GetRootFolder)
 			file.GET("/parent_folder", r.fileHandler.GetParentFolder)
 			file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
+			file.GET("/get", r.fileHandler.GetFile)
+			file.POST("/create", r.fileHandler.CreateFolder)
+			file.POST("/delete", r.fileHandler.DeleteFiles)
 		}
 	}
 
