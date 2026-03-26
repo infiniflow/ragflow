@@ -17,15 +17,20 @@
 package service
 
 import (
+	"context"
+	"fmt"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 )
 
 // TenantService tenant service
 type TenantService struct {
 	tenantDAO     *dao.TenantDAO
 	userTenantDAO *dao.UserTenantDAO
+	docEngine     engine.DocEngine
 }
 
 // NewTenantService create tenant service
@@ -33,6 +38,7 @@ func NewTenantService() *TenantService {
 	return &TenantService{
 		tenantDAO:     dao.NewTenantDAO(),
 		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine:     engine.Get(),
 	}
 }
 
@@ -117,4 +123,32 @@ func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) 
 	}
 
 	return result, nil
+}
+
+// CreateDocMetaIndex creates the document metadata index for a tenant
+func (s *TenantService) CreateDocMetaIndex(tenantID string) (common.ErrorCode, error) {
+	// Build index name: ragflow_doc_meta_<tenant_id>
+	indexName := fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
+
+	// Call document engine to create doc meta index
+	err := s.docEngine.CreateDocMetaIndex(context.Background(), indexName)
+	if err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to create doc meta index: %w", err)
+	}
+
+	return common.CodeSuccess, nil
+}
+
+// DeleteDocMetaIndex deletes the document metadata index for a tenant
+func (s *TenantService) DeleteDocMetaIndex(tenantID string) (common.ErrorCode, error) {
+	// Build index name: ragflow_doc_meta_<tenant_id>
+	indexName := fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
+
+	// Call document engine to delete doc meta index
+	err := s.docEngine.DeleteIndex(context.Background(), indexName)
+	if err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to delete doc meta index: %w", err)
+	}
+
+	return common.CodeSuccess, nil
 }
