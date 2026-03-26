@@ -564,6 +564,10 @@ Commands (User Mode):
   SET TOKEN 'token_value';                               - Set and validate API token
   SHOW TOKEN;                                            - Show current API token
   UNSET TOKEN;                                           - Remove current API token
+  CREATE INDEX FOR DATASET 'name' VECTOR_SIZE N;         - Create index for dataset
+  DROP INDEX FOR DATASET 'name';                         - Drop index for dataset
+  CREATE INDEX DOC_META;                                 - Create doc meta index
+  DROP INDEX DOC_META;                                   - Drop doc meta index
 
 Commands (Admin Mode):
   LIST USERS;                                            - List all users

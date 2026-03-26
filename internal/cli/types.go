@@ -98,6 +98,9 @@ const (
 	TokenToken
 	TokenTokens
 	TokenUnset
+	TokenIndex
+	TokenVectorSize
+	TokenDocMeta
 
 	// Literals
 	TokenIdentifier

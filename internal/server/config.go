@@ -135,9 +135,11 @@ type ElasticsearchConfig struct {
 
 // InfinityConfig Infinity configuration
 type InfinityConfig struct {
-	URI          string `mapstructure:"uri"`
-	PostgresPort int    `mapstructure:"postgres_port"`
-	DBName       string `mapstructure:"db_name"`
+	URI                    string `mapstructure:"uri"`
+	PostgresPort           int    `mapstructure:"postgres_port"`
+	DBName                 string `mapstructure:"db_name"`
+	MappingFileName        string `mapstructure:"mapping_file_name"`
+	DocMetaMappingFileName string `mapstructure:"doc_meta_mapping_file_name"`
 }
 
 type StorageType string

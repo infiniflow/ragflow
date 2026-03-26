@@ -208,7 +208,7 @@ func (p *Parser) expectSemicolon() error {
 }
 
 func isKeyword(tokenType int) bool {
-	return tokenType >= TokenLogin && tokenType <= TokenPing
+	return tokenType >= TokenLogin && tokenType <= TokenDocMeta
 }
 
 // Helper functions for parsing
