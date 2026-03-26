@@ -1,6 +1,9 @@
 package cli
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
 // Command parsers
 func (p *Parser) parseLogout() (*Command, error) {

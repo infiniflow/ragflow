@@ -18,13 +18,17 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
+
+	ce "ragflow/internal/cli/contextengine"
 )
 
 // PasswordPromptFunc is a function type for password input
@@ -35,6 +39,8 @@ type RAGFlowClient struct {
 	HTTPClient     *HTTPClient
 	ServerType     string             // "admin" or "user"
 	PasswordPrompt PasswordPromptFunc // Function for password input
+	OutputFormat   OutputFormat       // Output format: table, plain, json
+	ContextEngine  *ce.Engine         // Context Engine for virtual filesystem
 }
 
 // NewRAGFlowClient creates a new RAGFlow client
@@ -47,10 +53,54 @@ func NewRAGFlowClient(serverType string) *RAGFlowClient {
 		httpClient.Port = 9380
 	}
 
-	return &RAGFlowClient{
+	client := &RAGFlowClient{
 		HTTPClient: httpClient,
 		ServerType: serverType,
 	}
+
+	// Initialize Context Engine
+	client.initContextEngine()
+
+	return client
+}
+
+// initContextEngine initializes the Context Engine with all providers
+func (c *RAGFlowClient) initContextEngine() {
+	engine := ce.NewEngine()
+
+	// Register providers
+	engine.RegisterProvider(ce.NewDatasetProvider(&httpClientAdapter{c.HTTPClient}))
+
+	c.ContextEngine = engine
+}
+
+// httpClientAdapter adapts HTTPClient to ce.HTTPClientInterface
+type httpClientAdapter struct {
+	client *HTTPClient
+}
+
+func (a *httpClientAdapter) Request(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*ce.HTTPResponse, error) {
+	// Auto-detect auth kind based on available tokens
+	// If authKind is "auto" or empty, determine based on token availability
+	if authKind == "auto" || authKind == "" {
+		if a.client.useAPIToken && a.client.APIToken != "" {
+			authKind = "api"
+		} else if a.client.LoginToken != "" {
+			authKind = "web"
+		} else {
+			authKind = "web" // default
+		}
+	}
+	resp, err := a.client.Request(method, path, useAPIBase, authKind, headers, jsonBody)
+	if err != nil {
+		return nil, err
+	}
+	return &ce.HTTPResponse{
+		StatusCode: resp.StatusCode,
+		Body:       resp.Body,
+		Headers:    resp.Headers,
+		Duration:   resp.Duration,
+	}, nil
 }
 
 // LoginUserInteractive performs interactive login with username and password
@@ -413,6 +463,11 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CreateDocMetaIndex(cmd)
 	case "drop_doc_meta_index":
 		return c.DropDocMetaIndex(cmd)
+	// ContextEngine commands
+	case "ce_ls":
+		return c.CEList(cmd)
+	case "ce_search":
+		return c.CESearch(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
@@ -432,13 +487,15 @@ type ResponseIf interface {
 	Type() string
 	PrintOut()
 	TimeCost() float64
+	SetOutputFormat(format OutputFormat)
 }
 
 type CommonResponse struct {
-	Code     int                      `json:"code"`
-	Data     []map[string]interface{} `json:"data"`
-	Message  string                   `json:"message"`
-	Duration float64
+	Code         int                      `json:"code"`
+	Data         []map[string]interface{} `json:"data"`
+	Message      string                   `json:"message"`
+	Duration     float64
+	outputFormat OutputFormat
 }
 
 func (r *CommonResponse) Type() string {
@@ -449,9 +506,13 @@ func (r *CommonResponse) TimeCost() float64 {
 	return r.Duration
 }
 
+func (r *CommonResponse) SetOutputFormat(format OutputFormat) {
+	r.outputFormat = format
+}
+
 func (r *CommonResponse) PrintOut() {
 	if r.Code == 0 {
-		PrintTableSimple(r.Data)
+		PrintTableSimpleByFormat(r.Data, r.outputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
@@ -459,10 +520,11 @@ func (r *CommonResponse) PrintOut() {
 }
 
 type CommonDataResponse struct {
-	Code     int                    `json:"code"`
-	Data     map[string]interface{} `json:"data"`
-	Message  string                 `json:"message"`
-	Duration float64
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	outputFormat OutputFormat
 }
 
 func (r *CommonDataResponse) Type() string {
@@ -473,11 +535,15 @@ func (r *CommonDataResponse) TimeCost() float64 {
 	return r.Duration
 }
 
+func (r *CommonDataResponse) SetOutputFormat(format OutputFormat) {
+	r.outputFormat = format
+}
+
 func (r *CommonDataResponse) PrintOut() {
 	if r.Code == 0 {
 		table := make([]map[string]interface{}, 0)
 		table = append(table, r.Data)
-		PrintTableSimple(table)
+		PrintTableSimpleByFormat(table, r.outputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
@@ -485,9 +551,10 @@ func (r *CommonDataResponse) PrintOut() {
 }
 
 type SimpleResponse struct {
-	Code     int    `json:"code"`
-	Message  string `json:"message"`
-	Duration float64
+	Code         int    `json:"code"`
+	Message      string `json:"message"`
+	Duration     float64
+	outputFormat OutputFormat
 }
 
 func (r *SimpleResponse) Type() string {
@@ -496,6 +563,10 @@ func (r *SimpleResponse) Type() string {
 
 func (r *SimpleResponse) TimeCost() float64 {
 	return r.Duration
+}
+
+func (r *SimpleResponse) SetOutputFormat(format OutputFormat) {
+	r.outputFormat = format
 }
 
 func (r *SimpleResponse) PrintOut() {
@@ -508,9 +579,10 @@ func (r *SimpleResponse) PrintOut() {
 }
 
 type RegisterResponse struct {
-	Code     int    `json:"code"`
-	Message  string `json:"message"`
-	Duration float64
+	Code         int    `json:"code"`
+	Message      string `json:"message"`
+	Duration     float64
+	outputFormat OutputFormat
 }
 
 func (r *RegisterResponse) Type() string {
@@ -519,6 +591,10 @@ func (r *RegisterResponse) Type() string {
 
 func (r *RegisterResponse) TimeCost() float64 {
 	return r.Duration
+}
+
+func (r *RegisterResponse) SetOutputFormat(format OutputFormat) {
+	r.outputFormat = format
 }
 
 func (r *RegisterResponse) PrintOut() {
@@ -536,10 +612,15 @@ type BenchmarkResponse struct {
 	SuccessCount int     `json:"success_count"`
 	FailureCount int     `json:"failure_count"`
 	Concurrency  int
+	outputFormat OutputFormat
 }
 
 func (r *BenchmarkResponse) Type() string {
 	return "benchmark"
+}
+
+func (r *BenchmarkResponse) SetOutputFormat(format OutputFormat) {
+	r.outputFormat = format
 }
 
 func (r *BenchmarkResponse) PrintOut() {
@@ -565,10 +646,11 @@ func (r *BenchmarkResponse) TimeCost() float64 {
 }
 
 type KeyValueResponse struct {
-	Code     int    `json:"code"`
-	Key      string `json:"key"`
-	Value    string `json:"data"`
-	Duration float64
+	Code         int    `json:"code"`
+	Key          string `json:"key"`
+	Value        string `json:"data"`
+	Duration     float64
+	outputFormat OutputFormat
 }
 
 func (r *KeyValueResponse) Type() string {
@@ -579,6 +661,10 @@ func (r *KeyValueResponse) TimeCost() float64 {
 	return r.Duration
 }
 
+func (r *KeyValueResponse) SetOutputFormat(format OutputFormat) {
+	r.outputFormat = format
+}
+
 func (r *KeyValueResponse) PrintOut() {
 	if r.Code == 0 {
 		table := make([]map[string]interface{}, 0)
@@ -587,9 +673,175 @@ func (r *KeyValueResponse) PrintOut() {
 			"key":   r.Key,
 			"value": r.Value,
 		})
-		PrintTableSimple(table)
+		PrintTableSimpleByFormat(table, r.outputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d\n", r.Code)
 	}
+}
+
+// ==================== ContextEngine Commands ====================
+
+// CEListResponse represents the response for ls command
+type CEListResponse struct {
+	Code         int                      `json:"code"`
+	Data         []map[string]interface{} `json:"data"`
+	Message      string                   `json:"message"`
+	Duration     float64
+	outputFormat OutputFormat
+}
+
+func (r *CEListResponse) Type() string { return "ce_ls" }
+func (r *CEListResponse) TimeCost() float64 { return r.Duration }
+func (r *CEListResponse) SetOutputFormat(format OutputFormat) { r.outputFormat = format }
+func (r *CEListResponse) PrintOut() {
+	if r.Code == 0 {
+		PrintTableSimpleByFormat(r.Data, r.outputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+// CEList handles the ls command - lists nodes using Context Engine
+func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
+	// Get path from command params, default to "datasets"
+	path, _ := cmd.Params["path"].(string)
+	if path == "" {
+		path = "datasets"
+	}
+
+	// Parse options
+	opts := &ce.ListOptions{}
+	if recursive, ok := cmd.Params["recursive"].(bool); ok {
+		opts.Recursive = recursive
+	}
+	if limit, ok := cmd.Params["limit"].(int); ok {
+		opts.Limit = limit
+	}
+	if offset, ok := cmd.Params["offset"].(int); ok {
+		opts.Offset = offset
+	}
+
+	// Execute list command through Context Engine
+	ctx := context.Background()
+	result, err := c.ContextEngine.List(ctx, path, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to response
+	var response CEListResponse
+	response.outputFormat = c.OutputFormat
+	response.Code = 0
+	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
+
+	return &response, nil
+}
+
+// getStringValue safely converts interface{} to string
+func getStringValue(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+// formatTimeValue converts a timestamp (milliseconds or string) to readable format
+func formatTimeValue(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+
+	var ts int64
+	switch val := v.(type) {
+	case float64:
+		ts = int64(val)
+	case int64:
+		ts = val
+	case int:
+		ts = int64(val)
+	case string:
+		// Try to parse as number
+		if _, err := fmt.Sscanf(val, "%d", &ts); err != nil {
+			// If it's already a formatted date string, return as is
+			return val
+		}
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+
+	// Convert milliseconds to seconds if timestamp is in milliseconds (13 digits)
+	if ts > 1e12 {
+		ts = ts / 1000
+	}
+
+	t := time.Unix(ts, 0)
+	return t.Format("2006-01-02 15:04:05")
+}
+
+// CESearchResponse represents the response for search command
+type CESearchResponse struct {
+	Code         int                      `json:"code"`
+	Data         []map[string]interface{} `json:"data"`
+	Total        int                      `json:"total"`
+	Message      string                   `json:"message"`
+	Duration     float64
+	outputFormat OutputFormat
+}
+
+func (r *CESearchResponse) Type() string { return "ce_search" }
+func (r *CESearchResponse) TimeCost() float64 { return r.Duration }
+func (r *CESearchResponse) SetOutputFormat(format OutputFormat) { r.outputFormat = format }
+func (r *CESearchResponse) PrintOut() {
+	if r.Code == 0 {
+		fmt.Printf("Found %d results:\n", r.Total)
+		PrintTableSimpleByFormat(r.Data, r.outputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+// CESearch handles the search command using Context Engine
+func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
+	// Get path and query from command params
+	path, _ := cmd.Params["path"].(string)
+	if path == "" {
+		path = "datasets"
+	}
+	query, _ := cmd.Params["query"].(string)
+
+	// Parse options
+	opts := &ce.SearchOptions{
+		Query: query,
+	}
+	if limit, ok := cmd.Params["limit"].(int); ok {
+		opts.Limit = limit
+	}
+	if offset, ok := cmd.Params["offset"].(int); ok {
+		opts.Offset = offset
+	}
+	if recursive, ok := cmd.Params["recursive"].(bool); ok {
+		opts.Recursive = recursive
+	}
+
+	// Execute search command through Context Engine
+	ctx := context.Background()
+	result, err := c.ContextEngine.Search(ctx, path, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to response
+	var response CESearchResponse
+	response.outputFormat = c.OutputFormat
+	response.Code = 0
+	response.Total = result.Total
+	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
+
+	return &response, nil
 }
