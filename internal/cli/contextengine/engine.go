@@ -206,12 +206,10 @@ func (e *Engine) Mkdir(ctx stdctx.Context, path string, params map[string]interf
 func (e *Engine) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 	provider, subPath, err := e.resolveProvider(path)
 	if err != nil {
-		// Try to find in files provider as a fallback
+		// If not found, try to find in files provider as a fallback
+		// This allows "cat myfolder/file.txt" to work as "cat files/myfolder/file.txt"
 		if fileProvider := e.getFileProvider(); fileProvider != nil {
-			content, ferr := fileProvider.Cat(ctx, path)
-			if ferr == nil {
-				return content, nil
-			}
+			return fileProvider.Cat(ctx, path)
 		}
 		return nil, err
 	}

@@ -437,20 +437,29 @@ func (p *FileProvider) getFileByID(ctx stdctx.Context, fileID string) (*FileNode
 	return p.mapToFileNode(apiResp.Data), nil
 }
 
-// getFileContent retrieves file content from storage
+// getFileContent retrieves file content from storage via API
 func (p *FileProvider) getFileContent(ctx stdctx.Context, fileID string, location string) ([]byte, error) {
-	// If we have a direct location, we could fetch it
-	// For now, return an error indicating content retrieval is not implemented
-	// The actual content would need to be fetched from MinIO/S3 storage
-	if location == "" {
-		return nil, fmt.Errorf("file location not available")
+	apiPath := "/file/content?id=" + url.QueryEscape(fileID)
+	resp, err := p.httpClient.Request("GET", apiPath, false, "auto", nil, nil)
+	if err != nil {
+		return nil, err
 	}
 
-	// TODO: Implement content retrieval from storage
-	// This would require:
-	// 1. Getting the storage location from file metadata
-	// 2. Fetching from MinIO/S3 using appropriate credentials
-	return nil, fmt.Errorf("file content retrieval not yet implemented")
+	// Check if it's an error response (JSON)
+	if resp.StatusCode != 200 {
+		// Try to parse error response
+		var apiResp struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(resp.Body, &apiResp); err == nil && apiResp.Code != 0 {
+			return nil, fmt.Errorf("%s", apiResp.Message)
+		}
+		return nil, fmt.Errorf("HTTP error %d", resp.StatusCode)
+	}
+
+	// Return raw content
+	return resp.Body, nil
 }
 
 // searchFiles searches for files with keywords
@@ -626,9 +635,17 @@ func (p *FileProvider) fileToNode(file *FileNode, path string) *Node {
 		nodeType = NodeTypeDirectory
 	}
 
+	// Build display path without /files/ prefix
+	displayPath := path
+	if displayPath != "" {
+		displayPath = path
+	} else {
+		displayPath = file.Name
+	}
+
 	node := &Node{
 		Name:     file.Name,
-		Path:     "/files/" + path,
+		Path:     displayPath,
 		Type:     nodeType,
 		Size:     file.Size,
 		Metadata: file.Metadata,

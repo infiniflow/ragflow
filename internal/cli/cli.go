@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"unicode/utf8"
 
 	"github.com/peterh/liner"
 	"golang.org/x/term"
@@ -685,6 +686,8 @@ func (c *CLI) executeContextEngine(input string) error {
 		}
 		if content == nil || len(content) == 0 {
 			fmt.Println("(empty file)")
+		} else if isBinaryContent(content) {
+			return fmt.Errorf("cannot display binary file content")
 		} else {
 			fmt.Println(string(content))
 		}
@@ -997,4 +1000,16 @@ func (c *CLI) VerifyAuth() error {
 	cmd.Params["password"] = c.args.Password
 	_, err := c.client.ExecuteCommand(cmd)
 	return err
+}
+
+// isBinaryContent checks if content is binary (contains null bytes or invalid UTF-8)
+func isBinaryContent(content []byte) bool {
+	// Check for null bytes (binary file indicator)
+	for _, b := range content {
+		if b == 0 {
+			return true
+		}
+	}
+	// Check valid UTF-8
+	return !utf8.Valid(content)
 }

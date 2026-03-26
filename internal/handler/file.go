@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -253,7 +254,7 @@ func (h *FileHandler) GetFile(c *gin.Context) {
 		return
 	}
 
-	// Get file
+	// Get file metadata only
 	file, err := h.fileService.GetFileByID(fileID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -364,4 +365,66 @@ func (h *FileHandler) DeleteFiles(c *gin.Context) {
 		"data":    true,
 		"message": "success",
 	})
+}
+
+// isTextFile checks if content is text (no null bytes and valid UTF-8)
+func isTextFile(content []byte) bool {
+	// Check for null bytes (binary file indicator)
+	for _, b := range content {
+		if b == 0 {
+			return false
+		}
+	}
+	// Check valid UTF-8
+	return utf8.Valid(content)
+}
+
+// GetFileContent gets file content (cat functionality)
+// @Summary Get File Content
+// @Description Get file content directly. Text files are displayed, binary files return error.
+// @Tags file
+// @Accept json
+// @Produce plain
+// @Param id query string true "file ID"
+// @Success 200 {string} string "file content"
+// @Failure 400 {object} map[string]interface{} "binary file error"
+// @Router /v1/file/content [get]
+func (h *FileHandler) GetFileContent(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	// Get file_id from query
+	fileID := c.Query("id")
+	if fileID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "id is required",
+		})
+		return
+	}
+
+	// Get file content
+	content, err := h.fileService.DownloadFile(fileID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Check if content is text
+	if !isTextFile(content) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "cannot display binary file content",
+		})
+		return
+	}
+
+	// Return text content with text/plain content type
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", content)
 }

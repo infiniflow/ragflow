@@ -17,12 +17,14 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/model"
+	"ragflow/internal/storage"
 )
 
 // FileService file service
@@ -310,4 +312,43 @@ func (s *FileService) DeleteFiles(fileIDs []string) error {
 func generateFileUUID() string {
 	id := uuid.New().String()
 	return strings.ReplaceAll(id, "-", "")
+}
+
+// DownloadFile gets file content from storage
+func (s *FileService) DownloadFile(fileID string) ([]byte, error) {
+	// Get file info
+	file, err := s.fileDAO.GetByID(fileID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if it's a folder
+	if file.Type == "folder" {
+		return nil, fmt.Errorf("cannot download a folder")
+	}
+
+	// Check if location is available
+	if file.Location == nil || *file.Location == "" {
+		return nil, fmt.Errorf("file location not available")
+	}
+
+	// Get storage instance
+	storageFactory := storage.GetStorageFactory()
+	stor := storageFactory.GetStorage()
+	if stor == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	// Use parent_id as bucket (consistent with Python backend)
+	// location field is just the object key, not bucket/object_key
+	bucket := file.ParentID
+	objectKey := *file.Location
+
+	// Get file content from storage
+	content, err := stor.Get(bucket, objectKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file from storage: %w", err)
+	}
+
+	return content, nil
 }

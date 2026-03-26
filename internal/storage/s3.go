@@ -98,6 +98,7 @@ func (s *S3Storage) reconnect() {
 }
 
 func (s *S3Storage) resolveBucketAndPath(bucket, fnm string) (string, string) {
+	// If configured bucket is set, use it; otherwise use the passed bucket
 	actualBucket := bucket
 	if s.bucket != "" {
 		actualBucket = s.bucket
@@ -105,7 +106,12 @@ func (s *S3Storage) resolveBucketAndPath(bucket, fnm string) (string, string) {
 
 	actualPath := fnm
 	if s.prefixPath != "" {
-		actualPath = fmt.Sprintf("%s/%s/%s", s.prefixPath, bucket, fnm)
+		// Include bucket in path if provided and different from configured bucket
+		if bucket != "" && bucket != s.bucket {
+			actualPath = fmt.Sprintf("%s/%s/%s", s.prefixPath, bucket, fnm)
+		} else {
+			actualPath = fmt.Sprintf("%s/%s", s.prefixPath, fnm)
+		}
 	}
 
 	return actualBucket, actualPath
@@ -197,7 +203,12 @@ func (s *S3Storage) Put(bucket, fnm string, binary []byte, tenantID ...string) e
 func (s *S3Storage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
 	bucket, fnm = s.resolveBucketAndPath(bucket, fnm)
 
+	if bucket == "" {
+		return nil, fmt.Errorf("bucket name is empty (check s3.bucket configuration)")
+	}
+
 	ctx := context.Background()
+	var lastErr error
 
 	for i := 0; i < 2; i++ {
 		result, err := s.client.GetObject(ctx, &s3.GetObjectInput{
@@ -205,6 +216,7 @@ func (s *S3Storage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) 
 			Key:    aws.String(fnm),
 		})
 		if err != nil {
+			lastErr = err
 			zap.L().Error("Failed to get object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			s.reconnect()
 			time.Sleep(time.Second)
@@ -214,6 +226,7 @@ func (s *S3Storage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) 
 
 		buf := new(bytes.Buffer)
 		if _, err := buf.ReadFrom(result.Body); err != nil {
+			lastErr = err
 			zap.L().Error("Failed to read object data", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			s.reconnect()
 			time.Sleep(time.Second)
@@ -223,7 +236,7 @@ func (s *S3Storage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) 
 		return buf.Bytes(), nil
 	}
 
-	return nil, fmt.Errorf("failed to get object after retries")
+	return nil, fmt.Errorf("failed to get object bucket=%s key=%s: %w", bucket, fnm, lastErr)
 }
 
 // Rm removes an object from S3
