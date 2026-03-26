@@ -825,9 +825,9 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 			fmt.Println("(empty)")
 			return
 		}
-		// Print as table: name, path and created (no type)
-		fmt.Printf("%-30s %-50s %-20s\n", "NAME", "PATH", "CREATED")
-		fmt.Println(strings.Repeat("-", 100))
+		// Print as table: name, type, path and created
+		fmt.Printf("%-30s %-12s %-50s %-20s\n", "NAME", "TYPE", "PATH", "CREATED")
+		fmt.Println(strings.Repeat("-", 112))
 		displayCount := len(result.Nodes)
 		if limit > 0 && displayCount > limit {
 			displayCount = limit
@@ -843,7 +843,7 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 			if strings.HasPrefix(displayPath, "/") {
 				displayPath = displayPath[1:]
 			}
-			fmt.Printf("%-30s %-50s %-20s\n", node.Name, displayPath, created)
+			fmt.Printf("%-30s %-12s %-50s %-20s\n", node.Name, node.Type, displayPath, created)
 		}
 		if limit > 0 && result.Total > limit {
 			fmt.Printf("\n... and %d more (use -n to show more)\n", result.Total-limit)

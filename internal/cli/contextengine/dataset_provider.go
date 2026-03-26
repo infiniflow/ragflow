@@ -809,7 +809,7 @@ func (p *DatasetProvider) datasetToNode(ds map[string]interface{}) *Node {
 	node := &Node{
 		Name:     name,
 		Path:     "/datasets/" + name,
-		Type:     NodeTypeDataset,
+		Type:     NodeTypeDirectory,
 		Metadata: ds,
 	}
 

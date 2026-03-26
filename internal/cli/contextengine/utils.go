@@ -37,6 +37,7 @@ func FormatNode(node *Node, format string) map[string]interface{} {
 	case "table":
 		return map[string]interface{}{
 			"name": node.Name,
+			"path": node.Path,
 			"type": string(node.Type),
 			"size": formatSize(node.Size),
 			"created_at": formatTime(node.CreatedAt),
@@ -46,6 +47,7 @@ func FormatNode(node *Node, format string) map[string]interface{} {
 		return map[string]interface{}{
 			"name":       node.Name,
 			"path":       node.Path,
+			"type":       string(node.Type),
 			"created_at": formatTime(node.CreatedAt),
 			"updated_at": formatTime(node.UpdatedAt),
 		}
