@@ -464,8 +464,6 @@ func FromConfigFile(configPath string) error {
 		v.SetConfigType("yaml")
 		v.AddConfigPath("./conf")
 		v.AddConfigPath(".")
-		v.AddConfigPath("./config")
-		v.AddConfigPath("./internal/config")
 		v.AddConfigPath("/etc/ragflow/")
 	}
 
