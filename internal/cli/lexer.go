@@ -149,6 +149,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 	switch upper {
 	case "LOGIN":
 		return Token{Type: TokenLogin, Value: ident}
+	case "LOGOUT":
+		return Token{Type: TokenLogout, Value: ident}
 	case "REGISTER":
 		return Token{Type: TokenRegister, Value: ident}
 	case "LIST":

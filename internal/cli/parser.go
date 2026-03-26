@@ -81,6 +81,8 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenLogin:
 		return p.parseAdminLoginUser()
+	case TokenLogout:
+		return p.parseAdminLogout()
 	case TokenPing:
 		return p.parseAdminPingServer()
 	case TokenList:
@@ -131,6 +133,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenLogin:
 		return p.parseLoginUser()
+	case TokenLogout:
+		return p.parseLogout()
 	case TokenPing:
 		return p.parsePingServer()
 	case TokenList:
