@@ -58,10 +58,13 @@ def _assert_progress_in_scale(progress, payload):
     return scale
 
 
-def _wait_for_task(trace_func, auth, kb_id, task_id, timeout=60):
+def _wait_for_task(trace_func, auth, kb_id, task_id, timeout=60, use_params_payload=False):
     @wait_for(timeout, 1, "Pipeline task trace timeout")
     def _condition():
-        res = trace_func(auth, {"kb_id": kb_id})
+        if use_params_payload:
+            res = trace_func(auth, {"kb_id": kb_id})
+        else:
+            res = trace_func(auth, kb_id)
         if res["code"] != 0:
             return False
         return _find_task(res["data"], task_id) is not None
@@ -140,7 +143,7 @@ class TestKbPipelineTasks:
         task_id = run_res["data"]["mindmap_task_id"]
         assert task_id, run_res
 
-        _wait_for_task(kb_trace_mindmap, WebApiAuth, kb_id, task_id)
+        _wait_for_task(kb_trace_mindmap, WebApiAuth, kb_id, task_id, use_params_payload=True)
         trace_res = kb_trace_mindmap(WebApiAuth, {"kb_id": kb_id})
         assert trace_res["code"] == 0, trace_res
         task = _find_task(trace_res["data"], task_id)

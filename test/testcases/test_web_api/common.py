@@ -39,7 +39,7 @@ API_APP_URL = f"/{VERSION}/api"
 SYSTEM_APP_URL = f"/{VERSION}/system"
 LLM_APP_URL = f"/{VERSION}/llm"
 PLUGIN_APP_URL = f"/{VERSION}/plugin"
-SEARCH_APP_URL = f"/{VERSION}/search"
+SEARCHES_URL = f"/api/{VERSION}/searches"
 
 
 def _http_debug_enabled():
@@ -142,29 +142,27 @@ def plugin_llm_tools(auth, params=None, *, headers=HEADERS):
 
 # SEARCH APP
 def search_create(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/create", headers=headers, auth=auth, json=payload, data=data)
+    res = requests.post(url=f"{HOST_ADDRESS}{SEARCHES_URL}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def search_update(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/update", headers=headers, auth=auth, json=payload, data=data)
+def search_update(auth, search_id, payload=None, *, headers=HEADERS, data=None):
+    res = requests.put(url=f"{HOST_ADDRESS}{SEARCHES_URL}/{search_id}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def search_detail(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/detail", headers=headers, auth=auth, params=params)
+def search_detail(auth, search_id, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{SEARCHES_URL}/{search_id}", headers=headers, auth=auth)
     return res.json()
 
 
-def search_list(auth, params=None, payload=None, *, headers=HEADERS, data=None):
-    if payload is None:
-        payload = {}
-    res = requests.post(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/list", headers=headers, auth=auth, params=params, json=payload, data=data)
+def search_list(auth, params=None, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{SEARCHES_URL}", headers=headers, auth=auth, params=params)
     return res.json()
 
 
-def search_rm(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/rm", headers=headers, auth=auth, json=payload, data=data)
+def search_rm(auth, search_id, *, headers=HEADERS):
+    res = requests.delete(url=f"{HOST_ADDRESS}{SEARCHES_URL}/{search_id}", headers=headers, auth=auth)
     return res.json()
 
 
