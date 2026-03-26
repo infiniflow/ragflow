@@ -28,8 +28,9 @@ type SearchRequest struct {
 	Keywords  []string // Extracted keywords from question
 
 	// Filters
-	KbIDs  []string // Knowledge base IDs filter
-	DocIDs []string // Document IDs filter
+	KbIDs        []string // Knowledge base IDs filter
+	DocIDs       []string // Document IDs filter
+	AvailableInt *int     // Available_int filter (1 = available, 0 = unavailable)
 
 	// Pagination
 	Page int // Page number (1-based)

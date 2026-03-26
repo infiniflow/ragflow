@@ -58,7 +58,7 @@ if __name__ == '__main__':
         os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024)
     )
     Session(app)
-    logging.info(f'RAGFlow version: {get_ragflow_version()}')
+    logging.info(f'RAGFlow admin version: {get_ragflow_version()}')
     show_configs()
     login_manager = LoginManager()
     login_manager.init_app(app)

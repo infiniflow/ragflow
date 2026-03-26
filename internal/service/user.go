@@ -59,7 +59,7 @@ func NewUserService() *UserService {
 // RegisterRequest registration request
 type RegisterRequest struct {
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Password string `json:"password" binding:"required,min=1"`
 	Nickname string `json:"nickname"`
 }
 
@@ -122,7 +122,8 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 		return nil, common.CodeServerError, fmt.Errorf("Fail to decrypt password")
 	}
 
-	hashedPassword, err := s.HashPassword(decryptedPassword)
+	var hashedPassword string
+	hashedPassword, err = s.HashPassword(decryptedPassword)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -227,20 +228,20 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	userTenantDAO := dao.NewUserTenantDAO()
 	fileDAO := dao.NewFileDAO()
 
-	if err := s.userDAO.Create(user); err != nil {
+	if err = s.userDAO.Create(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	if err := tenantDAO.Create(tenant); err != nil {
-		err := s.userDAO.DeleteByID(userID)
+	if err = tenantDAO.Create(tenant); err != nil {
+		err = s.userDAO.DeleteByID(userID)
 		if err != nil {
 			return nil, 0, err
 		}
 		return nil, common.CodeServerError, fmt.Errorf("failed to create tenant: %w", err)
 	}
 
-	if err := userTenantDAO.Create(userTenant); err != nil {
-		err := s.userDAO.DeleteByID(userID)
+	if err = userTenantDAO.Create(userTenant); err != nil {
+		err = s.userDAO.DeleteByID(userID)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -251,8 +252,8 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 		return nil, common.CodeServerError, fmt.Errorf("failed to create user tenant relation: %w", err)
 	}
 
-	if err := fileDAO.Create(rootFile); err != nil {
-		err := s.userDAO.DeleteByID(userID)
+	if err = fileDAO.Create(rootFile); err != nil {
+		err = s.userDAO.DeleteByID(userID)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -1010,4 +1011,45 @@ func convertToUserTenantRelation(userTenant *model.UserTenant) *UserTenantRelati
 		TenantID: userTenant.TenantID,
 		Role:     userTenant.Role,
 	}
+
+// GetUserByAPIToken gets user by access key from Authorization header
+// This is used for API token authentication
+// The authorization parameter should be in format: "Bearer <token>" or just "<token>"
+func (s *UserService) GetUserByAPIToken(authorization string) (*model.User, common.ErrorCode, error) {
+	if authorization == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
+	}
+
+	// Split authorization header to get the token
+	// Expected format: "Bearer <token>" or "<token>"
+	parts := strings.Split(authorization, " ")
+	var token string
+	if len(parts) == 2 {
+		token = parts[1]
+	} else if len(parts) == 1 {
+		token = parts[0]
+	} else {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+	}
+
+	// Query API token from database
+	apiTokenDAO := dao.NewAPITokenDAO()
+	userToken, err := apiTokenDAO.GetUserByAPIToken(token)
+	if err != nil {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token")
+	}
+
+	// Get user by tenant_id from API token
+	user, err := s.userDAO.GetByTenantID(userToken.TenantID)
+	if err != nil {
+		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for this access token")
+	}
+
+	// Check if user's access_token is empty
+	if user.AccessToken == nil || *user.AccessToken == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("user has empty access_token in database")
+	}
+
+	return user, common.CodeSuccess, nil
+
 }
