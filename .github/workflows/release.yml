@@ -74,7 +74,7 @@ jobs:
 
       - name: Create or overwrite a release
         # https://github.com/actions/upload-release-asset has been replaced by https://github.com/softprops/action-gh-release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}  # Use the secret as an environment variable
           prerelease: ${{ env.PRERELEASE }}
@@ -84,18 +84,25 @@ jobs:
 
       - name: Build and push image
         run: |
-          sudo docker login --username infiniflow --password-stdin <<< ${{ secrets.DOCKERHUB_TOKEN }}
+          sudo docker login --username infiniflow --password-stdin <<< ${DOCKERHUB_TOKEN}
           sudo docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
           sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
           sudo docker push infiniflow/ragflow:${RELEASE_TAG}
           sudo docker push infiniflow/ragflow:latest
 
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build and push ragflow-sdk
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          cd sdk/python && uv build && uv publish --token ${{ secrets.PYPI_API_TOKEN }}
+          cd sdk/python && uv build && uv publish --token ${PYPI_API_TOKEN}
 
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
       - name: Build and push ragflow-cli
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          cd admin/client && uv build && uv publish --token ${{ secrets.PYPI_API_TOKEN }}
+          cd admin/client && uv build && uv publish --token ${PYPI_API_TOKEN}
+
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}

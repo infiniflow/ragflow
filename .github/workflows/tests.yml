@@ -55,7 +55,7 @@ jobs:
           if [[ ${GITHUB_EVENT_NAME} != "pull_request" && ${GITHUB_EVENT_NAME} != "schedule" ]]; then
             HEAD=$(git rev-parse HEAD)
             # Find a PR that introduced a given commit
-            gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
+            gh auth login --with-token <<< "${GITHUB_TOKEN}"
             PR_NUMBER=$(gh pr list --search ${HEAD} --state merged --json number --jq .[0].number)
             echo "HEAD=${HEAD}"
             echo "PR_NUMBER=${PR_NUMBER}"
@@ -90,9 +90,11 @@ jobs:
           echo "ARTIFACTS_DIR=${ARTIFACTS_DIR}" >> ${GITHUB_ENV}
           rm -rf ${ARTIFACTS_DIR} && mkdir -p ${ARTIFACTS_DIR}
 
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # https://github.com/astral-sh/ruff-action
       - name: Static check with Ruff
-        uses: astral-sh/ruff-action@v3
+        uses: astral-sh/ruff-action@4919ec5cf1f49eff0871dbcea0da843445b837e6 # v3
         with:
           version: ">=0.11.x"
           args: "check"
@@ -101,7 +103,7 @@ jobs:
         if: ${{ false }}
         run: |
           if [[ ${{ github.event_name }} == 'pull_request' || ${{ github.event_name }} == 'pull_request_target' ]]; then
-            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${PR_HEAD_SHA} \
               | grep -E '\.(py)$' || true)
 
             if [ -n "$CHANGED_FILES" ]; then
@@ -129,6 +131,8 @@ jobs:
             fi
           fi
 
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       - name: Build ragflow go server
         run: |
           BUILDER_CONTAINER=ragflow_build_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
@@ -394,7 +398,7 @@ jobs:
           fi
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@1af58845a975a7985b0beb0cbe6fbbb71a41dbad # v5
         if: ${{ !cancelled() }}
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
