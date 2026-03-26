@@ -27,6 +27,16 @@ func (p *Parser) parseAdminLoginUser() (*Command, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseAdminLogout() (*Command, error) {
+	cmd := NewCommand("logout")
+	p.nextToken()
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
 func (p *Parser) parseAdminPingServer() (*Command, error) {
 	cmd := NewCommand("ping")
 	p.nextToken()

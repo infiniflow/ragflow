@@ -8,5 +8,5 @@ export function SharedBadge({ children }: PropsWithChildren) {
     return null;
   }
 
-  return <span className="bg-bg-card rounded-sm px-1 text-xs">{children}</span>;
+  return <span className="bg-bg-card rounded-sm px-1 text-xs inline-block max-w-[120px] truncate align-middle">{children}</span>;
 }

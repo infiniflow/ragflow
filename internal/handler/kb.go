@@ -622,3 +622,84 @@ func (h *KnowledgebaseHandler) GetBasicInfo(c *gin.Context) {
 
 	jsonResponse(c, common.CodeSuccess, map[string]interface{}{}, "success")
 }
+
+// CreateIndex handles the create index request for a knowledge base
+// @Summary Create Index
+// @Description Create the Infinity index/table for a knowledge base
+// @Tags knowledgebase
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body service.CreateIndexRequest true "create index request"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/kb/index [post]
+func (h *KnowledgebaseHandler) CreateIndex(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.CreateIndexRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	// Check authorization
+	if !h.kbService.Accessible(req.KBID, user.ID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		return
+	}
+
+	result, code, err := h.kbService.CreateIndex(&req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+// DeleteIndexRequest represents the request for deleting an index
+type DeleteIndexRequest struct {
+	KBID string `json:"kb_id" binding:"required"`
+}
+
+// DeleteIndex handles the delete index request for a knowledge base
+// @Summary Delete Index
+// @Description Delete the Infinity index/table for a knowledge base
+// @Tags knowledgebase
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body DeleteIndexRequest true "delete index request"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/kb/index [delete]
+func (h *KnowledgebaseHandler) DeleteIndex(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req DeleteIndexRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	// Check authorization
+	if !h.kbService.Accessible(req.KBID, user.ID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		return
+	}
+
+	code, err := h.kbService.DeleteIndex(req.KBID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, nil, "success")
+}

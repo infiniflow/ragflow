@@ -110,7 +110,7 @@ func parseHostPort(hostPort string) (string, int, error) {
 func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	// First, scan args to check for help, config file, and admin mode
 	var configFilePath string
-
+	var adminMode bool = false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--help" || arg == "-help" {
@@ -118,6 +118,8 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 		} else if (arg == "-f" || arg == "--config") && i+1 < len(args) {
 			configFilePath = args[i+1]
 			i++
+		} else if arg == "--admin" {
+			adminMode = true
 		}
 	}
 
@@ -125,44 +127,47 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	var config *ConfigFile
 	var err error
 
-	if configFilePath != "" {
-		// User specified config file via -f
-		config, err = LoadConfigFileFromPath(configFilePath)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// Try default rf.yml
-		config, err = LoadDefaultConfigFile()
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	// Parse arguments manually to support both short and long forms
 	// and to handle priority: command line > config file > defaults
 
 	// Build result from config file first (if exists), then override with command line flags
 	result := &ConnectionArgs{}
 
+	if !adminMode {
+		// Only user mode read config file
+		if configFilePath != "" {
+			// User specified config file via -f
+			config, err = LoadConfigFileFromPath(configFilePath)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// Try default rf.yml
+			config, err = LoadDefaultConfigFile()
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// Apply config file values first (lower priority)
+		if config != nil {
+			// Parse host:port from config file
+			if config.Host != "" {
+				h, port, err := parseHostPort(config.Host)
+				if err != nil {
+					return nil, fmt.Errorf("invalid host in config file: %v", err)
+				}
+				result.Host = h
+				result.Port = port
+			}
+			result.UserName = config.UserName
+			result.Password = config.Password
+			result.APIToken = config.APIToken
+		}
+	}
+
 	// Get non-flag arguments (command to execute)
 	var nonFlagArgs []string
-
-	// Apply config file values first (lower priority)
-	if config != nil {
-		// Parse host:port from config file
-		if config.Host != "" {
-			h, port, err := parseHostPort(config.Host)
-			if err != nil {
-				return nil, fmt.Errorf("invalid host in config file: %v", err)
-			}
-			result.Host = h
-			result.Port = port
-		}
-		result.UserName = config.UserName
-		result.Password = config.Password
-		result.APIToken = config.APIToken
-	}
 
 	// Override with command line flags (higher priority)
 	// Handle both short and long forms manually
@@ -564,6 +569,10 @@ Commands (User Mode):
   SET TOKEN 'token_value';                               - Set and validate API token
   SHOW TOKEN;                                            - Show current API token
   UNSET TOKEN;                                           - Remove current API token
+  CREATE INDEX FOR DATASET 'name' VECTOR_SIZE N;         - Create index for dataset
+  DROP INDEX FOR DATASET 'name';                         - Drop index for dataset
+  CREATE INDEX DOC_META;                                 - Create doc meta index
+  DROP INDEX DOC_META;                                   - Drop doc meta index
 
 Commands (Admin Mode):
   LIST USERS;                                            - List all users
