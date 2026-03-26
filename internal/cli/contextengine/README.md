@@ -45,5 +45,5 @@ user_id/
 ## Supported Commands
 
 - `ls [path]` - List directory contents
-- `mkdir <path>` - Create directory
+- `cat <path>` - Display file contents(only for text files)
 - `search <query>` - Search content
