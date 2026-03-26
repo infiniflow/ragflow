@@ -233,6 +233,7 @@ jobs:
 
       - name: Run go test for Infinity
         run: |
+          MINIO_PORT=$((9000 + RUNNER_NUM * 10))
           echo "Start to run go test, minio port: $MINIO_PORT"
           bash run_go_tests.sh
 
