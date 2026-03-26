@@ -825,30 +825,38 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 			fmt.Println("(empty)")
 			return
 		}
-		// Print as table: name, type, path and created
-		fmt.Printf("%-30s %-12s %-50s %-20s\n", "NAME", "TYPE", "PATH", "CREATED")
-		fmt.Println(strings.Repeat("-", 112))
 		displayCount := len(result.Nodes)
 		if limit > 0 && displayCount > limit {
 			displayCount = limit
 		}
-		for i := 0; i < displayCount; i++ {
-			node := result.Nodes[i]
-			created := node.CreatedAt.Format("2006-01-02 15:04")
-			if node.CreatedAt.IsZero() {
-				created = "-"
+		if format == OutputFormatPlain {
+			// Plain format: simple space-separated, no headers
+			for i := 0; i < displayCount; i++ {
+				node := result.Nodes[i]
+				fmt.Printf("%s %s %s %s\n", node.Name, node.Type, node.Path, node.CreatedAt.Format("2006-01-02 15:04"))
 			}
-			// Remove leading "/" from path for display
-			displayPath := node.Path
-			if strings.HasPrefix(displayPath, "/") {
-				displayPath = displayPath[1:]
+		} else {
+			// Table format: with headers and aligned columns
+			fmt.Printf("%-30s %-12s %-50s %-20s\n", "NAME", "TYPE", "PATH", "CREATED")
+			fmt.Println(strings.Repeat("-", 112))
+			for i := 0; i < displayCount; i++ {
+				node := result.Nodes[i]
+				created := node.CreatedAt.Format("2006-01-02 15:04")
+				if node.CreatedAt.IsZero() {
+					created = "-"
+				}
+				// Remove leading "/" from path for display
+				displayPath := node.Path
+				if strings.HasPrefix(displayPath, "/") {
+					displayPath = displayPath[1:]
+				}
+				fmt.Printf("%-30s %-12s %-50s %-20s\n", node.Name, node.Type, displayPath, created)
 			}
-			fmt.Printf("%-30s %-12s %-50s %-20s\n", node.Name, node.Type, displayPath, created)
 		}
 		if limit > 0 && result.Total > limit {
 			fmt.Printf("\n... and %d more (use -n to show more)\n", result.Total-limit)
 		}
-		fmt.Printf("\nTotal: %d\n", result.Total)
+		fmt.Printf("Total: %d\n", result.Total)
 	case contextengine.CommandSearch:
 		if len(result.Nodes) == 0 {
 			if format == OutputFormatJSON {
