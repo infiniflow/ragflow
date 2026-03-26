@@ -20,8 +20,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
+	"ragflow/internal/utility"
 	"testing"
 	"time"
 
@@ -61,10 +60,8 @@ func getEnvBool(key string, defaultValue bool) bool {
 
 // newTestMinioStorage creates a new MinIO storage instance for testing
 func newTestMinioStorage(t *testing.T) *MinioStorage {
-	rootDir, err := GetProjectRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
+	rootDir := utility.GetProjectRoot()
+	t.Chdir(rootDir)
 	t.Chdir(rootDir)
 
 	config, err := getMinioConfig()
@@ -80,21 +77,8 @@ func newTestMinioStorage(t *testing.T) *MinioStorage {
 	return storage
 }
 
-func GetProjectRoot() (string, error) {
-	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(out.String()), nil
-}
-
 func TestNewMinioStorage(t *testing.T) {
-	rootDir, err := GetProjectRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
+	rootDir := utility.GetProjectRoot()
 	t.Chdir(rootDir)
 
 	config, err := getMinioConfig()
