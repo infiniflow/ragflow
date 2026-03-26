@@ -372,6 +372,14 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.UnsetToken(cmd)
 	case "show_version":
 		return c.ShowServerVersion(cmd)
+	case "create_index":
+		return c.CreateIndex(cmd)
+	case "drop_index":
+		return c.DropIndex(cmd)
+	case "create_doc_meta_index":
+		return c.CreateDocMetaIndex(cmd)
+	case "drop_doc_meta_index":
+		return c.DropDocMetaIndex(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
