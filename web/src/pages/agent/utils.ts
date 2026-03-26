@@ -307,11 +307,15 @@ function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
 }
 
 function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
-  const levels = params.levels.map((x) =>
-    transformObjectArrayToPureArray(x.expressions, 'expression'),
+  const levels = params.rules.map((rule) =>
+    transformObjectArrayToPureArray(rule.levels, 'expression'),
   );
 
-  return { ...params, hierarchy: Number(params.hierarchy), levels };
+  return {
+    method: params.method,
+    hierarchy: Number(params.hierarchy || 0),
+    levels,
+  };
 }
 
 function transformExtractorParams(params: ExtractorFormSchemaType) {

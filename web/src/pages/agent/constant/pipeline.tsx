@@ -260,12 +260,26 @@ export const initialTitleChunkerValues = {
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
+  method: 'hierarchy',
   hierarchy: Hierarchy.H3,
-  levels: [
-    { expressions: [{ expression: '^#[^#]' }] },
-    { expressions: [{ expression: '^##[^#]' }] },
-    { expressions: [{ expression: '^###[^#]' }] },
-    { expressions: [{ expression: '^####[^#]' }] },
+  rules: [
+    {
+      levels: [
+        { expression: '^#[^#]' },
+        { expression: '^##[^#]' },
+        { expression: '^###[^#]' },
+        { expression: '^####[^#]' },
+      ],
+    },
+  ],
+};
+
+export const initialGroupValues = {
+  method: 'group',
+  rules: [
+    {
+      levels: [{ expression: '' }],
+    },
   ],
 };
 
