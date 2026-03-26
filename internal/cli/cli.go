@@ -653,14 +653,21 @@ func (c *CLI) executeContextEngine(input string) error {
 
 	switch cmdType {
 	case "ls", "list":
-		path := ""
-		if len(cmdArgs) > 0 {
-			path = cmdArgs[0]
+		// Parse list command arguments
+		listOpts, err := parseListCommandArgs(cmdArgs)
+		if err != nil {
+			return err
+		}
+		if listOpts == nil {
+			// Help was printed
+			return nil
 		}
 		ceCmd = &contextengine.Command{
-			Type:   contextengine.CommandList,
-			Path:   path,
-			Params: map[string]interface{}{},
+			Type: contextengine.CommandList,
+			Path: listOpts.Path,
+			Params: map[string]interface{}{
+				"limit": listOpts.Limit,
+			},
 		}
 	case "search":
 		// Parse search command arguments
@@ -751,7 +758,14 @@ func (c *CLI) executeContextEngine(input string) error {
 	if ceCmd.Type == contextengine.CommandSearch && format != OutputFormatPlain && format != OutputFormatTable {
 		format = OutputFormatJSON
 	}
-	c.printContextEngineResult(result, ceCmd.Type, format)
+	// Get limit for list command
+	limit := 0
+	if ceCmd.Type == contextengine.CommandList {
+		if l, ok := ceCmd.Params["limit"].(int); ok {
+			limit = l
+		}
+	}
+	c.printContextEngineResult(result, ceCmd.Type, format, limit)
 	return nil
 }
 
@@ -800,7 +814,7 @@ func parseContextEngineArgs(input string) []string {
 }
 
 // printContextEngineResult prints the result of a context engine command
-func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType contextengine.CommandType, format OutputFormat) {
+func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType contextengine.CommandType, format OutputFormat, limit int) {
 	if result == nil {
 		return
 	}
@@ -814,7 +828,12 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 		// Print as table: name, path and created (no type)
 		fmt.Printf("%-30s %-50s %-20s\n", "NAME", "PATH", "CREATED")
 		fmt.Println(strings.Repeat("-", 100))
-		for _, node := range result.Nodes {
+		displayCount := len(result.Nodes)
+		if limit > 0 && displayCount > limit {
+			displayCount = limit
+		}
+		for i := 0; i < displayCount; i++ {
+			node := result.Nodes[i]
 			created := node.CreatedAt.Format("2006-01-02 15:04")
 			if node.CreatedAt.IsZero() {
 				created = "-"
@@ -825,6 +844,9 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 				displayPath = displayPath[1:]
 			}
 			fmt.Printf("%-30s %-50s %-20s\n", node.Name, displayPath, created)
+		}
+		if limit > 0 && result.Total > limit {
+			fmt.Printf("\n... and %d more (use -n to show more)\n", result.Total-limit)
 		}
 		fmt.Printf("\nTotal: %d\n", result.Total)
 	case contextengine.CommandSearch:
@@ -1136,6 +1158,12 @@ type SearchCommandOptions struct {
 	Dirs      []string
 }
 
+// ListCommandOptions holds parsed list command options
+type ListCommandOptions struct {
+	Path  string
+	Limit int
+}
+
 // parseSearchCommandArgs parses search command arguments
 // Format: search [-d dir1] [-d dir2] ... -q query [-k top_k] [-t threshold]
 //         search -h|--help (shows help)
@@ -1261,4 +1289,75 @@ Examples:
   search -q "RAG" -k 20 -t 0.5                      # Return 20 results with threshold 0.5
 `
 	fmt.Println(help)
+}
+
+// printListHelp prints help for the list/ls command
+func printListHelp() {
+	help := `List command usage: ls [path] [options]
+
+List contents of a path in the context filesystem.
+
+Arguments:
+  [path]                 Path to list (default: "datasets")
+                         Examples: datasets, datasets/kb1
+
+Options:
+  -n, --limit <number>   Maximum number of items to display (default: 10)
+                         Example: -n 20
+  -h, --help             Show this help message
+
+Examples:
+  ls                          # List all datasets
+  ls datasets                 # List all datasets
+  ls datasets/kb1             # List files in kb1 dataset (default 10 items)
+  ls datasets/kb1 -n 20       # List 20 files in kb1 dataset
+  ls -n 5                     # List 5 datasets
+`
+	fmt.Println(help)
+}
+
+// parseListCommandArgs parses list/ls command arguments
+// Format: ls [path] [-n limit] [-h|--help]
+func parseListCommandArgs(args []string) (*ListCommandOptions, error) {
+	opts := &ListCommandOptions{
+		Path:  "datasets",
+		Limit: 10,
+	}
+
+	// Check for help flag
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
+			printListHelp()
+			return nil, nil
+		}
+	}
+
+	// Parse arguments
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+
+		switch arg {
+		case "-n", "--limit":
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("missing value for %s flag", arg)
+			}
+			limit, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return nil, fmt.Errorf("invalid limit value: %s", args[i+1])
+			}
+			opts.Limit = limit
+			i += 2
+		default:
+			// If it doesn't start with -, treat as path
+			if !strings.HasPrefix(arg, "-") {
+				opts.Path = arg
+			} else {
+				return nil, fmt.Errorf("unknown flag: %s", arg)
+			}
+			i++
+		}
+	}
+
+	return opts, nil
 }

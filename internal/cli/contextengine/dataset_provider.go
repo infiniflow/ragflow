@@ -84,18 +84,17 @@ func (p *DatasetProvider) List(ctx stdctx.Context, subPath string, opts *ListOpt
 
 	parts := SplitPath(subPath)
 	if len(parts) == 1 {
-		// datasets/{name} - return dataset info as a single node
-		return p.getDatasetNode(ctx, parts[0])
-	}
-
-	if len(parts) == 2 && parts[1] == "files" {
-		// datasets/{name}/files - list documents
+		// datasets/{name} - list documents in the dataset (default behavior)
 		return p.listDocuments(ctx, parts[0], opts)
 	}
 
-	if len(parts) == 3 && parts[1] == "files" {
-		// datasets/{name}/files/{doc_name} - get document info
-		return p.getDocumentNode(ctx, parts[0], parts[2])
+	if len(parts) == 2 {
+		if parts[1] == "info" {
+			// datasets/{name}/info - return dataset info as a single node
+			return p.getDatasetNode(ctx, parts[0])
+		}
+		// datasets/{name}/{doc_name} - get document info
+		return p.getDocumentNode(ctx, parts[0], parts[1])
 	}
 
 	return nil, fmt.Errorf("invalid path: %s", subPath)
@@ -216,9 +215,16 @@ func (p *DatasetProvider) listDatasets(ctx stdctx.Context, opts *ListOptions) (*
 		nodes = append(nodes, node)
 	}
 
+	total := len(nodes)
+
+	// Apply limit if specified
+	if opts != nil && opts.Limit > 0 && opts.Limit < len(nodes) {
+		nodes = nodes[:opts.Limit]
+	}
+
 	return &Result{
 		Nodes: nodes,
-		Total: len(nodes),
+		Total: total,
 	}, nil
 }
 

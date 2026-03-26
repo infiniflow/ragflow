@@ -4,24 +4,59 @@ This is the Go implementation of the RAGFlow command-line interface, compatible 
 
 ## Features
 
-- Interactive mode only
+- Interactive mode and single command execution
 - Full compatibility with Python CLI syntax
 - Recursive descent parser for SQL-like commands
+- Context Engine (Virtual Filesystem) for intuitive resource management
 - Support for all major commands:
   - User management: LOGIN, REGISTER, CREATE USER, DROP USER, LIST USERS, etc.
   - Service management: LIST SERVICES, SHOW SERVICE, STARTUP/SHUTDOWN/RESTART SERVICE
   - Role management: CREATE ROLE, DROP ROLE, LIST ROLES, GRANT/REVOKE PERMISSION
-  - Dataset management: CREATE DATASET, DROP DATASET, LIST DATASETS
+  - Dataset management via Context Engine: `ls`, `search`, `mkdir`, `cat`, `rm`
   - Model management: SET/RESET DEFAULT LLM/VLM/EMBEDDING/etc.
   - And more...
 
 ## Usage
 
-Build and run:
+### Build and run
 
 ```bash
 go build -o ragflow_cli ./cmd/ragflow_cli.go
 ./ragflow_cli
+```
+
+### Quick Start with Context Engine
+
+The Context Engine provides a filesystem-like interface to manage RAGFlow resources:
+
+```bash
+# Connect to RAGFlow server
+./ragflow_cli --host localhost:9380 -u admin@example.com
+
+# List datasets (default shows 10)
+RAGFlow(user)> ls
+
+# List more datasets
+RAGFlow(user)> ls -n 20
+
+# View files in a dataset
+RAGFlow(user)> datasets/KB1
+
+# View more files
+RAGFlow(user)> ls datasets/KB1 -n 50
+
+# Search within a dataset (JSON output by default)
+RAGFlow(user)> search -d datasets/KB1 -q "machine learning"
+
+# Search with plain text output
+RAGFlow(user)> search -d datasets/KB1 -q "test" --output plain
+
+# Create a new dataset
+RAGFlow(user)> mkdir datasets/new_kb
+
+# Get help for specific commands
+RAGFlow(user)> ls -h
+RAGFlow(user)> search -h
 ```
 
 ## Architecture
@@ -59,15 +94,64 @@ The Context Engine provides a unified virtual filesystem interface over RAGFlow'
 | Path | Description |
 |------|-------------|
 | `/datasets` | List all datasets |
-| `/datasets/{name}` | Get dataset info |
-| `/datasets/{name}/files` | List documents in dataset |
-| `/datasets/{name}/files/{doc}` | Get document info |
+| `/datasets/{name}` | List documents in dataset (default behavior) |
+| `/datasets/{name}/info` | Get dataset info |
+| `/datasets/{name}/{doc}` | Get document info |
 
 ### Commands
 
-- `ls [path]` - List nodes at path
-- `search [path] WHERE query='...'` - Search nodes
-- `mkdir [path]` - Create new resource (dataset)
+#### `ls [path] [options]` - List nodes at path
+
+List contents of a path in the context filesystem.
+
+**Arguments:**
+- `[path]` - Path to list (default: "datasets")
+
+**Options:**
+- `-n, --limit <number>` - Maximum number of items to display (default: 10)
+- `-h, --help` - Show ls help message
+
+**Examples:**
+```bash
+ls                              # List all datasets (default 10)
+ls -n 20                        # List 20 datasets
+ls datasets/kb1                 # List files in kb1 dataset
+ls datasets/kb1 -n 50           # List 50 files in kb1 dataset
+ls datasets/kb1/info            # Show dataset info
+```
+
+#### `search [options]` - Search for content
+
+Semantic search in datasets.
+
+**Options:**
+- `-d, --dir <path>` - Directory to search in (can be specified multiple times)
+- `-q, --query <query>` - Search query (required)
+- `-k, --top-k <number>` - Number of top results to return (default: 10)
+- `-t, --threshold <num>` - Similarity threshold, 0.0-1.0 (default: 0.2)
+- `-h, --help` - Show search help message
+
+**Output Formats:**
+- Default: JSON format
+- `--output plain` - Plain text format
+- `--output table` - Table format with borders
+
+**Examples:**
+```bash
+search -q "machine learning"                    # Search all datasets (JSON output)
+search -d datasets/kb1 -q "neural networks"     # Search in kb1
+search -d datasets/kb1 -q "AI" --output plain   # Plain text output
+search -q "RAG" -k 20 -t 0.5                    # Return 20 results with threshold 0.5
+```
+
+#### `cat <path>` - Display content
+
+Display document content (if available).
+
+**Examples:**
+```bash
+cat datasets/kb1/document.pdf   # Show document info
+```
 
 ## Command Examples
 
@@ -106,11 +190,13 @@ SET DEFAULT EMBEDDING 'text-embedding-ada-002';
 RESET DEFAULT LLM;
 
 -- Context Engine (Virtual Filesystem)
-ls datasets;                              -- List all datasets
-ls datasets/my_dataset;                   -- Show dataset info
-ls datasets/my_dataset/files;             -- List documents in dataset
-search datasets WHERE query='test';       -- Search datasets
-mkdir datasets/new_dataset;               -- Create new dataset
+ls;                                       -- List all datasets (default 10)
+ls -n 20;                                 -- List 20 datasets
+ls datasets/my_dataset;                   -- List documents in dataset
+ls datasets/my_dataset -n 50;             -- List 50 documents
+ls datasets/my_dataset/info;              -- Show dataset info
+search -q "test";                         -- Search all datasets (JSON output)
+search -d datasets/my_dataset -q "test";  -- Search in specific dataset
 
 -- Meta commands
 \?          -- Show help
