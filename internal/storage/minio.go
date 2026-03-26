@@ -133,10 +133,13 @@ func (m *MinioStorage) Put(bucket, fnm string, binary []byte, tenantID ...string
 
 	ctx := context.Background()
 
+	var err error
+
 	for i := 0; i < 3; i++ {
+		var exists bool
 		// Ensure bucket exists
 		if m.bucket == "" {
-			exists, err := m.client.BucketExists(ctx, bucket)
+			exists, err = m.client.BucketExists(ctx, bucket)
 			if err != nil {
 				logger.Warn("Failed to check bucket existence", zap.String("bucket", bucket), zap.Error(err))
 				m.reconnect()
@@ -144,7 +147,7 @@ func (m *MinioStorage) Put(bucket, fnm string, binary []byte, tenantID ...string
 				continue
 			}
 			if !exists {
-				if err := m.client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}); err != nil {
+				if err = m.client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}); err != nil {
 					logger.Warn("Failed to create bucket", zap.String("bucket", bucket), zap.Error(err))
 					m.reconnect()
 					time.Sleep(time.Second)
@@ -154,7 +157,7 @@ func (m *MinioStorage) Put(bucket, fnm string, binary []byte, tenantID ...string
 		}
 
 		reader := bytes.NewReader(binary)
-		_, err := m.client.PutObject(ctx, bucket, fnm, reader, int64(len(binary)), minio.PutObjectOptions{})
+		_, err = m.client.PutObject(ctx, bucket, fnm, reader, int64(len(binary)), minio.PutObjectOptions{})
 		if err != nil {
 			logger.Warn("Failed to put object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			m.reconnect()
@@ -165,7 +168,7 @@ func (m *MinioStorage) Put(bucket, fnm string, binary []byte, tenantID ...string
 		return nil
 	}
 
-	return fmt.Errorf("failed to put object after 3 retries")
+	return err
 }
 
 // Get retrieves an object from MinIO
