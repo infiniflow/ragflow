@@ -715,7 +715,6 @@ def compare_backends(
 
 
 # ── Main — run all tests ───────────────────────────────────────────────────────
-
 if __name__ == "__main__":
     # ── Config ──────────────────────────────────────────────────────────────────
     cfg = load_config()
@@ -725,63 +724,41 @@ if __name__ == "__main__":
     VIDEO_TITLE = "Vauxhall Corsa 2024 review"
     QUESTION    = "engine performance and fuel economy"
 
-    # ── Choose what to run ───────────────────────────────────────────────────────
-    # Option A: test a single backend
-    run_video_pipeline(
-         cfg=cfg,
-         url=VIDEO_URL,
-         title=VIDEO_TITLE,
-         question=QUESTION,
-         whisper_backend="youtube-transcript-api",  # fastest, no download
-         whisper_model="base",                      # ignored for this backend
-         cleanup=False,                             # set True to auto-delete after test
-     )
+    # ── Choose what to run — uncomment ONE block at a time ───────────────────────
 
-    # Option B: test faster-whisper on CPU
+    # Option A: youtube-transcript-api (fast, ~10s, captions only)
     # run_video_pipeline(
-    #     cfg=cfg,
-    #     url=VIDEO_URL,
-    #     title=VIDEO_TITLE,
-    #     question=QUESTION,
-    #     whisper_backend="faster-whisper",
-    #     whisper_model="tiny",    # tiny=fast, base=balanced, large=best (GPU)
-    #     cleanup=False,
+    #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
+    #     whisper_backend="youtube-transcript-api", whisper_model="base", cleanup=False,
     # )
 
-    # Option C: test openai-api backend (uses OPENAI_API_KEY from .env.test)
+    # Option B: faster-whisper (local CPU, ~60s with tiny model)
     # run_video_pipeline(
-    #     cfg=cfg,
-    #     url=VIDEO_URL,
-    #     title=VIDEO_TITLE,
-    #     question=QUESTION,
-    #     whisper_backend="openai-api",
-    #     cleanup=False,
+    #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
+    #     whisper_backend="faster-whisper", whisper_model="tiny", cleanup=False,
     # )
 
-    # Option D: compare all 4 backends on the same video
-    # Remove "openai-api" from the list if you don't want to use it
-    '''compare_backends(
-        cfg=cfg,
-        url=VIDEO_URL,
-        title=VIDEO_TITLE,
-        question=QUESTION,
-        backends=[
-            "youtube-transcript-api",
-            "faster-whisper",
-            # "openai-whisper",   # slow on CPU, uncomment to include
-            # "openai-api",       # costs ~$0.02, uncomment to include
-        ],
-        whisper_model="tiny",   # use tiny for quick comparison test
-        top_n=3,
-        cleanup=False,          # set True to delete datasets after comparison
-    )'''
-
-    # ── PDF pipeline test ────────────────────────────────────────────────────────
-    # Uncomment and set file_path to test PDF ingestion:
-    # run_pdf_pipeline(
-    #     cfg=cfg,
-    #     file_path="/path/to/your/document.pdf",
-    #     question="your question about the document",
-    #     top_n=3,
-    #     cleanup=False,
+    # Option C: openai-whisper (local CPU, ~2-3min with tiny model)
+    # run_video_pipeline(
+    #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
+    #     whisper_backend="openai-whisper", whisper_model="tiny", cleanup=False,
     # )
+
+    # Option D: openai-api (cloud, ~30s, costs ~$0.02/video)
+    # run_video_pipeline(
+    #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
+    #     whisper_backend="openai-api", cleanup=False,
+    # )
+
+    # Option E: compare multiple backends side by side
+    # compare_backends(
+    #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
+    #     backends=["youtube-transcript-api", "faster-whisper"],
+    #     whisper_model="tiny", top_n=3, cleanup=False,
+    # )
+
+    # Option F: PDF pipeline test
+    run_pdf_pipeline(
+        cfg=cfg, file_path="/ragflow/tests/Corsa_test.pdf",
+        question="engine performance and fuel economy", top_n=3, cleanup=False,
+    )
