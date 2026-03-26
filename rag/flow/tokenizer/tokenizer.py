@@ -84,16 +84,20 @@ class Tokenizer(ProcessBase):
             return embedding_model.encode([truncate(c, embedding_model.max_length - 10) for c in txts])
 
         cnts_ = np.array([])
+        self.callback(1, f"Total chunks to embed: {len(texts)}")
+
         for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
             async with embed_limiter:
+                start = time.time()
                 vts, c = await thread_pool_exec(batch_encode,texts[i : i + settings.EMBEDDING_BATCH_SIZE],)
+                delta = time.time()-start
             if len(cnts_) == 0:
                 cnts_ = vts
             else:
                 cnts_ = np.concatenate((cnts_, vts), axis=0)
             token_count += c
-            if i % 33 == 32:
-                self.callback(i * 1.0 / len(texts) / parts / settings.EMBEDDING_BATCH_SIZE + 0.5 * (parts - 1))
+            self.callback(1, f"Embedding batch {i}-{i + settings.EMBEDDING_BATCH_SIZE} :: {(i*100)/len(texts):2.2f}% done :: {settings.EMBEDDING_BATCH_SIZE / delta:2.1f} chunks/s")
+
 
         cnts = cnts_
         title_w = float(self._param.filename_embd_weight)
