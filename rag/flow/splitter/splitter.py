@@ -17,11 +17,14 @@ import random
 import re
 from copy import deepcopy
 
-from common.token_utils import num_tokens_from_string
-from deepdoc.parser.pdf_parser import RAGFlowPdfParser
-from rag.flow.base import ProcessBase, ProcessParamBase
-from rag.flow.splitter.schema import SplitterFromUpstream
 from common.float_utils import normalize_overlapped_percent
+from common.token_utils import num_tokens_from_string
+from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.flow.splitter.pdf_splitter import (
+    extract_item_positions,
+    restore_pdf_text_previews,
+)
+from rag.flow.splitter.schema import SplitterFromUpstream
 from rag.nlp import naive_merge
 
 
@@ -112,31 +115,40 @@ def _build_json_chunks(json_result, delimiter_pattern):
         if not isinstance(text, str):
             text = ""
 
-        positions = item.get("positions")
-        if isinstance(positions, list):
-            positions = deepcopy(positions)
-        else:
-            position_tag = item.get("position_tag")
-            if isinstance(position_tag, str) and position_tag:
-                positions = [[pos[0][-1], *pos[1:]] for pos in RAGFlowPdfParser.extract_positions(position_tag)]
-            else:
-                position_int = item.get("position_int")
-                if isinstance(position_int, list):
-                    positions = [list(pos) for pos in position_int if isinstance(pos, (list, tuple)) and len(pos) >= 5]
-                else:
-                    positions = []
-
-        img_id = item.get("img_id") if ck_type in {"table", "image"} else None
+        # Keep PDF coordinates as an internal preview field until the final
+        # output is assembled. This avoids leaking two public coordinate
+        # formats downstream.
+        preview_positions = extract_item_positions(item)
+        img_id = item.get("img_id")
 
         if ck_type == "text":
             text_segments = _split_text_by_pattern(text, delimiter_pattern) if delimiter_pattern else [text]
             for segment in text_segments:
                 if not segment or not segment.strip():
                     continue
-                chunks.append({"text": segment, "doc_type_kwd": "text", "ck_type": "text", "positions": deepcopy(positions), "tk_nums": num_tokens_from_string(segment)})
+                chunks.append(
+                    {
+                        "text": segment,
+                        "doc_type_kwd": "text",
+                        "ck_type": "text",
+                        "_preview_positions": deepcopy(preview_positions),
+                        "tk_nums": num_tokens_from_string(segment),
+                    }
+                )
             continue
 
-        chunks.append({"text": text or "", "doc_type_kwd": ck_type, "ck_type": ck_type, "img_id": img_id, "positions": deepcopy(positions), "tk_nums": num_tokens_from_string(text or ""), "context_above": "", "context_below": ""})
+        chunks.append(
+            {
+                "text": text or "",
+                "doc_type_kwd": ck_type,
+                "ck_type": ck_type,
+                "img_id": img_id,
+                "_preview_positions": deepcopy(preview_positions),
+                "tk_nums": num_tokens_from_string(text or ""),
+                "context_above": "",
+                "context_below": "",
+            }
+        )
 
     return chunks
 
@@ -228,7 +240,7 @@ def _merge_text_chunks_by_token_size(chunks, chunk_token_size, overlapped_percen
             merged[prev_text_idx]["text"] += "\n" + current["text"]
         else:
             merged[prev_text_idx]["text"] += current["text"]
-        merged[prev_text_idx]["positions"].extend(current.get("positions") or [])
+        merged[prev_text_idx]["_preview_positions"].extend(current.get("_preview_positions") or [])
         merged[prev_text_idx]["tk_nums"] += current["tk_nums"]
 
     return merged
@@ -242,11 +254,43 @@ def _finalize_json_chunks(chunks):
         if not text.strip():
             continue
 
+        # The internal preview coordinates are converted exactly once into the
+        # indexed fields consumed downstream.
+        position_int = []
+        page_num_int = []
+        top_int = []
+        for pos in chunk.get("_preview_positions") or []:
+            if not isinstance(pos, (list, tuple)) or len(pos) < 5:
+                continue
+            try:
+                page_no = int(pos[0])
+                left = int(pos[1])
+                right = int(pos[2])
+                top = int(pos[3])
+                bottom = int(pos[4])
+                position_int.append(
+                    (
+                        page_no,
+                        left,
+                        right,
+                        top,
+                        bottom,
+                    )
+                )
+                page_num_int.append(page_no)
+                top_int.append(top)
+            except (TypeError, ValueError):
+                continue
+
         doc = {
             "text": text,
-            "positions": deepcopy(chunk.get("positions") or []),
+            "position_int": deepcopy(position_int),
+            "page_num_int": deepcopy(page_num_int),
+            "top_int": deepcopy(top_int),
             "doc_type_kwd": chunk.get("doc_type_kwd", "text"),
         }
+        if chunk.get("mom"):
+            doc["mom"] = chunk["mom"]
         if chunk.get("img_id"):
             doc["img_id"] = chunk["img_id"]
         docs.append(doc)
@@ -356,9 +400,10 @@ class Splitter(ProcessBase):
         if not delimiter_pattern:
             chunks = _merge_text_chunks_by_token_size(chunks, self._param.chunk_token_size, overlapped_percent)
 
-        cks = _finalize_json_chunks(chunks)
         if custom_pattern:
-            cks = _split_chunk_docs_by_children(cks, custom_pattern)
+            chunks = _split_chunk_docs_by_children(chunks, custom_pattern)
 
+        await restore_pdf_text_previews(chunks, from_upstream, self._canvas)
+        cks = _finalize_json_chunks(chunks)
         self.set_output("chunks", cks)
         self.callback(1, "Done.")

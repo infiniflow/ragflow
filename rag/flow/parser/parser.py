@@ -458,7 +458,7 @@ class Parser(ProcessBase):
             for t, poss in lines:
                 box = {
                     "image": pdf_parser.crop(poss, 1),
-                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
+                    "positions": [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
                     "text": t,
                 }
                 bboxes.append(box)
@@ -480,7 +480,7 @@ class Parser(ProcessBase):
                 box = {
                     "text": text,
                     "image": pdf_parser.crop(poss, 1) if isinstance(poss, str) and poss else None,
-                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)] if isinstance(poss, str) and poss else [],
+                    "positions": [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)] if isinstance(poss, str) and poss else [],
                 }
                 bboxes.append(box)
         elif parse_method.lower() == "tcadp parser":
@@ -564,7 +564,7 @@ class Parser(ProcessBase):
                 box = {
                     "text": t,
                     "image": cropped_image,
-                    "positions": positions,
+                    "positions": [[pos[0] + 1, *pos[1:]] for pos in positions] if positions else [],
                 }
                 bboxes.append(box)
         else:
@@ -579,7 +579,7 @@ class Parser(ProcessBase):
                 for pn, x0, x1, top, bott in RAGFlowPdfParser.extract_positions(poss):
                     bboxes.append(
                         {
-                            "page_number": int(pn[0]),
+                            "page_number": int(pn[0]) + 1,
                             "x0": float(x0),
                             "x1": float(x1),
                             "top": float(top),
