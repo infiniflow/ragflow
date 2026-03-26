@@ -49,9 +49,7 @@ type CommandType string
 const (
 	CommandList   CommandType = "ls"
 	CommandSearch CommandType = "search"
-	CommandMkdir  CommandType = "mkdir"
 	CommandCat    CommandType = "cat"
-	CommandRm     CommandType = "rm"
 )
 
 // Command represents a context engine command

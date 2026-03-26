@@ -55,7 +55,7 @@ func (p *Parser) Parse(adminCommand bool) (*Command, error) {
 		return p.parseMetaCommand()
 	}
 
-	// Check for ContextEngine commands (ls, mkdir, rm, cat, cd, pwd, search)
+	// Check for ContextEngine commands (ls, cat, search)
 	if p.curToken.Type == TokenIdentifier && isCECommand(p.curToken.Value) {
 		return p.parseCECommand()
 	}

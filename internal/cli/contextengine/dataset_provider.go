@@ -115,21 +115,6 @@ func (p *DatasetProvider) Search(ctx stdctx.Context, subPath string, opts *Searc
 	return p.searchDatasets(ctx, opts)
 }
 
-// Mkdir creates a new dataset or directory structure
-func (p *DatasetProvider) Mkdir(ctx stdctx.Context, subPath string, params map[string]interface{}) (*Node, error) {
-	if subPath == "" {
-		return nil, fmt.Errorf("cannot create dataset without a name")
-	}
-
-	parts := SplitPath(subPath)
-	if len(parts) == 1 {
-		// Create dataset
-		return p.createDataset(ctx, parts[0], params)
-	}
-
-	return nil, fmt.Errorf("mkdir only supports creating datasets at the root level")
-}
-
 // Cat retrieves document content
 // For datasets:
 //   - cat datasets          -> Error: datasets is a directory, not a file
@@ -153,24 +138,6 @@ func (p *DatasetProvider) Cat(ctx stdctx.Context, subPath string) ([]byte, error
 	}
 
 	return nil, fmt.Errorf("invalid path for cat: %s", subPath)
-}
-
-// Rm removes a dataset or document
-func (p *DatasetProvider) Rm(ctx stdctx.Context, subPath string, recursive bool) error {
-	if subPath == "" {
-		return fmt.Errorf("cannot remove root datasets node")
-	}
-
-	parts := SplitPath(subPath)
-	if len(parts) == 1 {
-		return p.deleteDataset(ctx, parts[0])
-	}
-
-	if len(parts) == 3 && parts[1] == "files" {
-		return p.deleteDocument(ctx, parts[0], parts[2])
-	}
-
-	return fmt.Errorf("invalid path for removal: %s", subPath)
 }
 
 // ==================== Dataset Operations ====================
@@ -251,79 +218,6 @@ func (p *DatasetProvider) getDataset(ctx stdctx.Context, name string) (*Node, er
 	}
 
 	return nil, fmt.Errorf("%s: dataset '%s'", ErrNotFound, name)
-}
-
-func (p *DatasetProvider) createDataset(ctx stdctx.Context, name string, params map[string]interface{}) (*Node, error) {
-	payload := map[string]interface{}{
-		"name": name,
-	}
-
-	// Add optional parameters
-	if params != nil {
-		if embedding, ok := params["embedding_model"]; ok {
-			payload["embedding_model"] = embedding
-		}
-		if parser, ok := params["parser_config"]; ok {
-			payload["parser_config"] = parser
-		}
-		if parserMethod, ok := params["parser_method"]; ok {
-			payload["parser_method"] = parserMethod
-		}
-	}
-
-	resp, err := p.httpClient.Request("POST", "/datasets", true, "auto", nil, payload)
-	if err != nil {
-		return nil, err
-	}
-
-	var apiResp struct {
-		Code    int                    `json:"code"`
-		Data    map[string]interface{} `json:"data"`
-		Message string                 `json:"message"`
-	}
-
-	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
-		return nil, err
-	}
-
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("API error: %s", apiResp.Message)
-	}
-
-	return p.datasetToNode(apiResp.Data), nil
-}
-
-func (p *DatasetProvider) deleteDataset(ctx stdctx.Context, name string) error {
-	// First get the dataset ID
-	node, err := p.getDataset(ctx, name)
-	if err != nil {
-		return err
-	}
-
-	datasetID := getString(node.Metadata["id"])
-	if datasetID == "" {
-		return fmt.Errorf("dataset ID not found")
-	}
-
-	resp, err := p.httpClient.Request("DELETE", fmt.Sprintf("/datasets/%s", datasetID), true, "auto", nil, nil)
-	if err != nil {
-		return err
-	}
-
-	var apiResp struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	}
-
-	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
-		return err
-	}
-
-	if apiResp.Code != 0 {
-		return fmt.Errorf("API error: %s", apiResp.Message)
-	}
-
-	return nil
 }
 
 func (p *DatasetProvider) searchDatasets(ctx stdctx.Context, opts *SearchOptions) (*Result, error) {
@@ -751,55 +645,6 @@ func (p *DatasetProvider) searchDocuments(ctx stdctx.Context, datasetName string
 		Nodes: nodes,
 		Total: len(nodes),
 	}, nil
-}
-
-func (p *DatasetProvider) deleteDocument(ctx stdctx.Context, datasetName, docName string) error {
-	// First get the document to get its ID
-	doc, err := p.getDocument(ctx, datasetName, docName)
-	if err != nil {
-		return err
-	}
-
-	docID := getString(doc.Metadata["id"])
-	if docID == "" {
-		return fmt.Errorf("document ID not found")
-	}
-
-	// Get dataset ID
-	ds, err := p.getDataset(ctx, datasetName)
-	if err != nil {
-		return err
-	}
-
-	datasetID := getString(ds.Metadata["id"])
-	if datasetID == "" {
-		return fmt.Errorf("dataset ID not found")
-	}
-
-	path := fmt.Sprintf("/datasets/%s/documents", datasetID)
-	payload := map[string]interface{}{
-		"ids": []string{docID},
-	}
-
-	resp, err := p.httpClient.Request("DELETE", path, true, "auto", nil, payload)
-	if err != nil {
-		return err
-	}
-
-	var apiResp struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	}
-
-	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
-		return err
-	}
-
-	if apiResp.Code != 0 {
-		return fmt.Errorf("API error: %s", apiResp.Message)
-	}
-
-	return nil
 }
 
 // ==================== Helper Functions ====================

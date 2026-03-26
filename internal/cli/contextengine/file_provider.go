@@ -123,30 +123,6 @@ func (p *FileProvider) Search(ctx stdctx.Context, subPath string, opts *SearchOp
 	}, nil
 }
 
-// Mkdir creates a new folder
-func (p *FileProvider) Mkdir(ctx stdctx.Context, subPath string, params map[string]interface{}) (*Node, error) {
-	if subPath == "" {
-		return nil, fmt.Errorf("cannot create folder without a name")
-	}
-
-	parts := SplitPath(subPath)
-	if len(parts) == 1 {
-		// Create folder in root
-		return p.createFolder(ctx, parts[0], "")
-	}
-
-	// Create folder inside another folder
-	parentName := parts[0]
-	folderName := parts[1]
-
-	parentID, err := p.getFolderIDByName(ctx, parentName)
-	if err != nil {
-		return nil, err
-	}
-
-	return p.createFolder(ctx, folderName, parentID)
-}
-
 // Cat retrieves file content
 func (p *FileProvider) Cat(ctx stdctx.Context, subPath string) ([]byte, error) {
 	if subPath == "" {
@@ -178,43 +154,6 @@ func (p *FileProvider) Cat(ctx stdctx.Context, subPath string) ([]byte, error) {
 
 	// Download file content
 	return p.downloadFile(ctx, fileID)
-}
-
-// Rm removes a file or folder
-func (p *FileProvider) Rm(ctx stdctx.Context, subPath string, recursive bool) error {
-	if subPath == "" {
-		return fmt.Errorf("cannot remove root")
-	}
-
-	parts := SplitPath(subPath)
-	if len(parts) == 1 {
-		// Remove folder
-		folderID, err := p.getFolderIDByName(ctx, parts[0])
-		if err != nil {
-			return err
-		}
-		return p.deleteFile(ctx, folderID)
-	}
-
-	// Remove file
-	folderName := parts[0]
-	fileName := strings.Join(parts[1:], "/")
-
-	result, err := p.getFileNode(ctx, folderName, fileName)
-	if err != nil {
-		return err
-	}
-
-	if len(result.Nodes) == 0 {
-		return fmt.Errorf("%s: file '%s'", ErrNotFound, fileName)
-	}
-
-	fileID := getString(result.Nodes[0].Metadata["id"])
-	if fileID == "" {
-		return fmt.Errorf("file ID not found")
-	}
-
-	return p.deleteFile(ctx, fileID)
 }
 
 // ==================== Python Server API Methods ====================
@@ -451,38 +390,6 @@ func (p *FileProvider) getFileNode(ctx stdctx.Context, folderName, fileName stri
 	return nil, fmt.Errorf("%s: file '%s' in folder '%s'", ErrNotFound, fileName, folderName)
 }
 
-// createFolder creates a new folder
-func (p *FileProvider) createFolder(ctx stdctx.Context, name string, parentID string) (*Node, error) {
-	payload := map[string]interface{}{
-		"name": name,
-		"type": "folder",
-	}
-	if parentID != "" {
-		payload["parent_id"] = parentID
-	}
-
-	resp, err := p.httpClient.Request("POST", "/files", true, "auto", nil, payload)
-	if err != nil {
-		return nil, err
-	}
-
-	var apiResp struct {
-		Code    int                    `json:"code"`
-		Data    map[string]interface{} `json:"data"`
-		Message string                 `json:"message"`
-	}
-
-	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
-		return nil, err
-	}
-
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("API error: %s", apiResp.Message)
-	}
-
-	return p.fileToNode(apiResp.Data, ""), nil
-}
-
 // downloadFile downloads file content
 func (p *FileProvider) downloadFile(ctx stdctx.Context, fileID string) ([]byte, error) {
 	path := fmt.Sprintf("/files/%s", fileID)
@@ -505,41 +412,6 @@ func (p *FileProvider) downloadFile(ctx stdctx.Context, fileID string) ([]byte, 
 
 	// Return raw file content
 	return resp.Body, nil
-}
-
-// deleteFile deletes a file or folder
-func (p *FileProvider) deleteFile(ctx stdctx.Context, fileID string) error {
-	payload := map[string]interface{}{
-		"ids": []string{fileID},
-	}
-
-	resp, err := p.httpClient.Request("DELETE", "/files", true, "auto", nil, payload)
-	if err != nil {
-		return err
-	}
-
-	var apiResp struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	}
-
-	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
-		return err
-	}
-
-	if apiResp.Code != 0 {
-		return fmt.Errorf("API error: %s", apiResp.Message)
-	}
-
-	// Remove from cache
-	for path, id := range p.folderCache {
-		if id == fileID {
-			delete(p.folderCache, path)
-			break
-		}
-	}
-
-	return nil
 }
 
 // ==================== Conversion Functions ====================

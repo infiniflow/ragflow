@@ -60,18 +60,8 @@ func (e *Engine) Execute(ctx stdctx.Context, cmd *Command) (*Result, error) {
 		return e.List(ctx, cmd.Path, parseListOptions(cmd.Params))
 	case CommandSearch:
 		return e.Search(ctx, cmd.Path, parseSearchOptions(cmd.Params))
-	case CommandMkdir:
-		_, err := e.Mkdir(ctx, cmd.Path, cmd.Params)
-		return nil, err
 	case CommandCat:
 		_, err := e.Cat(ctx, cmd.Path)
-		return nil, err
-	case CommandRm:
-		recursive := false
-		if r, ok := cmd.Params["recursive"].(bool); ok {
-			recursive = r
-		}
-		err := e.Rm(ctx, cmd.Path, recursive)
 		return nil, err
 	default:
 		return nil, fmt.Errorf("unknown command type: %s", cmd.Type)
@@ -206,16 +196,6 @@ func (e *Engine) Search(ctx stdctx.Context, path string, opts *SearchOptions) (*
 	return provider.Search(ctx, subPath, opts)
 }
 
-// Mkdir creates a new directory/node
-func (e *Engine) Mkdir(ctx stdctx.Context, path string, params map[string]interface{}) (*Node, error) {
-	provider, subPath, err := e.resolveProvider(path)
-	if err != nil {
-		return nil, err
-	}
-
-	return provider.Mkdir(ctx, subPath, params)
-}
-
 // Cat retrieves the content of a file/document
 func (e *Engine) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 	provider, subPath, err := e.resolveProvider(path)
@@ -229,16 +209,6 @@ func (e *Engine) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 	}
 
 	return provider.Cat(ctx, subPath)
-}
-
-// Rm removes a resource
-func (e *Engine) Rm(ctx stdctx.Context, path string, recursive bool) error {
-	provider, subPath, err := e.resolveProvider(path)
-	if err != nil {
-		return err
-	}
-
-	return provider.Rm(ctx, subPath, recursive)
 }
 
 // ParsePath parses a path and returns path information

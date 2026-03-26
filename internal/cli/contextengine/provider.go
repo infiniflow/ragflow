@@ -38,14 +38,8 @@ type Provider interface {
 	// Search searches for nodes matching the query under the given path
 	Search(ctx stdctx.Context, path string, opts *SearchOptions) (*Result, error)
 
-	// Mkdir creates a new directory/node at the given path
-	Mkdir(ctx stdctx.Context, path string, params map[string]interface{}) (*Node, error)
-
 	// Cat retrieves the content of a file/document at the given path
 	Cat(ctx stdctx.Context, path string) ([]byte, error)
-
-	// Rm removes a resource at the given path
-	Rm(ctx stdctx.Context, path string, recursive bool) error
 }
 
 // BaseProvider provides common functionality for all providers

@@ -383,7 +383,7 @@ Configuration File:
 
 Commands:
   SQL commands (use quotes): "LIST USERS", "CREATE USER 'email' 'password'", etc.
-  Context Engine commands (no quotes): ls datasets, search "keyword", mkdir path, etc.
+  Context Engine commands (no quotes): ls datasets, search "keyword", cat path, etc.
   If no command is provided, CLI runs in interactive mode.
 `)
 }
@@ -695,15 +695,6 @@ func (c *CLI) executeContextEngine(input string) error {
 				"dirs":      searchOpts.Dirs,
 			},
 		}
-	case "mkdir":
-		if len(cmdArgs) == 0 {
-			return fmt.Errorf("mkdir requires a path argument")
-		}
-		ceCmd = &contextengine.Command{
-			Type:   contextengine.CommandMkdir,
-			Path:   cmdArgs[0],
-			Params: map[string]interface{}{},
-		}
 	case "cat":
 		if len(cmdArgs) == 0 {
 			return fmt.Errorf("cat requires a path argument")
@@ -721,27 +712,6 @@ func (c *CLI) executeContextEngine(input string) error {
 			fmt.Println(string(content))
 		}
 		return nil
-	case "rm", "del", "delete":
-		if len(cmdArgs) == 0 {
-			return fmt.Errorf("rm requires a path argument")
-		}
-		recursive := false
-		path := cmdArgs[0]
-		// Check for -r or -R flag
-		for _, arg := range cmdArgs {
-			if arg == "-r" || arg == "-R" || arg == "--recursive" {
-				recursive = true
-			} else if !strings.HasPrefix(arg, "-") {
-				path = arg
-			}
-		}
-		ceCmd = &contextengine.Command{
-			Type: contextengine.CommandRm,
-			Path: path,
-			Params: map[string]interface{}{
-				"recursive": recursive,
-			},
-		}
 	default:
 		return fmt.Errorf("unknown context engine command: %s", cmdType)
 	}
@@ -951,14 +921,10 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 					break
 				}
 			}
-			fmt.Println(sep)
-			fmt.Printf("Total: %d\n", result.Total)
-		}
-	case contextengine.CommandMkdir:
-		fmt.Println("Created successfully")
-	case contextengine.CommandRm:
-		fmt.Println("Removed successfully")
-	case contextengine.CommandCat:
+		fmt.Println(sep)
+		fmt.Printf("Total: %d\n", result.Total)
+	}
+case contextengine.CommandCat:
 		// Cat output is handled differently - it returns []byte, not *Result
 		// This case should not be reached in normal flow since Cat returns []byte directly
 		fmt.Println("Content retrieved")
@@ -1060,11 +1026,9 @@ Context Engine Commands (no quotes):
   list [path]                  - Same as ls
   search [options]             - Search resources in datasets
                                  Use 'search -h' for detailed options
-  mkdir <path>                 - Create a resource (e.g., mkdir datasets/new_ds)
   cat <path>                   - Show file content
                                  e.g., cat files/docs/file.txt  - Show file content
                                  Note: cat datasets or cat datasets/kb1 will error
-  rm [-r] <path>               - Remove a resource
 
 Examples:
   ragflow_cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
