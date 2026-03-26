@@ -358,6 +358,11 @@ class ParserConfig(Base):
     filename_embd_weight: Annotated[float | None, Field(default=0.1, ge=0.0, le=1.0)]
     task_page_size: Annotated[int | None, Field(default=None, ge=1)]
     pages: Annotated[list[list[int]] | None, Field(default=None)]
+    # Video / Whisper backend config
+    whisper_backend: Annotated[str | None, Field(default=None)]
+    whisper_model: Annotated[str | None, Field(default=None)]
+    openai_api_key: Annotated[str | None, Field(default=None)]
+    video_title: Annotated[str | None, Field(default=None)]
 
 
 class CreateDatasetReq(Base):
