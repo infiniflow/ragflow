@@ -781,15 +781,20 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 			fmt.Println("(empty)")
 			return
 		}
-		// Print as table: path and created (no type)
-		fmt.Printf("%-50s %-20s\n", "PATH", "CREATED")
-		fmt.Println(strings.Repeat("-", 70))
+		// Print as table: name, path and created (no type)
+		fmt.Printf("%-30s %-50s %-20s\n", "NAME", "PATH", "CREATED")
+		fmt.Println(strings.Repeat("-", 100))
 		for _, node := range result.Nodes {
 			created := node.CreatedAt.Format("2006-01-02 15:04")
 			if node.CreatedAt.IsZero() {
 				created = "-"
 			}
-			fmt.Printf("%-50s %-20s\n", node.Path, created)
+			// Remove leading "/" from path for display
+			displayPath := node.Path
+			if strings.HasPrefix(displayPath, "/") {
+				displayPath = displayPath[1:]
+			}
+			fmt.Printf("%-30s %-50s %-20s\n", node.Name, displayPath, created)
 		}
 		fmt.Printf("\nTotal: %d\n", result.Total)
 	case contextengine.CommandSearch:

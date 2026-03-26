@@ -73,6 +73,11 @@ func (p *DatasetProvider) List(ctx stdctx.Context, subPath string, opts *ListOpt
 	// Empty subPath means list all datasets
 	// "{name}/files" means list documents in a dataset
 
+	// Check if trying to access hidden .knowledgebase
+	if subPath == ".knowledgebase" || strings.HasPrefix(subPath, ".knowledgebase/") {
+		return nil, fmt.Errorf("invalid path: .knowledgebase is not accessible")
+	}
+
 	if subPath == "" {
 		return p.listDatasets(ctx, opts)
 	}
@@ -204,6 +209,10 @@ func (p *DatasetProvider) listDatasets(ctx stdctx.Context, opts *ListOptions) (*
 	nodes := make([]*Node, 0, len(apiResp.Data))
 	for _, ds := range apiResp.Data {
 		node := p.datasetToNode(ds)
+		// Skip hidden .knowledgebase dataset (trim whitespace for safety)
+		if strings.TrimSpace(node.Name) == ".knowledgebase" {
+			continue
+		}
 		nodes = append(nodes, node)
 	}
 
@@ -214,6 +223,10 @@ func (p *DatasetProvider) listDatasets(ctx stdctx.Context, opts *ListOptions) (*
 }
 
 func (p *DatasetProvider) getDatasetNode(ctx stdctx.Context, name string) (*Result, error) {
+	// Check if trying to access hidden .knowledgebase
+	if name == ".knowledgebase" {
+		return nil, fmt.Errorf("invalid path: .knowledgebase is not accessible")
+	}
 	node, err := p.getDataset(ctx, name)
 	if err != nil {
 		return nil, err
@@ -225,6 +238,11 @@ func (p *DatasetProvider) getDatasetNode(ctx stdctx.Context, name string) (*Resu
 }
 
 func (p *DatasetProvider) getDataset(ctx stdctx.Context, name string) (*Node, error) {
+	// Check if trying to access hidden .knowledgebase
+	if name == ".knowledgebase" {
+		return nil, fmt.Errorf("invalid path: .knowledgebase is not accessible")
+	}
+
 	// First list all datasets to find the one with matching name
 	resp, err := p.httpClient.Request("GET", "/datasets", true, "auto", nil, nil)
 	if err != nil {

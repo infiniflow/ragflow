@@ -327,6 +327,10 @@ func (p *FileProvider) listFolderContents(ctx stdctx.Context, folderID string, p
 	nodes := make([]*Node, 0, len(apiResp.Data.Files))
 	for _, file := range apiResp.Data.Files {
 		fileNode := p.mapToFileNode(file)
+		// Skip hidden .knowledgebase folder
+		if strings.TrimSpace(fileNode.Name) == ".knowledgebase" {
+			continue
+		}
 		filePath := path
 		if filePath != "" {
 			filePath = filePath + "/" + fileNode.Name
@@ -348,6 +352,13 @@ func (p *FileProvider) resolvePath(ctx stdctx.Context, path string) (*FileNode, 
 	parts := SplitPath(path)
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("empty path")
+	}
+
+	// Check if trying to access hidden .knowledgebase
+	for _, part := range parts {
+		if strings.TrimSpace(part) == ".knowledgebase" {
+			return nil, fmt.Errorf("invalid path: .knowledgebase is not accessible")
+		}
 	}
 
 	// Start from root
