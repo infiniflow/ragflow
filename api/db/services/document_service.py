@@ -825,6 +825,17 @@ class DocumentService(CommonService):
             try:
                 tsks = TaskService.query(doc_id=d["id"], order_by=Task.create_time)
                 if not tsks:
+                    # Document is RUNNING but has no tasks — executor likely crashed before
+                    # tasks were created. Reset to FAIL after a grace period so the frontend
+                    # stops polling endlessly.
+                    begin_at = d.get("process_begin_at")
+                    if (d.get("run") == TaskStatus.RUNNING.value and begin_at
+                            and (datetime.now() - begin_at).total_seconds() > 600):
+                        cls.update_by_id(d["id"], {
+                            "run": TaskStatus.FAIL.value,
+                            "progress": -1,
+                            "progress_msg": "Task lost — executor may have crashed. Please re-parse the document.",
+                        })
                     continue
                 msg = []
                 prg = 0
