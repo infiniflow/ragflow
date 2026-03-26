@@ -194,7 +194,31 @@ then access the UI at `http://localhost:8080`.
 cd ~/ragflow && docker build -f Dockerfile.custom -t ragflow-stellantis:v0.24.0 .
 ```
 
-This takes 2–3 minutes and layers on top of `infiniflow/ragflow:v0.24.0`.
+This takes 8–10 minutes and layers on top of `infiniflow/ragflow:v0.24.0`.
+It installs ffmpeg, all Whisper backends, and pre-downloads the `tiny` and `base` models.
+
+---
+
+### Fix 5 — Corporate SSL proxy (HuggingFace / OpenAI SDK)
+
+**Symptom:** Whisper model download or OpenAI API calls fail with:
+```
+SSL: CERTIFICATE_VERIFY_FAILED — self-signed certificate in certificate chain
+```
+
+**Cause:** Corporate SSL inspection (e.g. Kaspersky) intercepts HTTPS connections.
+
+**Fix:** Already baked into `Dockerfile.custom` via three ENV variables:
+```dockerfile
+ENV HF_HUB_DISABLE_SSL_VERIFICATION=1   # HuggingFace model downloads
+ENV CURL_CA_BUNDLE=""                    # curl/requests based libraries
+ENV REQUESTS_CA_BUNDLE=""               # OpenAI SDK (httpx)
+```
+
+No manual action needed — these are set automatically in the custom image.
+
+> ⚠️ For LLM/chat calls (Gemini API), a separate Kaspersky certificate injection
+> is still required. See the [Corporate Network](#corporate-network-kaspersky-ssl) section.
 
 ---
 
@@ -225,6 +249,26 @@ from rag.svr.task_executor import FACTORY
 assert ParserType.VIDEO.value in FACTORY
 print('Video parser: OK')
 " 2>&1 | grep "Video parser"
+
+# Whisper backends availability
+docker exec docker-ragflow-cpu-1 /ragflow/.venv/bin/python3 -c "
+import subprocess
+for pkg in ['faster_whisper', 'yt_dlp', 'whisper']:
+    try:
+        __import__(pkg)
+        print(f'✅ {pkg} importable')
+    except ImportError:
+        print(f'❌ {pkg} missing')
+r = subprocess.run(['ffmpeg', '-version'], capture_output=True)
+print('✅ ffmpeg available' if r.returncode == 0 else '❌ ffmpeg missing')
+from faster_whisper import WhisperModel
+for size in ['tiny', 'base']:
+    try:
+        WhisperModel(size, device='cpu', compute_type='int8')
+        print(f'✅ faster-whisper {size} model cached')
+    except Exception as e:
+        print(f'❌ faster-whisper {size} failed: {e}')
+"
 ```
 
 ---
@@ -236,7 +280,8 @@ If your machine uses Kaspersky Endpoint Security with SSL inspection
 external APIs (Gemini, HuggingFace) without trusting the Kaspersky CA certificate.
 
 > ⚠️ The SSL fix is only needed for **LLM/chat calls** (Gemini API).
-> YouTube transcript ingestion does NOT require the SSL fix.
+> Whisper model downloads and OpenAI API calls are handled automatically
+> via ENV variables baked into the image (see Fix 5 above).
 
 ### Export the certificate (Windows PowerShell)
 
@@ -347,14 +392,20 @@ This deployment includes a custom YouTube transcript ingestion pipeline built on
 YouTube URL
     │
     ▼
-POST /api/v1/datasets/{id}/videos          ← new endpoint
-    │
+POST /api/v1/datasets/{id}/videos          ← custom endpoint
+    │  whisper_backend + whisper_model
+    │  stored in parser_config
     ▼
 task_executor.py (parser_id="video")
     │  bypasses MinIO — no file upload
     ▼
-rag/app/video.py
-    │  youtube-transcript-api → 315 raw cues
+rag/app/video.py → _fetch_transcript()
+    │
+    ├── youtube-transcript-api  → fetch captions directly (fast, default)
+    ├── faster-whisper          → download audio + local transcription (CPU/GPU)
+    ├── openai-whisper          → download audio + local transcription (CPU/GPU)
+    └── openai-api              → download audio + cloud transcription (fastest)
+    │
     │  merge into 60-second overlapping segments
     │  tokenize via rag_tokenizer
     ▼
@@ -370,21 +421,54 @@ POST /api/v1/retrieval
 chunk with timestamp deep-link (&t=60s)
 ```
 
+---
+
+### Transcript Backends
+
+The pipeline supports 4 configurable backends selected via `whisper_backend` in `parser_config`:
+
+| Backend | Speed (5-min video) | Requires | Best for |
+|---|---|---|---|
+| `youtube-transcript-api` | ~1 sec | Nothing | Local dev, videos with captions |
+| `faster-whisper` | ~30 sec (tiny/CPU), ~8 sec (large/GPU) | yt-dlp + ffmpeg (baked in) | Production CPU/GPU |
+| `openai-whisper` | ~2 min (tiny/CPU) | yt-dlp + ffmpeg (baked in) | Alternative local option |
+| `openai-api` | ~10 sec | OpenAI API key | Cloud, fastest, $0.006/min |
+
+All backends return the same format: `[{"text": str, "start": float, "duration": float}, ...]`
+
+#### `parser_config` reference
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `whisper_backend` | string | `"youtube-transcript-api"` | Backend to use for transcription |
+| `whisper_model` | string | `"base"` | Model size: `tiny`, `base`, `small`, `medium`, `large` |
+| `openai_api_key` | string | `""` | Required only for `openai-api` backend |
+| `video_title` | string | `""` | Human-readable title stored with chunks |
+
+> **Model size guidance:**
+> - `tiny` — fastest, lower accuracy (~29 sec on CPU for 3.5-min video)
+> - `base` — good balance of speed and accuracy (~60 sec on CPU)
+> - `large` — best accuracy, requires GPU (~8 sec on GCP GPU)
+
+---
+
 ### Files modified / created
 
 | File | Change |
 |---|---|
 | `common/constants.py` | Added `ParserType.VIDEO = "video"` |
-| `rag/app/video.py` | New parser — transcript download, segmentation, tokenization |
+| `rag/app/video.py` | Multi-backend transcript dispatcher + 4 backend implementations |
 | `rag/svr/task_executor.py` | Registered video parser in FACTORY; bypass MinIO for video tasks |
 | `rag/nlp/search.py` | Added video fields to Infinity retrieval field list and response dict |
 | `api/apps/sdk/dataset.py` | New `POST /datasets/{id}/videos` endpoint |
 | `api/apps/sdk/doc.py` | Extended `Chunk` model and both serializers with video fields |
-| `api/utils/validation_utils.py` | Added `"video"` to `chunk_method` validator |
+| `api/utils/validation_utils.py` | Added `"video"` to `chunk_method` validator + whisper fields to `ParserConfig` |
 | `api/utils/api_utils.py` | Added `"video": None` to `get_parser_config` map |
 | `api/db/init_data.py` | Added `video:Video` to tenant `parser_ids` |
 | `conf/infinity_mapping.json` | Added 5 video columns to Infinity schema |
-| `Dockerfile.custom` | Custom image layer — bakes in all changes + youtube-transcript-api |
+| `Dockerfile.custom` | ffmpeg, faster-whisper, yt-dlp, openai-whisper; SSL bypasses; pre-cached models |
+
+---
 
 ### Step-by-step ingestion workflow
 
@@ -399,11 +483,18 @@ curl -s -X POST "http://localhost:9380/api/v1/datasets" \
   -d '{
     "name": "Car_Reviews",
     "chunk_method": "video",
-    "embedding_model": "BAAI/bge-small-en-v1.5@Builtin"
+    "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
+    "parser_config": {
+      "whisper_backend": "faster-whisper",
+      "whisper_model": "tiny"
+    }
   }' | python3 -m json.tool
 ```
 
 Save the returned `id` as `DATASET_ID`.
+
+> To use the default `youtube-transcript-api` backend (fastest for local dev),
+> omit `parser_config` entirely or set `"whisper_backend": "youtube-transcript-api"`.
 
 **Step 2 — Ingest a YouTube video**
 
@@ -428,9 +519,14 @@ curl -s -X POST "http://localhost:9380/api/v1/datasets/${DATASET_ID}/chunks" \
   -d "{\"document_ids\": [\"${DOC_ID}\"]}" | python3 -m json.tool
 ```
 
-Processing takes 10–30 seconds. Monitor with:
+Processing time depends on backend:
+- `youtube-transcript-api`: ~10 seconds
+- `faster-whisper` tiny on CPU: ~30–60 seconds
+- `faster-whisper` large on GPU (GCP): ~8 seconds
+
+Monitor with:
 ```bash
-docker logs docker-ragflow-cpu-1 --tail=5 -f 2>&1 | grep -i "done\|fail\|video"
+docker logs docker-ragflow-cpu-1 --tail=5 -f 2>&1 | grep -i "done\|fail\|video\|whisper"
 ```
 
 **Step 4 — Query with timestamp deep-links**
@@ -484,11 +580,33 @@ BASE_URL = "http://localhost:9380"
 API_KEY = "your_api_key"
 HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
 
-def create_video_dataset(name: str) -> str:
+def create_video_dataset(
+    name: str,
+    whisper_backend: str = "youtube-transcript-api",
+    whisper_model: str = "base",
+    openai_api_key: str = "",
+) -> str:
+    """
+    Create a video dataset with configurable Whisper backend.
+
+    whisper_backend options:
+      - "youtube-transcript-api"  : fast, no download, captions only (default)
+      - "faster-whisper"          : local CPU/GPU transcription
+      - "openai-whisper"          : local CPU/GPU transcription (original library)
+      - "openai-api"              : cloud transcription, requires openai_api_key
+    """
+    parser_config = {
+        "whisper_backend": whisper_backend,
+        "whisper_model": whisper_model,
+    }
+    if openai_api_key:
+        parser_config["openai_api_key"] = openai_api_key
+
     resp = requests.post(f"{BASE_URL}/api/v1/datasets", headers=HEADERS, json={
         "name": name,
         "chunk_method": "video",
         "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
+        "parser_config": parser_config,
     })
     return resp.json()["data"]["id"]
 
@@ -516,8 +634,18 @@ def retrieve(dataset_id: str, question: str, top_n: int = 5) -> list:
     })
     return resp.json()["data"]["chunks"]
 
-# Usage
-ds_id = create_video_dataset("Car_Reviews")
+# Usage — local dev (fast, captions only)
+ds_id = create_video_dataset("Car_Reviews_Dev", whisper_backend="youtube-transcript-api")
+
+# Usage — production CPU (accurate local transcription)
+ds_id = create_video_dataset("Car_Reviews_Prod", whisper_backend="faster-whisper", whisper_model="base")
+
+# Usage — GCP GPU (fastest + most accurate)
+ds_id = create_video_dataset("Car_Reviews_GCP", whisper_backend="faster-whisper", whisper_model="large")
+
+# Usage — cloud API (fastest, pay-per-use)
+ds_id = create_video_dataset("Car_Reviews_Cloud", whisper_backend="openai-api", openai_api_key="sk-...")
+
 ingest_video(ds_id, "https://www.youtube.com/watch?v=QFzEVtY_1lQ", "Vauxhall Corsa 2024 review")
 
 # Wait for processing, then query
@@ -529,8 +657,10 @@ for c in chunks:
 
 ### Requirements and constraints
 
-- Videos must have English captions (manual or auto-generated)
-- `youtube-transcript-api` is baked into `ragflow-stellantis:v0.24.0` — no manual install needed
+- `youtube-transcript-api` backend: video must have English captions (manual or auto-generated)
+- `faster-whisper` / `openai-whisper` / `openai-api` backends: works on any video with audio, no captions needed
+- All Whisper dependencies (ffmpeg, yt-dlp, faster-whisper, openai-whisper) are baked into `ragflow-stellantis:v0.24.0` — no manual install needed
+- `faster-whisper` tiny and base models are pre-cached in the image — no download on first use
 - The dataset must be created with `chunk_method: "video"` — the UI dropdown does not show `video` (UI is hardcoded); always use the API
 - On GCP with `bge-m3`, re-index from scratch — `parser_id` stays `"video"`, no code changes needed
 
@@ -549,6 +679,7 @@ for c in chunks:
 | `COMPOSE_PROFILES` | `tei-cpu` | `tei-gpu` |
 | `DOC_BULK_SIZE` | `4` | `16` (higher throughput) |
 | `EMBEDDING_BATCH_SIZE` | `8` | `32` (GPU handles larger batches) |
+| `whisper_model` | `tiny` / `base` (CPU) | `large` (GPU, ~8 sec/video) |
 | LLM provider | Gemini via OpenAI-compatible | Gemini via OpenAI-compatible |
 
 ### Important: re-indexing required on GCP
@@ -565,7 +696,7 @@ from scratch on the GCP instance. Do not migrate data volumes from local to GCP.
 - [ ] Terraform service account with appropriate IAM roles (`stellantis-terraform-sa@stellantis-490509.iam.gserviceaccount.com`)
 - [ ] Gemini API key (restricted to Generative Language API)
 - [ ] GCS bucket for Terraform state (optional)
-- [ ] VM instance with GPU support (for bge-m3 embedding)
+- [ ] VM instance with GPU support (for bge-m3 embedding + faster-whisper large)
 - [ ] Docker and Docker Compose installed on GCP VM
 - [ ] Firewall rules for ports 80, 443, 9380
 - [ ] Build `ragflow-stellantis:v0.24.0` image on the GCP VM
@@ -582,7 +713,8 @@ When modifying Python source files, the container must be restarted to pick up c
 bash docker/deploy-local.sh
 ```
 
-This restarts the container and re-copies all modified source files in one command.
+This restarts the container, prints the running image name as a sanity check,
+and re-copies all modified source files in one command.
 
 ### Rebuilding the custom Docker image
 
@@ -593,10 +725,13 @@ cd ~/ragflow
 docker build -f Dockerfile.custom -t ragflow-stellantis:v0.24.0 .
 ```
 
-Then restart the stack:
+Then force-recreate the container from the new image:
 ```bash
-cd docker && docker compose -f docker-compose.yml down && docker compose -f docker-compose.yml up -d
+cd docker && docker compose up -d --no-deps --force-recreate ragflow-cpu
 ```
+
+> ⚠️ `docker compose down && up` restarts the existing container from the old image.
+> Always use `--force-recreate` after rebuilding the image.
 
 ### Files tracked by deploy-local.sh
 
@@ -658,6 +793,9 @@ docker compose -f docker/docker-compose.yml stop
 docker compose -f docker/docker-compose.yml down
 docker compose -f docker/docker-compose.yml up -d
 
+# Force-recreate container from new image (after docker build)
+cd docker && docker compose up -d --no-deps --force-recreate ragflow-cpu
+
 # DANGER: delete all data and start fresh
 docker compose -f docker/docker-compose.yml down -v
 
@@ -675,4 +813,4 @@ bash docker/deploy-local.sh
 
 ---
 
-*Last updated: March 2026 | RagFlow v0.24.0 | Branch: `feature/youtube-ingestion`*
+*Last updated: March 2026 | RagFlow v0.24.0 | Branch: `feature/youtube-ingestion` | Whisper multi-backend support added*
