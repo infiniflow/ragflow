@@ -33,8 +33,8 @@ import (
 // MinioStorage implements Storage interface for MinIO
 type MinioStorage struct {
 	client     *minio.Client
-	bucket     string
-	prefixPath string
+	bucket     string // default bucket
+	prefixPath string // default prefix path
 	config     *server.MinioConfig
 }
 
@@ -197,8 +197,8 @@ func (m *MinioStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, erro
 	return nil, fmt.Errorf("failed to get object after retries")
 }
 
-// Rm removes an object from MinIO
-func (m *MinioStorage) Rm(bucket, fnm string, tenantID ...string) error {
+// Remove removes an object from MinIO
+func (m *MinioStorage) Remove(bucket, fnm string, tenantID ...string) error {
 	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
 
 	ctx := context.Background()
@@ -377,7 +377,7 @@ func (m *MinioStorage) Copy(srcBucket, srcPath, destBucket, destPath string) boo
 // Move moves an object from source to destination
 func (m *MinioStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
 	if m.Copy(srcBucket, srcPath, destBucket, destPath) {
-		if err := m.Rm(srcBucket, srcPath); err != nil {
+		if err := m.Remove(srcBucket, srcPath); err != nil {
 			zap.L().Error("Failed to remove source object after copy", zap.String("bucket", srcBucket), zap.String("key", srcPath), zap.Error(err))
 			return false
 		}
