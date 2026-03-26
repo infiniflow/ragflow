@@ -1829,12 +1829,12 @@ export default {
       tokenizerRequired: 'Пожалуйста, сначала добавьте узел Индексатора',
       tokenizerDescription:
         'Преобразует текст в требуемую структуру данных (например, векторные эмбеддинги для поиска по эмбеддингам) в зависимости от выбранного метода поиска.',
-      splitter: 'Токен',
-      splitterDescription:
+      tokenChunker: 'Token Chunker',
+      tokenChunkerDescription:
         'Разделяет текст на чанки по длине токена с опциональными разделителями и перекрытием.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'Разделяет документы на разделы по иерархии заголовков с regex правилами для более точного контроля.',
-      hierarchicalMerger: 'Заголовок',
+      titleChunker: 'Title Chunker',
       extractor: 'Трансформер',
       extractorDescription:
         'Использует LLM для извлечения структурированных инсайтов из чанков документов - таких как резюме, классификации и т.д.',

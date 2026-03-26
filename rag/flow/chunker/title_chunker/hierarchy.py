@@ -24,12 +24,12 @@ from common.misc_utils import get_uuid
 from rag.utils.base64_image import id2image, image2id
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from rag.flow.base import ProcessBase, ProcessParamBase
-from rag.flow.hierarchical_merger.schema import HierarchicalMergerFromUpstream
+from rag.flow.chunker.title_chunker.schema import TitleChunkerFromUpstream
 from rag.nlp import concat_img
 from common import settings
 
 
-class HierarchicalMergerParam(ProcessParamBase):
+class TitleChunkerParam(ProcessParamBase):
     def __init__(self):
         super().__init__()
         self.levels = []
@@ -43,12 +43,12 @@ class HierarchicalMergerParam(ProcessParamBase):
         return {}
 
 
-class HierarchicalMerger(ProcessBase):
-    component_name = "HierarchicalMerger"
+class TitleChunker(ProcessBase):
+    component_name = "TitleChunker"
 
     async def _invoke(self, **kwargs):
         try:
-            from_upstream = HierarchicalMergerFromUpstream.model_validate(kwargs)
+            from_upstream = TitleChunkerFromUpstream.model_validate(kwargs)
         except Exception as e:
             self.set_output("_ERROR", f"Input error: {str(e)}")
             return

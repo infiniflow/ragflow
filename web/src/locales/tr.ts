@@ -2063,12 +2063,12 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       tokenizerRequired: 'Lütfen önce İndeksleyici düğümü ekleyin',
       tokenizerDescription:
         'Metni seçilen arama yöntemine bağlı olarak gerekli veri yapısına dönüştürür.',
-      splitter: 'Token',
-      splitterDescription:
+      tokenChunker: 'Token Chunker',
+      tokenChunkerDescription:
         'Metni isteğe bağlı sınırlayıcılar ve örtüşme ile token uzunluğuna göre parçalara böler.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'Belgeleri daha ince kontrol için regex kurallarıyla başlık hiyerarşisine göre bölümlere böler.',
-      hierarchicalMerger: 'Başlık',
+      titleChunker: 'Title Chunker',
       extractor: 'Dönüştürücü',
       extractorDescription:
         'Belge parçalarından yapılandırılmış içgörüler çıkarmak için LLM kullanır.',

@@ -35,7 +35,7 @@ PDF_PREVIEW_ZOOM = 3
 
 def extract_item_positions(item):
     # Normalize upstream PDF coordinates into the internal preview shape used
-    # inside the splitter.
+    # inside the chunker flow components.
     positions = _extract_raw_positions(item)
 
     ref_page_number = item.get("page_number")
@@ -218,7 +218,7 @@ async def restore_pdf_text_previews(chunks, from_upstream, canvas):
     try:
         page_images = _load_pdf_page_images(blob)
     except Exception as e:
-        logging.warning(f"Failed to load PDF page images for splitter preview restore: {e}")
+        logging.warning(f"Failed to load PDF page images for chunker preview restore: {e}")
         return
 
     # Reuse uploads when multiple chunks point to the same PDF region.

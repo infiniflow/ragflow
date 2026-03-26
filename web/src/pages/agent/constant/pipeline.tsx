@@ -238,7 +238,7 @@ export const initialParserValues = {
   ],
 };
 
-export const initialSplitterValues = {
+export const initialTokenChunkerValues = {
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
@@ -256,7 +256,7 @@ export enum Hierarchy {
   H5 = '5',
 }
 
-export const initialHierarchicalMergerValues = {
+export const initialTitleChunkerValues = {
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
@@ -325,7 +325,7 @@ export const FileTypeSuffixMap = {
 
 export const SingleOperators = [
   Operator.Tokenizer,
-  Operator.Splitter,
-  Operator.HierarchicalMerger,
+  Operator.TokenChunker,
+  Operator.TitleChunker,
   Operator.Parser,
 ];

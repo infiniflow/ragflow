@@ -10,10 +10,7 @@ import { memo } from 'react';
 import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import {
-  Hierarchy,
-  initialHierarchicalMergerValues,
-} from '../../constant/pipeline';
+import { Hierarchy, initialTitleChunkerValues } from '../../constant/pipeline';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -21,7 +18,7 @@ import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 
-const outputList = buildOutputList(initialHierarchicalMergerValues.outputs);
+const outputList = buildOutputList(initialTitleChunkerValues.outputs);
 
 const HierarchyOptions = [
   { label: 'H1', value: Hierarchy.H1 },
@@ -57,7 +54,7 @@ export const FormSchema = z.object({
   ),
 });
 
-export type HierarchicalMergerFormSchemaType = z.infer<typeof FormSchema>;
+export type TitleChunkerFormSchemaType = z.infer<typeof FormSchema>;
 
 type RegularExpressionsProps = {
   index: number;
@@ -136,11 +133,11 @@ export function RegularExpressions({
   );
 }
 
-const HierarchicalMergerForm = ({ node }: INextOperatorForm) => {
+const TitleChunkerForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
-  const defaultValues = useFormValues(initialHierarchicalMergerValues, node);
+  const defaultValues = useFormValues(initialTitleChunkerValues, node);
 
-  const form = useForm<HierarchicalMergerFormSchemaType>({
+  const form = useForm<TitleChunkerFormSchemaType>({
     defaultValues,
     resolver: zodResolver(FormSchema),
     mode: 'onChange',
@@ -188,4 +185,4 @@ const HierarchicalMergerForm = ({ node }: INextOperatorForm) => {
   );
 };
 
-export default memo(HierarchicalMergerForm);
+export default memo(TitleChunkerForm);

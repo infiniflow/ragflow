@@ -10,7 +10,7 @@ import { memo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { initialSplitterValues } from '../../constant/pipeline';
+import { initialTokenChunkerValues } from '../../constant/pipeline';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -18,7 +18,7 @@ import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 
-const outputList = buildOutputList(initialSplitterValues.outputs);
+const outputList = buildOutputList(initialTokenChunkerValues.outputs);
 
 export const FormSchema = z.object({
   chunk_token_size: z.number(),
@@ -37,13 +37,13 @@ export const FormSchema = z.object({
   overlapped_percent: z.number(), // 0.0 - 0.3 , 0% - 30%
 });
 
-export type SplitterFormSchemaType = z.infer<typeof FormSchema>;
+export type TokenChunkerFormSchemaType = z.infer<typeof FormSchema>;
 
-const SplitterForm = ({ node }: INextOperatorForm) => {
-  const defaultValues = useFormValues(initialSplitterValues, node);
+const TokenChunkerForm = ({ node }: INextOperatorForm) => {
+  const defaultValues = useFormValues(initialTokenChunkerValues, node);
   const { t } = useTranslation();
 
-  const form = useForm<SplitterFormSchemaType>({
+  const form = useForm<TokenChunkerFormSchemaType>({
     defaultValues,
     resolver: zodResolver(FormSchema),
   });
@@ -171,4 +171,4 @@ const SplitterForm = ({ node }: INextOperatorForm) => {
   );
 };
 
-export default memo(SplitterForm);
+export default memo(TokenChunkerForm);

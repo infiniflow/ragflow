@@ -39,9 +39,9 @@ import {
 import { BeginFormSchemaType } from './form/begin-form/schema';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
 import { ExtractorFormSchemaType } from './form/extractor-form';
-import { HierarchicalMergerFormSchemaType } from './form/hierarchical-merger-form';
 import { ParserFormSchemaType } from './form/parser-form';
-import { SplitterFormSchemaType } from './form/splitter-form';
+import { TitleChunkerFormSchemaType } from './form/title-chunker-form';
+import { TokenChunkerFormSchemaType } from './form/token-chunker-form';
 import { BeginQuery, IPosition } from './interface';
 
 function buildAgentExceptionGoto(edges: Edge[], nodeId: string) {
@@ -289,7 +289,7 @@ function transformParserParams(params: ParserFormSchemaType) {
   return { ...params, setups };
 }
 
-function transformSplitterParams(params: SplitterFormSchemaType) {
+function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
   const { image_table_context_window, ...rest } = params;
   const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
@@ -306,9 +306,7 @@ function transformSplitterParams(params: SplitterFormSchemaType) {
   };
 }
 
-function transformHierarchicalMergerParams(
-  params: HierarchicalMergerFormSchemaType,
-) {
+function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
   const levels = params.levels.map((x) =>
     transformObjectArrayToPureArray(x.expressions, 'expression'),
   );
@@ -437,12 +435,12 @@ export const buildDslComponentsByGraph = (
           params = transformParserParams(params);
           break;
 
-        case Operator.Splitter:
-          params = transformSplitterParams(params);
+        case Operator.TokenChunker:
+          params = transformTokenChunkerParams(params);
           break;
 
-        case Operator.HierarchicalMerger:
-          params = transformHierarchicalMergerParams(params);
+        case Operator.TitleChunker:
+          params = transformTitleChunkerParams(params);
           break;
         case Operator.Extractor:
           params = transformExtractorParams(params);

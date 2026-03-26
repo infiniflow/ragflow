@@ -20,15 +20,15 @@ from copy import deepcopy
 from common.float_utils import normalize_overlapped_percent
 from common.token_utils import num_tokens_from_string
 from rag.flow.base import ProcessBase, ProcessParamBase
-from rag.flow.splitter.pdf_splitter import (
+from rag.flow.chunker.pdf_splitter import (
     extract_item_positions,
     restore_pdf_text_previews,
 )
-from rag.flow.splitter.schema import SplitterFromUpstream
+from rag.flow.chunker.schema import TokenChunkerFromUpstream
 from rag.nlp import naive_merge
 
 
-class SplitterParam(ProcessParamBase):
+class TokenChunkerParam(ProcessParamBase):
     def __init__(self):
         super().__init__()
         self.chunk_token_size = 512
@@ -247,7 +247,7 @@ def _merge_text_chunks_by_token_size(chunks, chunk_token_size, overlapped_percen
 
 
 def _finalize_json_chunks(chunks):
-    # Convert internal chunks back to the splitter output format.
+    # Convert internal chunks into the final token chunker output format.
     docs = []
     for chunk in chunks:
         text = (chunk.get("context_above") or "") + (chunk.get("text") or "") + (chunk.get("context_below") or "")
@@ -333,18 +333,18 @@ def _split_plain_payload(payload, delimiter_pattern, chunk_token_size, overlappe
     return naive_merge(payload, chunk_token_size, "", overlapped_percent)
 
 
-class Splitter(ProcessBase):
-    component_name = "Splitter"
+class TokenChunker(ProcessBase):
+    component_name = "TokenChunker"
 
     async def _invoke(self, **kwargs):
         try:
-            from_upstream = SplitterFromUpstream.model_validate(kwargs)
+            from_upstream = TokenChunkerFromUpstream.model_validate(kwargs)
         except Exception as e:
             self.set_output("_ERROR", f"Input error: {str(e)}")
             return
 
         # Build the primary delimiter regex. If no active custom delimiter exists,
-        # the splitter falls back to token-size based merging.
+        # the token chunker falls back to token-size based merging.
         delimiter_pattern = _compile_delimiter_pattern(self._param.delimiters)
         custom_pattern = "|".join(re.escape(t) for t in sorted(set(self._param.children_delimiters), key=len, reverse=True))
 

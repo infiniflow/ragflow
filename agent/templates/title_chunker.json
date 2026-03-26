@@ -74,7 +74,7 @@
                     }
                 },
                 "downstream": [
-                    "HierarchicalMerger:BusyPoetsSearch"
+                    "TitleChunker:BusyPoetsSearch"
                 ],
                 "upstream": [
                     "File"
@@ -95,12 +95,12 @@
                 },
                 "downstream": [],
                 "upstream": [
-                    "HierarchicalMerger:BusyPoetsSearch"
+                    "TitleChunker:BusyPoetsSearch"
                 ]
             },
-            "HierarchicalMerger:BusyPoetsSearch": {
+            "TitleChunker:BusyPoetsSearch": {
                 "obj": {
-                    "component_name": "HierarchicalMerger",
+                    "component_name": "TitleChunker",
                     "params": {
                         "hierarchy": 3,
                         "levels": [
@@ -279,11 +279,11 @@
                                 }
                             }
                         },
-                        "label": "HierarchicalMerger",
+                        "label": "TitleChunker",
                         "name": "Title Chunker"
                     },
                     "dragging": false,
-                    "id": "HierarchicalMerger:BusyPoetsSearch",
+                    "id": "TitleChunker:BusyPoetsSearch",
                     "measured": {
                         "height": 80,
                         "width": 200
@@ -295,7 +295,7 @@
                     "selected": false,
                     "sourcePosition": "right",
                     "targetPosition": "left",
-                    "type": "splitterNode"
+                    "type": "chunkerNode"
                 },
                 {
                     "data": {
@@ -334,10 +334,10 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__Parser:HipSignsRhymestart-HierarchicalMerger:BusyPoetsSearchend",
+                    "id": "xy-edge__Parser:HipSignsRhymestart-TitleChunker:BusyPoetsSearchend",
                     "source": "Parser:HipSignsRhyme",
                     "sourceHandle": "start",
-                    "target": "HierarchicalMerger:BusyPoetsSearch",
+                    "target": "TitleChunker:BusyPoetsSearch",
                     "targetHandle": "end",
                     "data": {
                         "isHovered": false
@@ -347,9 +347,9 @@
                     "data": {
                         "isHovered": false
                     },
-                    "id": "xy-edge__HierarchicalMerger:BusyPoetsSearchstart-Tokenizer:NeatRadiosEndend",
+                    "id": "xy-edge__TitleChunker:BusyPoetsSearchstart-Tokenizer:NeatRadiosEndend",
                     "markerEnd": "logo",
-                    "source": "HierarchicalMerger:BusyPoetsSearch",
+                    "source": "TitleChunker:BusyPoetsSearch",
                     "sourceHandle": "start",
                     "style": {
                         "stroke": "rgba(91, 93, 106, 1)",
