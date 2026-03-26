@@ -306,6 +306,7 @@ class TestDatasetCreate:
             ("qa", "qa"),
             ("table", "table"),
             ("tag", "tag"),
+            ("resume", "resume")
         ],
         ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume"],
     )
