@@ -1011,6 +1011,7 @@ func convertToUserTenantRelation(userTenant *model.UserTenant) *UserTenantRelati
 		TenantID: userTenant.TenantID,
 		Role:     userTenant.Role,
 	}
+}
 
 // GetUserByAPIToken gets user by access key from Authorization header
 // This is used for API token authentication
