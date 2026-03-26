@@ -25,17 +25,17 @@ import (
 	"time"
 )
 
-// HTTPClientInterface defines the interface needed from HTTPClient
-type HTTPClientInterface interface {
-	Request(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*HTTPResponse, error)
-}
-
 // HTTPResponse represents an HTTP response
 type HTTPResponse struct {
 	StatusCode int
 	Body       []byte
 	Headers    map[string][]string
 	Duration   float64
+}
+
+// HTTPClientInterface defines the interface needed from HTTPClient
+type HTTPClientInterface interface {
+	Request(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*HTTPResponse, error)
 }
 
 // DatasetProvider handles datasets and their documents
@@ -131,32 +131,9 @@ func (p *DatasetProvider) Mkdir(ctx stdctx.Context, subPath string, params map[s
 	return nil, fmt.Errorf("mkdir only supports creating datasets at the root level")
 }
 
-// Get retrieves a single node
-func (p *DatasetProvider) Get(ctx stdctx.Context, subPath string) (*Node, error) {
-	if subPath == "" {
-		return nil, fmt.Errorf("cannot get root datasets node")
-	}
-
-	parts := SplitPath(subPath)
-	if len(parts) == 1 {
-		return p.getDataset(ctx, parts[0])
-	}
-
-	if len(parts) == 3 && parts[1] == "files" {
-		return p.getDocument(ctx, parts[0], parts[2])
-	}
-
-	return nil, fmt.Errorf("not found: %s", subPath)
-}
-
 // Cat retrieves document content (not implemented for datasets)
 func (p *DatasetProvider) Cat(ctx stdctx.Context, subPath string) ([]byte, error) {
 	return nil, fmt.Errorf("cat not supported for datasets provider")
-}
-
-// Put creates or updates a resource
-func (p *DatasetProvider) Put(ctx stdctx.Context, subPath string, content []byte, params map[string]interface{}) (*Node, error) {
-	return nil, fmt.Errorf("put not yet implemented for datasets provider")
 }
 
 // Rm removes a dataset or document

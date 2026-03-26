@@ -17,6 +17,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -28,6 +29,8 @@ import (
 	"github.com/peterh/liner"
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
+
+	"ragflow/internal/cli/contextengine"
 )
 
 // ConfigFile represents the rf.yml configuration file structure
@@ -54,7 +57,9 @@ type ConnectionArgs struct {
 	Password     string
 	APIToken     string
 	UserName     string
-	Command      string
+	Command      string       // Original command string (for SQL mode)
+	CommandArgs  []string     // Split command arguments (for ContextEngine mode)
+	IsSQLMode    bool         // true=SQL mode (quoted), false=ContextEngine mode (unquoted)
 	ShowHelp     bool
 	AdminMode    bool
 	OutputFormat OutputFormat // Output format: table, plain, json
@@ -275,10 +280,40 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 
 	// Get command from remaining args (non-flag arguments)
 	if len(nonFlagArgs) > 0 {
-		result.Command = strings.Join(nonFlagArgs, " ")
+		// Check if this is SQL mode or ContextEngine mode
+		// SQL mode: single argument that looks like SQL (e.g., "LIST DATASETS")
+		// ContextEngine mode: multiple arguments (e.g., "ls", "datasets")
+		if len(nonFlagArgs) == 1 && looksLikeSQL(nonFlagArgs[0]) {
+			// SQL mode: single argument that looks like SQL
+			result.IsSQLMode = true
+			result.Command = nonFlagArgs[0]
+		} else {
+			// ContextEngine mode: multiple arguments
+			result.IsSQLMode = false
+			result.CommandArgs = nonFlagArgs
+			// Also store joined version for backward compatibility
+			result.Command = strings.Join(nonFlagArgs, " ")
+		}
 	}
 
 	return result, nil
+}
+
+// looksLikeSQL checks if a string looks like a SQL command
+func looksLikeSQL(s string) bool {
+	s = strings.ToUpper(strings.TrimSpace(s))
+	sqlPrefixes := []string{
+		"LIST ", "SHOW ", "CREATE ", "DROP ", "ALTER ",
+		"LOGIN ", "REGISTER ", "PING", "GRANT ", "REVOKE ",
+		"SET ", "UNSET ", "UPDATE ", "DELETE ", "INSERT ",
+		"SELECT ", "DESCRIBE ", "EXPLAIN ",
+	}
+	for _, prefix := range sqlPrefixes {
+		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // PrintUsage prints the CLI usage information
@@ -321,7 +356,8 @@ Configuration File:
   Note: api_token and user_name/password are mutually exclusive in config file.
 
 Commands:
-  SQL commands like: LOGIN USER 'email'; LIST USERS; etc.
+  SQL commands (use quotes): "LIST USERS", "CREATE USER 'email' 'password'", etc.
+  Context Engine commands (no quotes): ls datasets, search "keyword", mkdir path, etc.
   If no command is provided, CLI runs in interactive mode.
 `)
 }
@@ -335,12 +371,13 @@ const historyFileName = ".ragflow_cli_history"
 
 // CLI represents the command line interface
 type CLI struct {
-	client       *RAGFlowClient
-	prompt       string
-	running      bool
-	line         *liner.State
-	args         *ConnectionArgs
-	outputFormat OutputFormat // Output format
+	client        *RAGFlowClient
+	contextEngine *contextengine.Engine
+	prompt        string
+	running       bool
+	line          *liner.State
+	args          *ConnectionArgs
+	outputFormat  OutputFormat // Output format
 }
 
 // NewCLI creates a new CLI instance
@@ -399,12 +436,17 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 		prompt = "RAGFlow(admin)> "
 	}
 
+	// Create context engine and register providers
+	engine := contextengine.NewEngine()
+	engine.RegisterProvider(contextengine.NewDatasetProvider(&httpClientAdapter{client: client.HTTPClient}))
+
 	return &CLI{
-		prompt:       prompt,
-		client:       client,
-		line:         line,
-		args:         args,
-		outputFormat: args.OutputFormat,
+		prompt:        prompt,
+		client:        client,
+		contextEngine: engine,
+		line:          line,
+		args:          args,
+		outputFormat:  args.OutputFormat,
 	}, nil
 }
 
@@ -506,30 +548,257 @@ func (c *CLI) Run() error {
 }
 
 func (c *CLI) execute(input string) error {
-	p := NewParser(input)
-	cmd, err := p.Parse(c.args.AdminMode)
+	// Determine execution mode based on input and args
+	input = strings.TrimSpace(input)
+
+	// Handle meta commands (start with \)
+	if strings.HasPrefix(input, "\\") {
+		p := NewParser(input)
+		cmd, err := p.Parse(c.args.AdminMode)
+		if err != nil {
+			return err
+		}
+		if cmd != nil && cmd.Type == "meta" {
+			return c.handleMetaCommand(cmd)
+		}
+	}
+
+	// Check if we should use SQL mode or ContextEngine mode
+	isSQLMode := false
+	if c.args != nil && len(c.args.CommandArgs) > 0 {
+		// Non-interactive mode: use pre-determined mode from args
+		isSQLMode = c.args.IsSQLMode
+	} else {
+		// Interactive mode: determine based on input
+		isSQLMode = looksLikeSQL(input)
+	}
+
+	if isSQLMode {
+		// SQL mode: use parser
+		p := NewParser(input)
+		cmd, err := p.Parse(c.args.AdminMode)
+		if err != nil {
+			return err
+		}
+		if cmd == nil {
+			return nil
+		}
+		// Execute SQL command using the client
+		var result ResponseIf
+		result, err = c.client.ExecuteCommand(cmd)
+		if result != nil {
+			result.SetOutputFormat(c.outputFormat)
+			result.PrintOut()
+		}
+		return err
+	}
+
+	// ContextEngine mode: execute context engine command
+	return c.executeContextEngine(input)
+}
+
+// executeContextEngine executes a Context Engine command
+func (c *CLI) executeContextEngine(input string) error {
+	// Parse input into arguments
+	var args []string
+	if c.args != nil && len(c.args.CommandArgs) > 0 {
+		// Non-interactive mode: use pre-parsed args
+		args = c.args.CommandArgs
+	} else {
+		// Interactive mode: parse input
+		args = parseContextEngineArgs(input)
+	}
+
+	if len(args) == 0 {
+		return fmt.Errorf("no command provided")
+	}
+
+	// Check if we have a context engine
+	if c.contextEngine == nil {
+		return fmt.Errorf("context engine not available")
+	}
+
+	cmdType := args[0]
+	cmdArgs := args[1:]
+
+	// Build context engine command
+	var ceCmd *contextengine.Command
+
+	switch cmdType {
+	case "ls", "list":
+		path := ""
+		if len(cmdArgs) > 0 {
+			path = cmdArgs[0]
+		}
+		ceCmd = &contextengine.Command{
+			Type:   contextengine.CommandList,
+			Path:   path,
+			Params: map[string]interface{}{},
+		}
+	case "search":
+		path := ""
+		query := ""
+		if len(cmdArgs) > 0 {
+			// Last arg is query if it looks like a query, otherwise it's a path
+			if len(cmdArgs) == 1 {
+				if strings.Contains(cmdArgs[0], " ") || strings.HasPrefix(cmdArgs[0], "\"") {
+					query = strings.Trim(cmdArgs[0], "\"")
+				} else {
+					path = cmdArgs[0]
+				}
+			} else {
+				path = cmdArgs[0]
+				query = strings.Join(cmdArgs[1:], " ")
+				query = strings.Trim(query, "\"")
+			}
+		}
+		ceCmd = &contextengine.Command{
+			Type: contextengine.CommandSearch,
+			Path: path,
+			Params: map[string]interface{}{
+				"query": query,
+			},
+		}
+	case "mkdir":
+		if len(cmdArgs) == 0 {
+			return fmt.Errorf("mkdir requires a path argument")
+		}
+		ceCmd = &contextengine.Command{
+			Type:   contextengine.CommandMkdir,
+			Path:   cmdArgs[0],
+			Params: map[string]interface{}{},
+		}
+	case "cat":
+		if len(cmdArgs) == 0 {
+			return fmt.Errorf("cat requires a path argument")
+		}
+		ceCmd = &contextengine.Command{
+			Type:   contextengine.CommandCat,
+			Path:   cmdArgs[0],
+			Params: map[string]interface{}{},
+		}
+	case "rm", "del", "delete":
+		if len(cmdArgs) == 0 {
+			return fmt.Errorf("rm requires a path argument")
+		}
+		recursive := false
+		path := cmdArgs[0]
+		// Check for -r or -R flag
+		for _, arg := range cmdArgs {
+			if arg == "-r" || arg == "-R" || arg == "--recursive" {
+				recursive = true
+			} else if !strings.HasPrefix(arg, "-") {
+				path = arg
+			}
+		}
+		ceCmd = &contextengine.Command{
+			Type: contextengine.CommandRm,
+			Path: path,
+			Params: map[string]interface{}{
+				"recursive": recursive,
+			},
+		}
+	default:
+		return fmt.Errorf("unknown context engine command: %s", cmdType)
+	}
+
+	// Execute the command
+	result, err := c.contextEngine.Execute(context.Background(), ceCmd)
 	if err != nil {
 		return err
 	}
 
-	if cmd == nil {
-		return nil
+	// Print result
+	c.printContextEngineResult(result, ceCmd.Type)
+	return nil
+}
+
+// parseContextEngineArgs parses Context Engine command arguments
+// Supports simple space-separated args and quoted strings
+func parseContextEngineArgs(input string) []string {
+	var args []string
+	var current strings.Builder
+	inQuote := false
+	var quoteChar rune
+
+	for _, ch := range input {
+		switch ch {
+		case '"', '\'':
+			if !inQuote {
+				inQuote = true
+				quoteChar = ch
+				if current.Len() > 0 {
+					args = append(args, current.String())
+					current.Reset()
+				}
+			} else if ch == quoteChar {
+				inQuote = false
+				args = append(args, current.String())
+				current.Reset()
+			} else {
+				current.WriteRune(ch)
+			}
+		case ' ', '\t':
+			if inQuote {
+				current.WriteRune(ch)
+			} else if current.Len() > 0 {
+				args = append(args, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteRune(ch)
+		}
 	}
 
-	// Handle meta commands
-	if cmd.Type == "meta" {
-		return c.handleMetaCommand(cmd)
+	if current.Len() > 0 {
+		args = append(args, current.String())
 	}
 
-	// Execute the command using the client
-	var result ResponseIf
-	result, err = c.client.ExecuteCommand(cmd)
-	if result != nil {
-		// Set output format for the result
-		result.SetOutputFormat(c.outputFormat)
-		result.PrintOut()
+	return args
+}
+
+// printContextEngineResult prints the result of a context engine command
+func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType contextengine.CommandType) {
+	if result == nil {
+		return
 	}
-	return err
+
+	switch cmdType {
+	case contextengine.CommandList:
+		if len(result.Nodes) == 0 {
+			fmt.Println("(empty)")
+			return
+		}
+		// Print as table: path and created (no type)
+		fmt.Printf("%-50s %-20s\n", "PATH", "CREATED")
+		fmt.Println(strings.Repeat("-", 70))
+		for _, node := range result.Nodes {
+			created := node.CreatedAt.Format("2006-01-02 15:04")
+			if node.CreatedAt.IsZero() {
+				created = "-"
+			}
+			fmt.Printf("%-50s %-20s\n", node.Path, created)
+		}
+		fmt.Printf("\nTotal: %d\n", result.Total)
+	case contextengine.CommandSearch:
+		if len(result.Nodes) == 0 {
+			fmt.Println("No results found")
+			return
+		}
+		fmt.Printf("%-30s %-15s %-20s\n", "NAME", "TYPE", "PATH")
+		fmt.Println(strings.Repeat("-", 65))
+		for _, node := range result.Nodes {
+			fmt.Printf("%-30s %-15s %-20s\n", node.Name, node.Type, node.Path)
+		}
+		fmt.Printf("\nTotal: %d\n", result.Total)
+	case contextengine.CommandMkdir:
+		fmt.Println("Created successfully")
+	case contextengine.CommandRm:
+		fmt.Println("Removed successfully")
+	case contextengine.CommandCat:
+		// Cat output is handled differently
+		fmt.Println("Content retrieved")
+	}
 }
 
 func (c *CLI) handleMetaCommand(cmd *Command) error {
@@ -597,41 +866,31 @@ Meta Commands:
   \q or \quit   - Exit CLI
   \c or \clear  - Clear screen
 
-Commands (User Mode):
-  LOGIN USER 'email';                                    - Login as user
-  REGISTER USER 'name' AS 'nickname' PASSWORD 'pwd';     - Register new user
-  SHOW VERSION;                                          - Show version info
-  PING;                                                  - Ping server
-  LIST DATASETS;                                         - List user datasets
-  LIST AGENTS;                                           - List user agents
-  LIST CHATS;                                            - List user chats
-  LIST MODEL PROVIDERS;                                  - List model providers
-  LIST DEFAULT MODELS;                                   - List default models
-  LIST TOKENS;                                           - List API tokens
-  CREATE TOKEN;                                          - Create new API token
-  DROP TOKEN 'token_value';                              - Delete an API token
-  SET TOKEN 'token_value';                               - Set and validate API token
-  SHOW TOKEN;                                            - Show current API token
-  UNSET TOKEN;                                           - Remove current API token
+SQL Commands (use quotes):
+  "LOGIN USER 'email';"                                  - Login as user
+  "REGISTER USER 'name' AS 'nickname' PASSWORD 'pwd';"   - Register new user
+  "SHOW VERSION;"                                        - Show version info
+  "PING;"                                                - Ping server
+  "LIST DATASETS;"                                       - List user datasets
+  "LIST AGENTS;"                                         - List user agents
+  "LIST CHATS;"                                          - List user chats
+  "LIST USERS;"                                          - List all users (admin)
+  "CREATE USER 'email' 'password';"                      - Create new user (admin)
+  "DROP USER 'email';"                                   - Delete user (admin)
+  ... and more SQL commands
 
-Commands (Admin Mode):
-  LIST USERS;                                            - List all users
-  SHOW USER 'email';                                     - Show user details
-  CREATE USER 'email' 'password';                        - Create new user
-  DROP USER 'email';                                     - Delete user
-  ALTER USER PASSWORD 'email' 'new_password';            - Change user password
-  ALTER USER ACTIVE 'email' on/off;                      - Activate/deactivate user
-  GRANT ADMIN 'email';                                   - Grant admin role
-  REVOKE ADMIN 'email';                                  - Revoke admin role
-  LIST SERVICES;                                         - List services
-  SHOW SERVICE <id>;                                     - Show service details
-  PING;                                                  - Ping server
-  ... and many more
+Context Engine Commands (no quotes):
+  ls [path]                    - List resources (e.g., ls datasets)
+  list [path]                  - Same as ls
+  search [path] [query]        - Search resources (e.g., search datasets "keyword")
+  mkdir <path>                 - Create a resource (e.g., mkdir datasets/new_ds)
+  cat <path>                   - Show resource content
+  rm [-r] <path>               - Remove a resource
 
-Meta Commands:
-  \? or \h      - Show this help
-  \q or \quit   - Exit CLI
-  \c or \clear  - Clear screen
+Examples:
+  ragflow_cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
+  ragflow_cli -f rf.yml ls datasets            # Context Engine mode (no quotes)
+  ragflow_cli -f rf.yml search datasets "doc"  # Search in datasets
 
 For more information, see documentation.
 `

@@ -50,9 +50,7 @@ const (
 	CommandList   CommandType = "ls"
 	CommandSearch CommandType = "search"
 	CommandMkdir  CommandType = "mkdir"
-	CommandGet    CommandType = "get"
 	CommandCat    CommandType = "cat"
-	CommandPut    CommandType = "put"
 	CommandRm     CommandType = "rm"
 )
 

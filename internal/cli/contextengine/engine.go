@@ -62,17 +62,8 @@ func (e *Engine) Execute(ctx stdctx.Context, cmd *Command) (*Result, error) {
 	case CommandMkdir:
 		_, err := e.Mkdir(ctx, cmd.Path, cmd.Params)
 		return nil, err
-	case CommandGet:
-		node, err := e.Get(ctx, cmd.Path)
-		if err != nil {
-			return nil, err
-		}
-		return &Result{Nodes: []*Node{node}, Total: 1}, nil
 	case CommandCat:
 		_, err := e.Cat(ctx, cmd.Path)
-		return nil, err
-	case CommandPut:
-		_, err := e.Put(ctx, cmd.Path, nil, cmd.Params)
 		return nil, err
 	case CommandRm:
 		recursive := false
@@ -140,16 +131,6 @@ func (e *Engine) Mkdir(ctx stdctx.Context, path string, params map[string]interf
 	return provider.Mkdir(ctx, subPath, params)
 }
 
-// Get retrieves a single node
-func (e *Engine) Get(ctx stdctx.Context, path string) (*Node, error) {
-	provider, subPath, err := e.resolveProvider(path)
-	if err != nil {
-		return nil, err
-	}
-
-	return provider.Get(ctx, subPath)
-}
-
 // Cat retrieves the content of a file/document
 func (e *Engine) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 	provider, subPath, err := e.resolveProvider(path)
@@ -158,16 +139,6 @@ func (e *Engine) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 	}
 
 	return provider.Cat(ctx, subPath)
-}
-
-// Put creates or updates a resource
-func (e *Engine) Put(ctx stdctx.Context, path string, content []byte, params map[string]interface{}) (*Node, error) {
-	provider, subPath, err := e.resolveProvider(path)
-	if err != nil {
-		return nil, err
-	}
-
-	return provider.Put(ctx, subPath, content, params)
 }
 
 // Rm removes a resource

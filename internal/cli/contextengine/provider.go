@@ -41,14 +41,8 @@ type Provider interface {
 	// Mkdir creates a new directory/node at the given path
 	Mkdir(ctx stdctx.Context, path string, params map[string]interface{}) (*Node, error)
 
-	// Get retrieves a single node at the given path
-	Get(ctx stdctx.Context, path string) (*Node, error)
-
 	// Cat retrieves the content of a file/document at the given path
 	Cat(ctx stdctx.Context, path string) ([]byte, error)
-
-	// Put creates or updates a resource at the given path
-	Put(ctx stdctx.Context, path string, content []byte, params map[string]interface{}) (*Node, error)
 
 	// Rm removes a resource at the given path
 	Rm(ctx stdctx.Context, path string, recursive bool) error
