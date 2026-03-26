@@ -24,10 +24,10 @@ from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
-from api.utils.api_utils import get_data_error_result, get_json_result, not_allowed_parameters, get_request_json, server_error_response, validate_request
+from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 
 
-@manager.route("/create", methods=["post"])  # noqa: F821
+@manager.route("/searches", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("name")
 async def create():
@@ -61,67 +61,34 @@ async def create():
             return server_error_response(e)
 
 
-@manager.route("/update", methods=["post"])  # noqa: F821
+@manager.route("/searches", methods=["GET"])  # noqa: F821
 @login_required
-@validate_request("search_id", "name", "search_config", "tenant_id")
-@not_allowed_parameters("id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
-async def update():
-    req = await get_request_json()
-    if not isinstance(req["name"], str):
-        return get_data_error_result(message="Search name must be string.")
-    if req["name"].strip() == "":
-        return get_data_error_result(message="Search name can't be empty.")
-    if len(req["name"].encode("utf-8")) > DATASET_NAME_LIMIT:
-        return get_data_error_result(message=f"Search name length is {len(req['name'])} which is large than {DATASET_NAME_LIMIT}")
-    req["name"] = req["name"].strip()
-    tenant_id = req["tenant_id"]
-    e, _ = TenantService.get_by_id(tenant_id)
-    if not e:
-        return get_data_error_result(message="Authorized identity.")
-
-    search_id = req["search_id"]
-    if not SearchService.accessible4deletion(search_id, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+def list_searches():
+    keywords = request.args.get("keywords", "")
+    page_number = int(request.args.get("page", 0))
+    items_per_page = int(request.args.get("page_size", 0))
+    orderby = request.args.get("orderby", "create_time")
+    desc = request.args.get("desc", "true").lower() != "false"
+    owner_ids = request.args.getlist("owner_ids")
 
     try:
-        search_app = SearchService.query(tenant_id=tenant_id, id=search_id)[0]
-        if not search_app:
-            return get_json_result(data=False, message=f"Cannot find search {search_id}", code=RetCode.DATA_ERROR)
-
-        if req["name"].lower() != search_app.name.lower() and len(SearchService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)) >= 1:
-            return get_data_error_result(message="Duplicated search name.")
-
-        if "search_config" in req:
-            current_config = search_app.search_config or {}
-            new_config = req["search_config"]
-
-            if not isinstance(new_config, dict):
-                return get_data_error_result(message="search_config must be a JSON object")
-
-            updated_config = {**current_config, **new_config}
-            req["search_config"] = updated_config
-
-        req.pop("search_id", None)
-        req.pop("tenant_id", None)
-
-        updated = SearchService.update_by_id(search_id, req)
-        if not updated:
-            return get_data_error_result(message="Failed to update search")
-
-        e, updated_search = SearchService.get_by_id(search_id)
-        if not e:
-            return get_data_error_result(message="Failed to fetch updated search")
-
-        return get_json_result(data=updated_search.to_dict())
-
+        if not owner_ids:
+            tenants = []
+            search_apps, total = SearchService.get_by_tenant_ids(tenants, current_user.id, page_number, items_per_page, orderby, desc, keywords)
+        else:
+            search_apps, total = SearchService.get_by_tenant_ids(owner_ids, current_user.id, 0, 0, orderby, desc, keywords)
+            search_apps = [s for s in search_apps if s["tenant_id"] in owner_ids]
+            total = len(search_apps)
+            if page_number and items_per_page:
+                search_apps = search_apps[(page_number - 1) * items_per_page: page_number * items_per_page]
+        return get_json_result(data={"search_apps": search_apps, "total": total})
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route("/detail", methods=["GET"])  # noqa: F821
+@manager.route("/searches/<search_id>", methods=["GET"])  # noqa: F821
 @login_required
-def detail():
-    search_id = request.args["search_id"]
+def detail(search_id):
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
         for tenant in tenants:
@@ -138,44 +105,60 @@ def detail():
         return server_error_response(e)
 
 
-@manager.route("/list", methods=["POST"])  # noqa: F821
+@manager.route("/searches/<search_id>", methods=["PUT"])  # noqa: F821
 @login_required
-async def list_search_app():
-    keywords = request.args.get("keywords", "")
-    page_number = int(request.args.get("page", 0))
-    items_per_page = int(request.args.get("page_size", 0))
-    orderby = request.args.get("orderby", "create_time")
-    if request.args.get("desc", "true").lower() == "false":
-        desc = False
-    else:
-        desc = True
-
+@validate_request("name", "search_config")
+async def update(search_id):
     req = await get_request_json()
-    owner_ids = req.get("owner_ids", [])
+    if not isinstance(req["name"], str):
+        return get_data_error_result(message="Search name must be string.")
+    if req["name"].strip() == "":
+        return get_data_error_result(message="Search name can't be empty.")
+    if len(req["name"].encode("utf-8")) > DATASET_NAME_LIMIT:
+        return get_data_error_result(message=f"Search name length is {len(req['name'])} which is large than {DATASET_NAME_LIMIT}")
+    req["name"] = req["name"].strip()
+
+    e, _ = TenantService.get_by_id(current_user.id)
+    if not e:
+        return get_data_error_result(message="Authorized identity.")
+
+    if not SearchService.accessible4deletion(search_id, current_user.id):
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+
     try:
-        if not owner_ids:
-            # tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-            # tenants = [m["tenant_id"] for m in tenants]
-            tenants = []
-            search_apps, total = SearchService.get_by_tenant_ids(tenants, current_user.id, page_number, items_per_page, orderby, desc, keywords)
-        else:
-            tenants = owner_ids
-            search_apps, total = SearchService.get_by_tenant_ids(tenants, current_user.id, 0, 0, orderby, desc, keywords)
-            search_apps = [search_app for search_app in search_apps if search_app["tenant_id"] in tenants]
-            total = len(search_apps)
-            if page_number and items_per_page:
-                search_apps = search_apps[(page_number - 1) * items_per_page : page_number * items_per_page]
-        return get_json_result(data={"search_apps": search_apps, "total": total})
+        search_app = SearchService.query(tenant_id=current_user.id, id=search_id)[0]
+        if not search_app:
+            return get_json_result(data=False, message=f"Cannot find search {search_id}", code=RetCode.DATA_ERROR)
+
+        if req["name"].lower() != search_app.name.lower() and len(SearchService.query(name=req["name"], tenant_id=current_user.id, status=StatusEnum.VALID.value)) >= 1:
+            return get_data_error_result(message="Duplicated search name.")
+
+        current_config = search_app.search_config or {}
+        new_config = req["search_config"]
+        if not isinstance(new_config, dict):
+            return get_data_error_result(message="search_config must be a JSON object")
+        req["search_config"] = {**current_config, **new_config}
+
+        for field in ("search_id", "tenant_id", "created_by", "update_time", "id"):
+            req.pop(field, None)
+
+        updated = SearchService.update_by_id(search_id, req)
+        if not updated:
+            return get_data_error_result(message="Failed to update search")
+
+        e, updated_search = SearchService.get_by_id(search_id)
+        if not e:
+            return get_data_error_result(message="Failed to fetch updated search")
+
+        return get_json_result(data=updated_search.to_dict())
+
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route("/rm", methods=["post"])  # noqa: F821
+@manager.route("/searches/<search_id>", methods=["DELETE"])  # noqa: F821
 @login_required
-@validate_request("search_id")
-async def rm():
-    req = await get_request_json()
-    search_id = req["search_id"]
+def delete_search(search_id):
     if not SearchService.accessible4deletion(search_id, current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
