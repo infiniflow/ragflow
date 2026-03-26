@@ -217,6 +217,10 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     elif "parser_config" in req and not req["parser_config"]:
         del req["parser_config"]
 
+    if kb.pipeline_id and req.get("parser_id") and not req.get("pipeline_id"):
+        # shift to use parser_id, delete old pipeline_id
+        req["pipeline_id"] = ""
+
     if "name" in req and req["name"].lower() != kb.name.lower():
         exists = KnowledgebaseService.get_or_none(name=req["name"], tenant_id=tenant_id,
                                                   status=StatusEnum.VALID.value)
@@ -245,6 +249,8 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
             from rag.nlp import search
             settings.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
                                          search.index_name(kb.tenant_id), kb.id)
+    if "parse_type" in req:
+        del req["parse_type"]
 
     if not KnowledgebaseService.update_by_id(kb.id, req):
         return False, "Update dataset error.(Database error)"
