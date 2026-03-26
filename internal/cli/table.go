@@ -17,6 +17,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -31,18 +32,31 @@ func PrintTableSimple(data []map[string]interface{}) {
 }
 
 // PrintTableSimpleByFormat prints data in the specified format
-// Supports: table (with borders), plain (no borders, space-separated), json (reserved)
+// Supports: table (with borders), plain (no borders, space-separated), json
 // - Column names in lowercase
 // - Two spaces between columns
 // - Numeric columns right-aligned
 // - URI/path columns not truncated
 func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat) {
 	if len(data) == 0 {
-		if format == OutputFormatPlain {
+		if format == OutputFormatJSON {
+			fmt.Println("[]")
+		} else if format == OutputFormatPlain {
 			fmt.Println("(empty)")
 		} else {
 			fmt.Println("No data to print")
 		}
+		return
+	}
+
+	// JSON format: output as JSON array
+	if format == OutputFormatJSON {
+		jsonData, err := json.MarshalIndent(data, "", "  ")
+		if err != nil {
+			fmt.Printf("Error marshaling JSON: %v\n", err)
+			return
+		}
+		fmt.Println(string(jsonData))
 		return
 	}
 

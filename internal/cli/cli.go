@@ -18,6 +18,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -353,7 +354,7 @@ Options:
   -u, --user string      Username for authentication
   -p, --password string  Password for authentication
   -f, --config string    Path to config file (YAML format)
-  -o, --output string    Output format: table, plain (json reserved for future)
+  -o, --output string    Output format: table, plain, json (search defaults to json)
   --admin, -admin        Run in admin mode
   --help                 Show this help message
 
@@ -745,7 +746,12 @@ func (c *CLI) executeContextEngine(input string) error {
 	}
 
 	// Print result
-	c.printContextEngineResult(result, ceCmd.Type)
+	// For search command, default to JSON format if not explicitly set to plain/table
+	format := c.outputFormat
+	if ceCmd.Type == contextengine.CommandSearch && format != OutputFormatPlain && format != OutputFormatTable {
+		format = OutputFormatJSON
+	}
+	c.printContextEngineResult(result, ceCmd.Type, format)
 	return nil
 }
 
@@ -794,7 +800,7 @@ func parseContextEngineArgs(input string) []string {
 }
 
 // printContextEngineResult prints the result of a context engine command
-func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType contextengine.CommandType) {
+func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType contextengine.CommandType, format OutputFormat) {
 	if result == nil {
 		return
 	}
@@ -823,45 +829,74 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 		fmt.Printf("\nTotal: %d\n", result.Total)
 	case contextengine.CommandSearch:
 		if len(result.Nodes) == 0 {
-			fmt.Println("No results found")
+			if format == OutputFormatJSON {
+				fmt.Println("[]")
+			} else {
+				fmt.Println("No results found")
+			}
 			return
 		}
-		// Print search results: content and path (no type)
-		fmt.Printf("%-70s %-50s\n", "CONTENT", "PATH")
-		fmt.Println(strings.Repeat("-", 120))
-		for i, node := range result.Nodes {
-			// Get content from Name field (which contains the chunk content)
+		// Build data for output (same fields for all formats: content, path, score)
+		type searchResult struct {
+			Content string  `json:"content"`
+			Path    string  `json:"path"`
+			Score   float64 `json:"score,omitempty"`
+		}
+		results := make([]searchResult, 0, len(result.Nodes))
+		for _, node := range result.Nodes {
 			content := node.Name
 			if content == "" {
 				content = "(empty)"
 			}
-			// Normalize whitespace and truncate for display
-			content = strings.Join(strings.Fields(content), " ")
-			if len(content) > 67 {
-				content = content[:67] + "..."
-			}
-			// Remove leading "/" from path for display
 			displayPath := node.Path
 			if strings.HasPrefix(displayPath, "/") {
 				displayPath = displayPath[1:]
 			}
-			if len(displayPath) > 47 {
-				displayPath = displayPath[:44] + "..."
+			var score float64
+			if s, ok := node.Metadata["similarity"].(float64); ok {
+				score = s
+			} else if s, ok := node.Metadata["_score"].(float64); ok {
+				score = s
 			}
-			fmt.Printf("%-70s %-50s\n", content, displayPath)
-			// Also print similarity score if available in metadata
-			if score, ok := node.Metadata["similarity"]; ok {
-				fmt.Printf("  [score: %.4f]\n", score)
-			} else if score, ok := node.Metadata["_score"]; ok {
-				fmt.Printf("  [score: %.4f]\n", score)
-			}
-			// Limit display to avoid too much output (actual limit is enforced by API top_k)
-			if i >= 99 {
-				fmt.Printf("\n... and %d more results\n", result.Total-i-1)
-				break
-			}
+			results = append(results, searchResult{
+				Content: content,
+				Path:    displayPath,
+				Score:   score,
+			})
 		}
-		fmt.Printf("\nTotal: %d\n", result.Total)
+		// Output based on format
+		if format == OutputFormatJSON {
+			jsonData, err := json.MarshalIndent(results, "", "  ")
+			if err != nil {
+				fmt.Printf("Error marshaling JSON: %v\n", err)
+				return
+			}
+			fmt.Println(string(jsonData))
+		} else {
+			// Plain or table format with score as separate column
+			fmt.Printf("%-70s %-50s %-10s\n", "CONTENT", "PATH", "SCORE")
+			fmt.Println(strings.Repeat("-", 132))
+			for i, sr := range results {
+				content := strings.Join(strings.Fields(sr.Content), " ")
+				if len(content) > 67 {
+					content = content[:67] + "..."
+				}
+				displayPath := sr.Path
+				if len(displayPath) > 47 {
+					displayPath = displayPath[:44] + "..."
+				}
+				scoreStr := "-"
+				if sr.Score > 0 {
+					scoreStr = fmt.Sprintf("%.4f", sr.Score)
+				}
+				fmt.Printf("%-70s %-50s %-10s\n", content, displayPath, scoreStr)
+				if i >= 99 {
+					fmt.Printf("\n... and %d more results\n", result.Total-i-1)
+					break
+				}
+			}
+			fmt.Printf("\nTotal: %d\n", result.Total)
+		}
 	case contextengine.CommandMkdir:
 		fmt.Println("Created successfully")
 	case contextengine.CommandRm:
@@ -1189,9 +1224,12 @@ Options:
                          Example: -t 0.5
   -h, --help             Show this help message
 
+Output:
+  Default output format is JSON. Use --output plain or --output table for other formats.
+
 Examples:
-  search -d datasets/kb1 -q "neural networks"       # Search in kb1
-  search -d datasets/kb1 -d datasets/kb2 -q "AI"    # Search in multiple KBs
+  search -d datasets/kb1 -q "neural networks"       # Search in kb1 (JSON output)
+  search -d datasets/kb1 -q "AI" --output plain     # Search with plain text output
   search -q "data mining"                           # Search all datasets
   search -q "RAG" -k 20 -t 0.5                      # Return 20 results with threshold 0.5
 `
