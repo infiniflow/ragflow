@@ -86,6 +86,8 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenLogin:
 		return p.parseAdminLoginUser()
+	case TokenLogout:
+		return p.parseAdminLogout()
 	case TokenPing:
 		return p.parseAdminPingServer()
 	case TokenList:
@@ -136,6 +138,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenLogin:
 		return p.parseLoginUser()
+	case TokenLogout:
+		return p.parseLogout()
 	case TokenPing:
 		return p.parsePingServer()
 	case TokenList:
@@ -213,7 +217,7 @@ func (p *Parser) expectSemicolon() error {
 }
 
 func isKeyword(tokenType int) bool {
-	return tokenType >= TokenLogin && tokenType <= TokenPing
+	return tokenType >= TokenLogin && tokenType <= TokenDocMeta
 }
 
 // isCECommand checks if the given string is a ContextEngine command

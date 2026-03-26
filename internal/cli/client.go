@@ -284,6 +284,35 @@ func (c *RAGFlowClient) loginUser(email, password string) (string, error) {
 	return token, nil
 }
 
+func (c *RAGFlowClient) Logout() (ResponseIf, error) {
+	if c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("not logged in")
+	}
+
+	var path string
+	if c.ServerType == "admin" {
+		path = "/admin/logout"
+	} else {
+		path = "/user/logout"
+	}
+
+	resp, err := c.HTTPClient.Request("GET", path, c.ServerType == "admin", "web", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("login failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("login failed: %s", result.Message)
+	}
+
+	return &result, nil
+}
+
 // readPassword reads password from terminal without echoing
 func readPassword() (string, error) {
 	// Check if stdin is a terminal by trying to get terminal size
@@ -351,6 +380,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 	switch cmd.Type {
 	case "login_user":
 		return nil, c.LoginUser(cmd)
+	case "logout":
+		return c.Logout()
 	case "ping":
 		return c.PingAdmin(cmd)
 	case "benchmark":
@@ -400,6 +431,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.RegisterUser(cmd)
 	case "login_user":
 		return nil, c.LoginUser(cmd)
+	case "logout":
+		return c.Logout()
 	case "ping":
 		return c.PingServer(cmd)
 	case "benchmark":
@@ -422,6 +455,14 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.UnsetToken(cmd)
 	case "show_version":
 		return c.ShowServerVersion(cmd)
+	case "create_index":
+		return c.CreateIndex(cmd)
+	case "drop_index":
+		return c.DropIndex(cmd)
+	case "create_doc_meta_index":
+		return c.CreateDocMetaIndex(cmd)
+	case "drop_doc_meta_index":
+		return c.DropDocMetaIndex(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)

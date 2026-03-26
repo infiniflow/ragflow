@@ -177,6 +177,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			kb.GET("/tags", r.knowledgebaseHandler.ListTagsFromKbs)
 			kb.GET("/get_meta", r.knowledgebaseHandler.GetMeta)
 			kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
+			kb.POST("/index", r.knowledgebaseHandler.CreateIndex)
+			kb.DELETE("/index", r.knowledgebaseHandler.DeleteIndex)
 
 			// KB ID specific routes
 			kbByID := kb.Group("/:kb_id")
@@ -187,6 +189,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 				kbByID.GET("/knowledge_graph", r.knowledgebaseHandler.KnowledgeGraph)
 				kbByID.DELETE("/knowledge_graph", r.knowledgebaseHandler.DeleteKnowledgeGraph)
 			}
+		}
+
+		// Tenant routes (per-tenant resources)
+		tenant := authorized.Group("/v1/tenant")
+		{
+			tenant.POST("/doc_meta_index", r.tenantHandler.CreateDocMetaIndex)
+			tenant.DELETE("/doc_meta_index", r.tenantHandler.DeleteDocMetaIndex)
 		}
 
 		// Document routes

@@ -125,7 +125,7 @@ func parseHostPort(hostPort string) (string, int, error) {
 func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	// First, scan args to check for help, config file, and admin mode
 	var configFilePath string
-
+	var adminMode bool = false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--help" || arg == "-help" {
@@ -137,6 +137,8 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 			// -o/--output is allowed with config file, skip it and its value
 			i++
 			continue
+		} else if arg == "--admin" {
+			adminMode = true
 		}
 	}
 
@@ -144,43 +146,46 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	var config *ConfigFile
 	var err error
 
-	if configFilePath != "" {
-		// User specified config file via -f
-		config, err = LoadConfigFileFromPath(configFilePath)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// Try default rf.yml
-		config, err = LoadDefaultConfigFile()
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	// Parse arguments manually to support both short and long forms
 	// and to handle priority: command line > config file > defaults
 
 	result := &ConnectionArgs{}
 
+	if !adminMode {
+		// Only user mode read config file
+		if configFilePath != "" {
+			// User specified config file via -f
+			config, err = LoadConfigFileFromPath(configFilePath)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// Try default rf.yml
+			config, err = LoadDefaultConfigFile()
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// Apply config file values first (lower priority)
+		if config != nil {
+			// Parse host:port from config file
+			if config.Host != "" {
+				h, port, err := parseHostPort(config.Host)
+				if err != nil {
+					return nil, fmt.Errorf("invalid host in config file: %v", err)
+				}
+				result.Host = h
+				result.Port = port
+			}
+			result.UserName = config.UserName
+			result.Password = config.Password
+			result.APIToken = config.APIToken
+		}
+	}
+
 	// Get non-flag arguments (command to execute)
 	var nonFlagArgs []string
-
-	// Apply config file values first (lower priority)
-	if config != nil {
-		// Parse host:port from config file
-		if config.Host != "" {
-			h, port, err := parseHostPort(config.Host)
-			if err != nil {
-				return nil, fmt.Errorf("invalid host in config file: %v", err)
-			}
-			result.Host = h
-			result.Port = port
-		}
-		result.UserName = config.UserName
-		result.Password = config.Password
-		result.APIToken = config.APIToken
-	}
 
 	// Override with command line flags (higher priority)
 	// Handle both short and long forms manually
@@ -874,18 +879,26 @@ Meta Commands:
   \q or \quit   - Exit CLI
   \c or \clear  - Clear screen
 
-SQL Commands (use quotes):
-  "LOGIN USER 'email';"                                  - Login as user
-  "REGISTER USER 'name' AS 'nickname' PASSWORD 'pwd';"   - Register new user
-  "SHOW VERSION;"                                        - Show version info
-  "PING;"                                                - Ping server
-  "LIST DATASETS;"                                       - List user datasets
-  "LIST AGENTS;"                                         - List user agents
-  "LIST CHATS;"                                          - List user chats
-  "LIST USERS;"                                          - List all users (admin)
-  "CREATE USER 'email' 'password';"                      - Create new user (admin)
-  "DROP USER 'email';"                                   - Delete user (admin)
-  ... and more SQL commands
+Commands (User Mode):
+  LOGIN USER 'email';                                    - Login as user
+  REGISTER USER 'name' AS 'nickname' PASSWORD 'pwd';     - Register new user
+  SHOW VERSION;                                          - Show version info
+  PING;                                                  - Ping server
+  LIST DATASETS;                                         - List user datasets
+  LIST AGENTS;                                           - List user agents
+  LIST CHATS;                                            - List user chats
+  LIST MODEL PROVIDERS;                                  - List model providers
+  LIST DEFAULT MODELS;                                   - List default models
+  LIST TOKENS;                                           - List API tokens
+  CREATE TOKEN;                                          - Create new API token
+  DROP TOKEN 'token_value';                              - Delete an API token
+  SET TOKEN 'token_value';                               - Set and validate API token
+  SHOW TOKEN;                                            - Show current API token
+  UNSET TOKEN;                                           - Remove current API token
+  CREATE INDEX FOR DATASET 'name' VECTOR_SIZE N;         - Create index for dataset
+  DROP INDEX FOR DATASET 'name';                         - Drop index for dataset
+  CREATE INDEX DOC_META;                                 - Create doc meta index
+  DROP INDEX DOC_META;                                   - Drop doc meta index
 
 Context Engine Commands (no quotes):
   ls [path]                    - List resources
