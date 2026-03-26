@@ -49,66 +49,18 @@ export default defineConfig(({ mode }) => {
       },
     },
     hybrid: {
-      '/v1/system/token_list': {
-        target: 'http://127.0.0.1:9384/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1/system/new_token': {
-        target: 'http://127.0.0.1:9384/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1/system/token': {
-        target: 'http://127.0.0.1:9384/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1/system/config': {
-        target: 'http://127.0.0.1:9384/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1/user/login': {
-        target: 'http://127.0.0.1:9384/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1/user/logout': {
-        target: 'http://127.0.0.1:9384/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/admin/sandbox': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/admin/roles': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/admin/roles/owner/permission': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/admin/roles_with_permission': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/admin/whitelist': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/admin/variables': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
+      '^(/api/v1/memories)|^(/v1/user/info)|^(/v1/user/tenant_info)|^(/v1/tenant/list)|^(/v1/system/config)|^(/v1/user/login)|^(/v1/user/logout)':
+        {
+          target: 'http://127.0.0.1:9384/',
+          changeOrigin: true,
+          ws: true,
+        },
+      '^(/api/v1/admin/sandbox)|^(/api/v1/admin/roles)|^(/api/v1/admin/roles/owner/permission)|^(/api/v1/admin/roles_with_permission)|^(/api/v1/admin/whitelist)|^(/api/v1/admin/variables)':
+        {
+          target: 'http://127.0.0.1:9381/',
+          changeOrigin: true,
+          ws: true,
+        },
       '/api/v1/admin': {
         target: 'http://127.0.0.1:9383/',
         changeOrigin: true,
