@@ -649,7 +649,7 @@ class CreateDatasetReq(Base):
         try:
             # Run inner validation (type checking)
             result = handler(v)
-        except Exception as e:
+        except Exception:
             raise PydanticCustomError("literal_error", error_msg)
             # Omitted field: handler won't be invoked (wrap still gets value); None treated as explicit invalid
         if not result and not info.data.get("pipeline_id", None):
