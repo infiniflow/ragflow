@@ -641,31 +641,23 @@ class CreateDatasetReq(Base):
 
     @field_validator("chunk_method", mode="wrap")
     @classmethod
-    def validate_chunk_method(cls, v: Any, handler) -> Any:
+    def validate_chunk_method(cls, v: Any, handler, info: ValidationInfo) -> Any:
         """Wrap validation to unify error messages, including type errors (e.g. list)."""
+        allowed = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table",
+                   "tag", "resume"}
+        error_msg = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
         try:
             # Run inner validation (type checking)
             result = handler(v)
         except Exception as e:
-            print(f"error during wrap handle, v: {v}")
-            raise PydanticCustomError("literal_error", str(e))
-        return result
-
-    @field_validator("chunk_method", mode="after")
-    @classmethod
-    def validate_chunk_method_after(cls, v: Any, info: ValidationInfo):
-        allowed = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table",
-                   "tag", "resume"}
-        error_msg = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
-        # Omitted field: handler won't be invoked (wrap still gets value); None treated as explicit invalid
-        if not v and not info.data.get("pipeline_id", None):
-            print(f"error empty check, v: {v}, info: {info}", flush=True)
+            raise PydanticCustomError("literal_error", error_msg)
+            # Omitted field: handler won't be invoked (wrap still gets value); None treated as explicit invalid
+        if not result and not info.data.get("pipeline_id", None):
             raise PydanticCustomError("literal_error", error_msg)
         # After handler, enforce enumeration
-        if v and v not in allowed:
-            print(f"error legal check, v: {v}, info: {info}")
+        if result and result not in allowed:
             raise PydanticCustomError("literal_error", error_msg)
-        return v
+        return result
 
 
 class UpdateDatasetReq(CreateDatasetReq):
