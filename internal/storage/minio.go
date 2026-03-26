@@ -86,7 +86,6 @@ func (m *MinioStorage) reconnect() {
 }
 
 func (m *MinioStorage) resolveBucketAndPath(bucket, fnm string) (string, string) {
-	// If configured bucket is set, use it; otherwise use the passed bucket
 	actualBucket := bucket
 	if m.bucket != "" {
 		actualBucket = m.bucket
@@ -94,25 +93,14 @@ func (m *MinioStorage) resolveBucketAndPath(bucket, fnm string) (string, string)
 
 	actualPath := fnm
 	if m.bucket != "" {
-		// Configured bucket mode: original bucket becomes part of path
 		if m.prefixPath != "" {
-			if bucket != "" {
-				actualPath = fmt.Sprintf("%s/%s/%s", m.prefixPath, bucket, fnm)
-			} else {
-				actualPath = fmt.Sprintf("%s/%s", m.prefixPath, fnm)
-			}
+			actualPath = fmt.Sprintf("%s/%s/%s", m.prefixPath, bucket, fnm)
 		} else {
-			if bucket != "" {
-				actualPath = fmt.Sprintf("%s/%s", bucket, fnm)
-			} else {
-				actualPath = fnm
-			}
+			actualPath = fmt.Sprintf("%s/%s", bucket, fnm)
 		}
 	} else if m.prefixPath != "" {
-		// No configured bucket but has prefix_path
 		actualPath = fmt.Sprintf("%s/%s", m.prefixPath, fnm)
 	}
-	// else: no configured bucket, no prefix - use bucket and fnm as-is
 
 	return actualBucket, actualPath
 }
@@ -183,17 +171,11 @@ func (m *MinioStorage) Put(bucket, fnm string, binary []byte, tenantID ...string
 func (m *MinioStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
 	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
 
-	if bucket == "" {
-		return nil, fmt.Errorf("bucket name is empty (check minio.bucket configuration or ensure location contains bucket prefix)")
-	}
-
 	ctx := context.Background()
-	var lastErr error
 
 	for i := 0; i < 2; i++ {
 		obj, err := m.client.GetObject(ctx, bucket, fnm, minio.GetObjectOptions{})
 		if err != nil {
-			lastErr = err
 			zap.L().Error("Failed to get object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			m.reconnect()
 			time.Sleep(time.Second)
@@ -203,7 +185,6 @@ func (m *MinioStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, erro
 
 		buf := new(bytes.Buffer)
 		if _, err := buf.ReadFrom(obj); err != nil {
-			lastErr = err
 			zap.L().Error("Failed to read object data", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			m.reconnect()
 			time.Sleep(time.Second)
@@ -213,7 +194,7 @@ func (m *MinioStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, erro
 		return buf.Bytes(), nil
 	}
 
-	return nil, fmt.Errorf("failed to get object bucket=%s key=%s: %w", bucket, fnm, lastErr)
+	return nil, fmt.Errorf("failed to get object after retries")
 }
 
 // Rm removes an object from MinIO

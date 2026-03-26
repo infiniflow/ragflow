@@ -90,7 +90,6 @@ func (o *OSSStorage) reconnect() {
 }
 
 func (o *OSSStorage) resolveBucketAndPath(bucket, fnm string) (string, string) {
-	// If configured bucket is set, use it; otherwise use the passed bucket
 	actualBucket := bucket
 	if o.bucket != "" {
 		actualBucket = o.bucket
@@ -98,12 +97,7 @@ func (o *OSSStorage) resolveBucketAndPath(bucket, fnm string) (string, string) {
 
 	actualPath := fnm
 	if o.prefixPath != "" {
-		// Include bucket in path if provided and different from configured bucket
-		if bucket != "" && bucket != o.bucket {
-			actualPath = fmt.Sprintf("%s/%s/%s", o.prefixPath, bucket, fnm)
-		} else {
-			actualPath = fmt.Sprintf("%s/%s", o.prefixPath, fnm)
-		}
+		actualPath = fmt.Sprintf("%s/%s", o.prefixPath, fnm)
 	}
 
 	return actualBucket, actualPath
@@ -195,12 +189,7 @@ func (o *OSSStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) 
 func (o *OSSStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
 	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
 
-	if bucket == "" {
-		return nil, fmt.Errorf("bucket name is empty (check oss.bucket configuration)")
-	}
-
 	ctx := context.Background()
-	var lastErr error
 
 	for i := 0; i < 2; i++ {
 		result, err := o.client.GetObject(ctx, &s3.GetObjectInput{
@@ -208,7 +197,6 @@ func (o *OSSStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error)
 			Key:    aws.String(fnm),
 		})
 		if err != nil {
-			lastErr = err
 			zap.L().Error("Failed to get object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			o.reconnect()
 			time.Sleep(time.Second)
@@ -218,7 +206,6 @@ func (o *OSSStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error)
 
 		buf := new(bytes.Buffer)
 		if _, err := buf.ReadFrom(result.Body); err != nil {
-			lastErr = err
 			zap.L().Error("Failed to read object data", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			o.reconnect()
 			time.Sleep(time.Second)
@@ -228,7 +215,7 @@ func (o *OSSStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error)
 		return buf.Bytes(), nil
 	}
 
-	return nil, fmt.Errorf("failed to get object bucket=%s key=%s: %w", bucket, fnm, lastErr)
+	return nil, fmt.Errorf("failed to get object after retries")
 }
 
 // Rm removes an object from OSS

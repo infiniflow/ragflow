@@ -158,12 +158,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 			}
 
-		// Author routes
-		authors := v1.Group("/authors")
-		{
-			authors.GET("/:author_id/documents", r.documentHandler.GetDocumentsByAuthorID)
+			// Author routes
+			authors := v1.Group("/authors")
+			{
+				authors.GET("/:author_id/documents", r.documentHandler.GetDocumentsByAuthorID)
+			}
 		}
-	}
 
 		// Knowledge base routes
 		kb := authorized.Group("/v1/kb")
@@ -259,10 +259,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			file.GET("/root_folder", r.fileHandler.GetRootFolder)
 			file.GET("/parent_folder", r.fileHandler.GetParentFolder)
 			file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
-			file.GET("/get", r.fileHandler.GetFile)
-			file.GET("/content", r.fileHandler.GetFileContent)
-			file.POST("/create", r.fileHandler.CreateFolder)
-			file.POST("/delete", r.fileHandler.DeleteFiles)
 		}
 	}
 
