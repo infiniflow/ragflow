@@ -1137,7 +1137,7 @@ func (s *Service) getMySQLStatus(name string) (map[string]interface{}, error) {
 		return map[string]interface{}{
 			"service_name": name,
 			"status":       "timeout",
-			"elapsed":      fmt.Sprintf("%.1f", time.Since(startTime).Milliseconds()),
+			"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
 			"message":      err.Error(),
 		}, nil
 	}
@@ -1148,7 +1148,7 @@ func (s *Service) getMySQLStatus(name string) (map[string]interface{}, error) {
 		return map[string]interface{}{
 			"service_name": name,
 			"status":       "timeout",
-			"elapsed":      fmt.Sprintf("%.1f", time.Since(startTime).Milliseconds()),
+			"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
 			"message":      err.Error(),
 		}, nil
 	}
@@ -1156,7 +1156,7 @@ func (s *Service) getMySQLStatus(name string) (map[string]interface{}, error) {
 	return map[string]interface{}{
 		"service_name": name,
 		"status":       "alive",
-		"elapsed":      fmt.Sprintf("%.1f", time.Since(startTime).Milliseconds()),
+		"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
 		"message":      "MySQL connection successful",
 	}, nil
 }
@@ -1170,7 +1170,7 @@ func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
 		return map[string]interface{}{
 			"service_name": name,
 			"status":       "timeout",
-			"elapsed":      fmt.Sprintf("%.1f", time.Since(startTime).Milliseconds()),
+			"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
 			"error":        "Redis client not initialized",
 		}, nil
 	}
@@ -1180,7 +1180,7 @@ func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
 		return map[string]interface{}{
 			"service_name": name,
 			"status":       "timeout",
-			"elapsed":      fmt.Sprintf("%.1f", time.Since(startTime).Milliseconds()),
+			"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
 			"error":        "Redis health check failed",
 		}, nil
 	}
@@ -1188,7 +1188,7 @@ func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
 	return map[string]interface{}{
 		"service_name": name,
 		"status":       "alive",
-		"elapsed":      fmt.Sprintf("%.1f", time.Since(startTime).Milliseconds()),
+		"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
 		"message":      "Redis connection successful",
 	}, nil
 }

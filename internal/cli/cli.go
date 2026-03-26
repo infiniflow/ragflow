@@ -299,8 +299,7 @@ Configuration File:
 
 Commands:
   SQL commands like: LOGIN USER 'email'; LIST USERS; etc.
-  If no command is provided, CLI runs in interactive mode.
-`)
+  If no command is provided, CLI runs in interactive mode.`)
 }
 
 // HistoryFile returns the path to the history file
