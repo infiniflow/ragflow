@@ -652,8 +652,8 @@ class CreateDatasetReq(Base):
     @classmethod
     def validate_chunk_method(cls, v: Any, handler) -> Any:
         """Wrap validation to unify error messages, including type errors (e.g. list)."""
-        allowed = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"}
-        error_msg = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'"
+        allowed = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume"}
+        error_msg = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
         # Omitted field: handler won't be invoked (wrap still gets value); None treated as explicit invalid
         if v is None:
             raise PydanticCustomError("literal_error", error_msg)
