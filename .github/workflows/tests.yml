@@ -233,6 +233,7 @@ jobs:
 
       - name: Run go test for Infinity
         run: |
+          echo "Start to run go test, minio port: $MINIO_PORT"
           bash run_go_tests.sh
 
       - name: Run sdk tests against Infinity
