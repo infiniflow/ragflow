@@ -4,10 +4,14 @@ FROM infiniflow/ragflow:v0.24.0
 
 USER root
 WORKDIR /ragflow
+ENV HF_HUB_DISABLE_SSL_VERIFICATION=1
 
 # Install youtube-transcript-api into the venv
-RUN /ragflow/.venv/bin/pip3 install youtube-transcript-api==1.2.4 --quiet
+RUN sed -i "s|https://mirrors.tuna.tsinghua.edu.cn/ubuntu/|http://archive.ubuntu.com/ubuntu/|g" /etc/apt/sources.list.d/ubuntu.sources && apt-get update -qq && apt-get install -y ffmpeg --no-install-recommends -qq && rm -rf /var/lib/apt/lists/*
+RUN /ragflow/.venv/bin/pip3 install youtube-transcript-api==1.2.4 faster-whisper>=1.0.0 yt-dlp>=2024.1.0 --quiet
 
+# Pre-download faster-whisper tiny model so it is available offline
+RUN HF_HUB_DISABLE_SSL_VERIFICATION=1 /ragflow/.venv/bin/python3 -c "from faster_whisper import WhisperModel; WhisperModel('tiny', device='cpu', compute_type='int8')"
 # Copy our custom source files
 COPY common/constants.py         /ragflow/common/constants.py
 COPY rag/app/video.py            /ragflow/rag/app/video.py

@@ -8,6 +8,9 @@ BASE="/home/oussama_raji/ragflow"
 echo "Restarting $CONTAINER..."
 docker restart $CONTAINER
 sleep 30
+# Verify container is using correct image
+IMAGE=$(docker inspect $CONTAINER --format "{{.Config.Image}}")
+echo "Running image: $IMAGE"
 
 echo "Copying files..."
 docker cp $BASE/common/constants.py            $CONTAINER:/ragflow/common/constants.py

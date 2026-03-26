@@ -175,6 +175,9 @@ test = [
     "pycryptodomex==3.20.0",
     "codecov>=2.1.13",
     "youtube-transcript-api>=0.6.0",
+    "yt-dlp>=2024.1.0",
+    "faster-whisper>=1.0.0",
+    "openai-whisper>=20231117",
 ]
 
 [[tool.uv.index]]
