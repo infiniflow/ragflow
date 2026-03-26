@@ -4,7 +4,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { DatasetMetadata } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useFetchDialog, useSetDialog } from '@/hooks/use-chat-request';
+import { useFetchChat, useUpdateChat } from '@/hooks/use-chat-request';
 import { cn } from '@/lib/utils';
 import {
   removeUselessFieldsFromValues,
@@ -28,8 +28,8 @@ type ChatSettingsProps = { hasSingleChatBox: boolean };
 
 export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   const formSchema = useChatSettingSchema();
-  const { data } = useFetchDialog();
-  const { setDialog, loading } = useSetDialog();
+  const { data } = useFetchChat();
+  const { updateChat, loading } = useUpdateChat();
   const { id } = useParams();
   const { t } = useTranslation();
 
@@ -45,7 +45,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       name: '',
       icon: '',
       description: '',
-      kb_ids: [],
+      dataset_ids: [],
       prompt_config: {
         quote: true,
         keyword: false,
@@ -75,22 +75,23 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       'llm_setting.',
     );
 
-    setDialog({
-      ...omit(data, 'operator_permission'),
-      ...nextValues,
-      dialog_id: id,
+    updateChat({
+      chatId: id!,
+      params: {
+        ...omit(data, 'operator_permission'),
+        ...nextValues,
+      },
     });
   }
 
   function onInvalid(errors: any) {
-    console.log('Form validation failed:', errors);
+    void errors;
   }
 
   useEffect(() => {
     const llmSettingEnabledValues = setLLMSettingEnabledValues(
       data.llm_setting,
     );
-
     const nextData = {
       ...data,
       ...llmSettingEnabledValues,

@@ -379,7 +379,7 @@ def _select_first_dataset_and_save(
         return isinstance(kb_ids, list) and len(kb_ids) > 0
 
     response_url_pattern = (
-        "/dialog/set" if save_testid == "chat-settings-save" else "/api/v1/searches/"
+        "/api/v1/chats" if save_testid == "chat-settings-save" else "/api/v1/searches/"
     )
     last_payload = {}
     last_combobox_text = ""
