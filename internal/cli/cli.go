@@ -872,30 +872,57 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 				return
 			}
 			fmt.Println(string(jsonData))
-		} else {
-			// Plain or table format with score as separate column
-			fmt.Printf("%-70s %-50s %-10s\n", "CONTENT", "PATH", "SCORE")
-			fmt.Println(strings.Repeat("-", 132))
+		} else if format == OutputFormatPlain {
+			// Plain format: simple space-separated, no borders
+			fmt.Printf("%-70s  %-50s  %-10s\n", "CONTENT", "PATH", "SCORE")
 			for i, sr := range results {
 				content := strings.Join(strings.Fields(sr.Content), " ")
-				if len(content) > 67 {
+				if len(content) > 70 {
 					content = content[:67] + "..."
 				}
 				displayPath := sr.Path
-				if len(displayPath) > 47 {
-					displayPath = displayPath[:44] + "..."
+				if len(displayPath) > 50 {
+					displayPath = displayPath[:47] + "..."
 				}
 				scoreStr := "-"
 				if sr.Score > 0 {
 					scoreStr = fmt.Sprintf("%.4f", sr.Score)
 				}
-				fmt.Printf("%-70s %-50s %-10s\n", content, displayPath, scoreStr)
+				fmt.Printf("%-70s  %-50s  %-10s\n", content, displayPath, scoreStr)
 				if i >= 99 {
 					fmt.Printf("\n... and %d more results\n", result.Total-i-1)
 					break
 				}
 			}
 			fmt.Printf("\nTotal: %d\n", result.Total)
+		} else {
+			// Table format: with borders
+			col1Width, col2Width, col3Width := 70, 50, 10
+			sep := "+" + strings.Repeat("-", col1Width+2) + "+" + strings.Repeat("-", col2Width+2) + "+" + strings.Repeat("-", col3Width+2) + "+"
+			fmt.Println(sep)
+			fmt.Printf("| %-70s | %-50s | %-10s |\n", "CONTENT", "PATH", "SCORE")
+			fmt.Println(sep)
+			for i, sr := range results {
+				content := strings.Join(strings.Fields(sr.Content), " ")
+				if len(content) > 70 {
+					content = content[:67] + "..."
+				}
+				displayPath := sr.Path
+				if len(displayPath) > 50 {
+					displayPath = displayPath[:47] + "..."
+				}
+				scoreStr := "-"
+				if sr.Score > 0 {
+					scoreStr = fmt.Sprintf("%.4f", sr.Score)
+				}
+				fmt.Printf("| %-70s | %-50s | %-10s |\n", content, displayPath, scoreStr)
+				if i >= 99 {
+					fmt.Printf("\n... and %d more results\n", result.Total-i-1)
+					break
+				}
+			}
+			fmt.Println(sep)
+			fmt.Printf("Total: %d\n", result.Total)
 		}
 	case contextengine.CommandMkdir:
 		fmt.Println("Created successfully")
