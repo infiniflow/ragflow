@@ -5,6 +5,8 @@ FROM infiniflow/ragflow:v0.24.0
 USER root
 WORKDIR /ragflow
 ENV HF_HUB_DISABLE_SSL_VERIFICATION=1
+ENV CURL_CA_BUNDLE=""
+ENV REQUESTS_CA_BUNDLE=""
 
 # Install youtube-transcript-api into the venv
 RUN sed -i "s|https://mirrors.tuna.tsinghua.edu.cn/ubuntu/|http://archive.ubuntu.com/ubuntu/|g" /etc/apt/sources.list.d/ubuntu.sources && apt-get update -qq && apt-get install -y ffmpeg --no-install-recommends -qq && rm -rf /var/lib/apt/lists/*

@@ -256,6 +256,8 @@ def _fetch_transcript_openai_whisper(video_id: str, cfg: dict) -> list:
     try:
         audio_path = _download_audio(video_id)
         logger.info("video: openai-whisper transcribing %s (model=%s)", video_id, model_size)
+        import ssl
+        ssl._create_default_https_context = ssl._create_unverified_context
         model  = whisper.load_model(model_size)
         result = model.transcribe(audio_path)
         entries = _segments_from_whisper_result(result)
