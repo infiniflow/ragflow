@@ -64,7 +64,7 @@ func (p *FileProvider) Supports(path string) bool {
 }
 
 // List lists nodes at the given path
-// Path structure: files/ or files/{folder_name}/ or files/{folder_name}/{file_name}
+// Path structure: files/ or files/{folder_name}/ or files/{folder_name}/{sub_path}/...
 func (p *FileProvider) List(ctx stdctx.Context, subPath string, opts *ListOptions) (*Result, error) {
 	// subPath is the path relative to "files/"
 	// Empty subPath means list root folder
@@ -79,15 +79,77 @@ func (p *FileProvider) List(ctx stdctx.Context, subPath string, opts *ListOption
 		return p.listFolderByName(ctx, parts[0], opts)
 	}
 
-	if len(parts) >= 2 {
-		// files/{folder_name}/{file_name}... - get file info
-		// Join remaining parts as the file name (could contain "/")
-		folderName := parts[0]
-		fileName := strings.Join(parts[1:], "/")
-		return p.getFileNode(ctx, folderName, fileName)
+	// For multi-level paths like myskills/skill-name/dir1, recursively traverse
+	return p.listPathRecursive(ctx, parts, opts)
+}
+
+// listPathRecursive recursively traverses the path and lists the final component
+func (p *FileProvider) listPathRecursive(ctx stdctx.Context, parts []string, opts *ListOptions) (*Result, error) {
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("empty path")
 	}
 
-	return nil, fmt.Errorf("invalid path: %s", subPath)
+	// Start from root to find the first folder
+	currentFolderID, err := p.getFolderIDByName(ctx, parts[0])
+	if err != nil {
+		return nil, err
+	}
+	currentPath := parts[0]
+
+	// Traverse through intermediate directories
+	for i := 1; i < len(parts); i++ {
+		partName := parts[i]
+
+		// List contents of current folder to find the next part
+		result, err := p.listFilesByParentID(ctx, currentFolderID, currentPath, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		// Find the next component
+		found := false
+		for _, node := range result.Nodes {
+			if node.Name == partName {
+				if i == len(parts)-1 {
+					// This is the last component - if it's a directory, list its contents
+					if node.Type == NodeTypeDirectory {
+						childID := getString(node.Metadata["id"])
+						if childID == "" {
+							return nil, fmt.Errorf("folder ID not found for '%s'", partName)
+						}
+						newPath := currentPath + "/" + partName
+						p.folderCache[newPath] = childID
+						return p.listFilesByParentID(ctx, childID, newPath, opts)
+					}
+					// It's a file - return the file node
+					return &Result{
+						Nodes: []*Node{node},
+						Total: 1,
+					}, nil
+				}
+				// Not the last component - must be a directory
+				if node.Type != NodeTypeDirectory {
+					return nil, fmt.Errorf("'%s' is not a directory", partName)
+				}
+				childID := getString(node.Metadata["id"])
+				if childID == "" {
+					return nil, fmt.Errorf("folder ID not found for '%s'", partName)
+				}
+				currentFolderID = childID
+				currentPath = currentPath + "/" + partName
+				p.folderCache[currentPath] = currentFolderID
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return nil, fmt.Errorf("%s: '%s' in '%s'", ErrNotFound, partName, currentPath)
+		}
+	}
+
+	// Should have returned in the loop, but just in case
+	return p.listFilesByParentID(ctx, currentFolderID, currentPath, opts)
 }
 
 // Search searches for files/folders
@@ -134,26 +196,78 @@ func (p *FileProvider) Cat(ctx stdctx.Context, subPath string) ([]byte, error) {
 		return nil, fmt.Errorf("invalid path format, expected: files/{folder}/{file}")
 	}
 
-	folderName := parts[0]
-	fileName := strings.Join(parts[1:], "/")
-
-	// Get file info first to get file ID
-	result, err := p.getFileNode(ctx, folderName, fileName)
+	// Find the file by recursively traversing the path
+	node, err := p.findNodeByPath(ctx, parts)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(result.Nodes) == 0 {
-		return nil, fmt.Errorf("%s: file '%s'", ErrNotFound, fileName)
+	if node.Type == NodeTypeDirectory {
+		return nil, fmt.Errorf("'%s' is a directory, not a file", subPath)
 	}
 
-	fileID := getString(result.Nodes[0].Metadata["id"])
+	fileID := getString(node.Metadata["id"])
 	if fileID == "" {
 		return nil, fmt.Errorf("file ID not found")
 	}
 
 	// Download file content
 	return p.downloadFile(ctx, fileID)
+}
+
+// findNodeByPath recursively traverses the path to find the target node
+func (p *FileProvider) findNodeByPath(ctx stdctx.Context, parts []string) (*Node, error) {
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("empty path")
+	}
+
+	// Start from root to find the first folder
+	currentFolderID, err := p.getFolderIDByName(ctx, parts[0])
+	if err != nil {
+		return nil, err
+	}
+	currentPath := parts[0]
+
+	// Traverse through intermediate directories
+	for i := 1; i < len(parts); i++ {
+		partName := parts[i]
+
+		// List contents of current folder to find the next part
+		result, err := p.listFilesByParentID(ctx, currentFolderID, currentPath, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		// Find the next component
+		found := false
+		for _, node := range result.Nodes {
+			if node.Name == partName {
+				if i == len(parts)-1 {
+					// This is the last component - return it
+					return node, nil
+				}
+				// Not the last component - must be a directory
+				if node.Type != NodeTypeDirectory {
+					return nil, fmt.Errorf("'%s' is not a directory", partName)
+				}
+				childID := getString(node.Metadata["id"])
+				if childID == "" {
+					return nil, fmt.Errorf("folder ID not found for '%s'", partName)
+				}
+				currentFolderID = childID
+				currentPath = currentPath + "/" + partName
+				p.folderCache[currentPath] = currentFolderID
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return nil, fmt.Errorf("%s: '%s' in '%s'", ErrNotFound, partName, currentPath)
+		}
+	}
+
+	return nil, fmt.Errorf("%s: '%s'", ErrNotFound, strings.Join(parts, "/"))
 }
 
 // ==================== Python Server API Methods ====================
@@ -365,6 +479,7 @@ func (p *FileProvider) getFolderIDByName(ctx stdctx.Context, folderName string) 
 }
 
 // getFileNode gets a file node by folder and file name
+// If fileName is a directory, returns the directory contents instead of the directory node
 func (p *FileProvider) getFileNode(ctx stdctx.Context, folderName, fileName string) (*Result, error) {
 	folderID, err := p.getFolderIDByName(ctx, folderName)
 	if err != nil {
@@ -380,6 +495,19 @@ func (p *FileProvider) getFileNode(ctx stdctx.Context, folderName, fileName stri
 	// Find the specific file
 	for _, node := range result.Nodes {
 		if node.Name == fileName {
+			// If it's a directory, list its contents instead of returning the node itself
+			if node.Type == NodeTypeDirectory {
+				childFolderID := getString(node.Metadata["id"])
+				if childFolderID == "" {
+					return nil, fmt.Errorf("folder ID not found for '%s'", fileName)
+				}
+				// Cache the folder ID
+				cacheKey := folderName + "/" + fileName
+				p.folderCache[cacheKey] = childFolderID
+				// Return directory contents
+				return p.listFilesByParentID(ctx, childFolderID, cacheKey, nil)
+			}
+			// Return file node
 			return &Result{
 				Nodes: []*Node{node},
 				Total: 1,
