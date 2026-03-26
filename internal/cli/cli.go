@@ -18,7 +18,6 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -34,21 +33,21 @@ import (
 // ConfigFile represents the rf.yml configuration file structure
 type ConfigFile struct {
 	Host     string `yaml:"host"`
-	User     string `yaml:"user"`
-	Password string `yaml:"password"`
 	APIToken string `yaml:"api_token"`
+	UserName string `yaml:"user_name"`
+	Password string `yaml:"password"`
 }
 
 // ConnectionArgs holds the parsed command line arguments
 type ConnectionArgs struct {
-	Host     string
-	Port     int
-	Password string
-	Key      string
-	Type     string
-	Username string
-	Command  string
-	ShowHelp bool
+	Host      string
+	Port      int
+	Password  string
+	APIToken  string
+	UserName  string
+	Command   string
+	ShowHelp  bool
+	AdminMode bool
 }
 
 // LoadDefaultConfigFile reads the rf.yml file from current directory if it exists
@@ -109,23 +108,18 @@ func parseHostPort(hostPort string) (string, int, error) {
 
 // ParseConnectionArgs parses command line arguments similar to Python's parse_connection_args
 func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
-	// First, scan args to check for help and config file
+	// First, scan args to check for help, config file, and admin mode
 	var configFilePath string
-	var hasOtherFlags bool
-
+	var adminMode bool = false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		if arg == "--help" {
+		if arg == "--help" || arg == "-help" {
 			return &ConnectionArgs{ShowHelp: true}, nil
-		} else if arg == "-f" && i+1 < len(args) {
+		} else if (arg == "-f" || arg == "--config") && i+1 < len(args) {
 			configFilePath = args[i+1]
 			i++
-		} else if strings.HasPrefix(arg, "-") && arg != "-f" {
-			// Check if it's a flag (not a command)
-			if arg == "-h" || arg == "-p" || arg == "-w" || arg == "-k" ||
-				arg == "-u" || arg == "-admin" || arg == "-user" {
-				hasOtherFlags = true
-			}
+		} else if arg == "--admin" {
+			adminMode = true
 		}
 	}
 
@@ -133,129 +127,133 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	var config *ConfigFile
 	var err error
 
-	if configFilePath != "" {
-		// User specified config file via -f
-		config, err = LoadConfigFileFromPath(configFilePath)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// Try default rf.yml
-		config, err = LoadDefaultConfigFile()
-		if err != nil {
-			return nil, err
-		}
-	}
+	// Parse arguments manually to support both short and long forms
+	// and to handle priority: command line > config file > defaults
 
-	if config != nil {
-		if hasOtherFlags {
-			return nil, fmt.Errorf("cannot use command line flags (-h, -p, -w, -k, -u, -admin, -user) when using config file. Please use config file or command line flags, not both")
-		}
-
-		return buildArgsFromConfig(config, args)
-	}
-	// Create a new flag set
-	fs := flag.NewFlagSet("ragflow_cli", flag.ContinueOnError)
-
-	// Define flags
-	host := fs.String("h", "127.0.0.1", "Admin or RAGFlow service host")
-	port := fs.Int("p", -1, "Admin or RAGFlow service port (default: 9381 for admin, 9380 for user)")
-	password := fs.String("w", "", "Superuser password")
-	key := fs.String("k", "", "API key for authentication")
-	_ = fs.String("f", "", "Path to config file (YAML format)") // Already parsed above
-	_ = fs.Bool("admin", false, "Run in admin mode (default)")
-	userMode := fs.Bool("user", false, "Run in user mode")
-	username := fs.String("u", "", "Username (email). In admin mode defaults to admin@ragflow.io, in user mode required")
-
-	// Parse the arguments
-	if err = fs.Parse(args); err != nil {
-		return nil, fmt.Errorf("failed to parse arguments: %v", err)
-	}
-
-	// Otherwise, use command line flags
-	return buildArgsFromFlags(host, port, password, key, userMode, username, fs.Args())
-}
-
-// buildArgsFromConfig builds ConnectionArgs from config file
-func buildArgsFromConfig(config *ConfigFile, remainingArgs []string) (*ConnectionArgs, error) {
+	// Build result from config file first (if exists), then override with command line flags
 	result := &ConnectionArgs{}
 
-	// Parse host:port from config file
-	if config.Host != "" {
-		host, port, err := parseHostPort(config.Host)
-		if err != nil {
-			return nil, fmt.Errorf("invalid host in config file: %v", err)
+	if !adminMode {
+		// Only user mode read config file
+		if configFilePath != "" {
+			// User specified config file via -f
+			config, err = LoadConfigFileFromPath(configFilePath)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// Try default rf.yml
+			config, err = LoadDefaultConfigFile()
+			if err != nil {
+				return nil, err
+			}
 		}
-		result.Host = host
-		result.Port = port
-	} else {
+
+		// Apply config file values first (lower priority)
+		if config != nil {
+			// Parse host:port from config file
+			if config.Host != "" {
+				h, port, err := parseHostPort(config.Host)
+				if err != nil {
+					return nil, fmt.Errorf("invalid host in config file: %v", err)
+				}
+				result.Host = h
+				result.Port = port
+			}
+			result.UserName = config.UserName
+			result.Password = config.Password
+			result.APIToken = config.APIToken
+		}
+	}
+
+	// Get non-flag arguments (command to execute)
+	var nonFlagArgs []string
+
+	// Override with command line flags (higher priority)
+	// Handle both short and long forms manually
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "-h", "--host":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				hostVal := args[i+1]
+				h, port, err := parseHostPort(hostVal)
+				if err != nil {
+					return nil, fmt.Errorf("invalid host format: %v", err)
+				}
+				result.Host = h
+				result.Port = port
+				i++
+			}
+		case "-t", "--token":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				result.APIToken = args[i+1]
+				i++
+			}
+		case "-u", "--user":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				result.UserName = args[i+1]
+				i++
+			}
+		case "-p", "--password":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				result.Password = args[i+1]
+				i++
+			}
+		case "-f", "--config":
+			// Skip config file path (already parsed)
+			if i+1 < len(args) {
+				i++
+			}
+		case "--admin", "-admin":
+			result.AdminMode = true
+		case "--help", "-help":
+			// Already handled above
+			continue
+		default:
+			// Non-flag argument (command)
+			if !strings.HasPrefix(arg, "-") {
+				nonFlagArgs = append(nonFlagArgs, arg)
+			}
+		}
+	}
+
+	// Set defaults if not provided
+	if result.Host == "" {
 		result.Host = "127.0.0.1"
 	}
-
-	// Apply auth info from config
-	result.Username = config.User
-	result.Password = config.Password
-	result.Key = config.APIToken
-
-	// Determine mode: if config has auth info, use user mode
-	if config.User != "" || config.APIToken != "" {
-		result.Type = "user"
-	} else {
-		result.Type = "admin"
-		result.Username = "admin@ragflow.io"
-	}
-
-	// Set default port if not specified in config
-	if result.Port == -1 {
-		if result.Type == "admin" {
-			result.Port = 9381
-		} else {
-			result.Port = 9380
-		}
-	}
-
-	// Get command from remaining args (no need for quotes or semicolon)
-	if len(remainingArgs) > 0 {
-		result.Command = strings.Join(remainingArgs, " ") + ";"
-	}
-
-	return result, nil
-}
-
-// buildArgsFromFlags builds ConnectionArgs from command line flags
-func buildArgsFromFlags(host *string, port *int, password *string, key *string, userMode *bool, username *string, remainingArgs []string) (*ConnectionArgs, error) {
-	result := &ConnectionArgs{
-		Host:     *host,
-		Port:     *port,
-		Password: *password,
-		Key:      *key,
-		Username: *username,
-	}
-
-	// Determine mode
-	if *userMode {
-		result.Type = "user"
-	} else {
-		result.Type = "admin"
-	}
-
-	// Set default port based on type if not specified
-	if result.Port == -1 {
-		if result.Type == "admin" {
+	if result.Port == -1 || result.Port == 0 {
+		if result.AdminMode {
 			result.Port = 9383
 		} else {
 			result.Port = 9384
 		}
 	}
 
-	// Determine username based on mode
-	if result.Type == "admin" && result.Username == "" {
-		result.Username = "admin@ragflow.io"
+	if result.UserName == "" && result.Password != "" {
+		return nil, fmt.Errorf("username (-u/--user) is required when using password (-p/--password)")
 	}
 
-	// Get command from remaining args (no need for quotes or semicolon)
-	if len(remainingArgs) > 0 {
-		result.Command = strings.Join(remainingArgs, " ") + ";"
+	if result.AdminMode {
+		result.APIToken = ""
+		if result.UserName == "" {
+			result.UserName = "admin@ragflow.io"
+			result.Password = ""
+		}
+	} else {
+		// For user mode
+		// Validate mutual exclusivity: -t and (-u, -p) are mutually exclusive
+		hasToken := result.APIToken != ""
+		hasUserPass := result.UserName != "" || result.Password != ""
+
+		if hasToken && hasUserPass {
+			return nil, fmt.Errorf("cannot use both API token (-t/--token) and username/password (-u/--user, -p/--password). Please use one authentication method")
+		}
+	}
+
+	// Get command from remaining args (non-flag arguments)
+	if len(nonFlagArgs) > 0 {
+		result.Command = strings.Join(nonFlagArgs, " ")
 	}
 
 	return result, nil
@@ -268,31 +266,40 @@ func PrintUsage() {
 Usage: ragflow_cli [options] [command]
 
 Options:
-  -h string    Admin or RAGFlow service host (default "127.0.0.1")
-  -p int       Admin or RAGFlow service port (default 9381 for admin, 9380 for user)
-  -w string    Superuser password
-  -k string    API key for authentication
-  -f string    Path to config file (YAML format)
-  -admin       Run in admin mode (default)
-  -user        Run in user mode
-  -u string    Username (email). In admin mode defaults to admin@ragflow.io
-  --help        Show this help message
+  -h, --host string      RAGFlow service address (host:port, default "127.0.0.1:9380")
+  -t, --token string     API token for authentication
+  -u, --user string      Username for authentication
+  -p, --password string  Password for authentication
+  -f, --config string    Path to config file (YAML format)
+  --admin, -admin        Run in admin mode
+  --help                 Show this help message
+
+Mode:
+  --admin, -admin        Run in admin mode (prompt: RAGFlow(admin)>)
+  Default is user mode (prompt: RAGFlow(user)>).
+
+Authentication:
+  You can authenticate using either:
+    1. API token: -t or --token
+    2. Username and password: -u/--user and -p/--password
+  Note: These two methods are mutually exclusive.
 
 Configuration File:
   The CLI will automatically read rf.yml from the current directory if it exists.
-  Use -f to specify a custom config file path.
+  Use -f or --config to specify a custom config file path.
+  Command line options override config file values.
 
   Config file format:
     host: 127.0.0.1:9380
-    user: your-email@example.com
-    password: your-password
     api_token: your-api-token
+    user_name: your-username
+    password: your-password
 
-  When using a config file, you cannot use other command line flags except -help.
-  The command line is only for the SQL command.
+  Note: api_token and user_name/password are mutually exclusive in config file.
 
 Commands:
   SQL commands like: LOGIN USER 'email'; LIST USERS; etc.
+  If no command is provided, CLI runs in interactive mode.
 `)
 }
 
@@ -322,10 +329,11 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 	// Create liner first
 	line := liner.NewLiner()
 
-	// Determine server type
+	// Determine server type based on --admin or --user flag
+	// Default to "user" mode if not specified
 	serverType := "user"
-	if args != nil && args.Type != "" {
-		serverType = args.Type
+	if args != nil && args.AdminMode {
+		serverType = "admin"
 	}
 
 	// Create client with password prompt using liner
@@ -333,11 +341,19 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 	client.PasswordPrompt = line.PasswordPrompt
 
 	// Apply connection arguments if provided
-	client.HTTPClient.Host = args.Host
-	client.HTTPClient.Port = args.Port
+	if args != nil {
+		client.HTTPClient.Host = args.Host
+		if args.Port > 0 {
+			client.HTTPClient.Port = args.Port
+		}
+
+		if args.APIToken != "" {
+			client.HTTPClient.APIToken = args.APIToken
+		}
+	}
 
 	// Set prompt based on server type
-	prompt := "RAGFlow> "
+	prompt := "RAGFlow(user)> "
 	if serverType == "admin" {
 		prompt = "RAGFlow(admin)> "
 	}
@@ -352,7 +368,8 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 
 // Run starts the interactive CLI
 func (c *CLI) Run() error {
-	if c.args.Type == "admin" {
+	// If username is provided without password, prompt for password
+	if c.args != nil && c.args.UserName != "" && c.args.Password == "" && c.args.APIToken == "" {
 		// Allow 3 attempts for password verification
 		maxAttempts := 3
 		for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -448,7 +465,7 @@ func (c *CLI) Run() error {
 
 func (c *CLI) execute(input string) error {
 	p := NewParser(input)
-	cmd, err := p.Parse()
+	cmd, err := p.Parse(c.args.AdminMode)
 	if err != nil {
 		return err
 	}
@@ -490,7 +507,7 @@ func (c *CLI) handleMetaCommand(cmd *Command) error {
 		fmt.Println("Switched to ADMIN mode")
 	case "user":
 		c.client.ServerType = "user"
-		c.prompt = "RAGFlow> "
+		c.prompt = "RAGFlow(user)> "
 		fmt.Println("Switched to USER mode")
 	case "host":
 		if len(args) == 0 {
@@ -552,6 +569,10 @@ Commands (User Mode):
   SET TOKEN 'token_value';                               - Set and validate API token
   SHOW TOKEN;                                            - Show current API token
   UNSET TOKEN;                                           - Remove current API token
+  CREATE INDEX FOR DATASET 'name' VECTOR_SIZE N;         - Create index for dataset
+  DROP INDEX FOR DATASET 'name';                         - Drop index for dataset
+  CREATE INDEX DOC_META;                                 - Create doc meta index
+  DROP INDEX DOC_META;                                   - Drop doc meta index
 
 Commands (Admin Mode):
   LIST USERS;                                            - List all users
@@ -616,7 +637,14 @@ func (c *CLI) VerifyAuth() error {
 		return nil
 	}
 
-	if c.args.Username == "" {
+	// If API token is provided, use it for authentication
+	if c.args.APIToken != "" {
+		// TODO: Implement API token authentication
+		return nil
+	}
+
+	// Otherwise, use username/password authentication
+	if c.args.UserName == "" {
 		return fmt.Errorf("username is required")
 	}
 
@@ -626,7 +654,7 @@ func (c *CLI) VerifyAuth() error {
 
 	// Create login command with username and password
 	cmd := NewCommand("login_user")
-	cmd.Params["email"] = c.args.Username
+	cmd.Params["email"] = c.args.UserName
 	cmd.Params["password"] = c.args.Password
 	_, err := c.client.ExecuteCommand(cmd)
 	return err

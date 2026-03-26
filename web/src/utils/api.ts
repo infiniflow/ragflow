@@ -237,12 +237,15 @@ export default {
   testMcpServer: `${api_host}/mcp_server/test_mcp`,
 
   // next-search
-  createSearch: `${api_host}/search/create`,
-  getSearchList: `${api_host}/search/list`,
-  deleteSearch: `${api_host}/search/rm`,
-  getSearchDetail: `${api_host}/search/detail`,
+  createSearch: `${ExternalApi}${api_host}/searches`,
+  getSearchList: `${ExternalApi}${api_host}/searches`,
+  deleteSearch: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
+  getSearchDetail: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
   getSearchDetailShare: `${ExternalApi}${api_host}/searchbots/detail`,
-  updateSearchSetting: `${api_host}/search/update`,
+  updateSearchSetting: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
   askShare: `${ExternalApi}${api_host}/searchbots/ask`,
   mindmapShare: `${ExternalApi}${api_host}/searchbots/mindmap`,
   getRelatedQuestionsShare: `${ExternalApi}${api_host}/searchbots/related_questions`,

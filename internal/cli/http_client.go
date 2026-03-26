@@ -84,16 +84,12 @@ func (c *HTTPClient) BuildURL(path string, useAPIBase bool) string {
 // Headers builds the request headers
 func (c *HTTPClient) Headers(authKind string, extra map[string]string) map[string]string {
 	headers := make(map[string]string)
-	switch authKind {
-	case "api":
-		if c.APIToken != "" {
-			headers["Authorization"] = fmt.Sprintf("Bearer %s", c.APIToken)
-		}
-	case "web", "admin":
-		if c.LoginToken != "" {
-			headers["Authorization"] = c.LoginToken
-		}
+	if c.APIToken != "" {
+		headers["Authorization"] = fmt.Sprintf("Bearer %s", c.APIToken)
+	} else if c.LoginToken != "" {
+		headers["Authorization"] = c.LoginToken
 	}
+
 	for k, v := range extra {
 		headers[k] = v
 	}
