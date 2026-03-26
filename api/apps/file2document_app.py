@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
 #  limitations under the License
 #
 
+import asyncio
+import logging
 from pathlib import Path
 
 from api.db.services.file2document_service import File2DocumentService
@@ -28,6 +30,50 @@ from api.db import FileType
 from api.db.services.document_service import DocumentService
 
 
+def _convert_files(file_ids, kb_ids, user_id):
+    """Synchronous worker: delete old docs and insert new ones for the given file/kb pairs."""
+    for id in file_ids:
+        informs = File2DocumentService.get_by_file_id(id)
+        for inform in informs:
+            doc_id = inform.document_id
+            e, doc = DocumentService.get_by_id(doc_id)
+            if not e:
+                continue
+            tenant_id = DocumentService.get_tenant_id(doc_id)
+            if not tenant_id:
+                logging.warning("tenant_id not found for doc_id=%s, skipping remove_document", doc_id)
+                continue
+            DocumentService.remove_document(doc, tenant_id)
+        File2DocumentService.delete_by_file_id(id)
+
+        e, file = FileService.get_by_id(id)
+        if not e:
+            continue
+
+        for kb_id in kb_ids:
+            e, kb = KnowledgebaseService.get_by_id(kb_id)
+            if not e:
+                continue
+            doc = DocumentService.insert({
+                "id": get_uuid(),
+                "kb_id": kb.id,
+                "parser_id": FileService.get_parser(file.type, file.name, kb.parser_id),
+                "pipeline_id": kb.pipeline_id,
+                "parser_config": kb.parser_config,
+                "created_by": user_id,
+                "type": file.type,
+                "name": file.name,
+                "suffix": Path(file.name).suffix.lstrip("."),
+                "location": file.location,
+                "size": file.size
+            })
+            File2DocumentService.insert({
+                "id": get_uuid(),
+                "file_id": id,
+                "document_id": doc.id,
+            })
+
+
 @manager.route('/convert', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("file_ids", "kb_ids")
@@ -35,66 +81,41 @@ async def convert():
     req = await get_request_json()
     kb_ids = req["kb_ids"]
     file_ids = req["file_ids"]
-    file2documents = []
 
     try:
         files = FileService.get_by_ids(file_ids)
-        files_set = dict({file.id: file for file in files})
+        files_set = {file.id: file for file in files}
+
+        # Validate all files exist before starting any work
+        for file_id in file_ids:
+            if not files_set.get(file_id):
+                return get_data_error_result(message="File not found!")
+
+        # Validate all kb_ids exist before scheduling background work
+        for kb_id in kb_ids:
+            e, _ = KnowledgebaseService.get_by_id(kb_id)
+            if not e:
+                return get_data_error_result(message="Can't find this dataset!")
+
+        # Expand folders to their innermost file IDs
+        all_file_ids = []
         for file_id in file_ids:
             file = files_set[file_id]
-            if not file:
-                return get_data_error_result(message="File not found!")
-            file_ids_list = [file_id]
             if file.type == FileType.FOLDER.value:
-                file_ids_list = FileService.get_all_innermost_file_ids(file_id, [])
-            for id in file_ids_list:
-                informs = File2DocumentService.get_by_file_id(id)
-                # delete
-                for inform in informs:
-                    doc_id = inform.document_id
-                    e, doc = DocumentService.get_by_id(doc_id)
-                    if not e:
-                        return get_data_error_result(message="Document not found!")
-                    tenant_id = DocumentService.get_tenant_id(doc_id)
-                    if not tenant_id:
-                        return get_data_error_result(message="Tenant not found!")
-                    if not DocumentService.remove_document(doc, tenant_id):
-                        return get_data_error_result(
-                            message="Database error (Document removal)!")
-                File2DocumentService.delete_by_file_id(id)
+                all_file_ids.extend(FileService.get_all_innermost_file_ids(file_id, []))
+            else:
+                all_file_ids.append(file_id)
 
-                # insert
-                for kb_id in kb_ids:
-                    e, kb = KnowledgebaseService.get_by_id(kb_id)
-                    if not e:
-                        return get_data_error_result(
-                            message="Can't find this dataset!")
-                    e, file = FileService.get_by_id(id)
-                    if not e:
-                        return get_data_error_result(
-                            message="Can't find this file!")
-
-                    doc = DocumentService.insert({
-                        "id": get_uuid(),
-                        "kb_id": kb.id,
-                        "parser_id": kb.parser_id,
-                        "pipeline_id": kb.pipeline_id,
-                        "parser_config": kb.parser_config,
-                        "created_by": current_user.id,
-                        "type": file.type,
-                        "name": file.name,
-                        "suffix": Path(file.name).suffix.lstrip("."),
-                        "location": file.location,
-                        "size": file.size
-                    })
-                    file2document = File2DocumentService.insert({
-                        "id": get_uuid(),
-                        "file_id": id,
-                        "document_id": doc.id,
-                    })
-
-                    file2documents.append(file2document.to_json())
-        return get_json_result(data=file2documents)
+        user_id = current_user.id
+        # Run the blocking DB work in a thread so the event loop is not blocked.
+        # For large folders this prevents 504 Gateway Timeout by returning as
+        # soon as the background task is scheduled.
+        loop = asyncio.get_running_loop()
+        future = loop.run_in_executor(None, _convert_files, all_file_ids, kb_ids, user_id)
+        future.add_done_callback(
+            lambda f: logging.error("_convert_files failed: %s", f.exception()) if f.exception() else None
+        )
+        return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
 

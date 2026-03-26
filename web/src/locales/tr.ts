@@ -326,7 +326,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       action: 'İşlem',
       parsingStatus: 'Ayrıştırma durumu',
       parsingStatusTip:
-        'Belge ayrıştırma süresi çeşitli faktörlere bağlıdır. Bilgi Grafiği, RAPTOR, Otomatik Soru Çıkarma veya Otomatik Anahtar Kelime Çıkarma gibi özelliklerin etkinleştirilmesi işlem süresini önemli ölçüde artıracaktır.',
+        'Belge ayrıştırma süresi çeşitli faktörlere bağlıdır. Bilgi Grafiği, RAPTOR, Otomatik Soru Çıkarma veya Otomatik Anahtar Kelime Çıkarma gibi özelliklerin etkinleştirilmesi işlem süresini önemli ölçüde artıracaktır. İlerleme çubuğu durursa, lütfen şu SSS\'ye başvurun: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Başlangıç zamanı',
       processDuration: 'Süre',
       progressMsg: 'İlerleme',
@@ -338,7 +338,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
         "RAGFlow'nun LLM için hedeflenen içeriği alıp alamadığını kontrol etmek için bir alım testi yapın.",
       similarityThreshold: 'Benzerlik eşiği',
       similarityThresholdTip:
-        'RAGFlow, alım sırasında ağırlıklı anahtar kelime benzerliği ile ağırlıklı vektör kosinüs benzerliğinin veya ağırlıklı yeniden sıralama puanının kombinasyonunu kullanır. Bu parametre, kullanıcı sorgusu ile parçalar arasındaki benzerlik eşiğini belirler.',
+        'RAGFlow, alım sırasında ağırlıklı anahtar kelime benzerliği ile ağırlıklı vektör kosinüs benzerliğinin veya ağırlıklı yeniden sıralama puanının kombinasyonunu kullanır. Bu parametre, kullanıcı sorgusu ile parçalar arasındaki benzerlik eşiğini belirler. Bu eşiğin altında benzerlik puanına sahip parçalar sonuçlardan çıkarılır. Varsayılan eşik 0.2 olarak ayarlanmıştır, yani yalnızca 20 veya daha yüksek hibrit benzerlik puanına sahip parçalar alınacaktır.',
       vectorSimilarityWeight: 'Vektör benzerlik ağırlığı',
       vectorSimilarityWeightTip:
         "Bu, birleşik benzerlik puanındaki anahtar kelime benzerliğinin ağırlığını ayarlar. İki ağırlığın toplamı 1.0'a eşit olmalıdır.",
@@ -370,10 +370,10 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       toMessage: 'Bitiş sayfa numarası eksik (hariç)',
       layoutRecognize: 'PDF ayrıştırıcı',
       layoutRecognizeTip:
-        'PDF düzen analizi için görsel model kullanın. Naive seçeneği seçilirse yalnızca düz metin alınır.',
+        'PDF düzen analizi için görsel model kullanın. Belge başlıklarını, metin bloklarını, görüntüleri ve tabloları etkili bir şekilde konumlandırır. Naive seçeneği seçilirse yalnızca PDF\'deki düz metin alınır. Bu seçeneğin şu anda YALNIZCA PDF belgeleri için çalıştığını lütfen unutmayın.',
       taskPageSize: 'Görev sayfa boyutu',
       taskPageSizeMessage: 'Lütfen görev sayfa boyutunu girin!',
-      taskPageSizeTip: `Düzen tanıma sırasında bir PDF dosyası parçalara bölünür ve paralel olarak işlenir. Bu parametre her parçanın boyutunu ayarlar.`,
+      taskPageSizeTip: `Düzen tanıma sırasında bir PDF dosyası parçalara bölünür ve işleme hızını artırmak için paralel olarak işlenir. Bu parametre her parçanın boyutunu ayarlar. Daha büyük parça boyutu, sayfalar arasındaki sürekli metni bölme olasılığını azaltır.`,
       addPage: 'Sayfa ekle',
       greaterThan: 'Geçerli değer bitiş değerinden büyük olmalıdır!',
       greaterThanPrevious:
@@ -382,33 +382,51 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       changeSpecificCategory: 'Belirli kategoriyi değiştir',
       uploadTitle: 'Yüklemek için dosyanızı buraya sürükleyip bırakın',
       uploadDescription:
-        'Tekil veya toplu dosya yüklemeyi destekler. Yerel olarak dağıtılan RAGFlow için: yükleme başına toplam dosya boyutu sınırı 1GB, 32 dosya toplu yükleme sınırı. Bulut için 10MB sınır geçerlidir.',
+        'Tekil veya toplu dosya yüklemeyi destekler. Yerel olarak dağıtılan RAGFlow için: yükleme başına toplam dosya boyutu sınırı 1GB, 32 dosyalık toplu yükleme sınırı vardır. Hesap başına toplam dosya sayısında sınır yoktur. cloud.ragflow.io için yükleme başına toplam dosya boyutu sınırı 10MB, her dosya en fazla 10MB ve hesap başına en fazla 128 dosya.',
       chunk: 'Parça',
       bulk: 'Toplu',
       cancel: 'İptal',
       close: 'Kapat',
       rerankModel: 'Yeniden sıralama modeli',
       rerankPlaceholder: 'Değer seçin',
-      rerankTip: `İsteğe bağlı. Boş bırakılırsa RAGFlow ağırlıklı anahtar kelime benzerliği ve ağırlıklı vektör kosinüs benzerliğinin kombinasyonunu kullanır.`,
+      rerankTip: `İsteğe bağlı. Boş bırakılırsa RAGFlow ağırlıklı anahtar kelime benzerliği ve ağırlıklı vektör kosinüs benzerliğinin kombinasyonunu kullanır; yeniden sıralama modeli seçilirse ağırlıklı yeniden sıralama puanı ağırlıklı vektör kosinüs benzerliğinin yerini alır. Yeniden sıralama modeli kullanmanın sistemin yanıt süresini önemli ölçüde artıracağını unutmayın. Yeniden sıralama modeli kullanmak istiyorsanız bir SaaS yeniden sıralayıcı kullandığınızdan emin olun; yerel olarak dağıtılmış yeniden sıralama modelini tercih ediyorsanız RAGFlow'u docker-compose-gpu.yml ile başlattığınızdan emin olun.`,
       topK: 'Top-K',
-      topKTip: `Yeniden sıralama modeli ile birlikte kullanılır, belirtilen yeniden sıralama modeline gönderilecek metin parçası sayısını tanımlar.`,
+      topKTip: `Yeniden sıralama modeli ile birlikte kullanılır; bu ayar belirtilen yeniden sıralama modeline gönderilecek metin parçası sayısını tanımlar.`,
       delimiter: `Metin sınırlayıcısı`,
       delimiterTip:
-        'Bir sınırlayıcı bir veya birden fazla özel karakterden oluşabilir.',
+        'Bir sınırlayıcı bir veya birden fazla özel karakterden oluşabilir. Birden fazla karakter ise ters tırnak içine alındığından emin olun( ``). Örneğin, sınırlayıcılarınızı şöyle yapılandırırsanız: \\n`##`;, metinleriniz satır sonlarında, çift kare işaretlerinde (##) ve noktalı virgüllerde ayrılacaktır.',
       enableChildrenDelimiter: 'Alt parçalar alım için kullanılır',
       childrenDelimiter: 'Metin sınırlayıcısı',
       childrenDelimiterTip:
-        'Bir sınırlayıcı bir veya birden fazla özel karakterden oluşabilir.',
+        'Bir sınırlayıcı bir veya birden fazla özel karakterden oluşabilir. Birden fazla karakter ise ters tırnak içine alındığından emin olun( ``). Örneğin, sınırlayıcılarınızı şöyle yapılandırırsanız: \\n`##`;, metinleriniz satır sonlarında, çift kare işaretlerinde (##) ve noktalı virgüllerde ayrılacaktır.',
       html4excel: "Excel'i HTML'ye dönüştür",
-      html4excelTip: `Genel parçalama yöntemi ile kullanın. Devre dışı bırakıldığında, dataset içindeki elektronik tablolar anahtar-değer çiftlerine ayrıştırılır.`,
+      html4excelTip: `Genel parçalama yöntemi ile kullanın. Devre dışı bırakıldığında, datasetteki elektronik tablolar (XLSX veya XLS(Excel 97-2003)) anahtar-değer çiftlerine ayrıştırılır. Etkinleştirildiğinde HTML tablolarına ayrıştırılır; orijinal tabloda 12'den fazla satır varsa her 12 satırda bölünür. Ayrıntılar için bkz. https://ragflow.io/docs/dev/enable_excel2html.`,
       autoKeywords: 'Otomatik anahtar kelime',
-      autoKeywordsTip: `Her parça için otomatik olarak N anahtar kelime çıkarır.`,
+      autoKeywordsTip: `Her parça için otomatik olarak N anahtar kelime çıkarır ve o anahtar kelimeleri içeren sorgular için sıralamalarını artırır. 'Yapılandırma'da belirtilen indeksleme modeli tarafından ekstra tokenlar tüketileceğini unutmayın. Bir parçaya eklenen anahtar kelimeleri parça listesinden kontrol edebilir veya güncelleyebilirsiniz. Ayrıntılar için bkz. https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       autoQuestions: 'Otomatik soru',
-      autoQuestionsTip: `Her parça için otomatik olarak N soru çıkarır.`,
+      autoQuestionsTip: `Her parça için otomatik olarak N soru çıkarır ve o soruları içeren sorgular için sıralamalarını artırır. Bir parçaya eklenen soruları parça listesinden kontrol edebilir veya güncelleyebilirsiniz. Bir hata oluşursa bu özellik parçalama işlemini bozmaz, ancak orijinal parçaya boş bir sonuç ekleyebilir. 'Yapılandırma'da belirtilen indeksleme modeli tarafından ekstra tokenlar tüketileceğini unutmayın. Ayrıntılar için bkz. https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       redo: 'Mevcut {{chunkNum}} parçayı temizlemek istiyor musunuz?',
       setMetaData: 'Meta veri ayarla',
       pleaseInputJson: 'Lütfen JSON girin',
-      documentMetaTips: `<p>Meta veri JSON formatındadır (aranabilir değildir). Bu belgenin parçaları isteme dahil edilirse LLM istemlerine eklenecektir.</p>`,
+      documentMetaTips: `<p>Meta veri JSON formatındadır (aranabilir değildir). Bu belgenin parçaları isteme dahil edilirse LLM istemlerine eklenecektir.</p>
+<p>Örnekler:</p>
+<b>Meta veri:</b><br>
+<code>
+  {
+      "Author": "Alex Dowson",
+      "Date": "2024-11-12"
+  }
+</code><br>
+<b>İstem şöyle olacaktır:</b><br>
+<p>Belge: belgenin_adı</p>
+<p>Author: Alex Dowson</p>
+<p>Date: 2024-11-12</p>
+<p>İlgili parçalar aşağıdaki gibidir:</p>
+<ul>
+<li>  İşte parça içeriği....</li>
+<li>  İşte parça içeriği....</li>
+</ul>
+`,
       metaData: 'Meta veri',
       deleteDocumentConfirmContent:
         'Belge bilgi grafiği ile ilişkilendirilmiş. Silindikten sonra ilgili düğüm ve ilişki bilgileri silinecek.',
@@ -421,10 +439,10 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       datasetDescription: `Dataset'inizi açıklayın`,
       overlappedPercentTip: 'İki yakın parça arasındaki örtüşme yüzdesi',
       globalIndexModelTip:
-        'Bilgi grafikleri, RAPTOR, otomatik meta veri, otomatik anahtar kelime ve otomatik soru oluşturmak için kullanılır.',
+        'Bilgi grafikleri, RAPTOR, otomatik meta veri, otomatik anahtar kelime ve otomatik soru oluşturmak için kullanılır. Model performansı üretim kalitesini etkiler.',
       globalIndexModel: 'İndeksleme modeli',
       settings: 'Ayarlar',
-      autoMetadataTip: `Otomatik olarak meta veri oluşturur. Ayrıştırma sırasında yeni dosyalara uygulanır.`,
+      autoMetadataTip: `Otomatik olarak meta veri oluşturur. Ayrıştırma sırasında yeni dosyalara uygulanır. Mevcut dosyaların güncellenmesi yeniden ayrıştırma gerektirir (parçalar korunur). 'Yapılandırma'da belirtilen indeksleme modeli tarafından ekstra tokenlar tüketileceğini unutmayın.`,
       imageTableContextWindow: 'Görüntü ve tablo bağlam penceresi',
       imageTableContextWindowTip:
         'Daha zengin arka plan bağlamı sağlamak için görüntü ve tablonun üstünde ve altında N token metin yakalar.',
@@ -468,7 +486,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       linkDataSource: 'Veri kaynağını bağla',
       tocExtraction: 'SayfaDizini',
       tocExtractionTip:
-        'Mevcut parçalar için, hiyerarşik bir içindekiler tablosu oluşturur.',
+        'Mevcut parçalar için hiyerarşik bir içindekiler tablosu oluşturur (dosya başına bir dizin). Sorgularda Dizin Geliştirme etkinleştirildiğinde, sistem kullanıcının sorusuyla ilgili dizin öğelerini belirlemek için büyük bir model kullanır ve böylece ilgili parçaları tespit eder.',
       deleteGenerateModalContent: `
         <p>Oluşturulan <strong class='text-text-primary'>{{type}}</strong> sonuçlarını silmek,
         bu dataset içindeki tüm türetilmiş varlıkları ve ilişkileri kaldıracak.
@@ -509,9 +527,9 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       embeddingModel: 'Embedding model',
       chunkTokenNumber: 'Önerilen parça boyutu',
       chunkTokenNumberMessage: 'Metin için parça token sayısı gereklidir',
-      embeddingModelTip: `Dataset tarafından kullanılan varsayılan embedding model. Dataset içinde parçalar varken embedding modelini değiştirirken, sistem uyumluluk kontrolü için birkaç parça örnekler.`,
+      embeddingModelTip: `Dataset tarafından kullanılan varsayılan embedding model. Dataset içinde parçalar varken embedding modelini değiştirirken, sistem uyumluluk kontrolü için rastgele birkaç parça örnekler, yeni embedding modeli ile yeniden gömer ve eski ile yeni vektörler arasındaki kosinüs benzerliğini hesaplar. Değiştirmeye ancak örneklerin ortalama benzerliği ≥ 0.9 olduğunda izin verilir. Aksi takdirde, değiştirmeden önce datasetteki tüm parçaları silmeniz gerekir.`,
       permissionsTip: `'Takım' olarak ayarlandığında, tüm takım üyeleri bu dataset'i yönetebilir.`,
-      chunkTokenNumberTip: 'Bir parça oluşturmak için token eşiğini belirler.',
+      chunkTokenNumberTip: 'Bir parça oluşturmak için token eşiğini belirler. Bu eşiğin altındaki tokenlı bir bölüm, token sayısı eşiği aşana kadar sonraki bölümlerle birleştirilir ve bu noktada bir parça oluşturulur. Eşik aşılsa bile bir sınırlayıcı ile karşılaşılmadıkça yeni parça oluşturulmaz.',
       chunkMethod: 'Parçalama yöntemi',
       chunkMethodTip: 'Sağdaki ipuçlarına bakın.',
       upload: 'Yükle',
@@ -546,25 +564,100 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
         'Aşağıdaki ekran görüntüleri açıklama amacıyla sunulmuştur.',
       dialogueExamplesTitle: 'görüntüle',
       methodEmpty: 'Bu, dataset kategorilerinin görsel açıklamasını gösterecek',
-      book: `<p>Desteklenen dosya formatları: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p>`,
-      laws: `<p>Desteklenen dosya formatları: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p>`,
-      manual: `<p>Yalnızca <b>PDF</b> desteklenir.</p>`,
-      naive: `<p>Desteklenen dosya formatları: <b>MD, MDX, DOCX, XLSX, XLS, PPTX, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>`,
-      paper: `<p>Yalnızca <b>PDF</b> dosyası desteklenir.</p>`,
-      presentation: `<p>Desteklenen dosya formatları: <b>PDF</b>, <b>PPTX</b>.</p>`,
-      qa: `<p>Bu parçalama yöntemi <b>XLSX</b> ve <b>CSV/TXT</b> dosya formatlarını destekler.</p>`,
-      resume: `<p>Desteklenen dosya formatları: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p>`,
-      table: `<p>Desteklenen dosya formatları: <b>XLSX</b> ve <b>CSV/TXT</b>.</p>`,
-      picture: `<p>Görüntü dosyaları desteklenir, video desteği yakında gelecek.</p>`,
-      one: `<p>Desteklenen dosya formatları: <b>DOCX, XLSX, XLS, PDF, TXT</b>.</p>`,
-      knowledgeGraph: `<p>Desteklenen dosya formatları: <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b></p>`,
-      tag: `<p>'Etiket' parçalama yöntemini kullanan bir dataset, etiket kümesi olarak işlev görür.</p>`,
+      book: `<p>Desteklenen dosya formatları: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
+      Her PDF kitap için, istenmeyen bilgileri kaldırmak ve analiz süresini azaltmak için lütfen <i>sayfa aralıklarını</i> ayarlayın.</p>`,
+      laws: `<p>Desteklenen dosya formatları: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
+      Hukuki belgeler genellikle katı bir yazım formatına uyar. Bölünme noktasını belirlemek için metin özelliklerini kullanırız.
+      </p><p>
+      Parça, 'MADDE' ile tutarlı bir ayrıntı düzeyine sahiptir ve tüm üst düzey metnin parçaya dahil edilmesini sağlar.
+      </p>`,
+      manual: `<p>Yalnızca <b>PDF</b> desteklenir.</p><p>
+      Kılavuzun hiyerarşik bölüm yapısına sahip olduğunu varsayıyoruz; belgeleri parçalamak için en alt bölüm başlıklarını temel birim olarak kullanırız. Bu nedenle aynı bölümdeki şekiller ve tablolar ayrılmaz, bu da daha büyük parça boyutlarına neden olabilir.
+      </p>`,
+      naive: `<p>Desteklenen dosya formatları: <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPTX, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
+      <p>Bu yöntem dosyaları 'basit' bir yöntemle parçalar: </p>
+      <p>
+      <ul>
+      <li>Metinleri daha küçük bölümlere ayırmak için görüntü algılama modeli kullanılır.</li>
+      <li>Ardından, token sayısı 'Metin için parça token sayısı' ile belirtilen eşiği aşana kadar bitkişik bölümler birleştirilir ve bir parça oluşturulur.</li></ul></p>`,
+      paper: `<p>Yalnızca <b>PDF</b> dosyası desteklenir.</p><p>
+      Makaleler <i>özet, 1.1, 1.2</i> gibi bölümlere ayrılır. </p><p>
+      Bu yaklaşım, LLM'in makaleyi daha etkili özetlemesini ve daha kapsamlı, anlaşılır yanıtlar vermesini sağlar.
+      Ancak bu, yapay zeka konuşmaları için bağlamı artırır ve LLM için hesaplama maliyetini yükseltir. Bu nedenle konuşma sırasında '<b>topN</b>' değerini düşürmeyi düşünün.</p>`,
+      presentation: `<p>Desteklenen dosya formatları: <b>PDF</b>, <b>PPTX</b>.</p><p>
+      Slaytlardaki her sayfa bir parça olarak ele alınır ve küçük resmi saklanır.</p><p>
+      <i>Bu parçalama yöntemi yüklenen tüm PPT dosyalarına otomatik olarak uygulanır, bu nedenle manuel olarak belirtmeniz gerekmez.</i></p>`,
+      qa: `
+      <p>
+      Bu parçalama yöntemi <b>XLSX</b> ve <b>CSV/TXT</b> dosya formatlarını destekler.
+    </p>
+    <ul>
+    <li>
+      Dosya <b>XLSX</b> veya <b>XLS (Excel 97-2003)</b> formatındaysa, başlık olmadan iki sütun içermelidir: biri sorular, diğeri yanıtlar için; soru sütunu yanıt sütunundan önce gelmelidir. Sütunlar doğru yapılandırılmış olduğu sürece birden fazla sayfa kabul edilir.
+    </li>
+    <li>
+      Dosya <b>CSV/TXT</b> formatındaysa, UTF-8 kodlamalı olmalı ve sorular ile yanıtları ayırmak için TAB sınırlayıcı kullanılmalıdır.
+    </li>
+    </ul>
+    <p>
+      <i>
+        Yukarıdaki kurallara uymayan metin satırları yok sayılacak ve
+        her S&C çifti ayrı bir parça olarak değerlendirilecektir.
+      </i>
+    </p>
+      `,
+      resume: `<p>Desteklenen dosya formatları: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.
+      </p><p>
+      Çeşitli formlardaki özgeçmişler ayrıştırılır ve işe alımcılar için aday aramasını kolaylaştırmak amacıyla yapılandırılmış verilere dönüştürülür.
+      </p>
+      `,
+      table: `<p>Desteklenen dosya formatları: <b>XLSX</b> ve <b>CSV/TXT</b>.</p><p>
+      Bazı ön koşullar ve ipuçları:
+      <ul>
+    <li>CSV veya TXT dosyası için sütunlar arasındaki sınırlayıcı <em><b>TAB</b></em> olmalıdır.</li>
+    <li>İlk satır sütun başlıkları olmalıdır.</li>
+    <li>Sütun başlıkları, LLM'in anlamasına yardımcı olmak için anlamlı terimler olmalıdır.
+    Eş anlamlıları eğik çizgiyle <i>'/'</i> ayırmak ve değerleri parantez içinde sıralamak iyi bir uygulamadır, örneğin: <i>'Cinsiyet/Seks (erkek, kadın)'</i>.<p>
+    İşte bazı başlık örnekleri:<ol>
+        <li>tedarikçi/satıcı<b>'TAB'</b>Renk (Sarı, Mavi, Kahverengi)<b>'TAB'</b>Cinsiyet (erkek, kadın)<b>'TAB'</b>beden (M, L, XL, XXL)</li>
+        </ol>
+        </p>
+    </li>
+    <li>Tablodaki her satır bir parça olarak ele alınacaktır.</li>
+    </ul>`,
+      picture: `
+    <p>Görüntü dosyaları desteklenir, video desteği yakında gelecek.</p><p>
+    Bu yöntem görüntülerden metin çıkarmak için bir OCR modeli kullanır.
+    </p><p>
+    OCR modeli tarafından çıkarılan metin yetersiz bulunursa, görüntünün açıklamasını sağlamak için belirtilen görsel LLM kullanılacaktır.
+    </p>`,
+      one: `
+    <p>Desteklenen dosya formatları: <b>DOCX, XLSX, XLS (Excel 97-2003), PDF, TXT</b>.
+    </p><p>
+    Bu yöntem her belgeyi bütünüyle tek bir parça olarak ele alır.
+    </p><p>
+    LLM'in tüm belgeyi özetlemesini gerektirdiğinizde uygulanabilir; LLM'in o kadar bağlam uzunluğunu işleyebilmesi gerekir.
+    </p>`,
+      knowledgeGraph: `<p>Desteklenen dosya formatları: <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
+
+<p>Bu yaklaşım dosyaları 'basit'/'Genel' yöntemiyle parçalar. Bir belgeyi bölümlere ayırır ve ardından token sayısı 'Metin için parça token sayısı' ile belirtilen eşiği aşana kadar bitkişik bölümleri birleştirir.</p>
+<p>Parçalar daha sonra bir bilgi grafiği ve zihin haritası için varlıkları ve ilişkileri çıkarmak üzere LLM'e beslenir.</p>
+<p><b>Varlık türlerini</b> ayarladığınızdan emin olun.</p>`,
+      tag: `<p>'Etiket' parçalama yöntemini kullanan bir dataset, etiket kümesi olarak işlev görür. Diğer datasetler parçalarını etiketlemek için bunu kullanır ve bu datasetlere yapılan sorgular da bu etiket kümesi kullanılarak etiketlenir.</p>
+<p>Bir etiket kümesi doğrudan Alım-Artırılmış Üretim (RAG) sürecine <b>DAHİL OLMAYACAKTIR</b>.</p>
+<p>Bu datasetteki her parça bağımsız bir açıklama-etiket çiftidir.</p>
+<p>Desteklenen dosya formatları: <b>XLSX</b> ve <b>CSV/TXT</b>:</p>
+<p>Dosya <b>XLSX</b> formatındaysa, başlıksız iki sütun içermelidir: biri etiket açıklamaları, diğeri etiket adları için; Açıklama sütunu Etiket sütunundan önce gelmelidir. Sütunlar doğru yapılandırılmış olduğu sürece birden fazla sayfa kabul edilir.</p>
+<p>Dosya <b>CSV/TXT</b> formatındaysa, UTF-8 kodlamalı olmalı ve açıklamaları etiketlerden ayırmak için TAB sınırlayıcı kullanılmalıdır.</p>
+<p>Etiket sütununda etiketleri ayırmak için <b>virgül</b> kullanılır.</p>
+<i>Yukarıdaki kurallara uymayan metin satırları yok sayılacaktır.</i>
+`,
       useRaptor: 'RAPTOR',
       useRaptorTip:
-        'RAPTOR çok adımlı soru-cevap görevleri için kullanılabilir.',
+        'RAPTOR çok adımlı soru-cevap görevleri için kullanılabilir. Dosyalar sayfasına gidin, Oluştur > RAPTOR\'a tıklayarak etkinleştirin. Ayrıntılar için bkz. https://ragflow.io/docs/dev/enable_raptor.',
       prompt: 'İstem',
       promptTip:
-        'Görevi tanımlamak, yanıt vermesini istediğiniz yöntemi belirtmek için sistem istemini kullanın.',
+        'Görevi tanımlamak, nasıl yanıt vermesi gerektiğini belirtmek ve diğer çeşitli gereksinimleri belirlemek için sistem istemini kullanın. Sistem istemi genellikle LLM için çeşitli veri girdileri olarak hizmet eden anahtarlarla (değişkenlerle) birlikte kullanılır. Kullanacağınız anahtarları göstermek için eğik çizgi `/` veya (x) düğmesini kullanın.',
       promptMessage: 'İstem gereklidir',
       promptText: `Lütfen aşağıdaki paragrafları özetleyin. Sayılara dikkat edin, uydurma yapmayın. Paragraflar aşağıdaki gibidir:
       {cluster_content}
@@ -584,29 +677,39 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       entityTypes: 'Varlık türleri',
       vietnamese: 'Vietnamca',
       pageRank: 'Sayfa sıralaması',
-      pageRankTip: `Alım sırasında belirli datasets'e daha yüksek PageRank puanı atayabilirsiniz.`,
+      pageRankTip: `Alım sırasında belirli datasets'e daha yüksek PageRank puanı atayabilirsiniz. İlgili puan, bu datasetlerden alınan parçaların hibrit benzerlik puanlarına eklenir ve sıralamalarını yükseltir. Ayrıntılar için bkz. https://ragflow.io/docs/dev/set_page_rank.`,
       tagName: 'Etiket',
       frequency: 'Sıklık',
       searchTags: 'Etiketleri ara',
       tagCloud: 'Bulut',
       tagTable: 'Tablo',
       tagSet: 'Etiket kümeleri',
-      tagSetTip: `<p>Dataset'inizdeki parçaları otomatik olarak etiketlemek için bir veya birden fazla etiket dataset seçin.</p>`,
+      tagSetTip: `
+     <p> Dataset'inizdeki parçaları otomatik olarak etiketlemek için bir veya birden fazla etiket dataset seçin. Ayrıntılar için bkz. https://ragflow.io/docs/dev/use_tag_sets.</p>
+<p>Kullanıcı sorgusu da otomatik olarak etiketlenecektir.</p>
+Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katmanı ekleyerek alımı geliştirir.
+<p>Otomatik etiket ve otomatik anahtar kelime arasındaki fark:</p>
+<ul>
+  <li>Etiket dataseti kullanıcı tanımlı kapalı bir kümeiken, LLM tarafından çıkarılan anahtar kelimeler açık bir küme olarak değerlendirilebilir.</li>
+  <li>Otomatik etiket özelliğini çalıştırmadan önce etiket kümelerini belirtilen formatlarda yüklemeniz gerekir.</li>
+  <li>Otomatik anahtar kelime özelliği LLM'e bağımlıdır ve önemli miktarda token tüketir.</li>
+</ul>
+      `,
       topnTags: 'İlk N etiket',
       tags: 'Etiketler',
       addTag: 'Etiket ekle',
       useGraphRag: 'Bilgi grafiği',
       useGraphRagTip:
-        'İç içe geçmiş mantık içeren çok adımlı soru-cevabı geliştirmek için mevcut dataset dosya parçaları üzerinde bir bilgi grafiği oluşturun.',
+        'İç içe geçmiş mantık içeren çok adımlı soru-cevabı geliştirmek için mevcut dataset dosya parçaları üzerinde bir bilgi grafiği oluşturun. Ayrıntılar için bkz. https://ragflow.io/docs/dev/construct_knowledge_graph.',
       graphRagMethod: 'Yöntem',
       graphRagMethodTip: `
       Hafif: (Varsayılan) Varlıkları ve ilişkileri çıkarmak için github.com/HKUDS/LightRAG tarafından sağlanan istemler kullanılır.</br>
       Genel: Varlıkları ve ilişkileri çıkarmak için github.com/microsoft/graphrag tarafından sağlanan istemler kullanılır`,
       resolution: 'Varlık çözünürlüğü',
-      resolutionTip: `Varlık tekilleştirme anahtarı. Etkinleştirildiğinde LLM benzer varlıkları birleştirir.`,
+      resolutionTip: `Varlık tekilleştirme anahtarı. Etkinleştirildiğinde LLM benzer varlıkları birleştirir - örneğin '2025' ve '2025 yılı' veya 'BT' ve 'Bilgi Teknolojisi' - daha doğru bir grafik oluşturmak için`,
       community: 'Topluluk raporları',
       communityTip:
-        'Bir bilgi grafiğinde, topluluk ilişkilerle bağlı varlıkların bir kümesidir.',
+        'Bir bilgi grafiğinde, topluluk ilişkilerle bağlı varlıkların bir kümesidir. LLM\'in her topluluk için bir özet oluşturmasını sağlayabilirsiniz, bu topluluk raporu olarak bilinir. Daha fazla bilgi için bkz: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
       theDocumentBeingParsedCannotBeDeleted: 'Ayrıştırılan belge silinemez',
       lastWeek: 'geçen haftadan',
     },
@@ -672,8 +775,8 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       assistantAvatar: 'Asistan avatarı',
       language: 'Dil',
       emptyResponse: 'Boş yanıt',
-      emptyResponseTip: `Sorgunuz için datasets sonuç alınamazsa bu yanıtı ayarlayın.`,
-      emptyResponseMessage: `Boş yanıt, datasets içinden ilgili bir şey alınamadığında tetiklenecek.`,
+      emptyResponseTip: `Sorgunuz için datasetlerden hiçbir sonuç alınamazsa bu yanıtı ayarlayın, veya hiçbir şey bulunamadığında LLM'in doğaçlama yapmasına izin vermek için bu alanı boş bırakın.`,
+      emptyResponseMessage: `Boş yanıt, datasetlerden ilgili bir şey alınamadığında tetiklenecektir. Hiçbir dataset seçilmediyse 'Boş yanıt' alanını temizlemeniz gerekir.`,
       emptyResponsePlaceholder: 'Aradığınız cevap dataset içinde bulunamadı!',
       setAnOpener: 'Açılış selamlaması',
       setAnOpenerInitial: `Merhaba! Ben asistanınızım. Size nasıl yardımcı olabilirim?`,
@@ -700,7 +803,7 @@ Yukarısı özetlemeniz gereken içeriktir.`,
         - **Her zaman** konuşma geçmişinin tamamını göz önünde bulundurun.`,
       systemMessage: 'Lütfen girin!',
       systemTip:
-        'LLM için istemleriniz veya talimatlarınız; rol, yanıtların uzunluğu, tonu ve dili dahil.',
+        'LLM için istemleriniz veya talimatlarınız; rol, yanıtların uzunluğu, tonu ve dili dahil ancak bunlarla sınırlı değildir. Modeliniz doğal olarak akıl yürütmeyi destekliyorsa, akıl yürütmeyi durdurmak için isteme //no_thinking ekleyebilirsiniz.',
       topN: 'İlk N',
       topNTip: `Benzerlik eşiğinin üzerindeki tüm parçalar LLM\'ye gönderilmeyecek. Bu, alınanlardan 'İlk N' parçayı seçer.`,
       variable: 'Değişken',
@@ -714,16 +817,16 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       modelMessage: 'Lütfen seçin!',
       modelEnabledTools: 'Etkin araçlar',
       modelEnabledToolsTip:
-        'Sohbet modeli için kullanılacak bir veya daha fazla araç seçin.',
+        'Sohbet modeli için kullanılacak bir veya daha fazla araç seçin. Araç çağrısı desteklemeyen modeller için etkisi yoktur.',
       freedom: 'Yaratıcılık',
       improvise: 'Doğaçlama',
       precise: 'Kesin',
       balance: 'Denge',
       custom: 'Özel',
-      freedomTip: `'Sıcaklık', 'Top P', 'Varlık cezası' ve 'Sıklık cezası' ayarlarına kısayol.`,
+      freedomTip: `'Sıcaklık', 'Top P', 'Varlık cezası' ve 'Sıklık cezası' ayarlarına kısayol; modelin özgürlük seviyesini belirtir. Bu parametrenin üç seçeneği vardır: Daha yaratıcı yanıtlar üretmek için 'Doğaçlama' seçin; daha muhafazakâr yanıtlar üretmek için 'Kesin' (varsayılan) seçin; 'Denge' her ikisi arasında bir orta noktadır.`,
       temperature: 'Sıcaklık',
       temperatureMessage: 'Sıcaklık gereklidir',
-      temperatureTip: `Bu parametre modelin tahminlerinin rastgeleliğini kontrol eder.`,
+      temperatureTip: `Bu parametre modelin tahminlerinin rastgeleliğini kontrol eder. Düşük sıcaklık daha muhafazakâr yanıtlar üretirken, yüksek sıcaklık daha yaratıcı ve çeşitli yanıtlar verir.`,
       topP: 'Top P',
       topPMessage: 'Top P gereklidir',
       topPTip:
@@ -795,28 +898,28 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       answerTitle: 'C',
       multiTurn: 'Çok turlu optimizasyon',
       multiTurnTip:
-        'Bu, çok turlu konuşmada bağlamı kullanarak kullanıcı sorgularını optimize eder.',
+        'Bu, çok turlu konuşmada bağlamı kullanarak kullanıcı sorgularını optimize eder. Etkinleştirildiğinde ek LLM tokenları tüketecektir.',
       howUseId: 'Sohbet kimliği nasıl kullanılır?',
       description: 'Asistan açıklaması',
       descriptionPlaceholder: 'Ben bir sohbet asistanıyım.',
       useKnowledgeGraph: 'Bilgi grafiği kullan',
       useKnowledgeGraphTip:
-        'Çok adımlı soru-cevap için alım sırasında bilgi grafikleri kullanılsın mı.',
+        'Çok adımlı soru-cevap için alım sırasında belirtilen dataset(lerdeki) bilgi grafikleri kullanılsın mı. Etkinleştirildiğinde varlık, ilişki ve topluluk raporu parçaları üzerinde yinelemeli aramalar içererek alım süresini önemli ölçüde artırır.',
       keyword: 'Anahtar kelime analizi',
-      keywordTip: `Kullanıcının sorularını analiz etmek, alaka düzeyi hesaplaması sırasında vurgulanacak anahtar kelimeleri çıkarmak için LLM kullanın.`,
-      languageTip: 'Belirtilen dille cümle yeniden yazmaya izin verir.',
+      keywordTip: `Kullanıcının sorularını analiz etmek, alaka düzeyi hesaplaması sırasında vurgulanacak anahtar kelimeleri çıkarmak için LLM kullanın. Uzun sorgularda iyi çalışır ancak yanıt süresini artırır.`,
+      languageTip: 'Belirtilen dille cümle yeniden yazmaya izin verir veya seçilmezse en son soruyu varsayılan olarak kullanır.',
       avatarHidden: 'Avatarı gizle',
       locale: 'Yerel ayar',
       selectLanguage: 'Dil seçin',
       reasoning: 'Akıl yürütme',
-      reasoningTip: `Soru yanıtlama sırasında bir akıl yürütme iş akışı etkinleştirilsin mi.`,
+      reasoningTip: `Deepseek-R1 veya OpenAI o1 gibi modellerde görüldüğü şekilde soru yanıtlama sırasında bir akıl yürütme iş akışı etkinleştirilsin mi. Etkinleştirildiğinde, model harici bilgiye erişebilir ve karmaşık soruları düşünce zinciri akıl yürütmesi gibi tekniklerden yararlanarak adım adım ele alabilir. Bu yaklaşım, problemleri yönetilebilir adımlara bölerek modelin doğru yanıtlar sağlama yeteneğini artırır.`,
       tavilyApiKeyTip:
         'Burada bir API anahtarı doğru şekilde ayarlanırsa, Tavily tabanlı web aramaları dataset alımını desteklemek için kullanılacaktır.',
       tavilyApiKeyMessage: 'Lütfen Tavily API Anahtarınızı girin',
       tavilyApiKeyHelp: 'Nasıl alınır?',
       crossLanguage: 'Çapraz dil araması',
       crossLanguagePlaceholder: 'Değer seçin',
-      crossLanguageTip: `Çapraz dil araması için bir veya daha fazla dil seçin.`,
+      crossLanguageTip: `Çapraz dil araması için bir veya daha fazla dil seçin. Hiçbir dil seçilmezse sistem orijinal sorguyla arama yapar.`,
       createChat: 'Sohbet oluştur',
       metadata: 'Meta veri',
       metadataTip:
@@ -833,7 +936,7 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       cancel: 'İptal',
       chatSetting: 'Sohbet ayarı',
       tocEnhance: 'SayfaDizini',
-      tocEnhanceTip: `Belgenin ayrıştırılması sırasında içindekiler tablosu bilgisi oluşturuldu.`,
+      tocEnhanceTip: ` Belgenin ayrıştırılması sırasında içindekiler tablosu bilgisi oluşturuldu (Genel yöntemindeki 'İçindekiler Tablosu Çıkarmayı Etkinleştir' seçeneğine bakın). Bu, büyük modelin kullanıcının sorgusuyla ilgili içindekiler öğelerini döndürmesine olanak tanır, böylece bu öğeleri kullanarak ilgili parçaları alır ve sıralama işleminde bu parçalara ağırlık uygular. Bu yaklaşım, kitaplarda insan bilgi arama davranışını taklit eder.`,
       batchDeleteSessions: 'Toplu sil',
       deleteSelectedConfirm: 'Seçilen {{count}} oturum(lar) silinsin mi?',
     },
@@ -852,7 +955,7 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       awsRoleArn: 'AWS Rol ARN',
       awsRoleArnMessage: 'Lütfen AWS Rol ARN girin',
       awsAssumeRoleTip:
-        'Bu modu seçerseniz, Amazon EC2 örneği AWS hizmetlerine erişmek için mevcut rolünü üstlenir.',
+        'Bu modu seçerseniz, Amazon EC2 örneği AWS hizmetlerine erişmek için mevcut rolünü üstlenir. Ek kimlik bilgisi gerekmez.',
       modelEmptyTip: 'Model yok. <br>Lütfen sağdaki panelden model ekleyin.',
       sourceEmptyTip:
         'Henüz veri kaynağı eklenmedi. Bağlanmak için aşağıdan birini seçin.',
@@ -905,7 +1008,7 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       webdavRemotePathTip:
         'İsteğe bağlı: WebDAV sunucusunda bir klasör yolu belirtin.',
       google_driveTokenTip:
-        "OAuth yardımcısından veya Google Cloud Console'dan oluşturulan OAuth token JSON'ını yükleyin.",
+        'OAuth yardımcısından veya Google Cloud Console\'dan oluşturulan OAuth token JSON\'unu yükleyin. "installed" veya "web" uygulamasından bir client_secret JSON da yükleyebilirsiniz. Bu ilk senkronizasyonunuzsa, OAuth onayını tamamlamak için bir tarayıcı penceresi açılacaktır. JSON zaten bir yenileme token\'ı içeriyorsa otomatik olarak yeniden kullanılacaktır.',
       google_drivePrimaryAdminTip:
         'Senkronize edilen Drive içeriğine erişimi olan e-posta adresi',
       zendeskDescription:
@@ -915,8 +1018,8 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       google_driveSharedFoldersTip:
         'Taranacak Google Drive klasör bağlantıları (virgülle ayrılmış).',
       gmailPrimaryAdminTip:
-        'Gmail / Workspace erişimi olan birincil yönetici e-postası.',
-      gmailTokenTip: "Google Console'dan oluşturulan OAuth JSON'ını yükleyin.",
+        'Gmail / Workspace erişimi olan birincil yönetici e-postası, alan kullanıcılarını listeleme ve varsayılan senkronizasyon hesabı olarak kullanılır.',
+      gmailTokenTip: "Google Console'dan oluşturulan OAuth JSON'ını yükleyin. Yalnızca istemci kimlik bilgilerini içeriyorsa, uzun ömürlü yenileme tokenları oluşturmak için tarayıcı tabanlı doğrulamayı bir kez çalıştırın.",
       dropboxDescription:
         "Seçilen bir hesaptan dosya ve klasörleri senkronize etmek için Dropbox'ınızı bağlayın.",
       bitbucketDescription:
@@ -942,11 +1045,12 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       imapDescription:
         'Bilgi alımı için e-postaları senkronize etmek üzere IMAP posta kutunuza bağlanın.',
       dropboxAccessTokenTip:
-        "Dropbox Uygulama Konsolu'nda uzun ömürlü erişim token'ı oluşturun.",
+        'Dropbox Uygulama Konsolunda files.metadata.read, files.content.read ve sharing.read kapsamlarıyla uzun ömürlü erişim token\'ı oluşturun.',
       moodleDescription:
         "Ders içeriği, forumlar ve kaynakları senkronize etmek için Moodle LMS'nize bağlanın.",
-      moodleUrlTip: "Moodle örneğinizin temel URL'si.",
-      moodleTokenTip: "Moodle'da bir web servisi token'ı oluşturun.",
+      moodleUrlTip: 'Moodle örneğinizin temel URL\'si (örn. https://moodle.university.edu). /webservice veya /login eklemeyin.',
+      moodleTokenTip:
+        'Moodle\'da bir web servisi token\'ı oluşturun: Site yönetimi → Sunucu → Web servisleri → Tokenları yönet bölümüne gidin. Kullanıcı senkronize etmek istediğiniz kurslara kayıtlı olmalıdır.',
       seafileDescription:
         'SeaFile sunucunuza bağlanarak kitaplıklarınızdaki dosya ve belgeleri senkronize edin.',
       seafileUrlTip: "Protokol dahil SeaFile sunucunuzun tam URL'si.",
@@ -963,18 +1067,25 @@ Yukarısı özetlemeniz gereken içeriktir.`,
         "Hesap API Token'ı veya Kitaplık Token'ı sağlayın",
       seafileValidationLibraryIdRequired: 'Kitaplık Kimliği gereklidir',
       seafileValidationDirectoryPathRequired: 'Dizin Yolu gereklidir',
-      seafileSyncScopeTip: 'Senkronize edilecekleri kontrol eder.',
-      seafileTokenTip: "Hesap düzeyinde SeaFile API token'ınız.",
+      seafileSyncScopeTip:
+        'Nelerin senkronize edileceğini kontrol eder: ' +
+        '(1) Tüm Hesap - Token\'larınızın erişebildiği tüm kitaplıkları senkronize eder. Hesap API Token\'ı gerektirir. ' +
+        '(2) Tek Kitaplık - Belirli bir kitaplıktaki tüm dosyaları senkronize eder. Kitaplık Kimliği ve Hesap API Token\'ı veya Kitaplık API Token\'ı gerektirir. ' +
+        '(3) Belirli Dizin - Bir kitaplık içindeki belirli bir klasördeki dosyaları senkronize eder. Kitaplık Kimliği, klasör yolu ve kimlik doğrulama token\'ı gerektirir.',
+      seafileTokenTip: 'Hesap düzeyinde SeaFile API token\'ınız. ' +
+        'Hesabınıza görünür tüm kitaplıklara erişim sağlar. ' +
+        'Senkronizasyon kapsamı "Tüm Hesap" olduğunda gereklidir. ' +
+        '"Tek Kitaplık" veya "Belirli Dizin" için bu token\'ı veya Kitaplık API Token\'ını kullanabilirsiniz.',
       seafileRepoTokenTip:
-        "Yalnızca bir kitaplığa erişim sağlayan kitaplık kapsamlı API token'ı.",
+        'Yalnızca bir kitaplığa erişim sağlayan kitaplık kapsamındaki API token. "Tek Kitaplık" ve "Belirli Dizin" senkronizasyon kapsamları için Hesap API Token yerine kullanılabilir.',
       seafileRepoIdTip:
-        'Senkronize etmek istediğiniz SeaFile kitaplığının benzersiz tanımlayıcısı (UUID).',
+        'Senkronize etmek istediğiniz SeaFile kitaplığının benzersiz tanımlayıcısı (UUID). SeaFile web arayüzünde kitaplığı açtığınızda tarayıcı adres çubuğunuzda bulabilirsiniz. Örnek: 7a9e1b3c-4d5f-6a7b-8c9d-0e1f2a3b4c5d. Senkronizasyon kapsamı "Tek Kitaplık" veya "Belirli Dizin" olduğunda gereklidir.',
       seafileSyncPathTip:
-        'Kitaplık içinde senkronize edilecek klasörün mutlak yolu.',
+        'Yukarıdaki Kitaplık Kimliği ile belirtilen kitaplık içinde senkronize edilecek klasörün mutlak yolu. Eğik çizgi ile başlamalıdır. Bu yol altındaki tüm dosyalar ve alt klasörler özyinelemeli olarak dahil edilecektir. Örnek: /Belgeler/Raporlar. Önemli: Klasör belirtilen kitaplık içinde bulunmalıdır. Yalnızca senkronizasyon kapsamı "Belirli Dizin" olduğunda kullanılır.',
       seafileIncludeSharedTip:
-        'Etkinleştirildiğinde, diğer kullanıcıların sizinle paylaştığı kitaplıklar senkronizasyona dahil edilir.',
+        'Etkinleştirildiğinde, diğer kullanıcıların sizinle paylaştığı kitaplıklar senkronizasyona dahil edilir. Devre dışı bırakıldığında yalnızca hesabınıza ait kitaplıklar senkronize edilir. Yalnızca senkronizasyon kapsamı "Tüm Hesap" olduğunda geçerlidir.',
       seafileBatchSizeTip:
-        'Senkronizasyon sırasında parti başına işlenen ve döndürülen belge sayısı.',
+        'Senkronizasyon sırasında parti başına işlenen ve döndürülen belge sayısı. Daha küçük bir değer daha az bellek kullanır ancak genel olarak daha yavaş olabilir. Varsayılan: 100.',
       jiraDescription:
         'Sorunları, yorumları ve ekleri senkronize etmek için Jira çalışma alanınızı bağlayın.',
       jiraBaseUrlTip: "Jira sitenizin temel URL'si.",
@@ -1089,21 +1200,21 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       modify: 'Değiştir',
       systemModelSettings: 'Varsayılan modelleri ayarla',
       chatModel: 'LLM',
-      chatModelTip: 'The default LLM for each newly created dataset.',
+      chatModelTip: 'Her yeni oluşturulan dataset için varsayılan LLM.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+        'Her yeni oluşturulan dataset için varsayılan embedding model. Açılır listede bir embedding model bulamıyorsanız, RAGFlow slim sürümünü (embedding modeller içermez) kullanıp kullanmadığınızı kontrol edin veya model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için https://ragflow.io/docs/dev/supported_models adresine bakın.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+        'Her yeni oluşturulan dataset için varsayılan VLM. Bir resmi veya videoyu tanımlar. Açılır listede bir model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için https://ragflow.io/docs/dev/supported_models adresine bakın.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
-        'The default ASR model for each newly created dataset. Use this model to translate voices to corresponding text.',
+        'Her yeni oluşturulan dataset için varsayılan ASR modeli. Bu modeli sesleri ilgili metne dönüştürmek için kullanın.',
       rerankModel: 'Rerank',
-      rerankModelTip: `The default rerank model for reranking chunks. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.`,
+      rerankModelTip: `Parçaları yeniden sıralamak için varsayılan yeniden sıralama modeli. Açılır listede bir model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için https://ragflow.io/docs/dev/supported_models adresine bakın.`,
       ttsModel: 'TTS',
       ttsModelTip:
-        'The default text-to-speech model. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+        'Varsayılan metin-konuşma dönüştürme modeli. Açılır listede bir model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için https://ragflow.io/docs/dev/supported_models adresine bakın.',
       workspace: 'çalışma alanı',
       upgrade: 'Yükselt',
       addLlmTitle: 'LLM Ekle',

@@ -84,6 +84,10 @@ sql_command: login_user
            | list_user_chats
            | create_user_chat
            | drop_user_chat
+           | create_index
+           | drop_index
+           | create_doc_meta_index
+           | drop_doc_meta_index
            | list_user_model_providers
            | list_user_default_models
            | parse_dataset_docs
@@ -91,6 +95,8 @@ sql_command: login_user
            | parse_dataset_async
            | import_docs_into_dataset
            | search_on_datasets
+           | get_chunk
+           | list_chunks
            | create_chat_session
            | drop_chat_session
            | list_chat_sessions
@@ -164,6 +170,7 @@ DEFAULT: "DEFAULT"i
 CHATS: "CHATS"i
 CHAT: "CHAT"i
 FILES: "FILES"i
+DOCUMENT: "DOCUMENT"i
 DOCUMENTS: "DOCUMENTS"i
 METADATA: "METADATA"i
 SUMMARY: "SUMMARY"i
@@ -173,6 +180,7 @@ IMPORT: "IMPORT"i
 INTO: "INTO"i
 IN: "IN"i
 WITH: "WITH"i
+VECTOR_SIZE: "VECTOR_SIZE"i
 PARSER: "PARSER"i
 PIPELINE: "PIPELINE"i
 SEARCH: "SEARCH"i
@@ -194,6 +202,15 @@ FINGERPRINT: "FINGERPRINT"i
 LICENSE: "LICENSE"i
 CHECK: "CHECK"i
 CONFIG: "CONFIG"i
+INDEX: "INDEX"i
+DOC_META: "DOC_META"i
+CHUNK: "CHUNK"i
+CHUNKS: "CHUNKS"i
+GET: "GET"i
+PAGE: "PAGE"i
+SIZE: "SIZE"i
+KEYWORDS: "KEYWORDS"i
+AVAILABLE: "AVAILABLE"i
 
 login_user: LOGIN USER quoted_string ";"
 list_services: LIST SERVICES ";"
@@ -313,6 +330,10 @@ list_user_agents: LIST AGENTS ";"
 list_user_chats: LIST CHATS ";"
 create_user_chat: CREATE CHAT quoted_string ";"
 drop_user_chat: DROP CHAT quoted_string ";"
+create_index: CREATE INDEX FOR DATASET quoted_string VECTOR_SIZE NUMBER ";"
+drop_index: DROP INDEX FOR DATASET quoted_string ";"
+create_doc_meta_index: CREATE INDEX DOC_META ";"
+drop_doc_meta_index: DROP INDEX DOC_META ";"
 create_chat_session: CREATE CHAT quoted_string SESSION ";"
 drop_chat_session: DROP CHAT quoted_string SESSION quoted_string ";"
 list_chat_sessions: LIST CHAT quoted_string SESSIONS ";"
@@ -321,6 +342,8 @@ list_user_model_providers: LIST MODEL PROVIDERS ";"
 list_user_default_models: LIST DEFAULT MODELS ";"
 import_docs_into_dataset: IMPORT quoted_string INTO DATASET quoted_string ";"
 search_on_datasets: SEARCH quoted_string ON DATASETS quoted_string ";"
+get_chunk: GET CHUNK quoted_string ";"
+list_chunks: LIST CHUNKS OF DOCUMENT quoted_string ("PAGE" NUMBER)? ("SIZE" NUMBER)? ("KEYWORDS" quoted_string)? ("AVAILABLE" NUMBER)? ";"
 
 parse_dataset_docs: PARSE quoted_string OF DATASET quoted_string ";"
 parse_dataset_sync: PARSE DATASET quoted_string SYNC ";"
@@ -638,6 +661,31 @@ class RAGFlowCLITransformer(Transformer):
         chat_name = items[2].children[0].strip("'\"")
         return {"type": "drop_user_chat", "chat_name": chat_name}
 
+    def create_index(self, items):
+        # items: CREATE, INDEX, FOR, DATASET, quoted_string, VECTOR_SIZE, NUMBER, ";"
+        dataset_name = None
+        vector_size = None
+        for i, item in enumerate(items):
+            if hasattr(item, 'data') and item.data == 'quoted_string':
+                dataset_name = item.children[0].strip("'\"")
+            if hasattr(item, 'type') and item.type == 'NUMBER':
+                if i > 0 and items[i-1].type == 'VECTOR_SIZE':
+                    vector_size = int(item)
+        return {"type": "create_index", "dataset_name": dataset_name, "vector_size": vector_size}
+
+    def drop_index(self, items):
+        dataset_name = None
+        for item in items:
+            if hasattr(item, 'data') and item.data == 'quoted_string':
+                dataset_name = item.children[0].strip("'\"")
+        return {"type": "drop_index", "dataset_name": dataset_name}
+
+    def create_doc_meta_index(self, items):
+        return {"type": "create_doc_meta_index"}
+
+    def drop_doc_meta_index(self, items):
+        return {"type": "drop_doc_meta_index"}
+
     def list_user_model_providers(self, items):
         return {"type": "list_user_model_providers"}
 
@@ -697,6 +745,28 @@ class RAGFlowCLITransformer(Transformer):
             datasets = datasets[0]
             datasets = datasets.split(" ")
         return {"type": "search_on_datasets", "datasets": datasets, "question": question}
+
+    def get_chunk(self, items):
+        chunk_id = items[2].children[0].strip("'\"")
+        return {"type": "get_chunk", "chunk_id": chunk_id}
+
+    def list_chunks(self, items):
+        doc_id = items[4].children[0].strip("'\"")
+        result = {"type": "list_chunks", "doc_id": doc_id}
+
+        # Parse optional parameters: PAGE, SIZE, KEYWORDS, AVAILABLE
+        # items structure varies based on which params are present
+        for i, item in enumerate(items):
+            if str(item) == "PAGE":
+                result["page"] = int(items[i + 1])
+            elif str(item) == "SIZE":
+                result["size"] = int(items[i + 1])
+            elif str(item) == "KEYWORDS":
+                result["keywords"] = items[i + 1].children[0].strip("'\"")
+            elif str(item) == "AVAILABLE":
+                result["available_int"] = int(items[i + 1])
+
+        return result
 
     def benchmark(self, items):
         concurrency: int = int(items[1])

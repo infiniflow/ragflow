@@ -161,15 +161,14 @@ export default {
     `${ExternalApi}${api_host}/chatbots/${id}/info`,
 
   // file manager
-  listFile: `${api_host}/file/list`,
-  uploadFile: `${api_host}/file/upload`,
-  removeFile: `${api_host}/file/rm`,
-  renameFile: `${api_host}/file/rename`,
-  getAllParentFolder: `${api_host}/file/all_parent_folder`,
-  createFolder: `${api_host}/file/create`,
+  listFile: `${ExternalApi}${api_host}/files`,
+  uploadFile: `${ExternalApi}${api_host}/files`,
+  removeFile: `${ExternalApi}${api_host}/files`,
+  getAllParentFolder: `${ExternalApi}${api_host}/files`,
+  createFolder: `${ExternalApi}${api_host}/files`,
   connectFileToKnowledge: `${api_host}/file2document/convert`,
-  getFile: `${api_host}/file/get`,
-  moveFile: `${api_host}/file/mv`,
+  getFile: `${ExternalApi}${api_host}/files`,
+  moveFile: `${ExternalApi}${api_host}/files/move`,
 
   // system
   getSystemVersion: `${api_host}/system/version`,
@@ -238,12 +237,15 @@ export default {
   testMcpServer: `${api_host}/mcp_server/test_mcp`,
 
   // next-search
-  createSearch: `${api_host}/search/create`,
-  getSearchList: `${api_host}/search/list`,
-  deleteSearch: `${api_host}/search/rm`,
-  getSearchDetail: `${api_host}/search/detail`,
+  createSearch: `${ExternalApi}${api_host}/searches`,
+  getSearchList: `${ExternalApi}${api_host}/searches`,
+  deleteSearch: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
+  getSearchDetail: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
   getSearchDetailShare: `${ExternalApi}${api_host}/searchbots/detail`,
-  updateSearchSetting: `${api_host}/search/update`,
+  updateSearchSetting: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
   askShare: `${ExternalApi}${api_host}/searchbots/ask`,
   mindmapShare: `${ExternalApi}${api_host}/searchbots/mindmap`,
   getRelatedQuestionsShare: `${ExternalApi}${api_host}/searchbots/related_questions`,
