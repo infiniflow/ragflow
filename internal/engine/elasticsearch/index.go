@@ -27,7 +27,14 @@ import (
 )
 
 // CreateIndex creates an index
-func (e *elasticsearchEngine) CreateIndex(ctx context.Context, indexName string, mapping interface{}) error {
+func (e *elasticsearchEngine) CreateIndex(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error {
+	// Elasticsearch doesn't support vector_size or parser_id in the same way
+	// Build mapping for ES (if needed)
+	// TODO
+	mapping := map[string]interface{}{
+		"dataset_id": datasetID,
+	}
+
 	if indexName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
@@ -44,15 +51,11 @@ func (e *elasticsearchEngine) CreateIndex(ctx context.Context, indexName string,
 	// Prepare request body
 	var body io.Reader
 	if mapping != nil {
-		if str, ok := mapping.(string); ok {
-			body = bytes.NewBufferString(str)
-		} else {
-			data, err := json.Marshal(mapping)
-			if err != nil {
-				return fmt.Errorf("failed to marshal mapping: %w", err)
-			}
-			body = bytes.NewReader(data)
+		data, err := json.Marshal(mapping)
+		if err != nil {
+			return fmt.Errorf("failed to marshal mapping: %w", err)
 		}
+		body = bytes.NewReader(data)
 	}
 
 	// Create index
@@ -141,4 +144,10 @@ func (e *elasticsearchEngine) IndexExists(ctx context.Context, indexName string)
 	}
 
 	return false, fmt.Errorf("elasticsearch returned error: %s", res.Status())
+}
+
+// CreateDocMetaIndex creates the document metadata index
+func (e *elasticsearchEngine) CreateDocMetaIndex(ctx context.Context, indexName string) error {
+	// TODO
+	return nil
 }
