@@ -17,10 +17,12 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/model"
 	"ragflow/internal/utility"
 	"strings"
@@ -36,6 +38,7 @@ type KnowledgebaseService struct {
 	userDAO       *dao.UserDAO
 	tenantDAO     *dao.TenantDAO
 	connectorDAO  *dao.ConnectorDAO
+	docEngine     engine.DocEngine
 }
 
 // NewKnowledgebaseService creates a new knowledge base service
@@ -46,6 +49,7 @@ func NewKnowledgebaseService() *KnowledgebaseService {
 		userDAO:       dao.NewUserDAO(),
 		tenantDAO:     dao.NewTenantDAO(),
 		connectorDAO:  dao.NewConnectorDAO(),
+		docEngine:    engine.Get(),
 	}
 }
 
@@ -184,6 +188,71 @@ func (s *KnowledgebaseService) CreateKB(req *CreateKBRequest, tenantID string) (
 	}
 
 	return &CreateKBResponse{KBID: kbID}, common.CodeSuccess, nil
+}
+
+// CreateIndexRequest represents the request for creating an index
+type CreateIndexRequest struct {
+	KBID       string `json:"kb_id" binding:"required"`
+	VectorSize int    `json:"vector_size" binding:"required"`
+	ParserID   string `json:"parser_id,omitempty"`
+}
+
+// CreateIndexResponse represents the response for creating an index
+type CreateIndexResponse struct {
+	KBID       string `json:"kb_id"`
+	IndexName  string `json:"index_name"`
+	VectorSize int    `json:"vector_size"`
+}
+
+// CreateIndex creates an index in the document engine for a knowledge base
+func (s *KnowledgebaseService) CreateIndex(req *CreateIndexRequest) (*CreateIndexResponse, common.ErrorCode, error) {
+	// Get KB to find tenant_id for building index name
+	kb, err := s.kbDAO.GetByID(req.KBID)
+	if err != nil {
+		return nil, common.CodeDataError, fmt.Errorf("knowledge base not found: %s", req.KBID)
+	}
+
+	// vector_size is required
+	vecSize := req.VectorSize
+	if vecSize <= 0 {
+		return nil, common.CodeDataError, fmt.Errorf("vector_size must be positive")
+	}
+
+	// Build index name prefix: ragflow_<tenant_id>
+	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+
+	// Call document engine to create index
+	// Full table name will be built as "{indexName}_{kb_id}"
+	err = s.docEngine.CreateIndex(context.Background(), indexName, req.KBID, vecSize, req.ParserID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to create index: %w", err)
+	}
+
+	return &CreateIndexResponse{
+		KBID:       req.KBID,
+		IndexName:  indexName,
+		VectorSize: vecSize,
+	}, common.CodeSuccess, nil
+}
+
+// DeleteIndex deletes the index in the document engine for a knowledge base
+func (s *KnowledgebaseService) DeleteIndex(kbID string) (common.ErrorCode, error) {
+	// Get KB to find tenant_id for building index name
+	kb, err := s.kbDAO.GetByID(kbID)
+	if err != nil {
+		return common.CodeDataError, fmt.Errorf("knowledge base not found: %s", kbID)
+	}
+
+	// Build index name: ragflow_<tenant_id>_<kb_id>
+	indexName := fmt.Sprintf("ragflow_%s_%s", kb.TenantID, kbID)
+
+	// Call document engine to delete index
+	err = s.docEngine.DeleteIndex(context.Background(), indexName)
+	if err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to delete index: %w", err)
+	}
+
+	return common.CodeSuccess, nil
 }
 
 // UpdateKB updates an existing knowledge base

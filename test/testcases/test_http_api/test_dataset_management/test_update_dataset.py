@@ -118,7 +118,7 @@ class TestDatasetUpdate:
     def test_dataset_id_wrong_uuid(self, HttpApiAuth):
         payload = {"name": "wrong uuid"}
         res = update_dataset(HttpApiAuth, "d94a8dc02c9711f0930f7fbc369eab6d", payload)
-        assert res["code"] == 108, res
+        assert res["code"] == 102, res
         assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p1

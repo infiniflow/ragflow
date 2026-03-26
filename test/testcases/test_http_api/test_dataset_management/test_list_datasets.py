@@ -331,7 +331,7 @@ class TestDatasetsList:
         else:
             params = {"id": dataset_id, "name": name}
         res = list_datasets(HttpApiAuth, params)
-        assert res["code"] == 108, res
+        assert res["code"] == 102, res
         assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p3

@@ -52,16 +52,6 @@ func (dao *UserDAO) GetByTenantID(tenantID string) (*model.User, error) {
 	return &user, nil
 }
 
-// GetByUsername get user by username
-func (dao *UserDAO) GetByUsername(username string) (*model.User, error) {
-	var user model.User
-	err := DB.Where("username = ?", username).First(&user).Error
-	if err != nil {
-		return nil, err
-	}
-	return &user, nil
-}
-
 // GetByEmail get user by email
 func (dao *UserDAO) GetByEmail(email string) (*model.User, error) {
 	var user model.User
