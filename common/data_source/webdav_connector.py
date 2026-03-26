@@ -8,6 +8,7 @@ from webdav4.client import Client as WebDAVClient
 
 from common.data_source.utils import (
     get_file_ext,
+    is_accepted_file_ext,
 )
 from common.data_source.config import DocumentSource, INDEX_BATCH_SIZE, BLOB_STORAGE_SIZE_THRESHOLD
 from common.data_source.exceptions import (
@@ -16,7 +17,7 @@ from common.data_source.exceptions import (
     CredentialExpiredError,
     InsufficientPermissionsError
 )
-from common.data_source.interfaces import LoadConnector, PollConnector
+from common.data_source.interfaces import LoadConnector, OnyxExtensionType, PollConnector
 from common.data_source.models import Document, SecondsSinceUnixEpoch, GenerateDocumentsOutput
 
 
@@ -48,6 +49,16 @@ class WebDAVConnector(LoadConnector, PollConnector):
         self.client: Optional[WebDAVClient] = None
         self._allow_images: bool | None = None
         self.size_threshold: int | None = BLOB_STORAGE_SIZE_THRESHOLD
+
+    def _build_extension_type(self) -> OnyxExtensionType:
+        extension_type = OnyxExtensionType.Plain | OnyxExtensionType.Document
+        if bool(self._allow_images):
+            extension_type |= OnyxExtensionType.Multimedia
+        return extension_type
+
+    def _is_supported_file(self, file_name: str) -> bool:
+        file_ext = get_file_ext(file_name)
+        return is_accepted_file_ext(file_ext, self._build_extension_type())
 
     def set_allow_images(self, allow_images: bool) -> None:
         """Set whether to process images"""
@@ -129,6 +140,11 @@ class WebDAVConnector(LoadConnector, PollConnector):
                         continue
                 else:
                     try:
+                        file_name = os.path.basename(item_path)
+                        if not self._is_supported_file(file_name):
+                            logging.debug(f"Skipping file {item_path} due to unsupported extension.")
+                            continue
+
                         modified_time = item.get('modified')
                         if modified_time:
                             if isinstance(modified_time, datetime):
@@ -194,6 +210,10 @@ class WebDAVConnector(LoadConnector, PollConnector):
         batch: list[Document] = []
         for file_path, file_info in files:
             file_name = os.path.basename(file_path)
+
+            if not self._is_supported_file(file_name):
+                logging.debug(f"Skipping file {file_path} due to unsupported extension.")
+                continue
             
             size_bytes = file_info.get('size', 0)
             if (
