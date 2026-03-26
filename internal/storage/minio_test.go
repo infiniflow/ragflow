@@ -19,6 +19,7 @@ package storage
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"os"
 	"ragflow/internal/utility"
 	"testing"
@@ -33,12 +34,13 @@ func getMinioConfig() (*server.MinioConfig, error) {
 
 	// Initialize configuration
 	if err := server.Init(""); err != nil {
-
 		return nil, err
 	}
 
 	// Try to get configuration from environment variables first
 	config := server.GetConfig().StorageEngine.Minio
+
+	log.Printf("MinioConfig: %+v", config)
 	return config, nil
 }
 
