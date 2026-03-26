@@ -44,38 +44,40 @@ class _AwaitableValue:
 
 
 class _DummyKB:
-    def __init__(self, embd_id="embd@factory", chunk_num=1, tenant_embd_id=1):
+    def __init__(self, kid="kb-1", embd_id="embd@factory", chunk_num=1, name="Dataset A", status="1"):
+        self.id = kid
         self.embd_id = embd_id
         self.chunk_num = chunk_num
-        self.tenant_embd_id = tenant_embd_id
-
-    def to_json(self):
-        return {"id": "kb-1"}
+        self.name = name
+        self.status = status
 
 
 class _DummyDialogRecord:
-    def __init__(self):
-        self._data = {
+    def __init__(self, data=None):
+        self._data = data or {
             "id": "chat-1",
             "name": "chat-name",
+            "description": "desc",
+            "icon": "icon.png",
+            "kb_ids": ["kb-1"],
+            "llm_id": "glm-4",
+            "llm_setting": {"temperature": 0.1},
             "prompt_config": {
                 "system": "Answer with {knowledge}",
                 "parameters": [{"key": "knowledge", "optional": False}],
                 "prologue": "hello",
                 "quote": True,
             },
-            "llm_setting": {"temperature": 0.1},
-            "llm_id": "glm-4",
             "similarity_threshold": 0.2,
             "vector_similarity_weight": 0.3,
             "top_n": 6,
-            "rerank_id": "",
             "top_k": 1024,
-            "kb_ids": ["kb-1"],
-            "icon": "icon.png",
+            "rerank_id": "",
+            "meta_data_filter": {},
+            "tenant_id": "tenant-1",
         }
 
-    def to_json(self):
+    def to_dict(self):
         return deepcopy(self._data)
 
 
@@ -85,47 +87,15 @@ def _run(coro):
 
 def _load_chat_module(monkeypatch):
     repo_root = Path(__file__).resolve().parents[4]
+    module_name = "test_chat_restful_routes_unit_module"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "chat_api.py"
 
-    common_pkg = ModuleType("common")
-    common_pkg.__path__ = [str(repo_root / "common")]
-    monkeypatch.setitem(sys.modules, "common", common_pkg)
-
-    deepdoc_pkg = ModuleType("deepdoc")
-    deepdoc_parser_pkg = ModuleType("deepdoc.parser")
-    deepdoc_parser_pkg.__path__ = []
-
-    class _StubPdfParser:
-        pass
-
-    class _StubExcelParser:
-        pass
-
-    class _StubDocxParser:
-        pass
-
-    deepdoc_parser_pkg.PdfParser = _StubPdfParser
-    deepdoc_parser_pkg.ExcelParser = _StubExcelParser
-    deepdoc_parser_pkg.DocxParser = _StubDocxParser
-    deepdoc_pkg.parser = deepdoc_parser_pkg
-    monkeypatch.setitem(sys.modules, "deepdoc", deepdoc_pkg)
-    monkeypatch.setitem(sys.modules, "deepdoc.parser", deepdoc_parser_pkg)
-
-    deepdoc_excel_module = ModuleType("deepdoc.parser.excel_parser")
-    deepdoc_excel_module.RAGFlowExcelParser = _StubExcelParser
-    monkeypatch.setitem(sys.modules, "deepdoc.parser.excel_parser", deepdoc_excel_module)
-
-    deepdoc_parser_utils = ModuleType("deepdoc.parser.utils")
-    deepdoc_parser_utils.get_text = lambda *_args, **_kwargs: ""
-    monkeypatch.setitem(sys.modules, "deepdoc.parser.utils", deepdoc_parser_utils)
-    monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
-
-    module_name = "test_chat_sdk_routes_unit_module"
-    module_path = repo_root / "api" / "apps" / "sdk" / "chat.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
     monkeypatch.setitem(sys.modules, module_name, module)
     spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "current_user", SimpleNamespace(id="tenant-1"))
     return module
 
 
@@ -134,227 +104,357 @@ def _set_request_json(monkeypatch, module, payload):
 
 
 @pytest.mark.p2
-def test_create_internal_failure_paths(monkeypatch):
+def test_create_chat_uses_direct_chat_fields(monkeypatch):
     module = _load_chat_module(monkeypatch)
-
-    _set_request_json(monkeypatch, module, {"name": "chat-a", "dataset_ids": ["kb-1", "kb-2"]})
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb")])
-    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB(chunk_num=1)])
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_ids", lambda _ids: [_DummyKB(embd_id="embd-a@x"), _DummyKB(embd_id="embd-b@y")])
-    monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda model: (model.split("@")[0], "factory"))
-    res = _run(module.create.__wrapped__("tenant-1"))
-    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
-    assert "different embedding models" in res["message"]
-
-    _set_request_json(monkeypatch, module, {"name": "chat-a", "dataset_ids": []})
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (False, None))
-    res = _run(module.create.__wrapped__("tenant-1"))
-    assert res["message"] == "Tenant not found!"
-
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
-    monkeypatch.setattr(module.DialogService, "save", lambda **_kwargs: False)
-    res = _run(module.create.__wrapped__("tenant-1"))
-    assert res["message"] == "Fail to new a chat!"
-
-    monkeypatch.setattr(module.DialogService, "save", lambda **_kwargs: True)
-    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (False, None))
-    res = _run(module.create.__wrapped__("tenant-1"))
-    assert res["message"] == "Fail to new a chat!"
+    saved = {}
 
     _set_request_json(
         monkeypatch,
         module,
-        {"name": "chat-rerank", "dataset_ids": [], "prompt": {"rerank_model": "unknown-rerank-model"}},
-    )
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
-    rerank_query_calls = []
-
-    def _mock_tenant_llm_query(**kwargs):
-        rerank_query_calls.append(kwargs)
-        return False
-
-    monkeypatch.setattr(module.TenantLLMService, "query", _mock_tenant_llm_query)
-    res = _run(module.create.__wrapped__("tenant-1"))
-    assert "`rerank_model` unknown-rerank-model doesn't exist" in res["message"]
-    assert rerank_query_calls[-1]["model_type"] == "rerank"
-    assert rerank_query_calls[-1]["llm_name"] == "unknown-rerank-model"
-
-    _set_request_json(monkeypatch, module, {"name": "chat-tenant", "dataset_ids": [], "tenant_id": "tenant-forbidden"})
-    res = _run(module.create.__wrapped__("tenant-1"))
-    assert res["message"] == "`tenant_id` must not be provided."
-
-
-@pytest.mark.p2
-def test_update_internal_failure_paths(monkeypatch):
-    module = _load_chat_module(monkeypatch)
-
-    _set_request_json(monkeypatch, module, {"name": "anything"})
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
-    res = _run(module.update.__wrapped__("tenant-1", "chat-1"))
-    assert res["message"] == "You do not own the chat"
-
-    _set_request_json(monkeypatch, module, {"name": "chat-name"})
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (False, None))
-    res = _run(module.update.__wrapped__("tenant-1", "chat-1"))
-    assert res["message"] == "Tenant not found!"
-
-    _set_request_json(monkeypatch, module, {"dataset_ids": ["kb-1", "kb-2"]})
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(id="tenant-1")))
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb")])
-    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB(chunk_num=1)])
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_ids", lambda _ids: [_DummyKB(embd_id="embd-a@x"), _DummyKB(embd_id="embd-b@y")])
-    monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda model: (model.split("@")[0], "factory"))
-    res = _run(module.update.__wrapped__("tenant-1", "chat-1"))
-    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
-    assert "different embedding models" in res["message"]
-
-    _set_request_json(monkeypatch, module, {"avatar": "new-avatar"})
-    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord()))
-    monkeypatch.setattr(module.DialogService, "update_by_id", lambda *_args, **_kwargs: False)
-    res = _run(module.update.__wrapped__("tenant-1", "chat-1"))
-    assert res["message"] == "Chat not found!"
-
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(id="tenant-1")))
-    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord()))
-    monkeypatch.setattr(module.DialogService, "update_by_id", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(
-        module.DialogService,
-        "query",
-        lambda **kwargs: (
-            [SimpleNamespace(id="chat-1")]
-            if kwargs.get("id") == "chat-1"
-            else ([SimpleNamespace(id="dup")] if kwargs.get("name") == "dup-name" else [])
-        ),
-    )
-    monkeypatch.setattr(
-        module.TenantLLMService,
-        "split_model_name_and_factory",
-        lambda model: (model.split("@")[0], "factory"),
-    )
-    monkeypatch.setattr(
-        module.TenantLLMService,
-        "query",
-        lambda **kwargs: kwargs.get("llm_name") in {"glm-4", "allowed-rerank"},
-    )
-
-    _set_request_json(monkeypatch, module, {"show_quotation": True})
-    res = _run(module.update.__wrapped__("tenant-1", "chat-1"))
-    assert res["code"] == 0
-
-    _set_request_json(monkeypatch, module, {"dataset_ids": ["kb-no-owner"]})
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [])
-    res = _run(module.update.__wrapped__("tenant-1", "chat-1"))
-    assert "You don't own the dataset kb-no-owner" in res["message"]
-
-    _set_request_json(monkeypatch, module, {"dataset_ids": ["kb-unparsed"]})
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-unparsed")])
-    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB(chunk_num=0)])
-    res = _run(module.update.__wrapped__("tenant-1", "chat-1"))
-    assert "doesn't own parsed file" in res["message"]
-
-    _set_request_json(monkeypatch, module, {"llm": {"model_name": "unknown-model", "model_type": "unsupported"}})
-    res = _run(module.update.__wrapped__("tenant-1", "chat-1"))
-    assert "`model_name` unknown-model doesn't exist" in res["message"]
-
-    _set_request_json(
-        monkeypatch,
-        module,
-        {"prompt": {"prompt": "No placeholder", "variables": [{"key": "knowledge", "optional": False}], "rerank_model": "unknown-rerank"}},
-    )
-    res = _run(module.update.__wrapped__("tenant-1", "chat-1"))
-    assert "`rerank_model` unknown-rerank doesn't exist" in res["message"]
-
-    _set_request_json(
-        monkeypatch,
-        module,
-        {"prompt": {"prompt": "No placeholder", "variables": [{"key": "knowledge", "optional": False}]}},
-    )
-    res = _run(module.update.__wrapped__("tenant-1", "chat-1"))
-    assert "Parameter 'knowledge' is not used" in res["message"]
-
-    _set_request_json(
-        monkeypatch,
-        module,
-        {"prompt": {"prompt": "Optional-only prompt", "variables": [{"key": "maybe", "optional": True}]}},
-    )
-    res = _run(module.update.__wrapped__("tenant-1", "chat-1"))
-    assert res["code"] == 0
-
-    _set_request_json(monkeypatch, module, {"name": ""})
-    res = _run(module.update.__wrapped__("tenant-1", "chat-1"))
-    assert res["message"] == "`name` cannot be empty."
-
-    _set_request_json(monkeypatch, module, {"name": "dup-name"})
-    res = _run(module.update.__wrapped__("tenant-1", "chat-1"))
-    assert res["message"] == "Duplicated chat name in updating chat."
-
-    _set_request_json(monkeypatch, module, {"llm": {"model_name": "glm-4", "temperature": 0.9}})
-    res = _run(module.update.__wrapped__("tenant-1", "chat-1"))
-    assert res["code"] == 0
-
-
-@pytest.mark.p2
-def test_delete_duplicate_no_success_path(monkeypatch):
-    module = _load_chat_module(monkeypatch)
-
-    _set_request_json(monkeypatch, module, {})
-    monkeypatch.setattr(
-        module.DialogService,
-        "query",
-        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("query must not run for empty delete payload")),
-    )
-    res = _run(module.delete_chats.__wrapped__("tenant-1"))
-    assert res["code"] == module.RetCode.SUCCESS
-
-    _set_request_json(monkeypatch, module, {"ids": ["chat-1", "chat-1"]})
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
-    monkeypatch.setattr(module.DialogService, "update_by_id", lambda *_args, **_kwargs: 0)
-    res = _run(module.delete_chats.__wrapped__("tenant-1"))
-    assert res["code"] == module.RetCode.DATA_ERROR
-    assert "Duplicate assistant ids: chat-1" in res["message"]
-
-    _set_request_json(monkeypatch, module, {"ids": ["missing-chat"]})
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
-    res = _run(module.delete_chats.__wrapped__("tenant-1"))
-    assert res["code"] == module.RetCode.DATA_ERROR
-    assert "Assistant(missing-chat) not found." in res["message"]
-
-    _set_request_json(monkeypatch, module, {"ids": ["chat-1", "chat-1"]})
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
-    monkeypatch.setattr(module.DialogService, "update_by_id", lambda *_args, **_kwargs: 1)
-    res = _run(module.delete_chats.__wrapped__("tenant-1"))
-    assert res["code"] == 0
-    assert res["data"]["success_count"] == 1
-
-
-@pytest.mark.p2
-def test_list_missing_kb_warning_and_desc_false(monkeypatch, caplog):
-    module = _load_chat_module(monkeypatch)
-
-    monkeypatch.setattr(module, "request", SimpleNamespace(args={"desc": "False"}))
-    monkeypatch.setattr(module.DialogService, "get_list", lambda *_args, **_kwargs: [
         {
-            "id": "chat-1",
+            "name": "chat-a",
+            "icon": "icon.png",
+            "dataset_ids": ["kb-1"],
+            "llm_id": "glm-4",
+            "llm_setting": {"temperature": 0.8},
+            "prompt_config": {
+                "system": "Answer with {knowledge}",
+                "parameters": [{"key": "knowledge", "optional": False}],
+                "prologue": "Hi",
+            },
+            "vector_similarity_weight": 0.25,
+        },
+    )
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
+    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
+    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
+    monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda model: (model.split("@")[0], "factory"))
+    monkeypatch.setattr(module.TenantLLMService, "query", lambda **_kwargs: [SimpleNamespace(id="llm-1")])
+
+    def _save(**kwargs):
+        saved.update(kwargs)
+        return True
+
+    monkeypatch.setattr(module.DialogService, "save", _save)
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(saved)))
+
+    res = _run(module.create.__wrapped__())
+
+    assert res["code"] == 0
+    assert saved["kb_ids"] == ["kb-1"]
+    assert saved["prompt_config"]["prologue"] == "Hi"
+    assert saved["llm_id"] == "glm-4"
+    assert saved["llm_setting"]["temperature"] == 0.8
+    assert res["data"]["dataset_ids"] == ["kb-1"]
+    assert res["data"]["kb_names"] == ["Dataset A"]
+    assert "kb_ids" not in res["data"]
+    assert "prompt" not in res["data"]
+    assert "llm" not in res["data"]
+    assert "avatar" not in res["data"]
+
+
+@pytest.mark.p1
+def test_create_chat_accepts_provider_scoped_rerank_id(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    saved = {}
+    query_calls = []
+
+    _set_request_json(
+        monkeypatch,
+        module,
+        {
+            "name": "chat-a",
+            "icon": "icon.png",
+            "dataset_ids": ["kb-1"],
+            "llm_id": "glm-4@ZHIPU-AI",
+            "llm_setting": {"temperature": 0.8},
+            "prompt_config": {
+                "system": "Answer with {knowledge}",
+                "parameters": [{"key": "knowledge", "optional": False}],
+                "prologue": "Hi",
+            },
+            "rerank_id": "custom-reranker@OpenAI",
+            "vector_similarity_weight": 0.25,
+        },
+    )
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4@ZHIPU-AI")))
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
+    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
+    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
+
+    def _split_model_name_and_factory(model_name):
+        return {
+            "glm-4@ZHIPU-AI": ("glm-4", "ZHIPU-AI"),
+            "custom-reranker@OpenAI": ("custom-reranker", "OpenAI"),
+        }.get(model_name, (model_name, None))
+
+    def _query(**kwargs):
+        query_calls.append(kwargs)
+        if kwargs == {
+            "tenant_id": "tenant-1",
+            "llm_name": "glm-4",
+            "llm_factory": "ZHIPU-AI",
+            "model_type": "chat",
+        }:
+            return [SimpleNamespace(id="llm-1")]
+        if kwargs == {
+            "tenant_id": "tenant-1",
+            "llm_name": "custom-reranker",
+            "llm_factory": "OpenAI",
+            "model_type": "rerank",
+        }:
+            return [SimpleNamespace(id="rerank-1")]
+        return []
+
+    monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", _split_model_name_and_factory)
+    monkeypatch.setattr(module.TenantLLMService, "query", _query)
+
+    def _save(**kwargs):
+        saved.update(kwargs)
+        return True
+
+    monkeypatch.setattr(module.DialogService, "save", _save)
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(saved)))
+
+    res = _run(module.create.__wrapped__())
+
+    assert res["code"] == 0
+    assert saved["rerank_id"] == "custom-reranker@OpenAI"
+    assert {
+        "tenant_id": "tenant-1",
+        "llm_name": "custom-reranker",
+        "llm_factory": "OpenAI",
+        "model_type": "rerank",
+    } in query_calls
+
+
+@pytest.mark.p1
+def test_create_chat_allows_default_knowledge_placeholder_without_sources(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    saved = {}
+
+    _set_request_json(monkeypatch, module, {"name": "chat-a"})
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
+    monkeypatch.setattr(module.TenantLLMService, "get_api_key", lambda *_args, **_kwargs: SimpleNamespace(id=1))
+
+    def _save(**kwargs):
+        saved.update(kwargs)
+        return True
+
+    monkeypatch.setattr(module.DialogService, "save", _save)
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(saved)))
+
+    res = _run(module.create.__wrapped__())
+
+    assert res["code"] == 0
+    assert saved["kb_ids"] == []
+    assert saved["prompt_config"]["system"].find("{knowledge}") >= 0
+    assert saved["prompt_config"]["parameters"] == [{"key": "knowledge", "optional": False}]
+
+
+@pytest.mark.p1
+def test_create_chat_uses_tenant_default_llm_when_llm_id_is_null(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    saved = {}
+
+    _set_request_json(
+        monkeypatch,
+        module,
+        {
+            "name": "chat-a",
+            "dataset_ids": ["kb-1"],
+            "llm_id": None,
+            "llm_setting": {"temperature": 0.8},
+            "prompt_config": {
+                "system": "Answer with {knowledge}",
+                "parameters": [{"key": "knowledge", "optional": False}],
+            },
+        },
+    )
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
+    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
+    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
+    monkeypatch.setattr(module.TenantLLMService, "get_api_key", lambda *_args, **_kwargs: SimpleNamespace(id=1))
+
+    def _save(**kwargs):
+        saved.update(kwargs)
+        return True
+
+    monkeypatch.setattr(module.DialogService, "save", _save)
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(saved)))
+
+    res = _run(module.create.__wrapped__())
+
+    assert res["code"] == 0
+    assert saved["llm_id"] == "glm-4"
+    assert saved["llm_setting"]["temperature"] == 0.8
+
+
+@pytest.mark.p2
+def test_patch_chat_merges_prompt_and_llm_settings(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    updated = {}
+    existing = _DummyDialogRecord().to_dict()
+
+    _set_request_json(
+        monkeypatch,
+        module,
+        {
+            "prompt_config": {"prologue": "updated opener"},
+            "llm_setting": {"temperature": 0.9},
+        },
+    )
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(existing)))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+
+    def _update(_chat_id, payload):
+        updated.update(payload)
+        return True
+
+    monkeypatch.setattr(module.DialogService, "update_by_id", _update)
+
+    res = _run(module.patch_chat.__wrapped__("chat-1"))
+
+    assert res["code"] == 0
+    assert updated["prompt_config"]["system"] == "Answer with {knowledge}"
+    assert updated["prompt_config"]["prologue"] == "updated opener"
+    assert updated["llm_setting"]["temperature"] == 0.9
+
+
+@pytest.mark.p2
+def test_patch_chat_drops_response_only_fields_before_update(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    updated = {}
+    existing = _DummyDialogRecord().to_dict()
+    payload = {
+        "name": "renamed-chat",
+        "description": existing["description"],
+        "icon": existing["icon"],
+        "dataset_ids": existing["kb_ids"],
+        "kb_names": ["Dataset A"],
+        "llm_id": existing["llm_id"],
+        "llm_setting": existing["llm_setting"],
+        "prompt_config": existing["prompt_config"],
+        "similarity_threshold": existing["similarity_threshold"],
+        "vector_similarity_weight": existing["vector_similarity_weight"],
+        "top_n": existing["top_n"],
+        "top_k": existing["top_k"],
+        "rerank_id": existing["rerank_id"],
+    }
+
+    _set_request_json(monkeypatch, module, payload)
+    monkeypatch.setattr(
+        module.DialogService,
+        "query",
+        lambda **kwargs: [] if "name" in kwargs else [SimpleNamespace(id="chat-1")],
+    )
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(existing)))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
+    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
+    monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda model: (model.split("@")[0], "factory"))
+    monkeypatch.setattr(module.TenantLLMService, "query", lambda **_kwargs: [SimpleNamespace(id="llm-1")])
+
+    def _update(_chat_id, req):
+        updated.update(req)
+        return True
+
+    monkeypatch.setattr(module.DialogService, "update_by_id", _update)
+
+    res = _run(module.patch_chat.__wrapped__("chat-1"))
+
+    assert res["code"] == 0
+    assert updated["name"] == "renamed-chat"
+    assert "kb_names" not in updated
+
+
+@pytest.mark.p2
+def test_update_chat_rejects_knowledge_placeholder_without_sources(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    existing = _DummyDialogRecord().to_dict()
+
+    _set_request_json(
+        monkeypatch,
+        module,
+        {
             "name": "chat-name",
-            "prompt_config": {"system": "Answer with {knowledge}", "parameters": [{"key": "knowledge", "optional": False}], "do_refer": True},
+            "description": "desc",
+            "icon": "icon.png",
+            "dataset_ids": [],
+            "llm_id": "glm-4",
+            "llm_setting": {"temperature": 0.1},
+            "prompt_config": {
+                "system": "Answer with {knowledge}",
+                "parameters": [{"key": "knowledge", "optional": False}],
+                "prologue": "hello",
+                "quote": True,
+            },
             "similarity_threshold": 0.2,
             "vector_similarity_weight": 0.3,
             "top_n": 6,
+            "top_k": 1024,
             "rerank_id": "",
-            "llm_setting": {"temperature": 0.1},
-            "llm_id": "glm-4",
-            "kb_ids": ["missing-kb"],
-            "icon": "icon.png",
-        }
-    ])
-    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [])
+        },
+    )
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(existing)))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda model: (model.split("@")[0], "factory"))
+    monkeypatch.setattr(module.TenantLLMService, "query", lambda **_kwargs: [SimpleNamespace(id="llm-1")])
 
-    with caplog.at_level("WARNING"):
-        res = module.list_chat.__wrapped__("tenant-1")
+    res = _run(module.update_chat.__wrapped__("chat-1"))
+
+    assert res["code"] == 102
+    assert res["message"] == "Please remove `{knowledge}` in system prompt since no dataset / Tavily used here."
+
+
+@pytest.mark.p2
+def test_list_chats_returns_old_business_fields(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "request",
+        SimpleNamespace(
+            args=SimpleNamespace(
+                get=lambda key, default=None: {
+                    "keywords": "",
+                    "page": 1,
+                    "page_size": 20,
+                    "orderby": "create_time",
+                    "desc": "true",
+                }.get(key, default),
+                getlist=lambda _key: [],
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        module.DialogService,
+        "get_by_tenant_ids",
+        lambda *_args, **_kwargs: (
+            [_DummyDialogRecord().to_dict()],
+            1,
+        ),
+    )
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
+
+    res = module.list_chats.__wrapped__()
 
     assert res["code"] == 0
-    assert res["data"][0]["datasets"] == []
-    assert res["data"][0]["avatar"] == "icon.png"
-    assert "does not exist" in caplog.text
+    chat = res["data"]["chats"][0]
+    assert chat["icon"] == "icon.png"
+    assert chat["dataset_ids"] == ["kb-1"]
+    assert chat["kb_names"] == ["Dataset A"]
+    assert "kb_ids" not in chat
+    assert chat["prompt_config"]["prologue"] == "hello"
+    assert "dataset_names" not in chat
+    assert "prompt" not in chat
+    assert "llm" not in chat
+
+
