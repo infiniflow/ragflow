@@ -72,10 +72,13 @@ type ListOptions struct {
 
 // SearchOptions represents options for search operations
 type SearchOptions struct {
-	Query     string `json:"query"`
-	Limit     int    `json:"limit,omitempty"`
-	Offset    int    `json:"offset,omitempty"`
-	Recursive bool   `json:"recursive,omitempty"`
+	Query     string  `json:"query"`
+	Limit     int     `json:"limit,omitempty"`
+	Offset    int     `json:"offset,omitempty"`
+	Recursive bool    `json:"recursive,omitempty"`
+	TopK      int     `json:"top_k,omitempty"`      // Number of top results to return (default: 10)
+	Threshold float64 `json:"threshold,omitempty"`  // Similarity threshold (default: 0.2)
+	Dirs      []string `json:"dirs,omitempty"`      // List of directories to search in
 }
 
 // Result represents the result of a command execution

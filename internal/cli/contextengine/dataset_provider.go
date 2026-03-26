@@ -346,31 +346,259 @@ func (p *DatasetProvider) deleteDataset(ctx stdctx.Context, name string) error {
 }
 
 func (p *DatasetProvider) searchDatasets(ctx stdctx.Context, opts *SearchOptions) (*Result, error) {
-	// Get all datasets and filter client-side
-	allResult, err := p.listDatasets(ctx, &ListOptions{
-		Limit:  opts.Limit,
-		Offset: opts.Offset,
-	})
-	if err != nil {
-		return nil, err
-	}
-
+	// If no query is provided, just list datasets
 	if opts.Query == "" {
-		return allResult, nil
+		return p.listDatasets(ctx, &ListOptions{
+			Limit:  opts.Limit,
+			Offset: opts.Offset,
+		})
 	}
 
-	queryLower := strings.ToLower(opts.Query)
-	filtered := make([]*Node, 0)
-	for _, node := range allResult.Nodes {
-		if strings.Contains(strings.ToLower(node.Name), queryLower) {
-			filtered = append(filtered, node)
+	// Use retrieval API for semantic search
+	return p.searchWithRetrieval(ctx, opts)
+}
+
+// searchWithRetrieval performs semantic search using the retrieval API
+func (p *DatasetProvider) searchWithRetrieval(ctx stdctx.Context, opts *SearchOptions) (*Result, error) {
+	// Determine kb_ids to search in
+	var kbIDs []string
+	var datasetsToSearch []*Node
+
+	if len(opts.Dirs) > 0 && opts.Dirs[0] != "datasets" {
+		// Search in specific datasets
+		for _, dir := range opts.Dirs {
+			// Extract dataset name from path (e.g., "datasets/kb1" -> "kb1")
+			datasetName := dir
+			if strings.HasPrefix(dir, "datasets/") {
+				datasetName = dir[len("datasets/"):]
+			}
+			ds, err := p.getDataset(ctx, datasetName)
+			if err != nil {
+				// Try case-insensitive match
+				allResult, listErr := p.listDatasets(ctx, nil)
+				if listErr == nil {
+					for _, d := range allResult.Nodes {
+						if strings.EqualFold(d.Name, datasetName) {
+							ds = d
+							err = nil
+							break
+						}
+					}
+				}
+				if err != nil {
+					return nil, fmt.Errorf("dataset not found: %s", datasetName)
+				}
+			}
+			datasetsToSearch = append(datasetsToSearch, ds)
+			kbID := getString(ds.Metadata["id"])
+			if kbID != "" {
+				kbIDs = append(kbIDs, kbID)
+			}
+		}
+	} else {
+		// Search in all datasets
+		allResult, err := p.listDatasets(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		datasetsToSearch = allResult.Nodes
+		for _, ds := range datasetsToSearch {
+			kbID := getString(ds.Metadata["id"])
+			if kbID != "" {
+				kbIDs = append(kbIDs, kbID)
+			}
 		}
 	}
 
+	if len(kbIDs) == 0 {
+		return &Result{
+			Nodes: []*Node{},
+			Total: 0,
+		}, nil
+	}
+
+	// Build kb_id -> dataset name mapping
+	kbIDToName := make(map[string]string)
+	for _, ds := range datasetsToSearch {
+		kbID := getString(ds.Metadata["id"])
+		if kbID != "" && ds.Name != "" {
+			kbIDToName[kbID] = ds.Name
+		}
+	}
+
+	// Build retrieval request
+	payload := map[string]interface{}{
+		"kb_id":    kbIDs,
+		"question": opts.Query,
+	}
+
+	// Set top_k (default to 10 if not specified)
+	topK := opts.TopK
+	if topK <= 0 {
+		topK = 10
+	}
+	payload["top_k"] = topK
+
+	// Set similarity threshold (default to 0.2 if not specified to match UI behavior)
+	threshold := opts.Threshold
+	if threshold <= 0 {
+		threshold = 0.2
+	}
+	payload["similarity_threshold"] = threshold
+
+	// Call retrieval API (useAPIBase=false because the route is /v1/chunk/retrieval_test, not /api/v1/...)
+	resp, err := p.httpClient.Request("POST", "/chunk/retrieval_test", false, "auto", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("retrieval request failed: %w", err)
+	}
+
+	var apiResp struct {
+		Code    int                    `json:"code"`
+		Data    map[string]interface{} `json:"data"`
+		Message string                 `json:"message"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
+		return nil, err
+	}
+
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("API error: %s", apiResp.Message)
+	}
+
+	// Parse chunks from response
+	var nodes []*Node
+	if chunksData, ok := apiResp.Data["chunks"].([]interface{}); ok {
+		for _, chunk := range chunksData {
+			if chunkMap, ok := chunk.(map[string]interface{}); ok {
+				node := p.chunkToNodeWithKBMapping(chunkMap, kbIDToName)
+				nodes = append(nodes, node)
+			}
+		}
+	}
+
+	// Apply top_k limit if specified (API may return more results)
+	if topK > 0 && len(nodes) > topK {
+		nodes = nodes[:topK]
+	}
+
 	return &Result{
-		Nodes: filtered,
-		Total: len(filtered),
+		Nodes: nodes,
+		Total: len(nodes),
 	}, nil
+}
+
+// chunkToNodeWithKBMapping converts a chunk map to a Node with kb_id -> name mapping
+func (p *DatasetProvider) chunkToNodeWithKBMapping(chunk map[string]interface{}, kbIDToName map[string]string) *Node {
+	// Extract chunk content - try multiple field names
+	content := ""
+	if v, ok := chunk["content_with_weight"].(string); ok && v != "" {
+		content = v
+	} else if v, ok := chunk["content"].(string); ok && v != "" {
+		content = v
+	} else if v, ok := chunk["content_ltks"].(string); ok && v != "" {
+		content = v
+	} else if v, ok := chunk["text"].(string); ok && v != "" {
+		content = v
+	}
+
+	// Get chunk_id for URI
+	chunkID := ""
+	if v, ok := chunk["chunk_id"].(string); ok {
+		chunkID = v
+	} else if v, ok := chunk["id"].(string); ok {
+		chunkID = v
+	}
+
+	// Get document name and ID
+	docName := ""
+	if v, ok := chunk["docnm_kwd"].(string); ok && v != "" {
+		docName = v
+	} else if v, ok := chunk["docnm"].(string); ok && v != "" {
+		docName = v
+	} else if v, ok := chunk["doc_name"].(string); ok && v != "" {
+		docName = v
+	}
+
+	docID := ""
+	if v, ok := chunk["doc_id"].(string); ok && v != "" {
+		docID = v
+	}
+
+	// Get dataset/kb name from mapping or chunk data
+	datasetName := ""
+	datasetID := ""
+
+	// First try to get kb_id from chunk (could be string or array)
+	if v, ok := chunk["kb_id"].(string); ok && v != "" {
+		datasetID = v
+	} else if v, ok := chunk["kb_id"].([]interface{}); ok && len(v) > 0 {
+		if s, ok := v[0].(string); ok {
+			datasetID = s
+		}
+	}
+
+	// Look up dataset name from mapping using kb_id
+	if datasetID != "" && kbIDToName != nil {
+		if name, ok := kbIDToName[datasetID]; ok && name != "" {
+			datasetName = name
+		}
+	}
+
+	// Fallback to kb_name from chunk if mapping doesn't have it
+	if datasetName == "" {
+		if v, ok := chunk["kb_name"].(string); ok && v != "" {
+			datasetName = v
+		}
+	}
+
+	// Build URI path: prefer names over IDs for readability
+	// Format: datasets/{dataset_name}/{doc_name}
+	path := "/datasets"
+	if datasetName != "" {
+		path += "/" + datasetName
+	} else if datasetID != "" {
+		path += "/" + datasetID
+	}
+	if docName != "" {
+		path += "/" + docName
+	} else if docID != "" {
+		path += "/" + docID
+	}
+
+	// Use doc_name or chunk_id as the name if content is empty
+	name := content
+	if name == "" {
+		if docName != "" {
+			name = docName
+		} else if chunkID != "" {
+			name = "chunk:" + chunkID[:min(len(chunkID), 16)]
+		} else {
+			name = "(empty)"
+		}
+	}
+
+	node := &Node{
+		Name:     name,
+		Path:     path,
+		Type:     NodeTypeDocument,
+		Metadata: chunk,
+	}
+
+	// Parse timestamps if available
+	if createTime, ok := chunk["create_time"]; ok {
+		node.CreatedAt = parseTime(createTime)
+	}
+	if updateTime, ok := chunk["update_time"]; ok {
+		node.UpdatedAt = parseTime(updateTime)
+	}
+
+	return node
+}
+
+// chunkToNode converts a chunk map to a Node (legacy, uses chunk data only)
+func (p *DatasetProvider) chunkToNode(chunk map[string]interface{}) *Node {
+	return p.chunkToNodeWithKBMapping(chunk, nil)
 }
 
 // ==================== Document Operations ====================
@@ -460,30 +688,87 @@ func (p *DatasetProvider) getDocument(ctx stdctx.Context, datasetName, docName s
 }
 
 func (p *DatasetProvider) searchDocuments(ctx stdctx.Context, datasetName string, opts *SearchOptions) (*Result, error) {
-	// Get all documents and filter client-side
-	allResult, err := p.listDocuments(ctx, datasetName, &ListOptions{
-		Limit:  opts.Limit,
-		Offset: opts.Offset,
-	})
+	// If no query is provided, just list documents
+	if opts.Query == "" {
+		return p.listDocuments(ctx, datasetName, &ListOptions{
+			Limit:  opts.Limit,
+			Offset: opts.Offset,
+		})
+	}
+
+	// Use retrieval API for semantic search in specific dataset
+	ds, err := p.getDataset(ctx, datasetName)
 	if err != nil {
 		return nil, err
 	}
 
-	if opts.Query == "" {
-		return allResult, nil
+	kbID := getString(ds.Metadata["id"])
+	if kbID == "" {
+		return nil, fmt.Errorf("dataset ID not found for '%s'", datasetName)
 	}
 
-	queryLower := strings.ToLower(opts.Query)
-	filtered := make([]*Node, 0)
-	for _, node := range allResult.Nodes {
-		if strings.Contains(strings.ToLower(node.Name), queryLower) {
-			filtered = append(filtered, node)
+	// Build kb_id -> dataset name mapping
+	kbIDToName := map[string]string{kbID: datasetName}
+
+	// Build retrieval request for specific dataset
+	payload := map[string]interface{}{
+		"kb_id":    []string{kbID},
+		"question": opts.Query,
+	}
+
+	// Set top_k (default to 10 if not specified)
+	topK := opts.TopK
+	if topK <= 0 {
+		topK = 10
+	}
+	payload["top_k"] = topK
+
+	// Set similarity threshold (default to 0.2 if not specified to match UI behavior)
+	threshold := opts.Threshold
+	if threshold <= 0 {
+		threshold = 0.2
+	}
+	payload["similarity_threshold"] = threshold
+
+	// Call retrieval API (useAPIBase=false because the route is /v1/chunk/retrieval_test, not /api/v1/...)
+	resp, err := p.httpClient.Request("POST", "/chunk/retrieval_test", false, "auto", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("retrieval request failed: %w", err)
+	}
+
+	var apiResp struct {
+		Code    int                    `json:"code"`
+		Data    map[string]interface{} `json:"data"`
+		Message string                 `json:"message"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
+		return nil, err
+	}
+
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("API error: %s", apiResp.Message)
+	}
+
+	// Parse chunks from response
+	var nodes []*Node
+	if chunksData, ok := apiResp.Data["chunks"].([]interface{}); ok {
+		for _, chunk := range chunksData {
+			if chunkMap, ok := chunk.(map[string]interface{}); ok {
+				node := p.chunkToNodeWithKBMapping(chunkMap, kbIDToName)
+				nodes = append(nodes, node)
+			}
 		}
 	}
 
+	// Apply top_k limit if specified (API may return more results)
+	if topK > 0 && len(nodes) > topK {
+		nodes = nodes[:topK]
+	}
+
 	return &Result{
-		Nodes: filtered,
-		Total: len(filtered),
+		Nodes: nodes,
+		Total: len(nodes),
 	}, nil
 }
 
@@ -596,6 +881,13 @@ func getString(v interface{}) string {
 		return s
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func getFloat(v interface{}) float64 {

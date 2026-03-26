@@ -314,6 +314,15 @@ func parseSearchOptions(params map[string]interface{}) *SearchOptions {
 	if recursive, ok := params["recursive"].(bool); ok {
 		opts.Recursive = recursive
 	}
+	if topK, ok := params["top_k"].(int); ok {
+		opts.TopK = topK
+	}
+	if threshold, ok := params["threshold"].(float64); ok {
+		opts.Threshold = threshold
+	}
+	if dirs, ok := params["dirs"].([]string); ok {
+		opts.Dirs = dirs
+	}
 
 	return opts
 }

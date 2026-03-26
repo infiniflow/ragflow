@@ -127,9 +127,17 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	// First, scan args to check for help, config file, and admin mode
 	var configFilePath string
 	var adminMode bool = false
+	foundCommand := false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		if arg == "--help" || arg == "-help" {
+		// If we found a command (non-flag arg), stop processing global flags
+		// This allows subcommands like "search --help" to handle their own help
+		if !strings.HasPrefix(arg, "-") {
+			foundCommand = true
+			continue
+		}
+		// Only process --help as global help if it's before any command
+		if !foundCommand && (arg == "--help" || arg == "-help") {
 			return &ConnectionArgs{ShowHelp: true}, nil
 		} else if (arg == "-f" || arg == "--config") && i+1 < len(args) {
 			configFilePath = args[i+1]
@@ -190,8 +198,18 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 
 	// Override with command line flags (higher priority)
 	// Handle both short and long forms manually
+	// Once we encounter a non-flag argument (command), stop parsing global flags
+	// Remaining args belong to the subcommand
+	foundCommand = false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+
+		// If we've found the command, collect remaining args as subcommand args
+		if foundCommand {
+			nonFlagArgs = append(nonFlagArgs, arg)
+			continue
+		}
+
 		switch arg {
 		case "-h", "--host":
 			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
@@ -247,6 +265,7 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 			// Non-flag argument (command)
 			if !strings.HasPrefix(arg, "-") {
 				nonFlagArgs = append(nonFlagArgs, arg)
+				foundCommand = true
 			}
 		}
 	}
@@ -643,27 +662,29 @@ func (c *CLI) executeContextEngine(input string) error {
 			Params: map[string]interface{}{},
 		}
 	case "search":
-		path := ""
-		query := ""
-		if len(cmdArgs) > 0 {
-			// Last arg is query if it looks like a query, otherwise it's a path
-			if len(cmdArgs) == 1 {
-				if strings.Contains(cmdArgs[0], " ") || strings.HasPrefix(cmdArgs[0], "\"") {
-					query = strings.Trim(cmdArgs[0], "\"")
-				} else {
-					path = cmdArgs[0]
-				}
-			} else {
-				path = cmdArgs[0]
-				query = strings.Join(cmdArgs[1:], " ")
-				query = strings.Trim(query, "\"")
-			}
+		// Parse search command arguments
+		searchOpts, err := parseSearchCommandArgs(cmdArgs)
+		if err != nil {
+			return err
+		}
+		if searchOpts == nil {
+			// Help was printed
+			return nil
+		}
+		// Determine the path for provider resolution
+		// Use first dir if specified, otherwise default to "datasets"
+		searchPath := "datasets"
+		if len(searchOpts.Dirs) > 0 {
+			searchPath = searchOpts.Dirs[0]
 		}
 		ceCmd = &contextengine.Command{
 			Type: contextengine.CommandSearch,
-			Path: path,
+			Path: searchPath,
 			Params: map[string]interface{}{
-				"query": query,
+				"query":     searchOpts.Query,
+				"top_k":     searchOpts.TopK,
+				"threshold": searchOpts.Threshold,
+				"dirs":      searchOpts.Dirs,
 			},
 		}
 	case "mkdir":
@@ -805,10 +826,40 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 			fmt.Println("No results found")
 			return
 		}
-		fmt.Printf("%-30s %-15s %-20s\n", "NAME", "TYPE", "PATH")
-		fmt.Println(strings.Repeat("-", 65))
-		for _, node := range result.Nodes {
-			fmt.Printf("%-30s %-15s %-20s\n", node.Name, node.Type, node.Path)
+		// Print search results: content and path (no type)
+		fmt.Printf("%-70s %-50s\n", "CONTENT", "PATH")
+		fmt.Println(strings.Repeat("-", 120))
+		for i, node := range result.Nodes {
+			// Get content from Name field (which contains the chunk content)
+			content := node.Name
+			if content == "" {
+				content = "(empty)"
+			}
+			// Normalize whitespace and truncate for display
+			content = strings.Join(strings.Fields(content), " ")
+			if len(content) > 67 {
+				content = content[:67] + "..."
+			}
+			// Remove leading "/" from path for display
+			displayPath := node.Path
+			if strings.HasPrefix(displayPath, "/") {
+				displayPath = displayPath[1:]
+			}
+			if len(displayPath) > 47 {
+				displayPath = displayPath[:44] + "..."
+			}
+			fmt.Printf("%-70s %-50s\n", content, displayPath)
+			// Also print similarity score if available in metadata
+			if score, ok := node.Metadata["similarity"]; ok {
+				fmt.Printf("  [score: %.4f]\n", score)
+			} else if score, ok := node.Metadata["_score"]; ok {
+				fmt.Printf("  [score: %.4f]\n", score)
+			}
+			// Limit display to avoid too much output (actual limit is enforced by API top_k)
+			if i >= 99 {
+				fmt.Printf("\n... and %d more results\n", result.Total-i-1)
+				break
+			}
 		}
 		fmt.Printf("\nTotal: %d\n", result.Total)
 	case contextengine.CommandMkdir:
@@ -915,7 +966,8 @@ Context Engine Commands (no quotes):
                                  e.g., ls files             - List files in root folder
                                  e.g., ls files/docs        - List files in 'docs' folder
   list [path]                  - Same as ls
-  search [path] [query]        - Search resources (e.g., search datasets "keyword")
+  search [options]             - Search resources in datasets
+                                 Use 'search -h' for detailed options
   mkdir <path>                 - Create a resource (e.g., mkdir datasets/new_ds)
   cat <path>                   - Show file content
                                  e.g., cat files/docs/file.txt  - Show file content
@@ -1012,4 +1064,136 @@ func isBinaryContent(content []byte) bool {
 	}
 	// Check valid UTF-8
 	return !utf8.Valid(content)
+}
+
+// SearchCommandOptions holds parsed search command options
+type SearchCommandOptions struct {
+	Query     string
+	TopK      int
+	Threshold float64
+	Dirs      []string
+}
+
+// parseSearchCommandArgs parses search command arguments
+// Format: search [-d dir1] [-d dir2] ... -q query [-k top_k] [-t threshold]
+//         search -h|--help (shows help)
+func parseSearchCommandArgs(args []string) (*SearchCommandOptions, error) {
+	opts := &SearchCommandOptions{
+		TopK:      10,
+		Threshold: 0.2,
+		Dirs:      []string{},
+	}
+
+	// Check for help flag
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
+			printSearchHelp()
+			return nil, nil
+		}
+	}
+
+	// Parse arguments
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+
+		switch arg {
+		case "-d", "--dir":
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("missing value for %s flag", arg)
+			}
+			opts.Dirs = append(opts.Dirs, args[i+1])
+			i += 2
+		case "-q", "--query":
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("missing value for %s flag", arg)
+			}
+			opts.Query = args[i+1]
+			i += 2
+		case "-k", "--top-k":
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("missing value for %s flag", arg)
+			}
+			topK, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return nil, fmt.Errorf("invalid top-k value: %s", args[i+1])
+			}
+			opts.TopK = topK
+			i += 2
+		case "-t", "--threshold":
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("missing value for %s flag", arg)
+			}
+			threshold, err := strconv.ParseFloat(args[i+1], 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid threshold value: %s", args[i+1])
+			}
+			opts.Threshold = threshold
+			i += 2
+		default:
+			// If it doesn't start with -, it might be a positional argument
+			if !strings.HasPrefix(arg, "-") {
+				// For backwards compatibility: if no -q flag and this is the last arg, treat as query
+				if opts.Query == "" && i == len(args)-1 {
+					opts.Query = arg
+				} else if opts.Query == "" && len(args) > 0 && i < len(args)-1 {
+					// Old format: search [path] query
+					// Treat first non-flag as path, rest as query
+					opts.Dirs = append(opts.Dirs, arg)
+					// Join remaining args as query
+					remainingArgs := args[i+1:]
+					queryParts := []string{}
+					for _, part := range remainingArgs {
+						if !strings.HasPrefix(part, "-") {
+							queryParts = append(queryParts, part)
+						}
+					}
+					opts.Query = strings.Join(queryParts, " ")
+					break
+				}
+			} else {
+				return nil, fmt.Errorf("unknown flag: %s", arg)
+			}
+			i++
+		}
+	}
+
+	// Validate required parameters
+	if opts.Query == "" {
+		return nil, fmt.Errorf("query is required (use -q or --query)")
+	}
+
+	// If no directories specified, search in all datasets (empty path means all)
+	if len(opts.Dirs) == 0 {
+		opts.Dirs = []string{"datasets"}
+	}
+
+	return opts, nil
+}
+
+// printSearchHelp prints help for the search command
+func printSearchHelp() {
+	help := `Search command usage: search [options]
+
+Search for content in datasets. Currently only supports searching in datasets.
+
+Options:
+  -d, --dir <path>       Directory to search in (can be specified multiple times)
+                         Currently only supports paths under 'datasets/'
+                         Example: -d datasets/kb1 -d datasets/kb2
+  -q, --query <query>    Search query (required)
+                         Example: -q "machine learning"
+  -k, --top-k <number>   Number of top results to return (default: 10)
+                         Example: -k 20
+  -t, --threshold <num>  Similarity threshold, 0.0-1.0 (default: 0.2)
+                         Example: -t 0.5
+  -h, --help             Show this help message
+
+Examples:
+  search -d datasets/kb1 -q "neural networks"       # Search in kb1
+  search -d datasets/kb1 -d datasets/kb2 -q "AI"    # Search in multiple KBs
+  search -q "data mining"                           # Search all datasets
+  search -q "RAG" -k 20 -t 0.5                      # Return 20 results with threshold 0.5
+`
+	fmt.Println(help)
 }
