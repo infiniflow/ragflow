@@ -115,7 +115,8 @@ Display document content (if available).
 
 **Examples:**
 ```bash
-cat datasets/kb1/document.pdf   # Show document info
+cat myskills/doc.md   # Show content of doc.md file
+cat datasets/kb1/document.pdf   # Error: cannot display binary file content
 ```
 
 ## Command Examples
