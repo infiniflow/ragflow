@@ -113,3 +113,67 @@ func (h *TenantHandler) TenantList(c *gin.Context) {
 		"data":    tenantList,
 	})
 }
+
+// CreateDocMetaIndex handles the create doc meta index request
+// @Summary Create Doc Meta Index
+// @Description Create the document metadata index for a tenant
+// @Tags tenants
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/tenant/doc_meta_index [post]
+func (h *TenantHandler) CreateDocMetaIndex(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	// Use user.ID as tenant ID (user IS the tenant in user mode)
+	tenantID := user.ID
+
+	code, err := h.tenantService.CreateDocMetaIndex(tenantID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    nil,
+	})
+}
+
+// DeleteDocMetaIndex handles the delete doc meta index request
+// @Summary Delete Doc Meta Index
+// @Description Delete the document metadata index for a tenant
+// @Tags tenants
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/tenant/doc_meta_index [delete]
+func (h *TenantHandler) DeleteDocMetaIndex(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	// Use user.ID as tenant ID (user IS the tenant in user mode)
+	tenantID := user.ID
+
+	code, err := h.tenantService.DeleteDocMetaIndex(tenantID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    nil,
+	})
+}
