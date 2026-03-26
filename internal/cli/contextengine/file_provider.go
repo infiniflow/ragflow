@@ -20,42 +20,28 @@ import (
 	stdctx "context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
-	"time"
 )
 
-// FileProvider handles file manager operations using Go backend API
+// FileProvider handles file operations using Python backend /files API
 // Path structure:
-//   - files/                      -> Root folder (list files)
-//   - files/{folder_name}/        -> List folder contents
-//   - files/{folder_name}/{sub}/  -> Navigate subdirectories
-//   - files/{path}/{filename}     -> Get file info or content
+//   - files/                             -> List root folder contents
+//   - files/{folder_name}/               -> List folder contents
+//   - files/{folder_name}/{file_name}    -> Get file info/content
 //
-// Note: Uses Go backend API on port 9384 (useAPIBase=false, NonAPIBase already includes /v1):
-//   - GET /file/list              -> List files (with optional parent_id)
-//   - GET /file/get?id={id}       -> Get file by ID
-//   - GET /file/parent_folder?file_id={id} -> Get parent folder
-//   - GET /file/all_parent_folder?file_id={id} -> Get all parent folders
-//   - POST /file/create           -> Create folder
-//   - POST /file/delete           -> Delete files
+// Note: Uses Python backend API (useAPIBase=true):
+//   - GET /files?parent_id={id}         -> List files/folders in parent
+//   - GET /files/{file_id}              -> Get file info
+//   - POST /files                       -> Create folder or upload file
+//   - DELETE /files                     -> Delete files
+//   - GET /files/{file_id}/parent       -> Get parent folder
+//   - GET /files/{file_id}/ancestors    -> Get ancestor folders
+
 type FileProvider struct {
 	BaseProvider
-	httpClient HTTPClientInterface
-	rootFolder *FileNode // Cache root folder info
-}
-
-// FileNode represents a file/folder in the file manager
-type FileNode struct {
-	ID         string                 `json:"id"`
-	ParentID   string                 `json:"parent_id"`
-	Name       string                 `json:"name"`
-	Type       string                 `json:"type"` // "folder" or "file"
-	Size       int64                  `json:"size"`
-	CreateTime int64                  `json:"create_time"`
-	UpdateTime int64                  `json:"update_time"`
-	Location   string                 `json:"location,omitempty"`
-	Metadata   map[string]interface{} `json:"-"`
+	httpClient  HTTPClientInterface
+	folderCache map[string]string // path -> folder ID cache
+	rootID      string            // root folder ID
 }
 
 // NewFileProvider creates a new FileProvider
@@ -63,10 +49,11 @@ func NewFileProvider(httpClient HTTPClientInterface) *FileProvider {
 	return &FileProvider{
 		BaseProvider: BaseProvider{
 			name:        "files",
-			description: "File manager provider",
+			description: "File manager provider (Python server)",
 			rootPath:    "files",
 		},
-		httpClient: httpClient,
+		httpClient:  httpClient,
+		folderCache: make(map[string]string),
 	}
 }
 
@@ -77,6 +64,7 @@ func (p *FileProvider) Supports(path string) bool {
 }
 
 // List lists nodes at the given path
+// Path structure: files/ or files/{folder_name}/ or files/{folder_name}/{file_name}
 func (p *FileProvider) List(ctx stdctx.Context, subPath string, opts *ListOptions) (*Result, error) {
 	// subPath is the path relative to "files/"
 	// Empty subPath means list root folder
@@ -85,25 +73,24 @@ func (p *FileProvider) List(ctx stdctx.Context, subPath string, opts *ListOption
 		return p.listRootFolder(ctx, opts)
 	}
 
-	// Try to resolve the path to a folder
-	fileNode, err := p.resolvePath(ctx, subPath)
-	if err != nil {
-		return nil, err
+	parts := SplitPath(subPath)
+	if len(parts) == 1 {
+		// files/{folder_name} - list contents of this folder
+		return p.listFolderByName(ctx, parts[0], opts)
 	}
 
-	if fileNode.Type != "folder" {
-		// It's a file, return it as a single node
-		return &Result{
-			Nodes: []*Node{p.fileToNode(fileNode, subPath)},
-			Total: 1,
-		}, nil
+	if len(parts) >= 2 {
+		// files/{folder_name}/{file_name}... - get file info
+		// Join remaining parts as the file name (could contain "/")
+		folderName := parts[0]
+		fileName := strings.Join(parts[1:], "/")
+		return p.getFileNode(ctx, folderName, fileName)
 	}
 
-	// It's a folder, list its contents
-	return p.listFolderContents(ctx, fileNode.ID, subPath, opts)
+	return nil, fmt.Errorf("invalid path: %s", subPath)
 }
 
-// Search searches for files matching the query
+// Search searches for files/folders
 func (p *FileProvider) Search(ctx stdctx.Context, subPath string, opts *SearchOptions) (*Result, error) {
 	if opts.Query == "" {
 		return p.List(ctx, subPath, &ListOptions{
@@ -112,21 +99,28 @@ func (p *FileProvider) Search(ctx stdctx.Context, subPath string, opts *SearchOp
 		})
 	}
 
-	// Get the parent folder ID if path is specified
-	var parentID string
-	if subPath != "" {
-		fileNode, err := p.resolvePath(ctx, subPath)
-		if err != nil {
-			return nil, err
-		}
-		if fileNode.Type != "folder" {
-			return nil, fmt.Errorf("path is not a folder: %s", subPath)
-		}
-		parentID = fileNode.ID
+	// For now, search is not implemented - just list and filter by name
+	result, err := p.List(ctx, subPath, &ListOptions{
+		Limit:  opts.Limit,
+		Offset: opts.Offset,
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	// Search files with keywords
-	return p.searchFiles(ctx, parentID, opts)
+	// Simple name filtering
+	var filtered []*Node
+	query := strings.ToLower(opts.Query)
+	for _, node := range result.Nodes {
+		if strings.Contains(strings.ToLower(node.Name), query) {
+			filtered = append(filtered, node)
+		}
+	}
+
+	return &Result{
+		Nodes: filtered,
+		Total: len(filtered),
+	}, nil
 }
 
 // Mkdir creates a new folder
@@ -136,286 +130,164 @@ func (p *FileProvider) Mkdir(ctx stdctx.Context, subPath string, params map[stri
 	}
 
 	parts := SplitPath(subPath)
-	folderName := parts[len(parts)-1]
-	parentPath := ""
-	if len(parts) > 1 {
-		parentPath = joinStrings(parts[:len(parts)-1], "/")
+	if len(parts) == 1 {
+		// Create folder in root
+		return p.createFolder(ctx, parts[0], "")
 	}
 
-	// Get parent folder ID
-	var parentID string
-	if parentPath == "" {
-		// Create under root
-		rootFolder, err := p.getRootFolder(ctx)
-		if err != nil {
-			return nil, err
-		}
-		parentID = rootFolder.ID
-	} else {
-		parentNode, err := p.resolvePath(ctx, parentPath)
-		if err != nil {
-			return nil, err
-		}
-		if parentNode.Type != "folder" {
-			return nil, fmt.Errorf("parent path is not a folder: %s", parentPath)
-		}
-		parentID = parentNode.ID
+	// Create folder inside another folder
+	parentName := parts[0]
+	folderName := parts[1]
+
+	parentID, err := p.getFolderIDByName(ctx, parentName)
+	if err != nil {
+		return nil, err
 	}
 
-	// Create the folder via API
-	return p.createFolder(ctx, parentID, folderName)
+	return p.createFolder(ctx, folderName, parentID)
 }
 
 // Cat retrieves file content
 func (p *FileProvider) Cat(ctx stdctx.Context, subPath string) ([]byte, error) {
 	if subPath == "" {
-		return nil, fmt.Errorf("cat requires a file path")
+		return nil, fmt.Errorf("cat requires a file path: files/{folder}/{file}")
 	}
 
-	// Resolve path to file
-	fileNode, err := p.resolvePath(ctx, subPath)
+	parts := SplitPath(subPath)
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("invalid path format, expected: files/{folder}/{file}")
+	}
+
+	folderName := parts[0]
+	fileName := strings.Join(parts[1:], "/")
+
+	// Get file info first to get file ID
+	result, err := p.getFileNode(ctx, folderName, fileName)
 	if err != nil {
 		return nil, err
 	}
 
-	if fileNode.Type == "folder" {
-		return nil, fmt.Errorf("'%s' is a directory, not a file", subPath)
+	if len(result.Nodes) == 0 {
+		return nil, fmt.Errorf("%s: file '%s'", ErrNotFound, fileName)
 	}
 
-	// Get file content via API
-	return p.getFileContent(ctx, fileNode.ID, fileNode.Location)
+	fileID := getString(result.Nodes[0].Metadata["id"])
+	if fileID == "" {
+		return nil, fmt.Errorf("file ID not found")
+	}
+
+	// Download file content
+	return p.downloadFile(ctx, fileID)
 }
 
 // Rm removes a file or folder
 func (p *FileProvider) Rm(ctx stdctx.Context, subPath string, recursive bool) error {
 	if subPath == "" {
-		return fmt.Errorf("cannot remove root folder")
+		return fmt.Errorf("cannot remove root")
 	}
 
-	// Resolve path to file/folder
-	fileNode, err := p.resolvePath(ctx, subPath)
+	parts := SplitPath(subPath)
+	if len(parts) == 1 {
+		// Remove folder
+		folderID, err := p.getFolderIDByName(ctx, parts[0])
+		if err != nil {
+			return err
+		}
+		return p.deleteFile(ctx, folderID)
+	}
+
+	// Remove file
+	folderName := parts[0]
+	fileName := strings.Join(parts[1:], "/")
+
+	result, err := p.getFileNode(ctx, folderName, fileName)
 	if err != nil {
 		return err
 	}
 
-	// Check if it's a folder with children
-	if fileNode.Type == "folder" && !recursive {
-		hasChildren, err := p.hasChildren(ctx, fileNode.ID)
-		if err != nil {
-			return err
-		}
-		if hasChildren {
-			return fmt.Errorf("folder is not empty, use -r to remove recursively")
-		}
+	if len(result.Nodes) == 0 {
+		return fmt.Errorf("%s: file '%s'", ErrNotFound, fileName)
 	}
 
-	// Delete the file/folder
-	return p.deleteFile(ctx, fileNode.ID)
+	fileID := getString(result.Nodes[0].Metadata["id"])
+	if fileID == "" {
+		return fmt.Errorf("file ID not found")
+	}
+
+	return p.deleteFile(ctx, fileID)
 }
 
-// ==================== Helper Methods ====================
+// ==================== Python Server API Methods ====================
 
-// getRootFolder gets the root folder for the current user
-// Go backend has a dedicated root_folder endpoint
-func (p *FileProvider) getRootFolder(ctx stdctx.Context) (*FileNode, error) {
-	// Return cached root folder if available
-	if p.rootFolder != nil {
-		return p.rootFolder, nil
+// getRootID gets or caches the root folder ID
+func (p *FileProvider) getRootID(ctx stdctx.Context) (string, error) {
+	if p.rootID != "" {
+		return p.rootID, nil
 	}
 
-	// Use Go backend API to get root folder (NonAPIBase already includes /v1)
-	resp, err := p.httpClient.Request("GET", "/file/root_folder", false, "auto", nil, nil)
+	// List files without parent_id to get root folder
+	resp, err := p.httpClient.Request("GET", "/files", true, "auto", nil, nil)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	var apiResp struct {
-		Code int `json:"code"`
-		Data struct {
-			RootFolder map[string]interface{} `json:"root_folder"`
-		} `json:"data"`
-		Message string `json:"message"`
+		Code    int                    `json:"code"`
+		Data    map[string]interface{} `json:"data"`
+		Message string                 `json:"message"`
 	}
 
 	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
-		return nil, err
+		return "", err
 	}
 
 	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("API error: %s", apiResp.Message)
+		return "", fmt.Errorf("API error: %s", apiResp.Message)
 	}
 
-	// Extract root folder info from root_folder field
-	if apiResp.Data.RootFolder == nil {
-		return nil, fmt.Errorf("cannot determine root folder")
+	// Try to find root folder ID from response
+	if rootID, ok := apiResp.Data["root_id"].(string); ok && rootID != "" {
+		p.rootID = rootID
+		return rootID, nil
 	}
 
-	p.rootFolder = p.mapToFileNode(apiResp.Data.RootFolder)
-	return p.rootFolder, nil
+	// If no explicit root_id, use empty parent_id for root listing
+	return "", nil
 }
 
-// listRootFolder lists the contents of the root folder
+// listRootFolder lists the contents of root folder
 func (p *FileProvider) listRootFolder(ctx stdctx.Context, opts *ListOptions) (*Result, error) {
-	rootFolder, err := p.getRootFolder(ctx)
+	// Get root folder ID first
+	rootID, err := p.getRootID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return p.listFolderContents(ctx, rootFolder.ID, "", opts)
+	// List files using root folder ID as parent
+	return p.listFilesByParentID(ctx, rootID, "", opts)
 }
 
-// listFolderContents lists the contents of a folder by ID
-func (p *FileProvider) listFolderContents(ctx stdctx.Context, folderID string, path string, opts *ListOptions) (*Result, error) {
+// listFilesByParentID lists files/folders by parent ID
+func (p *FileProvider) listFilesByParentID(ctx stdctx.Context, parentID string, parentPath string, opts *ListOptions) (*Result, error) {
 	// Build query parameters
-	queryParams := make(map[string]string)
-	if opts != nil {
-		if opts.Limit > 0 {
-			queryParams["page_size"] = fmt.Sprintf("%d", opts.Limit)
-		} else {
-			queryParams["page_size"] = "100" // Default
-		}
-		if opts.Offset > 0 {
-			page := opts.Offset/opts.Limit + 1
-			queryParams["page"] = fmt.Sprintf("%d", page)
-		}
-	} else {
-		queryParams["page_size"] = "100"
+	queryParams := make([]string, 0)
+	if parentID != "" {
+		queryParams = append(queryParams, fmt.Sprintf("parent_id=%s", parentID))
 	}
-
-	// Always add parent_id for non-root folders
-	rootFolder, err := p.getRootFolder(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get root folder: %w", err)
+	// Always set page=1 and page_size to ensure we get results
+	pageSize := 100
+	if opts != nil && opts.Limit > 0 {
+		pageSize = opts.Limit
 	}
+	queryParams = append(queryParams, fmt.Sprintf("page_size=%d", pageSize))
+	queryParams = append(queryParams, "page=1")
 
-	if folderID != rootFolder.ID {
-		queryParams["parent_id"] = folderID
-	}
-
-	// Build URL with query parameters for Go backend API (NonAPIBase already includes /v1)
-	apiPath := "/file/list"
+	// Build URL with query string
+	path := "/files"
 	if len(queryParams) > 0 {
-		apiPath += "?" + buildQueryString(queryParams)
+		path = path + "?" + strings.Join(queryParams, "&")
 	}
 
-	resp, err := p.httpClient.Request("GET", apiPath, false, "auto", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// Check HTTP status code
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("HTTP error %d: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var apiResp struct {
-		Code    int `json:"code"`
-		Data    struct {
-			Total int64                    `json:"total"`
-			Files []map[string]interface{} `json:"files"`
-		} `json:"data"`
-		Message string `json:"message"`
-	}
-
-	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w (body: %s)", err, string(resp.Body))
-	}
-
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("API error: %s", apiResp.Message)
-	}
-
-	nodes := make([]*Node, 0, len(apiResp.Data.Files))
-	for _, file := range apiResp.Data.Files {
-		fileNode := p.mapToFileNode(file)
-		// Skip hidden .knowledgebase folder
-		if strings.TrimSpace(fileNode.Name) == ".knowledgebase" {
-			continue
-		}
-		filePath := path
-		if filePath != "" {
-			filePath = filePath + "/" + fileNode.Name
-		} else {
-			filePath = fileNode.Name
-		}
-		nodes = append(nodes, p.fileToNode(fileNode, filePath))
-	}
-
-	return &Result{
-		Nodes: nodes,
-		Total: int(apiResp.Data.Total),
-	}, nil
-}
-
-// resolvePath resolves a path string to a FileNode
-// Path components are looked up by name from the root
-func (p *FileProvider) resolvePath(ctx stdctx.Context, path string) (*FileNode, error) {
-	parts := SplitPath(path)
-	if len(parts) == 0 {
-		return nil, fmt.Errorf("empty path")
-	}
-
-	// Check if trying to access hidden .knowledgebase
-	for _, part := range parts {
-		if strings.TrimSpace(part) == ".knowledgebase" {
-			return nil, fmt.Errorf("invalid path: .knowledgebase is not accessible")
-		}
-	}
-
-	// Start from root
-	currentFolder, err := p.getRootFolder(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Traverse path components
-	for i, part := range parts {
-		// Build current path for this level
-		currentPath := joinStrings(parts[:i], "/")
-
-		// List contents of current folder
-		result, err := p.listFolderContents(ctx, currentFolder.ID, currentPath, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		// Find the matching child
-		var found *FileNode
-		for _, node := range result.Nodes {
-			if node.Name == part {
-				// Convert Node back to FileNode using metadata
-				if _, ok := node.Metadata["id"]; ok {
-					found = p.mapToFileNode(node.Metadata)
-				} else {
-					return nil, fmt.Errorf("node missing id: %s", part)
-				}
-				break
-			}
-		}
-
-		if found == nil {
-			return nil, fmt.Errorf("%s: '%s'", ErrNotFound, path)
-		}
-
-		// If this is the last part, return it
-		if i == len(parts)-1 {
-			return found, nil
-		}
-
-		// If not the last part, it must be a folder
-		if found.Type != "folder" {
-			return nil, fmt.Errorf("'%s' is not a directory", part)
-		}
-
-		currentFolder = found
-	}
-
-	return currentFolder, nil
-}
-
-// getFileByID gets file info by ID
-func (p *FileProvider) getFileByID(ctx stdctx.Context, fileID string) (*FileNode, error) {
-	apiPath := "/file/get?id=" + url.QueryEscape(fileID)
-	resp, err := p.httpClient.Request("GET", apiPath, false, "auto", nil, nil)
+	resp, err := p.httpClient.Request("GET", path, true, "auto", nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -434,18 +306,191 @@ func (p *FileProvider) getFileByID(ctx stdctx.Context, fileID string) (*FileNode
 		return nil, fmt.Errorf("API error: %s", apiResp.Message)
 	}
 
-	return p.mapToFileNode(apiResp.Data), nil
+	// Extract files list from data - API returns {"total": N, "files": [...], "parent_folder": {...}}
+	var files []map[string]interface{}
+	if fileList, ok := apiResp.Data["files"].([]interface{}); ok {
+		for _, f := range fileList {
+			if fileMap, ok := f.(map[string]interface{}); ok {
+				files = append(files, fileMap)
+			}
+		}
+	}
+
+	nodes := make([]*Node, 0, len(files))
+	for _, f := range files {
+		name := getString(f["name"])
+		// Skip hidden .knowledgebase folder
+		if strings.TrimSpace(name) == ".knowledgebase" {
+			continue
+		}
+
+		node := p.fileToNode(f, parentPath)
+		nodes = append(nodes, node)
+
+		// Cache folder ID
+		if node.Type == NodeTypeDirectory || getString(f["type"]) == "folder" {
+			if id := getString(f["id"]); id != "" {
+				cacheKey := node.Name
+				if parentPath != "" {
+					cacheKey = parentPath + "/" + node.Name
+				}
+				p.folderCache[cacheKey] = id
+			}
+		}
+	}
+
+	return &Result{
+		Nodes: nodes,
+		Total: len(nodes),
+	}, nil
 }
 
-// getFileContent retrieves file content from storage via API
-func (p *FileProvider) getFileContent(ctx stdctx.Context, fileID string, location string) ([]byte, error) {
-	apiPath := "/file/content?id=" + url.QueryEscape(fileID)
-	resp, err := p.httpClient.Request("GET", apiPath, false, "auto", nil, nil)
+// listFolderByName lists contents of a folder by its name
+func (p *FileProvider) listFolderByName(ctx stdctx.Context, folderName string, opts *ListOptions) (*Result, error) {
+	folderID, err := p.getFolderIDByName(ctx, folderName)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if it's an error response (JSON)
+	// List files in the folder using folder ID as parent_id
+	return p.listFilesByParentID(ctx, folderID, folderName, opts)
+}
+
+// getFolderIDByName finds folder ID by its name in root
+func (p *FileProvider) getFolderIDByName(ctx stdctx.Context, folderName string) (string, error) {
+	// Check cache first
+	if id, ok := p.folderCache[folderName]; ok {
+		return id, nil
+	}
+
+	// List root folder to find the folder
+	rootID, _ := p.getRootID(ctx)
+	queryParams := make([]string, 0)
+	if rootID != "" {
+		queryParams = append(queryParams, fmt.Sprintf("parent_id=%s", rootID))
+	}
+	queryParams = append(queryParams, "page_size=100", "page=1")
+
+	path := "/files"
+	if len(queryParams) > 0 {
+		path = path + "?" + strings.Join(queryParams, "&")
+	}
+
+	resp, err := p.httpClient.Request("GET", path, true, "auto", nil, nil)
+	if err != nil {
+		return "", err
+	}
+
+	var apiResp struct {
+		Code    int                    `json:"code"`
+		Data    map[string]interface{} `json:"data"`
+		Message string                 `json:"message"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
+		return "", err
+	}
+
+	if apiResp.Code != 0 {
+		return "", fmt.Errorf("API error: %s", apiResp.Message)
+	}
+
+	// Search for folder by name
+	var files []map[string]interface{}
+	if fileList, ok := apiResp.Data["files"].([]interface{}); ok {
+		for _, f := range fileList {
+			if fileMap, ok := f.(map[string]interface{}); ok {
+				files = append(files, fileMap)
+			}
+		}
+	} else if fileList, ok := apiResp.Data["docs"].([]interface{}); ok {
+		for _, f := range fileList {
+			if fileMap, ok := f.(map[string]interface{}); ok {
+				files = append(files, fileMap)
+			}
+		}
+	}
+
+	for _, f := range files {
+		name := getString(f["name"])
+		fileType := getString(f["type"])
+		id := getString(f["id"])
+		// Match by name and ensure it's a folder
+		if name == folderName && fileType == "folder" && id != "" {
+			p.folderCache[folderName] = id
+			return id, nil
+		}
+	}
+
+	return "", fmt.Errorf("%s: folder '%s'", ErrNotFound, folderName)
+}
+
+// getFileNode gets a file node by folder and file name
+func (p *FileProvider) getFileNode(ctx stdctx.Context, folderName, fileName string) (*Result, error) {
+	folderID, err := p.getFolderIDByName(ctx, folderName)
+	if err != nil {
+		return nil, err
+	}
+
+	// List files in folder to find the file
+	result, err := p.listFilesByParentID(ctx, folderID, folderName, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find the specific file
+	for _, node := range result.Nodes {
+		if node.Name == fileName {
+			return &Result{
+				Nodes: []*Node{node},
+				Total: 1,
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("%s: file '%s' in folder '%s'", ErrNotFound, fileName, folderName)
+}
+
+// createFolder creates a new folder
+func (p *FileProvider) createFolder(ctx stdctx.Context, name string, parentID string) (*Node, error) {
+	payload := map[string]interface{}{
+		"name": name,
+		"type": "folder",
+	}
+	if parentID != "" {
+		payload["parent_id"] = parentID
+	}
+
+	resp, err := p.httpClient.Request("POST", "/files", true, "auto", nil, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	var apiResp struct {
+		Code    int                    `json:"code"`
+		Data    map[string]interface{} `json:"data"`
+		Message string                 `json:"message"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
+		return nil, err
+	}
+
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("API error: %s", apiResp.Message)
+	}
+
+	return p.fileToNode(apiResp.Data, ""), nil
+}
+
+// downloadFile downloads file content
+func (p *FileProvider) downloadFile(ctx stdctx.Context, fileID string) ([]byte, error) {
+	path := fmt.Sprintf("/files/%s", fileID)
+	resp, err := p.httpClient.Request("GET", path, true, "auto", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	if resp.StatusCode != 200 {
 		// Try to parse error response
 		var apiResp struct {
@@ -458,112 +503,8 @@ func (p *FileProvider) getFileContent(ctx stdctx.Context, fileID string, locatio
 		return nil, fmt.Errorf("HTTP error %d", resp.StatusCode)
 	}
 
-	// Return raw content
+	// Return raw file content
 	return resp.Body, nil
-}
-
-// searchFiles searches for files with keywords
-func (p *FileProvider) searchFiles(ctx stdctx.Context, parentID string, opts *SearchOptions) (*Result, error) {
-	// Build query parameters
-	queryParams := make(map[string]string)
-	if parentID != "" {
-		queryParams["parent_id"] = parentID
-	}
-	if opts.Query != "" {
-		queryParams["keywords"] = opts.Query
-	}
-	if opts.Limit > 0 {
-		queryParams["page_size"] = fmt.Sprintf("%d", opts.Limit)
-	} else {
-		queryParams["page_size"] = "100"
-	}
-	if opts.Offset > 0 {
-		page := opts.Offset/opts.Limit + 1
-		queryParams["page"] = fmt.Sprintf("%d", page)
-	}
-
-	// Build URL with query parameters for Go backend API (NonAPIBase already includes /v1)
-	apiPath := "/file/list"
-	if len(queryParams) > 0 {
-		apiPath += "?" + buildQueryString(queryParams)
-	}
-
-	resp, err := p.httpClient.Request("GET", apiPath, false, "auto", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// Check HTTP status code
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("HTTP error %d: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var apiResp struct {
-		Code    int `json:"code"`
-		Data    struct {
-			Total int64                    `json:"total"`
-			Files []map[string]interface{} `json:"files"`
-		} `json:"data"`
-		Message string `json:"message"`
-	}
-
-	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w (body: %s)", err, string(resp.Body))
-	}
-
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("API error: %s", apiResp.Message)
-	}
-
-	nodes := make([]*Node, 0, len(apiResp.Data.Files))
-	for _, file := range apiResp.Data.Files {
-		fileNode := p.mapToFileNode(file)
-		nodes = append(nodes, p.fileToNode(fileNode, fileNode.Name))
-	}
-
-	return &Result{
-		Nodes: nodes,
-		Total: int(apiResp.Data.Total),
-	}, nil
-}
-
-// createFolder creates a new folder
-func (p *FileProvider) createFolder(ctx stdctx.Context, parentID string, name string) (*Node, error) {
-	payload := map[string]interface{}{
-		"name":      name,
-		"parent_id": parentID,
-		"type":      "folder",
-	}
-
-	resp, err := p.httpClient.Request("POST", "/file/create", false, "auto", nil, payload)
-	if err != nil {
-		return nil, err
-	}
-
-	var apiResp struct {
-		Code    int                    `json:"code"`
-		Data    map[string]interface{} `json:"data"`
-		Message string                 `json:"message"`
-	}
-
-	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
-		return nil, err
-	}
-
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("API error: %s", apiResp.Message)
-	}
-
-	return p.fileToNode(p.mapToFileNode(apiResp.Data), name), nil
-}
-
-// hasChildren checks if a folder has any children
-func (p *FileProvider) hasChildren(ctx stdctx.Context, folderID string) (bool, error) {
-	result, err := p.listFolderContents(ctx, folderID, "", &ListOptions{Limit: 1})
-	if err != nil {
-		return false, err
-	}
-	return len(result.Nodes) > 0, nil
 }
 
 // deleteFile deletes a file or folder
@@ -572,7 +513,7 @@ func (p *FileProvider) deleteFile(ctx stdctx.Context, fileID string) error {
 		"ids": []string{fileID},
 	}
 
-	resp, err := p.httpClient.Request("POST", "/file/delete", false, "auto", nil, payload)
+	resp, err := p.httpClient.Request("DELETE", "/files", true, "auto", nil, payload)
 	if err != nil {
 		return err
 	}
@@ -590,93 +531,64 @@ func (p *FileProvider) deleteFile(ctx stdctx.Context, fileID string) error {
 		return fmt.Errorf("API error: %s", apiResp.Message)
 	}
 
+	// Remove from cache
+	for path, id := range p.folderCache {
+		if id == fileID {
+			delete(p.folderCache, path)
+			break
+		}
+	}
+
 	return nil
 }
 
 // ==================== Conversion Functions ====================
 
-// mapToFileNode converts a map to a FileNode
-func (p *FileProvider) mapToFileNode(m map[string]interface{}) *FileNode {
-	if m == nil {
-		return nil
-	}
+// fileToNode converts a file map to a Node
+func (p *FileProvider) fileToNode(f map[string]interface{}, parentPath string) *Node {
+	name := getString(f["name"])
+	fileType := getString(f["type"])
+	fileID := getString(f["id"])
 
-	node := &FileNode{
-		ID:       getString(m["id"]),
-		ParentID: getString(m["parent_id"]),
-		Name:     getString(m["name"]),
-		Type:     getString(m["type"]),
-		Metadata: m,
-	}
-
-	if size, ok := m["size"]; ok {
-		node.Size = int64(getFloat(size))
-	}
-
-	if loc, ok := m["location"].(string); ok {
-		node.Location = loc
-	}
-
-	if createTime, ok := m["create_time"]; ok {
-		node.CreateTime = int64(getFloat(createTime))
-	}
-
-	if updateTime, ok := m["update_time"]; ok {
-		node.UpdateTime = int64(getFloat(updateTime))
-	}
-
-	return node
-}
-
-// fileToNode converts a FileNode to a contextengine Node
-func (p *FileProvider) fileToNode(file *FileNode, path string) *Node {
+	// Determine node type
 	nodeType := NodeTypeFile
-	if file.Type == "folder" {
+	if fileType == "folder" {
 		nodeType = NodeTypeDirectory
 	}
 
-	// Build display path without /files/ prefix
-	displayPath := path
-	if displayPath != "" {
-		displayPath = path
-	} else {
-		displayPath = file.Name
+	// Build path
+	path := name
+	if parentPath != "" {
+		path = parentPath + "/" + name
 	}
 
 	node := &Node{
-		Name:     file.Name,
-		Path:     displayPath,
+		Name:     name,
+		Path:     path,
 		Type:     nodeType,
-		Size:     file.Size,
-		Metadata: file.Metadata,
+		Metadata: f,
+	}
+
+	// Parse size
+	if size, ok := f["size"]; ok {
+		node.Size = int64(getFloat(size))
 	}
 
 	// Parse timestamps
-	if file.CreateTime > 0 {
-		// Convert milliseconds to seconds if needed
-		ts := file.CreateTime
-		if ts > 1e12 {
-			ts = ts / 1000
-		}
-		node.CreatedAt = time.Unix(ts, 0)
+	if createTime, ok := f["create_time"]; ok && createTime != nil {
+		node.CreatedAt = parseTime(createTime)
+	}
+	if updateTime, ok := f["update_time"]; ok && updateTime != nil {
+		node.UpdatedAt = parseTime(updateTime)
 	}
 
-	if file.UpdateTime > 0 {
-		ts := file.UpdateTime
-		if ts > 1e12 {
-			ts = ts / 1000
+	// Store ID for later use
+	if fileID != "" {
+		if node.Metadata == nil {
+			node.Metadata = make(map[string]interface{})
 		}
-		node.UpdatedAt = time.Unix(ts, 0)
+		node.Metadata["id"] = fileID
 	}
 
 	return node
-}
-
-// buildQueryString builds a URL query string from a map
-func buildQueryString(params map[string]string) string {
-	values := url.Values{}
-	for k, v := range params {
-		values.Set(k, v)
-	}
-	return values.Encode()
 }

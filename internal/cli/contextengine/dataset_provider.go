@@ -41,9 +41,8 @@ type HTTPClientInterface interface {
 // DatasetProvider handles datasets and their documents
 // Path structure:
 //   - datasets/              -> List all datasets
-//   - datasets/{name}        -> Get dataset info
-//   - datasets/{name}/files  -> List documents in dataset
-//   - datasets/{name}/files/{doc_name} -> Get document info
+//   - datasets/{name}        -> List documents in dataset
+//   - datasets/{name}/{doc_name} -> Get document info
 type DatasetProvider struct {
 	BaseProvider
 	httpClient HTTPClientInterface
@@ -89,10 +88,6 @@ func (p *DatasetProvider) List(ctx stdctx.Context, subPath string, opts *ListOpt
 	}
 
 	if len(parts) == 2 {
-		if parts[1] == "info" {
-			// datasets/{name}/info - return dataset info as a single node
-			return p.getDatasetNode(ctx, parts[0])
-		}
 		// datasets/{name}/{doc_name} - get document info
 		return p.getDocumentNode(ctx, parts[0], parts[1])
 	}
@@ -139,7 +134,7 @@ func (p *DatasetProvider) Mkdir(ctx stdctx.Context, subPath string, params map[s
 // For datasets:
 //   - cat datasets          -> Error: datasets is a directory, not a file
 //   - cat datasets/kb_name  -> Error: kb_name is a directory, not a file
-//   - cat datasets/kb_name/files/doc_name -> Would retrieve document content (if implemented)
+//   - cat datasets/kb_name/doc_name -> Would retrieve document content (if implemented)
 func (p *DatasetProvider) Cat(ctx stdctx.Context, subPath string) ([]byte, error) {
 	if subPath == "" {
 		return nil, fmt.Errorf("'datasets' is a directory, not a file")
@@ -151,15 +146,10 @@ func (p *DatasetProvider) Cat(ctx stdctx.Context, subPath string) ([]byte, error
 		return nil, fmt.Errorf("'%s' is a directory, not a file", parts[0])
 	}
 
-	if len(parts) == 2 && parts[1] == "files" {
-		// datasets/{name}/files - this is a directory
-		return nil, fmt.Errorf("'%s/files' is a directory, not a file", parts[0])
-	}
-
-	if len(parts) == 3 && parts[1] == "files" {
-		// datasets/{name}/files/{doc_name} - this could be a document
+	if len(parts) == 2 {
+		// datasets/{name}/{doc_name} - this could be a document
 		// For now, document content retrieval is not implemented
-		return nil, fmt.Errorf("document content retrieval not yet implemented for '%s'", parts[2])
+		return nil, fmt.Errorf("document content retrieval not yet implemented for '%s'", parts[1])
 	}
 
 	return nil, fmt.Errorf("invalid path for cat: %s", subPath)
@@ -225,21 +215,6 @@ func (p *DatasetProvider) listDatasets(ctx stdctx.Context, opts *ListOptions) (*
 	return &Result{
 		Nodes: nodes,
 		Total: total,
-	}, nil
-}
-
-func (p *DatasetProvider) getDatasetNode(ctx stdctx.Context, name string) (*Result, error) {
-	// Check if trying to access hidden .knowledgebase
-	if name == ".knowledgebase" {
-		return nil, fmt.Errorf("invalid path: .knowledgebase is not accessible")
-	}
-	node, err := p.getDataset(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	return &Result{
-		Nodes: []*Node{node},
-		Total: 1,
 	}, nil
 }
 
@@ -858,7 +833,7 @@ func (p *DatasetProvider) documentToNode(doc map[string]interface{}, datasetName
 	name := getString(doc["name"])
 	node := &Node{
 		Name:     name,
-		Path:     "/datasets/" + datasetName + "/files/" + name,
+		Path:     "datasets/" + datasetName + "/" + name,
 		Type:     NodeTypeDocument,
 		Metadata: doc,
 	}

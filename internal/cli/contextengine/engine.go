@@ -99,6 +99,16 @@ func (e *Engine) resolveProvider(path string) (Provider, string, error) {
 		}
 	}
 
+	// If no provider supports this path, check if FileProvider can handle it as a fallback
+	// This allows paths like "myskills" to be treated as "files/myskills"
+	if fileProvider := e.getFileProvider(); fileProvider != nil {
+		// Check if the path looks like a file manager path (single component, not matching other providers)
+		parts := SplitPath(path)
+		if len(parts) > 0 && parts[0] != "datasets" {
+			return fileProvider, path, nil
+		}
+	}
+
 	return nil, "", fmt.Errorf("%s: %s", ErrProviderNotFound, path)
 }
 
@@ -107,6 +117,9 @@ func (e *Engine) resolveProvider(path string) (Provider, string, error) {
 //   1. Built-in providers (e.g., datasets)
 //   2. Top-level directories from files provider (if any)
 func (e *Engine) List(ctx stdctx.Context, path string, opts *ListOptions) (*Result, error) {
+	// Normalize path
+	path = normalizePath(path)
+
 	// If path is empty, return list of providers and files root directories
 	if path == "" || path == "/" {
 		return e.listRoot(ctx, opts)
@@ -115,7 +128,7 @@ func (e *Engine) List(ctx stdctx.Context, path string, opts *ListOptions) (*Resu
 	provider, subPath, err := e.resolveProvider(path)
 	if err != nil {
 		// If not found, try to find in files provider as a fallback
-		// This allows "ls myfolder" to work as "ls files/myskills"
+		// This allows "ls myfolder" to work as "ls files/myfolder"
 		if fileProvider := e.getFileProvider(); fileProvider != nil {
 			result, ferr := fileProvider.List(ctx, path, opts)
 			if ferr == nil {
@@ -130,11 +143,11 @@ func (e *Engine) List(ctx stdctx.Context, path string, opts *ListOptions) (*Resu
 
 // listRoot returns the root listing:
 // 1. Built-in providers (datasets, etc.)
-// 2. Top-level directories from files provider
+// 2. Top-level folders from files provider (file_manager)
 func (e *Engine) listRoot(ctx stdctx.Context, opts *ListOptions) (*Result, error) {
 	nodes := make([]*Node, 0)
 
-	// Add built-in providers first
+	// Add built-in providers first (like datasets)
 	for _, p := range e.providers {
 		// Skip files provider from this list - we'll add its children instead
 		if p.Name() == "files" {
@@ -151,15 +164,16 @@ func (e *Engine) listRoot(ctx stdctx.Context, opts *ListOptions) (*Result, error
 		})
 	}
 
-	// Add top-level directories from files provider
+	// Add top-level folders from files provider (file_manager)
 	if fileProvider := e.getFileProvider(); fileProvider != nil {
 		filesResult, err := fileProvider.List(ctx, "", opts)
 		if err == nil {
 			for _, node := range filesResult.Nodes {
-				// Only add directories, not files
+				// Only add folders (directories), not files
 				if node.Type == NodeTypeDirectory {
-					// Remove the /files/ prefix from path
-					node.Path = strings.TrimPrefix(node.Path, "/files/")
+					// Ensure path doesn't have /files/ prefix for display
+					node.Path = strings.TrimPrefix(node.Path, "files/")
+					node.Path = strings.TrimPrefix(node.Path, "/")
 					nodes = append(nodes, node)
 				}
 			}

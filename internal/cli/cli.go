@@ -1045,10 +1045,10 @@ Commands (User Mode):
 
 Context Engine Commands (no quotes):
   ls [path]                    - List resources
+                                 e.g., ls                   - List root (providers and folders)
                                  e.g., ls datasets          - List all datasets
                                  e.g., ls datasets/kb1      - Show dataset info
-                                 e.g., ls files             - List files in root folder
-                                 e.g., ls files/docs        - List files in 'docs' folder
+                                 e.g., ls myfolder          - List files in 'myfolder' (file_manager)
   list [path]                  - Same as ls
   search [options]             - Search resources in datasets
                                  Use 'search -h' for detailed options
@@ -1298,8 +1298,8 @@ func printListHelp() {
 List contents of a path in the context filesystem.
 
 Arguments:
-  [path]                 Path to list (default: "datasets")
-                         Examples: datasets, datasets/kb1
+  [path]                 Path to list (default: root - shows all providers and folders)
+                         Examples: datasets, datasets/kb1, myfolder
 
 Options:
   -n, --limit <number>   Maximum number of items to display (default: 10)
@@ -1307,11 +1307,11 @@ Options:
   -h, --help             Show this help message
 
 Examples:
-  ls                          # List all datasets
+  ls                          # List root (all providers and file_manager folders)
   ls datasets                 # List all datasets
   ls datasets/kb1             # List files in kb1 dataset (default 10 items)
-  ls datasets/kb1 -n 20       # List 20 files in kb1 dataset
-  ls -n 5                     # List 5 datasets
+  ls myfolder                 # List files in file_manager folder 'myfolder'
+  ls -n 5                     # List 5 items at root
 `
 	fmt.Println(help)
 }
@@ -1320,7 +1320,7 @@ Examples:
 // Format: ls [path] [-n limit] [-h|--help]
 func parseListCommandArgs(args []string) (*ListCommandOptions, error) {
 	opts := &ListCommandOptions{
-		Path:  "datasets",
+		Path:  "", // Empty path means list root (all providers and file_manager folders)
 		Limit: 10,
 	}
 

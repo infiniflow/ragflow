@@ -25,40 +25,6 @@ go build -o ragflow_cli ./cmd/ragflow_cli.go
 ./ragflow_cli
 ```
 
-### Quick Start with Context Engine
-
-The Context Engine provides a filesystem-like interface to manage RAGFlow resources:
-
-```bash
-# Connect to RAGFlow server
-./ragflow_cli --host localhost:9380 -u admin@example.com
-
-# List datasets (default shows 10)
-RAGFlow(user)> ls
-
-# List more datasets
-RAGFlow(user)> ls -n 20
-
-# View files in a dataset
-RAGFlow(user)> datasets/KB1
-
-# View more files
-RAGFlow(user)> ls datasets/KB1 -n 50
-
-# Search within a dataset (JSON output by default)
-RAGFlow(user)> search -d datasets/KB1 -q "machine learning"
-
-# Search with plain text output
-RAGFlow(user)> search -d datasets/KB1 -q "test" --output plain
-
-# Create a new dataset
-RAGFlow(user)> mkdir datasets/new_kb
-
-# Get help for specific commands
-RAGFlow(user)> ls -h
-RAGFlow(user)> search -h
-```
-
 ## Architecture
 
 ```
@@ -73,8 +39,9 @@ internal/cli/
 └── contextengine/      # Context Engine (Virtual Filesystem)
     ├── engine.go       # Core engine: path resolution, command routing
     ├── types.go        # Node, Command, Result types
-    ├── provider.go     # Provider interface definition
+    ├── provider.go     # Provider interface definition    
     ├── dataset_provider.go  # Dataset provider implementation
+    ├── file_provider.go  # File manager provider implementation
     └── utils.go        # Helper functions
 ```
 
@@ -95,7 +62,6 @@ The Context Engine provides a unified virtual filesystem interface over RAGFlow'
 |------|-------------|
 | `/datasets` | List all datasets |
 | `/datasets/{name}` | List documents in dataset (default behavior) |
-| `/datasets/{name}/info` | Get dataset info |
 | `/datasets/{name}/{doc}` | Get document info |
 
 ### Commands
@@ -117,7 +83,6 @@ ls                              # List all datasets (default 10)
 ls -n 20                        # List 20 datasets
 ls datasets/kb1                 # List files in kb1 dataset
 ls datasets/kb1 -n 50           # List 50 files in kb1 dataset
-ls datasets/kb1/info            # Show dataset info
 ```
 
 #### `search [options]` - Search for content

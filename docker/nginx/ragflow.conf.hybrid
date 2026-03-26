@@ -50,11 +50,6 @@ server {
         include proxy.conf;
     }
 
-    location ~ ^/v1/file {
-        proxy_pass http://127.0.0.1:9384;
-        include proxy.conf;
-    }
-
     location ~ ^/(v1|api) {
         proxy_pass http://127.0.0.1:9380;
         include proxy.conf;
