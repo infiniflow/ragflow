@@ -177,6 +177,13 @@ test = [
     "codecov>=2.1.13",
 ]
 
+[tool.uv]
+constraint-dependencies = [
+    # CVE-2026-30922: Denial of Service via unbounded recursion in ASN.1 decoding (CVSS 7.5 HIGH)
+    # pyasn1 < 0.6.3 is vulnerable; pulled in transitively via google-auth / rsa / pyasn1-modules
+    "pyasn1>=0.6.3",
+]
+
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
 
