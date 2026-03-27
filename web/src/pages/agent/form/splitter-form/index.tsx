@@ -1,4 +1,5 @@
 import { DelimiterInput } from '@/components/delimiter-form-field';
+import { FormFieldType, RenderField } from '@/components/dynamic-form';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { BlockButton, Button } from '@/components/ui/button';
@@ -34,7 +35,8 @@ export const FormSchema = z.object({
       value: z.string().optional(),
     }),
   ),
-  overlapped_percent: z.number(), // 0.0 - 0.3 , 0% - 30%
+  overlapped_percent: z.number(),
+  delimiter_mode: z.enum(['token_size', 'delimiter']).optional(),
 });
 
 export type SplitterFormSchemaType = z.infer<typeof FormSchema>;
@@ -43,10 +45,17 @@ const SplitterForm = ({ node }: INextOperatorForm) => {
   const defaultValues = useFormValues(initialSplitterValues, node);
   const { t } = useTranslation();
 
+  const formDefaultValues = {
+    ...defaultValues,
+    delimiter_mode: defaultValues.delimiter_mode || 'token_size',
+  };
+
   const form = useForm<SplitterFormSchemaType>({
-    defaultValues,
+    defaultValues: formDefaultValues,
     resolver: zodResolver(FormSchema),
   });
+
+  const delimiterMode = form.watch('delimiter_mode');
   const name = 'delimiters';
 
   const { fields, append, remove } = useFieldArray({
@@ -64,52 +73,73 @@ const SplitterForm = ({ node }: INextOperatorForm) => {
   return (
     <Form {...form}>
       <FormWrapper>
-        <SliderInputFormField
-          name="chunk_token_size"
-          max={2048}
-          label={t('knowledgeConfiguration.chunkTokenNumber')}
-        ></SliderInputFormField>
-        <SliderInputFormField
-          name="overlapped_percent"
-          max={30}
-          min={0}
-          label={t('flow.overlappedPercent')}
-        ></SliderInputFormField>
-        <SliderInputFormField
-          name="image_table_context_window"
-          max={256}
-          min={0}
-          label={t('knowledgeConfiguration.imageTableContextWindow')}
-          tooltip={t('knowledgeConfiguration.imageTableContextWindowTip')}
-        ></SliderInputFormField>
-        <section>
-          <span className="mb-2 inline-block">{t('flow.delimiters')}</span>
-          <div className="space-y-4">
-            {fields.map((field, index) => (
-              <div key={field.id} className="flex items-center gap-2">
-                <div className="space-y-2 flex-1">
-                  <RAGFlowFormItem
-                    name={`${name}.${index}.value`}
-                    label="delimiter"
-                    labelClassName="!hidden"
-                  >
-                    <DelimiterInput className="!m-0"></DelimiterInput>
-                  </RAGFlowFormItem>
-                </div>
-                <Button
-                  type="button"
-                  variant={'ghost'}
-                  onClick={() => remove(index)}
-                >
-                  <Trash2 />
-                </Button>
+        <RenderField
+          field={{
+            name: 'delimiter_mode',
+            type: FormFieldType.Segmented,
+            label: '',
+            options: [
+              { label: 'Token Size', value: 'token_size' },
+              { label: t('flow.delimiters'), value: 'delimiter' },
+            ],
+          }}
+        />
+
+        {delimiterMode === 'token_size' && (
+          <>
+            <SliderInputFormField
+              name="chunk_token_size"
+              max={2048}
+              label={t('knowledgeConfiguration.chunkTokenNumber')}
+            />
+            <SliderInputFormField
+              name="overlapped_percent"
+              max={30}
+              min={0}
+              label={t('flow.overlappedPercent')}
+            />
+            <SliderInputFormField
+              name="image_table_context_window"
+              max={256}
+              min={0}
+              label={t('knowledgeConfiguration.imageTableContextWindow')}
+              tooltip={t('knowledgeConfiguration.imageTableContextWindowTip')}
+            />
+          </>
+        )}
+
+        {delimiterMode === 'delimiter' && (
+          <>
+            <section>
+              <span className="mb-2 inline-block">{t('flow.delimiters')}</span>
+              <div className="space-y-4">
+                {fields.map((field, index) => (
+                  <div key={field.id} className="flex items-center gap-2">
+                    <div className="space-y-2 flex-1">
+                      <RAGFlowFormItem
+                        name={`${name}.${index}.value`}
+                        label="delimiter"
+                        labelClassName="!hidden"
+                      >
+                        <DelimiterInput className="!m-0"></DelimiterInput>
+                      </RAGFlowFormItem>
+                    </div>
+                    <Button
+                      type="button"
+                      variant={'ghost'}
+                      onClick={() => remove(index)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </section>
-        <BlockButton onClick={() => append({ value: '\n' })}>
-          {t('common.add')}
-        </BlockButton>
+            </section>
+            <BlockButton onClick={() => append({ value: '\n' })}>
+              {t('common.add')}
+            </BlockButton>
+          </>
+        )}
 
         <fieldset>
           <div className="mb-2 flex justify-between items-center gap-1">
