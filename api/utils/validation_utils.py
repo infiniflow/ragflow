@@ -397,9 +397,9 @@ class CreateDatasetReq(Base):
     description: Annotated[str | None, Field(default=None, max_length=65535)]
     embedding_model: Annotated[str | None, Field(default=None, max_length=255, serialization_alias="embd_id")]
     permission: Annotated[Literal["me", "team"], Field(default="me", min_length=1, max_length=16)]
-    chunk_method: Annotated[str | None, Field(default=None, serialization_alias="parser_id")]
     parse_type: Annotated[int | None, Field(default=None, ge=0, le=64)]
     pipeline_id: Annotated[str | None, Field(default=None, min_length=32, max_length=32, serialization_alias="pipeline_id")]
+    chunk_method: Annotated[str | None, Field(default=None, serialization_alias="parser_id")]
     parser_config: Annotated[ParserConfig | None, Field(default=None)]
     auto_metadata_config: Annotated[AutoMetadataConfig | None, Field(default=None)]
     ext: Annotated[dict, Field(default={})]
@@ -409,16 +409,7 @@ class CreateDatasetReq(Base):
     def handle_pipeline_id(cls, v: str | None, info: ValidationInfo):
         if v is None:
             return v
-        if info.data.get("chunk_method") is not None and isinstance(v, str):
-            v = None
-        return v
-
-    @field_validator("parse_type", mode="before")
-    @classmethod
-    def handle_parse_type(cls, v: int | None, info: ValidationInfo):
-        if v is None:
-            return v
-        if info.data.get("chunk_method") is not None and isinstance(v, int):
+        if info.data.get("parse_type", 0) == 1:
             v = None
         return v
 
@@ -633,11 +624,11 @@ class CreateDatasetReq(Base):
             # Both provided → allow pipeline mode
             return self
 
-        # parser_id provided (valid): MUST NOT have parse_type or pipeline_id
+        # parser_id provided (valid): parse_type MUST be one of [None, 1], and MUST NOT have pipeline_id
         if isinstance(self.chunk_method, str):
-            if self.parse_type is not None or self.pipeline_id is not None:
-                invalid = []
-                if self.parse_type is not None:
+            invalid = []
+            if self.parse_type not in [None, 1] or self.pipeline_id is not None:
+                if self.parse_type not in [None, 1]:
                     invalid.append("parse_type")
                 if self.pipeline_id is not None:
                     invalid.append("pipeline_id")
@@ -650,20 +641,21 @@ class CreateDatasetReq(Base):
 
     @field_validator("chunk_method", mode="wrap")
     @classmethod
-    def validate_chunk_method(cls, v: Any, handler) -> Any:
+    def validate_chunk_method(cls, v: Any, handler, info: ValidationInfo) -> Any:
         """Wrap validation to unify error messages, including type errors (e.g. list)."""
-        allowed = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"}
-        error_msg = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'"
-        # Omitted field: handler won't be invoked (wrap still gets value); None treated as explicit invalid
-        if v is None:
-            raise PydanticCustomError("literal_error", error_msg)
+        allowed = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table",
+                   "tag", "resume"}
+        error_msg = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
         try:
             # Run inner validation (type checking)
             result = handler(v)
         except Exception:
             raise PydanticCustomError("literal_error", error_msg)
+            # Omitted field: handler won't be invoked (wrap still gets value); None treated as explicit invalid
+        if not result and not info.data.get("pipeline_id", None):
+            raise PydanticCustomError("literal_error", error_msg)
         # After handler, enforce enumeration
-        if not isinstance(result, str) or result == "" or result not in allowed:
+        if result and result not in allowed:
             raise PydanticCustomError("literal_error", error_msg)
         return result
 
