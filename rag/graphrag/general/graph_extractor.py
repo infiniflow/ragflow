@@ -25,14 +25,6 @@ DEFAULT_RECORD_DELIMITER = "##"
 DEFAULT_COMPLETION_DELIMITER = "<|COMPLETE|>"
 
 
-@dataclass
-class GraphExtractionResult:
-    """Unipartite graph extraction result class definition."""
-
-    output: nx.Graph
-    source_docs: dict[Any, Any]
-
-
 class GraphExtractor(Extractor):
     """Unipartite graph extractor class definition."""
 
@@ -120,7 +112,8 @@ class GraphExtractor(Extractor):
             history.append({"role": "user", "content": CONTINUE_PROMPT})
             async with chat_limiter:
                 response = await thread_pool_exec(self._chat, "", history, {})
-            token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + response)
+            string_tokens = num_tokens_from_string("\n".join([m["content"] for m in history]) + response)
+            token_count += string_tokens
             results += response or ""
 
             # if this is the final glean, don't bother updating the continuation flag
@@ -130,7 +123,7 @@ class GraphExtractor(Extractor):
             history.append({"role": "user", "content": LOOP_PROMPT})
             async with chat_limiter:
                 continuation = await thread_pool_exec(self._chat, "", history)
-            token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + response)
+            token_count += string_tokens
             if continuation != "Y":
                 break
             history.append({"role": "assistant", "content": "Y"})
