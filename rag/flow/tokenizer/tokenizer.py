@@ -15,6 +15,7 @@
 import logging
 import random
 import re
+import time
 
 import numpy as np
 
@@ -96,8 +97,9 @@ class Tokenizer(ProcessBase):
             else:
                 cnts_ = np.concatenate((cnts_, vts), axis=0)
             token_count += c
+            if i % 33 == 32:
+                self.callback(i * 1.0 / len(texts) / parts / settings.EMBEDDING_BATCH_SIZE + 0.5 * (parts - 1))
             self.callback(1, f"Embedding batch {i}-{i + settings.EMBEDDING_BATCH_SIZE} :: {(i*100)/len(texts):2.2f}% done :: {settings.EMBEDDING_BATCH_SIZE / delta:2.1f} chunks/s")
-
 
         cnts = cnts_
         title_w = float(self._param.filename_embd_weight)
