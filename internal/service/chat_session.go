@@ -26,7 +26,7 @@ import (
 	"github.com/google/uuid"
 
 	"ragflow/internal/dao"
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
 )
 
 // ChatSessionService chat session (conversation) service
@@ -55,7 +55,7 @@ type SetChatSessionRequest struct {
 
 // SetChatSessionResponse set chat session response
 type SetChatSessionResponse struct {
-	*model.ChatSession
+	*entity.ChatSession
 }
 
 // SetChatSession create or update a chat session
@@ -131,7 +131,7 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 	referenceJSON, _ := json.Marshal([]interface{}{})
 
 	// Create chat session
-	session := &model.ChatSession{
+	session := &entity.ChatSession{
 		ID:        newID,
 		DialogID:  req.DialogID,
 		Name:      &name,
@@ -212,7 +212,7 @@ type ListChatSessionsRequest struct {
 
 // ListChatSessionsResponse list chat sessions response
 type ListChatSessionsResponse struct {
-	Sessions []*model.ChatSession
+	Sessions []*entity.ChatSession
 }
 
 // ListChatSessions lists chat sessions for a dialog
@@ -397,7 +397,7 @@ func (s *ChatSessionService) CompletionStream(userID string, conversationID stri
 
 // Helper methods
 
-func (s *ChatSessionService) buildSessionMessages(session *model.ChatSession, messages []map[string]interface{}) []map[string]interface{} {
+func (s *ChatSessionService) buildSessionMessages(session *entity.ChatSession, messages []map[string]interface{}) []map[string]interface{} {
 	// Deep copy messages to session
 	sessionMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -409,7 +409,7 @@ func (s *ChatSessionService) buildSessionMessages(session *model.ChatSession, me
 	return sessionMessages
 }
 
-func (s *ChatSessionService) initializeReference(session *model.ChatSession) []interface{} {
+func (s *ChatSessionService) initializeReference(session *entity.ChatSession) []interface{} {
 	var reference []interface{}
 	if len(session.Reference) > 0 {
 		json.Unmarshal(session.Reference, &reference)
@@ -433,7 +433,7 @@ func (s *ChatSessionService) checkTenantLLMAPIKey(tenantID, modelName string) (b
 	return true, nil
 }
 
-func (s *ChatSessionService) performChat(dialog *model.Chat, messages []map[string]interface{}, config map[string]interface{}) (string, error) {
+func (s *ChatSessionService) performChat(dialog *entity.Chat, messages []map[string]interface{}, config map[string]interface{}) (string, error) {
 	// Get system prompt from dialog
 	systemPrompt := ""
 	if dialog.PromptConfig != nil {
@@ -456,7 +456,7 @@ func (s *ChatSessionService) performChat(dialog *model.Chat, messages []map[stri
 	}
 
 	// Use ModelBundle to perform chat
-	bundle, err := NewModelBundle(dialog.TenantID, model.ModelTypeChat, dialog.LLMID)
+	bundle, err := NewModelBundle(dialog.TenantID, entity.ModelTypeChat, dialog.LLMID)
 	if err != nil {
 		return "", err
 	}
@@ -476,7 +476,7 @@ func (s *ChatSessionService) performChat(dialog *model.Chat, messages []map[stri
 	return response, err
 }
 
-func (s *ChatSessionService) performChatStream(dialog *model.Chat, messages []map[string]interface{}, config map[string]interface{}) (<-chan string, error) {
+func (s *ChatSessionService) performChatStream(dialog *entity.Chat, messages []map[string]interface{}, config map[string]interface{}) (<-chan string, error) {
 	// Get system prompt from dialog
 	systemPrompt := ""
 	if dialog.PromptConfig != nil {
@@ -499,7 +499,7 @@ func (s *ChatSessionService) performChatStream(dialog *model.Chat, messages []ma
 	}
 
 	// Use ModelBundle to perform streaming chat
-	bundle, err := NewModelBundle(dialog.TenantID, model.ModelTypeChat, dialog.LLMID)
+	bundle, err := NewModelBundle(dialog.TenantID, entity.ModelTypeChat, dialog.LLMID)
 	if err != nil {
 		return nil, err
 	}
@@ -516,7 +516,7 @@ func (s *ChatSessionService) performChatStream(dialog *model.Chat, messages []ma
 	}
 
 	// Get chat model and call ChatStreamly
-	chatModel, ok := bundle.GetModel().(model.ChatModel)
+	chatModel, ok := bundle.GetModel().(entity.ChatModel)
 	if !ok {
 		return nil, fmt.Errorf("model is not a chat model")
 	}
@@ -524,7 +524,7 @@ func (s *ChatSessionService) performChatStream(dialog *model.Chat, messages []ma
 	return chatModel.ChatStreamly(systemPrompt, history, genConf)
 }
 
-func (s *ChatSessionService) structureAnswer(session *model.ChatSession, answer string, messageID, conversationID string, reference []interface{}) map[string]interface{} {
+func (s *ChatSessionService) structureAnswer(session *entity.ChatSession, answer string, messageID, conversationID string, reference []interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"answer":          answer,
 		"reference":       reference,
@@ -533,7 +533,7 @@ func (s *ChatSessionService) structureAnswer(session *model.ChatSession, answer 
 	}
 }
 
-func (s *ChatSessionService) updateSessionMessages(session *model.ChatSession, messages []map[string]interface{}, reference []interface{}) {
+func (s *ChatSessionService) updateSessionMessages(session *entity.ChatSession, messages []map[string]interface{}, reference []interface{}) {
 	// Update session with new messages and reference
 	messagesJSON, _ := json.Marshal(map[string]interface{}{
 		"messages": messages,
@@ -550,7 +550,7 @@ func (s *ChatSessionService) updateSessionMessages(session *model.ChatSession, m
 }
 
 // asyncChat performs chat with RAG support (non-streaming)
-func (s *ChatSessionService) asyncChat(dialog *model.Chat, session *model.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, stream bool) (map[string]interface{}, error) {
+func (s *ChatSessionService) asyncChat(dialog *entity.Chat, session *entity.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, stream bool) (map[string]interface{}, error) {
 	// Check if we need RAG (knowledge base or tavily)
 	hasKB := len(dialog.KBIDs) > 0
 	hasTavily := false
@@ -579,7 +579,7 @@ func (s *ChatSessionService) asyncChat(dialog *model.Chat, session *model.ChatSe
 }
 
 // asyncChatStream performs streaming chat with RAG support
-func (s *ChatSessionService) asyncChatStream(dialog *model.Chat, session *model.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}) (<-chan map[string]interface{}, error) {
+func (s *ChatSessionService) asyncChatStream(dialog *entity.Chat, session *entity.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}) (<-chan map[string]interface{}, error) {
 	resultChan := make(chan map[string]interface{})
 
 	go func() {
@@ -609,7 +609,7 @@ func (s *ChatSessionService) asyncChatStream(dialog *model.Chat, session *model.
 }
 
 // asyncChatSolo performs simple chat without RAG (non-streaming)
-func (s *ChatSessionService) asyncChatSolo(dialog *model.Chat, session *model.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, stream bool) (map[string]interface{}, error) {
+func (s *ChatSessionService) asyncChatSolo(dialog *entity.Chat, session *entity.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, stream bool) (map[string]interface{}, error) {
 	// Get system prompt
 	systemPrompt := s.buildSystemPrompt(dialog)
 
@@ -626,9 +626,9 @@ func (s *ChatSessionService) asyncChatSolo(dialog *model.Chat, session *model.Ch
 	var bundle *ModelBundle
 	var err error
 	if llmType == "image2text" {
-		bundle, err = NewModelBundle(dialog.TenantID, model.ModelTypeImage2Text, dialog.LLMID)
+		bundle, err = NewModelBundle(dialog.TenantID, entity.ModelTypeImage2Text, dialog.LLMID)
 	} else {
-		bundle, err = NewModelBundle(dialog.TenantID, model.ModelTypeChat, dialog.LLMID)
+		bundle, err = NewModelBundle(dialog.TenantID, entity.ModelTypeChat, dialog.LLMID)
 	}
 	if err != nil {
 		return nil, err
@@ -654,7 +654,7 @@ func (s *ChatSessionService) asyncChatSolo(dialog *model.Chat, session *model.Ch
 }
 
 // asyncChatSoloStream performs simple streaming chat without RAG
-func (s *ChatSessionService) asyncChatSoloStream(dialog *model.Chat, session *model.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, resultChan chan<- map[string]interface{}) {
+func (s *ChatSessionService) asyncChatSoloStream(dialog *entity.Chat, session *entity.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, resultChan chan<- map[string]interface{}) {
 	// Get system prompt
 	systemPrompt := s.buildSystemPrompt(dialog)
 
@@ -671,9 +671,9 @@ func (s *ChatSessionService) asyncChatSoloStream(dialog *model.Chat, session *mo
 	var bundle *ModelBundle
 	var err error
 	if llmType == "image2text" {
-		bundle, err = NewModelBundle(dialog.TenantID, model.ModelTypeImage2Text, dialog.LLMID)
+		bundle, err = NewModelBundle(dialog.TenantID, entity.ModelTypeImage2Text, dialog.LLMID)
 	} else {
-		bundle, err = NewModelBundle(dialog.TenantID, model.ModelTypeChat, dialog.LLMID)
+		bundle, err = NewModelBundle(dialog.TenantID, entity.ModelTypeChat, dialog.LLMID)
 	}
 	if err != nil {
 		resultChan <- s.structureAnswer(session, "**ERROR**: "+err.Error(), messageID, session.ID, reference)
@@ -684,7 +684,7 @@ func (s *ChatSessionService) asyncChatSoloStream(dialog *model.Chat, session *mo
 	history := s.convertToHistory(processedMessages)
 
 	// Get chat model
-	chatModel, ok := bundle.GetModel().(model.ChatModel)
+	chatModel, ok := bundle.GetModel().(entity.ChatModel)
 	if !ok {
 		resultChan <- s.structureAnswer(session, "**ERROR**: model is not a chat model", messageID, session.ID, reference)
 		return
@@ -709,7 +709,7 @@ func (s *ChatSessionService) asyncChatSoloStream(dialog *model.Chat, session *mo
 }
 
 // buildSystemPrompt builds the system prompt from dialog configuration
-func (s *ChatSessionService) buildSystemPrompt(dialog *model.Chat) string {
+func (s *ChatSessionService) buildSystemPrompt(dialog *entity.Chat) string {
 	if dialog.PromptConfig == nil {
 		return ""
 	}
@@ -719,7 +719,7 @@ func (s *ChatSessionService) buildSystemPrompt(dialog *model.Chat) string {
 }
 
 // processMessages processes messages and handles attachments
-func (s *ChatSessionService) processMessages(messages []map[string]interface{}, dialog *model.Chat) []map[string]interface{} {
+func (s *ChatSessionService) processMessages(messages []map[string]interface{}, dialog *entity.Chat) []map[string]interface{} {
 	// Process each message
 	processed := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -762,7 +762,7 @@ func (s *ChatSessionService) convertToHistory(messages []map[string]interface{})
 }
 
 // buildGenConf builds generation config from dialog and request
-func (s *ChatSessionService) buildGenConf(dialog *model.Chat, config map[string]interface{}) map[string]interface{} {
+func (s *ChatSessionService) buildGenConf(dialog *entity.Chat, config map[string]interface{}) map[string]interface{} {
 	genConf := make(map[string]interface{})
 
 	// Start with dialog's LLM setting
@@ -799,7 +799,7 @@ func (s *ChatSessionService) removeReasoningContent(answer string) string {
 }
 
 // structureAnswerWithConv structures the answer with conversation update (like Python's structure_answer)
-func (s *ChatSessionService) structureAnswerWithConv(session *model.ChatSession, ans map[string]interface{}, messageID, conversationID string, reference []interface{}) map[string]interface{} {
+func (s *ChatSessionService) structureAnswerWithConv(session *entity.ChatSession, ans map[string]interface{}, messageID, conversationID string, reference []interface{}) map[string]interface{} {
 	// Extract reference from answer
 	ref, _ := ans["reference"].(map[string]interface{})
 	if ref == nil {

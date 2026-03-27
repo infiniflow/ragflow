@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package model
+package entity
 
 // LLMFactories LLM factory model
 type LLMFactories struct {

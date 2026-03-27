@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package model
+package entity
 
 // UserTenant user tenant relationship model
 type UserTenant struct {

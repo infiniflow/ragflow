@@ -446,7 +446,7 @@ func (p *Parser) parseCreateCommand() (*Command, error) {
 	case TokenToken:
 		return p.parseCreateToken()
 	case TokenIndex:
-        return p.parseCreateIndex()
+		return p.parseCreateIndex()
 	default:
 		return nil, fmt.Errorf("unknown CREATE target: %s", p.curToken.Value)
 	}
@@ -691,7 +691,7 @@ func (p *Parser) parseDropCommand() (*Command, error) {
 	case TokenToken:
 		return p.parseDropToken()
 	case TokenIndex:
-        return p.parseDropIndex()
+		return p.parseDropIndex()
 	default:
 		return nil, fmt.Errorf("unknown DROP target: %s", p.curToken.Value)
 	}

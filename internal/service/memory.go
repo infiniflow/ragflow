@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"ragflow/internal/entity"
 	"regexp"
 	"strconv"
 	"strings"
@@ -28,7 +29,6 @@ import (
 	"github.com/google/uuid"
 
 	"ragflow/internal/dao"
-	"ragflow/internal/model"
 )
 
 const (
@@ -362,7 +362,7 @@ type UpdateMemoryRequest struct {
 // CreateMemoryResponse defines the response structure for memory operations
 // Uses struct embedding to extend Memory struct with API-specific fields
 type CreateMemoryResponse struct {
-	model.Memory
+	entity.Memory
 	OwnerName  *string  `json:"owner_name,omitempty"`
 	MemoryType []string `json:"memory_type"`
 }
@@ -454,7 +454,7 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 		newID = newID[:32]
 	}
 
-	memory := &model.Memory{
+	memory := &entity.Memory{
 		ID:               newID,
 		Name:             memoryName,
 		TenantID:         tenantID,
@@ -845,7 +845,7 @@ func isList(v interface{}) bool {
 // Example:
 //
 //	resp := formatRetDataFromMemory(memoryModel)
-func formatRetDataFromMemory(memory *model.Memory) *CreateMemoryResponse {
+func formatRetDataFromMemory(memory *entity.Memory) *CreateMemoryResponse {
 	memoryTypes := dao.GetMemoryTypeHuman(memory.MemoryType)
 
 	resp := &CreateMemoryResponse{
@@ -881,7 +881,7 @@ func formatDateToString(t int64) *string {
 // Example:
 //
 //	resp := formatRetDataFromMemoryListItem(memoryItem)
-func formatRetDataFromMemoryListItem(memory *model.MemoryListItem) *CreateMemoryResponse {
+func formatRetDataFromMemoryListItem(memory *entity.MemoryListItem) *CreateMemoryResponse {
 	memoryTypes := dao.GetMemoryTypeHuman(memory.MemoryType)
 	resp := &CreateMemoryResponse{
 		Memory:     memory.Memory,

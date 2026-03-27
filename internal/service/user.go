@@ -30,6 +30,7 @@ import (
 	"hash"
 	"os"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"regexp"
 	"strconv"
@@ -40,7 +41,7 @@ import (
 	"golang.org/x/crypto/scrypt"
 
 	"ragflow/internal/dao"
-	"ragflow/internal/model"
+
 	"ragflow/internal/utility"
 )
 
@@ -101,7 +102,7 @@ type UserResponse struct {
 }
 
 // Register user registration
-func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorCode, error) {
+func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.ErrorCode, error) {
 	cfg := server.GetConfig()
 	if cfg.RegisterEnabled == 0 {
 		return nil, common.CodeOperatingError, fmt.Errorf("User registration is disabled!")
@@ -134,7 +135,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	loginChannel := "password"
 	isSuperuser := false
 
-	user := &model.User{
+	user := &entity.User{
 		ID:              userID,
 		AccessToken:     &accessToken,
 		Email:           req.Email,
@@ -179,7 +180,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 		rerankID = ""
 	}
 
-	tenant := &model.Tenant{
+	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
 		LLMID:     llmID,
@@ -196,7 +197,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	tenant.UpdateDate = &now_date
 
 	userTenantID := utility.GenerateToken()
-	userTenant := &model.UserTenant{
+	userTenant := &entity.UserTenant{
 		ID:        userTenantID,
 		UserID:    userID,
 		TenantID:  userID,
@@ -210,7 +211,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	userTenant.UpdateDate = &now_date
 
 	fileID := utility.GenerateToken()
-	rootFile := &model.File{
+	rootFile := &entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
 		TenantID:  userID,
@@ -272,7 +273,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 }
 
 // Login user login
-func (s *UserService) Login(req *LoginRequest) (*model.User, common.ErrorCode, error) {
+func (s *UserService) Login(req *LoginRequest) (*entity.User, common.ErrorCode, error) {
 	// Get user by email (using username field as email)
 	user, err := s.userDAO.GetByEmail(req.Username)
 	if err != nil {
@@ -315,7 +316,7 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, common.ErrorCode, e
 // - CodeAuthenticationError (109): Email not registered or password mismatch
 // - CodeServerError (500): Password decryption failure
 // - CodeForbidden (403): Account disabled
-func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*model.User, common.ErrorCode, error) {
+func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*entity.User, common.ErrorCode, error) {
 	user, err := s.userDAO.GetByEmail(req.Email)
 	if err != nil {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("Email: %s is not registered!", req.Email)
@@ -639,7 +640,7 @@ func (s *UserService) decryptPassword(encryptedPassword string) (string, error) 
 // GetUserByToken gets user by authorization header
 // The token parameter is the authorization header value, which needs to be decrypted
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
-func (s *UserService) GetUserByToken(authorization string) (*model.User, common.ErrorCode, error) {
+func (s *UserService) GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error) {
 	// Get secret key from config
 	variables := server.GetVariables()
 	secretKey := variables.SecretKey
@@ -666,12 +667,12 @@ func (s *UserService) GetUserByToken(authorization string) (*model.User, common.
 }
 
 // UpdateUserAccessToken updates user's access token
-func (s *UserService) UpdateUserAccessToken(user *model.User, token string) error {
+func (s *UserService) UpdateUserAccessToken(user *entity.User, token string) error {
 	return s.userDAO.UpdateAccessToken(user, token)
 }
 
 // Logout invalidates user's access token
-func (s *UserService) Logout(user *model.User) (common.ErrorCode, error) {
+func (s *UserService) Logout(user *entity.User) (common.ErrorCode, error) {
 	// Invalidate token by setting it to an invalid value
 	// Similar to Python implementation: "INVALID_" + secrets.token_hex(16)
 	invalidToken := "INVALID_" + utility.GenerateToken()
@@ -683,7 +684,7 @@ func (s *UserService) Logout(user *model.User) (common.ErrorCode, error) {
 }
 
 // GetUserProfile returns user profile information
-func (s *UserService) GetUserProfile(user *model.User) map[string]interface{} {
+func (s *UserService) GetUserProfile(user *entity.User) map[string]interface{} {
 	// Format create time and date (from database fields)
 	createTime := user.CreateTime
 	createDate := ""
@@ -788,7 +789,7 @@ func (s *UserService) GetUserProfile(user *model.User) map[string]interface{} {
 }
 
 // UpdateUserSettings updates user settings
-func (s *UserService) UpdateUserSettings(user *model.User, req *UpdateSettingsRequest) (common.ErrorCode, error) {
+func (s *UserService) UpdateUserSettings(user *entity.User, req *UpdateSettingsRequest) (common.ErrorCode, error) {
 	// Update fields if provided
 	if req.Nickname != nil {
 		user.Nickname = *req.Nickname
@@ -818,7 +819,7 @@ func (s *UserService) UpdateUserSettings(user *model.User, req *UpdateSettingsRe
 }
 
 // ChangePassword changes user password
-func (s *UserService) ChangePassword(user *model.User, req *ChangePasswordRequest) (common.ErrorCode, error) {
+func (s *UserService) ChangePassword(user *entity.User, req *ChangePasswordRequest) (common.ErrorCode, error) {
 	// If password is provided, verify current password
 	if req.Password != nil {
 		if user.Password == nil || !s.VerifyPassword(*user.Password, *req.Password) {
@@ -1004,7 +1005,7 @@ func (s *UserTenantService) GetUserTenantRelationByUserID(userID string) ([]*Use
  * Returns:
  *   - *UserTenantRelation: the converted UserTenantRelation
  */
-func convertToUserTenantRelation(userTenant *model.UserTenant) *UserTenantRelation {
+func convertToUserTenantRelation(userTenant *entity.UserTenant) *UserTenantRelation {
 	return &UserTenantRelation{
 		ID:       userTenant.ID,
 		UserID:   userTenant.UserID,
@@ -1016,7 +1017,7 @@ func convertToUserTenantRelation(userTenant *model.UserTenant) *UserTenantRelati
 // GetUserByAPIToken gets user by access key from Authorization header
 // This is used for API token authentication
 // The authorization parameter should be in format: "Bearer <token>" or just "<token>"
-func (s *UserService) GetUserByAPIToken(authorization string) (*model.User, common.ErrorCode, error) {
+func (s *UserService) GetUserByAPIToken(authorization string) (*entity.User, common.ErrorCode, error) {
 	if authorization == "" {
 		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
 	}
