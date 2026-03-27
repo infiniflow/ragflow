@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { isEmpty } from 'lodash';
 import { Trash2 } from 'lucide-react';
 import { memo, useEffect, useRef } from 'react';
 import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
@@ -22,16 +23,14 @@ import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
+import { transformApiResponseToForm, useDynamicHierarchyOptions } from './hook';
+
+type FormModeValues = {
+  hierarchy?: string;
+  rules: Array<{ levels: Array<{ expression: string }> }>;
+};
 
 const outputList = buildOutputList(initialTitleChunkerValues.outputs);
-
-const HierarchyOptions = [
-  { label: 'H1', value: Hierarchy.H1 },
-  { label: 'H2', value: Hierarchy.H2 },
-  { label: 'H3', value: Hierarchy.H3 },
-  { label: 'H4', value: Hierarchy.H4 },
-  { label: 'H5', value: Hierarchy.H5 },
-];
 
 const rulesSchema = z.array(
   z.object({
@@ -56,7 +55,7 @@ const rulesSchema = z.array(
 );
 
 export const FormSchema = z.object({
-  method: z.enum(['hierarchy', 'tree', 'group']),
+  method: z.enum(['hierarchy', 'group']),
   hierarchy: z.string().optional(),
   rules: rulesSchema,
 });
@@ -139,14 +138,13 @@ function CardBody({ cardName }: CardBodyProps) {
           />
         ))}
       </div>
-      {levelFields.length < 5 && (
-        <BlockButton
-          onClick={() => appendLevel({ expression: '' })}
-          className="mt-4"
-        >
-          {t('flow.addLevel', 'Add Level')}
-        </BlockButton>
-      )}
+
+      <BlockButton
+        onClick={() => appendLevel({ expression: '' })}
+        className="mt-4"
+      >
+        {t('flow.addLevel', 'Add Level')}
+      </BlockButton>
     </CardContent>
   );
 }
@@ -185,10 +183,13 @@ function GroupCardBody({ cardName }: GroupCardBodyProps) {
 
 const TitleChunkerForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
-  const defaultValues = useFormValues(initialTitleChunkerValues, node);
+  const initialValues = useFormValues(initialTitleChunkerValues, node);
+
+  const hierarchyModeValues = useRef<FormModeValues | null>(null);
+  const groupValues = useRef<FormModeValues | null>(null);
 
   const form = useForm<TitleChunkerFormSchemaType>({
-    defaultValues,
+    defaultValues: transformApiResponseToForm(initialValues),
     resolver: zodResolver(FormSchema),
     mode: 'onChange',
   });
@@ -197,6 +198,7 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
 
   const method = form.watch('method');
   const name = 'rules';
+  const hierarchyOptions = useDynamicHierarchyOptions(form, name);
 
   useEffect(() => {
     if (!isInitialized.current) {
@@ -206,20 +208,65 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
     }
 
     if (method !== initialMode.current) {
+      const currentMode = initialMode.current;
+      const hierarchyValue = form.getValues('hierarchy');
+      const rulesValue = form.getValues('rules');
+
+      if (currentMode === 'hierarchy') {
+        hierarchyModeValues.current = {
+          hierarchy: hierarchyValue,
+          rules: rulesValue,
+        };
+      } else if (currentMode === 'group') {
+        groupValues.current = {
+          hierarchy: hierarchyValue,
+          rules: rulesValue,
+        };
+      }
+
       initialMode.current = method;
 
       if (method === 'group') {
+        const rules = groupValues.current?.rules?.map((item) => {
+          const levels = item.levels.filter((level) => {
+            return !isEmpty(level.expression);
+          });
+          if (levels.length === 0) {
+            return { levels: [{ expression: '' }] };
+          }
+          return {
+            levels: levels,
+          };
+        });
         form.reset({
           method: 'group',
           hierarchy: undefined,
-          rules: initialGroupValues.rules,
+          rules: rules || initialGroupValues.rules,
         });
       } else {
-        form.reset({
-          method: method,
-          hierarchy: initialTitleChunkerValues.hierarchy,
-          rules: initialTitleChunkerValues.rules,
-        });
+        let modeValues: FormModeValues | null = null;
+        const defaultHierarchy = Hierarchy.H3;
+
+        modeValues = hierarchyModeValues.current;
+
+        if (modeValues) {
+          form.reset({
+            method: method,
+            hierarchy: modeValues.hierarchy || defaultHierarchy,
+            rules: modeValues.rules,
+          });
+        } else {
+          const newModeValues: FormModeValues = {
+            hierarchy: defaultHierarchy,
+            rules: JSON.parse(JSON.stringify(initialTitleChunkerValues.rules)),
+          };
+
+          form.reset({
+            method: method,
+            hierarchy: defaultHierarchy,
+            rules: newModeValues.rules,
+          });
+        }
       }
     }
   }, [method, form]);
@@ -241,14 +288,14 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
             label: '',
             options: [
               { label: t('flow.hierarchy'), value: 'hierarchy' },
-              { label: t('flow.tree', 'tree'), value: 'tree' },
-              { label: t('flow.group', 'group'), value: 'group' },
+              // { label: t('flow.tree', 'Tree'), value: 'tree' },
+              { label: t('flow.group', 'Group'), value: 'group' },
             ],
           }}
         />
         {method !== 'group' && (
           <RAGFlowFormItem name={'hierarchy'} label={''}>
-            <SelectWithSearch options={HierarchyOptions}></SelectWithSearch>
+            <SelectWithSearch options={hierarchyOptions}></SelectWithSearch>
           </RAGFlowFormItem>
         )}
         {method === 'group' ? (
@@ -290,17 +337,18 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
             ))}
           </div>
         )}
-        <BlockButton
-          onClick={() =>
-            append({
-              levels: [{ expression: '' }],
-            })
-          }
-          disabled={fields.length >= 5}
-          className="mt-4"
-        >
-          {t('flow.rule', 'Add Rule')}
-        </BlockButton>
+        {method !== 'group' && (
+          <BlockButton
+            onClick={() =>
+              append({
+                levels: [{ expression: '' }],
+              })
+            }
+            className="mt-4"
+          >
+            {t('flow.rule', 'Add Rule')}
+          </BlockButton>
+        )}
       </FormWrapper>
       <div className="p-5">
         <Output list={outputList}></Output>
