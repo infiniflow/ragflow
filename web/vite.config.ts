@@ -165,7 +165,6 @@ export default defineConfig(({ mode }) => {
         'react',
         'react-dom',
         'react-router',
-        'antd',
         'axios',
         'lodash',
         'dayjs',
