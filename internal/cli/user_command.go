@@ -143,13 +143,19 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 		iterations = val
 	}
 
+	// Determine auth kind based on whether API token is being used
+	authKind := "web"
+	if c.HTTPClient.useAPIToken {
+		authKind = "api"
+	}
+
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", "/datasets", true, "web", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/datasets", true, authKind, nil, nil, iterations)
 	}
 
 	// Normal mode
-	resp, err := c.HTTPClient.Request("GET", "/datasets", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/datasets", true, authKind, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
@@ -543,6 +549,186 @@ func (c *RAGFlowClient) UnsetToken(cmd *Command) (ResponseIf, error) {
 	var result SimpleResponse
 	result.Code = 0
 	result.Message = "API token unset successfully"
+	result.Duration = 0
+	return &result, nil
+}
+
+// CreateIndex creates an index for a dataset
+func (c *RAGFlowClient) CreateIndex(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	datasetName, ok := cmd.Params["dataset_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("dataset_name not provided")
+	}
+
+	vectorSize, ok := cmd.Params["vector_size"].(int)
+	if !ok {
+		return nil, fmt.Errorf("vector_size not provided")
+	}
+
+	// Get dataset ID by name
+	datasetID, err := c.getDatasetID(datasetName)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := map[string]interface{}{
+		"kb_id":       datasetID,
+		"vector_size": vectorSize,
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/kb/index", false, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create index: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create index: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: code is not a number")
+	}
+
+	var result SimpleResponse
+	result.Code = int(code)
+	if result.Code == 0 {
+		result.Message = fmt.Sprintf("Success to create index for dataset: %s", datasetName)
+	} else {
+		result.Message = fmt.Sprintf("Failed to create index: %v", resJSON)
+	}
+	result.Duration = 0
+	return &result, nil
+}
+
+// DropIndex drops an index for a dataset
+func (c *RAGFlowClient) DropIndex(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	datasetName, ok := cmd.Params["dataset_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("dataset_name not provided")
+	}
+
+	// Get dataset ID by name
+	datasetID, err := c.getDatasetID(datasetName)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := map[string]interface{}{
+		"kb_id": datasetID,
+	}
+
+	resp, err := c.HTTPClient.Request("DELETE", "/kb/index", false, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop index: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to drop index: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: code is not a number")
+	}
+
+	var result SimpleResponse
+	result.Code = int(code)
+	if result.Code == 0 {
+		result.Message = fmt.Sprintf("Success to drop index for dataset: %s", datasetName)
+	} else {
+		result.Message = fmt.Sprintf("Failed to drop index: %v", resJSON)
+	}
+	result.Duration = 0
+	return &result, nil
+}
+
+// CreateDocMetaIndex creates the document metadata index for the tenant
+func (c *RAGFlowClient) CreateDocMetaIndex(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/tenant/doc_meta_index", false, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create doc meta index: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create doc meta index: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: code is not a number")
+	}
+
+	var result SimpleResponse
+	result.Code = int(code)
+	if result.Code == 0 {
+		result.Message = "Success to create doc meta index"
+	} else {
+		result.Message = fmt.Sprintf("Failed to create doc meta index: %v", resJSON)
+	}
+	result.Duration = 0
+	return &result, nil
+}
+
+// DropDocMetaIndex drops the document metadata index for the tenant
+func (c *RAGFlowClient) DropDocMetaIndex(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	resp, err := c.HTTPClient.Request("DELETE", "/tenant/doc_meta_index", false, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop doc meta index: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to drop doc meta index: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: code is not a number")
+	}
+
+	var result SimpleResponse
+	result.Code = int(code)
+	if result.Code == 0 {
+		result.Message = "Success to drop doc meta index"
+	} else {
+		result.Message = fmt.Sprintf("Failed to drop doc meta index: %v", resJSON)
+	}
 	result.Duration = 0
 	return &result, nil
 }

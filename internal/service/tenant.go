@@ -17,15 +17,22 @@
 package service
 
 import (
+	"strings"
+	"context"
+	"fmt"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/model"
+	"ragflow/internal/engine"
 )
 
 // TenantService tenant service
 type TenantService struct {
 	tenantDAO     *dao.TenantDAO
 	userTenantDAO *dao.UserTenantDAO
+	docEngine     engine.DocEngine
 }
 
 // NewTenantService create tenant service
@@ -33,6 +40,7 @@ func NewTenantService() *TenantService {
 	return &TenantService{
 		tenantDAO:     dao.NewTenantDAO(),
 		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine:     engine.Get(),
 	}
 }
 
@@ -86,6 +94,136 @@ type TenantListItem struct {
 	DeltaSeconds float64 `json:"delta_seconds"`
 }
 
+// TenantLLMService tenant LLM service
+// This service handles operations related to tenant-specific LLM configurations
+type TenantLLMService struct {
+	tenantLLMDAO *dao.TenantLLMDAO
+}
+
+// NewTenantLLMService creates a new TenantLLMService instance
+func NewTenantLLMService() *TenantLLMService {
+	return &TenantLLMService{
+		tenantLLMDAO: dao.NewTenantLLMDAO(),
+	}
+}
+
+// GetAPIKey retrieves the tenant LLM record by tenant ID and model name
+/**
+ * This method splits the model name into name and factory parts using the "@" separator,
+ * then queries the database for the matching tenant LLM configuration.
+ *
+ * Parameters:
+ *   - tenantID: the unique identifier of the tenant
+ *   - modelName: the model name, optionally including factory suffix (e.g., "gpt-4@OpenAI")
+ *
+ * Returns:
+ *   - *model.TenantLLM: the tenant LLM record if found, nil otherwise
+ *   - error: an error if the query fails, nil otherwise
+ *
+ * Example:
+ *
+ *	service := NewTenantLLMService()
+ *
+ *	// Get API key for model with factory
+ *	tenantLLM, err := service.GetAPIKey("tenant-123", "gpt-4@OpenAI")
+ *	if err != nil {
+ *	    log.Printf("Error: %v", err)
+ *	}
+ *
+ *	// Get API key for model without factory
+ *	tenantLLM, err := service.GetAPIKey("tenant-123", "gpt-4")
+ */
+func (s *TenantLLMService) GetAPIKey(tenantID, modelName string) (*model.TenantLLM, error) {
+	modelName, factory := s.SplitModelNameAndFactory(modelName)
+
+	var tenantLLM *model.TenantLLM
+	var err error
+
+	if factory == "" {
+		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDAndLLMName(tenantID, modelName)
+	} else {
+		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDLLMNameAndFactory(tenantID, modelName, factory)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return tenantLLM, nil
+}
+
+// SplitModelNameAndFactory splits a model name into name and factory parts
+func (s *TenantLLMService) SplitModelNameAndFactory(modelName string) (string, string) {
+	arr := strings.Split(modelName, "@")
+	if len(arr) < 2 {
+		return modelName, ""
+	}
+	if len(arr) > 2 {
+		return strings.Join(arr[0:len(arr)-1], "@"), arr[len(arr)-1]
+	}
+	return arr[0], arr[1]
+}
+
+// EnsureTenantModelIDForParams ensures tenant model IDs are populated for LLM-related parameters
+/**
+ * This method iterates through a predefined list of LLM-related parameter keys (llm_id, embd_id,
+ * asr_id, img2txt_id, rerank_id, tts_id) and automatically populates the corresponding tenant_*
+ * fields (tenant_llm_id, tenant_embd_id, etc.) with the tenant LLM record IDs.
+ *
+ * If a parameter key exists and its corresponding tenant_* key doesn't exist, this method will:
+ *  1. Query the tenant LLM record using GetAPIKey
+ *  2. If found, set the tenant_* key to the record's ID
+ *  3. If not found, set the tenant_* key to 0
+ *
+ * Parameters:
+ *   - tenantID: the unique identifier of the tenant
+ *   - params: a map of parameters to be updated (will be modified in place)
+ *
+ * Returns:
+ *   - map[string]interface{}: the updated parameters map (same as input, modified in place)
+ *
+ * Example:
+ *
+ *	service := NewTenantLLMService()
+ *	params := map[string]interface{}{
+ *	    "llm_id": "gpt-4@OpenAI",
+ *	    "embd_id": "text-embedding-3-small@OpenAI",
+ *	}
+ *	result := service.EnsureTenantModelIDForParams("tenant-123", params)
+ *	// result will contain:
+ *	// {
+ *	//     "llm_id": "gpt-4@OpenAI",
+ *	//     "embd_id": "text-embedding-3-small@OpenAI",
+ *	//     "tenant_llm_id": 123,    // ID from tenant_llm table
+ *	//     "tenant_embd_id": 456,   // ID from tenant_llm table
+ *	// }
+ */
+func (s *TenantLLMService) EnsureTenantModelIDForParams(tenantID string, params map[string]interface{}) map[string]interface{} {
+	paramKeys := []string{"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id"}
+
+	for _, key := range paramKeys {
+		tenantKey := "tenant_" + key
+
+		if value, exists := params[key]; exists && value != nil && value != "" {
+			if _, tenantExists := params[tenantKey]; !tenantExists {
+				modelName, ok := value.(string)
+				if !ok || modelName == "" {
+					continue
+				}
+
+				tenantLLM, err := s.GetAPIKey(tenantID, modelName)
+				if err == nil && tenantLLM != nil {
+					params[tenantKey] = tenantLLM.ID
+				} else {
+					params[tenantKey] = int64(0)
+				}
+			}
+		}
+	}
+
+	return params
+}
+
 // GetTenantList get tenant list for a user
 func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) {
 	tenants, err := s.userTenantDAO.GetTenantsByUserID(userID)
@@ -117,4 +255,32 @@ func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) 
 	}
 
 	return result, nil
+}
+
+// CreateDocMetaIndex creates the document metadata index for a tenant
+func (s *TenantService) CreateDocMetaIndex(tenantID string) (common.ErrorCode, error) {
+	// Build index name: ragflow_doc_meta_<tenant_id>
+	indexName := fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
+
+	// Call document engine to create doc meta index
+	err := s.docEngine.CreateDocMetaIndex(context.Background(), indexName)
+	if err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to create doc meta index: %w", err)
+	}
+
+	return common.CodeSuccess, nil
+}
+
+// DeleteDocMetaIndex deletes the document metadata index for a tenant
+func (s *TenantService) DeleteDocMetaIndex(tenantID string) (common.ErrorCode, error) {
+	// Build index name: ragflow_doc_meta_<tenant_id>
+	indexName := fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
+
+	// Call document engine to delete doc meta index
+	err := s.docEngine.DeleteIndex(context.Background(), indexName)
+	if err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to delete doc meta index: %w", err)
+	}
+
+	return common.CodeSuccess, nil
 }
