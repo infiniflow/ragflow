@@ -116,7 +116,7 @@ export default {
     knowledgeDetails: {
       redoAll: 'Очистите существующие фрагменты',
       emptyMetadata: 'Нет метаданных',
-      metadataField: 'Поле метаддых',
+      metadataField: 'Поле метаданных',
       localUpload: 'Локальная загрузка',
       fileSize: 'Размер файла',
       fileType: 'Тип файла',
