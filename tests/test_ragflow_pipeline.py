@@ -99,45 +99,87 @@ def list_datasets(cfg: dict) -> list:
     return data["data"]
 
 
+MARKET_ISO_CODES = {
+    "United Kingdom": "UK", "Ireland": "IE", "France": "FR",
+    "Germany": "DE", "Italy": "IT", "Spain": "ES", "Belgium": "BE",
+    "Netherlands": "NL", "Portugal": "PT", "Poland": "PL",
+    "Austria": "AT", "Switzerland": "CH", "Sweden": "SE",
+    "Norway": "NO", "Denmark": "DK", "Finland": "FI",
+}
+
+def _normalize_market(market: str) -> str:
+    """Convert full country name to ISO code if needed."""
+    if market in MARKET_ISO_CODES.values():
+        return market  # already ISO code
+    return MARKET_ISO_CODES.get(market, market.upper()[:2])
+
+def _build_dataset_name(brand: str, car_model: str, year: str,
+                         market: str, trim: str, source_type: str) -> str:
+    """
+    Build standardized dataset name:
+    {Brand}_{Model}_{Year}_{Market}_{Trim}_{SourceType}_{YYYYMMDD}_{HHMM}
+    Example: Opel_Corsa_2023_UK_All_Video_20260327_1445
+    """
+    from datetime import datetime
+    now = datetime.now()
+    return f"{brand}_{car_model}_{year}_{market}_{trim}_{source_type}_{now.strftime('%Y%m%d')}_{now.strftime('%H%M')}"
+
 def create_video_dataset(
     cfg: dict,
-    name: str,
+    brand: str,
+    car_model: str,
+    year: str,
+    market: str,
     whisper_backend: str = "youtube-transcript-api",
     whisper_model: str = "base",
+    trim: str = "All",
     openai_api_key: str = "",
 ) -> dict:
     """
     MCP tool: create_video_dataset
-    Create a RagFlow dataset configured for YouTube video ingestion.
+    Create a RagFlow dataset for YouTube video ingestion.
+    Dataset name is auto-generated: {Brand}_{Model}_{Year}_{Market}_{Trim}_Video_{YYYYMMDD}_{HHMM}
 
     Args:
         cfg             : config dict from load_config()
-        name            : dataset name (must be unique)
-        whisper_backend : transcription backend, one of:
+        brand           : car brand e.g. "Opel", "Peugeot", "Fiat"
+        car_model       : car model e.g. "Corsa", "208", "500"
+        year            : model year e.g. "2023", "2024", "2025"
+        market          : target market — ISO code or full name:
+                            "UK" or "United Kingdom"
+                            "IE" or "Ireland"
+                            "FR" or "France"
+                            "DE" or "Germany"
+        whisper_backend : transcription backend:
                             "youtube-transcript-api"  — fast, captions only (default)
-                            "faster-whisper"          — local CPU/GPU transcription
-                            "openai-whisper"          — local CPU/GPU (original library)
-                            "openai-api"              — cloud transcription (needs key)
-        whisper_model   : model size for faster-whisper / openai-whisper:
-                            "tiny"   — fastest, lower accuracy
-                            "base"   — balanced (recommended for local CPU)
-                            "small"  — better accuracy
-                            "medium" — high accuracy
-                            "large"  — best accuracy (recommended for GCP GPU)
-                          Note: ignored for youtube-transcript-api and openai-api backends
-        openai_api_key  : OpenAI API key, required only for "openai-api" backend.
-                          Leave empty to use OPENAI_API_KEY from .env.test
+                            "faster-whisper"          — local CPU/GPU
+                            "openai-whisper"          — local CPU/GPU (original)
+                            "openai-api"              — cloud (needs key)
+        whisper_model   : "tiny" | "base" | "small" | "medium" | "large"
+        trim            : car trim level e.g. "GS", "Elegance", "All" (default: "All")
+        openai_api_key  : only for "openai-api" backend
 
     Returns:
-        dict with dataset metadata including "id" field
+        dict with dataset metadata including "id" and "name"
     """
-    # Fall back to env key if not provided
+    from datetime import date
     if not openai_api_key:
         openai_api_key = cfg.get("openai_api_key", "")
 
+    market_iso = _normalize_market(market)
+    name = _build_dataset_name(brand, car_model, year, market_iso, trim, "Video")
+    retrieval_date = date.today().isoformat()
+
     parser_config = {
-        "whisper_backend": whisper_backend,
-        "whisper_model":   whisper_model,
+        "whisper_backend":  whisper_backend,
+        "whisper_model":    whisper_model,
+        "brand":            brand,
+        "car_model":        car_model,
+        "year":             year,
+        "market":           market_iso,
+        "trim":             trim,
+        "source_type":      "Video",
+        "retrieval_date":   retrieval_date,
     }
     if openai_api_key and whisper_backend == "openai-api":
         parser_config["openai_api_key"] = openai_api_key
@@ -155,26 +197,42 @@ def create_video_dataset(
     data = resp.json()
     if data.get("code") != 0:
         raise RuntimeError(f"create_video_dataset failed: {data.get('message')}")
-    print(f"✅ Dataset created: {data['data']['name']} (id={data['data']['id']})")
-    print(f"   whisper_backend={whisper_backend}, whisper_model={whisper_model}")
+    print(f"✅ Video Dataset created: {data['data']['name']}")
+    print(f"   id={data['data']['id']}")
+    print(f"   brand={brand}, car_model={car_model}, year={year}, market={market_iso}, trim={trim}")
+    print(f"   whisper_backend={whisper_backend}, retrieval_date={retrieval_date}")
     return data["data"]
 
 
 def create_pdf_dataset(
     cfg: dict,
-    name: str,
+    brand: str,
+    car_model: str,
+    year: str,
+    market: str,
+    trim: str = "All",
 ) -> dict:
     """
     MCP tool: create_pdf_dataset
-    Create a RagFlow dataset configured for PDF document ingestion.
+    Create a RagFlow dataset for PDF/HTML/Image/Excel ingestion (DeepDoc parser).
+    Dataset name is auto-generated: {Brand}_{Model}_{Year}_{Market}_{Trim}_Docs_{YYYYMMDD}_{HHMM}
 
     Args:
-        cfg  : config dict from load_config()
-        name : dataset name (must be unique)
+        cfg       : config dict from load_config()
+        brand     : car brand e.g. "Opel", "Peugeot"
+        car_model : car model e.g. "Corsa", "208"
+        year      : model year e.g. "2023", "2025"
+        market    : target market — ISO code or full name
+        trim      : car trim level (default: "All")
 
     Returns:
-        dict with dataset metadata including "id" field
+        dict with dataset metadata including "id" and "name"
     """
+    from datetime import date
+    market_iso = _normalize_market(market)
+    name = _build_dataset_name(brand, car_model, year, market_iso, trim, "Docs")
+    retrieval_date = date.today().isoformat()
+
     resp = requests.post(
         f"{cfg['base_url']}/api/v1/datasets",
         headers=_headers(cfg),
@@ -182,12 +240,24 @@ def create_pdf_dataset(
             "name":            name,
             "chunk_method":    "naive",
             "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
+            "parser_config": {
+                "brand":          brand,
+                "car_model":      car_model,
+                "year":           year,
+                "market":         market_iso,
+                "trim":           trim,
+                "source_type":    "Docs",
+                "retrieval_date": retrieval_date,
+            },
         },
     )
     data = resp.json()
     if data.get("code") != 0:
         raise RuntimeError(f"create_pdf_dataset failed: {data.get('message')}")
-    print(f"✅ PDF Dataset created: {data['data']['name']} (id={data['data']['id']})")
+    print(f"✅ Docs Dataset created: {data['data']['name']}")
+    print(f"   id={data['data']['id']}")
+    print(f"   brand={brand}, car_model={car_model}, year={year}, market={market_iso}, trim={trim}")
+    print(f"   retrieval_date={retrieval_date}")
     return data["data"]
 
 
@@ -467,6 +537,130 @@ def display_results(chunks: list, max_content_length: int = 200) -> None:
             content = content[:max_content_length] + "..."
         print(f"  Content     : {content}")
 
+# ── Brand-model scoped dataset discovery and retrieval ──────────────────────────────────────────────────────────────────
+
+def get_datasets_by_brand_model(
+    cfg: dict,
+    brand: str,
+    model: str,
+    year: str | list | None = None,
+    market: str | None = None,
+    trim: str | None = None,
+    source_type: str | None = None,
+) -> list:
+    """
+    MCP tool: get_datasets_by_brand_model
+    Find all datasets matching brand + model, optionally filtered by
+    year, market, trim and/or source type.
+
+    Args:
+        cfg         : config dict from load_config()
+        brand       : car brand e.g. "Opel"
+        model       : car model e.g. "Corsa"
+        year        : optional — None=all, "2023"=exact, ["2023","2025"]=multiple
+        market      : optional — ISO code e.g. "UK", "FR", "IE"
+        trim        : optional — e.g. "All", "GS", "Elegance"
+        source_type : optional — "Video", "Docs", "Web", "Images"
+
+    Returns:
+        list of matching dataset dicts
+    """
+    all_datasets = list_datasets(cfg)
+    prefix = f"{brand}_{model}_"
+    matched = [d for d in all_datasets if d["name"].startswith(prefix)]
+
+    if year is not None:
+        years = [year] if isinstance(year, str) else year
+        matched = [d for d in matched if any(f"_{y}_" in d["name"] for y in years)]
+
+    if market is not None:
+        market_iso = _normalize_market(market)
+        matched = [d for d in matched if f"_{market_iso}_" in d["name"]]
+
+    if trim is not None:
+        matched = [d for d in matched if f"_{trim}_" in d["name"]]
+
+    if source_type is not None:
+        matched = [d for d in matched if f"_{source_type}_" in d["name"]]
+
+    print(f"🔎 Found {len(matched)} dataset(s) for {brand} {model}"
+          + (f" {year}" if year else "")
+          + (f" {market}" if market else "")
+          + (f" {trim}" if trim else "")
+          + (f" [{source_type}]" if source_type else ""))
+    for d in matched:
+        print(f"   → {d['name']} (chunks={d['chunk_count']})")
+    return matched
+
+
+def retrieve_by_brand_model(
+    cfg: dict,
+    brand: str,
+    model: str,
+    question: str,
+    year: str | list | None = None,
+    market: str | None = None,
+    trim: str | None = None,
+    source_type: str | None = None,
+    top_n: int = 5,
+    similarity_threshold: float = 0.1,
+) -> list:
+    """
+    MCP tool: retrieve_by_brand_model
+    Query all datasets for a brand+model, optionally scoped by year,
+    market, trim and/or source type.
+
+    Args:
+        cfg                  : config dict from load_config()
+        brand                : car brand e.g. "Opel"
+        model                : car model e.g. "Corsa"
+        question             : natural language query
+        year                 : optional year filter
+        market               : optional market filter e.g. "UK", "FR"
+        trim                 : optional trim filter e.g. "All", "GS"
+        source_type          : optional source type filter e.g. "Video", "Docs"
+        top_n                : max chunks to return (default: 5)
+        similarity_threshold : min similarity 0.0-1.0 (default: 0.1)
+
+    Returns:
+        list of chunk dicts with full metadata
+
+    Examples:
+        # All sources for Opel Corsa
+        retrieve_by_brand_model(cfg, "Opel", "Corsa", "engine performance")
+
+        # UK market only
+        retrieve_by_brand_model(cfg, "Opel", "Corsa", "engine performance", market="UK")
+
+        # 2025 IE Docs only
+        retrieve_by_brand_model(cfg, "Opel", "Corsa", "engine performance",
+                                year="2025", market="IE", source_type="Docs")
+    """
+    datasets = get_datasets_by_brand_model(cfg, brand, model, year, market, trim, source_type)
+
+    if not datasets:
+        print(f"⚠️  No datasets found for {brand} {model}")
+        return []
+
+    dataset_ids = [d["id"] for d in datasets]
+
+    resp = requests.post(
+        f"{cfg['base_url']}/api/v1/retrieval",
+        headers=_headers(cfg),
+        json={
+            "question":             question,
+            "dataset_ids":          dataset_ids,
+            "similarity_threshold": similarity_threshold,
+            "top_n":                top_n,
+        },
+    )
+    data = resp.json()
+    if data.get("code") != 0:
+        raise RuntimeError(f"retrieve_by_brand_model failed: {data.get('message')}")
+
+    chunks = data.get("data", {}).get("chunks", [])
+    print(f"🔍 Query: '{question}' → {len(chunks)} chunks from {len(dataset_ids)} dataset(s)")
+    return chunks
 
 # ── Full pipeline runners ──────────────────────────────────────────────────────
 
