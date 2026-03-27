@@ -224,6 +224,7 @@ function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             parse_method: cur.parse_method,
             lang: cur.lang,
+            llm_id: cur.llm_id,
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -271,6 +272,7 @@ function transformParserParams(params: ParserFormSchemaType) {
           };
           break;
         case FileType.Video:
+        case FileType.Docx:
         case FileType.Audio:
           filteredSetup = {
             ...filteredSetup,

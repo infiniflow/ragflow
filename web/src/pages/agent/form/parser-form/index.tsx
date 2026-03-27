@@ -41,6 +41,7 @@ import { PptFormFields } from './ppt-form-fields';
 import { SpreadsheetFormFields } from './spreadsheet-form-fields';
 import { buildFieldNameWithPrefix } from './utils';
 import { AudioFormFields, VideoFormFields } from './video-form-fields';
+import { WordFormFields } from './word-form-fields';
 
 const outputList = buildOutputList(initialParserValues.outputs);
 
@@ -121,6 +122,7 @@ const FileFormatWidgetMap = {
   [FileType.PDF]: PdfFormFields,
   [FileType.Spreadsheet]: SpreadsheetFormFields,
   [FileType.PowerPoint]: PptFormFields,
+  [FileType.Docx]: WordFormFields,
   [FileType.Video]: VideoFormFields,
   [FileType.Audio]: AudioFormFields,
   [FileType.Email]: EmailFormFields,
