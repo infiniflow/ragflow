@@ -22,7 +22,6 @@ import (
 	"net/mail"
 	"net/url"
 	"os"
-	"ragflow/internal/logger"
 	"strconv"
 	"strings"
 	"time"
@@ -457,7 +456,7 @@ func FromEnvironments() error {
 	}
 
 	minioPort := strings.ToLower(os.Getenv("MINIO_PORT"))
-	logger.Info(fmt.Sprintf("MINIO ip and port from env: %s:%s", minioIP, minioPort))
+	println(fmt.Sprintf("MINIO ip and port from env: %s:%s", minioIP, minioPort))
 	if minioPort != "" {
 		ip, _, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
 		if err != nil {

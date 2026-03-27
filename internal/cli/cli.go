@@ -384,8 +384,7 @@ Configuration File:
 Commands:
   SQL commands (use quotes): "LIST USERS", "CREATE USER 'email' 'password'", etc.
   Context Engine commands (no quotes): ls datasets, search "keyword", cat path, etc.
-  If no command is provided, CLI runs in interactive mode.
-`)
+  If no command is provided, CLI runs in interactive mode.`)
 }
 
 // HistoryFile returns the path to the history file

@@ -23,7 +23,7 @@ PACKAGES=(
 echo "Running tests for specific packages..."
 for pkg in "${PACKAGES[@]}"; do
     echo "=== Testing $pkg ==="
-    go test $pkg -v -cover
+    go test $pkg -v -cover -test.v
     echo ""
 done
 
