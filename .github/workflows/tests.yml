@@ -219,7 +219,6 @@ jobs:
                echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> .env
                echo -e "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> .env
                echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
-               echo "MINIO_PORT=${MINIO_PORT}" >> ${GITHUB_ENV}
 
                # Patch entrypoint.sh for coverage
                sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage -i https://mirrors.aliyun.com/pypi/simple\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
@@ -237,7 +236,8 @@ jobs:
         run: |
           MINIO_IP=$(sudo docker inspect ${MINIO_CONTAINER} --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
           echo "MinIO IP in network: ${MINIO_IP}"
-          MINIO_URL=http://${MINIO_IP}:9000/minio/health/live
+          MINIO_PORT=9000
+          MINIO_URL=http://${MINIO_IP}:${MINIO_PORT}/minio/health/live
           echo "Attempt to connect to ${MINIO_URL}"
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${MINIO_URL} > /dev/null 2>&1; do
             echo "Waiting for MINIO service to be available... (last exit code: $?)"
