@@ -20,11 +20,13 @@ from copy import deepcopy
 from common.float_utils import normalize_overlapped_percent
 from common.token_utils import num_tokens_from_string
 from rag.flow.base import ProcessBase, ProcessParamBase
-from rag.flow.chunker.pdf_splitter import (
-    extract_item_positions,
+from rag.flow.chunker.schema import TokenChunkerFromUpstream
+from rag.flow.parser.pdf_chunk_metadata import (
+    PDF_POSITIONS_KEY,
+    extract_pdf_positions,
+    finalize_pdf_chunk,
     restore_pdf_text_previews,
 )
-from rag.flow.chunker.schema import TokenChunkerFromUpstream
 from rag.nlp import naive_merge
 
 
@@ -118,7 +120,7 @@ def _build_json_chunks(json_result, delimiter_pattern):
         # Keep PDF coordinates as an internal preview field until the final
         # output is assembled. This avoids leaking two public coordinate
         # formats downstream.
-        preview_positions = extract_item_positions(item)
+        preview_positions = extract_pdf_positions(item)
         img_id = item.get("img_id")
 
         if ck_type == "text":
@@ -131,7 +133,7 @@ def _build_json_chunks(json_result, delimiter_pattern):
                         "text": segment,
                         "doc_type_kwd": "text",
                         "ck_type": "text",
-                        "_preview_positions": deepcopy(preview_positions),
+                        PDF_POSITIONS_KEY: deepcopy(preview_positions),
                         "tk_nums": num_tokens_from_string(segment),
                     }
                 )
@@ -143,7 +145,7 @@ def _build_json_chunks(json_result, delimiter_pattern):
                 "doc_type_kwd": ck_type,
                 "ck_type": ck_type,
                 "img_id": img_id,
-                "_preview_positions": deepcopy(preview_positions),
+                PDF_POSITIONS_KEY: deepcopy(preview_positions),
                 "tk_nums": num_tokens_from_string(text or ""),
                 "context_above": "",
                 "context_below": "",
@@ -240,7 +242,7 @@ def _merge_text_chunks_by_token_size(chunks, chunk_token_size, overlapped_percen
             merged[prev_text_idx]["text"] += "\n" + current["text"]
         else:
             merged[prev_text_idx]["text"] += current["text"]
-        merged[prev_text_idx]["_preview_positions"].extend(current.get("_preview_positions") or [])
+        merged[prev_text_idx][PDF_POSITIONS_KEY].extend(current.get(PDF_POSITIONS_KEY) or [])
         merged[prev_text_idx]["tk_nums"] += current["tk_nums"]
 
     return merged
@@ -256,44 +258,15 @@ def _finalize_json_chunks(chunks):
 
         # The internal preview coordinates are converted exactly once into the
         # indexed fields consumed downstream.
-        position_int = []
-        page_num_int = []
-        top_int = []
-        for pos in chunk.get("_preview_positions") or []:
-            if not isinstance(pos, (list, tuple)) or len(pos) < 5:
-                continue
-            try:
-                page_no = int(pos[0])
-                left = int(pos[1])
-                right = int(pos[2])
-                top = int(pos[3])
-                bottom = int(pos[4])
-                position_int.append(
-                    (
-                        page_no,
-                        left,
-                        right,
-                        top,
-                        bottom,
-                    )
-                )
-                page_num_int.append(page_no)
-                top_int.append(top)
-            except (TypeError, ValueError):
-                continue
-
         doc = {
             "text": text,
-            "position_int": deepcopy(position_int),
-            "page_num_int": deepcopy(page_num_int),
-            "top_int": deepcopy(top_int),
             "doc_type_kwd": chunk.get("doc_type_kwd", "text"),
         }
         if chunk.get("mom"):
             doc["mom"] = chunk["mom"]
         if chunk.get("img_id"):
             doc["img_id"] = chunk["img_id"]
-        docs.append(doc)
+        docs.append(finalize_pdf_chunk(doc))
 
     return docs
 

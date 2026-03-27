@@ -13,19 +13,20 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import asyncio
-import logging
 import random
 import re
-from functools import partial
+from copy import deepcopy
 
-from common.misc_utils import get_uuid
-from rag.utils.base64_image import id2image, image2id
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from rag.flow.base import ProcessParamBase
 from rag.flow.chunker.title_chunker.schema import TitleChunkerFromUpstream
-from rag.nlp import concat_img
-from common import settings
+from rag.flow.parser.pdf_chunk_metadata import (
+    PDF_POSITIONS_KEY,
+    extract_pdf_positions,
+    finalize_pdf_chunk,
+    merge_pdf_positions,
+    restore_pdf_text_previews,
+)
 
 
 class TitleChunkerParam(ProcessParamBase):
@@ -152,28 +153,43 @@ class _ChunkNode:
             child._dfs(chunk_paths, path_titles, depth)
 
 
-def _extract_lines(from_upstream):
-    """Normalize upstream content into plain text lines and optional image ids."""
+def _extract_line_records(from_upstream):
+    """Normalize upstream content into line records with optional PDF metadata."""
     if from_upstream.output_format == "markdown":
         payload = from_upstream.markdown_result or ""
-        return [line for line in payload.split("\n") if line], []
+        return [
+            {"text": line, PDF_POSITIONS_KEY: []}
+            for line in payload.split("\n")
+            if line
+        ]
 
     if from_upstream.output_format == "text":
         payload = from_upstream.text_result or ""
-        return [line for line in payload.split("\n") if line], []
+        return [
+            {"text": line, PDF_POSITIONS_KEY: []}
+            for line in payload.split("\n")
+            if line
+        ]
 
     if from_upstream.output_format == "html":
         payload = from_upstream.html_result or ""
-        return [line for line in payload.split("\n") if line], []
+        return [
+            {"text": line, PDF_POSITIONS_KEY: []}
+            for line in payload.split("\n")
+            if line
+        ]
 
     items = from_upstream.chunks if from_upstream.output_format == "chunks" else from_upstream.json_result
-    lines = []
-    image_ids = []
+    line_records = []
     for item in items or []:
         raw_text = item.get("text") if isinstance(item, dict) else item
-        lines.append(raw_text if isinstance(raw_text, str) else str(raw_text or ""))
-        image_ids.append(item.get("img_id") if isinstance(item, dict) else None)
-    return lines, image_ids
+        line_records.append(
+            {
+                "text": raw_text if isinstance(raw_text, str) else str(raw_text or ""),
+                PDF_POSITIONS_KEY: extract_pdf_positions(item) if isinstance(item, dict) else [],
+            }
+        )
+    return line_records
 
 
 def _build_indexed_lines(lines, level_group):
@@ -207,51 +223,21 @@ def _build_text_chunks(chunk_paths, lines):
     return [{"text": "".join(lines[index] + "\n" for index in path)} for path in chunk_paths if path]
 
 
-def _build_visual_chunks(chunk_paths, lines, image_ids, title_chunker):
-    """Serialize chunk paths for chunk/json output with images and positions."""
-    cks = []
-    images = []
+def _build_visual_chunks(chunk_paths, line_records):
+    """Serialize chunk paths for chunk/json output with merged PDF metadata."""
+    chunks = []
     for path in chunk_paths:
-        txt = ""
-        img = None
+        text = ""
         for index in path:
-            txt += lines[index] + "\n"
-            concat_img(
-                img,
-                id2image(
-                    image_ids[index],
-                    partial(
-                        settings.STORAGE_IMPL.get,
-                        tenant_id=title_chunker._canvas._tenant_id,
-                    ),
-                ),
-            )
-        cks.append(txt)
-        images.append(img)
-
-    cks = [
-        {
-            "text": RAGFlowPdfParser.remove_tag(content),
-            "image": image,
-            "positions": RAGFlowPdfParser.extract_positions(content),
-        }
-        for content, image in zip(cks, images)
-    ]
-    tasks = []
-    for chunk in cks:
-        tasks.append(
-            asyncio.create_task(
-                image2id(
-                    chunk,
-                    partial(
-                        settings.STORAGE_IMPL.put,
-                        tenant_id=title_chunker._canvas._tenant_id,
-                    ),
-                    get_uuid(),
-                )
-            )
+            text += line_records[index]["text"] + "\n"
+        chunks.append(
+            {
+                "text": RAGFlowPdfParser.remove_tag(text),
+                "doc_type_kwd": "text",
+                PDF_POSITIONS_KEY: merge_pdf_positions([line_records[index] for index in path]),
+            }
         )
-    return cks, tasks
+    return chunks
 
 
 async def invoke_hierarchy_title_chunker(title_chunker, **kwargs):
@@ -263,7 +249,8 @@ async def invoke_hierarchy_title_chunker(title_chunker, **kwargs):
 
     title_chunker.set_output("output_format", "chunks")
     title_chunker.callback(random.randint(1, 5) / 100.0, "Start to merge hierarchically.")
-    lines, image_ids = _extract_lines(from_upstream)
+    line_records = _extract_line_records(from_upstream)
+    lines = [record["text"] for record in line_records]
 
     level_group = _select_level_group(lines, title_chunker._param.levels)
     chunk_paths = _build_chunk_paths(lines, level_group, title_chunker._param.hierarchy)
@@ -271,21 +258,8 @@ async def invoke_hierarchy_title_chunker(title_chunker, **kwargs):
     if from_upstream.output_format in ["markdown", "text", "html"]:
         title_chunker.set_output("chunks", _build_text_chunks(chunk_paths, lines))
     else:
-        cks, tasks = _build_visual_chunks(
-            chunk_paths,
-            lines,
-            image_ids,
-            title_chunker,
-        )
-        try:
-            await asyncio.gather(*tasks, return_exceptions=False)
-        except Exception as e:
-            logging.error(f"Error in image2id: {e}")
-            for t in tasks:
-                t.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            raise
-
-        title_chunker.set_output("chunks", cks)
+        chunks = _build_visual_chunks(chunk_paths, line_records)
+        await restore_pdf_text_previews(chunks, from_upstream, title_chunker._canvas)
+        title_chunker.set_output("chunks", [finalize_pdf_chunk(deepcopy(chunk)) for chunk in chunks])
 
     title_chunker.callback(1, "Done.")

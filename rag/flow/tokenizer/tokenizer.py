@@ -24,6 +24,7 @@ from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_by_id, get_model_config_by_type_and_name
 from common.connection_utils import timeout
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.flow.parser.pdf_chunk_metadata import finalize_pdf_chunk
 from rag.flow.tokenizer.schema import TokenizerFromUpstream
 from rag.nlp import rag_tokenizer
 from common import settings
@@ -183,9 +184,6 @@ class Tokenizer(ProcessBase):
 
             self.callback(1.0, "Finish embedding.")
 
-        print("\n")
-        for ck in chunks:
-            print(ck)
-            print("\n")
+        chunks = [finalize_pdf_chunk(ck) for ck in chunks]
 
         self.set_output("chunks", chunks)

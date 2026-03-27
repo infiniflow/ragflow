@@ -37,6 +37,7 @@ from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParse
 from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.flow.parser.pdf_chunk_metadata import normalize_pdf_items_metadata
 from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
 from rag.nlp import BULLET_PATTERN, bullets_category, docx_question_level, not_bullet
@@ -662,6 +663,7 @@ class Parser(ProcessBase):
                 bboxes[abstract_idx]["abstract"] = True
 
         if conf.get("output_format") == "json":
+            normalize_pdf_items_metadata(bboxes)
             self.set_output("json", bboxes)
         if conf.get("output_format") == "markdown":
             mkdn = ""

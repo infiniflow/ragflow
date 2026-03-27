@@ -31,13 +31,45 @@ from rag.utils.base64_image import image2id
 PDF_PREVIEW_GAP = 6
 PDF_PREVIEW_CONTEXT = 120
 PDF_PREVIEW_ZOOM = 3
+PDF_POSITIONS_KEY = "_pdf_positions"
 
 
-def extract_item_positions(item):
-    # Normalize upstream PDF coordinates into the internal preview shape used
-    # inside the chunker flow components.
+def _extract_raw_positions(item):
+    positions = item.get(PDF_POSITIONS_KEY)
+    if isinstance(positions, list):
+        return deepcopy(positions)
+
+    positions = item.get("positions")
+    if isinstance(positions, list):
+        return deepcopy(positions)
+
+    position_tag = item.get("position_tag")
+    if isinstance(position_tag, str) and position_tag:
+        return [[pos[0][-1], *pos[1:]] for pos in RAGFlowPdfParser.extract_positions(position_tag)]
+
+    position_int = item.get("position_int")
+    if isinstance(position_int, list):
+        return [
+            list(pos)
+            for pos in position_int
+            if isinstance(pos, (list, tuple)) and len(pos) >= 5
+        ]
+
+    if item.get("page_number") is not None and all(
+        item.get(key) is not None for key in ["x0", "x1", "top", "bottom"]
+    ):
+        return [[item["page_number"], item["x0"], item["x1"], item["top"], item["bottom"]]]
+
+    return []
+
+
+def extract_pdf_positions(item):
+    # Parser-owned canonical PDF coordinate shape:
+    # [[page_number, left, right, top, bottom], ...]
+    if not isinstance(item, dict):
+        return []
+
     positions = _extract_raw_positions(item)
-
     ref_page_number = item.get("page_number")
     ref_page_number = int(ref_page_number) if isinstance(ref_page_number, (int, float)) else None
     if ref_page_number is not None and ref_page_number <= 0:
@@ -65,32 +97,86 @@ def extract_item_positions(item):
     return normalized_positions
 
 
-def _extract_raw_positions(item):
-    positions = item.get("positions")
-    if isinstance(positions, list):
-        return deepcopy(positions)
+def normalize_pdf_item_metadata(item):
+    if not isinstance(item, dict):
+        return item
 
-    position_tag = item.get("position_tag")
-    if isinstance(position_tag, str) and position_tag:
-        return [
-            [pos[0][-1], *pos[1:]]
-            for pos in RAGFlowPdfParser.extract_positions(position_tag)
-        ]
+    positions = extract_pdf_positions(item)
+    if positions:
+        item[PDF_POSITIONS_KEY] = positions
+    else:
+        item.pop(PDF_POSITIONS_KEY, None)
+    return item
 
-    position_int = item.get("position_int")
-    if isinstance(position_int, list):
-        return [
-            list(pos)
-            for pos in position_int
-            if isinstance(pos, (list, tuple)) and len(pos) >= 5
-        ]
 
-    if item.get("page_number") is not None and all(
-        item.get(key) is not None for key in ["x0", "x1", "top", "bottom"]
-    ):
-        return [[item["page_number"], item["x0"], item["x1"], item["top"], item["bottom"]]]
+def normalize_pdf_items_metadata(items):
+    if not isinstance(items, list):
+        return items
+    for item in items:
+        normalize_pdf_item_metadata(item)
+    return items
 
-    return []
+
+def merge_pdf_positions(sources):
+    merged = []
+    seen = set()
+    for source in sources or []:
+        if isinstance(source, dict):
+            positions = extract_pdf_positions(source)
+        elif isinstance(source, list):
+            positions = source
+        else:
+            positions = []
+
+        for pos in positions:
+            if not isinstance(pos, (list, tuple)) or len(pos) < 5:
+                continue
+            key = tuple(pos[:5])
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(list(pos[:5]))
+
+    merged.sort(key=lambda item: (item[0], item[3], item[1]))
+    return merged
+
+
+def build_pdf_position_fields(positions):
+    position_int = []
+    page_num_int = []
+    top_int = []
+    for pos in positions or []:
+        if not isinstance(pos, (list, tuple)) or len(pos) < 5:
+            continue
+        try:
+            page_no = int(pos[0])
+            left = int(pos[1])
+            right = int(pos[2])
+            top = int(pos[3])
+            bottom = int(pos[4])
+        except (TypeError, ValueError):
+            continue
+
+        position_int.append((page_no, left, right, top, bottom))
+        page_num_int.append(page_no)
+        top_int.append(top)
+
+    return {
+        "position_int": deepcopy(position_int),
+        "page_num_int": deepcopy(page_num_int),
+        "top_int": deepcopy(top_int),
+    }
+
+
+def finalize_pdf_chunk(chunk):
+    if not isinstance(chunk, dict):
+        return chunk
+
+    positions = extract_pdf_positions(chunk)
+    if positions:
+        chunk.update(build_pdf_position_fields(positions))
+    chunk.pop(PDF_POSITIONS_KEY, None)
+    return chunk
 
 
 def _fetch_source_blob(from_upstream, canvas):
@@ -205,8 +291,7 @@ async def restore_pdf_text_previews(chunks, from_upstream, canvas):
     text_chunks = [
         chunk
         for chunk in chunks
-        if chunk.get("doc_type_kwd", "text") == "text"
-        and (chunk.get("_preview_positions") or chunk.get("positions"))
+        if chunk.get("doc_type_kwd", "text") == "text" and extract_pdf_positions(chunk)
     ]
     if not text_chunks:
         return
@@ -218,14 +303,13 @@ async def restore_pdf_text_previews(chunks, from_upstream, canvas):
     try:
         page_images = _load_pdf_page_images(blob)
     except Exception as e:
-        logging.warning(f"Failed to load PDF page images for chunker preview restore: {e}")
+        logging.warning(f"Failed to load PDF page images for chunk preview restore: {e}")
         return
 
-    # Reuse uploads when multiple chunks point to the same PDF region.
     preview_cache = {}
     storage_put = partial(settings.STORAGE_IMPL.put, tenant_id=canvas._tenant_id)
     for chunk in text_chunks:
-        preview_positions = chunk.get("_preview_positions") or chunk.get("positions") or []
+        preview_positions = extract_pdf_positions(chunk)
         positions_key = tuple(tuple(pos[:5]) for pos in preview_positions)
         if not positions_key:
             continue
