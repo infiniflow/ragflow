@@ -234,7 +234,10 @@ jobs:
 
       - name: Run go test for Infinity
         run: |
-          until curl -s --connect-timeout 5 localhost:${MINIO_PORT}/minio/health/live > /dev/null 2>&1; do
+          MINIO_HOST=localhost:${MINIO_PORT}
+          MINIO_ALIVE_URL=http://${MINIO_HOST}/minio/health/live
+          echo "MINIO HOST: ${MINIO_HOST}, URL:  ${MINIO_ALIVE_URL}"
+          until curl -s --connect-timeout 5 ${MINIO_ALIVE_URL} > /dev/null 2>&1; do
           echo "Waiting for MINIO service to be available... (last exit code: $?)"
           sleep 5
           done
