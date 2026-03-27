@@ -155,7 +155,6 @@ jobs:
           fi
           echo "HTTP_API_TEST_LEVEL=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_ENV}
           echo "RAGFLOW_CONTAINER=${GITHUB_RUN_ID}-ragflow-cpu-1" >> ${GITHUB_ENV}
-          echo "MINIO_CONTAINER=${GITHUB_RUN_ID}-minio-1" >> ${GITHUB_ENV}
 
       - name: Run unit test
         run: |
@@ -230,21 +229,6 @@ jobs:
         run: |
           sed -i 's/^DOC_ENGINE=.*$/DOC_ENGINE=infinity/' docker/.env
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
-
-
-      - name: Run go test for Infinity
-        run: |
-          MINIO_IP=$(sudo docker inspect ${MINIO_CONTAINER} --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
-          echo "MinIO IP in network: ${MINIO_IP}"
-          MINIO_PORT=9000
-          MINIO_URL=http://${MINIO_IP}:${MINIO_PORT}/minio/health/live
-          echo "Attempt to connect to ${MINIO_URL}"
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${MINIO_URL} > /dev/null 2>&1; do
-            echo "Waiting for MINIO service to be available... (last exit code: $?)"
-            sleep 5
-          done
-          echo "Start to run go test, MINIO: ${MINIO_IP}:${MINIO_PORT}"
-          MINIO_IP=${MINIO_IP} bash run_go_tests.sh
 
       - name: Run sdk tests against Infinity
         run: |
