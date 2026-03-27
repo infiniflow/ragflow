@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package model
+package entity
 
 // MCPServer MCP server model
 type MCPServer struct {

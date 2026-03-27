@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package model
+package entity
 
 // TenantLLM tenant LLM model
 // Python uses PrimaryKeyField (auto-increment ID) with unique index on (tenant_id, llm_factory, llm_name)

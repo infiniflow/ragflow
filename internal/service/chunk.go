@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"strings"
 
@@ -27,7 +28,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/logger"
-	"ragflow/internal/model"
+
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/utility"
 )
@@ -76,10 +77,10 @@ type RetrievalTestRequest struct {
 
 // RetrievalTestResponse retrieval test response
 type RetrievalTestResponse struct {
-	Chunks  []map[string]interface{} `json:"chunks"`
-	DocAggs []map[string]interface{} `json:"doc_aggs"`
+	Chunks  []map[string]interface{}  `json:"chunks"`
+	DocAggs []map[string]interface{}  `json:"doc_aggs"`
 	Labels  *[]map[string]interface{} `json:"labels"`
-	Total   int64                    `json:"total,omitempty"`
+	Total   int64                     `json:"total,omitempty"`
 }
 
 // RetrievalTest performs retrieval test
@@ -130,7 +131,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 
 	// Check permission for each kb_id
 	var tenantIDs []string
-	var kbRecords []*model.Knowledgebase
+	var kbRecords []*entity.Knowledgebase
 
 	for _, kbID := range kbIDs {
 		found := false
@@ -651,11 +652,11 @@ func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkRespon
 
 // ListChunksRequest request for listing chunks
 type ListChunksRequest struct {
-	DocID       string `json:"doc_id" binding:"required"`
-	Page        *int   `json:"page,omitempty"`
-	Size        *int   `json:"size,omitempty"`
-	Keywords    string `json:"keywords,omitempty"`
-	AvailableInt *int  `json:"available_int,omitempty"`
+	DocID        string `json:"doc_id" binding:"required"`
+	Page         *int   `json:"page,omitempty"`
+	Size         *int   `json:"size,omitempty"`
+	Keywords     string `json:"keywords,omitempty"`
+	AvailableInt *int   `json:"available_int,omitempty"`
 }
 
 // ListChunksResponse response for listing chunks
@@ -772,7 +773,7 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 					result["image_id"] = ""
 				}
 			case "position_int":
-                result["positions"] = v
+				result["positions"] = v
 			case "id":
 				result["chunk_id"] = v
 			case "content":
@@ -817,32 +818,32 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 	// Build document info (matching Python doc.to_dict())
 	timeFormat := "2006-01-02T15:04:05"
 	docInfo := map[string]interface{}{
-		"id":                doc.ID,
-		"thumbnail":         doc.Thumbnail,
-		"kb_id":             doc.KbID,
-		"parser_id":         doc.ParserID,
-		"pipeline_id":       doc.PipelineID,
-		"parser_config":     doc.ParserConfig,
-		"source_type":       doc.SourceType,
-		"type":              doc.Type,
-		"created_by":        doc.CreatedBy,
-		"name":              doc.Name,
-		"location":          doc.Location,
-		"size":              doc.Size,
-		"token_num":         doc.TokenNum,
-		"chunk_num":         doc.ChunkNum,
-		"progress":          utility.JSONFloat64(doc.Progress),
-		"progress_msg":      doc.ProgressMsg,
-		"process_begin_at":  utility.FormatTimeToString(doc.ProcessBeginAt, timeFormat),
-		"process_duration":  doc.ProcessDuration,
-		"content_hash":      doc.ContentHash,
-		"suffix":            doc.Suffix,
-		"run":               doc.Run,
-		"status":            doc.Status,
-		"create_time":       doc.CreateTime,
-		"create_date":       utility.FormatTimeToString(doc.CreateDate, timeFormat),
-		"update_time":       doc.UpdateTime,
-		"update_date":       utility.FormatTimeToString(doc.UpdateDate, timeFormat),
+		"id":               doc.ID,
+		"thumbnail":        doc.Thumbnail,
+		"kb_id":            doc.KbID,
+		"parser_id":        doc.ParserID,
+		"pipeline_id":      doc.PipelineID,
+		"parser_config":    doc.ParserConfig,
+		"source_type":      doc.SourceType,
+		"type":             doc.Type,
+		"created_by":       doc.CreatedBy,
+		"name":             doc.Name,
+		"location":         doc.Location,
+		"size":             doc.Size,
+		"token_num":        doc.TokenNum,
+		"chunk_num":        doc.ChunkNum,
+		"progress":         utility.JSONFloat64(doc.Progress),
+		"progress_msg":     doc.ProgressMsg,
+		"process_begin_at": utility.FormatTimeToString(doc.ProcessBeginAt, timeFormat),
+		"process_duration": doc.ProcessDuration,
+		"content_hash":     doc.ContentHash,
+		"suffix":           doc.Suffix,
+		"run":              doc.Run,
+		"status":           doc.Status,
+		"create_time":      doc.CreateTime,
+		"create_date":      utility.FormatTimeToString(doc.CreateDate, timeFormat),
+		"update_time":      doc.UpdateTime,
+		"update_date":      utility.FormatTimeToString(doc.UpdateDate, timeFormat),
 	}
 
 	return &ListChunksResponse{
