@@ -33,6 +33,7 @@ export enum Routes {
   Chats = '/chats',
   Chat = '/chat',
   Files = '/files',
+  Skills = '/skills',
   ProfileSetting = '/profile-setting',
   Profile = '/profile',
   Api = '/api',
@@ -245,6 +246,10 @@ const routeConfigOptions = [
       {
         path: Routes.Files,
         Component: () => import('@/pages/files'),
+      },
+      {
+        path: Routes.Skills,
+        Component: () => import('@/pages/skills'),
       },
       {
         path: Routes.UserSetting,

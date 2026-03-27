@@ -110,11 +110,54 @@ export default {
       setting: 'User settings',
       logout: 'Log out',
       fileManager: 'File',
+      skills: 'Skills',
       flow: 'Agent',
       search: 'Search',
       welcome: 'Welcome to',
       dataset: 'Dataset',
       memories: 'Memory',
+    },
+    skills: {
+      title: 'Skills Hub',
+      fetchError: 'Failed to fetch skills',
+      uploadSuccess: 'Skill uploaded successfully',
+      uploadError: 'Failed to upload skill',
+      deleteSuccess: 'Skill deleted successfully',
+      deleteError: 'Failed to delete skill',
+      skillExists:
+        'A skill with this name already exists. Please delete it first or use a different name.',
+      uploadSkill: 'Upload Skill',
+      searchPlaceholder: 'Search skills...',
+      noSkills: 'No skills yet. Upload your first skill.',
+      noSearchResults: 'No skills matching your search',
+      filesCount: '{{count}} files',
+      foldersCount: '{{count}} folders',
+      backToSkills: 'Back to Skills',
+      selectFileToView: 'Select a file to view',
+      skillName: 'Skill Name',
+      skillNamePlaceholder: 'e.g., my-awesome-skill',
+      skillNameHelp: 'Only letters, numbers, hyphens and underscores allowed',
+      selectFilesOrFolder: 'Select Files or Folder',
+      uploadDescription:
+        'Upload skill files. You can drag and drop files or select a folder.',
+      selectFolder: 'Select Folder',
+      dragFilesHint: 'or drag files below',
+      dragFilesTitle: 'Drag skill folder here',
+      dragFilesDescription:
+        'Drag and drop a skill folder here, or use the "Select Folder" button below.',
+      filesSelected: '{{count}} files selected',
+      uploading: 'Uploading...',
+      validation: {
+        missing_skill_md:
+          'Invalid skill: SKILL.md not found. Please ensure your skill directory contains a valid SKILL.md file.',
+        invalid_frontmatter:
+          'Invalid skill: SKILL.md must have valid frontmatter (start and end with ---).',
+        missing_name:
+          'Invalid skill: SKILL.md frontmatter must include a "name" field.',
+        read_failed: 'Invalid skill: Failed to read SKILL.md file.',
+        invalid: 'Invalid skill format.',
+        valid: 'Valid skill format. Ready to upload.',
+      },
     },
     memories: {
       llmTooltip:
