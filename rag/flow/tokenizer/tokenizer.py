@@ -183,4 +183,9 @@ class Tokenizer(ProcessBase):
 
             self.callback(1.0, "Finish embedding.")
 
+        print("\n")
+        for ck in chunks:
+            print(ck)
+            print("\n")
+
         self.set_output("chunks", chunks)

@@ -13,7 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from rag.flow.chunker.title_chunker.hierarchy import TitleChunkerParam
-from rag.flow.chunker.title_chunker.title_chunker import TitleChunker
+from rag.flow.base import ProcessBase
+from rag.flow.chunker.title_chunker.hierarchy import invoke_hierarchy_title_chunker
 
-__all__ = ["TitleChunker", "TitleChunkerParam"]
+
+class TitleChunker(ProcessBase):
+    component_name = "TitleChunker"
+
+    async def _invoke(self, **kwargs):
+        if self._param.method == "hierarchy":
+            await invoke_hierarchy_title_chunker(self, **kwargs)

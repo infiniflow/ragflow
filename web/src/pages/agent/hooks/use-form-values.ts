@@ -131,13 +131,7 @@ export function useFormValues(
       return defaultValues;
     }
 
-    const transformed = transformApiResponseToForm(formData);
-
-    if (!transformed) {
-      return defaultValues;
-    }
-
-    return transformed;
+    return formData;
   }, [defaultValues, node?.data?.form]);
 
   return values;
