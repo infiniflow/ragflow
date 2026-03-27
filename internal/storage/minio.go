@@ -108,23 +108,17 @@ func (m *MinioStorage) resolveBucketAndPath(bucket, fnm string) (string, string)
 
 // Health checks MinIO service availability
 func (m *MinioStorage) Health() bool {
-	ctx := context.Background()
-
-	if m.bucket != "" {
-		exists, err := m.client.BucketExists(ctx, m.bucket)
-		if err != nil {
-			logger.Warn("MinIO health check failed", zap.Error(err))
-			return false
-		}
-		return exists
+	cancelFunction, err := m.client.HealthCheck(time.Second * 5)
+	if cancelFunction != nil {
+		defer cancelFunction()
 	}
 
-	_, err := m.client.ListBuckets(ctx)
 	if err != nil {
-		logger.Warn("MinIO health check failed", zap.Error(err))
+		logger.Warn("Failed to check MinIO health", zap.Error(err))
 		return false
 	}
-	return true
+
+	return m.client.IsOnline()
 }
 
 // Put uploads an object to MinIO

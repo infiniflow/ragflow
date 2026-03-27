@@ -234,6 +234,10 @@ jobs:
 
       - name: Run go test for Infinity
         run: |
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 localhost:${MINIO_PORT}/minio/health/live > /dev/null 2>&1; do
+          echo "Waiting for minio service to be available... (last exit code: $?)"
+          sleep 5
+          done
           echo "Start to run go test, minio port: $MINIO_PORT"
           bash run_go_tests.sh
 

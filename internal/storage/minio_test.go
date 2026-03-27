@@ -130,6 +130,9 @@ func TestMinioStorage_Health(t *testing.T) {
 	// Health check should return true if connection is working
 	// Note: This depends on whether a default bucket is configured
 	t.Logf("Health check result: %v", healthy)
+	if !healthy {
+		t.Error("Expected storage to be healthy")
+	}
 }
 
 func TestMinioStorage_PutAndGet(t *testing.T) {
