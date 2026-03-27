@@ -155,6 +155,7 @@ jobs:
           fi
           echo "HTTP_API_TEST_LEVEL=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_ENV}
           echo "RAGFLOW_CONTAINER=${GITHUB_RUN_ID}-ragflow-cpu-1" >> ${GITHUB_ENV}
+          echo "MINIO_CONTAINER=${GITHUB_RUN_ID}-minio-1" >> ${GITHUB_ENV}
 
       - name: Run unit test
         run: |
@@ -234,12 +235,13 @@ jobs:
 
       - name: Run go test for Infinity
         run: |
-          MINIO_HOST=localhost:${MINIO_PORT}
-          MINIO_ALIVE_URL=http://${MINIO_HOST}/minio/health/live
-          echo "MINIO HOST: ${MINIO_HOST}, URL:  ${MINIO_ALIVE_URL}"
-          until curl -s --connect-timeout 5 ${MINIO_ALIVE_URL} > /dev/null 2>&1; do
-          echo "Waiting for MINIO service to be available... (last exit code: $?)"
-          sleep 5
+          MINIO_IP=$(sudo docker inspect ${MINIO_CONTAINER} | grep -A20 "Networks" | grep "IPAddress" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)
+          echo "MinIO IP in network: ${MINIO_IP}"
+          MINIO_URL=http://${MINIO_IP}:9000/minio/health/live
+          echo "Attempt to curl ${MINIO_URL}"
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${MINIO_URL} > /dev/null 2>&1; do
+            echo "Waiting for MINIO service to be available... (last exit code: $?)"
+            sleep 5
           done
           echo "Start to run go test, MINIO port: $MINIO_PORT"
           bash run_go_tests.sh
