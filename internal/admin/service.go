@@ -29,8 +29,9 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/elasticsearch"
+	"ragflow/internal/entity"
 	"ragflow/internal/logger"
-	"ragflow/internal/model"
+
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"regexp"
@@ -94,7 +95,7 @@ func NewService() *Service {
 // Logout user logout
 func (s *Service) Logout(user interface{}) error {
 	// Invalidate token by setting it to INVALID_ prefix
-	if u, ok := user.(*model.User); ok {
+	if u, ok := user.(*entity.User); ok {
 		invalidToken := "INVALID_" + generateRandomHex(16)
 		return s.userDAO.UpdateAccessToken(u, invalidToken)
 	}
@@ -102,7 +103,7 @@ func (s *Service) Logout(user interface{}) error {
 }
 
 // GetUserByToken get user by access token
-func (s *Service) GetUserByToken(token string) (*model.User, error) {
+func (s *Service) GetUserByToken(token string) (*entity.User, error) {
 	user, err := s.userDAO.GetByAccessToken(token)
 	if err != nil {
 		return nil, ErrInvalidToken
@@ -185,7 +186,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	now := time.Now().Unix()
 	nowDate := time.Now().Truncate(time.Second)
 
-	user := &model.User{
+	user := &entity.User{
 		ID:              userID,
 		AccessToken:     &accessToken,
 		Email:           username,
@@ -197,7 +198,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		IsAnonymous:     "0",
 		LoginChannel:    &loginChannel,
 		IsSuperuser:     &isSuperuser,
-		BaseModel: model.BaseModel{
+		BaseModel: entity.BaseModel{
 			CreateTime: &now,
 			CreateDate: &nowDate,
 			UpdateTime: &now,
@@ -246,7 +247,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	}
 
 	tenantStatus := "1"
-	tenant := &model.Tenant{
+	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
 		LLMID:     chatMdl,
@@ -257,7 +258,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		ParserIDs: parserIDs,
 		Credit:    512,
 		Status:    &tenantStatus,
-		BaseModel: model.BaseModel{
+		BaseModel: entity.BaseModel{
 			CreateTime: &now,
 			CreateDate: &nowDate,
 			UpdateTime: &now,
@@ -271,14 +272,14 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 
 	// 3. Create user-tenant relation
 	userTenantStatus := "1"
-	userTenant := &model.UserTenant{
+	userTenant := &entity.UserTenant{
 		ID:        utility.GenerateToken(),
 		UserID:    userID,
 		TenantID:  userID,
 		Role:      "owner",
 		InvitedBy: userID,
 		Status:    &userTenantStatus,
-		BaseModel: model.BaseModel{
+		BaseModel: entity.BaseModel{
 			CreateTime: &now,
 			CreateDate: &nowDate,
 			UpdateTime: &now,
@@ -305,7 +306,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	// 5. Create root file folder
 	fileID := utility.GenerateToken()
 	fileLocation := ""
-	file := &model.File{
+	file := &entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
 		TenantID:  userID,
@@ -314,7 +315,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		Type:      "folder",
 		Size:      0,
 		Location:  &fileLocation,
-		BaseModel: model.BaseModel{
+		BaseModel: entity.BaseModel{
 			CreateTime: &now,
 			CreateDate: &nowDate,
 			UpdateTime: &now,
@@ -345,13 +346,13 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 
 // getInitTenantLLM gets initial tenant LLM configurations
 // This matches Python's get_init_tenant_llm function
-func (s *Service) getInitTenantLLM(userID string) ([]*model.TenantLLM, error) {
+func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 	cfg := server.GetConfig()
 	if cfg == nil {
 		return nil, fmt.Errorf("config not initialized")
 	}
 
-	var tenantLLMs []*model.TenantLLM
+	var tenantLLMs []*entity.TenantLLM
 
 	// Get model configs from configuration
 	modelConfigs := []server.ModelConfig{
@@ -388,10 +389,10 @@ func (s *Service) getInitTenantLLM(userID string) ([]*model.TenantLLM, error) {
 			// Determine API key and base URL based on model type
 			var apiKey, apiBase string
 			switch llm.ModelType {
-			case string(model.ModelTypeChat):
+			case string(entity.ModelTypeChat):
 				apiKey = factoryConfig.APIKey
 				apiBase = factoryConfig.BaseURL
-			case string(model.ModelTypeEmbedding):
+			case string(entity.ModelTypeEmbedding):
 				apiKey = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.BaseURL
 				if apiKey == "" {
@@ -400,7 +401,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*model.TenantLLM, error) {
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case string(model.ModelTypeRerank):
+			case string(entity.ModelTypeRerank):
 				apiKey = cfg.UserDefaultLLM.DefaultModels.RerankModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.RerankModel.BaseURL
 				if apiKey == "" {
@@ -409,7 +410,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*model.TenantLLM, error) {
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case string(model.ModelTypeSpeech2Text):
+			case string(entity.ModelTypeSpeech2Text):
 				apiKey = cfg.UserDefaultLLM.DefaultModels.ASRModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.ASRModel.BaseURL
 				if apiKey == "" {
@@ -418,7 +419,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*model.TenantLLM, error) {
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case string(model.ModelTypeImage2Text):
+			case string(entity.ModelTypeImage2Text):
 				apiKey = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.BaseURL
 				if apiKey == "" {
@@ -442,7 +443,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*model.TenantLLM, error) {
 			now := time.Now().Unix()
 			nowDate := time.Now().Truncate(time.Second)
 
-			tenantLLM := &model.TenantLLM{
+			tenantLLM := &entity.TenantLLM{
 				TenantID:   userID,
 				LLMFactory: factoryConfig.Factory,
 				LLMName:    &llmName,
@@ -451,7 +452,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*model.TenantLLM, error) {
 				APIBase:    &apiBase,
 				MaxTokens:  maxTokens,
 				Status:     "1",
-				BaseModel: model.BaseModel{
+				BaseModel: entity.BaseModel{
 					CreateTime: &now,
 					CreateDate: &nowDate,
 					UpdateTime: &now,
@@ -464,7 +465,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*model.TenantLLM, error) {
 
 	// Remove duplicates based on (tenant_id, llm_factory, llm_name)
 	seen := make(map[string]bool)
-	var uniqueLLMs []*model.TenantLLM
+	var uniqueLLMs []*entity.TenantLLM
 	for _, tllm := range tenantLLMs {
 		key := fmt.Sprintf("%s|%s|%s", tllm.TenantID, tllm.LLMFactory, *tllm.LLMName)
 		if !seen[key] {
@@ -479,7 +480,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*model.TenantLLM, error) {
 // GetUserDetails get user details
 func (s *Service) GetUserDetails(username string) (map[string]interface{}, error) {
 	// Query user by email/username
-	var user model.User
+	var user entity.User
 	err := dao.DB.Where("email = ?", username).First(&user).Error
 	if err != nil {
 		return nil, ErrUserNotFound
@@ -590,64 +591,64 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 				for i, d := range docIDs {
 					docIDList[i] = d["id"]
 				}
-				if delErr := tx.Unscoped().Where("doc_id IN ?", docIDList).Delete(&model.Task{}); delErr.Error != nil {
+				if delErr := tx.Unscoped().Where("doc_id IN ?", docIDList).Delete(&entity.Task{}); delErr.Error != nil {
 					logger.Warn("failed to delete tasks", zap.Error(delErr.Error))
 				}
 			}
 
 			// 4. Delete documents
-			if delErr := tx.Unscoped().Where("kb_id IN ?", kbIDs).Delete(&model.Document{}); delErr.Error != nil {
+			if delErr := tx.Unscoped().Where("kb_id IN ?", kbIDs).Delete(&entity.Document{}); delErr.Error != nil {
 				logger.Warn("failed to delete documents", zap.Error(delErr.Error))
 			}
 
 			// 5. Delete knowledge bases
-			if delErr := tx.Unscoped().Where("id IN ?", kbIDs).Delete(&model.Knowledgebase{}); delErr.Error != nil {
+			if delErr := tx.Unscoped().Where("id IN ?", kbIDs).Delete(&entity.Knowledgebase{}); delErr.Error != nil {
 				logger.Warn("failed to delete knowledge bases", zap.Error(delErr.Error))
 			}
 		}
 
 		// 6. Delete files
-		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&model.File{}); delErr.Error != nil {
+		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.File{}); delErr.Error != nil {
 			logger.Warn("failed to delete files", zap.Error(delErr.Error))
 		}
 
 		// 7. Delete user canvas (agents)
-		if delErr := tx.Unscoped().Where("user_id = ?", ownedTenantID).Delete(&model.UserCanvas{}); delErr.Error != nil {
+		if delErr := tx.Unscoped().Where("user_id = ?", ownedTenantID).Delete(&entity.UserCanvas{}); delErr.Error != nil {
 			logger.Warn("failed to delete user canvas", zap.Error(delErr.Error))
 		}
 
 		// 8. Get dialog IDs
 		var dialogIDs []string
-		if pluckErr := tx.Model(&model.Chat{}).Where("tenant_id = ?", ownedTenantID).Pluck("id", &dialogIDs); pluckErr.Error != nil {
+		if pluckErr := tx.Model(&entity.Chat{}).Where("tenant_id = ?", ownedTenantID).Pluck("id", &dialogIDs); pluckErr.Error != nil {
 			logger.Warn("failed to get dialog IDs", zap.Error(pluckErr.Error))
 		}
 
 		// 9. Delete chat sessions
 		if len(dialogIDs) > 0 {
-			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&model.ChatSession{}); delErr.Error != nil {
+			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.ChatSession{}); delErr.Error != nil {
 				logger.Warn("failed to delete chat sessions", zap.Error(delErr.Error))
 			}
 		}
 
 		// 10. Delete chats/dialogs
-		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&model.Chat{}); delErr.Error != nil {
+		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.Chat{}); delErr.Error != nil {
 			logger.Warn("failed to delete chats", zap.Error(delErr.Error))
 		}
 
 		// 11. Delete API tokens
-		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&model.APIToken{}); delErr.Error != nil {
+		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.APIToken{}); delErr.Error != nil {
 			logger.Warn("failed to delete API tokens", zap.Error(delErr.Error))
 		}
 
 		// 12. Delete API4Conversations
 		if len(dialogIDs) > 0 {
-			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&model.API4Conversation{}); delErr.Error != nil {
+			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.API4Conversation{}); delErr.Error != nil {
 				logger.Warn("failed to delete API4Conversations", zap.Error(delErr.Error))
 			}
 		}
 
 		var tenantLLMCount int64
-		tx.Model(&model.TenantLLM{}).Where("tenant_id = ?", ownedTenantID).Count(&tenantLLMCount)
+		tx.Model(&entity.TenantLLM{}).Where("tenant_id = ?", ownedTenantID).Count(&tenantLLMCount)
 		result.TenantLLMCount = int(tenantLLMCount)
 		result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d tenant-LLM records.", tenantLLMCount))
 
@@ -659,33 +660,33 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 		result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted metadata table %s.", metadataTableName))
 
 		// 13. Delete tenant LLM configurations
-		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&model.TenantLLM{}); delErr.Error != nil {
+		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.TenantLLM{}); delErr.Error != nil {
 			logger.Warn("failed to delete tenant LLM", zap.Error(delErr.Error))
 		}
 
 		var tenantCount int64
-		tx.Model(&model.Tenant{}).Where("id = ?", ownedTenantID).Count(&tenantCount)
+		tx.Model(&entity.Tenant{}).Where("id = ?", ownedTenantID).Count(&tenantCount)
 		result.TenantCount = int(tenantCount)
 		// 14. Delete tenant
-		if delErr := tx.Unscoped().Where("id = ?", ownedTenantID).Delete(&model.Tenant{}); delErr.Error != nil {
+		if delErr := tx.Unscoped().Where("id = ?", ownedTenantID).Delete(&entity.Tenant{}); delErr.Error != nil {
 			logger.Warn("failed to delete tenant", zap.Error(delErr.Error))
 		}
 		result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d tenant.", result.TenantCount))
 	}
 
 	var userTenantCount int64
-	tx.Model(&model.UserTenant{}).Where("user_id = ?", user.ID).Count(&userTenantCount)
+	tx.Model(&entity.UserTenant{}).Where("user_id = ?", user.ID).Count(&userTenantCount)
 	result.UserTenantCount = int(userTenantCount)
 
 	// 15. Delete user-tenant relations
-	if delErr := tx.Unscoped().Where("user_id = ?", user.ID).Delete(&model.UserTenant{}); delErr.Error != nil {
+	if delErr := tx.Unscoped().Where("user_id = ?", user.ID).Delete(&entity.UserTenant{}); delErr.Error != nil {
 		logger.Warn("failed to delete user-tenant relations", zap.Error(delErr.Error))
 	}
 	result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d user-tenant records.", result.UserTenantCount))
 
 	result.UserCount = 1
 	// 16. Finally, hard delete user
-	if delErr := tx.Unscoped().Where("id = ?", user.ID).Delete(&model.User{}); delErr.Error != nil {
+	if delErr := tx.Unscoped().Where("id = ?", user.ID).Delete(&entity.User{}); delErr.Error != nil {
 		rollbackTx()
 		return nil, fmt.Errorf("failed to delete user: %w", delErr.Error)
 	}
@@ -931,7 +932,7 @@ func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{},
 	now := time.Now()
 	nowUnix := now.Unix()
 
-	apiToken := &model.APIToken{
+	apiToken := &entity.APIToken{
 		TenantID: tenantID,
 		Token:    key,
 		Beta:     &beta,
@@ -1539,7 +1540,7 @@ func (s *Service) SetVariable(varName, varValue string) error {
 		dataType = "boolean"
 	}
 
-	newSetting := &model.SystemSettings{
+	newSetting := &entity.SystemSettings{
 		Name:     varName,
 		Value:    varValue,
 		Source:   "admin",
@@ -1692,7 +1693,7 @@ func (s *Service) InitDefaultAdmin() error {
 	defaultPassword := "admin"
 
 	// Query superusers
-	var users []*model.User
+	var users []*entity.User
 	err := dao.DB.Where("is_superuser = ? AND status = ?", true, "1").Find(&users).Error
 	if err != nil {
 		return fmt.Errorf("failed to query superusers: %w", err)
@@ -1715,7 +1716,7 @@ func (s *Service) InitDefaultAdmin() error {
 			return fmt.Errorf("failed to hash password: %w", err)
 		}
 
-		user := &model.User{
+		user := &entity.User{
 			ID:              userID,
 			Email:           defaultEmail,
 			Nickname:        defaultNickname,
@@ -1727,7 +1728,7 @@ func (s *Service) InitDefaultAdmin() error {
 			IsAnonymous:     "0",
 			LoginChannel:    &loginChannel,
 			IsSuperuser:     &isSuperuser,
-			BaseModel: model.BaseModel{
+			BaseModel: entity.BaseModel{
 				CreateTime: &now,
 				CreateDate: &nowDate,
 				UpdateTime: &now,
@@ -1756,7 +1757,7 @@ func (s *Service) InitDefaultAdmin() error {
 		if user.Email == defaultEmail {
 			// Check if tenant exists
 			var count int64
-			dao.DB.Model(&model.UserTenant{}).Where("user_id = ? AND status = ?", user.ID, "1").Count(&count)
+			dao.DB.Model(&entity.UserTenant{}).Where("user_id = ? AND status = ?", user.ID, "1").Count(&count)
 			if count == 0 {
 				nickname := defaultNickname
 				if user.Nickname != "" {
@@ -1781,10 +1782,10 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 	role := "owner"
 	tenantName := nickname + "'s Kingdom"
 
-	tenant := &model.Tenant{
+	tenant := &entity.Tenant{
 		ID:   userID,
 		Name: &tenantName,
-		BaseModel: model.BaseModel{
+		BaseModel: entity.BaseModel{
 			CreateTime: &now,
 			CreateDate: &nowDate,
 			UpdateTime: &now,
@@ -1796,13 +1797,13 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 		return err
 	}
 
-	userTenant := &model.UserTenant{
+	userTenant := &entity.UserTenant{
 		TenantID:  userID,
 		UserID:    userID,
 		InvitedBy: userID,
 		Role:      role,
 		Status:    &status,
-		BaseModel: model.BaseModel{
+		BaseModel: entity.BaseModel{
 			CreateTime: &now,
 			CreateDate: &nowDate,
 			UpdateTime: &now,

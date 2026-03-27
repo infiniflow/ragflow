@@ -14,17 +14,17 @@
 //  limitations under the License.
 //
 
-package model
+package entity
 
 // EvaluationDataset evaluation dataset model
 // Note: Python defines custom create_time/update_time (not null) instead of using BaseModel's
 type EvaluationDataset struct {
-	ID          string `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TenantID    string `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	Name        string `gorm:"column:name;size:255;not null;index" json:"name"`
+	ID          string  `gorm:"column:id;primaryKey;size:32" json:"id"`
+	TenantID    string  `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
+	Name        string  `gorm:"column:name;size:255;not null;index" json:"name"`
 	Description *string `gorm:"column:description;type:longtext" json:"description,omitempty"`
 	KbIDs       JSONMap `gorm:"column:kb_ids;type:longtext;not null" json:"kb_ids"`
-	CreatedBy   string `gorm:"column:created_by;size:32;not null;index" json:"created_by"`
+	CreatedBy   string  `gorm:"column:created_by;size:32;not null;index" json:"created_by"`
 	// Custom time fields (not null) to match Python
 	CreateTime int64 `gorm:"column:create_time;not null;index" json:"create_time"`
 	UpdateTime int64 `gorm:"column:update_time;not null" json:"update_time"`

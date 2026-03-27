@@ -14,20 +14,20 @@
 //  limitations under the License.
 //
 
-package model
+package entity
 
 import (
 	"time"
 )
 
-// License time record model
-type License struct {
-	ID        string    `gorm:"column:id;size:128;not null;primaryKey" json:"id"`
-	License   string    `gorm:"column:encrypted_data;type:longtext;not null" json:"encrypted_data"`
+// TimeRecord time record model
+type TimeRecord struct {
+	ID        int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	Data      string    `gorm:"column:data;type:longtext;not null" json:"data"`
 	CreatedAt time.Time `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
 }
 
 // TableName specify table name
-func (License) TableName() string {
-	return "license"
+func (TimeRecord) TableName() string {
+	return "time_records"
 }
