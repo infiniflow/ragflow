@@ -344,6 +344,7 @@ async def update_doc(tenant_id, dataset_id, document_id):
         "chunk_num": "chunk_count",
         "kb_id": "dataset_id",
         "token_num": "token_count",
+        "llm_token_num": "llm_token_count",
         "parser_id": "chunk_method",
     }
     run_mapping = {
@@ -620,6 +621,7 @@ def list_docs(dataset_id, tenant_id):
         "chunk_num": "chunk_count",
         "kb_id": "dataset_id",
         "token_num": "token_count",
+        "llm_token_num": "llm_token_count",
         "parser_id": "chunk_method",
     }
     run_status_numeric_to_text = {"0": "UNSTART", "1": "RUNNING", "2": "CANCEL", "3": "DONE", "4": "FAIL"}
@@ -1079,6 +1081,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         "chunk_num": "chunk_count",
         "kb_id": "dataset_id",
         "token_num": "token_count",
+        "llm_token_num": "llm_token_count",
         "parser_id": "chunk_method",
     }
     run_mapping = {

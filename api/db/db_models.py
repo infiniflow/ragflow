@@ -906,6 +906,7 @@ class Document(DataBaseModel):
     progress_msg = TextField(null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True, index=True)
     process_duration = FloatField(default=0)
+    llm_token_num = IntegerField(default=0, help_text="LLM tokens consumed during parsing (keywords, questions, metadata generation)")
     suffix = CharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
 
     content_hash = CharField(max_length=32, null=True, help_text="xxhash128 of document content for change detection", default="", index=True)
@@ -1646,6 +1647,7 @@ def migrate_db():
     alter_db_add_column(migrator, "memory", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "user_canvas_version", "release", BooleanField(null=False, help_text="is released", default=False, index=True))
     alter_db_add_column(migrator, "api_4_conversation", "version_title", CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False))
+    alter_db_add_column(migrator, "document", "llm_token_num", IntegerField(default=0, help_text="LLM tokens consumed during parsing (keywords, questions, metadata generation)"))
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)
