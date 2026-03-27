@@ -114,6 +114,11 @@ class _StubAsyncRetriever:
     def retrieval_by_children(self, chunks, tenant_ids):
         return chunks
 
+<<<<<<< HEAD
+=======
+    def insert_citations(self, answer, *_args, **_kwargs):
+        return answer, [0]
+
 
 @pytest.fixture
 def force_es_engine(monkeypatch):
@@ -314,3 +319,112 @@ def test_async_chat_uses_all_docs_when_no_doc_ids_selected(monkeypatch):
     assert retriever.calls[0]["kwargs"]["doc_ids"] is None
     assert "Chunk text from dataset." in chat_model.calls[0]["system_prompt"]
     assert result[0]["answer"] == "stub answer"
+@pytest.mark.p2
+def test_async_ask_uses_all_docs_when_search_config_has_no_doc_ids(monkeypatch):
+    retriever = _StubAsyncRetriever(
+        {
+            "total": 1,
+            "chunks": [
+                {
+                    "chunk_id": "chunk-1",
+                    "content_ltks": "chunk text",
+                    "content_with_weight": "Chunk text from dataset.",
+                    "doc_id": "doc-1",
+                    "docnm_kwd": "doc.txt",
+                    "kb_id": "kb-1",
+                    "important_kwd": [],
+                    "positions": [],
+                    "vector": [0.1, 0.2],
+                }
+            ],
+            "doc_aggs": [{"doc_id": "doc-1"}],
+        }
+    )
+
+    class _StubStreamChatModel:
+        max_length = 4096
+
+        def async_chat_streamly_delta(self, *_args, **_kwargs):
+            return object()
+
+    def _fake_bundle(_tenant_id, model_config, *args, **kwargs):
+        if model_config.get("model_type") == dialog_service.LLMType.CHAT:
+            return _StubStreamChatModel()
+        return SimpleNamespace()
+
+    async def _fake_stream(_stream_iter):
+        yield ("text", "partial", SimpleNamespace(full_text="final answer", endswith_think=False, buffer=""))
+
+    monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
+    monkeypatch.setattr(
+        dialog_service.KnowledgebaseService,
+        "get_by_ids",
+        lambda _kb_ids: [SimpleNamespace(tenant_id="tenant-1", embd_id="embd-1", parser_id="naive")],
+    )
+    monkeypatch.setattr(
+        dialog_service,
+        "get_model_config_by_type_and_name",
+        lambda _tenant_id, model_type, _name: {"model_type": model_type},
+    )
+    monkeypatch.setattr(dialog_service, "LLMBundle", _fake_bundle)
+    monkeypatch.setattr(dialog_service, "kb_prompt", lambda _kbinfos, _max_tokens: ["Chunk text from dataset."])
+    monkeypatch.setattr(dialog_service, "label_question", lambda _question, _kbs: ["label-1"])
+    monkeypatch.setattr(
+        dialog_service,
+        "PROMPT_JINJA_ENV",
+        SimpleNamespace(from_string=lambda _template: SimpleNamespace(render=lambda **_kwargs: "system prompt")),
+    )
+    monkeypatch.setattr(dialog_service, "_stream_with_think_delta", _fake_stream)
+    monkeypatch.setattr(dialog_service, "chunks_format", lambda refs: refs["chunks"])
+
+    async def _collect():
+        items = []
+        async for item in dialog_service.async_ask("What does the dataset say?", ["kb-1"], "tenant-1", chat_llm_name="chat-model", search_config={}):
+            items.append(item)
+        return items
+
+    result = asyncio.run(_collect())
+
+    assert len(retriever.calls) == 1
+    assert retriever.calls[0]["kwargs"]["doc_ids"] is None
+    assert result[-1]["final"] is True
+
+
+@pytest.mark.p2
+def test_gen_mindmap_uses_all_docs_when_search_config_has_no_doc_ids(monkeypatch):
+    retriever = _StubAsyncRetriever(
+        {
+            "total": 1,
+            "chunks": [
+                {
+                    "chunk_id": "chunk-1",
+                    "content_with_weight": "Chunk text from dataset.",
+                }
+            ],
+        }
+    )
+
+    class _StubMindMapExtractor:
+        def __init__(self, _chat_mdl):
+            pass
+
+        async def __call__(self, chunks):
+            return SimpleNamespace(output={"mind_map": chunks})
+
+    monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
+    monkeypatch.setattr(
+        dialog_service.KnowledgebaseService,
+        "get_by_ids",
+        lambda _kb_ids: [SimpleNamespace(tenant_id="tenant-1", tenant_embd_id=None, embd_id="embd-1")],
+    )
+    monkeypatch.setattr(dialog_service, "get_model_config_by_type_and_name", lambda *_args, **_kwargs: {"model_type": "chat"})
+    monkeypatch.setattr(dialog_service, "get_tenant_default_model_by_type", lambda *_args, **_kwargs: {"model_type": "chat"})
+    monkeypatch.setattr(dialog_service, "LLMBundle", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(dialog_service, "label_question", lambda _question, _kbs: ["label-1"])
+    monkeypatch.setattr(dialog_service, "MindMapExtractor", _StubMindMapExtractor)
+
+    result = asyncio.run(dialog_service.gen_mindmap("What does the dataset say?", ["kb-1"], "tenant-1", search_config={}))
+
+    assert len(retriever.calls) == 1
+    assert retriever.calls[0]["kwargs"]["doc_ids"] is None
+    assert result == {"mind_map": ["Chunk text from dataset."]}
