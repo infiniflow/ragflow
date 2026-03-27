@@ -244,7 +244,7 @@ jobs:
             sleep 5
           done
           echo "Start to run go test, MINIO: ${MINIO_IP}:${MINIO_PORT}"
-          bash run_go_tests.sh
+          MINIO_IP=${MINIO_IP} bash run_go_tests.sh
 
       - name: Run sdk tests against Infinity
         run: |
