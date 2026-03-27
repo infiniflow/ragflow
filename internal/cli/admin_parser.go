@@ -150,6 +150,8 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 		return p.parseAdminListModelProviders()
 	case TokenDefault:
 		return p.parseAdminListDefaultModels()
+	case TokenPool:
+		return p.parseCommonListPoolModels()
 	case TokenChats:
 		p.nextToken()
 		// Semicolon is optional for SHOW TOKEN
@@ -255,6 +257,78 @@ func (p *Parser) parseAdminListDefaultModels() (*Command, error) {
 	return NewCommand("list_user_default_models"), nil
 }
 
+func (p *Parser) parseCommonListPoolModels() (*Command, error) {
+	p.nextToken() // consume POOL
+	if p.curToken.Type == TokenProviders {
+		return NewCommand("list_pool_providers"), nil
+	} else if p.curToken.Type == TokenModels {
+		p.nextToken()
+		if p.curToken.Type != TokenFrom {
+			return nil, fmt.Errorf("expected FROM")
+		}
+		p.nextToken()
+		providerName, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd := NewCommand("list_pool_models")
+		cmd.Params["provider_name"] = providerName
+		p.nextToken()
+		// Semicolon is optional for UNSET TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+		}
+		return cmd, nil
+	} else {
+		return nil, fmt.Errorf("expected PROVIDERS or MODELS")
+	}
+}
+
+func (p *Parser) parseCommonShowPoolModel() (*Command, error) {
+	p.nextToken() // consume POOL
+	if p.curToken.Type == TokenProvider {
+		p.nextToken()
+		providerName, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd := NewCommand("show_pool_provider")
+		cmd.Params["provider_name"] = providerName
+		p.nextToken()
+		// Semicolon is optional for UNSET TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+		}
+		return cmd, nil
+	} else if p.curToken.Type == TokenModel {
+		p.nextToken() // skip model
+		modelName, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken() // skip model name
+		if p.curToken.Type != TokenFrom {
+			return nil, fmt.Errorf("expected FROM")
+		}
+		p.nextToken() // skip from
+		providerName, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken() // skip provider name
+		cmd := NewCommand("show_pool_model")
+		cmd.Params["provider_name"] = providerName
+		cmd.Params["model_name"] = modelName
+		// Semicolon is optional for UNSET TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+		}
+		return cmd, nil
+	} else {
+		return nil, fmt.Errorf("expected PROVIDERS or MODELS")
+	}
+}
+
 func (p *Parser) parseAdminListFiles() (*Command, error) {
 	p.nextToken() // consume FILES
 	if p.curToken.Type != TokenOf {
@@ -319,6 +393,8 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 		return p.parseShowVariable()
 	case TokenService:
 		return p.parseShowService()
+	case TokenPool:
+		return p.parseCommonShowPoolModel()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
