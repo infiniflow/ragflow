@@ -1,5 +1,5 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import { Button } from '@/components/ui/button';
+import { Button, ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -8,7 +8,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { LoadingButton } from '@/components/ui/loading-button';
 import { useDeleteLangfuseConfig } from '@/hooks/use-user-setting-request';
 import { IModalProps } from '@/interfaces/common';
 import { ExternalLink, Trash2 } from 'lucide-react';
@@ -61,9 +60,9 @@ export function LangfuseConfigurationDialog({
               </Button>
             </ConfirmDeleteDialog>
 
-            <LoadingButton type="submit" form={FormId} loading={loading}>
+            <ButtonLoading type="submit" form={FormId} loading={loading}>
               {t('common.save')}
-            </LoadingButton>
+            </ButtonLoading>
           </div>
         </DialogFooter>
       </DialogContent>
