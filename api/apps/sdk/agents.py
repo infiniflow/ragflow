@@ -25,6 +25,8 @@ import time
 from typing import Any, cast
 
 import jwt
+from pydantic import BaseModel, ConfigDict, Field
+from quart_schema import document_querystring, document_request, document_response, tag
 
 from agent.canvas import Canvas
 from api.apps.services.canvas_replica_service import CanvasReplicaService
@@ -41,6 +43,56 @@ from quart import request, Response
 from rag.utils.redis_conn import REDIS_CONN
 
 
+class ErrorResponse(BaseModel):
+    code: int
+    message: str
+    data: Any | None = None
+
+
+class AgentListQueryDoc(BaseModel):
+    id: str | None = Field(default=None, description="Optional agent ID filter.")
+    title: str | None = Field(default=None, description="Optional agent title filter.")
+    page: int | None = Field(default=1, description="Page number.")
+    page_size: int | None = Field(default=30, description="Number of agents per page.")
+    orderby: str | None = Field(default="update_time", description="Field used for ordering.")
+    desc: bool | None = Field(default=False, description="Whether results are in descending order.")
+
+
+class AgentCreateBodyDoc(BaseModel):
+    title: str = Field(description="Agent title.")
+    dsl: dict[str, Any] = Field(description="Agent DSL definition.")
+    description: str | None = Field(default=None, description="Optional description.")
+    avatar: str | None = Field(default=None, description="Optional avatar/icon.")
+    model_config = ConfigDict(extra="allow")
+
+
+class AgentUpdateBodyDoc(BaseModel):
+    title: str | None = Field(default=None, description="Updated agent title.")
+    dsl: dict[str, Any] | None = Field(default=None, description="Updated agent DSL definition.")
+    description: str | None = Field(default=None, description="Updated description.")
+    avatar: str | None = Field(default=None, description="Updated avatar/icon.")
+    model_config = ConfigDict(extra="allow")
+
+
+class AgentRecordDoc(BaseModel):
+    id: str
+    title: str
+    dsl: dict[str, Any] | None = None
+    model_config = ConfigDict(extra="allow")
+
+
+class AgentListResponseDoc(BaseModel):
+    code: int = 0
+    data: list[dict[str, Any]]
+    message: str = "success"
+
+
+class GenericSuccessResponse(BaseModel):
+    code: int = 0
+    data: Any | None = None
+    message: str = "success"
+
+
 def _get_user_nickname(user_id: str) -> str:
     exists, user = UserService.get_by_id(user_id)
     if not exists:
@@ -50,7 +102,12 @@ def _get_user_nickname(user_id: str) -> str:
 
 @manager.route('/agents', methods=['GET'])  # noqa: F821
 @token_required
+@tag(["SDK Agents"])
+@document_querystring(AgentListQueryDoc)
+@document_response(AgentListResponseDoc)
+@document_response(ErrorResponse, 400)
 def list_agents(tenant_id):
+    """List agents."""
     id = request.args.get("id")
     title = request.args.get("title")
     if id or title:
@@ -70,7 +127,12 @@ def list_agents(tenant_id):
 
 @manager.route("/agents", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Agents"])
+@document_request(AgentCreateBodyDoc)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def create_agent(tenant_id: str):
+    """Create a new agent."""
     req: dict[str, Any] = cast(dict[str, Any], await get_request_json())
     req["user_id"] = tenant_id
 
@@ -108,7 +170,12 @@ async def create_agent(tenant_id: str):
 
 @manager.route("/agents/<agent_id>", methods=["PUT"])  # noqa: F821
 @token_required
+@tag(["SDK Agents"])
+@document_request(AgentUpdateBodyDoc)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def update_agent(tenant_id: str, agent_id: str):
+    """Update an agent."""
     req: dict[str, Any] = {k: v for k, v in cast(dict[str, Any], (await get_request_json())).items() if v is not None}
     req["user_id"] = tenant_id
 
@@ -144,7 +211,11 @@ async def update_agent(tenant_id: str, agent_id: str):
 
 @manager.route("/agents/<agent_id>", methods=["DELETE"])  # noqa: F821
 @token_required
+@tag(["SDK Agents"])
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 def delete_agent(tenant_id: str, agent_id: str):
+    """Delete an agent."""
     if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
         return get_json_result(
             data=False, message="Only owner of canvas authorized for this operation.",

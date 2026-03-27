@@ -19,11 +19,13 @@ import logging
 import pathlib
 import re
 from io import BytesIO
+from typing import Any
 
 import xxhash
 from peewee import OperationalError
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, validator
 from quart import request, send_file
+from quart_schema import DataSource, document_querystring, document_request, document_response, tag
 
 from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileType
@@ -72,69 +74,211 @@ class Chunk(BaseModel):
         return value
 
 
+class ErrorResponse(BaseModel):
+    code: int
+    message: str
+    data: Any | None = None
+
+
+class GenericSuccessResponse(BaseModel):
+    code: int = 0
+    data: Any | None = None
+    message: str = "success"
+
+
+class DocumentUploadFormDoc(BaseModel):
+    file: list[Any] | None = Field(default=None, description="Document files to upload.")
+    parent_path: str | None = Field(default=None, description="Optional nested path under the parent folder.")
+
+
+class DocumentUpdateBodyDoc(BaseModel):
+    name: str | None = Field(default=None, description="New document name.")
+    parser_config: dict[str, Any] | None = Field(default=None, description="Optional parser configuration.")
+    chunk_method: str | None = Field(default=None, description="Updated chunking method.")
+    enabled: bool | None = Field(default=None, description="Document enabled status.")
+    meta_fields: dict[str, Any] | None = Field(default=None, description="Metadata fields to update.")
+    model_config = ConfigDict(extra="allow")
+
+
+class DocumentListQueryDoc(BaseModel):
+    id: str | None = Field(default=None, description="Optional document ID filter.")
+    name: str | None = Field(default=None, description="Optional document name filter.")
+    page: int | None = Field(default=1, description="Page number.")
+    page_size: int | None = Field(default=30, description="Number of documents per page.")
+    orderby: str | None = Field(default="create_time", description="Field used for ordering.")
+    desc: bool | None = Field(default=True, description="Whether results are in descending order.")
+    create_time_from: int | None = Field(default=0, description="Filter documents created after this timestamp.")
+    create_time_to: int | None = Field(default=0, description="Filter documents created before this timestamp.")
+    suffix: list[str] | None = Field(default=None, description="Optional file suffix filters.")
+    run: list[str] | None = Field(default=None, description="Optional run status filters.")
+    keywords: str | None = Field(default=None, description="Optional keyword filter.")
+    metadata_condition: str | None = Field(default=None, description="Optional JSON metadata filter.")
+
+
+class DocumentDeleteBodyDoc(BaseModel):
+    ids: list[str] | None = Field(default=None, description="Document IDs to delete.")
+    delete_all: bool | None = Field(default=None, description="Delete all dataset documents when true.")
+
+
+class MetadataSummaryBodyDoc(BaseModel):
+    doc_ids: list[str] | None = Field(default=None, description="Optional document IDs to summarize.")
+
+
+class MetadataSelectorDoc(BaseModel):
+    document_ids: list[str] | None = Field(default=None, description="Optional document IDs selector.")
+    metadata_condition: dict[str, Any] | None = Field(default=None, description="Optional metadata condition selector.")
+    model_config = ConfigDict(extra="allow")
+
+
+class MetadataUpdateEntryDoc(BaseModel):
+    key: str
+    value: Any
+
+
+class MetadataDeleteEntryDoc(BaseModel):
+    key: str
+
+
+class MetadataBatchUpdateBodyDoc(BaseModel):
+    selector: MetadataSelectorDoc | None = None
+    updates: list[MetadataUpdateEntryDoc] | None = None
+    deletes: list[MetadataDeleteEntryDoc] | None = None
+
+
+class ChunkTaskBodyDoc(BaseModel):
+    document_ids: list[str] = Field(description="Document IDs affected by the parsing action.")
+
+
+class ChunkListQueryDoc(BaseModel):
+    page: int | None = Field(default=1, description="Page number.")
+    page_size: int | None = Field(default=30, description="Number of chunks per page.")
+    id: str | None = Field(default=None, description="Optional chunk ID filter.")
+    keywords: str | None = Field(default=None, description="Optional search keywords.")
+    available: bool | None = Field(default=None, description="Optional availability filter.")
+
+
+class AddChunkBodyDoc(BaseModel):
+    content: str = Field(description="Chunk content.")
+    important_keywords: list[str] | None = Field(default=None, description="Important keywords.")
+    questions: list[str] | None = Field(default=None, description="Questions associated with the chunk.")
+    image_base64: str | None = Field(default=None, description="Optional base64 image payload.")
+    tag_kwd: list[str] | None = Field(default=None, description="Optional tag keywords.")
+    tag_feas: dict[str, Any] | None = Field(default=None, description="Optional tag features.")
+    model_config = ConfigDict(extra="allow")
+
+
+class RemoveChunksBodyDoc(BaseModel):
+    chunk_ids: list[str] | None = Field(default=None, description="Chunk IDs to remove.")
+    delete_all: bool | None = Field(default=None, description="Delete all chunks for the document when true.")
+
+
+class UpdateChunkBodyDoc(BaseModel):
+    content: str | None = Field(default=None, description="Updated chunk content.")
+    important_keywords: list[str] | None = Field(default=None, description="Updated important keywords.")
+    questions: list[str] | None = Field(default=None, description="Updated associated questions.")
+    available: bool | None = Field(default=None, description="Chunk availability.")
+    positions: list[list[int]] | None = Field(default=None, description="Updated chunk positions.")
+    tag_kwd: list[str] | None = Field(default=None, description="Updated tag keywords.")
+    tag_feas: dict[str, Any] | None = Field(default=None, description="Updated tag features.")
+    model_config = ConfigDict(extra="allow")
+
+
+class SwitchChunksBodyDoc(BaseModel):
+    chunk_ids: list[str] = Field(description="Chunk IDs to update.")
+    available_int: int | None = Field(default=None, description="1 for available, 0 for unavailable.")
+    available: bool | None = Field(default=None, description="Alternative boolean availability switch.")
+
+
+class RetrievalBodyDoc(BaseModel):
+    dataset_ids: list[str] = Field(description="Dataset IDs to search in.")
+    question: str = Field(description="Retrieval query.")
+    document_ids: list[str] | None = Field(default=None, description="Optional document ID filter.")
+    similarity_threshold: float | None = Field(default=None, description="Similarity threshold.")
+    vector_similarity_weight: float | None = Field(default=None, description="Vector similarity weight.")
+    top_k: int | None = Field(default=None, description="Maximum number of chunks to return.")
+    page: int | None = Field(default=1, description="Page number.")
+    page_size: int | None = Field(default=30, description="Number of chunks per page.")
+    highlight: bool | None = Field(default=None, description="Whether to highlight matched content.")
+    metadata_condition: dict[str, Any] | None = Field(default=None, description="Optional metadata filter.")
+    use_kg: bool | None = Field(default=None, description="Whether to use knowledge graph.")
+    toc_enhance: bool | None = Field(default=None, description="Whether to enhance table of contents matching.")
+    cross_languages: list[str] | None = Field(default=None, description="Optional cross-language expansion settings.")
+    model_config = ConfigDict(extra="allow")
+
+
+class ChunkRecordDoc(BaseModel):
+    id: str
+    content: str | None = None
+    document_id: str | None = None
+    dataset_id: str | None = None
+    available: bool | None = None
+    important_keywords: list[str] | None = None
+    questions: list[str] | None = None
+    image_id: str | None = None
+    positions: list[list[int]] | None = None
+    model_config = ConfigDict(extra="allow")
+
+
+class DocumentRecordDoc(BaseModel):
+    id: str
+    name: str
+    dataset_id: str | None = None
+    chunk_count: int | None = None
+    token_count: int | None = None
+    chunk_method: str | None = None
+    run: str | None = None
+    model_config = ConfigDict(extra="allow")
+
+
+class DocumentListDataDoc(BaseModel):
+    total: int
+    docs: list[DocumentRecordDoc]
+
+
+class DocumentListResponseDoc(BaseModel):
+    code: int = 0
+    data: DocumentListDataDoc
+    message: str = "success"
+
+
+class DocumentArrayResponseDoc(BaseModel):
+    code: int = 0
+    data: list[DocumentRecordDoc]
+    message: str = "success"
+
+
+class DocumentResponseDoc(BaseModel):
+    code: int = 0
+    data: DocumentRecordDoc
+    message: str = "success"
+
+
+class MetadataSummaryResponseDoc(BaseModel):
+    code: int = 0
+    data: dict[str, Any]
+    message: str = "success"
+
+
+class ChunkListDataDoc(BaseModel):
+    total: int
+    chunks: list[ChunkRecordDoc]
+    doc: dict[str, Any]
+
+
+class ChunkListResponseDoc(BaseModel):
+    code: int = 0
+    data: ChunkListDataDoc
+    message: str = "success"
+
+
 @manager.route("/datasets/<dataset_id>/documents", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Documents"])
+@document_request(DocumentUploadFormDoc, source=DataSource.FORM_MULTIPART)
+@document_response(DocumentArrayResponseDoc)
+@document_response(ErrorResponse, 400)
 async def upload(dataset_id, tenant_id):
-    """
-    Upload documents to a dataset.
-    ---
-    tags:
-      - Documents
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-      - in: formData
-        name: file
-        type: file
-        required: true
-        description: Document files to upload.
-      - in: formData
-        name: parent_path
-        type: string
-        description: Optional nested path under the parent folder. Uses '/' separators.
-    responses:
-      200:
-        description: Successfully uploaded documents.
-        schema:
-          type: object
-          properties:
-            data:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: string
-                    description: Document ID.
-                  name:
-                    type: string
-                    description: Document name.
-                  chunk_count:
-                    type: integer
-                    description: Number of chunks.
-                  token_count:
-                    type: integer
-                    description: Number of tokens.
-                  dataset_id:
-                    type: string
-                    description: ID of the dataset.
-                  chunk_method:
-                    type: string
-                    description: Chunking method used.
-                  run:
-                    type: string
-                    description: Processing status.
-    """
+    """Upload documents to a dataset."""
     form = await request.form
     files = await request.files
     if "file" not in files:
@@ -186,55 +330,12 @@ async def upload(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PUT"])  # noqa: F821
 @token_required
+@tag(["SDK Documents"])
+@document_request(DocumentUpdateBodyDoc)
+@document_response(DocumentResponseDoc)
+@document_response(ErrorResponse, 400)
 async def update_doc(tenant_id, dataset_id, document_id):
-    """
-    Update a document within a dataset.
-    ---
-    tags:
-      - Documents
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: path
-        name: document_id
-        type: string
-        required: true
-        description: ID of the document to update.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-      - in: body
-        name: body
-        description: Document update parameters.
-        required: true
-        schema:
-          type: object
-          properties:
-            name:
-              type: string
-              description: New name of the document.
-            parser_config:
-              type: object
-              description: Parser configuration.
-            chunk_method:
-              type: string
-              description: Chunking method.
-            enabled:
-              type: boolean
-              description: Document status.
-    responses:
-      200:
-        description: Document updated successfully.
-        schema:
-          type: object
-    """
+    """Update a document within a dataset."""
     req = await get_request_json()
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(message="You don't own the dataset.")
@@ -365,42 +466,11 @@ async def update_doc(tenant_id, dataset_id, document_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Documents"])
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def download(tenant_id, dataset_id, document_id):
-    """
-    Download a document from a dataset.
-    ---
-    tags:
-      - Documents
-    security:
-      - ApiKeyAuth: []
-    produces:
-      - application/octet-stream
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: path
-        name: document_id
-        type: string
-        required: true
-        description: ID of the document to download.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Document file stream.
-        schema:
-          type: file
-      400:
-        description: Error message.
-        schema:
-          type: object
-    """
+    """Download a document from a dataset."""
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
@@ -424,7 +494,11 @@ async def download(tenant_id, dataset_id, document_id):
 
 
 @manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
+@tag(["SDK Documents"])
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def download_doc(document_id):
+    """Download a document by document ID using an API token."""
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_error_data_result(message="Authorization is not valid!")
@@ -455,116 +529,12 @@ async def download_doc(document_id):
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Documents"])
+@document_querystring(DocumentListQueryDoc)
+@document_response(DocumentListResponseDoc)
+@document_response(ErrorResponse, 400)
 def list_docs(dataset_id, tenant_id):
-    """
-    List documents in a dataset.
-    ---
-    tags:
-      - Documents
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: query
-        name: id
-        type: string
-        required: false
-        description: Filter by document ID.
-      - in: query
-        name: page
-        type: integer
-        required: false
-        default: 1
-        description: Page number.
-      - in: query
-        name: page_size
-        type: integer
-        required: false
-        default: 30
-        description: Number of items per page.
-      - in: query
-        name: orderby
-        type: string
-        required: false
-        default: "create_time"
-        description: Field to order by.
-      - in: query
-        name: desc
-        type: boolean
-        required: false
-        default: true
-        description: Order in descending.
-      - in: query
-        name: create_time_from
-        type: integer
-        required: false
-        default: 0
-        description: Unix timestamp for filtering documents created after this time. 0 means no filter.
-      - in: query
-        name: create_time_to
-        type: integer
-        required: false
-        default: 0
-        description: Unix timestamp for filtering documents created before this time. 0 means no filter.
-      - in: query
-        name: suffix
-        type: array
-        items:
-          type: string
-        required: false
-        description: Filter by file suffix (e.g., ["pdf", "txt", "docx"]).
-      - in: query
-        name: run
-        type: array
-        items:
-          type: string
-        required: false
-        description: Filter by document run status. Supports both numeric ("0", "1", "2", "3", "4") and text formats ("UNSTART", "RUNNING", "CANCEL", "DONE", "FAIL").
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: List of documents.
-        schema:
-          type: object
-          properties:
-            total:
-              type: integer
-              description: Total number of documents.
-            docs:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: string
-                    description: Document ID.
-                  name:
-                    type: string
-                    description: Document name.
-                  chunk_count:
-                    type: integer
-                    description: Number of chunks.
-                  token_count:
-                    type: integer
-                    description: Number of tokens.
-                  dataset_id:
-                    type: string
-                    description: ID of the dataset.
-                  chunk_method:
-                    type: string
-                    description: Chunking method used.
-                  run:
-                    type: string
-                    description: Processing status.
-    """
+    """List documents in a dataset."""
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
 
@@ -636,6 +606,10 @@ def list_docs(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/metadata/summary", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Document Metadata"])
+@document_request(MetadataSummaryBodyDoc)
+@document_response(MetadataSummaryResponseDoc)
+@document_response(ErrorResponse, 400)
 async def metadata_summary(dataset_id, tenant_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
@@ -649,6 +623,10 @@ async def metadata_summary(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/metadata/update", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Document Metadata"])
+@document_request(MetadataBatchUpdateBodyDoc)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def metadata_batch_update(dataset_id, tenant_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
@@ -700,45 +678,12 @@ async def metadata_batch_update(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
 @token_required
+@tag(["SDK Documents"])
+@document_request(DocumentDeleteBodyDoc)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def delete(tenant_id, dataset_id):
-    """
-    Delete documents from a dataset.
-    ---
-    tags:
-      - Documents
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: body
-        name: body
-        description: Document deletion parameters.
-        required: true
-        schema:
-          type: object
-          properties:
-            ids:
-              type: array
-              items:
-                type: string
-              description: |
-                List of document IDs to delete.
-                If omitted, `null`, or an empty array is provided, no documents will be deleted.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Documents deleted successfully.
-        schema:
-          type: object
-    """
+    """Delete documents from a dataset."""
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
     req = await get_request_json()
@@ -818,43 +763,12 @@ DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Chunks"])
+@document_request(ChunkTaskBodyDoc)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def parse(tenant_id, dataset_id):
-    """
-    Start parsing documents into chunks.
-    ---
-    tags:
-      - Chunks
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: body
-        name: body
-        description: Parsing parameters.
-        required: true
-        schema:
-          type: object
-          properties:
-            document_ids:
-              type: array
-              items:
-                type: string
-              description: List of document IDs to parse.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Parsing started successfully.
-        schema:
-          type: object
-    """
+    """Start parsing documents into chunks."""
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
@@ -901,43 +815,12 @@ async def parse(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["DELETE"])  # noqa: F821
 @token_required
+@tag(["SDK Chunks"])
+@document_request(ChunkTaskBodyDoc)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def stop_parsing(tenant_id, dataset_id):
-    """
-    Stop parsing documents into chunks.
-    ---
-    tags:
-      - Chunks
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: body
-        name: body
-        description: Stop parsing parameters.
-        required: true
-        schema:
-          type: object
-          properties:
-            document_ids:
-              type: array
-              items:
-                type: string
-              description: List of document IDs to stop parsing.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Parsing stopped successfully.
-        schema:
-          type: object
-    """
+    """Stop parsing documents into chunks."""
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
@@ -978,83 +861,12 @@ async def stop_parsing(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["GET"])  # noqa: F821
 @token_required
+@tag(["SDK Chunks"])
+@document_querystring(ChunkListQueryDoc)
+@document_response(ChunkListResponseDoc)
+@document_response(ErrorResponse, 400)
 async def list_chunks(tenant_id, dataset_id, document_id):
-    """
-    List chunks of a document.
-    ---
-    tags:
-      - Chunks
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: path
-        name: document_id
-        type: string
-        required: true
-        description: ID of the document.
-      - in: query
-        name: page
-        type: integer
-        required: false
-        default: 1
-        description: Page number.
-      - in: query
-        name: page_size
-        type: integer
-        required: false
-        default: 30
-        description: Number of items per page.
-      - in: query
-        name: id
-        type: string
-        required: false
-        default: ""
-        description: Chunk id.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: List of chunks.
-        schema:
-          type: object
-          properties:
-            total:
-              type: integer
-              description: Total number of chunks.
-            chunks:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: string
-                    description: Chunk ID.
-                  content:
-                    type: string
-                    description: Chunk content.
-                  document_id:
-                    type: string
-                    description: ID of the document.
-                  important_keywords:
-                    type: array
-                    items:
-                      type: string
-                    description: Important keywords.
-                  image_id:
-                    type: string
-                    description: Image ID associated with the chunk.
-            doc:
-              type: object
-              description: Document details.
-    """
+    """List chunks of a document."""
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
@@ -1152,73 +964,12 @@ async def list_chunks(tenant_id, dataset_id, document_id):
     "/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["POST"]
 )
 @token_required
+@tag(["SDK Chunks"])
+@document_request(AddChunkBodyDoc)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def add_chunk(tenant_id, dataset_id, document_id):
-    """
-    Add a chunk to a document.
-    ---
-    tags:
-      - Chunks
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: path
-        name: document_id
-        type: string
-        required: true
-        description: ID of the document.
-      - in: body
-        name: body
-        description: Chunk data.
-        required: true
-        schema:
-          type: object
-          properties:
-            content:
-              type: string
-              required: true
-              description: Content of the chunk.
-            important_keywords:
-              type: array
-              items:
-                type: string
-              description: Important keywords.
-            image_base64:
-              type: string
-              description: Base64-encoded image to associate with the chunk.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Chunk added successfully.
-        schema:
-          type: object
-          properties:
-            chunk:
-              type: object
-              properties:
-                id:
-                  type: string
-                  description: Chunk ID.
-                content:
-                  type: string
-                  description: Chunk content.
-                document_id:
-                  type: string
-                  description: ID of the document.
-                important_keywords:
-                  type: array
-                  items:
-                    type: string
-                  description: Important keywords.
-    """
+    """Add a chunk to a document."""
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
@@ -1304,50 +1055,12 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     "datasets/<dataset_id>/documents/<document_id>/chunks", methods=["DELETE"]
 )
 @token_required
+@tag(["SDK Chunks"])
+@document_request(RemoveChunksBodyDoc)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def rm_chunk(tenant_id, dataset_id, document_id):
-    """
-    Remove chunks from a document.
-    ---
-    tags:
-      - Chunks
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: path
-        name: document_id
-        type: string
-        required: true
-        description: ID of the document.
-      - in: body
-        name: body
-        description: Chunk removal parameters.
-        required: true
-        schema:
-          type: object
-          properties:
-            chunk_ids:
-              type: array
-              items:
-                type: string
-              description: |
-                List of chunk IDs to remove.
-                If omitted, `null`, or an empty array is provided, no chunks will be deleted.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Chunks removed successfully.
-        schema:
-          type: object
-    """
+    """Remove chunks from a document."""
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     docs = DocumentService.get_by_ids([document_id])
@@ -1393,59 +1106,12 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     "/datasets/<dataset_id>/documents/<document_id>/chunks/<chunk_id>", methods=["PUT"]
 )
 @token_required
+@tag(["SDK Chunks"])
+@document_request(UpdateChunkBodyDoc)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
-    """
-    Update a chunk within a document.
-    ---
-    tags:
-      - Chunks
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: path
-        name: document_id
-        type: string
-        required: true
-        description: ID of the document.
-      - in: path
-        name: chunk_id
-        type: string
-        required: true
-        description: ID of the chunk to update.
-      - in: body
-        name: body
-        description: Chunk update parameters.
-        required: true
-        schema:
-          type: object
-          properties:
-            content:
-              type: string
-              description: Updated content of the chunk.
-            important_keywords:
-              type: array
-              items:
-                type: string
-              description: Updated important keywords.
-            available:
-              type: boolean
-              description: Availability status of the chunk.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Chunk updated successfully.
-        schema:
-          type: object
-    """
+    """Update a chunk within a document."""
     chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), [dataset_id])
     if chunk is None:
         return get_error_data_result(f"Can't find this chunk {chunk_id}")
@@ -1508,51 +1174,12 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     "/datasets/<dataset_id>/documents/<document_id>/chunks/switch", methods=["POST"]
 )
 @token_required
+@tag(["SDK Chunks"])
+@document_request(SwitchChunksBodyDoc)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def switch_chunks(tenant_id, dataset_id, document_id):
-    """
-    Switch availability of specified chunks (same as chunk_app switch).
-    ---
-    tags:
-      - Chunks
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: path
-        name: document_id
-        type: string
-        required: true
-        description: ID of the document.
-      - in: body
-        name: body
-        required: true
-        schema:
-          type: object
-          properties:
-            chunk_ids:
-              type: array
-              items:
-                type: string
-              description: List of chunk IDs to switch.
-            available_int:
-              type: integer
-              description: 1 for available, 0 for unavailable.
-            available:
-              type: boolean
-              description: Availability status (alternative to available_int).
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Chunks availability switched successfully.
-    """
+    """Switch availability of specified chunks."""
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
@@ -1586,87 +1213,12 @@ async def switch_chunks(tenant_id, dataset_id, document_id):
 
 @manager.route("/retrieval", methods=["POST"])  # noqa: F821
 @token_required
+@tag(["SDK Retrieval"])
+@document_request(RetrievalBodyDoc)
+@document_response(GenericSuccessResponse)
+@document_response(ErrorResponse, 400)
 async def retrieval_test(tenant_id):
-    """
-    Retrieve chunks based on a query.
-    ---
-    tags:
-      - Retrieval
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: body
-        name: body
-        description: Retrieval parameters.
-        required: true
-        schema:
-          type: object
-          properties:
-            dataset_ids:
-              type: array
-              items:
-                type: string
-              required: true
-              description: List of dataset IDs to search in.
-            question:
-              type: string
-              required: true
-              description: Query string.
-            document_ids:
-              type: array
-              items:
-                type: string
-              description: List of document IDs to filter.
-            similarity_threshold:
-              type: number
-              format: float
-              description: Similarity threshold.
-            vector_similarity_weight:
-              type: number
-              format: float
-              description: Vector similarity weight.
-            top_k:
-              type: integer
-              description: Maximum number of chunks to return.
-            highlight:
-              type: boolean
-              description: Whether to highlight matched content.
-            metadata_condition:
-              type: object
-              description: metadata filter condition.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Retrieval results.
-        schema:
-          type: object
-          properties:
-            chunks:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: string
-                    description: Chunk ID.
-                  content:
-                    type: string
-                    description: Chunk content.
-                  document_id:
-                    type: string
-                    description: ID of the document.
-                  dataset_id:
-                    type: string
-                    description: ID of the dataset.
-                  similarity:
-                    type: number
-                    format: float
-                    description: Similarity score.
-    """
+    """Retrieve chunks based on a query."""
     req = await get_request_json()
     if not req.get("dataset_ids"):
         return get_error_data_result("`dataset_ids` is required.")
