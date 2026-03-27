@@ -447,8 +447,17 @@ func FromEnvironments() error {
 	}
 
 	// Minio
+	minioIP := strings.ToLower(os.Getenv("MINIO_IP"))
+	if minioIP != "" {
+		_, port, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
+		if err != nil {
+			return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
+		}
+		globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", minioIP, port)
+	}
+
 	minioPort := strings.ToLower(os.Getenv("MINIO_PORT"))
-	logger.Info(fmt.Sprintf("MINIO port from env: %s", minioPort))
+	logger.Info(fmt.Sprintf("MINIO ip and port from env: %s:%s", minioIP, minioPort))
 	if minioPort != "" {
 		ip, _, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
 		if err != nil {

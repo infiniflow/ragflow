@@ -235,15 +235,15 @@ jobs:
 
       - name: Run go test for Infinity
         run: |
-          MINIO_IP=$(sudo docker inspect ${MINIO_CONTAINER} | grep -A20 "Networks" | grep "IPAddress" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)
+          MINIO_IP=$(sudo docker inspect ${MINIO_CONTAINER} --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
           echo "MinIO IP in network: ${MINIO_IP}"
           MINIO_URL=http://${MINIO_IP}:9000/minio/health/live
-          echo "Attempt to curl ${MINIO_URL}"
+          echo "Attempt to connect to ${MINIO_URL}"
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${MINIO_URL} > /dev/null 2>&1; do
             echo "Waiting for MINIO service to be available... (last exit code: $?)"
             sleep 5
           done
-          echo "Start to run go test, MINIO port: $MINIO_PORT"
+          echo "Start to run go test, MINIO: ${MINIO_IP}:${MINIO_PORT}"
           bash run_go_tests.sh
 
       - name: Run sdk tests against Infinity
