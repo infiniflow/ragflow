@@ -23,10 +23,11 @@ import tempfile
 import threading
 import zipfile
 from dataclasses import dataclass
+from html import escape
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
 import pdfplumber
@@ -74,7 +75,6 @@ LANGUAGE_TO_MINERU_MAP = {
     'Greek': 'el',
     'Hindi': 'devanagari',
     'Bulgarian': 'cyrillic',
-    'Turkish': 'latin',
 }
 
 
@@ -139,6 +139,7 @@ class MinerUParser(RAGFlowPdfParser):
         self.mineru_api = mineru_api.rstrip("/")
         self.mineru_server_url = mineru_server_url.rstrip("/")
         self.outlines = []
+        self.content_outputs: list[dict[str, Any]] = []
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @staticmethod
@@ -553,44 +554,272 @@ class MinerUParser(RAGFlowPdfParser):
                     item[key] = str((subdir / item[key]).resolve())
         return data
 
+    def _normalize_output_type(self, output: dict[str, Any]) -> MinerUContentType:
+        raw_type = str(output.get("type", "") or "").strip().lower()
+        try:
+            return MinerUContentType(raw_type)
+        except ValueError:
+            self.logger.warning(f"[MinerU] Unknown block type '{raw_type}', fallback to text.")
+            return MinerUContentType.TEXT
+
+    @staticmethod
+    def _normalize_text_lines(values: Sequence[Any] | None) -> list[str]:
+        """Normalize caption/footnote arrays so downstream code receives clean strings."""
+        lines: list[str] = []
+        for value in values or []:
+            text = str(value or "").strip()
+            if text:
+                lines.append(text)
+        return lines
+
+    @classmethod
+    def _join_text_lines(cls, values: Sequence[Any] | None) -> str:
+        return "\n".join(cls._normalize_text_lines(values))
+
+    @staticmethod
+    def _looks_like_markdown_table(text: str) -> bool:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if len(lines) < 2:
+            return False
+        return "|" in lines[0] and bool(re.match(r"^\|?[\s:\-|+]+\|?\s*$", lines[1]))
+
+    def _ensure_table_html(self, table_body: str) -> Optional[str]:
+        body = table_body.strip()
+        if not body:
+            return None
+
+        if re.search(r"<\s*table\b", body, flags=re.IGNORECASE):
+            return body
+
+        if re.search(r"<\s*(tr|td|th)\b", body, flags=re.IGNORECASE):
+            return f"<table>{body}</table>"
+
+        if self._looks_like_markdown_table(body):
+            try:
+                from markdown import markdown as render_markdown
+
+                rendered = render_markdown(body, extensions=["markdown.extensions.tables"])
+                if re.search(r"<\s*table\b", rendered, flags=re.IGNORECASE):
+                    return rendered
+            except Exception as exc:
+                self.logger.warning(f"[MinerU] Failed to convert markdown table to HTML: {exc}")
+
+        # DeepDOC tables are emitted as HTML; wrapping plain text here preserves table semantics downstream.
+        return f"<table><tr><td>{escape(body)}</td></tr></table>"
+
+    def _build_table_text(self, output: dict[str, Any]) -> Optional[str]:
+        table_html = self._ensure_table_html(str(output.get("table_body", "") or ""))
+        if not table_html:
+            return None
+
+        captions = self._normalize_text_lines(output.get("table_caption"))
+        footnotes = self._normalize_text_lines(output.get("table_footnote"))
+
+        if captions and not re.search(r"<\s*caption\b", table_html, flags=re.IGNORECASE):
+            caption_html = f"<caption>{escape(' '.join(captions))}</caption>"
+            table_html, replacements = re.subn(
+                r"(<table\b[^>]*>)",
+                lambda match: match.group(1) + caption_html,
+                table_html,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+            if replacements == 0:
+                table_html += f"\n<p>{escape(' '.join(captions))}</p>"
+
+        if footnotes:
+            table_html += "".join(f"\n<p>{escape(line)}</p>" for line in footnotes)
+
+        return table_html
+
+    def _build_image_caption_lines(self, output: dict[str, Any], *, keep_placeholder: bool = False) -> list[str]:
+        captions = self._normalize_text_lines(output.get("image_caption"))
+        captions.extend(self._normalize_text_lines(output.get("image_footnote")))
+        if captions or not keep_placeholder:
+            return captions
+
+        # Keep an empty placeholder so image blocks are not dropped by downstream list-based tokenization.
+        return [""]
+
+    def _build_section_text(self, output: dict[str, Any], output_type: MinerUContentType) -> str:
+        if output_type in {MinerUContentType.TEXT, MinerUContentType.EQUATION}:
+            return str(output.get("text", "") or "").strip()
+        if output_type == MinerUContentType.CODE:
+            parts = [str(output.get("code_body", "") or "").strip(), self._join_text_lines(output.get("code_caption"))]
+            return "\n".join(part for part in parts if part).strip()
+        if output_type == MinerUContentType.LIST:
+            return self._join_text_lines(output.get("list_items")).strip()
+        return ""
+
+    def _get_position_tag(self, output: dict[str, Any]) -> str:
+        if "page_idx" not in output or "bbox" not in output:
+            return ""
+        return self._line_tag(output)
+
+    def _get_position_list(self, position_tag: str) -> list[tuple[int, float, float, float, float]]:
+        positions: list[tuple[int, float, float, float, float]] = []
+        for pages, left, right, top, bottom in self.extract_positions(position_tag):
+            if not pages:
+                continue
+            positions.append((pages[-1], left, right, top, bottom))
+        return positions
+
+    @staticmethod
+    def _ensure_media_positions(
+        positions: list[tuple[int, float, float, float, float]],
+    ) -> list[tuple[int, float, float, float, float]]:
+        # Some downstream helpers index poss[0]; keep a dummy box so they stay stable on malformed data.
+        return positions or [(0, 0.0, 0.0, 0.0, 0.0)]
+
+    def _load_image_from_path(self, image_path: str | None) -> Optional[Image.Image]:
+        if not image_path:
+            return None
+
+        try:
+            with Image.open(image_path) as img:
+                return img.copy()
+        except Exception as exc:
+            self.logger.warning(f"[MinerU] Failed to load image '{image_path}': {exc}")
+            return None
+
+    def _resolve_output_image(self, output: dict[str, Any], position_tag: str, path_keys: Sequence[str]) -> Optional[Image.Image]:
+        for key in path_keys:
+            img = self._load_image_from_path(str(output.get(key, "") or ""))
+            if img is not None:
+                return img
+
+        if not position_tag:
+            return None
+
+        try:
+            return self.crop(position_tag, 1)
+        except Exception as exc:
+            self.logger.warning(f"[MinerU] Failed to crop media fallback image: {exc}")
+            return None
+
+    def _build_bbox(
+        self,
+        output: dict[str, Any],
+        output_type: MinerUContentType,
+        *,
+        text: str,
+        image: Optional[Image.Image],
+    ) -> dict[str, Any]:
+        position_tag = self._get_position_tag(output)
+        positions = self._get_position_list(position_tag)
+        bbox: dict[str, Any] = {
+            "text": text,
+            "image": image,
+            "positions": [[page + 1, left, right, top, bottom] for page, left, right, top, bottom in positions],
+            "position_tag": position_tag,
+        }
+
+        if positions:
+            page, left, right, top, bottom = positions[0]
+            bbox.update(
+                {
+                    "page_number": page + 1,
+                    "x0": left,
+                    "x1": right,
+                    "top": top,
+                    "bottom": bottom,
+                }
+            )
+
+        if output_type in {MinerUContentType.TEXT, MinerUContentType.LIST, MinerUContentType.CODE}:
+            bbox["layout_type"] = "text"
+        elif output_type == MinerUContentType.EQUATION:
+            bbox["layout_type"] = "equation"
+        elif output_type == MinerUContentType.TABLE:
+            bbox["layout_type"] = "table"
+        elif output_type == MinerUContentType.IMAGE:
+            bbox["layout_type"] = "figure"
+
+        return bbox
+
+    def _transfer_to_bboxes(self, outputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        bboxes: list[dict[str, Any]] = []
+        for output in outputs:
+            output_type = self._normalize_output_type(output)
+            if output_type == MinerUContentType.DISCARDED:
+                continue
+
+            position_tag = self._get_position_tag(output)
+            text = self._build_section_text(output, output_type)
+            image: Optional[Image.Image]
+
+            if output_type == MinerUContentType.TABLE:
+                text = self._build_table_text(output)
+                if not text:
+                    continue
+                image = self._resolve_output_image(output, position_tag, ("table_img_path", "img_path"))
+            elif output_type == MinerUContentType.IMAGE:
+                text = "\n".join(self._build_image_caption_lines(output))
+                image = self._resolve_output_image(output, position_tag, ("img_path", "table_img_path"))
+            else:
+                image = self.crop(position_tag, 1) if position_tag else None
+
+            bboxes.append(self._build_bbox(output, output_type, text=text, image=image))
+
+        return bboxes
+
     def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None):
         sections = []
         for output in outputs:
-            match output["type"]:
-                case MinerUContentType.TEXT:
-                    section = output.get("text", "")
-                case MinerUContentType.TABLE:
-                    section = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(
-                        output.get("table_footnote", []))
-                    if not section.strip():
-                        section = "FAILED TO PARSE TABLE"
-                case MinerUContentType.IMAGE:
-                    section = "".join(output.get("image_caption", [])) + "\n" + "".join(
-                        output.get("image_footnote", []))
-                case MinerUContentType.EQUATION:
-                    section = output.get("text", "")
-                case MinerUContentType.CODE:
-                    section = output.get("code_body", "") + "\n".join(output.get("code_caption", []))
-                case MinerUContentType.LIST:
-                    section = "\n".join(output.get("list_items", []))
-                case MinerUContentType.DISCARDED:
-                    continue  # Skip discarded blocks entirely
+            output_type = self._normalize_output_type(output)
+            if output_type in {MinerUContentType.TABLE, MinerUContentType.IMAGE, MinerUContentType.DISCARDED}:
+                continue
+
+            section = self._build_section_text(output, output_type)
+            if not section:
+                continue
+
+            position_tag = self._get_position_tag(output)
 
             if section and parse_method == "manual":
-                sections.append((section, output["type"], self._line_tag(output)))
+                sections.append((section, output_type.value, position_tag))
             elif section and parse_method == "paper":
-                sections.append((section + self._line_tag(output), output["type"]))
+                sections.append((section + position_tag, output_type.value))
             else:
-                sections.append((section, self._line_tag(output)))
+                sections.append((section, position_tag))
         return sections
 
     def _transfer_to_tables(self, outputs: list[dict[str, Any]]):
-        return []
+        tables = []
+        for output in outputs:
+            output_type = self._normalize_output_type(output)
+            position_tag = self._get_position_tag(output)
+            positions = self._ensure_media_positions(self._get_position_list(position_tag))
+
+            if output_type == MinerUContentType.TABLE:
+                table_text = self._build_table_text(output)
+                if not table_text:
+                    continue
+                table_image = self._resolve_output_image(output, position_tag, ("table_img_path", "img_path"))
+                tables.append(((table_image, table_text), positions))
+            elif output_type == MinerUContentType.IMAGE:
+                image_texts = self._build_image_caption_lines(output, keep_placeholder=True)
+                image = self._resolve_output_image(output, position_tag, ("img_path", "table_img_path"))
+                tables.append(((image, image_texts), positions))
+
+        return tables
+
+    def parse_into_bboxes(
+        self,
+        filepath: str | PathLike[str],
+        binary: BytesIO | bytes | None = None,
+        callback: Optional[Callable] = None,
+        *,
+        parse_method: str = "raw",
+        **kwargs,
+    ) -> list[dict[str, Any]]:
+        self.parse_pdf(filepath=filepath, binary=binary, callback=callback, parse_method=parse_method, **kwargs)
+        return self._transfer_to_bboxes(self.content_outputs)
 
     def parse_pdf(
             self,
             filepath: str | PathLike[str],
-            binary: BytesIO | bytes,
+            binary: BytesIO | bytes | None,
             callback: Optional[Callable] = None,
             *,
             output_dir: Optional[str] = None,
@@ -648,6 +877,7 @@ class MinerUParser(RAGFlowPdfParser):
             callback(0.15, f"[MinerU] Output directory: {out_dir}")
 
         self.__images__(pdf, zoomin=1)
+        self.content_outputs = []
 
         try:
             options = MinerUParseOptions(
@@ -662,6 +892,7 @@ class MinerUParser(RAGFlowPdfParser):
             )
             final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback)
             outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
+            self.content_outputs = outputs
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:
                 callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")

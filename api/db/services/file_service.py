@@ -444,17 +444,6 @@ class FileService(CommonService):
             e, doc = DocumentService.get_by_id(doc_id)
             if e:
                 try:
-                    if str(doc.kb_id) != str(kb.id):
-                        logging.warning(
-                            "Existing document id collision detected for %s: belongs to kb_id=%s, incoming kb_id=%s. "
-                            "Skipping update to avoid cross-KB overwrite.",
-                            doc_id,
-                            doc.kb_id,
-                            kb.id,
-                        )
-                        user_msg = "Existing document id collision with another knowledge base; skipping update."
-                        err.append(file.filename + ": " + user_msg)
-                        continue
                     blob = file.read()
                     new_hash = xxhash.xxh128(blob).hexdigest()
                     old_hash = doc.content_hash or ""
@@ -541,7 +530,7 @@ class FileService(CommonService):
         return "\n\n".join(res)
 
     @staticmethod
-    def parse(filename, blob, img_base64=True, tenant_id=None, layout_recognize=None):
+    def parse(filename, blob, img_base64=True, tenant_id=None, layout_recognize=None, source_location=None, storage_bucket=None):
         from rag.app import audio, email, naive, picture, presentation
         from api.apps import current_user
 
@@ -550,7 +539,16 @@ class FileService(CommonService):
 
         FACTORY = {ParserType.PRESENTATION.value: presentation, ParserType.PICTURE.value: picture, ParserType.AUDIO.value: audio, ParserType.EMAIL.value: email}
         parser_config = {"chunk_token_num": 16096, "delimiter": "\n!?;。；！？", "layout_recognize": layout_recognize or "Plain Text"}
-        kwargs = {"lang": "English", "callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": 100000, "tenant_id": current_user.id if current_user else tenant_id}
+        kwargs = {
+            "lang": "English",
+            "callback": dummy,
+            "parser_config": parser_config,
+            "from_page": 0,
+            "to_page": 100000,
+            "tenant_id": current_user.id if current_user else tenant_id,
+            "source_location": source_location,
+            "storage_bucket": storage_bucket,
+        }
         file_type = filename_type(filename)
         if img_base64 and file_type == FileType.VISUAL.value:
             return GptV4.image2base64(blob)
@@ -701,7 +699,18 @@ class FileService(CommonService):
                 else:
                     threads.append(exe.submit(image_to_base64, file))
                 continue
-            threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"], layout_recognize))
+            threads.append(
+                exe.submit(
+                    FileService.parse,
+                    file["name"],
+                    FileService.get_blob(file["created_by"], file["id"]),
+                    True,
+                    file["created_by"],
+                    layout_recognize,
+                    file.get("location") or file.get("id"),
+                    file.get("parent_id") or f"{file['created_by']}-downloads",
+                )
+            )
     
         if raw:
             return [th.result() for th in threads], imgs

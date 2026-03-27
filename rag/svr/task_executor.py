@@ -281,6 +281,7 @@ async def build_chunks(task, progress_callback):
                 kb_id=task["kb_id"],
                 parser_config=task["parser_config"],
                 tenant_id=task["tenant_id"],
+                source_location=task.get("location", ""),
             )
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
     except TaskCanceledException:
