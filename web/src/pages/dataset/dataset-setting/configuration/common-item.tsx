@@ -207,14 +207,20 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
   );
 }
 
-export function ParseTypeItem({ line = 2 }: { line?: number }) {
+export function ParseTypeItem({
+  line = 2,
+  name = 'parseType',
+}: {
+  line?: number;
+  name?: string;
+}) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
 
   return (
     <FormField
       control={form.control}
-      name={'parseType'}
+      name={name}
       render={({ field }) => (
         <FormItem className=" items-center space-y-0 ">
           <div
