@@ -303,7 +303,7 @@ class OSConnection(DocStoreConnection):
             try:
                 res = []
                 r = self.os.bulk(index=(indexName), body=operations,
-                                 refresh=False, timeout=60)
+                                 refresh="wait_for", timeout=60)
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
                     return res
 
