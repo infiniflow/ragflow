@@ -18,7 +18,7 @@ from common import (
     bulk_upload_documents,
     chat_completions_openai,
     create_chat_assistant,
-    delete_chat_assistants,
+    delete_all_chat_assistants,
     list_documents,
     parse_documents,
 )
@@ -53,7 +53,7 @@ class TestChatCompletionsOpenAI:
         res = create_chat_assistant(HttpApiAuth, {"name": "openai_endpoint_test", "dataset_ids": [dataset_id]})
         assert res["code"] == 0, res
         chat_id = res["data"]["id"]
-        request.addfinalizer(lambda: delete_chat_assistants(HttpApiAuth))
+        request.addfinalizer(lambda: delete_all_chat_assistants(HttpApiAuth))
 
         res = chat_completions_openai(
             HttpApiAuth,
@@ -92,7 +92,7 @@ class TestChatCompletionsOpenAI:
         res = create_chat_assistant(HttpApiAuth, {"name": "openai_token_count_test", "dataset_ids": [dataset_id]})
         assert res["code"] == 0, res
         chat_id = res["data"]["id"]
-        request.addfinalizer(lambda: delete_chat_assistants(HttpApiAuth))
+        request.addfinalizer(lambda: delete_all_chat_assistants(HttpApiAuth))
 
         # Use a message with known token count
         # "hello" is 1 token in cl100k_base encoding
@@ -130,3 +130,80 @@ class TestChatCompletionsOpenAI:
         )
         # Should return an error (format may vary based on implementation)
         assert "error" in res or res.get("code") != 0, f"Should return error for invalid chat: {res}"
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "payload, requires_valid_chat, expected_message",
+        [
+            (
+                {
+                    "model": "model",
+                    "messages": [{"role": "user", "content": "hello"}],
+                    "extra_body": "invalid_extra_body",
+                },
+                False,
+                "extra_body must be an object.",
+            ),
+            (
+                {
+                    "model": "model",
+                    "messages": [{"role": "user", "content": "hello"}],
+                    "extra_body": {"reference_metadata": "invalid_reference_metadata"},
+                },
+                False,
+                "reference_metadata must be an object.",
+            ),
+            (
+                {
+                    "model": "model",
+                    "messages": [{"role": "user", "content": "hello"}],
+                    "extra_body": {"reference_metadata": {"fields": "author"}},
+                },
+                False,
+                "reference_metadata.fields must be an array.",
+            ),
+            (
+                {
+                    "model": "model",
+                    "messages": [],
+                },
+                False,
+                "You have to provide messages.",
+            ),
+            (
+                {
+                    "model": "model",
+                    "messages": [{"role": "assistant", "content": "hello"}],
+                },
+                False,
+                "The last content of this conversation is not from user.",
+            ),
+            (
+                {
+                    "model": "model",
+                    "messages": [{"role": "user", "content": "hello"}],
+                    "extra_body": {"metadata_condition": "invalid"},
+                },
+                True,
+                "metadata_condition must be an object.",
+            ),
+        ],
+    )
+    def test_openai_chat_completion_request_validation(
+        self,
+        HttpApiAuth,
+        request,
+        payload,
+        requires_valid_chat,
+        expected_message,
+    ):
+        chat_id = "invalid_chat_id"
+        if requires_valid_chat:
+            res = create_chat_assistant(HttpApiAuth, {"name": "openai_validation_case", "dataset_ids": []})
+            assert res["code"] == 0, res
+            chat_id = res["data"]["id"]
+            request.addfinalizer(lambda: delete_all_chat_assistants(HttpApiAuth))
+
+        res = chat_completions_openai(HttpApiAuth, chat_id, payload)
+        assert res.get("code") != 0, res
+        assert expected_message in res.get("message", ""), res

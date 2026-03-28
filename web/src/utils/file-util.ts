@@ -1,6 +1,6 @@
 import { FileMimeType } from '@/constants/common';
+import { UploadFile } from '@/interfaces/antd-compat';
 import fileManagerService from '@/services/file-manager-service';
-import { UploadFile } from 'antd';
 
 export const transformFile2Base64 = (
   val: any,
@@ -101,8 +101,15 @@ export const getBase64FromUploadFileList = async (fileList?: UploadFile[]) => {
   return '';
 };
 
-async function fetchDocumentBlob(id: string, mimeType?: FileMimeType) {
-  const response = await fileManagerService.getDocumentFile({}, id);
+async function fetchPreviewBlob(
+  id: string,
+  resource: 'document' | 'files',
+  mimeType?: FileMimeType,
+) {
+  const response =
+    resource === 'files'
+      ? await fileManagerService.getFile({}, id)
+      : await fileManagerService.getDocumentFile({}, id);
   const blob = new Blob([response.data], {
     type: mimeType || response.data.type,
   });
@@ -110,8 +117,11 @@ async function fetchDocumentBlob(id: string, mimeType?: FileMimeType) {
   return blob;
 }
 
-export async function previewHtmlFile(id: string) {
-  const blob = await fetchDocumentBlob(id, FileMimeType.Html);
+export async function previewHtmlFile(
+  id: string,
+  resource: 'document' | 'files' = 'document',
+) {
+  const blob = await fetchPreviewBlob(id, resource, FileMimeType.Html);
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -137,7 +147,7 @@ export const downloadDocument = async ({
   id: string;
   filename?: string;
 }) => {
-  const blob = await fetchDocumentBlob(id);
+  const blob = await fetchPreviewBlob(id, 'document');
   downloadFileFromBlob(blob, filename);
 };
 

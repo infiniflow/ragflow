@@ -1,7 +1,7 @@
 let api_host = `/v1`;
 const ExternalApi = `/api`;
 
-export { api_host };
+export { ExternalApi, api_host };
 
 export default {
   // user
@@ -57,23 +57,30 @@ export default {
   // knowledge base
 
   check_embedding: `${api_host}/kb/check_embedding`,
-  kb_list: `${api_host}/kb/list`,
-  create_kb: `${api_host}/kb/create`,
-  update_kb: `${api_host}/kb/update`,
-  rm_kb: `${api_host}/kb/rm`,
+  kb_list: `${ExternalApi}${api_host}/datasets`,
+  create_kb: `${ExternalApi}${api_host}/datasets`,
+  update_kb: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}`,
+  rm_kb: `${ExternalApi}${api_host}/datasets`,
   get_kb_detail: `${api_host}/kb/detail`,
   getKnowledgeGraph: (knowledgeId: string) =>
-    `${api_host}/kb/${knowledgeId}/knowledge_graph`,
+    `${ExternalApi}${api_host}/datasets/${knowledgeId}/knowledge_graph`,
+  deleteKnowledgeGraph: (knowledgeId: string) =>
+    `${ExternalApi}${api_host}/datasets/${knowledgeId}/knowledge_graph`,
   getMeta: `${api_host}/kb/get_meta`,
   getKnowledgeBasicInfo: `${api_host}/kb/basic_info`,
   // data pipeline log
   fetchDataPipelineLog: `${api_host}/kb/list_pipeline_logs`,
   get_pipeline_detail: `${api_host}/kb/pipeline_log_detail`,
   fetchPipelineDatasetLogs: `${api_host}/kb/list_pipeline_dataset_logs`,
-  runGraphRag: `${api_host}/kb/run_graphrag`,
-  traceGraphRag: `${api_host}/kb/trace_graphrag`,
-  runRaptor: `${api_host}/kb/run_raptor`,
-  traceRaptor: `${api_host}/kb/trace_raptor`,
+  runGraphRag: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}/run_graphrag`,
+  traceGraphRag: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}/trace_graphrag`,
+  runRaptor: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}/run_raptor`,
+  traceRaptor: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}/trace_raptor`,
   unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
     `${api_host}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
   pipelineRerun: `${api_host}/canvas/rerun`,
@@ -154,15 +161,14 @@ export default {
     `${ExternalApi}${api_host}/chatbots/${id}/info`,
 
   // file manager
-  listFile: `${api_host}/file/list`,
-  uploadFile: `${api_host}/file/upload`,
-  removeFile: `${api_host}/file/rm`,
-  renameFile: `${api_host}/file/rename`,
-  getAllParentFolder: `${api_host}/file/all_parent_folder`,
-  createFolder: `${api_host}/file/create`,
+  listFile: `${ExternalApi}${api_host}/files`,
+  uploadFile: `${ExternalApi}${api_host}/files`,
+  removeFile: `${ExternalApi}${api_host}/files`,
+  getAllParentFolder: `${ExternalApi}${api_host}/files`,
+  createFolder: `${ExternalApi}${api_host}/files`,
   connectFileToKnowledge: `${api_host}/file2document/convert`,
-  getFile: `${api_host}/file/get`,
-  moveFile: `${api_host}/file/mv`,
+  getFile: `${ExternalApi}${api_host}/files`,
+  moveFile: `${ExternalApi}${api_host}/files/move`,
 
   // system
   getSystemVersion: `${api_host}/system/version`,
@@ -201,6 +207,8 @@ export default {
   uploadAgentFile: (id?: string) => `${api_host}/canvas/upload/${id}`,
   fetchAgentLogs: (canvasId: string) =>
     `${api_host}/canvas/${canvasId}/sessions`,
+  fetchAgentLogsById: (canvasId: string, sessionId: string) =>
+    `${api_host}/canvas/${canvasId}/sessions/${sessionId}`,
   fetchExternalAgentInputs: (canvasId: string) =>
     `${ExternalApi}${api_host}/agentbots/${canvasId}/inputs`,
   prompt: `${api_host}/canvas/prompts`,
@@ -209,6 +217,11 @@ export default {
   testWebhook: (id: string) => `${ExternalApi}${api_host}/webhook_test/${id}`,
   fetchWebhookTrace: (id: string) =>
     `${ExternalApi}${api_host}/webhook_trace/${id}`,
+
+  // explore
+
+  runCanvasExplore: (canvasId: string) =>
+    `${api_host}/canvas/${canvasId}/completion`,
 
   // mcp server
   listMcpServer: `${api_host}/mcp_server/list`,
@@ -224,12 +237,15 @@ export default {
   testMcpServer: `${api_host}/mcp_server/test_mcp`,
 
   // next-search
-  createSearch: `${api_host}/search/create`,
-  getSearchList: `${api_host}/search/list`,
-  deleteSearch: `${api_host}/search/rm`,
-  getSearchDetail: `${api_host}/search/detail`,
+  createSearch: `${ExternalApi}${api_host}/searches`,
+  getSearchList: `${ExternalApi}${api_host}/searches`,
+  deleteSearch: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
+  getSearchDetail: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
   getSearchDetailShare: `${ExternalApi}${api_host}/searchbots/detail`,
-  updateSearchSetting: `${api_host}/search/update`,
+  updateSearchSetting: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
   askShare: `${ExternalApi}${api_host}/searchbots/ask`,
   mindmapShare: `${ExternalApi}${api_host}/searchbots/mindmap`,
   getRelatedQuestionsShare: `${ExternalApi}${api_host}/searchbots/related_questions`,

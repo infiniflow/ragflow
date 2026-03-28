@@ -27,6 +27,7 @@ from utils.file_utils import create_txt_file
 HEADERS = {"Content-Type": "application/json"}
 
 KB_APP_URL = f"/{VERSION}/kb"
+DATASETS_URL = f"/api/{VERSION}/datasets"
 DOCUMENT_APP_URL = f"/{VERSION}/document"
 CHUNK_API_URL = f"/{VERSION}/chunk"
 DIALOG_APP_URL = f"/{VERSION}/dialog"
@@ -38,7 +39,7 @@ API_APP_URL = f"/{VERSION}/api"
 SYSTEM_APP_URL = f"/{VERSION}/system"
 LLM_APP_URL = f"/{VERSION}/llm"
 PLUGIN_APP_URL = f"/{VERSION}/plugin"
-SEARCH_APP_URL = f"/{VERSION}/search"
+SEARCHES_URL = f"/api/{VERSION}/searches"
 
 
 def _http_debug_enabled():
@@ -141,52 +142,53 @@ def plugin_llm_tools(auth, params=None, *, headers=HEADERS):
 
 # SEARCH APP
 def search_create(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/create", headers=headers, auth=auth, json=payload, data=data)
+    res = requests.post(url=f"{HOST_ADDRESS}{SEARCHES_URL}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def search_update(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/update", headers=headers, auth=auth, json=payload, data=data)
+def search_update(auth, search_id, payload=None, *, headers=HEADERS, data=None):
+    res = requests.put(url=f"{HOST_ADDRESS}{SEARCHES_URL}/{search_id}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def search_detail(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/detail", headers=headers, auth=auth, params=params)
+def search_detail(auth, search_id, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{SEARCHES_URL}/{search_id}", headers=headers, auth=auth)
     return res.json()
 
 
-def search_list(auth, params=None, payload=None, *, headers=HEADERS, data=None):
-    if payload is None:
-        payload = {}
-    res = requests.post(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/list", headers=headers, auth=auth, params=params, json=payload, data=data)
+def search_list(auth, params=None, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{SEARCHES_URL}", headers=headers, auth=auth, params=params)
     return res.json()
 
 
-def search_rm(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/rm", headers=headers, auth=auth, json=payload, data=data)
+def search_rm(auth, search_id, *, headers=HEADERS):
+    res = requests.delete(url=f"{HOST_ADDRESS}{SEARCHES_URL}/{search_id}", headers=headers, auth=auth)
     return res.json()
 
 
 # KB APP
-def create_kb(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/create", headers=headers, auth=auth, json=payload, data=data)
+def create_dataset(auth, payload=None, *, headers=HEADERS, data=None):
+    res = requests.post(url=f"{HOST_ADDRESS}{DATASETS_URL}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def list_kbs(auth, params=None, payload=None, *, headers=HEADERS, data=None):
-    if payload is None:
-        payload = {}
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/list", headers=headers, auth=auth, params=params, json=payload, data=data)
+def list_datasets(auth, params=None, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}", headers=headers, auth=auth, params=params)
     return res.json()
 
 
-def update_kb(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/update", headers=headers, auth=auth, json=payload, data=data)
+def update_dataset(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
+    res = requests.put(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def rm_kb(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/rm", headers=headers, auth=auth, json=payload, data=data)
+def delete_datasets(auth, payload=None, *, headers=HEADERS, data=None):
+    """
+    Delete datasets.
+    The endpoint is DELETE /api/{VERSION}/datasets with payload {"ids": [...]}
+    This is the standard SDK REST API endpoint for dataset deletion.
+    """
+    res = requests.delete(url=f"{HOST_ADDRESS}{DATASETS_URL}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
@@ -236,23 +238,43 @@ def kb_pipeline_log_detail(auth, params=None, *, headers=HEADERS):
     return res.json()
 
 
-def kb_run_graphrag(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/run_graphrag", headers=headers, auth=auth, json=payload, data=data)
+# DATASET GRAPH AND TASKS
+def knowledge_graph(auth, dataset_id, params=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/knowledge_graph"
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
-def kb_trace_graphrag(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/trace_graphrag", headers=headers, auth=auth, params=params)
+def delete_knowledge_graph(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/knowledge_graph"
+    if payload is None:
+        res = requests.delete(url=url, headers=HEADERS, auth=auth)
+    else:
+        res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def kb_run_raptor(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/run_raptor", headers=headers, auth=auth, json=payload, data=data)
+def run_graphrag(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/run_graphrag"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def kb_trace_raptor(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/trace_raptor", headers=headers, auth=auth, params=params)
+def trace_graphrag(auth, dataset_id, params=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/trace_graphrag"
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
+    return res.json()
+
+
+def run_raptor(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/run_raptor"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def trace_raptor(auth, dataset_id, params=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/trace_raptor"
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
@@ -286,21 +308,11 @@ def rename_tags(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
     return res.json()
 
 
-def knowledge_graph(auth, dataset_id, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/{dataset_id}/knowledge_graph", headers=headers, auth=auth, params=params)
-    return res.json()
-
-
-def delete_knowledge_graph(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
-    res = requests.delete(url=f"{HOST_ADDRESS}{KB_APP_URL}/{dataset_id}/delete_knowledge_graph", headers=headers, auth=auth, json=payload, data=data)
-    return res.json()
-
-
 def batch_create_datasets(auth, num):
     ids = []
     for i in range(num):
-        res = create_kb(auth, {"name": f"kb_{i}"})
-        ids.append(res["data"]["kb_id"])
+        res = create_dataset(auth, {"name": f"kb_{i}"})
+        ids.append(res["data"]["id"])
     return ids
 
 
@@ -431,6 +443,11 @@ def get_chunk(auth, params=None, *, headers=HEADERS):
 
 def update_chunk(auth, payload=None, *, headers=HEADERS):
     res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/set", headers=headers, auth=auth, json=payload)
+    return res.json()
+
+
+def switch_chunks(auth, payload=None, *, headers=HEADERS):
+    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/switch", headers=headers, auth=auth, json=payload)
     return res.json()
 
 

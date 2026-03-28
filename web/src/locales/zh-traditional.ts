@@ -18,6 +18,8 @@ export default {
       portugueseBr: '葡萄牙語 (巴西)',
       chinese: '簡體中文',
       traditionalChinese: '繁體中文',
+      bulgarian: '保加利亞語',
+      arabic: '阿拉伯語',
       language: '語言',
       languageMessage: '請輸入語言',
       languagePlaceholder: '請選擇語言',
@@ -35,6 +37,7 @@ export default {
       pleaseInput: '請輸入',
       submit: '提交',
       embedIntoSite: '嵌入網站',
+      openInNewTab: '在新標籤頁中聊天',
       previousPage: '上一頁',
       nextPage: '下一頁',
       add: '添加',
@@ -154,7 +157,7 @@ export default {
       changeSpecificCategory: '更改特定類別',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
       uploadDescription:
-        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 demo.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
+        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 cloud.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
       chunk: '解析塊',
       bulk: '批量',
       cancel: '取消',
@@ -561,6 +564,7 @@ export default {
       avatar: '头像',
       avatarTip: '這會在你的個人主頁展示',
       profileDescription: '在此更新您的照片和個人詳細信息。',
+      dingtalkAITableDescription: '連接釘釘AI表格，同步指定表格中的記錄。',
       gitlabDescription:
         '連接 GitLab，同步儲存庫、Issue、合併請求（MR）及相關文件內容。',
       bedrockCredentialsHint:
@@ -624,6 +628,8 @@ export default {
         '如果您的 API 密鑰來自 OpenAI，請忽略它。任何其他中間提供商都會提供帶有 API 密鑰的基本 URL。',
       tongyiBaseUrlTip:
         '中國用戶無需填寫或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。國際用戶請使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        '中國用戶無需填寫或使用 https://api.siliconflow.cn/v1。國際用戶請使用 https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder: '（僅國際用戶，請參閱提示）',
       minimaxBaseUrlTip: '僅國際用戶：使用 https://api.minimax.io/v1。',
       minimaxBaseUrlPlaceholder: '（僅國際用戶填寫 https://api.minimax.io/v1）',
@@ -803,7 +809,7 @@ export default {
       parseOnCreation: '創建時解析',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
       uploadDescription:
-        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 demo.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
+        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 cloud.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
       file: '文件',
       directory: '文件夾',
       local: '本地上傳',
@@ -1274,6 +1280,14 @@ export default {
       file: '文件',
       knowledge: '知識',
       chat: '聊天',
+    },
+    language: {
+      english: '英語',
+      chinese: '簡體中文',
+      russian: '俄語',
+      bulgarian: '保加利亞語',
+      arabic: '阿拉伯語',
+      turkish: '土耳其語',
     },
     modal: {
       okText: '確認',

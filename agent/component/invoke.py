@@ -54,6 +54,23 @@ class InvokeParam(ComponentParamBase):
 class Invoke(ComponentBase, ABC):
     component_name = "Invoke"
 
+    def get_input_form(self) -> dict[str, dict]:
+        res = {}
+        for item in self._param.variables or []:
+            if not isinstance(item, dict):
+                continue
+            ref = (item.get("ref") or "").strip()
+            if not ref or ref in res:
+                continue
+
+            elements = self.get_input_elements_from_text("{" + ref + "}")
+            element = elements.get(ref, {})
+            res[ref] = {
+                "type": "line",
+                "name": element.get("name") or item.get("key") or ref,
+            }
+        return res
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("Invoke processing"):
@@ -63,8 +80,12 @@ class Invoke(ComponentBase, ABC):
         for para in self._param.variables:
             if para.get("value"):
                 args[para["key"]] = para["value"]
+            elif para.get("ref") in kwargs:
+                args[para["key"]] = kwargs[para["ref"]]
+                self.set_input_value(para["ref"], kwargs[para["ref"]])
             else:
                 args[para["key"]] = self._canvas.get_variable_value(para["ref"])
+                self.set_input_value(para["ref"], args[para["key"]])
 
         url = self._param.url.strip()
 
@@ -76,8 +97,10 @@ class Invoke(ComponentBase, ABC):
             except Exception:
                 return ""
 
+        variable_pattern = r"\{([a-zA-Z_][a-zA-Z0-9_.@-]*)\}"
+
         # {base_url} or {component_id@variable_name}
-        url = re.sub(r"\{([a-zA-Z_][a-zA-Z0-9_.@-]*)\}", replace_variable, url)
+        url = re.sub(variable_pattern, replace_variable, url)
 
         if url.find("http") != 0:
             url = "http://" + url
@@ -85,7 +108,25 @@ class Invoke(ComponentBase, ABC):
         method = self._param.method.lower()
         headers = {}
         if self._param.headers:
-            headers = json.loads(self._param.headers)
+            try:
+                parsed_headers = json.loads(self._param.headers)
+            except json.JSONDecodeError as e:
+                logging.warning(
+                    "Invoke headers are not valid JSON, ignoring headers. raw=%r error=%s",
+                    self._param.headers,
+                    e,
+                )
+                parsed_headers = {}
+            if not isinstance(parsed_headers, dict):
+                logging.warning(
+                    "Invoke headers JSON is of type %s, expected an object; ignoring headers.",
+                    type(parsed_headers).__name__,
+                )
+                parsed_headers = {}
+            headers = parsed_headers
+            for key, value in list(headers.items()):
+                if isinstance(value, str):
+                    headers[key] = re.sub(variable_pattern, replace_variable, value)
         proxies = None
         if re.sub(r"https?:?/?/?", "", self._param.proxy):
             proxies = {"http": self._param.proxy, "https": self._param.proxy}
@@ -121,6 +162,7 @@ class Invoke(ComponentBase, ABC):
                     else:
                         response = requests.post(url=url, data=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
                     if self._param.clean_html:
+                        sections = HtmlParser()(None, response.content)
                         self.set_output("result", "\n".join(sections))
                     else:
                         self.set_output("result", response.text)

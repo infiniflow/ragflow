@@ -40,6 +40,7 @@ class BlobType(str, Enum):
 
 class DocumentSource(str, Enum):
     """Document sources"""
+    RSS = "rss"
     S3 = "s3"
     NOTION = "notion"
     R2 = "r2"
@@ -66,6 +67,7 @@ class DocumentSource(str, Enum):
     SEAFILE = "seafile"
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"
+    DINGTALK_AI_TABLE = "dingtalk_ai_table"
 
 
 class FileOrigin(str, Enum):

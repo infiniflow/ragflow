@@ -56,6 +56,7 @@ interface NextMessageInputProps {
   removeFile?(file: File): void;
   showReasoning?: boolean;
   showInternet?: boolean;
+  resize?: 'none' | 'vertical' | 'horizontal' | 'both';
 }
 
 export function NextMessageInput({
@@ -65,6 +66,7 @@ export function NextMessageInput({
   sendLoading,
   disabled,
   showUploadIcon = true,
+  resize = 'none',
   onUpload,
   onInputChange,
   stopOutputMessage,
@@ -157,7 +159,7 @@ export function NextMessageInput({
       onValueChange={setFiles}
       onUpload={onUpload}
       onFileReject={onFileReject}
-      className="relative w-full items-center "
+      className="relative w-full items-center"
       disabled={isUploading || disabled}
     >
       <FileUploadDropzone
@@ -176,9 +178,14 @@ export function NextMessageInput({
           </p>
         </div>
       </FileUploadDropzone>
+
       <form
         onSubmit={onSubmit}
-        className="relative flex w-full flex-col gap-2.5 rounded-md border border-input px-3 py-2 outline-none focus-within:ring-1 focus-within:ring-ring/50"
+        className="
+          relative flex w-full flex-col gap-2.5 rounded-md
+          border-0.5 border-border-default bg-bg-card p-2 outline-none
+          has-[textarea:focus]:outline-accent-primary has-[textarea:focus]:outline-1 has-[textarea:focus]:outline-offset-2
+        "
       >
         <FileUploadList
           orientation="horizontal"
@@ -203,65 +210,75 @@ export function NextMessageInput({
             </FileUploadItem>
           ))}
         </FileUploadList>
+
         <Textarea
+          data-testid="chat-textarea"
           value={value}
           onChange={onInputChange}
           placeholder={t('chat.messagePlaceholder')}
-          className="min-h-10 max-h-40 w-full border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
+          className="
+            min-h-10 max-h-40 w-full p-0 overflow-auto
+            !outline-none !border-transparent !bg-transparent !shadow-none !ring-transparent !ring-offset-transparent
+          "
           disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}
-          autoSize={{ minRows: 1, maxRows: 8 }}
+          autoSize={{ minRows: 2, maxRows: 8 }}
         />
-        <div className={cn('flex items-center justify-between gap-1.5')}>
-          <div className="flex items-center gap-3">
+
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
             {showUploadIcon && (
               <FileUploadTrigger asChild>
                 <Button
                   type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="size-7 rounded-sm"
+                  size="icon-xs"
+                  variant="transparent"
+                  className="rounded-sm border-0"
                   disabled={isUploading || sendLoading}
+                  data-testid="chat-detail-attach"
                 >
                   <Paperclip className="size-3.5" />
                   <span className="sr-only">Attach file</span>
                 </Button>
               </FileUploadTrigger>
             )}
+
             {showReasoning && (
               <Button
                 type="button"
-                variant="ghost"
-                className={cn(
-                  'rounded-sm h-7 focus-visible:bg-none! hover:bg-none!',
-                  {
-                    'bg-accent-primary text-white': enableThinking,
-                  },
-                )}
+                size="sm"
+                variant={'outline'}
+                className={cn('border-0 h-7 text-sm bg-bg-card', {
+                  'bg-text-primary text-bg-base': enableThinking,
+                })}
                 onClick={handleThinkingToggle}
+                data-testid="chat-detail-thinking-toggle"
               >
                 <Atom />
                 <span>Thinking</span>
               </Button>
             )}
+
             {showInternet && (
               <Button
                 type="button"
-                variant="ghost"
-                className={cn(
-                  'rounded-sm h-7 focus-visible:bg-none! hover:bg-none!',
-                  {
-                    'bg-accent-primary text-white': enableInternet,
-                  },
-                )}
+                variant={enableInternet ? 'accent' : 'transparent'}
+                size="icon-xs"
+                className="border-0"
                 onClick={handleInternetToggle}
+                data-testid="chat-detail-internet-toggle"
               >
                 <Globe />
               </Button>
             )}
           </div>
+
           {sendLoading ? (
-            <Button onClick={stopOutputMessage} className="size-5 rounded-sm">
+            <Button
+              data-testid="chat-stream-status"
+              onClick={stopOutputMessage}
+              size="icon-xs"
+            >
               <CircleStop />
             </Button>
           ) : (
@@ -270,12 +287,15 @@ export function NextMessageInput({
                 onOk={(value) => {
                   setAudioInputValue(value);
                 }}
+                testId="chat-detail-audio-toggle"
               />
+
               <Button
-                className="size-5 rounded-sm"
+                size="icon-xs"
                 disabled={
                   sendDisabled || isUploading || sendLoading || !value.trim()
                 }
+                data-testid="chat-detail-send"
               >
                 <Send />
                 <span className="sr-only">Send message</span>

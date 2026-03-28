@@ -24,6 +24,7 @@ SOFTWARE.
 """
 
 from .blob_connector import BlobStorageConnector
+from .rss_connector import RSSConnector
 from .slack_connector import SlackConnector
 from .gmail_connector import GmailConnector
 from .notion_connector import NotionConnector
@@ -36,11 +37,13 @@ from .sharepoint_connector import SharePointConnector
 from .teams_connector import TeamsConnector
 from .moodle_connector import MoodleConnector
 from .airtable_connector import AirtableConnector
+from .dingtalk_ai_table_connector import DingTalkAITableConnector
 from .asana_connector import AsanaConnector
 from .imap_connector import ImapConnector
 from .zendesk_connector import ZendeskConnector
 from .seafile_connector import SeaFileConnector
 from .rdbms_connector import RDBMSConnector
+from .webdav_connector import WebDAVConnector
 from .config import BlobType, DocumentSource
 from .models import Document, TextSection, ImageSection, BasicExpertInfo
 from .exceptions import (
@@ -53,6 +56,7 @@ from .exceptions import (
 
 __all__ = [
     "BlobStorageConnector",
+    "RSSConnector",
     "SlackConnector",
     "GmailConnector",
     "NotionConnector",
@@ -81,4 +85,6 @@ __all__ = [
     "ZendeskConnector",
     "SeaFileConnector",
     "RDBMSConnector",
+    "WebDAVConnector",
+    "DingTalkAITableConnector",
 ]

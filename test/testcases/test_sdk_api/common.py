@@ -25,6 +25,14 @@ def batch_create_datasets(client: RAGFlow, num: int) -> list[DataSet]:
     return [client.create_dataset(name=f"dataset_{i}") for i in range(num)]
 
 
+def delete_all_datasets(client: RAGFlow, *, page_size: int = 1000) -> None:
+    client.delete_datasets(delete_all=True)
+
+
+def delete_all_chats(client: RAGFlow, *, page_size: int = 1000) -> None:
+    client.delete_chats(delete_all=True)
+
+
 # FILE MANAGEMENT WITHIN DATASET
 def bulk_upload_documents(dataset: DataSet, num: int, tmp_path: Path) -> list[Document]:
     document_infos = []
@@ -35,6 +43,18 @@ def bulk_upload_documents(dataset: DataSet, num: int, tmp_path: Path) -> list[Do
         document_infos.append({"display_name": fp.name, "blob": blob})
 
     return dataset.upload_documents(document_infos)
+
+
+def delete_all_documents(dataset: DataSet, *, page_size: int = 1000) -> None:
+    dataset.delete_documents(delete_all=True)
+
+
+def delete_all_sessions(chat_assistant: Chat, *, page_size: int = 1000) -> None:
+    chat_assistant.delete_sessions(delete_all=True)
+
+
+def delete_all_chunks(document: Document, *, page_size: int = 1000) -> None:
+    document.delete_chunks(delete_all=True)
 
 
 # CHUNK MANAGEMENT WITHIN DATASET

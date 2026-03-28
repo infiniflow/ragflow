@@ -58,6 +58,7 @@ class SupportedLiteLLMProvider(StrEnum):
     Azure_OpenAI = "Azure-OpenAI"
     n1n = "n1n"
     HunYuan = "Tencent Hunyuan"
+    Avian = "Avian"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -80,11 +81,12 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Anthropic: "https://api.anthropic.com/",
     SupportedLiteLLMProvider.JiekouAI: "https://api.jiekou.ai/openai",
     SupportedLiteLLMProvider.ZHIPU_AI: "https://open.bigmodel.cn/api/paas/v4",
-    SupportedLiteLLMProvider.MiniMax: "https://api.minimaxi.com/v1",
+    SupportedLiteLLMProvider.MiniMax: "https://api.minimax.io/v1",
     SupportedLiteLLMProvider.DeerAPI: "https://api.deerapi.com/v1",
     SupportedLiteLLMProvider.OpenAI: "https://api.openai.com/v1",
     SupportedLiteLLMProvider.n1n: "https://api.n1n.ai/v1",
     SupportedLiteLLMProvider.HunYuan: "https://api.hunyuan.cloud.tencent.com/v1",
+    SupportedLiteLLMProvider.Avian: "https://api.avian.io/v1",
 }
 
 
@@ -124,6 +126,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.Azure_OpenAI: "azure/",
     SupportedLiteLLMProvider.n1n: "openai/",
     SupportedLiteLLMProvider.HunYuan: "openai/",
+    SupportedLiteLLMProvider.Avian: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})

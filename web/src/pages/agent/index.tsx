@@ -25,6 +25,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
   CirclePlay,
+  Compass,
   History,
   LaptopMinimalCheck,
   Logs,
@@ -38,6 +39,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import AgentCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
+import { PublishConfirmDialog } from './components/publish-confirm-dialog';
 import { Operator } from './constant';
 import { GlobalParamSheet } from './gobal-variable-sheet';
 import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
@@ -46,7 +48,10 @@ import { useFetchDataOnMount } from './hooks/use-fetch-data';
 import { useFetchPipelineLog } from './hooks/use-fetch-pipeline-log';
 import { useGetBeginNodeDataInputs } from './hooks/use-get-begin-query';
 import { useIsPipeline } from './hooks/use-is-pipeline';
-import { useIsWebhookMode } from './hooks/use-is-webhook';
+import {
+  useIsConversationMode,
+  useIsWebhookMode,
+} from './hooks/use-is-webhook';
 import { useRunDataflow } from './hooks/use-run-dataflow';
 import {
   useSaveGraph,
@@ -110,9 +115,11 @@ export default function Agent() {
 
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
-  const { navigateToAgentLogs } = useNavigatePage();
+  const { navigateToAgentLogs, navigateToAgentExplore } = useNavigatePage();
   const time = useWatchAgentChange(chatDrawerVisible);
   const isWebhookMode = useIsWebhookMode();
+
+  const isConversationMode = useIsConversationMode();
 
   // pipeline
 
@@ -205,7 +212,7 @@ export default function Agent() {
   } = useRunDataflow({ showLogSheet: showPipelineLogSheet, setMessageId });
 
   return (
-    <section className="h-full">
+    <section className="h-full" data-testid="agent-detail">
       <PageHeader>
         <section>
           <Breadcrumb>
@@ -233,30 +240,28 @@ export default function Agent() {
           >
             <LaptopMinimalCheck /> {t('flow.save')}
           </ButtonLoading>
-          <ButtonLoading
+          <Button
+            data-testid="agent-run"
             variant={'secondary'}
-            onClick={() => showGlobalParamSheet()}
-            loading={loading}
+            onClick={handleButtonRunClick}
           >
-            <MessageSquareCode /> {t('flow.conversationVariable')}
-          </ButtonLoading>
-          <Button variant={'secondary'} onClick={handleButtonRunClick}>
             <CirclePlay />
             {t('flow.run')}
           </Button>
-          <Button variant={'secondary'} onClick={showVersionDialog}>
-            <History />
-            {t('flow.historyVersion')}
-          </Button>
-          {isPipeline || (
+          {isConversationMode && (
             <Button
               variant={'secondary'}
-              onClick={navigateToAgentLogs(id as string)}
+              onClick={navigateToAgentExplore(id as string)}
             >
-              <Logs />
-              {t('flow.log')}
+              <Compass />
+              {t('explore.title')}
             </Button>
           )}
+          <PublishConfirmDialog
+            agentDetail={agentDetail}
+            loading={loading}
+            onPublish={() => saveGraph(undefined, undefined, true)}
+          />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant={'secondary'}>
@@ -264,6 +269,25 @@ export default function Agent() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
+              <AgentDropdownMenuItem onClick={() => showGlobalParamSheet()}>
+                <MessageSquareCode />
+                {t('flow.conversationVariable')}
+              </AgentDropdownMenuItem>
+              <DropdownMenuSeparator />
+              <AgentDropdownMenuItem onClick={showVersionDialog}>
+                <History />
+                {t('flow.historyVersion')}
+              </AgentDropdownMenuItem>
+              <DropdownMenuSeparator />
+              {isPipeline || (
+                <AgentDropdownMenuItem
+                  onClick={() => navigateToAgentLogs(id as string)()}
+                >
+                  <Logs />
+                  {t('flow.log')}
+                </AgentDropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleExportJson}>
                 <Upload />
                 {t('flow.export')}
@@ -274,7 +298,7 @@ export default function Agent() {
                 {t('flow.setting')}
               </AgentDropdownMenuItem>
               {isPipeline ||
-                (location.hostname !== 'demo.ragflow.io' && (
+                (location.hostname !== 'cloud.ragflow.io' && (
                   <>
                     <DropdownMenuSeparator />
                     <AgentDropdownMenuItem onClick={showEmbedModal}>

@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from typing import Optional
+from typing import Optional, Any
 
 import requests
 
@@ -58,6 +58,7 @@ class RAGFlow:
         permission: str = "me",
         chunk_method: str = "naive",
         parser_config: Optional[DataSet.ParserConfig] = None,
+        auto_metadata_config: Optional[dict[str, Any]] = None,
     ) -> DataSet:
         payload = {
             "name": name,
@@ -69,6 +70,8 @@ class RAGFlow:
         }
         if parser_config is not None:
             payload["parser_config"] = parser_config.to_json()
+        if auto_metadata_config is not None:
+            payload["auto_metadata_config"] = auto_metadata_config
 
         res = self.post("/datasets", payload)
         res = res.json()
@@ -76,8 +79,8 @@ class RAGFlow:
             return DataSet(self, res["data"])
         raise Exception(res["message"])
 
-    def delete_datasets(self, ids: list[str] | None = None):
-        res = self.delete("/datasets", {"ids": ids})
+    def delete_datasets(self, ids: list[str] | None = None, delete_all: bool = False):
+        res = self.delete("/datasets", {"ids": ids, "delete_all": delete_all})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
@@ -162,8 +165,8 @@ class RAGFlow:
             return Chat(self, res["data"])
         raise Exception(res["message"])
 
-    def delete_chats(self, ids: list[str] | None = None):
-        res = self.delete("/chats", {"ids": ids})
+    def delete_chats(self, ids: list[str] | None = None, delete_all: bool = False):
+        res = self.delete("/chats", {"ids": ids, "delete_all": delete_all})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])

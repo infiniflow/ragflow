@@ -1,6 +1,5 @@
 import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
-import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { MemoriesFormField } from '@/components/memories-form-field';
 import {
@@ -39,6 +38,7 @@ import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
+import { UserIdFormField } from '../components/user-id-form-field';
 import { useValues } from './use-values';
 
 export const RetrievalPartialSchema = {
@@ -55,6 +55,7 @@ export const RetrievalPartialSchema = {
   ...MetadataFilterSchema,
   memory_ids: z.array(z.string()).optional(),
   retrieval_from: z.string(),
+  user_id: z.string().optional(),
 };
 
 export const FormSchema = z.object({
@@ -83,7 +84,10 @@ export function MemoryDatasetForm() {
         </Radio.Group>
       </RAGFlowFormItem>
       {retrievalFrom === RetrievalFrom.Memory ? (
-        <MemoriesFormField label={t('header.memories')}></MemoriesFormField>
+        <>
+          <MemoriesFormField label={t('header.memories')}></MemoriesFormField>
+          <UserIdFormField></UserIdFormField>
+        </>
       ) : (
         <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
       )}
@@ -163,7 +167,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
         </RAGFlowFormItem>
         <MemoryDatasetForm></MemoryDatasetForm>
         <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
-          <FormContainer>
+          <section className="space-y-5">
             <SimilaritySliderFormField
               vectorSimilarityWeightName="keywords_similarity_weight"
               isTooltipShown
@@ -183,7 +187,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
                 <TOCEnhanceFormField name="toc_enhance"></TOCEnhanceFormField>
               </>
             )}
-          </FormContainer>
+          </section>
         </Collapse>
         <Output list={outputList}></Output>
       </FormWrapper>

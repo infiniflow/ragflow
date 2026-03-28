@@ -20,6 +20,7 @@ import inspect
 import json
 import logging
 import os
+import sys
 import time
 from copy import deepcopy
 from functools import wraps
@@ -27,12 +28,11 @@ from typing import Any
 
 import requests
 from quart import (
-    Response,
     jsonify,
     request,
     has_app_context,
 )
-from werkzeug.exceptions import BadRequest as WerkzeugBadRequest
+from werkzeug.exceptions import BadRequest as WerkzeugBadRequest, Unauthorized as WerkzeugUnauthorized
 
 try:
     from quart.exceptions import BadRequest as QuartBadRequest
@@ -118,7 +118,10 @@ def serialize_for_json(obj):
 
 
 def get_data_error_result(code=RetCode.DATA_ERROR, message="Sorry! Data missing!"):
-    logging.exception(Exception(message))
+    if sys.exc_info()[0] is not None:
+        logging.exception(message)
+    else:
+        logging.error(message)
     result_dict = {"code": code, "message": message}
     response = {}
     for key, value in result_dict.items():
@@ -230,6 +233,17 @@ def active_required(func):
     return wrapper
 
 
+def add_tenant_id_to_kwargs(func):
+    @wraps(func)
+    async def wrapper(**kwargs):
+        from api.apps import current_user
+        kwargs["tenant_id"] = current_user.id
+        if inspect.iscoroutinefunction(func):
+            return await func(**kwargs)
+        return func(**kwargs)
+    return wrapper
+
+
 def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=None):
     response = {"code": code, "message": message, "data": data}
     return _safe_jsonify(response)
@@ -266,39 +280,41 @@ def construct_json_result(code: RetCode = RetCode.SUCCESS, message="success", da
 
 
 def token_required(func):
-    def get_tenant_id(**kwargs):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        # Validate the token (API Key)
         if os.environ.get("DISABLE_SDK"):
-            return False, get_json_result(data=False, message="`Authorization` can't be empty")
+            err = WerkzeugUnauthorized(description="`Authorization` can't be empty")
+            err.code = RetCode.SUCCESS
+            raise err
+
         authorization_str = request.headers.get("Authorization")
         if not authorization_str:
-            return False, get_json_result(data=False, message="`Authorization` can't be empty")
+            err = WerkzeugUnauthorized(description="`Authorization` can't be empty")
+            err.code = RetCode.SUCCESS
+            raise err
+
         authorization_list = authorization_str.split()
         if len(authorization_list) < 2:
-            return False, get_json_result(data=False, message="Please check your authorization format.")
+            err = WerkzeugUnauthorized(description="Please check your authorization format.")
+            err.code = RetCode.AUTHENTICATION_ERROR
+            raise err
+
         token = authorization_list[1]
         objs = APIToken.query(token=token)
         if not objs:
-            return False, get_json_result(data=False, message="Authentication error: API key is invalid!", code=RetCode.AUTHENTICATION_ERROR)
+            err = WerkzeugUnauthorized(description="Authentication error: API key is invalid!")
+            err.code = RetCode.AUTHENTICATION_ERROR
+            raise err
+
+        # On success, inject tenant_id into the route function's kwargs
         kwargs["tenant_id"] = objs[0].tenant_id
-        return True, kwargs
+        result = func(*args, **kwargs)
+        if inspect.iscoroutine(result):
+            return await result
+        return result
 
-    @wraps(func)
-    def decorated_function(*args, **kwargs):
-        e, kwargs = get_tenant_id(**kwargs)
-        if not e:
-            return kwargs
-        return func(*args, **kwargs)
-
-    @wraps(func)
-    async def adecorated_function(*args, **kwargs):
-        e, kwargs = get_tenant_id(**kwargs)
-        if not e:
-            return kwargs
-        return await func(*args, **kwargs)
-
-    if inspect.iscoroutinefunction(func):
-        return adecorated_function
-    return decorated_function
+    return wrapper
 
 
 def get_result(code=RetCode.SUCCESS, message="", data=None, total=None):
@@ -507,7 +523,7 @@ def check_duplicate_ids(ids, id_type="item"):
     return list(set(ids)), duplicate_messages
 
 
-def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, Response | None]:
+def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, str | None]:
     from api.db.services.llm_service import LLMService
     from api.db.services.tenant_llm_service import TenantLLMService
 
@@ -553,13 +569,16 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, R
 
         is_builtin_model = llm_factory == "Builtin"
         if not (is_builtin_model or is_tenant_model or in_llm_service):
-            return False, get_error_argument_result(f"Unsupported model: <{embd_id}>")
+            return False, f"Unsupported model: <{embd_id}>"
 
         if not (is_builtin_model or is_tenant_model):
-            return False, get_error_argument_result(f"Unauthorized model: <{embd_id}>")
+            return False, f"Unauthorized model: <{embd_id}>"
     except OperationalError as e:
         logging.exception(e)
-        return False, get_error_data_result(message="Database operation failed")
+        return False, "Database operation failed"
+    except Exception as e:
+        logging.exception(e)
+        return False, "Internal server error"
 
     return True, None
 

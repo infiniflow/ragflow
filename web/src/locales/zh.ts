@@ -26,6 +26,8 @@ export default {
       portugueseBr: '葡萄牙语 (巴西)',
       chinese: '简体中文',
       traditionalChinese: '繁体中文',
+      bulgarian: '保加利亚语',
+      arabic: '阿拉伯语',
       language: '语言',
       languageMessage: '请输入语言',
       languagePlaceholder: '请选择语言',
@@ -44,6 +46,7 @@ export default {
       submit: '提交',
       clear: '清空',
       embedIntoSite: '嵌入网站',
+      openInNewTab: '在新标签页中聊天',
       previousPage: '上一页',
       nextPage: '下一页',
       add: '添加',
@@ -140,6 +143,7 @@ export default {
         action: '操作',
       },
       config: {
+        descriptionPlaceholder: '描述你的记忆',
         memorySizeTooltip: `记录每条消息的内容 + 其嵌入向量（≈ 内容 + 维度 × 8 字节）。
 例如：一条带有 1024 维嵌入的 1 KB 消息大约使用 9 KB。5 MB 的默认限制大约可容纳 500 条此类消息。`,
         avatar: '头像',
@@ -176,6 +180,7 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        fields: '字段',
         selectFiles: '已选择 {{count}} 个文件',
         type: '类型',
         fieldNameInvalid: '字段名称只能包含字母或下划线。',
@@ -197,7 +202,7 @@ export default {
         // editMetadataForDataset: '查看和编辑元数据 ',
         restrictDefinedValues: '限制为已定义的值',
         metadataGenerationSettings: '元数据生成设置',
-        // manageMetadataForDataset: '管理此数据集的元数据',
+        // manageMetadataForDataset: '管理此知识库的元数据',
         manageMetadata: '管理元数据',
         metadata: '元数据',
         values: '值',
@@ -207,6 +212,7 @@ export default {
         description: '描述',
         fieldName: '字段名称',
         editMetadata: '编辑元数据',
+        addMetadata: '添加元数据',
         deleteWarn: '此 {{field}} 将从所有关联文件中移除',
         deleteManageFieldAllWarn:
           '此字段及其所有对应值将从所有关联的文件中删除。',
@@ -231,7 +237,7 @@ export default {
       generate: '生成',
       raptor: 'RAPTOR',
       processingType: '处理类型',
-      dataPipeline: '数据管道',
+      dataPipeline: '切换或配置 ingestion pipeline。',
       operations: '操作',
       taskId: '任务ID',
       duration: '耗时',
@@ -241,7 +247,7 @@ export default {
       startDate: '开始时间',
       source: '来源',
       fileName: '文件名',
-      datasetLogs: '数据集',
+      datasetLogs: '知识库',
       fileLogs: '文件',
       overview: '日志',
       success: '成功',
@@ -333,7 +339,7 @@ export default {
       changeSpecificCategory: '更改特定类别',
       uploadTitle: '点击或拖拽文件至此区域即可上传',
       uploadDescription:
-        '支持单次或批量上传。本地部署的单次上传文件总大小上限为 1GB，单次批量上传文件数不超过 32，单个账户不限文件数量。对于 demo.ragflow.io：每次上传的总文件大小限制为 10MB，每个文件不得超过 10MB，每个账户最多可上传 128 个文件。严禁上传违禁文件。',
+        '支持单次或批量上传。本地部署的单次上传文件总大小上限为 1GB，单次批量上传文件数不超过 32，单个账户不限文件数量。对于 cloud.ragflow.io：每次上传的总文件大小限制为 10MB，每个文件不得超过 10MB，每个账户最多可上传 128 个文件。严禁上传违禁文件。',
       chunk: '解析块',
       bulk: '批量',
       cancel: '取消',
@@ -382,6 +388,10 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      randomSeedTip:
+        '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
+      datasetDescription: '你的知识库描述。',
+      overlappedPercentTip: '相邻两个块之间的重叠百分比',
       settings: '设置',
       autoMetadataTip:
         '自动生成元数据。适用于解析新文件。现有文件需要重新解析才能更新（chunk将保留）。请注意，配置中指定的索引模型将消耗额外的 Token。',
@@ -420,13 +430,13 @@ export default {
       baseInfo: '基础信息',
       globalIndex: '全局索引',
       dataSource: '数据源',
-      linkSourceSetTip: '管理与此数据集的数据源链接',
+      linkSourceSetTip: '管理与此知识库的数据源链接',
       linkDataSource: '链接数据源',
       tocExtractionTip:
-        '对于已有的chunk生成层级结构的目录信息（每个文件一个目录）。在查询时，激活`目录增强`后，系统会用大模型去判断用户问题和哪些目录项相关，从而找到相关的chunk。',
+        '对于已有的chunk生成层级结构的目录信息（每个文件一个目录）。在查询时，激活`Page Index`后，系统会用大模型去判断用户问题和哪些目录项相关，从而找到相关的chunk。',
       deleteGenerateModalContent: `
         <p>删除生成的 <strong class='text-text-primary'>{{type}}</strong> 结果
-          将从此数据集中移除所有派生实体和关系。
+          将从此知识库中移除所有派生实体和关系。
           您的原始文件将保持不变。<p>
           <br/>
           是否要继续？
@@ -439,9 +449,9 @@ export default {
       setDefaultTip: '',
       setDefault: '设置默认',
       editLinkDataPipeline: '编辑pipeline',
-      linkPipelineSetTip: '管理与此数据集的数据管道链接',
+      linkPipelineSetTip: '管理与此知识库的数据管道链接',
       default: '默认',
-      dataPipeline: 'Ingestion pipeline',
+      dataPipeline: '切换或配置 ingestion pipeline。',
       linkDataPipeline: '关联pipeline',
       enableAutoGenerate: '是否启用自动生成',
       teamPlaceholder: '请选择团队',
@@ -620,7 +630,7 @@ export default {
       tagSetTip: `
       <p> 请选择一个或多个标签集或标签知识库，用于对知识库中的每个文本块进行标记。</p>
       <p>对这些文本块的查询也将自动关联相应标签。 </p>
-      <p>此功能基于文本相似度，能够为数据集的文本块批量添加更多领域知识，从而显著提高检索准确性。该功能还能提升大量文本块的操作效率。</p>
+      <p>此功能基于文本相似度，能够为知识库的文本块批量添加更多领域知识，从而显著提高检索准确性。该功能还能提升大量文本块的操作效率。</p>
       <p>为了更好地理解标签集的作用，以下是标签集和关键词之间的主要区别：</p>
       <ul>
       <li>标签集是一个由用户定义和管理的封闭集，而自动生成的关键词属于开放集合。 </li>
@@ -694,17 +704,26 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       assistantAvatar: '助理头像',
       language: '语言',
       emptyResponse: '空回复',
+      emptyResponsePlaceholder: '在知识库中未找到您要寻找的答案！',
       emptyResponseTip: `如果在知识库中没有检索到用户的问题，它将使用它作为答案。 如果您希望 LLM 在未检索到任何内容时提出自己的意见，请将此留空。`,
       emptyResponseMessage: `当知识库中未检索到任何相关信息时，将触发空响应。由于未选择任何知识库，因此请清除“空响应”。`,
       setAnOpener: '设置开场白',
       setAnOpenerInitial: `你好！ 我是你的助理，有什么可以帮到你的吗？`,
       setAnOpenerTip: '您想如何欢迎您的客户？',
       knowledgeBases: '知识库',
+      knowledgeBasesPlaceholder: '请选择',
       knowledgeBasesMessage: '请选择',
       knowledgeBasesTip:
         '选择关联的知识库。新建或空知识库不会在下拉菜单中显示。',
       system: '系统提示词',
-      systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
+      systemPlaceholder: `你是一个智能助手，主要功能是基于提供的知识库严格回答问题。
+
+**重要规则:**
+  - 你的回答必须**仅**来自此知识库：{knowledge}。
+  - **当信息可用时**: 总结内容以给出详细答案。
+  - **当信息不可用时**: 你的回答必须包含这句确切的话："在知识库中未找到您要的答案！"
+  - **始终考虑**整个对话历史。`,
+      systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括"知识库中未找到您要的答案！"这句话。回答需要考虑聊天历史。
         以下是知识库：
         {knowledge}
         以上是知识库。`,
@@ -776,6 +795,16 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       created: '创建于',
       action: '操作',
       embedModalTitle: '嵌入网站',
+      published: '已发布',
+      publishedTooltip:
+        '在嵌入中使用已发布的版本。启用后，生成的 URL 将包含 release=true。',
+      embedType: '嵌入类型',
+      fullscreenChat: '全屏聊天（传统 iframe）',
+      floatingWidget: '悬浮组件（Intercom 风格）',
+      theme: '主题',
+      light: '浅色',
+      dark: '深色',
+      enableStreaming: '启用流式响应',
       comingSoon: '即将推出',
       fullScreenTitle: '全屏嵌入',
       fullScreenDescription: '将以下iframe嵌入您的网站处于所需位置',
@@ -798,8 +827,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '在多轮对话时，对查询问题根据上下文进行优化。会调用大模型额外消耗 token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
-      descriptionPlaceholder:
-        '例如 你是一个专业的简历助手，只能回答简历的问题。',
+      descriptionPlaceholder: '我是一个聊天助手。',
       useKnowledgeGraph: '使用知识图谱',
       useKnowledgeGraphTip:
         '是否检索与所选知识库对应的知识图谱相关文本块，以处理复杂的多跳问题？这一过程将涉及对实体、关系和社区报告文本块的多次检索，会显著延长检索时间。',
@@ -813,6 +841,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tavilyApiKeyMessage: '请输入你的 Tavily API Key',
       tavilyApiKeyHelp: '如何获取？',
       crossLanguage: '跨语言搜索',
+      crossLanguagePlaceholder: '请选择',
       crossLanguageTip: `选择一种或多种语言进行跨语言搜索。如果未选择任何语言，系统将使用原始查询进行搜索。`,
       metadata: '元数据',
       metadataTip:
@@ -830,10 +859,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       chatSetting: '聊天设置',
       avatarHidden: '隐藏头像',
       locale: '地区',
-      tocEnhance: '目录增强',
+      tocEnhance: 'PageIndex',
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
-      deleteSelectedConfirm: '删除选中的 {count} 个会话？',
+      deleteSelectedConfirm: '删除选中的 {{count}} 个会话？',
     },
     setting: {
       Verify: '验证',
@@ -866,6 +895,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       newDocs: '新文档',
       timeStarted: '开始时间',
       log: '日志',
+      rssDescription:
+        '连接公开的 RSS 或 Atom feed，并将 feed 条目同步到知识库。',
       confluenceDescription: '连接你的 Confluence 工作区以搜索文档内容。',
       s3Description: ' 连接你的 AWS S3 存储桶以导入和同步文件。',
       google_cloud_storageDescription:
@@ -901,6 +932,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       githubDescription:
         '连接 GitHub，可同步 Pull Request 与 Issue 内容用于检索。',
       airtableDescription: '连接 Airtable，同步指定工作区下指定表格中的文件。',
+      dingtalkAITableDescription: '连接钉钉AI表格，同步指定表格中的记录。',
       gitlabDescription:
         '连接 GitLab，同步仓库、Issue、合并请求（MR）及相关文档内容。',
       asanaDescription: '连接 Asana，同步工作区中的文件。',
@@ -987,6 +1019,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL。',
       tongyiBaseUrlTip:
         '对于中国用户，不需要填写或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。对于国际用户，使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1。',
+      siliconBaseUrlTip:
+        '对于中国用户，不需要填写或使用 https://api.siliconflow.cn/v1。对于国际用户，使用 https://api.siliconflow.com/v1。',
       tongyiBaseUrlPlaceholder: '(仅国际用户需要)',
       minimaxBaseUrlTip: '仅国际用户：使用 https://api.minimax.io/v1。',
       minimaxBaseUrlPlaceholder: '(仅国际用户填写 https://api.minimax.io/v1)',
@@ -1180,6 +1214,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       hint: '提示',
     },
     fileManager: {
+      uploadFolderTitle: '上传文件夹',
+      folder: '文件夹',
       files: '文件',
       name: '名称',
       uploadDate: '上传日期',
@@ -1193,7 +1229,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       parseOnCreation: '创建时解析',
       uploadTitle: '点击或拖拽文件至此区域即可上传',
       uploadDescription:
-        '支持单次或批量上传。 本地部署的单次上传文件总大小上限为 1GB，单次批量上传文件数不超过 32，单个账户不限文件数量。对于 demo.ragflow.io：每次上传的总文件大小限制为 10MB，每个文件不得超过 10MB，每个账户最多可上传 128 个文件。严禁上传违禁文件。',
+        '支持单次或批量上传。 本地部署的单次上传文件总大小上限为 1GB，单次批量上传文件数不超过 32，单个账户不限文件数量。对于 cloud.ragflow.io：每次上传的总文件大小限制为 10MB，每个文件不得超过 10MB，每个账户最多可上传 128 个文件。严禁上传违禁文件。',
       file: '文件',
       directory: '文件夹',
       local: '本地上传',
@@ -1205,6 +1241,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      preprocess: {
+        preprocess: '预处理',
+        mainContent: '主内容',
+        abstract: '摘要',
+        author: '作者',
+        sectionTitle: '章节标题',
+      },
       autoPlay: '自动播放',
       downloadFileTypeTip: '文件下载的类型',
       downloadFileType: '文件类型',
@@ -1219,6 +1262,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       consumerApp: '消费者应用',
       other: '其他',
       agents: '智能体',
+      id: 'ID',
+      logTitle: '标题',
+      state: '状态',
+      number: '轮数',
+      latestDate: '最新日期',
+      createDate: '创建日期',
+      publishedAt: '发布于',
       beginInput: '开始输入',
       seconds: '秒',
       ref: '引用变量',
@@ -1310,10 +1360,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       version: {
         details: '版本详情',
         download: '下载',
+        version: '版本',
       },
       cite: '引用',
       citeTip: '引用',
       nameMessage: '请输入名称',
+      lastSavedAt: '上次保存于',
       description: '描述',
       examples: '示例',
       to: '下一步',
@@ -1567,6 +1619,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       dbType: '数据库类型',
       database: '数据库',
       username: '用户名',
+      userId: '用户 ID',
       host: '主机',
       port: '端口',
       password: '密码',
@@ -1724,11 +1777,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '该组件用于排版各种组件的输出。1、支持Jinja2模板,会先将输入转为对象后进行模版渲染2、同时保留原使用{参数}字符串替换的方式',
       emailComponent: '邮件',
       emailDescription: '发送邮件到指定邮箱',
-      smtpServer: 'SMTP服务器',
-      smtpPort: 'SMTP端口',
-      senderEmail: '发件人邮箱',
-      authCode: '授权码',
-      senderName: '发件人名称',
+      smtpServer: 'SMTP服务器地址',
+      smtpPort: 'SMTP端口号',
+      senderEmail: '发件邮箱地址（From）',
+      smtpUsername: 'SMTP登录用户名',
+      authCode: 'SMTP登录密码/授权码',
+      senderName: '发件人显示名称',
       toEmail: '收件人邮箱',
       ccEmail: '抄送邮箱',
       emailSubject: '邮件主题',
@@ -1856,6 +1910,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '在此处编写您的 SQL 查询。您可以使用变量、原始 SQL，或使用变量语法混合使用两者。',
       frameworkPrompts: '框架',
       release: '发布',
+      production: '正式版',
+      productionTooltip: '此版本已发布到生产环境。可通过 API 或嵌入页面访问。',
+      confirmPublish: '确认发布',
+      publishIngestionPipeline: '您即将发布此 Ingestion pipeline。',
+      publishAgent: '您即将发布此智能体',
+      linkedDataset: '已关联的知识库：',
+      lastPublished: '上次发布时间',
       createFromBlank: '从空白创建',
       createFromTemplate: '从模板创建',
       importJsonFile: '导入 JSON 文件',
@@ -1883,7 +1944,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       regularExpressions: '正则表达式',
       overlappedPercent: '重叠百分比（%）',
       searchMethod: '搜索方法',
-      searchMethodTip: `决定该数据集启用的搜索方式，可选择全文、向量，或两者兼有。
+      searchMethodTip: `决定该知识库启用的搜索方式，可选择全文、向量，或两者兼有。
 Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       filenameEmbdWeight: '文件名嵌入权重',
       parserMethod: '解析方法',
@@ -1898,7 +1959,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       keywords: '关键词',
       questions: '问题',
       metadata: '元数据',
-      toc: '目录',
+      toc: 'PageIndex',
       fieldName: '结果目的地',
       prompts: {
         system: {
@@ -2106,6 +2167,9 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       japanese: '日语',
       korean: '韩语',
       vietnamese: '越南语',
+      bulgarian: '保加利亚语',
+      arabic: '阿拉伯语',
+      turkish: '土耳其语',
     },
     pagination: {
       total: '总共 {{total}} 条',
@@ -2139,7 +2203,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       changeStepModalCancelText: '取消',
       unlinkPipelineModalTitle: '解绑pipeline',
       unlinkPipelineModalContent: `
-      <p>一旦取消链接，该数据集将不再连接到当前数据管道。</p>
+      <p>一旦取消链接，该知识库将不再连接到当前数据管道。</p>
       <p>正在解析的文件将继续解析，直到完成。</p>
       <p>尚未解析的文件将不再被处理。</p> <br/>
       <p>你确定要继续吗?</p> `,
@@ -2178,8 +2242,8 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       noMCP: '暂无 MCP 服务器可用',
       agentTitle: '尚未创建智能体',
       notFoundAgent: '未查询到智能体',
-      datasetTitle: '尚未创建数据集',
-      notFoundDataset: '未查询到数据集',
+      datasetTitle: '尚未创建知识库',
+      notFoundDataset: '未查询到知识库',
       chatTitle: '尚未创建聊天应用',
       notFoundChat: '未查询到聊天应用',
       searchTitle: '尚未创建搜索应用',
@@ -2187,6 +2251,24 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       memoryTitle: '尚未创建记忆',
       notFoundMemory: '未查询到记忆',
       addNow: '立即添加',
+    },
+
+    explore: {
+      title: '探索',
+      canvasList: '画布列表',
+      sessions: '会话列表',
+      newSession: '新建会话',
+      newSessionLabel: '开始新对话',
+      deleteSession: '删除会话',
+      searchCanvas: '搜索画布...',
+      searchSessions: '搜索会话...',
+      noCanvasSelected: '请选择一个画布',
+      noSessionSelected: '请选择一个会话或创建新会话',
+      noSessionsFound: '未找到会话',
+      createFirstSession: '创建您的第一个会话',
+      noCanvasFound: '未找到画布',
+      deleteSelectedConfirm: '确定要删除 {{count}} 个会话吗？',
+      batchDeleteSessions: '删除会话',
     },
   },
 };

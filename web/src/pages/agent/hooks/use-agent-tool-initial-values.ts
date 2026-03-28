@@ -33,6 +33,7 @@ export function useAgentToolInitialValues() {
             'smtp_server',
             'smtp_port',
             'email',
+            'smtp_username',
             'password',
             'sender_name',
           );

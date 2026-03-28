@@ -14,6 +14,8 @@ import {
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { IReference } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
+import { citationMarkerReg } from '@/utils/citation-utils';
+import { getDirAttribute } from '@/utils/text-direction';
 import DOMPurify from 'dompurify';
 import { isEmpty } from 'lodash';
 import { BrainCircuit, Search, X } from 'lucide-react';
@@ -26,6 +28,10 @@ import './index.less';
 import MarkdownContent from './markdown-content';
 import MindMapDrawer from './mindmap-drawer';
 import RetrievalDocuments from './retrieval-documents';
+
+const getDirectionText = (content: string) =>
+  content.replace(/<[^>]+>/g, ' ').replace(citationMarkerReg, '');
+
 export default function SearchingView({
   setIsSearching,
   searchData,
@@ -201,9 +207,11 @@ export default function SearchingView({
                       <div key={index}>
                         <div className="w-full flex flex-col">
                           <div className="w-full highlightContent">
-                            <ImageWithPopover
-                              id={chunk.image_id || chunk.img_id}
-                            ></ImageWithPopover>
+                            {(chunk.image_id || chunk.img_id) && (
+                              <ImageWithPopover
+                                id={chunk.image_id || chunk.img_id}
+                              ></ImageWithPopover>
+                            )}
                             <Popover>
                               <PopoverTrigger asChild>
                                 <div
@@ -217,6 +225,13 @@ export default function SearchingView({
                                     ),
                                   }}
                                   className="text-sm text-text-primary mb-1"
+                                  dir={getDirAttribute(
+                                    getDirectionText(
+                                      chunk.highlight ??
+                                        chunk.content_with_weight ??
+                                        '',
+                                    ),
+                                  )}
                                 ></div>
                               </PopoverTrigger>
                               <PopoverContent className="text-text-primary !w-full max-w-lg ">
@@ -239,7 +254,7 @@ export default function SearchingView({
                           </div>
                         </div>
                         {index < chunks.length - 1 && (
-                          <div className="w-full border-b border-border-default/80 mt-6"></div>
+                          <div className="w-full border-b border-border-default/80 mt-6 mb-2"></div>
                         )}
                       </div>
                     );

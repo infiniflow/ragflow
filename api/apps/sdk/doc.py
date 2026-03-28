@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -21,31 +21,33 @@ import re
 from io import BytesIO
 
 import xxhash
-from quart import request, send_file
 from peewee import OperationalError
 from pydantic import BaseModel, Field, validator
+from quart import request, send_file
 
 from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileType
-from api.db.db_models import File, Task
-from api.db.services.document_service import DocumentService
+from api.db.db_models import APIToken, File, Task
+from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
+from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.db.services.task_service import TaskService, queue_tasks, cancel_all_task_of
-from common.metadata_utils import meta_filter, convert_conditions
-from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required, \
-    get_request_json
+from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_request_json, get_result, server_error_response, token_required
+from api.utils.image_utils import store_chunk_image
+from common import settings
+from common.constants import FileSource, LLMType, ParserType, RetCode, TaskStatus
+from common.metadata_utils import convert_conditions, meta_filter
+from common.misc_utils import thread_pool_exec
+from common.string_utils import remove_redundant_spaces
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
-from common.string_utils import remove_redundant_spaces
-from common.constants import RetCode, LLMType, ParserType, TaskStatus, FileSource
-from common import settings
 
 MAXIMUM_OF_UPLOADING_FILES = 256
 
@@ -159,7 +161,7 @@ async def upload(dataset_id, tenant_id):
     """
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
-        raise LookupError(f"Can't find the dataset with ID {dataset_id}!")
+        return server_error_response(LookupError(f"Can't find the dataset with ID {dataset_id}!"))
     err, files = FileService.upload_document(kb, file_objs, tenant_id, parent_path=form.get("parent_path"))
     if err:
         return get_result(message="\n".join(err), code=RetCode.SERVER_ERROR)
@@ -260,6 +262,8 @@ async def update_doc(tenant_id, dataset_id, document_id):
             return get_error_data_result(message="Failed to update metadata")
 
     if "name" in req and req["name"] != doc.name:
+        if not isinstance(req["name"], str):
+            return server_error_response(AttributeError(f"'{type(req['name']).__name__}' object has no attribute 'encode'"))
         if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
             return get_result(
                 message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.",
@@ -419,6 +423,36 @@ async def download(tenant_id, dataset_id, document_id):
     )
 
 
+@manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
+async def download_doc(document_id):
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message="Authorization is not valid!")
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    if not document_id:
+        return get_error_data_result(message="Specify document_id please.")
+    doc = DocumentService.query(id=document_id)
+    if not doc:
+        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+    # The process of downloading
+    doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
+    file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
+    if not file_stream:
+        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
+    file = BytesIO(file_stream)
+    # Use send_file with a proper filename and MIME type
+    return await send_file(
+        file,
+        as_attachment=True,
+        attachment_filename=doc[0].name,
+        mimetype="application/octet-stream",  # Set a default MIME type
+    )
+
+
 @manager.route("/datasets/<dataset_id>/documents", methods=["GET"])  # noqa: F821
 @token_required
 def list_docs(dataset_id, tenant_id):
@@ -532,28 +566,28 @@ def list_docs(dataset_id, tenant_id):
                     description: Processing status.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-      return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
 
     q = request.args
     document_id = q.get("id")
-    name        = q.get("name")
+    name = q.get("name")
 
     if document_id and not DocumentService.query(id=document_id, kb_id=dataset_id):
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     if name and not DocumentService.query(name=name, kb_id=dataset_id):
         return get_error_data_result(message=f"You don't own the document {name}.")
 
-    page        = int(q.get("page", 1))
-    page_size   = int(q.get("page_size", 30))
-    orderby     = q.get("orderby", "create_time")
-    desc        = str(q.get("desc", "true")).strip().lower() != "false"
-    keywords    = q.get("keywords", "")
+    page = int(q.get("page", 1))
+    page_size = int(q.get("page_size", 30))
+    orderby = q.get("orderby", "create_time")
+    desc = str(q.get("desc", "true")).strip().lower() != "false"
+    keywords = q.get("keywords", "")
 
     # filters - align with OpenAPI parameter names
-    suffix               = q.getlist("suffix")
-    run_status           = q.getlist("run")
-    create_time_from     = int(q.get("create_time_from", 0))
-    create_time_to       = int(q.get("create_time_to", 0))
+    suffix = q.getlist("suffix")
+    run_status = q.getlist("run")
+    create_time_from = int(q.get("create_time_from", 0))
+    create_time_to = int(q.get("create_time_to", 0))
     metadata_condition_raw = q.get("metadata_condition")
     metadata_condition = {}
     if metadata_condition_raw:
@@ -575,17 +609,11 @@ def list_docs(dataset_id, tenant_id):
         if metadata_condition.get("conditions") and not doc_ids_filter:
             return get_result(data={"total": 0, "docs": []})
 
-    docs, total = DocumentService.get_list(
-        dataset_id, page, page_size, orderby, desc, keywords, document_id, name, suffix, run_status_converted, doc_ids_filter
-    )
+    docs, total = DocumentService.get_list(dataset_id, page, page_size, orderby, desc, keywords, document_id, name, suffix, run_status_converted, doc_ids_filter)
 
     # time range filter (0 means no bound)
     if create_time_from or create_time_to:
-        docs = [
-            d for d in docs
-            if (create_time_from == 0 or d.get("create_time", 0) >= create_time_from)
-            and (create_time_to == 0 or d.get("create_time", 0) <= create_time_to)
-        ]
+        docs = [d for d in docs if (create_time_from == 0 or d.get("create_time", 0) >= create_time_from) and (create_time_to == 0 or d.get("create_time", 0) <= create_time_to)]
 
     # rename keys + map run status back to text for output
     key_mapping = {
@@ -649,7 +677,7 @@ async def metadata_batch_update(dataset_id, tenant_id):
     for d in deletes:
         if not isinstance(d, dict) or not d.get("key"):
             return get_error_data_result(message="Each delete requires key.")
-   
+
     if document_ids:
         kb_doc_ids = KnowledgebaseService.list_documents_by_ids([dataset_id])
         target_doc_ids = set(kb_doc_ids)
@@ -668,6 +696,7 @@ async def metadata_batch_update(dataset_id, tenant_id):
     target_doc_ids = list(target_doc_ids)
     updated = DocMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
     return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
+
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
 @token_required
@@ -696,7 +725,9 @@ async def delete(tenant_id, dataset_id):
               type: array
               items:
                 type: string
-              description: List of document IDs to delete.
+              description: |
+                List of document IDs to delete.
+                If omitted, `null`, or an empty array is provided, no documents will be deleted.
       - in: header
         name: Authorization
         type: string
@@ -712,16 +743,18 @@ async def delete(tenant_id, dataset_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
     req = await get_request_json()
     if not req:
-        doc_ids = None
-    else:
-        doc_ids = req.get("ids")
+        return get_result()
+
+    doc_ids = req.get("ids")
     if not doc_ids:
-        doc_list = []
-        docs = DocumentService.query(kb_id=dataset_id)
-        for doc in docs:
-            doc_list.append(doc.id)
-    else:
-        doc_list = doc_ids
+        if req.get("delete_all") is True:
+            doc_ids = [doc.id for doc in DocumentService.query(kb_id=dataset_id)]
+            if not doc_ids:
+                return get_result()
+        else:
+            return get_result()
+
+    doc_list = doc_ids
 
     unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_list, "document")
     doc_list = unique_doc_ids
@@ -777,6 +810,10 @@ async def delete(tenant_id, dataset_id):
             return get_error_data_result(message=";".join(duplicate_messages))
 
     return get_result()
+
+
+DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
+DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
 
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
@@ -836,7 +873,7 @@ async def parse(tenant_id, dataset_id):
             continue
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if 0.0 < doc[0].progress < 1.0:
+        if doc[0].run == TaskStatus.RUNNING.value:
             return get_error_data_result("Can't parse document that is currently being processed")
         info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
         DocumentService.update_by_id(id, info)
@@ -916,8 +953,12 @@ async def stop_parsing(tenant_id, dataset_id):
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if int(doc[0].progress) == 1 or doc[0].progress == 0:
-            return get_error_data_result("Can't stop parsing document with progress at 0 or 1")
+        if doc[0].run != TaskStatus.RUNNING.value:
+            return construct_json_result(
+                code=RetCode.DATA_ERROR,
+                message=DOC_STOP_PARSING_INVALID_STATE_MESSAGE,
+                data={"error_code": DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE},
+            )
         # Send cancellation signal via Redis to stop background task
         cancel_all_task_of(id)
         info = {"run": "2", "progress": 0, "chunk_num": 0}
@@ -1032,6 +1073,8 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         "question": question,
         "sort": True,
     }
+    if "available" in req:
+        query["available_int"] = 1 if req["available"] == "true" else 0
     key_mapping = {
         "chunk_num": "chunk_count",
         "kb_id": "dataset_id",
@@ -1078,6 +1121,8 @@ async def list_chunks(tenant_id, dataset_id, document_id):
             "image_id": chunk.get("img_id", ""),
             "available": bool(chunk.get("available_int", 1)),
             "positions": chunk.get("position_int", []),
+            "tag_kwd": chunk.get("tag_kwd", []),
+            "tag_feas": chunk.get("tag_feas", {}),
         }
         res["chunks"].append(final_chunk)
         _ = Chunk(**final_chunk)
@@ -1142,6 +1187,9 @@ async def add_chunk(tenant_id, dataset_id, document_id):
               items:
                 type: string
               description: Important keywords.
+            image_base64:
+              type: string
+              description: Base64-encoded image to associate with the chunk.
       - in: header
         name: Authorization
         type: string
@@ -1202,12 +1250,31 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     d["kb_id"] = dataset_id
     d["docnm_kwd"] = doc.name
     d["doc_id"] = document_id
-    embd_id = DocumentService.get_embd_id(document_id)
-    embd_mdl = TenantLLMService.model_instance(tenant_id, LLMType.EMBEDDING.value, embd_id)
+    if "tag_kwd" in req:
+        d["tag_kwd"] = req["tag_kwd"]
+    if "tag_feas" in req:
+        d["tag_feas"] = req["tag_feas"]
+    import base64
+
+    image_base64 = req.get("image_base64", None)
+    if image_base64:
+        d["img_id"] = "{}-{}".format(dataset_id, chunk_id)
+        d["doc_type_kwd"] = "image"
+
+    tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
+    if tenant_embd_id:
+        model_config = get_model_config_by_id(tenant_embd_id)
+    else:
+        embd_id = DocumentService.get_embd_id(document_id)
+        model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING.value, embd_id)
+    embd_mdl = TenantLLMService.model_instance(model_config)
     v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
     settings.docStoreConn.insert([d], search.index_name(tenant_id), dataset_id)
+
+    if image_base64:
+        store_chunk_image(dataset_id, chunk_id, base64.b64decode(image_base64))
 
     DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
     # rename keys
@@ -1221,6 +1288,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         "create_timestamp_flt": "create_timestamp",
         "create_time": "create_time",
         "document_keyword": "document",
+        "img_id": "image_id",
     }
     renamed_chunk = {}
     for key, value in d.items():
@@ -1266,7 +1334,9 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
               type: array
               items:
                 type: string
-              description: List of chunk IDs to remove.
+              description: |
+                List of chunk IDs to remove.
+                If omitted, `null`, or an empty array is provided, no chunks will be deleted.
       - in: header
         name: Authorization
         type: string
@@ -1284,17 +1354,30 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     if not docs:
         raise LookupError(f"Can't find the document with ID {document_id}!")
     req = await get_request_json()
+    if not req:
+        return get_result()
+
+    chunk_ids = req.get("chunk_ids")
+    if not chunk_ids:
+        if req.get("delete_all") is True:
+            doc = docs[0]
+            # Clean up storage assets while index rows still exist for discovery
+            DocumentService.delete_chunk_images(doc, tenant_id)
+            condition = {"doc_id": document_id}
+            chunk_number = settings.docStoreConn.delete(condition, search.index_name(tenant_id), dataset_id)
+            if chunk_number != 0:
+                DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
+            return get_result(message=f"deleted {chunk_number} chunks")
+        else:
+            return get_result()
+
     condition = {"doc_id": document_id}
-    if "chunk_ids" in req:
-        unique_chunk_ids, duplicate_messages = check_duplicate_ids(req["chunk_ids"], "chunk")
-        condition["id"] = unique_chunk_ids
-    else:
-        unique_chunk_ids = []
-        duplicate_messages = []
+    unique_chunk_ids, duplicate_messages = check_duplicate_ids(chunk_ids, "chunk")
+    condition["id"] = unique_chunk_ids
     chunk_number = settings.docStoreConn.delete(condition, search.index_name(tenant_id), dataset_id)
     if chunk_number != 0:
         DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
-    if "chunk_ids" in req and chunk_number != len(unique_chunk_ids):
+    if chunk_number != len(unique_chunk_ids):
         if len(unique_chunk_ids) == 0:
             return get_result(message=f"deleted {chunk_number} chunks")
         return get_error_data_result(message=f"rm_chunk deleted chunks {chunk_number}, expect {len(unique_chunk_ids)}")
@@ -1396,8 +1479,17 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         if not isinstance(req["positions"], list):
             return get_error_data_result("`positions` should be a list")
         d["position_int"] = req["positions"]
-    embd_id = DocumentService.get_embd_id(document_id)
-    embd_mdl = TenantLLMService.model_instance(tenant_id, LLMType.EMBEDDING.value, embd_id)
+    if "tag_kwd" in req:
+        d["tag_kwd"] = req["tag_kwd"]
+    if "tag_feas" in req:
+        d["tag_feas"] = req["tag_feas"]
+    tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
+    if tenant_embd_id:
+        model_config = get_model_config_by_id(tenant_embd_id)
+    else:
+        embd_id = DocumentService.get_embd_id(document_id)
+        model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING.value, embd_id)
+    embd_mdl = TenantLLMService.model_instance(model_config)
     if doc.parser_id == ParserType.QA:
         arr = [t for t in re.split(r"[\n\t]", d["content_with_weight"]) if len(t) > 1]
         if len(arr) != 2:
@@ -1410,6 +1502,86 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     d["q_%d_vec" % len(v)] = v.tolist()
     settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(tenant_id), dataset_id)
     return get_result()
+
+
+@manager.route(  # noqa: F821
+    "/datasets/<dataset_id>/documents/<document_id>/chunks/switch", methods=["POST"]
+)
+@token_required
+async def switch_chunks(tenant_id, dataset_id, document_id):
+    """
+    Switch availability of specified chunks (same as chunk_app switch).
+    ---
+    tags:
+      - Chunks
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: path
+        name: document_id
+        type: string
+        required: true
+        description: ID of the document.
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            chunk_ids:
+              type: array
+              items:
+                type: string
+              description: List of chunk IDs to switch.
+            available_int:
+              type: integer
+              description: 1 for available, 0 for unavailable.
+            available:
+              type: boolean
+              description: Availability status (alternative to available_int).
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Chunks availability switched successfully.
+    """
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    req = await get_request_json()
+    if not req.get("chunk_ids"):
+        return get_error_data_result(message="`chunk_ids` is required.")
+    if "available_int" not in req and "available" not in req:
+        return get_error_data_result(message="`available_int` or `available` is required.")
+    available_int = int(req["available_int"]) if "available_int" in req else (1 if req.get("available") else 0)
+    try:
+
+        def _switch_sync():
+            e, doc = DocumentService.get_by_id(document_id)
+            if not e:
+                return get_error_data_result(message="Document not found!")
+            if not doc or str(doc.kb_id) != str(dataset_id):
+                return get_error_data_result(message="Document not found!")
+            for cid in req["chunk_ids"]:
+                if not settings.docStoreConn.update(
+                    {"id": cid},
+                    {"available_int": available_int},
+                    search.index_name(tenant_id),
+                    doc.kb_id,
+                ):
+                    return get_error_data_result(message="Index updating failure")
+            return get_result(data=True)
+
+        return await thread_pool_exec(_switch_sync)
+    except Exception as e:
+        return server_error_response(e)
 
 
 @manager.route("/retrieval", methods=["POST"])  # noqa: F821
@@ -1527,8 +1699,8 @@ async def retrieval_test(tenant_id):
     toc_enhance = req.get("toc_enhance", False)
     langs = req.get("cross_languages", [])
     if not isinstance(doc_ids, list):
-        return get_error_data_result("`documents` should be a list")   
-    if doc_ids: 
+        return get_error_data_result("`documents` should be a list")
+    if doc_ids:
         doc_ids_list = KnowledgebaseService.list_documents_by_ids(kb_ids)
         for doc_id in doc_ids:
             if doc_id not in doc_ids_list:
@@ -1536,7 +1708,7 @@ async def retrieval_test(tenant_id):
     if not doc_ids:
         metadata_condition = req.get("metadata_condition")
         if metadata_condition:
-            metas = DocMetadataService.get_meta_by_kbs(kb_ids)
+            metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
             doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
             # If metadata_condition has conditions but no docs match, return empty result
             if not doc_ids and metadata_condition.get("conditions"):
@@ -1549,26 +1721,43 @@ async def retrieval_test(tenant_id):
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
-    if req.get("highlight") == "False" or req.get("highlight") == "false":
+    highlight_val = req.get("highlight", None)
+    if highlight_val is None:
         highlight = False
+    elif isinstance(highlight_val, bool):
+        highlight = highlight_val
+    elif isinstance(highlight_val, str):
+        if highlight_val.lower() in ["true", "false"]:
+            highlight = highlight_val.lower() == "true"
+        else:
+            return get_error_data_result("`highlight` should be a boolean")
     else:
-        highlight = True
+        return get_error_data_result("`highlight` should be a boolean")
     try:
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
             return get_error_data_result(message="Dataset not found!")
-        embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id)
+        if kb.tenant_embd_id:
+            embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+        else:
+            embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
         rerank_mdl = None
-        if req.get("rerank_id"):
-            rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK, llm_name=req["rerank_id"])
+        if req.get("tenant_rerank_id"):
+            rerank_model_config = get_model_config_by_id(req["tenant_rerank_id"])
+            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+        elif req.get("rerank_id"):
+            rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK, req["rerank_id"])
+            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
         if langs:
             question = await cross_languages(kb.tenant_id, None, question, langs)
 
         if req.get("keyword", False):
-            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
+            chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(kb.tenant_id, chat_model_config)
             question += await keyword_extraction(chat_mdl, question)
 
         ranks = await settings.retriever.retrieval(
@@ -1587,13 +1776,15 @@ async def retrieval_test(tenant_id):
             rank_feature=label_question(question, kbs),
         )
         if toc_enhance:
-            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
+            chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(kb.tenant_id, chat_model_config)
             cks = await settings.retriever.retrieval_by_toc(question, ranks["chunks"], tenant_ids, chat_mdl, size)
             if cks:
                 ranks["chunks"] = cks
         ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
         if use_kg:
-            ck = await settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
+            chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
+            ck = await settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, chat_model_config))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 

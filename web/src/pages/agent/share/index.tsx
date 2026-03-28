@@ -8,7 +8,7 @@ import { useSyncThemeFromParams } from '@/components/theme-provider';
 import { MessageType } from '@/constants/chat';
 import { useUploadCanvasFileWithProgress } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
-import i18n from '@/locales/config';
+import i18n, { changeLanguageAsync } from '@/locales/config';
 import DebugContent from '@/pages/agent/debug-content';
 import { useCacheChatLog } from '@/pages/agent/hooks/use-cache-chat-log';
 import { useAwaitCompentData } from '@/pages/agent/hooks/use-chat-logic';
@@ -88,7 +88,7 @@ const ChatContainer = () => {
 
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
-      i18n.changeLanguage(locale);
+      changeLanguageAsync(locale);
     }
   }, [locale, visibleAvatar]);
 
@@ -126,7 +126,7 @@ const ChatContainer = () => {
         <div className="flex flex-1 flex-col p-2.5  h-[90vh] m-3">
           <div
             className={cn(
-              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto w-5/6',
+              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto md:w-5/6',
             )}
             ref={messageContainerRef}
           >
@@ -186,13 +186,14 @@ const ChatContainer = () => {
             <div ref={scrollRef} />
           </div>
           {isTaskMode || (
-            <div className="flex w-full justify-center mb-8">
-              <div className="w-5/6">
+            <div className="flex w-full justify-center md:mb-8">
+              <div className="w-full md:w-5/6">
                 <NextMessageInput
                   isShared
                   value={value}
                   disabled={hasError || isWaitting}
                   sendDisabled={sendDisabled || isWaitting}
+                  resize="vertical"
                   conversationId={conversationId}
                   onInputChange={handleInputChange}
                   onPressEnter={handlePressEnter}

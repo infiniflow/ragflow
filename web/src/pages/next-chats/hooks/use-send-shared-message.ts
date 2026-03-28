@@ -1,4 +1,5 @@
 import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
+import message from '@/components/ui/message';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
@@ -7,7 +8,6 @@ import {
 } from '@/hooks/logic-hooks';
 import { useCreateNextSharedConversation } from '@/hooks/use-chat-request';
 import { Message } from '@/interfaces/database/chat';
-import { message } from 'antd';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
 import { useCallback, useEffect, useState } from 'react';

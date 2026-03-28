@@ -115,7 +115,7 @@ class Excel(ExcelParser):
             tables.append(
                 (
                     (
-                        img["image"],  # Image.Image
+                        img["image"],  # Image.Image or LazyImage
                         [img["image_description"]]  # description list (must be list)
                     ),
                     [
@@ -304,9 +304,8 @@ class Excel(ExcelParser):
 def trans_datatime(s):
     try:
         return datetime_parse(s.strip()).strftime("%Y-%m-%d %H:%M:%S")
-    except Exception as e:
-        logging.warning(f"Failed to parse date from {s}, error: {e}")
-        pass
+    except Exception:
+        return None
 
 
 def trans_bool(s):

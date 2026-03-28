@@ -77,10 +77,17 @@ sql_command: login_user
            | drop_user_dataset
            | list_user_datasets
            | list_user_dataset_files
+           | list_user_dataset_documents
+           | list_user_datasets_metadata
+           | list_user_documents_metadata_summary
            | list_user_agents
            | list_user_chats
            | create_user_chat
            | drop_user_chat
+           | create_index
+           | drop_index
+           | create_doc_meta_index
+           | drop_doc_meta_index
            | list_user_model_providers
            | list_user_default_models
            | parse_dataset_docs
@@ -88,6 +95,18 @@ sql_command: login_user
            | parse_dataset_async
            | import_docs_into_dataset
            | search_on_datasets
+           | get_chunk
+           | list_chunks
+           | create_chat_session
+           | drop_chat_session
+           | list_chat_sessions
+           | chat_on_session
+           | list_server_configs
+           | show_fingerprint
+           | set_license
+           | set_license_config
+           | show_license
+           | check_license
            | benchmark
 
 // meta command definition
@@ -151,11 +170,17 @@ DEFAULT: "DEFAULT"i
 CHATS: "CHATS"i
 CHAT: "CHAT"i
 FILES: "FILES"i
+DOCUMENT: "DOCUMENT"i
+DOCUMENTS: "DOCUMENTS"i
+METADATA: "METADATA"i
+SUMMARY: "SUMMARY"i
 AS: "AS"i
 PARSE: "PARSE"i
 IMPORT: "IMPORT"i
 INTO: "INTO"i
+IN: "IN"i
 WITH: "WITH"i
+VECTOR_SIZE: "VECTOR_SIZE"i
 PARSER: "PARSER"i
 PIPELINE: "PIPELINE"i
 SEARCH: "SEARCH"i
@@ -170,6 +195,22 @@ ASYNC: "ASYNC"i
 SYNC: "SYNC"i
 BENCHMARK: "BENCHMARK"i
 PING: "PING"i
+SESSION: "SESSION"i
+SESSIONS: "SESSIONS"i
+SERVER: "SERVER"i
+FINGERPRINT: "FINGERPRINT"i
+LICENSE: "LICENSE"i
+CHECK: "CHECK"i
+CONFIG: "CONFIG"i
+INDEX: "INDEX"i
+DOC_META: "DOC_META"i
+CHUNK: "CHUNK"i
+CHUNKS: "CHUNKS"i
+GET: "GET"i
+PAGE: "PAGE"i
+SIZE: "SIZE"i
+KEYWORDS: "KEYWORDS"i
+AVAILABLE: "AVAILABLE"i
 
 login_user: LOGIN USER quoted_string ";"
 list_services: LIST SERVICES ";"
@@ -215,6 +256,14 @@ list_variables: LIST VARS ";"
 list_configs: LIST CONFIGS ";"
 list_environments: LIST ENVS ";"
 
+show_fingerprint: SHOW FINGERPRINT ";"
+set_license: SET LICENSE quoted_string ";"
+set_license_config: SET LICENSE CONFIG NUMBER NUMBER ";"
+show_license: SHOW LICENSE ";"
+check_license: CHECK LICENSE ";"
+
+list_server_configs: LIST SERVER CONFIGS ";"
+
 benchmark: BENCHMARK NUMBER NUMBER user_statement
 
 user_statement: ping_server
@@ -246,6 +295,10 @@ user_statement: ping_server
                 | list_user_default_models
                 | import_docs_into_dataset
                 | search_on_datasets
+                | create_chat_session
+                | drop_chat_session
+                | list_chat_sessions
+                | chat_on_session
 
 ping_server: PING ";"
 show_current_user: SHOW CURRENT USER ";"
@@ -270,14 +323,27 @@ create_user_dataset_with_parser: CREATE DATASET quoted_string WITH EMBEDDING quo
 create_user_dataset_with_pipeline: CREATE DATASET quoted_string WITH EMBEDDING quoted_string PIPELINE quoted_string ";" 
 drop_user_dataset: DROP DATASET quoted_string ";"
 list_user_dataset_files: LIST FILES OF DATASET quoted_string ";"
+list_user_dataset_documents: LIST DOCUMENTS OF DATASET quoted_string ";"
+list_user_datasets_metadata: LIST METADATA OF DATASETS quoted_string ("," quoted_string)* ";"
+list_user_documents_metadata_summary: LIST METADATA SUMMARY OF DATASET quoted_string (DOCUMENTS quoted_string ("," quoted_string)*)? ";"
 list_user_agents: LIST AGENTS ";"
 list_user_chats: LIST CHATS ";"
 create_user_chat: CREATE CHAT quoted_string ";"
 drop_user_chat: DROP CHAT quoted_string ";"
+create_index: CREATE INDEX FOR DATASET quoted_string VECTOR_SIZE NUMBER ";"
+drop_index: DROP INDEX FOR DATASET quoted_string ";"
+create_doc_meta_index: CREATE INDEX DOC_META ";"
+drop_doc_meta_index: DROP INDEX DOC_META ";"
+create_chat_session: CREATE CHAT quoted_string SESSION ";"
+drop_chat_session: DROP CHAT quoted_string SESSION quoted_string ";"
+list_chat_sessions: LIST CHAT quoted_string SESSIONS ";"
+chat_on_session: CHAT quoted_string ON quoted_string SESSION quoted_string ";"
 list_user_model_providers: LIST MODEL PROVIDERS ";"
 list_user_default_models: LIST DEFAULT MODELS ";"
 import_docs_into_dataset: IMPORT quoted_string INTO DATASET quoted_string ";"
 search_on_datasets: SEARCH quoted_string ON DATASETS quoted_string ";"
+get_chunk: GET CHUNK quoted_string ";"
+list_chunks: LIST CHUNKS OF DOCUMENT quoted_string ("PAGE" NUMBER)? ("SIZE" NUMBER)? ("KEYWORDS" quoted_string)? ("AVAILABLE" NUMBER)? ";"
 
 parse_dataset_docs: PARSE quoted_string OF DATASET quoted_string ";"
 parse_dataset_sync: PARSE DATASET quoted_string SYNC ";"
@@ -287,7 +353,7 @@ identifier_list: identifier ("," identifier)*
 
 identifier: WORD
 quoted_string: QUOTED_STRING
-status: WORD
+status: ON | WORD
 
 QUOTED_STRING: /'[^']+'/ | /"[^"]+"/
 WORD: /[a-zA-Z0-9_\-\.]+/
@@ -459,6 +525,27 @@ class RAGFlowCLITransformer(Transformer):
     def list_environments(self, items):
         return {"type": "list_environments"}
 
+    def show_fingerprint(self, items):
+        return {"type": "show_fingerprint"}
+
+    def set_license(self, items):
+        license = items[2].children[0].strip("'\"")
+        return {"type": "set_license", "license": license}
+
+    def set_license_config(self, items):
+        value1: int = int(items[3])
+        value2: int = int(items[4])
+        return {"type": "set_license_config", "value1": value1, "value2": value2}
+
+    def show_license(self, items):
+        return {"type": "show_license"}
+
+    def check_license(self, items):
+        return {"type": "check_license"}
+
+    def list_server_configs(self, items):
+        return {"type": "list_server_configs"}
+
     def create_model_provider(self, items):
         provider_name = items[3].children[0].strip("'\"")
         provider_key = items[4].children[0].strip("'\"")
@@ -538,6 +625,28 @@ class RAGFlowCLITransformer(Transformer):
         dataset_name = items[4].children[0].strip("'\"")
         return {"type": "list_user_dataset_files", "dataset_name": dataset_name}
 
+    def list_user_dataset_documents(self, items):
+        dataset_name = items[4].children[0].strip("'\"")
+        return {"type": "list_user_dataset_documents", "dataset_name": dataset_name}
+
+    def list_user_datasets_metadata(self, items):
+        dataset_names = []
+        dataset_names.append(items[4].children[0].strip("'\""))
+        for i in range(5, len(items)):
+            if items[i] and hasattr(items[i], 'children') and items[i].children:
+                dataset_names.append(items[i].children[0].strip("'\""))
+        return {"type": "list_user_datasets_metadata", "dataset_names": dataset_names}
+
+    def list_user_documents_metadata_summary(self, items):
+        dataset_name = items[5].children[0].strip("'\"")
+        doc_ids = []
+        if len(items) > 6 and items[6] == "DOCUMENTS":
+            for i in range(7, len(items)):
+                if items[i] and hasattr(items[i], 'children') and items[i].children:
+                    doc_id = items[i].children[0].strip("'\"")
+                    doc_ids.append(doc_id)
+        return {"type": "list_user_documents_metadata_summary", "dataset_name": dataset_name, "document_ids": doc_ids}
+
     def list_user_agents(self, items):
         return {"type": "list_user_agents"}
 
@@ -551,6 +660,31 @@ class RAGFlowCLITransformer(Transformer):
     def drop_user_chat(self, items):
         chat_name = items[2].children[0].strip("'\"")
         return {"type": "drop_user_chat", "chat_name": chat_name}
+
+    def create_index(self, items):
+        # items: CREATE, INDEX, FOR, DATASET, quoted_string, VECTOR_SIZE, NUMBER, ";"
+        dataset_name = None
+        vector_size = None
+        for i, item in enumerate(items):
+            if hasattr(item, 'data') and item.data == 'quoted_string':
+                dataset_name = item.children[0].strip("'\"")
+            if hasattr(item, 'type') and item.type == 'NUMBER':
+                if i > 0 and items[i-1].type == 'VECTOR_SIZE':
+                    vector_size = int(item)
+        return {"type": "create_index", "dataset_name": dataset_name, "vector_size": vector_size}
+
+    def drop_index(self, items):
+        dataset_name = None
+        for item in items:
+            if hasattr(item, 'data') and item.data == 'quoted_string':
+                dataset_name = item.children[0].strip("'\"")
+        return {"type": "drop_index", "dataset_name": dataset_name}
+
+    def create_doc_meta_index(self, items):
+        return {"type": "create_doc_meta_index"}
+
+    def drop_doc_meta_index(self, items):
+        return {"type": "drop_doc_meta_index"}
 
     def list_user_model_providers(self, items):
         return {"type": "list_user_model_providers"}
@@ -575,6 +709,25 @@ class RAGFlowCLITransformer(Transformer):
         dataset_name = items[2].children[0].strip("'\"")
         return {"type": "parse_dataset", "dataset_name": dataset_name, "method": "async"}
 
+    def create_chat_session(self, items):
+        chat_name = items[2].children[0].strip("'\"")
+        return {"type": "create_chat_session", "chat_name": chat_name}
+
+    def drop_chat_session(self, items):
+        chat_name = items[2].children[0].strip("'\"")
+        session_id = items[4].children[0].strip("'\"")
+        return {"type": "drop_chat_session", "chat_name": chat_name, "session_id": session_id}
+
+    def list_chat_sessions(self, items):
+        chat_name = items[2].children[0].strip("'\"")
+        return {"type": "list_chat_sessions", "chat_name": chat_name}
+
+    def chat_on_session(self, items):
+        message = items[1].children[0].strip("'\"")
+        chat_name = items[3].children[0].strip("'\"")
+        session_id = items[5].children[0].strip("'\"")
+        return {"type": "chat_on_session", "message": message, "chat_name": chat_name, "session_id": session_id}
+
     def import_docs_into_dataset(self, items):
         document_list_str = items[1].children[0].strip("'\"")
         document_paths = document_list_str.split(",")
@@ -592,6 +745,28 @@ class RAGFlowCLITransformer(Transformer):
             datasets = datasets[0]
             datasets = datasets.split(" ")
         return {"type": "search_on_datasets", "datasets": datasets, "question": question}
+
+    def get_chunk(self, items):
+        chunk_id = items[2].children[0].strip("'\"")
+        return {"type": "get_chunk", "chunk_id": chunk_id}
+
+    def list_chunks(self, items):
+        doc_id = items[4].children[0].strip("'\"")
+        result = {"type": "list_chunks", "doc_id": doc_id}
+
+        # Parse optional parameters: PAGE, SIZE, KEYWORDS, AVAILABLE
+        # items structure varies based on which params are present
+        for i, item in enumerate(items):
+            if str(item) == "PAGE":
+                result["page"] = int(items[i + 1])
+            elif str(item) == "SIZE":
+                result["size"] = int(items[i + 1])
+            elif str(item) == "KEYWORDS":
+                result["keywords"] = items[i + 1].children[0].strip("'\"")
+            elif str(item) == "AVAILABLE":
+                result["available_int"] = int(items[i + 1])
+
+        return result
 
     def benchmark(self, items):
         concurrency: int = int(items[1])

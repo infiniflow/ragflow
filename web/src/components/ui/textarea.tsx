@@ -10,31 +10,45 @@ import {
   useRef,
   useState,
 } from 'react';
-interface TextareaProps
-  extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'autoSize'> {
+interface TextareaProps extends Omit<
+  TextareaHTMLAttributes<HTMLTextAreaElement>,
+  'autoSize'
+> {
   autoSize?: {
     minRows?: number;
     maxRows?: number;
   };
+  resize?: 'none' | 'vertical' | 'horizontal' | 'both';
 }
 const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, autoSize, ...props }, ref) => {
+  ({ className, autoSize, resize = 'none', ...props }, ref) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const manualHeightRef = useRef<number | null>(null);
+    const isAdjustingRef = useRef(false);
     const getLineHeight = (element: HTMLElement): number => {
       const style = window.getComputedStyle(element);
       return parseInt(style.lineHeight, 10) || 20;
     };
     const adjustHeight = useCallback(() => {
-      if (!textareaRef.current) return;
+      if (!textareaRef.current || !autoSize) return;
       const lineHeight = getLineHeight(textareaRef.current);
       const maxHeight = (autoSize?.maxRows || 3) * lineHeight;
+
+      isAdjustingRef.current = true;
       textareaRef.current.style.height = 'auto';
 
       requestAnimationFrame(() => {
         if (!textareaRef.current) return;
 
         const scrollHeight = textareaRef.current.scrollHeight;
-        textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
+        const desiredHeight = Math.min(scrollHeight, maxHeight);
+        const manualHeight = manualHeightRef.current;
+        const nextHeight =
+          manualHeight && manualHeight > desiredHeight
+            ? manualHeight
+            : desiredHeight;
+        textareaRef.current.style.height = `${nextHeight}px`;
+        isAdjustingRef.current = false;
       });
     }, [autoSize]);
 
@@ -51,18 +65,43 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         ref.current = textareaRef.current;
       }
     }, [ref]);
+    useEffect(() => {
+      if (!textareaRef.current || !autoSize || resize === 'none') {
+        manualHeightRef.current = null;
+        return;
+      }
+      const element = textareaRef.current;
+      let prevHeight = element.getBoundingClientRect().height;
+      const observer = new ResizeObserver((entries) => {
+        if (isAdjustingRef.current) return;
+        const entry = entries[0];
+        if (!entry) return;
+        const nextHeight = entry.contentRect.height;
+        if (Math.abs(nextHeight - prevHeight) > 1) {
+          manualHeightRef.current = nextHeight;
+        }
+        prevHeight = nextHeight;
+      });
+      observer.observe(element);
+      return () => observer.disconnect();
+    }, [autoSize, resize]);
+
+    const resizable = resize !== 'none';
+
     return (
       <textarea
         className={cn(
-          'flex min-h-[80px] w-full bg-bg-input rounded-md border border-border-button px-3 py-2 text-base ring-offset-background placeholder:text-text-disabled focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm overflow-hidden',
+          'flex min-h-[80px] w-full bg-bg-input rounded-md border border-border-button px-3 py-2 text-base ring-offset-background placeholder:text-text-disabled focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
+          resizable ? 'overflow-auto' : 'overflow-hidden',
           className,
         )}
         rows={autoSize?.minRows ?? props.rows ?? undefined}
         style={{
-          maxHeight: autoSize?.maxRows
-            ? `${autoSize.maxRows * 20}px`
-            : undefined,
-          overflow: autoSize ? 'auto' : undefined,
+          maxHeight:
+            autoSize?.maxRows && !resizable
+              ? `${autoSize.maxRows * 20}px`
+              : undefined,
+          resize,
         }}
         ref={textareaRef}
         {...props}

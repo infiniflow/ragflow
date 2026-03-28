@@ -52,7 +52,7 @@ class TestChatAssistantCreate:
             chat_assistant = client.create_chat(name=name)
             assert chat_assistant.name == name
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "dataset_ids, expected_message",
         [
@@ -216,7 +216,7 @@ class TestChatAssistantCreate:
 
 
 class TestChatAssistantCreate2:
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_unparsed_document(self, client, add_document):
         dataset, _ = add_document
         with pytest.raises(Exception) as exception_info:
