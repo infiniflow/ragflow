@@ -177,7 +177,8 @@ class InfinityConnection(InfinityConnectionBase):
                         matchExpr.extra_options.update({"filter": filter_cond})
                     matchExpr.fields = [self.convert_matching_field(field) for field in matchExpr.fields]
                     fields = ",".join(matchExpr.fields)
-                    filter_fulltext = f"filter_fulltext('{fields}', '{matchExpr.matching_text}')"
+                    escaped_matching_text = matchExpr.matching_text.replace("'", "''")
+                    filter_fulltext = f"filter_fulltext('{fields}', '{escaped_matching_text}')"
                     if filter_cond:
                         filter_fulltext = f"({filter_cond}) AND {filter_fulltext}"
                     minimum_should_match = matchExpr.extra_options.get("minimum_should_match", 0.0)
