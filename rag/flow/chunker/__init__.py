@@ -13,3 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+from rag.flow.chunker.token_chunker import TokenChunker, TokenChunkerParam
+
+__all__ = ["TokenChunker", "TokenChunkerParam"]

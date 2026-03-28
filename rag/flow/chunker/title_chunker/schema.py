@@ -17,7 +17,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class SplitterFromUpstream(BaseModel):
+class TitleChunkerFromUpstream(BaseModel):
     created_time: float | None = Field(default=None, alias="_created_time")
     elapsed_time: float | None = Field(default=None, alias="_elapsed_time")
 
@@ -26,7 +26,6 @@ class SplitterFromUpstream(BaseModel):
     chunks: list[dict[str, Any]] | None = Field(default=None)
 
     output_format: Literal["json", "markdown", "text", "html", "chunks"] | None = Field(default=None)
-
     json_result: list[dict[str, Any]] | None = Field(default=None, alias="json")
     markdown_result: str | None = Field(default=None, alias="markdown")
     text_result: str | None = Field(default=None, alias="text")
