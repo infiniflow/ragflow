@@ -84,7 +84,7 @@ jobs:
 
       - name: Build and push image
         run: |
-          sudo docker login --username infiniflow --password-stdin <<< ${DOCKERHUB_TOKEN}
+          sudo docker login --username infiniflow --password-stdin <<< "${DOCKERHUB_TOKEN}"
           sudo docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
           sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
           sudo docker push infiniflow/ragflow:${RELEASE_TAG}
@@ -95,14 +95,14 @@ jobs:
       - name: Build and push ragflow-sdk
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          cd sdk/python && uv build && uv publish --token ${PYPI_API_TOKEN}
+          cd sdk/python && uv build && uv publish --token "${PYPI_API_TOKEN}"
 
         env:
           PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
       - name: Build and push ragflow-cli
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          cd admin/client && uv build && uv publish --token ${PYPI_API_TOKEN}
+          cd admin/client && uv build && uv publish --token "${PYPI_API_TOKEN}"
 
         env:
           PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
