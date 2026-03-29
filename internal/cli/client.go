@@ -18,7 +18,6 @@ package cli
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -420,6 +419,14 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListAdminTokens(cmd)
 	case "drop_token":
 		return c.DropAdminToken(cmd)
+	case "list_pool_providers":
+		return c.ListAdminPoolProviders(cmd)
+	case "show_pool_provider":
+		return c.ShowAdminPoolProvider(cmd)
+	case "list_pool_models":
+		return c.ListAdminPoolModels(cmd)
+	case "show_pool_model":
+		return c.ShowAdminPoolModel(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
@@ -463,6 +470,14 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CreateDocMetaIndex(cmd)
 	case "drop_doc_meta_index":
 		return c.DropDocMetaIndex(cmd)
+	case "list_pool_providers":
+		return c.ListPoolProviders(cmd)
+	case "show_pool_provider":
+		return c.ShowPoolProvider(cmd)
+	case "list_pool_models":
+		return c.ListPoolModels(cmd)
+	case "show_pool_model":
+		return c.ShowPoolModel(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)
@@ -691,8 +706,8 @@ type CEListResponse struct {
 	outputFormat OutputFormat
 }
 
-func (r *CEListResponse) Type() string { return "ce_ls" }
-func (r *CEListResponse) TimeCost() float64 { return r.Duration }
+func (r *CEListResponse) Type() string                        { return "ce_ls" }
+func (r *CEListResponse) TimeCost() float64                   { return r.Duration }
 func (r *CEListResponse) SetOutputFormat(format OutputFormat) { r.outputFormat = format }
 func (r *CEListResponse) PrintOut() {
 	if r.Code == 0 {
@@ -701,42 +716,6 @@ func (r *CEListResponse) PrintOut() {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
-}
-
-// CEList handles the ls command - lists nodes using Context Engine
-func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
-	// Get path from command params, default to "datasets"
-	path, _ := cmd.Params["path"].(string)
-	if path == "" {
-		path = "datasets"
-	}
-
-	// Parse options
-	opts := &ce.ListOptions{}
-	if recursive, ok := cmd.Params["recursive"].(bool); ok {
-		opts.Recursive = recursive
-	}
-	if limit, ok := cmd.Params["limit"].(int); ok {
-		opts.Limit = limit
-	}
-	if offset, ok := cmd.Params["offset"].(int); ok {
-		opts.Offset = offset
-	}
-
-	// Execute list command through Context Engine
-	ctx := context.Background()
-	result, err := c.ContextEngine.List(ctx, path, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to response
-	var response CEListResponse
-	response.outputFormat = c.OutputFormat
-	response.Code = 0
-	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
-
-	return &response, nil
 }
 
 // getStringValue safely converts interface{} to string
@@ -793,8 +772,8 @@ type CESearchResponse struct {
 	outputFormat OutputFormat
 }
 
-func (r *CESearchResponse) Type() string { return "ce_search" }
-func (r *CESearchResponse) TimeCost() float64 { return r.Duration }
+func (r *CESearchResponse) Type() string                        { return "ce_search" }
+func (r *CESearchResponse) TimeCost() float64                   { return r.Duration }
 func (r *CESearchResponse) SetOutputFormat(format OutputFormat) { r.outputFormat = format }
 func (r *CESearchResponse) PrintOut() {
 	if r.Code == 0 {
@@ -804,44 +783,4 @@ func (r *CESearchResponse) PrintOut() {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
-}
-
-// CESearch handles the search command using Context Engine
-func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
-	// Get path and query from command params
-	path, _ := cmd.Params["path"].(string)
-	if path == "" {
-		path = "datasets"
-	}
-	query, _ := cmd.Params["query"].(string)
-
-	// Parse options
-	opts := &ce.SearchOptions{
-		Query: query,
-	}
-	if limit, ok := cmd.Params["limit"].(int); ok {
-		opts.Limit = limit
-	}
-	if offset, ok := cmd.Params["offset"].(int); ok {
-		opts.Offset = offset
-	}
-	if recursive, ok := cmd.Params["recursive"].(bool); ok {
-		opts.Recursive = recursive
-	}
-
-	// Execute search command through Context Engine
-	ctx := context.Background()
-	result, err := c.ContextEngine.Search(ctx, path, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to response
-	var response CESearchResponse
-	response.outputFormat = c.OutputFormat
-	response.Code = 0
-	response.Total = result.Total
-	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
-
-	return &response, nil
 }
