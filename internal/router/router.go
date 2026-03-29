@@ -102,6 +102,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// User logout endpoint
 	engine.GET("/v1/user/logout", r.userHandler.Logout)
 
+	// provider pool route group
+	provider := engine.Group("/api/v1/providers")
+	{
+		provider.GET("/", handler.ListPoolProviders)
+		provider.GET("/:provider_name", handler.ShowPoolProvider)
+		provider.GET("/models", handler.ListPoolModels)
+		provider.GET("/models/:model_name", handler.ShowPoolModel)
+	}
+
 	// Protected routes
 	authorized := engine.Group("")
 	authorized.Use(r.authHandler.AuthMiddleware())

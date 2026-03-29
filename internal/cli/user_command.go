@@ -751,38 +751,6 @@ func (c *RAGFlowClient) DropDocMetaIndex(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ListPoolProviders(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (c *RAGFlowClient) ShowPoolProvider(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (c *RAGFlowClient) ListPoolModels(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (c *RAGFlowClient) ShowPoolModel(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	return nil, fmt.Errorf("not implemented")
-}
-
 // Context related commands
 
 // CEList handles the ls command - lists nodes using Context Engine
