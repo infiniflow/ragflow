@@ -14,7 +14,8 @@
 #  limitations under the License.
 #
 import logging
-from quart import request
+from quart import request, Blueprint
+from quart_schema import security_scheme_blueprint
 from api.db.services.dialog_service import DialogService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.tenant_llm_service import TenantLLMService
@@ -23,6 +24,7 @@ from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_result, token_required, get_request_json
 
+manager: Blueprint
 
 @manager.route("/chats", methods=["POST"])  # noqa: F821
 @token_required
@@ -327,3 +329,5 @@ def list_chat(tenant_id):
         res["avatar"] = res.pop("icon")
         list_assistants.append(res)
     return get_result(data=list_assistants)
+
+security_scheme_blueprint(manager, [{"BearerAuth": []}])

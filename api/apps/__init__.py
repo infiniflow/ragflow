@@ -60,7 +60,7 @@ app = Quart(__name__)
 app = cors(app, allow_origin="*")
 
 # openapi supported
-QuartSchema(app)
+QuartSchema(app, info={"title": "Ragflow API", "version": "0.1.0"})
 
 app.url_map.strict_slashes = False
 app.json_encoder = CustomJSONEncoder
