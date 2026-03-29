@@ -22,7 +22,8 @@ import os
 import tempfile
 import logging
 
-from quart import Response, jsonify, request
+from quart import Response, jsonify, request, Blueprint
+from quart_schema import security_scheme_blueprint
 
 from common.token_utils import num_tokens_from_string
 
@@ -53,6 +54,7 @@ from rag.prompts.generator import cross_languages, keyword_extraction, chunks_fo
 from common.constants import RetCode, LLMType, StatusEnum
 from common import settings
 
+manager: Blueprint
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
@@ -1459,3 +1461,5 @@ def _build_reference_chunks(reference, include_metadata=False, metadata_fields=N
             chunk["document_metadata"] = meta
 
     return chunks
+
+security_scheme_blueprint(manager, [{"BearerAuth": []}])
