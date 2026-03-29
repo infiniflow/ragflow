@@ -18,6 +18,7 @@ package server
 
 import (
 	"fmt"
+	"net"
 	"net/mail"
 	"net/url"
 	"os"
@@ -213,7 +214,7 @@ var (
 // Init initialize configuration
 func Init(configPath string) error {
 
-	err := FromConfigFile("")
+	err := FromConfigFile(configPath)
 	if err != nil {
 		return err
 	}
@@ -444,6 +445,26 @@ func FromEnvironments() error {
 		return fmt.Errorf("invalid storage type: %s", storageType)
 	}
 
+	// Minio
+	minioIP := strings.ToLower(os.Getenv("MINIO_IP"))
+	if minioIP != "" {
+		_, port, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
+		if err != nil {
+			return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
+		}
+		globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", minioIP, port)
+	}
+
+	minioPort := strings.ToLower(os.Getenv("MINIO_PORT"))
+	// println(fmt.Sprintf("MINIO ip and port from env: %s:%s", minioIP, minioPort))
+	if minioPort != "" {
+		ip, _, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
+		if err != nil {
+			return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
+		}
+		globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", ip, minioPort)
+	}
+
 	// Language
 	if globalConfig.Language == "" {
 		globalConfig.Language = GetLanguage()
@@ -464,8 +485,6 @@ func FromConfigFile(configPath string) error {
 		v.SetConfigType("yaml")
 		v.AddConfigPath("./conf")
 		v.AddConfigPath(".")
-		v.AddConfigPath("./config")
-		v.AddConfigPath("./internal/config")
 		v.AddConfigPath("/etc/ragflow/")
 	}
 

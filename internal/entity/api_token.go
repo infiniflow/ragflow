@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package model
+package entity
 
 // APIToken API token model
 type APIToken struct {
@@ -33,20 +33,20 @@ func (APIToken) TableName() string {
 
 // API4Conversation API for conversation model
 type API4Conversation struct {
-	ID         string  `gorm:"column:id;primaryKey;size:32" json:"id"`
-	Name       *string `gorm:"column:name;size:255" json:"name,omitempty"`
-	DialogID   string  `gorm:"column:dialog_id;size:32;not null;index" json:"dialog_id"`
-	UserID     string  `gorm:"column:user_id;size:255;not null;index" json:"user_id"`
-	ExpUserID  *string `gorm:"column:exp_user_id;size:255;index" json:"exp_user_id,omitempty"`
-	Message    JSONMap `gorm:"column:message;type:longtext" json:"message,omitempty"`
-	Reference  JSONMap `gorm:"column:reference;type:longtext" json:"reference"`
-	Tokens     int64   `gorm:"column:tokens;default:0" json:"tokens"`
-	Source     *string `gorm:"column:source;size:16;index" json:"source,omitempty"`
-	DSL        JSONMap `gorm:"column:dsl;type:longtext" json:"dsl,omitempty"`
-	Duration   float64 `gorm:"column:duration;default:0;index" json:"duration"`
-	Round      int64   `gorm:"column:round;default:0;index" json:"round"`
-	ThumbUp    int64   `gorm:"column:thumb_up;default:0;index" json:"thumb_up"`
-	Errors     *string `gorm:"column:errors;type:longtext" json:"errors,omitempty"`
+	ID        string  `gorm:"column:id;primaryKey;size:32" json:"id"`
+	Name      *string `gorm:"column:name;size:255" json:"name,omitempty"`
+	DialogID  string  `gorm:"column:dialog_id;size:32;not null;index" json:"dialog_id"`
+	UserID    string  `gorm:"column:user_id;size:255;not null;index" json:"user_id"`
+	ExpUserID *string `gorm:"column:exp_user_id;size:255;index" json:"exp_user_id,omitempty"`
+	Message   JSONMap `gorm:"column:message;type:longtext" json:"message,omitempty"`
+	Reference JSONMap `gorm:"column:reference;type:longtext" json:"reference"`
+	Tokens    int64   `gorm:"column:tokens;default:0" json:"tokens"`
+	Source    *string `gorm:"column:source;size:16;index" json:"source,omitempty"`
+	DSL       JSONMap `gorm:"column:dsl;type:longtext" json:"dsl,omitempty"`
+	Duration  float64 `gorm:"column:duration;default:0;index" json:"duration"`
+	Round     int64   `gorm:"column:round;default:0;index" json:"round"`
+	ThumbUp   int64   `gorm:"column:thumb_up;default:0;index" json:"thumb_up"`
+	Errors    *string `gorm:"column:errors;type:longtext" json:"errors,omitempty"`
 	BaseModel
 }
 

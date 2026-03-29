@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package model
+package entity
 
 // Memory memory model
 type Memory struct {
@@ -41,4 +41,13 @@ type Memory struct {
 // TableName specify table name
 func (Memory) TableName() string {
 	return "memory"
+}
+
+// MemoryListItem represents a memory record with owner name from JOIN query.
+// Uses struct embedding to extend Memory struct with owner_name from user table JOIN.
+// Note: MemoryType is kept as int64 from Memory embedding; conversion to []string
+// happens in the Service layer via CreateMemoryResponse.
+type MemoryListItem struct {
+	Memory
+	OwnerName *string `json:"owner_name,omitempty"`
 }

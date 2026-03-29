@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package model
+package entity
 
 // UserCanvas user canvas model
 type UserCanvas struct {

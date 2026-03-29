@@ -19,7 +19,8 @@ package handler
 import (
 	"net/http"
 	"ragflow/internal/dao"
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
+
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -45,7 +46,7 @@ func (h *SystemHandler) ListTokens(c *gin.Context) {
 		return
 	}
 
-	userModel, ok := user.(*model.User)
+	userModel, ok := user.(*entity.User)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -105,7 +106,7 @@ func (h *SystemHandler) CreateToken(c *gin.Context) {
 		return
 	}
 
-	userModel, ok := user.(*model.User)
+	userModel, ok := user.(*entity.User)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -175,7 +176,7 @@ func (h *SystemHandler) DeleteToken(c *gin.Context) {
 		return
 	}
 
-	userModel, ok := user.(*model.User)
+	userModel, ok := user.(*entity.User)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

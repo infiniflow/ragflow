@@ -19,13 +19,14 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/entity"
 	"regexp"
 	"sort"
 	"time"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
-	"ragflow/internal/model"
+
 	"ragflow/internal/server"
 )
 
@@ -95,8 +96,8 @@ type DocumentResponse struct {
 }
 
 // CreateDocument create document
-func (s *DocumentService) CreateDocument(req *CreateDocumentRequest) (*model.Document, error) {
-	document := &model.Document{
+func (s *DocumentService) CreateDocument(req *CreateDocumentRequest) (*entity.Document, error) {
+	document := &entity.Document{
 		Name:       &req.Name,
 		KbID:       req.KbID,
 		ParserID:   req.ParserID,
@@ -207,7 +208,7 @@ func (s *DocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) (
 }
 
 // toResponse convert model.Document to DocumentResponse
-func (s *DocumentService) toResponse(doc *model.Document) *DocumentResponse {
+func (s *DocumentService) toResponse(doc *entity.Document) *DocumentResponse {
 	createdAt := ""
 	if doc.CreateTime != nil {
 		// Check if timestamp is in milliseconds (13 digits) or seconds (10 digits)
@@ -405,7 +406,7 @@ func (s *DocumentService) GetMetadataByKBs(kbIDs []string) (map[string]interface
 
 // valueInfo holds count and order of first appearance
 type valueInfo struct {
-	count     int
+	count      int
 	firstOrder int
 }
 
@@ -617,7 +618,7 @@ func aggregateMetadata(chunks []map[string]interface{}) map[string]interface{} {
 		}
 
 		result[k] = map[string]interface{}{
-			"type":  valueType,
+			"type":   valueType,
 			"values": outputValues,
 		}
 	}
