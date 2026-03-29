@@ -387,6 +387,58 @@ docker build --platform linux/amd64 \
    pkill -f "ragflow_server.py|task_executor.py"
    ```
 
+## 🐞 Debugging
+> [!TIP]
+> 💡 If you're on WSL it's advised you clone the project onto a WSL directory instead of a Windows directory.
+1. Install `debugpy`
+```sh
+uv pip install debugpy
+```
+
+2. Launch the launch script with the `--debug` flag
+```sh
+bash docker/launch_backend_service.sh --debug
+```
+
+> [!TIP]
+> You can add the following to your `launch.json`:
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Backend (SH)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bash docker/launch_backend_service.sh --debug",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Attach to Backend",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "localhost",
+        "port": 5678
+      },
+      "justMyCode": false
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Launch + Attach Backend",
+      "configurations": [
+        "Launch Backend (SH)",
+        "Attach to Backend"
+      ]
+    }
+  ]
+}
+```
+
+> [!IMPORTANT]
+> ❗️ The port you set with `RAGFLOW_DEBUGPY_LISTEN` must match this configuration's attach port.
+
 ## 📚 Documentation
 
 - [Quickstart](https://ragflow.io/docs/dev/)
