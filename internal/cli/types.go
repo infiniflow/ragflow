@@ -69,7 +69,7 @@ const (
 	TokenKey
 	TokenKeys
 	TokenGenerate
-	TokenPool
+	TokenAvailable
 	TokenModel
 	TokenModels
 	TokenProvider
