@@ -2176,12 +2176,12 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       tokenizerRequired: 'Bitte fügen Sie zuerst den Indexer-Knoten hinzu',
       tokenizerDescription:
         'Transformiert Text in die erforderliche Datenstruktur (z.B. Vektoreinbettungen für die Embedding-Suche) abhängig von der gewählten Suchmethode.',
-      splitter: 'Token',
-      splitterDescription:
+      tokenChunker: 'Token Chunker',
+      tokenChunkerDescription:
         'Teilt Text in Chunks nach Token-Länge mit optionalen Trennzeichen und Überlappung.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'Teilt Dokumente in Abschnitte nach Titelhierarchie mit Regex-Regeln für feinere Kontrolle.',
-      hierarchicalMerger: 'Titel',
+      titleChunker: 'Title Chunker',
       extractor: 'Transformer',
       extractorDescription:
         'Verwendet ein LLM, um strukturierte Erkenntnisse aus Dokument-Chunks zu extrahieren – wie Zusammenfassungen, Klassifizierungen usw.',
@@ -2193,6 +2193,8 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
         image: 'Bild',
         email: 'E-Mail',
         'text&markdown': 'Text & Markup',
+        code: 'Code',
+        html: 'HTML',
         word: 'Word',
         slides: 'PPTX',
         audio: 'Audio',

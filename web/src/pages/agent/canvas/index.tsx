@@ -55,6 +55,7 @@ import { RagNode } from './node';
 import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
+import { ChunkerNode } from './node/chunker-node';
 import { DataOperationsNode } from './node/data-operations-node';
 import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { ExitLoopNode } from './node/exit-loop-node';
@@ -70,7 +71,6 @@ import ParserNode from './node/parser-node';
 import { PlaceholderNode } from './node/placeholder-node';
 import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
-import { SplitterNode } from './node/splitter-node';
 import { SwitchNode } from './node/switch-node';
 import TokenizerNode from './node/tokenizer-node';
 import { ToolNode } from './node/tool-node';
@@ -96,7 +96,7 @@ export const nodeTypes: NodeTypes = {
   fileNode: FileNode,
   parserNode: ParserNode,
   tokenizerNode: TokenizerNode,
-  splitterNode: SplitterNode,
+  chunkerNode: ChunkerNode,
   contextNode: ExtractorNode,
   dataOperationsNode: DataOperationsNode,
   listOperationsNode: ListOperationsNode,
