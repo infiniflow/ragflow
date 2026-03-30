@@ -39,6 +39,7 @@ type Router struct {
 	searchHandler        *handler.SearchHandler
 	fileHandler          *handler.FileHandler
 	memoryHandler        *handler.MemoryHandler
+	providerHandler      *handler.ProviderHandler
 }
 
 // NewRouter create router
@@ -58,6 +59,7 @@ func NewRouter(
 	searchHandler *handler.SearchHandler,
 	fileHandler *handler.FileHandler,
 	memoryHandler *handler.MemoryHandler,
+	providerHandler *handler.ProviderHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -75,6 +77,7 @@ func NewRouter(
 		searchHandler:        searchHandler,
 		fileHandler:          fileHandler,
 		memoryHandler:        memoryHandler,
+		providerHandler:      providerHandler,
 	}
 }
 
@@ -101,15 +104,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 	// User logout endpoint
 	engine.GET("/v1/user/logout", r.userHandler.Logout)
-
-	// provider pool route group
-	provider := engine.Group("/api/v1/providers")
-	{
-		provider.GET("/", handler.ListPoolProviders)
-		provider.GET("/:provider_name", handler.ShowPoolProvider)
-		provider.GET("/:provider_name/models", handler.ListPoolModels)
-		provider.GET("/:provider_name/models/:model_name", handler.ShowPoolModel)
-	}
 
 	// Protected routes
 	authorized := engine.Group("")
@@ -197,6 +191,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("", r.memoryHandler.GetMessages)
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
+			// provider pool route group
+			provider := v1.Group("/providers")
+			{
+				provider.GET("/", r.providerHandler.ListPoolProviders)
+				provider.GET("/:provider_name", r.providerHandler.ShowPoolProvider)
+				provider.GET("/:provider_name/models", r.providerHandler.ListPoolModels)
+				provider.GET("/:provider_name/models/:model_name", r.providerHandler.ShowPoolModel)
+			}
 		}
 
 		// Knowledge base routes

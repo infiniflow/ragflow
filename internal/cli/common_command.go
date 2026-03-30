@@ -241,9 +241,9 @@ func (c *RAGFlowClient) ListPoolProviders(cmd *Command) (ResponseIf, error) {
 
 	var endPoint string
 	if c.ServerType == "admin" {
-		endPoint = fmt.Sprintf("/admin/providers")
+		endPoint = fmt.Sprintf("/admin/providers?available=true")
 	} else {
-		endPoint = fmt.Sprintf("/providers")
+		endPoint = fmt.Sprintf("/providers?available=true")
 	}
 
 	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
