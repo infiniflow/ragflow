@@ -4,20 +4,21 @@ This is the Go implementation of the RAGFlow command-line interface, compatible 
 
 ## Features
 
-- Interactive mode only
+- Interactive mode and single command execution
 - Full compatibility with Python CLI syntax
 - Recursive descent parser for SQL-like commands
+- Context Engine (Virtual Filesystem) for intuitive resource management
 - Support for all major commands:
   - User management: LOGIN, REGISTER, CREATE USER, DROP USER, LIST USERS, etc.
   - Service management: LIST SERVICES, SHOW SERVICE, STARTUP/SHUTDOWN/RESTART SERVICE
   - Role management: CREATE ROLE, DROP ROLE, LIST ROLES, GRANT/REVOKE PERMISSION
-  - Dataset management: CREATE DATASET, DROP DATASET, LIST DATASETS
+  - Dataset management via Context Engine: `ls`, `search`, `mkdir`, `cat`, `rm`
   - Model management: SET/RESET DEFAULT LLM/VLM/EMBEDDING/etc.
   - And more...
 
 ## Usage
 
-Build and run:
+### Build and run
 
 ```bash
 go build -o ragflow_cli ./cmd/ragflow_cli.go
@@ -28,11 +29,94 @@ go build -o ragflow_cli ./cmd/ragflow_cli.go
 
 ```
 internal/cli/
-├── cli.go           # Main CLI loop and interaction
-├── parser/          # Command parser package
-│   ├── types.go     # Token and Command types
-│   ├── lexer.go     # Lexical analyzer
-│   └── parser.go    # Recursive descent parser
+├── cli.go              # Main CLI loop and interaction
+├── client.go           # RAGFlowClient with Context Engine integration
+├── http_client.go      # HTTP client for API communication
+├── parser/             # Command parser package
+│   ├── types.go        # Token and Command types
+│   ├── lexer.go        # Lexical analyzer
+│   └── parser.go       # Recursive descent parser
+└── contextengine/      # Context Engine (Virtual Filesystem)
+    ├── engine.go       # Core engine: path resolution, command routing
+    ├── types.go        # Node, Command, Result types
+    ├── provider.go     # Provider interface definition    
+    ├── dataset_provider.go  # Dataset provider implementation
+    ├── file_provider.go  # File manager provider implementation
+    └── utils.go        # Helper functions
+```
+
+## Context Engine
+
+The Context Engine provides a unified virtual filesystem interface over RAGFlow's RESTful APIs.
+
+### Design Principles
+
+1. **No Server-Side Changes**: All logic implemented client-side using existing APIs
+2. **Provider Pattern**: Modular providers for different resource types (datasets, files, etc.)
+3. **Unified Interface**: Common `ls`, `search`, `mkdir` commands across all providers
+4. **Path-Based Navigation**: Virtual paths like `/datasets`, `/datasets/{name}/files`
+
+### Supported Paths
+
+| Path | Description |
+|------|-------------|
+| `/datasets` | List all datasets |
+| `/datasets/{name}` | List documents in dataset (default behavior) |
+| `/datasets/{name}/{doc}` | Get document info |
+
+### Commands
+
+#### `ls [path] [options]` - List nodes at path
+
+List contents of a path in the context filesystem.
+
+**Arguments:**
+- `[path]` - Path to list (default: "datasets")
+
+**Options:**
+- `-n, --limit <number>` - Maximum number of items to display (default: 10)
+- `-h, --help` - Show ls help message
+
+**Examples:**
+```bash
+ls                              # List all datasets (default 10)
+ls -n 20                        # List 20 datasets
+ls datasets/kb1                 # List files in kb1 dataset
+ls datasets/kb1 -n 50           # List 50 files in kb1 dataset
+```
+
+#### `search [options]` - Search for content
+
+Semantic search in datasets.
+
+**Options:**
+- `-d, --dir <path>` - Directory to search in (can be specified multiple times)
+- `-q, --query <query>` - Search query (required)
+- `-k, --top-k <number>` - Number of top results to return (default: 10)
+- `-t, --threshold <num>` - Similarity threshold, 0.0-1.0 (default: 0.2)
+- `-h, --help` - Show search help message
+
+**Output Formats:**
+- Default: JSON format
+- `--output plain` - Plain text format
+- `--output table` - Table format with borders
+
+**Examples:**
+```bash
+search -q "machine learning"                    # Search all datasets (JSON output)
+search -d datasets/kb1 -q "neural networks"     # Search in kb1
+search -d datasets/kb1 -q "AI" --output plain   # Plain text output
+search -q "RAG" -k 20 -t 0.5                    # Return 20 results with threshold 0.5
+```
+
+#### `cat <path>` - Display content
+
+Display document content (if available).
+
+**Examples:**
+```bash
+cat myskills/doc.md   # Show content of doc.md file
+cat datasets/kb1/document.pdf   # Error: cannot display binary file content
 ```
 
 ## Command Examples
@@ -70,6 +154,15 @@ DROP DATASET 'my_dataset';
 SET DEFAULT LLM 'gpt-4';
 SET DEFAULT EMBEDDING 'text-embedding-ada-002';
 RESET DEFAULT LLM;
+
+-- Context Engine (Virtual Filesystem)
+ls;                                       -- List all datasets (default 10)
+ls -n 20;                                 -- List 20 datasets
+ls datasets/my_dataset;                   -- List documents in dataset
+ls datasets/my_dataset -n 50;             -- List 50 documents
+ls datasets/my_dataset/info;              -- Show dataset info
+search -q "test";                         -- Search all datasets (JSON output)
+search -d datasets/my_dataset -q "test";  -- Search in specific dataset
 
 -- Meta commands
 \?          -- Show help

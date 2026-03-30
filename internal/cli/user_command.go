@@ -1,8 +1,26 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	ce "ragflow/internal/cli/contextengine"
 	"strings"
 )
 
@@ -143,13 +161,19 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 		iterations = val
 	}
 
+	// Determine auth kind based on whether API token is being used
+	authKind := "web"
+	if c.HTTPClient.useAPIToken {
+		authKind = "api"
+	}
+
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", "/datasets", true, "web", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/datasets", true, authKind, nil, nil, iterations)
 	}
 
 	// Normal mode
-	resp, err := c.HTTPClient.Request("GET", "/datasets", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/datasets", true, authKind, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
@@ -545,4 +569,262 @@ func (c *RAGFlowClient) UnsetToken(cmd *Command) (ResponseIf, error) {
 	result.Message = "API token unset successfully"
 	result.Duration = 0
 	return &result, nil
+}
+
+// CreateIndex creates an index for a dataset
+func (c *RAGFlowClient) CreateIndex(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	datasetName, ok := cmd.Params["dataset_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("dataset_name not provided")
+	}
+
+	vectorSize, ok := cmd.Params["vector_size"].(int)
+	if !ok {
+		return nil, fmt.Errorf("vector_size not provided")
+	}
+
+	// Get dataset ID by name
+	datasetID, err := c.getDatasetID(datasetName)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := map[string]interface{}{
+		"kb_id":       datasetID,
+		"vector_size": vectorSize,
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/kb/index", false, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create index: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create index: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: code is not a number")
+	}
+
+	var result SimpleResponse
+	result.Code = int(code)
+	if result.Code == 0 {
+		result.Message = fmt.Sprintf("Success to create index for dataset: %s", datasetName)
+	} else {
+		result.Message = fmt.Sprintf("Failed to create index: %v", resJSON)
+	}
+	result.Duration = 0
+	return &result, nil
+}
+
+// DropIndex drops an index for a dataset
+func (c *RAGFlowClient) DropIndex(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	datasetName, ok := cmd.Params["dataset_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("dataset_name not provided")
+	}
+
+	// Get dataset ID by name
+	datasetID, err := c.getDatasetID(datasetName)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := map[string]interface{}{
+		"kb_id": datasetID,
+	}
+
+	resp, err := c.HTTPClient.Request("DELETE", "/kb/index", false, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop index: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to drop index: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: code is not a number")
+	}
+
+	var result SimpleResponse
+	result.Code = int(code)
+	if result.Code == 0 {
+		result.Message = fmt.Sprintf("Success to drop index for dataset: %s", datasetName)
+	} else {
+		result.Message = fmt.Sprintf("Failed to drop index: %v", resJSON)
+	}
+	result.Duration = 0
+	return &result, nil
+}
+
+// CreateDocMetaIndex creates the document metadata index for the tenant
+func (c *RAGFlowClient) CreateDocMetaIndex(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/tenant/doc_meta_index", false, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create doc meta index: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create doc meta index: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: code is not a number")
+	}
+
+	var result SimpleResponse
+	result.Code = int(code)
+	if result.Code == 0 {
+		result.Message = "Success to create doc meta index"
+	} else {
+		result.Message = fmt.Sprintf("Failed to create doc meta index: %v", resJSON)
+	}
+	result.Duration = 0
+	return &result, nil
+}
+
+// DropDocMetaIndex drops the document metadata index for the tenant
+func (c *RAGFlowClient) DropDocMetaIndex(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	resp, err := c.HTTPClient.Request("DELETE", "/tenant/doc_meta_index", false, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop doc meta index: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to drop doc meta index: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: code is not a number")
+	}
+
+	var result SimpleResponse
+	result.Code = int(code)
+	if result.Code == 0 {
+		result.Message = "Success to drop doc meta index"
+	} else {
+		result.Message = fmt.Sprintf("Failed to drop doc meta index: %v", resJSON)
+	}
+	result.Duration = 0
+	return &result, nil
+}
+
+// Context related commands
+
+// CEList handles the ls command - lists nodes using Context Engine
+func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
+	// Get path from command params, default to "datasets"
+	path, _ := cmd.Params["path"].(string)
+	if path == "" {
+		path = "datasets"
+	}
+
+	// Parse options
+	opts := &ce.ListOptions{}
+	if recursive, ok := cmd.Params["recursive"].(bool); ok {
+		opts.Recursive = recursive
+	}
+	if limit, ok := cmd.Params["limit"].(int); ok {
+		opts.Limit = limit
+	}
+	if offset, ok := cmd.Params["offset"].(int); ok {
+		opts.Offset = offset
+	}
+
+	// Execute list command through Context Engine
+	ctx := context.Background()
+	result, err := c.ContextEngine.List(ctx, path, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to response
+	var response CEListResponse
+	response.outputFormat = c.OutputFormat
+	response.Code = 0
+	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
+
+	return &response, nil
+}
+
+// CESearch handles the search command using Context Engine
+func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
+	// Get path and query from command params
+	path, _ := cmd.Params["path"].(string)
+	if path == "" {
+		path = "datasets"
+	}
+	query, _ := cmd.Params["query"].(string)
+
+	// Parse options
+	opts := &ce.SearchOptions{
+		Query: query,
+	}
+	if limit, ok := cmd.Params["limit"].(int); ok {
+		opts.Limit = limit
+	}
+	if offset, ok := cmd.Params["offset"].(int); ok {
+		opts.Offset = offset
+	}
+	if recursive, ok := cmd.Params["recursive"].(bool); ok {
+		opts.Recursive = recursive
+	}
+
+	// Execute search command through Context Engine
+	ctx := context.Background()
+	result, err := c.ContextEngine.Search(ctx, path, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to response
+	var response CESearchResponse
+	response.outputFormat = c.OutputFormat
+	response.Code = 0
+	response.Total = result.Total
+	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
+
+	return &response, nil
 }

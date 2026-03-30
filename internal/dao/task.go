@@ -17,7 +17,7 @@
 package dao
 
 import (
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
 )
 
 // TaskDAO task data access object
@@ -29,13 +29,13 @@ func NewTaskDAO() *TaskDAO {
 }
 
 // Create creates a new task
-func (dao *TaskDAO) Create(task *model.Task) error {
+func (dao *TaskDAO) Create(task *entity.Task) error {
 	return DB.Create(task).Error
 }
 
 // GetByID gets task by ID
-func (dao *TaskDAO) GetByID(id string) (*model.Task, error) {
-	var task model.Task
+func (dao *TaskDAO) GetByID(id string) (*entity.Task, error) {
+	var task entity.Task
 	err := DB.Where("id = ?", id).First(&task).Error
 	if err != nil {
 		return nil, err
@@ -48,12 +48,12 @@ func (dao *TaskDAO) DeleteByDocIDs(docIDs []string) (int64, error) {
 	if len(docIDs) == 0 {
 		return 0, nil
 	}
-	result := DB.Unscoped().Where("doc_id IN ?", docIDs).Delete(&model.Task{})
+	result := DB.Unscoped().Where("doc_id IN ?", docIDs).Delete(&entity.Task{})
 	return result.RowsAffected, result.Error
 }
 
 // DeleteByTenantID deletes all tasks by tenant ID (hard delete via document join)
 func (dao *TaskDAO) DeleteByTenantID(tenantID string) (int64, error) {
-	result := DB.Unscoped().Where("doc_id IN (SELECT id FROM document WHERE tenant_id = ?)", tenantID).Delete(&model.Task{})
+	result := DB.Unscoped().Where("doc_id IN (SELECT id FROM document WHERE tenant_id = ?)", tenantID).Delete(&entity.Task{})
 	return result.RowsAffected, result.Error
 }
