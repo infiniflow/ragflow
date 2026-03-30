@@ -32,6 +32,13 @@ import RetrievalDocuments from './retrieval-documents';
 const getDirectionText = (content: string) =>
   content.replace(/<[^>]+>/g, ' ').replace(citationMarkerReg, '');
 
+const formatMetadataValue = (value: unknown) => {
+  if (Array.isArray(value)) return value.join(', ');
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
+
 export default function SearchingView({
   setIsSearching,
   searchData,
@@ -243,6 +250,26 @@ export default function SearchingView({
                               </PopoverContent>
                             </Popover>
                           </div>
+                          {chunk.document_metadata &&
+                            Object.keys(chunk.document_metadata).length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {Object.entries(chunk.document_metadata).map(
+                                  ([key, value]) => (
+                                    <div
+                                      key={key}
+                                      className="text-xs border border-border-default rounded px-2 py-1"
+                                    >
+                                      <span className="text-text-secondary">
+                                        {key}:
+                                      </span>{' '}
+                                      <span className="text-text-primary">
+                                        {formatMetadataValue(value)}
+                                      </span>
+                                    </div>
+                                  ),
+                                )}
+                              </div>
+                            )}
                           <div
                             className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit mt-3"
                             onClick={() =>

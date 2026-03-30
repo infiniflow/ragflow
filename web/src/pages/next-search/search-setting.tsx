@@ -26,6 +26,7 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
 import {
   useComposeLlmOptionsByModelTypes,
   useSelectLlmOptionsByModelType,
@@ -76,6 +77,12 @@ const SearchSettingFormSchema = z
       llm_setting: z.object(LlmSettingSchema),
       related_search: z.boolean(),
       query_mindmap: z.boolean(),
+      reference_metadata: z
+        .object({
+          include: z.boolean().optional(),
+          fields: z.array(z.string()).optional(),
+        })
+        .optional(),
       ...MetadataFilterSchema,
     }),
   })
@@ -153,6 +160,14 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         related_search: search_config?.related_search || false,
         query_mindmap: search_config?.query_mindmap || false,
         meta_data_filter: search_config?.meta_data_filter,
+        reference_metadata: {
+          include: search_config?.reference_metadata?.include || false,
+          fields:
+            search_config?.reference_metadata?.fields &&
+            search_config.reference_metadata.fields.length > 0
+              ? search_config.reference_metadata.fields
+              : undefined,
+        },
       },
     });
   }, [data, search_config, llm_setting, formMethods, descriptionDefaultValue]);
@@ -190,6 +205,23 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
     control: formMethods.control,
     name: 'search_config.summary',
   });
+  const selectedKbIds = useWatch({
+    control: formMethods.control,
+    name: 'search_config.kb_ids',
+  });
+  const referenceMetadataEnabled = useWatch({
+    control: formMethods.control,
+    name: 'search_config.reference_metadata.include',
+  });
+  const { data: metadataKeys } = useFetchKnowledgeMetadataKeys(
+    selectedKbIds || [],
+  );
+  const metadataFieldOptions = useMemo(() => {
+    return (metadataKeys || []).map((key) => ({
+      label: key,
+      value: key,
+    }));
+  }, [metadataKeys]);
 
   // Reset top_k to 1024 only when user actively disables rerank (from true to false)
   const prevRerankEnabled = useRef<boolean | undefined>(undefined);
@@ -224,11 +256,22 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         frequency_penalty: llm_setting.frequency_penalty,
         presence_penalty: llm_setting.presence_penalty,
       } as IllmSettingProps;
+      const referenceMetadata = other_config.reference_metadata;
+      const normalizedReferenceMetadata = referenceMetadata
+        ? {
+            ...referenceMetadata,
+            ...(Array.isArray(referenceMetadata.fields) &&
+            referenceMetadata.fields.length === 0
+              ? { fields: undefined }
+              : {}),
+          }
+        : referenceMetadata;
 
       await updateSearch({
         ...other_formdata,
         search_config: {
           ...other_config,
+          reference_metadata: normalizedReferenceMetadata,
           chat_id: llm_setting.llm_id,
           vector_similarity_weight: 1 - vector_similarity_weight,
           rerank_id: use_rerank ? rerank_id : '',
@@ -342,6 +385,56 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               required
             ></KnowledgeBaseFormField>
             <MetadataFilter prefix="search_config."></MetadataFilter>
+            <FormField
+              control={formMethods.control}
+              name="search_config.reference_metadata.include"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={(value) => {
+                        field.onChange(value);
+                        if (!value) {
+                          formMethods.setValue(
+                            'search_config.reference_metadata.fields',
+                            undefined,
+                          );
+                        }
+                      }}
+                    />
+                  </FormControl>
+                  <FormLabel tooltip="Display document metadata (e.g., title, page number, upload date) alongside retrieved text chunks">
+                    Show chunk metadata
+                  </FormLabel>
+                </FormItem>
+              )}
+            />
+            {referenceMetadataEnabled && (
+              <FormField
+                control={formMethods.control}
+                name="search_config.reference_metadata.fields"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel tooltip="Select which metadata fields to display with each chunk">
+                      Metadata fields
+                    </FormLabel>
+                    <FormControl className="bg-bg-input">
+                      <MultiSelect
+                        options={metadataFieldOptions}
+                        onValueChange={field.onChange}
+                        showSelectAll={false}
+                        placeholder="Please select"
+                        maxCount={20}
+                        defaultValue={field.value || []}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
             <SimilaritySliderFormField
               isTooltipShown
               similarityName="search_config.similarity_threshold"
