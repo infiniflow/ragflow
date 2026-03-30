@@ -151,6 +151,8 @@ func (p *Parser) parseListCommand() (*Command, error) {
 		return p.parseListTokens()
 	case TokenModel:
 		return p.parseListModelProviders()
+	case TokenModels:
+		return p.parseListModelsOfProvider()
 	case TokenProviders:
 		return p.parseListProviders()
 	case TokenDefault:
@@ -350,6 +352,8 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 		return p.parseShowService()
 	case TokenProvider:
 		return p.parseShowProvider()
+	case TokenModel:
+		return p.parseShowModel()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -439,6 +443,36 @@ func (p *Parser) parseShowService() (*Command, error) {
 
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseShowModel() (*Command, error) {
+	p.nextToken() // consume model
+
+	modelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model name: %w", err)
+	}
+
+	cmd := NewCommand("show_model")
+	cmd.Params["model_name"] = modelName
+
+	p.nextToken() // consume model_name
+
+	if p.curToken.Type != TokenFrom {
+		return nil, fmt.Errorf("expected FROM")
+	}
+	p.nextToken() // consume from
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected provider name: %w", err)
+	}
+	cmd.Params["provider_name"] = providerName
+	p.nextToken() // consume provider name
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}

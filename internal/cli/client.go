@@ -207,7 +207,7 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListPoolProviders(cmd)
 	case "show_provider":
 		return c.ShowProvider(cmd)
-	case "list_models":
+	case "list_provider_models":
 		return c.ListModels(cmd)
 	case "show_model":
 		return c.ShowModel(cmd)
