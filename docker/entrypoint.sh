@@ -2,6 +2,9 @@
 
 set -e
 
+echo "Start RAGFlow cluster, version: "
+cat /ragflow/VERSION
+
 # -----------------------------------------------------------------------------
 # Usage and command-line argument parsing
 # -----------------------------------------------------------------------------
