@@ -96,7 +96,13 @@ run_server(){
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
         echo "Starting ragflow_server.py (Attempt $((retry_count+1)))"
-        $PY api/ragflow_server.py
+        if [[ "$*" == *"--debug"* ]]; then
+            echo "Debug mode is ACTIVE"
+            DEBUG_FLAGS=--debug
+            # Change this value to set a different debugpy listening port
+            export RAGFLOW_DEBUGPY_LISTEN=5678
+        fi
+        $PY api/ragflow_server.py $DEBUG_FLAGS
         EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "ragflow_server.py exited successfully."
@@ -122,7 +128,7 @@ do
 done
 
 # Start the main server
-run_server &
+run_server "$@" &
 PIDS+=($!)
 
 # Wait for all background processes to finish
