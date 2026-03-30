@@ -153,6 +153,8 @@ func (p *Parser) parseListCommand() (*Command, error) {
 		return p.parseListModelProviders()
 	case TokenDefault:
 		return p.parseListDefaultModels()
+	case TokenPool:
+		return p.parseCommonListPoolModels()
 	case TokenChats:
 		p.nextToken()
 		// Semicolon is optional for SHOW TOKEN
@@ -334,6 +336,8 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 		return p.parseShowVariable()
 	case TokenService:
 		return p.parseShowService()
+	case TokenPool:
+		return p.parseCommonShowPoolModel()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
