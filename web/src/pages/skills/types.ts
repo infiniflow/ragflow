@@ -15,6 +15,7 @@ export interface Skill {
   updated_at: number;
   files: SkillFileEntry[];
   metadata?: SkillMetadata;
+  versions?: string[]; // Available versions (for versioned skills)
 }
 
 export interface SkillFileEntry {
@@ -93,7 +94,15 @@ export interface SkillDetailProps {
   skill: Skill | null;
   open: boolean;
   onClose: () => void;
-  getFileContent: (skillId: string, filePath: string) => Promise<string | null>;
+  getFileContent: (
+    skillId: string,
+    filePath: string,
+    version?: string,
+  ) => Promise<string | null>;
+  getVersionFiles?: (
+    skillId: string,
+    version: string,
+  ) => Promise<SkillFileEntry[]>;
 }
 
 export interface UploadModalProps {

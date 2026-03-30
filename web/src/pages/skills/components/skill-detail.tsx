@@ -1,6 +1,13 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Sheet,
   SheetContent,
   SheetHeader,
@@ -20,7 +27,15 @@ interface SkillDetailProps {
   skill: Skill | null;
   open: boolean;
   onClose: () => void;
-  getFileContent: (skillId: string, fileName: string) => Promise<string | null>;
+  getFileContent: (
+    skillId: string,
+    filePath: string,
+    version?: string,
+  ) => Promise<string | null>;
+  getVersionFiles?: (
+    skillId: string,
+    version: string,
+  ) => Promise<SkillFileEntry[]>;
 }
 
 const getFileIcon = (filename: string, isDir: boolean) => {
@@ -75,22 +90,81 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
   open,
   onClose,
   getFileContent,
+  getVersionFiles,
 }) => {
   const { t } = useTranslation();
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<string>('');
+  const [versionFiles, setVersionFiles] = useState<SkillFileEntry[]>([]);
+  const [versionLoading, setVersionLoading] = useState(false);
 
-  const treeData = useMemo(
-    () => (skill ? buildFileTree(skill.files) : []),
-    [skill],
-  );
+  // Check if skill has multiple versions
+  const hasVersions = skill?.versions && skill.versions.length > 0;
+  const availableVersions = skill?.versions || [];
+
+  // Initialize selected version when skill changes
+  useEffect(() => {
+    if (skill && hasVersions) {
+      const defaultVersion = skill.metadata?.version || availableVersions[0];
+      setSelectedVersion(defaultVersion);
+    } else {
+      setSelectedVersion('');
+      setVersionFiles([]);
+    }
+  }, [skill?.id, skill?.versions]);
+
+  // Load files when version changes
+  useEffect(() => {
+    const loadVersionFiles = async () => {
+      if (!skill || !selectedVersion || !getVersionFiles) {
+        setVersionFiles([]);
+        return;
+      }
+
+      // If it's the default version, use skill.files
+      if (selectedVersion === skill.metadata?.version) {
+        setVersionFiles(skill.files);
+        return;
+      }
+
+      setVersionLoading(true);
+      try {
+        const files = await getVersionFiles(skill.id, selectedVersion);
+        setVersionFiles(files);
+      } catch (error) {
+        console.error('Failed to load version files:', error);
+        setVersionFiles([]);
+      } finally {
+        setVersionLoading(false);
+      }
+    };
+
+    loadVersionFiles();
+  }, [skill?.id, selectedVersion, getVersionFiles]);
+
+  // Reset selected file when version changes
+  useEffect(() => {
+    setSelectedFile(null);
+    setFileContent('');
+  }, [selectedVersion]);
+
+  // Use version files if available, otherwise use skill.files
+  const currentFiles = useMemo(() => {
+    if (hasVersions && versionFiles.length > 0) {
+      return versionFiles;
+    }
+    return skill?.files || [];
+  }, [skill?.files, versionFiles, hasVersions]);
+
+  const treeData = useMemo(() => buildFileTree(currentFiles), [currentFiles]);
 
   const handleSelect = useCallback(
     async (item: TreeDataItem | undefined) => {
       if (!skill || !item) return;
 
-      const file = skill.files.find((f) => f.path === item.id);
+      const file = currentFiles.find((f) => f.path === item.id);
 
       if (!file || file.is_dir) return;
 
@@ -98,7 +172,11 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
       setLoading(true);
 
       try {
-        const content = await getFileContent(skill.id, file.path);
+        const content = await getFileContent(
+          skill.id,
+          file.path,
+          selectedVersion || undefined,
+        );
         setFileContent(content || '');
       } catch (error) {
         console.error('Failed to load file content');
@@ -106,18 +184,18 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
         setLoading(false);
       }
     },
-    [skill, getFileContent],
+    [skill, currentFiles, getFileContent, selectedVersion],
   );
 
   // Auto-select SKILL.md or README on open
   useEffect(() => {
-    if (skill && open) {
+    if (skill && open && currentFiles.length > 0 && !selectedFile) {
       // Priority: SKILL.md > README.md > index.md
       const priorityFiles = ['skill.md', 'readme.md', 'index.md'];
       let targetFile: SkillFileEntry | undefined;
 
       for (const priority of priorityFiles) {
-        targetFile = skill.files.find(
+        targetFile = currentFiles.find(
           (f) => f.name.toLowerCase() === priority && !f.is_dir,
         );
         if (targetFile) break;
@@ -127,7 +205,7 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
         handleSelect({ id: targetFile.path } as TreeDataItem);
       }
     }
-  }, [skill?.id, open, handleSelect]);
+  }, [skill?.id, open, currentFiles, handleSelect]);
 
   const renderFileContent = () => {
     if (!selectedFile) {
@@ -169,14 +247,35 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
                   {t('skills.backToSkills') || 'Back to Skills'}
                 </Button>
                 <SheetHeader className="p-0 space-y-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <SheetTitle className="text-left truncate">
                       {skill.name}
                     </SheetTitle>
-                    {skill.metadata?.version && (
-                      <Badge variant="outline" className="text-xs">
-                        <Tag className="size-3 mr-1" />v{skill.metadata.version}
-                      </Badge>
+                    {hasVersions ? (
+                      <Select
+                        value={selectedVersion}
+                        onValueChange={setSelectedVersion}
+                        disabled={versionLoading}
+                      >
+                        <SelectTrigger className="w-[120px] h-7 text-xs">
+                          <Tag className="size-3 mr-1" />
+                          <SelectValue placeholder="Version" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableVersions.map((version) => (
+                            <SelectItem key={version} value={version}>
+                              v{version}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      skill.metadata?.version && (
+                        <Badge variant="outline" className="text-xs">
+                          <Tag className="size-3 mr-1" />v
+                          {skill.metadata.version}
+                        </Badge>
+                      )
                     )}
                   </div>
                 </SheetHeader>
@@ -196,19 +295,30 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
 
               <div className="flex-1 overflow-auto p-2">
                 {/* File Tree */}
-                <div>
-                  <p className="text-text-secondary text-xs pl-2 mb-2">
-                    {t('skills.files') || 'Files'}
-                  </p>
-                  <TreeView
-                    data={treeData}
-                    initialSelectedItemId={selectedFile || undefined}
-                    onSelectChange={handleSelect}
-                    expandAll
-                    defaultNodeIcon={FolderOpen}
-                    defaultLeafIcon={FileText}
-                  />
-                </div>
+                {versionLoading ? (
+                  <div className="flex justify-center py-10">
+                    <Spin size="default" />
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-text-secondary text-xs pl-2 mb-2">
+                      {t('skills.files') || 'Files'}
+                      {currentFiles.length > 0 && (
+                        <span className="ml-1 text-text-tertiary">
+                          ({currentFiles.filter((f) => !f.is_dir).length} files)
+                        </span>
+                      )}
+                    </p>
+                    <TreeView
+                      data={treeData}
+                      initialSelectedItemId={selectedFile || undefined}
+                      onSelectChange={handleSelect}
+                      expandAll
+                      defaultNodeIcon={FolderOpen}
+                      defaultLeafIcon={FileText}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 

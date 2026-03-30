@@ -58,6 +58,7 @@ const SkillsPage: React.FC = () => {
     uploadSkill,
     deleteSkill,
     getSkillFileContent,
+    getSkillVersionFiles,
   } = useSkills();
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -195,6 +196,7 @@ const SkillsPage: React.FC = () => {
           open={detailOpen}
           onClose={handleCloseDetail}
           getFileContent={getSkillFileContent}
+          getVersionFiles={getSkillVersionFiles}
         />
 
         {/* Upload Modal */}

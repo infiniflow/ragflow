@@ -94,7 +94,7 @@ export const useSkills = () => {
         return fetchSkillDetailsLegacy(folderId, folderName, skillItems);
       }
 
-      // Use the latest version (sort by version number)
+      // Sort versions by version number (descending)
       const sortedVersions = versionFolders.sort((a: any, b: any) => {
         const va = a.name.split('.').map(Number);
         const vb = b.name.split('.').map(Number);
@@ -106,6 +106,7 @@ export const useSkills = () => {
         return 0;
       });
 
+      const allVersions = sortedVersions.map((v: any) => v.name);
       const latestVersionFolder = sortedVersions[0];
       const versionFolderId = latestVersionFolder.id;
       const versionName = latestVersionFolder.name;
@@ -180,12 +181,13 @@ export const useSkills = () => {
       return {
         id: folderId,
         name: metadata.name || folderName,
-        description: `${description} (v${versionName})`,
+        description,
         source_type: 'local',
         created_at: new Date(createDate).getTime(),
         updated_at: new Date(updateDate).getTime(),
         files: fileEntries,
         metadata: { ...metadata, version: versionName },
+        versions: allVersions,
       };
     } catch (error) {
       console.error('Error fetching skill details:', error);
@@ -570,12 +572,32 @@ export const useSkills = () => {
   );
 
   // Recursively find file by path in folder structure
+  // For versioned skills, automatically finds the version folder first
   const findFileByPath = async (
     folderId: string,
     targetPath: string,
+    version?: string,
   ): Promise<any | null> => {
-    const parts = targetPath.split('/');
     let currentFolderId = folderId;
+
+    // If version is provided, first find the version folder
+    if (version) {
+      const { data } = await fileManagerService.listFile({
+        parent_id: currentFolderId,
+      });
+      if (data.code !== 0) return null;
+
+      const files = data.data?.files || [];
+      const versionFolder = files.find(
+        (f: any) => f.name === version && f.type === 'folder',
+      );
+
+      if (!versionFolder) return null;
+      currentFolderId = versionFolder.id;
+    }
+
+    // Now find the file in the version folder (or original folder if no version)
+    const parts = targetPath.split('/');
 
     for (let i = 0; i < parts.length; i++) {
       const { data } = await fileManagerService.listFile({
@@ -604,16 +626,86 @@ export const useSkills = () => {
   };
 
   // Get file content for a skill
+  // Automatically handles versioned skills by checking skill.metadata.version
   const getSkillFileContent = useCallback(
-    async (skillId: string, filePath: string): Promise<string | null> => {
+    async (
+      skillId: string,
+      filePath: string,
+      version?: string,
+    ): Promise<string | null> => {
       try {
+        // If version is not provided, try to find it from the skill
+        let targetVersion = version;
+        if (!targetVersion) {
+          const skill = skills.find((s) => s.id === skillId);
+          targetVersion = skill?.metadata?.version;
+        }
+
         // Handle both file name and file path
-        const file = await findFileByPath(skillId, filePath);
+        const file = await findFileByPath(skillId, filePath, targetVersion);
         if (!file) return null;
         return await fetchFileContent(file.id);
       } catch (error) {
         console.error('Error getting skill file content:', error);
         return null;
+      }
+    },
+    [skills],
+  );
+
+  // Fetch files for a specific version of a skill
+  const getSkillVersionFiles = useCallback(
+    async (skillId: string, version: string): Promise<SkillFileEntry[]> => {
+      try {
+        // First, list the skill folder to find the version folder
+        const { data: skillFolderData } = await fileManagerService.listFile({
+          parent_id: skillId,
+        });
+
+        if (skillFolderData.code !== 0) return [];
+
+        const skillItems = skillFolderData.data?.files || [];
+        const versionFolder = skillItems.find(
+          (f: any) => f.name === version && f.type === 'folder',
+        );
+
+        if (!versionFolder) return [];
+
+        const fileEntries: SkillFileEntry[] = [];
+
+        // Recursively fetch all files in the version folder
+        const fetchFilesRecursive = async (
+          parentId: string,
+          basePath: string = '',
+        ) => {
+          const { data } = await fileManagerService.listFile({
+            parent_id: parentId,
+          });
+          if (data.code !== 0) return;
+
+          const files = data.data?.files || [];
+
+          for (const f of files) {
+            const path = basePath ? `${basePath}/${f.name}` : f.name;
+
+            fileEntries.push({
+              name: f.name,
+              path: path,
+              is_dir: f.type === 'folder',
+              size: f.size || 0,
+            });
+
+            if (f.type === 'folder') {
+              await fetchFilesRecursive(f.id, path);
+            }
+          }
+        };
+
+        await fetchFilesRecursive(versionFolder.id);
+        return fileEntries;
+      } catch (error) {
+        console.error('Error fetching skill version files:', error);
+        return [];
       }
     },
     [],
@@ -643,5 +735,6 @@ export const useSkills = () => {
     uploadSkill,
     deleteSkill,
     getSkillFileContent,
+    getSkillVersionFiles,
   };
 };
