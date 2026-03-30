@@ -114,7 +114,6 @@ export const useSkills = () => {
       const fileEntries: SkillFileEntry[] = [];
       let readmeContent: string | null = null;
       let firstFileDate: string | null = null;
-      let displayName: string | null = null;
 
       // Recursively fetch all files
       const fetchFilesRecursive = async (
@@ -135,20 +134,6 @@ export const useSkills = () => {
 
         for (const f of files) {
           const path = basePath ? `${basePath}/${f.name}` : f.name;
-
-          // Check for metadata file
-          if (f.name === '.skill-meta.json' && !basePath) {
-            const metaContent = await fetchFileContent(f.id);
-            if (metaContent) {
-              try {
-                const meta = JSON.parse(metaContent);
-                displayName = meta.displayName;
-              } catch (e) {
-                console.error('Failed to parse skill metadata:', e);
-              }
-            }
-            continue; // Don't include metadata file in file list
-          }
 
           fileEntries.push({
             name: f.name,
@@ -194,7 +179,7 @@ export const useSkills = () => {
 
       return {
         id: folderId,
-        name: displayName || metadata.name || folderName,
+        name: metadata.name || folderName,
         description: `${description} (v${versionName})`,
         source_type: 'local',
         created_at: new Date(createDate).getTime(),
@@ -218,7 +203,6 @@ export const useSkills = () => {
       const fileEntries: SkillFileEntry[] = [];
       let readmeContent: string | null = null;
       let firstFileDate: string | null = null;
-      let displayName: string | null = null;
 
       // Recursively fetch all files
       const fetchFilesRecursive = async (
@@ -238,19 +222,6 @@ export const useSkills = () => {
 
         for (const f of files) {
           const path = basePath ? `${basePath}/${f.name}` : f.name;
-
-          if (f.name === '.skill-meta.json' && !basePath) {
-            const metaContent = await fetchFileContent(f.id);
-            if (metaContent) {
-              try {
-                const meta = JSON.parse(metaContent);
-                displayName = meta.displayName;
-              } catch (e) {
-                console.error('Failed to parse skill metadata:', e);
-              }
-            }
-            continue;
-          }
 
           fileEntries.push({
             name: f.name,
@@ -314,7 +285,7 @@ export const useSkills = () => {
 
       return {
         id: folderId,
-        name: displayName || metadata.name || folderName,
+        name: metadata.name || folderName,
         description,
         source_type: 'local',
         created_at: new Date(createDate).getTime(),
@@ -496,24 +467,6 @@ export const useSkills = () => {
 
         if (!versionFolderId)
           throw new Error('Failed to get version folder ID');
-
-        // Create a metadata file to store the original name and version
-        const metadataContent = JSON.stringify({
-          displayName: name,
-          version: version,
-          createdAt: new Date().toISOString(),
-        });
-        const metadataBlob = new Blob([metadataContent], {
-          type: 'application/json',
-        });
-        const metadataFile = new File([metadataBlob], '.skill-meta.json');
-
-        // Upload metadata file to version folder
-        const metadataFormData = new FormData();
-        metadataFormData.append('parent_id', versionFolderId);
-        metadataFormData.append('file', metadataFile);
-
-        await fileManagerService.uploadFile(metadataFormData);
 
         // Upload files recursively to preserve directory structure
         const uploadFileWithStructure = async (
