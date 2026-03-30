@@ -389,24 +389,33 @@ This deployment includes a custom YouTube transcript ingestion pipeline built on
 ### Architecture
 
 ```
-YouTube URL
+YouTube URL / PDF / HTML / Image
     │
     ▼
-POST /api/v1/datasets/{id}/videos          ← custom endpoint
-    │  whisper_backend + whisper_model
-    │  stored in parser_config
+POST /api/v1/datasets                      ← create dataset with full metadata
+    │  brand, car_model, year, market,
+    │  trim, source_type, retrieval_date,
+    │  whisper_backend, whisper_model
     ▼
-task_executor.py (parser_id="video")
-    │  bypasses MinIO — no file upload
+POST /api/v1/datasets/{id}/videos          ← register YouTube URL
+POST /api/v1/datasets/{id}/documents       ← upload PDF/HTML/Image
     ▼
-rag/app/video.py → _fetch_transcript()
-    │
+task_executor.py (parser_id="video"|"naive")
+    │  bypasses MinIO for video — no file upload
+    ▼
+rag/app/video.py → _fetch_transcript()     ← video pipeline
     ├── youtube-transcript-api  → fetch captions directly (fast, default)
     ├── faster-whisper          → download audio + local transcription (CPU/GPU)
     ├── openai-whisper          → download audio + local transcription (CPU/GPU)
     └── openai-api              → download audio + cloud transcription (fastest)
+
+DeepDoc Engine                             ← docs pipeline
+    ├── PDF parser
+    ├── HTML parser
+    └── Image parser (vision)
     │
-    │  merge into 60-second overlapping segments
+    │  merge into 60-second overlapping segments (video)
+    │  or structured chunks (docs)
     │  tokenize via rag_tokenizer
     ▼
 TEI embedding (BAAI/bge-small-en-v1.5@Builtin)
@@ -414,12 +423,47 @@ TEI embedding (BAAI/bge-small-en-v1.5@Builtin)
 Infinity vector store
     │  stores: youtube_url, video_id, video_title,
     │          timestamp_seconds, transcript_segment
+    │          + all dataset metadata fields
     ▼
 POST /api/v1/retrieval
-    │  returns all video metadata fields per chunk
+    │  brand-scoped: query by brand+model+year+market+trim
     ▼
-chunk with timestamp deep-link (&t=60s)
+chunks with timestamp deep-links + full source traceability
 ```
+
+---
+
+### Dataset Naming Convention
+
+All datasets follow this standardized naming format:
+
+```
+{Brand}_{Model}_{Year}_{Market}_{Trim}_{SourceType}_{YYYYMMDD}_{HHMM}
+```
+
+**Examples:**
+```
+Opel_Corsa_2023_UK_All_Video_20260327_2005
+Opel_Corsa_2025_IE_All_Docs_20260327_2005
+Peugeot_208_2023_FR_All_Docs_20260327_2009
+Opel_Corsa_2025_IE_GS_Docs_20260328_0900    ← trim-specific
+```
+
+**Market ISO codes:**
+
+| Country | Code |
+|---|---|
+| United Kingdom | `UK` |
+| Ireland | `IE` |
+| France | `FR` |
+| Germany | `DE` |
+| Italy | `IT` |
+| Spain | `ES` |
+| Belgium | `BE` |
+| Netherlands | `NL` |
+
+> Date and time are **auto-generated** at ingestion time — no manual input needed.
+> Full country names are automatically normalized to ISO codes.
 
 ---
 
@@ -436,14 +480,25 @@ The pipeline supports 4 configurable backends selected via `whisper_backend` in 
 
 All backends return the same format: `[{"text": str, "start": float, "duration": float}, ...]`
 
-#### `parser_config` reference
+---
 
-| Field | Type | Default | Description |
+### `parser_config` reference
+
+All fields stored in `parser_config` at dataset creation time:
+
+| Field | Type | Required | Description |
 |---|---|---|---|
-| `whisper_backend` | string | `"youtube-transcript-api"` | Backend to use for transcription |
-| `whisper_model` | string | `"base"` | Model size: `tiny`, `base`, `small`, `medium`, `large` |
-| `openai_api_key` | string | `""` | Required only for `openai-api` backend |
-| `video_title` | string | `""` | Human-readable title stored with chunks |
+| `brand` | string | ✅ | Car manufacturer e.g. `"Opel"`, `"Peugeot"` |
+| `car_model` | string | ✅ | Car model e.g. `"Corsa"`, `"208"` |
+| `year` | string | ✅ | Model year e.g. `"2023"`, `"2025"` |
+| `market` | string | ✅ | Target market ISO code e.g. `"UK"`, `"FR"`, `"IE"` |
+| `trim` | string | ✅ | Trim level e.g. `"All"`, `"GS"`, `"Elegance"` |
+| `source_type` | string | ✅ | Content type: `"Video"`, `"Docs"`, `"Web"`, `"Images"` |
+| `retrieval_date` | string | auto | Auto-generated ingestion date `"YYYY-MM-DD"` |
+| `whisper_backend` | string | video only | Transcription backend (see above) |
+| `whisper_model` | string | video only | Model size: `tiny`, `base`, `small`, `medium`, `large` |
+| `openai_api_key` | string | openai-api only | Required only for `openai-api` backend |
+| `video_title` | string | video only | Human-readable title stored with chunks |
 
 > **Model size guidance:**
 > - `tiny` — fastest, lower accuracy (~29 sec on CPU for 3.5-min video)
@@ -462,11 +517,12 @@ All backends return the same format: `[{"text": str, "start": float, "duration":
 | `rag/nlp/search.py` | Added video fields to Infinity retrieval field list and response dict |
 | `api/apps/sdk/dataset.py` | New `POST /datasets/{id}/videos` endpoint |
 | `api/apps/sdk/doc.py` | Extended `Chunk` model and both serializers with video fields |
-| `api/utils/validation_utils.py` | Added `"video"` to `chunk_method` validator + whisper fields to `ParserConfig` |
+| `api/utils/validation_utils.py` | Added `"video"` to `chunk_method` validator + all metadata fields to `ParserConfig` |
 | `api/utils/api_utils.py` | Added `"video": None` to `get_parser_config` map |
 | `api/db/init_data.py` | Added `video:Video` to tenant `parser_ids` |
 | `conf/infinity_mapping.json` | Added 5 video columns to Infinity schema |
 | `Dockerfile.custom` | ffmpeg, faster-whisper, yt-dlp, openai-whisper; SSL bypasses; pre-cached models |
+| `tests/test_ragflow_pipeline.py` | MCP-ready pipeline test utility with brand-scoped retrieval |
 
 ---
 
@@ -481,20 +537,23 @@ curl -s -X POST "http://localhost:9380/api/v1/datasets" \
   -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Car_Reviews",
+    "name": "Opel_Corsa_2023_UK_All_Video_20260327_2005",
     "chunk_method": "video",
     "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
     "parser_config": {
-      "whisper_backend": "faster-whisper",
-      "whisper_model": "tiny"
+      "brand": "Opel",
+      "car_model": "Corsa",
+      "year": "2023",
+      "market": "UK",
+      "trim": "All",
+      "source_type": "Video",
+      "whisper_backend": "youtube-transcript-api",
+      "whisper_model": "base"
     }
   }' | python3 -m json.tool
 ```
 
 Save the returned `id` as `DATASET_ID`.
-
-> To use the default `youtube-transcript-api` backend (fastest for local dev),
-> omit `parser_config` entirely or set `"whisper_backend": "youtube-transcript-api"`.
 
 **Step 2 — Ingest a YouTube video**
 
@@ -504,7 +563,7 @@ curl -s -X POST "http://localhost:9380/api/v1/datasets/${DATASET_ID}/videos" \
   -H "Content-Type: application/json" \
   -d '{
     "url": "https://www.youtube.com/watch?v=VIDEO_ID",
-    "title": "Human-readable title for this video"
+    "title": "Opel Corsa 2023 review"
   }' | python3 -m json.tool
 ```
 
@@ -529,19 +588,30 @@ Monitor with:
 docker logs docker-ragflow-cpu-1 --tail=5 -f 2>&1 | grep -i "done\|fail\|video\|whisper"
 ```
 
-**Step 4 — Query with timestamp deep-links**
+**Step 4 — Brand-scoped retrieval**
 
-```bash
-curl -s -X POST "http://localhost:9380/api/v1/retrieval" \
-  -H "Authorization: Bearer ${API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"question\": \"engine performance and fuel economy\",
-    \"dataset_ids\": [\"${DATASET_ID}\"],
-    \"similarity_threshold\": 0.1,
-    \"top_n\": 3
-  }" | python3 -m json.tool
+Query across all datasets for a specific brand+model using `test_ragflow_pipeline.py`:
+
+```python
+from tests.test_ragflow_pipeline import load_config, retrieve_by_brand_model, display_results
+
+cfg = load_config()
+
+# Query all Opel Corsa sources (all years, all markets)
+chunks = retrieve_by_brand_model(cfg, "Opel", "Corsa", "engine performance")
+
+# Query only 2025 IE Docs
+chunks = retrieve_by_brand_model(cfg, "Opel", "Corsa", "engine performance",
+                                  year="2025", market="IE", source_type="Docs")
+
+# Query only UK Video
+chunks = retrieve_by_brand_model(cfg, "Opel", "Corsa", "engine performance",
+                                  market="UK", source_type="Video")
+
+display_results(chunks)
 ```
+
+---
 
 ### Retrieval response fields
 
@@ -563,96 +633,156 @@ Each chunk in the retrieval response includes these video-specific fields:
   "document_keyword": "https://www.youtube.com/watch?v=QFzEVtY_1lQ",
   "youtube_url": "https://www.youtube.com/watch?v=QFzEVtY_1lQ",
   "video_id": "QFzEVtY_1lQ",
-  "video_title": "Vauxhall Corsa 2024 review",
-  "timestamp_seconds": 121,
-  "transcript_segment": "https://www.youtube.com/watch?v=QFzEVtY_1lQ&t=121s",
-  "similarity": 0.699,
+  "video_title": "Opel Corsa 2023 review",
+  "timestamp_seconds": 60,
+  "transcript_segment": "https://www.youtube.com/watch?v=QFzEVtY_1lQ&t=60s",
+  "similarity": 0.689,
   "positions": []
 }
 ```
+
+---
 
 ### Python ingestion helper
 
 ```python
 import requests
+from datetime import datetime, date
 
 BASE_URL = "http://localhost:9380"
-API_KEY = "your_api_key"
-HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+API_KEY  = "your_api_key"
+HEADERS  = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+
+MARKET_ISO_CODES = {
+    "United Kingdom": "UK", "Ireland": "IE", "France": "FR",
+    "Germany": "DE", "Italy": "IT", "Spain": "ES",
+    "Belgium": "BE", "Netherlands": "NL",
+}
+
+def _normalize_market(market: str) -> str:
+    if market in MARKET_ISO_CODES.values():
+        return market
+    return MARKET_ISO_CODES.get(market, market.upper()[:2])
+
+def _build_name(brand, car_model, year, market, trim, source_type) -> str:
+    now = datetime.now()
+    return f"{brand}_{car_model}_{year}_{market}_{trim}_{source_type}_{now.strftime('%Y%m%d')}_{now.strftime('%H%M')}"
 
 def create_video_dataset(
-    name: str,
+    brand: str, car_model: str, year: str, market: str,
     whisper_backend: str = "youtube-transcript-api",
     whisper_model: str = "base",
+    trim: str = "All",
     openai_api_key: str = "",
 ) -> str:
     """
-    Create a video dataset with configurable Whisper backend.
-
-    whisper_backend options:
-      - "youtube-transcript-api"  : fast, no download, captions only (default)
-      - "faster-whisper"          : local CPU/GPU transcription
-      - "openai-whisper"          : local CPU/GPU transcription (original library)
-      - "openai-api"              : cloud transcription, requires openai_api_key
+    Create a video dataset. Dataset name is auto-generated.
+    whisper_backend: "youtube-transcript-api" | "faster-whisper" | "openai-whisper" | "openai-api"
+    whisper_model:   "tiny" | "base" | "small" | "medium" | "large"
+    market:          ISO code ("UK", "FR") or full name ("United Kingdom", "France")
     """
+    market_iso = _normalize_market(market)
+    name = _build_name(brand, car_model, year, market_iso, trim, "Video")
     parser_config = {
-        "whisper_backend": whisper_backend,
-        "whisper_model": whisper_model,
+        "brand": brand, "car_model": car_model, "year": year,
+        "market": market_iso, "trim": trim, "source_type": "Video",
+        "retrieval_date": date.today().isoformat(),
+        "whisper_backend": whisper_backend, "whisper_model": whisper_model,
     }
-    if openai_api_key:
+    if openai_api_key and whisper_backend == "openai-api":
         parser_config["openai_api_key"] = openai_api_key
-
     resp = requests.post(f"{BASE_URL}/api/v1/datasets", headers=HEADERS, json={
-        "name": name,
-        "chunk_method": "video",
+        "name": name, "chunk_method": "video",
         "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
         "parser_config": parser_config,
     })
     return resp.json()["data"]["id"]
 
-def ingest_video(dataset_id: str, url: str, title: str) -> str:
-    resp = requests.post(
-        f"{BASE_URL}/api/v1/datasets/{dataset_id}/videos",
-        headers=HEADERS,
-        json={"url": url, "title": title},
-    )
-    doc_id = resp.json()["data"][0]["id"]
-    # trigger processing
-    requests.post(
-        f"{BASE_URL}/api/v1/datasets/{dataset_id}/chunks",
-        headers=HEADERS,
-        json={"document_ids": [doc_id]},
-    )
-    return doc_id
+def create_pdf_dataset(
+    brand: str, car_model: str, year: str, market: str, trim: str = "All",
+) -> str:
+    """Create a Docs dataset for PDF/HTML/Image/Excel ingestion (DeepDoc parser)."""
+    market_iso = _normalize_market(market)
+    name = _build_name(brand, car_model, year, market_iso, trim, "Docs")
+    resp = requests.post(f"{BASE_URL}/api/v1/datasets", headers=HEADERS, json={
+        "name": name, "chunk_method": "naive",
+        "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
+        "parser_config": {
+            "brand": brand, "car_model": car_model, "year": year,
+            "market": market_iso, "trim": trim, "source_type": "Docs",
+            "retrieval_date": date.today().isoformat(),
+        },
+    })
+    return resp.json()["data"]["id"]
 
-def retrieve(dataset_id: str, question: str, top_n: int = 5) -> list:
+def get_datasets_by_brand_model(
+    brand: str, model: str,
+    year: str | None = None,
+    market: str | None = None,
+    source_type: str | None = None,
+) -> list:
+    """
+    Find all datasets for a brand+model, optionally filtered by year, market, source_type.
+    Returns list of dataset dicts with id, name, chunk_count.
+    """
+    resp = requests.get(f"{BASE_URL}/api/v1/datasets", headers=HEADERS,
+                        params={"page_size": 100})
+    datasets = resp.json()["data"]
+    prefix = f"{brand}_{model}_"
+    matched = [d for d in datasets if d["name"].startswith(prefix)]
+    if year:
+        matched = [d for d in matched if f"_{year}_" in d["name"]]
+    if market:
+        market_iso = _normalize_market(market)
+        matched = [d for d in matched if f"_{market_iso}_" in d["name"]]
+    if source_type:
+        matched = [d for d in matched if f"_{source_type}_" in d["name"]]
+    return matched
+
+def retrieve_by_brand_model(
+    brand: str, model: str, question: str,
+    year: str | None = None,
+    market: str | None = None,
+    source_type: str | None = None,
+    top_n: int = 5,
+) -> list:
+    """
+    Query all datasets for a brand+model. Optionally filter by year, market, source_type.
+    Returns chunks with full metadata + source traceability.
+    """
+    datasets = get_datasets_by_brand_model(brand, model, year, market, source_type)
+    if not datasets:
+        return []
+    dataset_ids = [d["id"] for d in datasets]
     resp = requests.post(f"{BASE_URL}/api/v1/retrieval", headers=HEADERS, json={
-        "question": question,
-        "dataset_ids": [dataset_id],
-        "similarity_threshold": 0.1,
-        "top_n": top_n,
+        "question": question, "dataset_ids": dataset_ids,
+        "similarity_threshold": 0.1, "top_n": top_n,
     })
     return resp.json()["data"]["chunks"]
 
-# Usage — local dev (fast, captions only)
-ds_id = create_video_dataset("Car_Reviews_Dev", whisper_backend="youtube-transcript-api")
+# ── Usage examples ────────────────────────────────────────────────────────────
 
-# Usage — production CPU (accurate local transcription)
-ds_id = create_video_dataset("Car_Reviews_Prod", whisper_backend="faster-whisper", whisper_model="base")
+# Create and ingest Opel Corsa 2023 UK video
+ds_id = create_video_dataset("Opel", "Corsa", "2023", "UK",
+                              whisper_backend="youtube-transcript-api")
 
-# Usage — GCP GPU (fastest + most accurate)
-ds_id = create_video_dataset("Car_Reviews_GCP", whisper_backend="faster-whisper", whisper_model="large")
+# Create and ingest Opel Corsa 2025 IE spec sheet
+ds_id = create_pdf_dataset("Opel", "Corsa", "2025", "IE")
 
-# Usage — cloud API (fastest, pay-per-use)
-ds_id = create_video_dataset("Car_Reviews_Cloud", whisper_backend="openai-api", openai_api_key="sk-...")
+# Query all Opel Corsa sources (all years, all markets)
+chunks = retrieve_by_brand_model("Opel", "Corsa", "engine performance")
 
-ingest_video(ds_id, "https://www.youtube.com/watch?v=QFzEVtY_1lQ", "Vauxhall Corsa 2024 review")
+# Query only 2025 IE Docs
+chunks = retrieve_by_brand_model("Opel", "Corsa", "engine performance",
+                                  year="2025", market="IE", source_type="Docs")
 
-# Wait for processing, then query
-chunks = retrieve(ds_id, "engine performance")
+# Print results with deeplinks
 for c in chunks:
-    print(f"[{c['timestamp_seconds']}s] {c['content'][:100]}")
-    print(f"  Watch: {c['transcript_segment']}")
+    if c.get("youtube_url"):
+        print(f"[{c['timestamp_seconds']}s] {c['content'][:100]}")
+        print(f"  Watch: {c['transcript_segment']}")
+    else:
+        print(f"[PDF] {c['content'][:100]}")
 ```
 
 ### Requirements and constraints
@@ -662,7 +792,9 @@ for c in chunks:
 - All Whisper dependencies (ffmpeg, yt-dlp, faster-whisper, openai-whisper) are baked into `ragflow-stellantis:v0.24.0` — no manual install needed
 - `faster-whisper` tiny and base models are pre-cached in the image — no download on first use
 - The dataset must be created with `chunk_method: "video"` — the UI dropdown does not show `video` (UI is hardcoded); always use the API
+- Dataset names are auto-generated — do not set them manually
 - On GCP with `bge-m3`, re-index from scratch — `parser_id` stays `"video"`, no code changes needed
+- The UI Files tab shows "No data available" for video datasets — this is expected (URL-based, no MinIO upload); use the Retrieval Testing tab instead
 
 ---
 
@@ -715,6 +847,13 @@ bash docker/deploy-local.sh
 
 This restarts the container, prints the running image name as a sanity check,
 and re-copies all modified source files in one command.
+
+### Updating test scripts only (no restart needed)
+
+```bash
+docker cp tests/test_ragflow_pipeline.py \
+  docker-ragflow-cpu-1:/ragflow/tests/test_ragflow_pipeline.py
+```
 
 ### Rebuilding the custom Docker image
 
@@ -813,4 +952,4 @@ bash docker/deploy-local.sh
 
 ---
 
-*Last updated: March 2026 | RagFlow v0.24.0 | Branch: `feature/youtube-ingestion` | Whisper multi-backend support added*
+*Last updated: March 2026 | RagFlow v0.24.0 | Branch: `feature/youtube-ingestion` | Whisper multi-backend + brand/model/year/market/trim metadata structure*
