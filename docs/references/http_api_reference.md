@@ -2005,6 +2005,7 @@ Adds a chunk to a specified document in a specified dataset.
 - Body:
   - `"content"`: `string`
   - `"important_keywords"`: `list[string]`
+  - `"tag_kwd"`: `list[string]`
   - `"image_base64"`: `string`
 
 ##### Request example
@@ -2031,6 +2032,8 @@ curl --request POST \
   The text content of the chunk.
 - `"important_keywords`(*Body parameter*), `list[string]`
   The key terms or phrases to tag with the chunk.
+- `"tag_kwd"`: (*Body parameter*), `list[string]`
+  Tag keywords to associate with the chunk.
 - `"questions"`(*Body parameter*), `list[string]`
   If there is a given question, the embedded chunks will be based on them
 - `"image_base64"`: (*Body parameter*), `string`
@@ -2053,6 +2056,7 @@ Success:
             "id": "12ccdc56e59837e5",
             "image_id": "",
             "important_keywords": [],
+            "tag_kwd": [],
             "questions": []
         }
     }
@@ -2123,6 +2127,7 @@ Success:
                 "id": "b48c170e90f70af998485c1065490726",
                 "image_id": "",
                 "important_keywords": "",
+                "tag_kwd": [],
                 "positions": [
                     ""
                 ]
@@ -2267,6 +2272,7 @@ Updates content or configurations for a specified chunk.
 - Body:
   - `"content"`: `string`
   - `"important_keywords"`: `list[string]`
+  - `"tag_kwd"`: `list[string]`
   - `"available"`: `boolean`
 
 ##### Request example
@@ -2295,6 +2301,8 @@ curl --request PUT \
   The text content of the chunk.
 - `"important_keywords"`: (*Body parameter*), `list[string]`  
   A list of key terms or phrases to tag with the chunk.
+- `"tag_kwd"`: (*Body parameter*), `list[string]`  
+  Updated tag keywords.
 - `"available"`: (*Body parameter*) `boolean`  
   The chunk's availability status in the dataset. Value options:  
   - `true`: Available (default)
@@ -2696,6 +2704,7 @@ Success:
                 "important_keywords": [
                     ""
                 ],
+                "tag_kwd": [],
                 "kb_id": "c7ee74067a2c11efb21c0242ac120006",
                 "positions": [
                     ""

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/logger"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
@@ -1104,6 +1105,33 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 		Code:    404,
 		Message: "The requested resource was not found",
 	})
+}
+
+// GetLogLevel returns the current log level
+func (h *Handler) GetLogLevel(c *gin.Context) {
+	level := logger.GetLevel()
+	success(c, gin.H{"level": level}, "")
+}
+
+// SetLogLevelRequest set log level request
+type SetLogLevelRequest struct {
+	Level string `json:"level" binding:"required"`
+}
+
+// SetLogLevel sets the log level at runtime
+func (h *Handler) SetLogLevel(c *gin.Context) {
+	var req SetLogLevelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "level is required", 400)
+		return
+	}
+
+	if err := logger.SetLevel(req.Level); err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+
+	success(c, gin.H{"level": req.Level}, "Log level updated successfully")
 }
 
 // Reports handle heartbeat reports from servers
