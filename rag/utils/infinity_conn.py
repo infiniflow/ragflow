@@ -243,6 +243,7 @@ class InfinityConnection(InfinityConnectionBase):
                         for matchExpr in match_expressions:
                             if isinstance(matchExpr, MatchTextExpr):
                                 fields = ",".join(matchExpr.fields)
+                                self.logger.info(f"INFINITY search match_text: {matchExpr.matching_text}")
                                 builder = builder.match_text(
                                     fields,
                                     matchExpr.matching_text,

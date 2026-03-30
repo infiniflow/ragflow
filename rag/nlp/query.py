@@ -42,7 +42,7 @@ class FulltextQueryer(QueryBase):
         original_query = txt
         txt = self.add_space_between_eng_zh(txt)
         txt = re.sub(
-            r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>]+",
+            r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>*~'\"\\]+",
             " ",
             rag_tokenizer.tradi2simp(rag_tokenizer.strQ2B(txt.lower())),
         ).strip()
