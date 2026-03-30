@@ -1,8 +1,26 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	ce "ragflow/internal/cli/contextengine"
 	"strings"
 )
 
@@ -731,4 +749,82 @@ func (c *RAGFlowClient) DropDocMetaIndex(cmd *Command) (ResponseIf, error) {
 	}
 	result.Duration = 0
 	return &result, nil
+}
+
+// Context related commands
+
+// CEList handles the ls command - lists nodes using Context Engine
+func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
+	// Get path from command params, default to "datasets"
+	path, _ := cmd.Params["path"].(string)
+	if path == "" {
+		path = "datasets"
+	}
+
+	// Parse options
+	opts := &ce.ListOptions{}
+	if recursive, ok := cmd.Params["recursive"].(bool); ok {
+		opts.Recursive = recursive
+	}
+	if limit, ok := cmd.Params["limit"].(int); ok {
+		opts.Limit = limit
+	}
+	if offset, ok := cmd.Params["offset"].(int); ok {
+		opts.Offset = offset
+	}
+
+	// Execute list command through Context Engine
+	ctx := context.Background()
+	result, err := c.ContextEngine.List(ctx, path, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to response
+	var response CEListResponse
+	response.outputFormat = c.OutputFormat
+	response.Code = 0
+	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
+
+	return &response, nil
+}
+
+// CESearch handles the search command using Context Engine
+func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
+	// Get path and query from command params
+	path, _ := cmd.Params["path"].(string)
+	if path == "" {
+		path = "datasets"
+	}
+	query, _ := cmd.Params["query"].(string)
+
+	// Parse options
+	opts := &ce.SearchOptions{
+		Query: query,
+	}
+	if limit, ok := cmd.Params["limit"].(int); ok {
+		opts.Limit = limit
+	}
+	if offset, ok := cmd.Params["offset"].(int); ok {
+		opts.Offset = offset
+	}
+	if recursive, ok := cmd.Params["recursive"].(bool); ok {
+		opts.Recursive = recursive
+	}
+
+	// Execute search command through Context Engine
+	ctx := context.Background()
+	result, err := c.ContextEngine.Search(ctx, path, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to response
+	var response CESearchResponse
+	response.outputFormat = c.OutputFormat
+	response.Code = 0
+	response.Total = result.Total
+	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
+
+	return &response, nil
 }
