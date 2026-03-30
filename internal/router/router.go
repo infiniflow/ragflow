@@ -107,8 +107,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 	{
 		provider.GET("/", handler.ListPoolProviders)
 		provider.GET("/:provider_name", handler.ShowPoolProvider)
-		provider.GET("/models", handler.ListPoolModels)
-		provider.GET("/models/:model_name", handler.ShowPoolModel)
+		provider.GET("/:provider_name/models", handler.ListPoolModels)
+		provider.GET("/:provider_name/models/:model_name", handler.ShowPoolModel)
 	}
 
 	// Protected routes

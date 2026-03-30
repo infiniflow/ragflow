@@ -1118,35 +1118,3 @@ func (c *RAGFlowClient) DropAdminToken(cmd *Command) (ResponseIf, error) {
 	result.Duration = resp.Duration
 	return &result, nil
 }
-
-func (c *RAGFlowClient) ListAdminPoolProviders(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
-	}
-
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (c *RAGFlowClient) ShowAdminPoolProvider(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
-	}
-
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (c *RAGFlowClient) ListAdminPoolModels(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
-	}
-
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (c *RAGFlowClient) ShowAdminPoolModel(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
-	}
-
-	return nil, fmt.Errorf("not implemented")
-}

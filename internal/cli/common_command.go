@@ -238,7 +238,15 @@ func (c *RAGFlowClient) Logout() (ResponseIf, error) {
 }
 
 func (c *RAGFlowClient) ListPoolProviders(cmd *Command) (ResponseIf, error) {
-	resp, err := c.HTTPClient.Request("GET", "/providers", true, "web", nil, nil)
+
+	var endPoint string
+	if c.ServerType == "admin" {
+		endPoint = fmt.Sprintf("/admin/providers")
+	} else {
+		endPoint = fmt.Sprintf("/providers")
+	}
+
+	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
@@ -265,7 +273,12 @@ func (c *RAGFlowClient) ShowPoolProvider(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("provider_name not provided")
 	}
 
-	endPoint := fmt.Sprint("/providers/%s", providerName)
+	var endPoint string
+	if c.ServerType == "admin" {
+		endPoint = fmt.Sprintf("/admin/providers/%s", providerName)
+	} else {
+		endPoint = fmt.Sprintf("/providers/%s", providerName)
+	}
 
 	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
 	if err != nil {
@@ -295,7 +308,12 @@ func (c *RAGFlowClient) ListPoolModels(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("provider_name not provided")
 	}
 
-	endPoint := fmt.Sprint("/providers/%s/models", providerName)
+	var endPoint string
+	if c.ServerType == "admin" {
+		endPoint = fmt.Sprintf("/admin/providers/%s/models", providerName)
+	} else {
+		endPoint = fmt.Sprintf("/providers/%s/models", providerName)
+	}
 
 	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
 	if err != nil {
@@ -328,7 +346,12 @@ func (c *RAGFlowClient) ShowPoolModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("model_name not provided")
 	}
 
-	endPoint := fmt.Sprint("/providers/%s/models/%s", providerName, modelName)
+	var endPoint string
+	if c.ServerType == "admin" {
+		endPoint = fmt.Sprintf("/admin/providers/%s/models/%s", providerName, modelName)
+	} else {
+		endPoint = fmt.Sprintf("/providers/%s/models/%s", providerName, modelName)
+	}
 
 	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
 	if err != nil {

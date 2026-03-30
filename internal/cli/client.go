@@ -153,13 +153,13 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 	case "drop_token":
 		return c.DropAdminToken(cmd)
 	case "list_pool_providers":
-		return c.ListAdminPoolProviders(cmd)
+		return c.ListPoolProviders(cmd)
 	case "show_pool_provider":
-		return c.ShowAdminPoolProvider(cmd)
+		return c.ShowPoolProvider(cmd)
 	case "list_pool_models":
-		return c.ListAdminPoolModels(cmd)
+		return c.ListPoolModels(cmd)
 	case "show_pool_model":
-		return c.ShowAdminPoolModel(cmd)
+		return c.ShowPoolModel(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)

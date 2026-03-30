@@ -212,12 +212,9 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 }
 
 // 1. List all providers
-func (pm *ProviderManager) ListProviders() ModelResponse {
-	resp := ModelResponse{
-		Code:    0,
-		Data:    []map[string]interface{}{},
-		Message: "success",
-	}
+func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
+
+	var providers []map[string]interface{}
 
 	for _, provider := range pm.Providers {
 		providerData := map[string]interface{}{
@@ -225,69 +222,42 @@ func (pm *ProviderManager) ListProviders() ModelResponse {
 			"tags": provider.Tags,
 			"url":  provider.URL,
 		}
-		resp.Data = append(resp.Data, providerData)
+		providers = append(providers, providerData)
 	}
 
-	if len(resp.Data) == 0 {
-		resp.Code = 404
-		resp.Message = "No providers found"
+	if len(providers) == 0 {
+		return nil, fmt.Errorf("no providers found")
 	}
 
-	return resp
+	return providers, nil
 }
 
 // 2. Show specific provider information (including base_url)
-func (pm *ProviderManager) ShowProviderInfo(providerName string) ModelResponse {
-	resp := ModelResponse{
-		Code:    0,
-		Data:    []map[string]interface{}{},
-		Message: "success",
-	}
+func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]interface{}, error) {
 
 	provider := pm.findProvider(providerName)
 	if provider == nil {
-		resp.Code = 404
-		resp.Message = fmt.Sprintf("Provider '%s' not found", providerName)
-		return resp
+		return nil, fmt.Errorf("provider '%s' not found", providerName)
 	}
 
-	providerData := map[string]interface{}{
+	providerInfo := map[string]interface{}{
 		"name":         provider.Name,
 		"tags":         provider.Tags,
 		"base_url":     provider.URL,
 		"total_models": len(provider.Models),
-		"models":       []map[string]interface{}{},
 	}
 
-	// Add model list
-	for _, model := range provider.Models {
-		modelData := map[string]interface{}{
-			"name":        model.Name,
-			"max_tokens":  model.MaxTokens,
-			"model_types": model.ModelTypes,
-		}
-		providerData["models"] = append(providerData["models"].([]map[string]interface{}), modelData)
-	}
-
-	resp.Data = append(resp.Data, providerData)
-	return resp
+	return providerInfo, nil
 }
 
 // 3. List models under a specific provider
-func (pm *ProviderManager) ListModels(providerName string) ModelResponse {
-	resp := ModelResponse{
-		Code:    0,
-		Data:    []map[string]interface{}{},
-		Message: "success",
-	}
-
+func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interface{}, error) {
 	provider := pm.findProvider(providerName)
 	if provider == nil {
-		resp.Code = 404
-		resp.Message = fmt.Sprintf("Provider '%s' not found", providerName)
-		return resp
+		return nil, fmt.Errorf("provider '%s' not found", providerName)
 	}
 
+	models := []map[string]interface{}{}
 	for _, model := range provider.Models {
 		modelData := map[string]interface{}{
 			"name":        model.Name,
@@ -295,19 +265,30 @@ func (pm *ProviderManager) ListModels(providerName string) ModelResponse {
 			"model_types": model.ModelTypes,
 			"features":    getFeaturesMap(model.Features),
 		}
-		resp.Data = append(resp.Data, modelData)
+		models = append(models, modelData)
 	}
 
-	if len(resp.Data) == 0 {
-		resp.Code = 404
-		resp.Message = fmt.Sprintf("No models found for provider '%s'", providerName)
+	if len(models) == 0 {
+		return nil, fmt.Errorf("no models found")
 	}
 
-	return resp
+	return models, nil
 }
 
-// 4. Show specific model information with filtering by max_tokens or type
-func (pm *ProviderManager) ShowModelInfo(providerName, modelName string, filterBy string, filterValue interface{}) ModelResponse {
+func (pm *ProviderManager) GetModelByName(providerName, modelName string) (*Model, error) {
+	provider := pm.findProvider(providerName)
+	if provider == nil {
+		return nil, fmt.Errorf("provider '%s' not found", providerName)
+	}
+	model := pm.findModel(provider, modelName)
+	if model == nil {
+		return nil, fmt.Errorf("model '%s' not found", modelName)
+	}
+	return model, nil
+}
+
+// 4. Search specific model information with filtering by max_tokens or type
+func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filterBy string, filterValue interface{}) ModelResponse {
 	resp := ModelResponse{
 		Code:    0,
 		Data:    []map[string]interface{}{},
