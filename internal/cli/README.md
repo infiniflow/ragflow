@@ -7,12 +7,12 @@ This is the Go implementation of the RAGFlow command-line interface, compatible 
 - Interactive mode and single command execution
 - Full compatibility with Python CLI syntax
 - Recursive descent parser for SQL-like commands
-- Context Engine (Virtual Filesystem) for intuitive resource management
+- Virtual Filesystem for intuitive resource management
 - Support for all major commands:
   - User management: LOGIN, REGISTER, CREATE USER, DROP USER, LIST USERS, etc.
   - Service management: LIST SERVICES, SHOW SERVICE, STARTUP/SHUTDOWN/RESTART SERVICE
   - Role management: CREATE ROLE, DROP ROLE, LIST ROLES, GRANT/REVOKE PERMISSION
-  - Dataset management via Context Engine: `ls`, `search`, `mkdir`, `cat`, `rm`
+  - Dataset management via Virtual Filesystem: `ls`, `search`, `mkdir`, `cat`, `rm`
   - Model management: SET/RESET DEFAULT LLM/VLM/EMBEDDING/etc.
   - And more...
 
@@ -30,13 +30,13 @@ go build -o ragflow_cli ./cmd/ragflow_cli.go
 ```
 internal/cli/
 ├── cli.go              # Main CLI loop and interaction
-├── client.go           # RAGFlowClient with Context Engine integration
+├── client.go           # RAGFlowClient with Filesystem integration
 ├── http_client.go      # HTTP client for API communication
 ├── parser/             # Command parser package
 │   ├── types.go        # Token and Command types
 │   ├── lexer.go        # Lexical analyzer
 │   └── parser.go       # Recursive descent parser
-└── contextengine/      # Context Engine (Virtual Filesystem)
+└── filesystem/         # Virtual Filesystem
     ├── engine.go       # Core engine: path resolution, command routing
     ├── types.go        # Node, Command, Result types
     ├── provider.go     # Provider interface definition    
@@ -45,9 +45,9 @@ internal/cli/
     └── utils.go        # Helper functions
 ```
 
-## Context Engine
+## Virtual Filesystem
 
-The Context Engine provides a unified virtual filesystem interface over RAGFlow's RESTful APIs.
+The Virtual Filesystem provides a unified filesystem interface over RAGFlow's RESTful APIs.
 
 ### Design Principles
 
@@ -155,7 +155,7 @@ SET DEFAULT LLM 'gpt-4';
 SET DEFAULT EMBEDDING 'text-embedding-ada-002';
 RESET DEFAULT LLM;
 
--- Context Engine (Virtual Filesystem)
+-- Virtual Filesystem
 ls;                                       -- List all datasets (default 10)
 ls -n 20;                                 -- List 20 datasets
 ls datasets/my_dataset;                   -- List documents in dataset

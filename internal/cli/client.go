@@ -28,7 +28,7 @@ import (
 	"time"
 	"unsafe"
 
-	ce "ragflow/internal/cli/contextengine"
+	ce "ragflow/internal/cli/filesystem"
 )
 
 // PasswordPromptFunc is a function type for password input
@@ -40,7 +40,7 @@ type RAGFlowClient struct {
 	ServerType     string             // "admin" or "user"
 	PasswordPrompt PasswordPromptFunc // Function for password input
 	OutputFormat   OutputFormat       // Output format: table, plain, json
-	ContextEngine  *ce.Engine         // Context Engine for virtual filesystem
+	FilesystemEngine *ce.Engine       // Filesystem engine for virtual filesystem
 }
 
 // NewRAGFlowClient creates a new RAGFlow client
@@ -58,20 +58,20 @@ func NewRAGFlowClient(serverType string) *RAGFlowClient {
 		ServerType: serverType,
 	}
 
-	// Initialize Context Engine
-	client.initContextEngine()
+	// Initialize Filesystem Engine
+	client.initFilesystemEngine()
 
 	return client
 }
 
-// initContextEngine initializes the Context Engine with all providers
-func (c *RAGFlowClient) initContextEngine() {
+// initFilesystemEngine initializes the Filesystem Engine with all providers
+func (c *RAGFlowClient) initFilesystemEngine() {
 	engine := ce.NewEngine()
 
 	// Register providers
 	engine.RegisterProvider(ce.NewDatasetProvider(&httpClientAdapter{c.HTTPClient}))
 
-	c.ContextEngine = engine
+	c.FilesystemEngine = engine
 }
 
 // httpClientAdapter adapts HTTPClient to ce.HTTPClientInterface
@@ -463,7 +463,7 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CreateDocMetaIndex(cmd)
 	case "drop_doc_meta_index":
 		return c.DropDocMetaIndex(cmd)
-	// ContextEngine commands
+	// Filesystem commands
 	case "ce_ls":
 		return c.CEList(cmd)
 	case "ce_search":
@@ -680,7 +680,7 @@ func (r *KeyValueResponse) PrintOut() {
 	}
 }
 
-// ==================== ContextEngine Commands ====================
+// ==================== Filesystem Commands ====================
 
 // CEListResponse represents the response for ls command
 type CEListResponse struct {
@@ -703,7 +703,7 @@ func (r *CEListResponse) PrintOut() {
 	}
 }
 
-// CEList handles the ls command - lists nodes using Context Engine
+// CEList handles the ls command - lists nodes using Filesystem
 func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
 	// Get path from command params, default to "datasets"
 	path, _ := cmd.Params["path"].(string)
@@ -723,9 +723,9 @@ func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
 		opts.Offset = offset
 	}
 
-	// Execute list command through Context Engine
+	// Execute list command through Filesystem
 	ctx := context.Background()
-	result, err := c.ContextEngine.List(ctx, path, opts)
+	result, err := c.FilesystemEngine.List(ctx, path, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -806,7 +806,7 @@ func (r *CESearchResponse) PrintOut() {
 	}
 }
 
-// CESearch handles the search command using Context Engine
+// CESearch handles the search command using Filesystem
 func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
 	// Get path and query from command params
 	path, _ := cmd.Params["path"].(string)
@@ -829,9 +829,9 @@ func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
 		opts.Recursive = recursive
 	}
 
-	// Execute search command through Context Engine
+	// Execute search command through Filesystem
 	ctx := context.Background()
-	result, err := c.ContextEngine.Search(ctx, path, opts)
+	result, err := c.FilesystemEngine.Search(ctx, path, opts)
 	if err != nil {
 		return nil, err
 	}
