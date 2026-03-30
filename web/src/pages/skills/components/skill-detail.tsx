@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/sheet';
 import { Spin } from '@/components/ui/spin';
 import { TreeDataItem, TreeView } from '@/components/ui/tree-view';
-import { ArrowLeft, FileCode, FileText, FolderOpen } from 'lucide-react';
+import { ArrowLeft, FileCode, FileText, FolderOpen, Tag } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { isMarkdownFile } from '../hooks';
@@ -169,9 +169,16 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
                   {t('skills.backToSkills') || 'Back to Skills'}
                 </Button>
                 <SheetHeader className="p-0 space-y-2">
-                  <SheetTitle className="text-left truncate">
-                    {skill.name}
-                  </SheetTitle>
+                  <div className="flex items-center gap-2">
+                    <SheetTitle className="text-left truncate">
+                      {skill.name}
+                    </SheetTitle>
+                    {skill.metadata?.version && (
+                      <Badge variant="outline" className="text-xs">
+                        <Tag className="size-3 mr-1" />v{skill.metadata.version}
+                      </Badge>
+                    )}
+                  </div>
                 </SheetHeader>
                 {skill.metadata?.description && (
                   <p className="text-text-secondary text-xs mt-2">

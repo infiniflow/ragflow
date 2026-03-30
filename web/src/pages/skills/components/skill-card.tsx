@@ -18,7 +18,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Eye, FileText, FolderOpen, GitBranch, Trash2 } from 'lucide-react';
+import {
+  Eye,
+  FileText,
+  FolderOpen,
+  GitBranch,
+  Tag,
+  Trash2,
+} from 'lucide-react';
 import React, { memo } from 'react';
 import type { Skill } from '../types';
 
@@ -145,9 +152,16 @@ const SkillCard: React.FC<SkillCardProps> = ({
                 {fileCount} files{dirCount > 0 ? `, ${dirCount} folders` : ''}
               </span>
 
-              <span className="text-text-secondary text-xs">
-                {formatRelative(skill.updated_at)}
-              </span>
+              <div className="flex items-center gap-2">
+                {skill.metadata?.version && (
+                  <Badge variant="outline" className="text-xs">
+                    <Tag className="size-3 mr-1" />v{skill.metadata.version}
+                  </Badge>
+                )}
+                <span className="text-text-secondary text-xs">
+                  {formatRelative(skill.updated_at)}
+                </span>
+              </div>
             </div>
           </div>
         </div>
