@@ -80,25 +80,7 @@ def _has_knowledge_placeholder(prompt_config):
     return "{knowledge}" in (prompt_config or {}).get("system", "")
 
 
-def _validate_knowledge_sources(req, *, existing=None, partial=False):
-    should_validate = not partial or "prompt_config" in req or "dataset_ids" in req
-    if not should_validate:
-        return None
-
-    prompt_config = req.get("prompt_config")
-    if prompt_config is None:
-        prompt_config = deepcopy(existing.get("prompt_config", {})) if existing else {}
-
-    kb_ids = req.get("kb_ids")
-    if kb_ids is None:
-        kb_ids = existing.get("kb_ids", []) if existing else []
-
-    if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
-        return "Please remove `{knowledge}` in system prompt since no dataset / Tavily used here."
-    return None
-
-
-def _normalize_name(name, *, required=True):
+def _validate_name(name, *, required=True):
     if name is None:
         if required:
             return None, "`name` is required."
@@ -163,23 +145,23 @@ def _validate_prompt_config(prompt_config):
     return None
 
 
-def _validate_kb_ids(kb_ids, tenant_id):
-    if kb_ids is None:
+def _validate_dataset_ids(dataset_ids, tenant_id):
+    if dataset_ids is None:
         return []
-    if not isinstance(kb_ids, list):
+    if not isinstance(dataset_ids, list):
         return f"`dataset_ids` should be a list."
 
-    normalized_ids = [kb_id for kb_id in kb_ids if kb_id]
+    normalized_ids = [dataset_id for dataset_id in dataset_ids if dataset_id]
     kbs = []
-    for kb_id in normalized_ids:
-        if not KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id):
-            return f"You don't own the dataset {kb_id}"
-        matches = KnowledgebaseService.query(id=kb_id)
+    for dataset_id in normalized_ids:
+        if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+            return f"You don't own the dataset {dataset_id}"
+        matches = KnowledgebaseService.query(id=dataset_id)
         if not matches:
-            return f"You don't own the dataset {kb_id}"
+            return f"You don't own the dataset {dataset_id}"
         kb = matches[0]
         if kb.chunk_num == 0:
-            return f"The dataset {kb_id} doesn't own parsed file"
+            return f"The dataset {dataset_id} doesn't own parsed file"
         kbs.append(kb)
 
     embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]
@@ -200,51 +182,49 @@ def _apply_prompt_defaults(req):
         prompt_config["parameters"] = [{"key": "knowledge", "optional": False}]
 
 
-def _normalize_chat_request(req, *, tenant, existing=None, partial=False):
-    req = dict(req or {})
+@manager.route("/chats", methods=["POST"])  # noqa: F821
+@login_required
+async def create():
+    try:
+        req = await get_request_json()
+        ok, tenant = TenantService.get_by_id(current_user.id)
+        if not ok:
+            return get_data_error_result(message="Tenant not found!")
 
-    if req.get("tenant_id"):
-        return None, "`tenant_id` must not be provided."
+        # Validate tenant_id should not be provided
+        if req.get("tenant_id"):
+            return get_data_error_result(message="`tenant_id` must not be provided.")
 
-    if not partial or "name" in req:
-        name, err = _normalize_name(req.get("name"), required=not partial)
+        # Validate name
+        name, err = _validate_name(req.get("name"), required=True)
         if err:
-            return None, err
-        if name is not None:
-            req["name"] = name
+            return get_data_error_result(message=err)
+        req["name"] = name
 
-    if "dataset_ids" in req:
-        kb_ids = _validate_kb_ids(req.get("dataset_ids"), current_user.id)
-        if isinstance(kb_ids, str):
-            return None, kb_ids
-        req["kb_ids"] = kb_ids
+        if "dataset_ids" in req:
+            kb_ids = _validate_dataset_ids(req.get("dataset_ids"), current_user.id)
+            if isinstance(kb_ids, str):
+                return get_data_error_result(message=kb_ids)
+            req["kb_ids"] = kb_ids
+            req.pop("dataset_ids", None)
 
-    if "llm_id" in req:
-        err = _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
-        if err:
-            return None, err
+        if "llm_id" in req:
+            err = _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
+            if err:
+                return get_data_error_result(message=err)
 
-    if "rerank_id" in req:
-        err = _validate_rerank_id(req.get("rerank_id"), current_user.id)
-        if err:
-            return None, err
+        if "rerank_id" in req:
+            err = _validate_rerank_id(req.get("rerank_id"), current_user.id)
+            if err:
+                return get_data_error_result(message=err)
 
-    if "prompt_config" in req:
-        if not isinstance(req["prompt_config"], dict):
-            return None, "`prompt_config` should be an object."
-        prompt_config = deepcopy(existing.get("prompt_config", {})) if partial and existing else {}
-        prompt_config.update(req["prompt_config"])
-        req["prompt_config"] = prompt_config
-        err = _validate_prompt_config(prompt_config)
-        if err:
-            return None, err
+        if "prompt_config" in req:
+            if not isinstance(req["prompt_config"], dict):
+                return get_data_error_result(message="`prompt_config` should be an object.")
+            err = _validate_prompt_config(req["prompt_config"])
+            if err:
+                return get_data_error_result(message=err)
 
-    if partial and "llm_setting" in req and existing is not None:
-        llm_setting = deepcopy(existing.get("llm_setting", {}))
-        llm_setting.update(req["llm_setting"])
-        req["llm_setting"] = llm_setting
-
-    if not partial:
         req.setdefault("kb_ids", [])
         req.setdefault("llm_id", tenant.llm_id)
         if req["llm_id"] is None:
@@ -260,45 +240,31 @@ def _normalize_chat_request(req, *, tenant, existing=None, partial=False):
         _apply_prompt_defaults(req)
         err = _validate_prompt_config(req["prompt_config"])
         if err:
-            return None, err
-    if partial or existing is not None:
-        err = _validate_knowledge_sources(req, existing=existing, partial=partial)
-        if err:
-            return None, err
-
-    req = ensure_tenant_model_id_for_params(current_user.id, req)
-    req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
-    for field in _READONLY_FIELDS:
-        req.pop(field, None)
-    return req, None
-
-
-@manager.route("/chats", methods=["POST"])  # noqa: F821
-@login_required
-async def create():
-    try:
-        req = await get_request_json()
-        ok, tenant = TenantService.get_by_id(current_user.id)
-        if not ok:
-            return get_data_error_result(message="Tenant not found!")
-
-        normalized_req, err = _normalize_chat_request(req, tenant=tenant)
-        if err:
             return get_data_error_result(message=err)
 
+        prompt_config = req.get("prompt_config", {})
+        kb_ids = req.get("kb_ids", [])
+        if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
+            return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
+
+        req = ensure_tenant_model_id_for_params(current_user.id, req)
+        req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
+        for field in _READONLY_FIELDS:
+            req.pop(field, None)
+
         if DialogService.query(
-            name=normalized_req["name"],
+            name=req["name"],
             tenant_id=current_user.id,
             status=StatusEnum.VALID.value,
         ):
             return get_data_error_result(message="Duplicated chat name in creating chat.")
 
-        normalized_req["id"] = get_uuid()
-        normalized_req["tenant_id"] = current_user.id
-        if not DialogService.save(**normalized_req):
+        req["id"] = get_uuid()
+        req["tenant_id"] = current_user.id
+        if not DialogService.save(**req):
             return get_data_error_result(message="Failed to create chat.")
 
-        ok, chat = DialogService.get_by_id(normalized_req["id"])
+        ok, chat = DialogService.get_by_id(req["id"])
         if not ok:
             return get_data_error_result(message="Failed to retrieve created chat.")
         return get_json_result(data=_build_chat_response(chat))
@@ -387,22 +353,63 @@ async def update_chat(chat_id):
             return get_data_error_result(message="Chat not found!")
         current_chat = current_chat.to_dict()
 
-        normalized_req, err = _normalize_chat_request(req, tenant=tenant, existing=current_chat)
-        if err:
-            return get_data_error_result(message=err)
+        if req.get("tenant_id"):
+            return get_data_error_result(message="`tenant_id` must not be provided.")
+
+        if "name" in req:
+            name, err = _validate_name(req.get("name"), required=True)
+            if err:
+                return get_data_error_result(message=err)
+            req["name"] = name
+
+        if "dataset_ids" in req:
+            kb_ids = _validate_dataset_ids(req.get("dataset_ids"), current_user.id)
+            if isinstance(kb_ids, str):
+                return get_data_error_result(message=kb_ids)
+            req["kb_ids"] = kb_ids
+            req.pop("dataset_ids", None)
+
+        if "llm_id" in req:
+            err = _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
+            if err:
+                return get_data_error_result(message=err)
+
+        if "rerank_id" in req:
+            err = _validate_rerank_id(req.get("rerank_id"), current_user.id)
+            if err:
+                return get_data_error_result(message=err)
+
+        if "prompt_config" in req:
+            if not isinstance(req["prompt_config"], dict):
+                return get_data_error_result(message="`prompt_config` should be an object.")
+            err = _validate_prompt_config(req["prompt_config"])
+            if err:
+                return get_data_error_result(message=err)
+
+        prompt_config = req.get("prompt_config", {})
+        if not prompt_config:
+            prompt_config = current_chat.get("prompt_config", {})
+        kb_ids = req.get("kb_ids", current_chat.get("kb_ids", []))
+        if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
+            return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
+
+        req = ensure_tenant_model_id_for_params(current_user.id, req)
+        req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
+        for field in _READONLY_FIELDS:
+            req.pop(field, None)
 
         if (
-            "name" in normalized_req
-            and normalized_req["name"].lower() != current_chat["name"].lower()
+            "name" in req
+            and req["name"].lower() != current_chat["name"].lower()
             and DialogService.query(
-                name=normalized_req["name"],
+                name=req["name"],
                 tenant_id=current_user.id,
                 status=StatusEnum.VALID.value,
             )
         ):
             return get_data_error_result(message="Duplicated chat name.")
 
-        if not DialogService.update_by_id(chat_id, normalized_req):
+        if not DialogService.update_by_id(chat_id, req):
             return get_data_error_result(message="Chat not found!")
 
         ok, chat = DialogService.get_by_id(chat_id)
@@ -432,24 +439,71 @@ async def patch_chat(chat_id):
             return get_data_error_result(message="Chat not found!")
         current_chat = current_chat.to_dict()
 
-        normalized_req, err = _normalize_chat_request(
-            req, tenant=tenant, existing=current_chat, partial=True
-        )
-        if err:
-            return get_data_error_result(message=err)
+        if req.get("tenant_id"):
+            return get_data_error_result(message="`tenant_id` must not be provided.")
+
+        if "name" in req:
+            name, err = _validate_name(req.get("name"), required=False)
+            if err:
+                return get_data_error_result(message=err)
+            if name is not None:
+                req["name"] = name
+
+        if "dataset_ids" in req:
+            kb_ids = _validate_dataset_ids(req.get("dataset_ids"), current_user.id)
+            if isinstance(kb_ids, str):
+                return get_data_error_result(message=kb_ids)
+            req["kb_ids"] = kb_ids
+            req.pop("dataset_ids", None)
+
+        if "llm_id" in req:
+            err = _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
+            if err:
+                return get_data_error_result(message=err)
+
+        if "rerank_id" in req:
+            err = _validate_rerank_id(req.get("rerank_id"), current_user.id)
+            if err:
+                return get_data_error_result(message=err)
+
+        if "prompt_config" in req:
+            if not isinstance(req["prompt_config"], dict):
+                return get_data_error_result(message="`prompt_config` should be an object.")
+            prompt_config = deepcopy(current_chat.get("prompt_config", {}))
+            prompt_config.update(req["prompt_config"])
+            req["prompt_config"] = prompt_config
+            err = _validate_prompt_config(prompt_config)
+            if err:
+                return get_data_error_result(message=err)
+
+        if "llm_setting" in req:
+            llm_setting = deepcopy(current_chat.get("llm_setting", {}))
+            llm_setting.update(req["llm_setting"])
+            req["llm_setting"] = llm_setting
+
+        if "prompt_config" in req or "kb_ids" in req:
+            prompt_config = req.get("prompt_config", current_chat.get("prompt_config", {}))
+            kb_ids = req.get("kb_ids", current_chat.get("kb_ids", []))
+            if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
+                return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
+
+        req = ensure_tenant_model_id_for_params(current_user.id, req)
+        req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
+        for field in _READONLY_FIELDS:
+            req.pop(field, None)
 
         if (
-            "name" in normalized_req
-            and normalized_req["name"].lower() != current_chat["name"].lower()
+            "name" in req
+            and req["name"].lower() != current_chat["name"].lower()
             and DialogService.query(
-                name=normalized_req["name"],
+                name=req["name"],
                 tenant_id=current_user.id,
                 status=StatusEnum.VALID.value,
             )
         ):
             return get_data_error_result(message="Duplicated chat name.")
 
-        if not DialogService.update_by_id(chat_id, normalized_req):
+        if not DialogService.update_by_id(chat_id, req):
             return get_data_error_result(message="Failed to update chat.")
 
         ok, chat = DialogService.get_by_id(chat_id)
