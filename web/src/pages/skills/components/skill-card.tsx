@@ -149,7 +149,9 @@ const SkillCard: React.FC<SkillCardProps> = ({
 
             <div className="flex justify-between items-center mt-2">
               <span className="text-text-secondary text-xs">
-                {fileCount} files{dirCount > 0 ? `, ${dirCount} folders` : ''}
+                {skill.versions && skill.versions.length > 0
+                  ? `${skill.versions.length} versions`
+                  : `${fileCount} files`}
               </span>
 
               <div className="flex items-center gap-2">
