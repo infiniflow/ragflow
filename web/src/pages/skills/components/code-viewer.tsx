@@ -1,9 +1,14 @@
-import { Tag, Typography } from 'antd';
+import { useIsDarkTheme } from '@/components/theme-provider';
+import { Tag, Typography, theme } from 'antd';
 import React, { memo } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import {
+  oneDark,
+  oneLight,
+} from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 const { Text } = Typography;
+const { useToken } = theme;
 
 interface CodeViewerProps {
   content: string;
@@ -65,6 +70,8 @@ const getLang = (filename: string): string => {
 };
 
 const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename }) => {
+  const isDarkTheme = useIsDarkTheme();
+  const { token } = useToken();
   const language = getLang(filename);
 
   const lineCount = content.split('\n').length;
@@ -83,8 +90,8 @@ const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename }) => {
       <div
         style={{
           padding: '12px 16px',
-          backgroundColor: '#fafafa',
-          borderBottom: '1px solid #f0f0f0',
+          backgroundColor: token.colorBgElevated,
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -100,10 +107,10 @@ const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename }) => {
       </div>
 
       {/* Code Content */}
-      <div style={{ backgroundColor: '#fff' }}>
+      <div style={{ backgroundColor: token.colorBgContainer }}>
         <SyntaxHighlighter
           language={language}
-          style={oneLight}
+          style={isDarkTheme ? oneDark : oneLight}
           showLineNumbers
           lineNumberStyle={{ minWidth: 40, paddingRight: 16 }}
           customStyle={{
@@ -111,7 +118,7 @@ const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename }) => {
             padding: '16px',
             fontSize: 13,
             lineHeight: 1.6,
-            backgroundColor: '#fff',
+            backgroundColor: isDarkTheme ? '#282c34' : '#fafafa',
           }}
         >
           {content || '// Empty file'}

@@ -1,23 +1,26 @@
 import {
-  DeleteOutlined,
-  EyeOutlined,
-  FileTextOutlined,
-  FolderOutlined,
-  GithubOutlined,
-} from '@ant-design/icons';
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import {
-  Button,
-  Card,
-  Popconfirm,
-  Space,
-  Tag,
   Tooltip,
-  Typography,
-} from 'antd';
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { Eye, FileText, FolderOpen, GitBranch, Trash2 } from 'lucide-react';
 import React, { memo } from 'react';
 import type { Skill } from '../types';
-
-const { Text, Paragraph } = Typography;
 
 interface SkillCardProps {
   skill: Skill;
@@ -35,11 +38,11 @@ const SkillCard: React.FC<SkillCardProps> = ({
   const getIcon = () => {
     switch (skill.source_type) {
       case 'git':
-        return <GithubOutlined style={{ fontSize: 24, color: '#1890ff' }} />;
+        return <GitBranch className="size-6 text-accent-primary" />;
       case 'local':
-        return <FolderOutlined style={{ fontSize: 24, color: '#52c41a' }} />;
+        return <FolderOpen className="size-6 text-state-success" />;
       default:
-        return <FileTextOutlined style={{ fontSize: 24, color: '#722ed1' }} />;
+        return <FileText className="size-6 text-purple-500" />;
     }
   };
 
@@ -47,109 +50,109 @@ const SkillCard: React.FC<SkillCardProps> = ({
   const dirCount = skill.files.filter((f) => f.is_dir).length;
 
   return (
-    <Card
-      className="skill-card"
-      hoverable
-      onClick={() => onView(skill)}
-      styles={{ body: { padding: 16 } }}
-    >
-      <div style={{ display: 'flex', gap: 16 }}>
-        <div style={{ flexShrink: 0, marginTop: 4 }}>{getIcon()}</div>
+    <TooltipProvider>
+      <Card
+        className="cursor-pointer hover:shadow-md transition-shadow bg-bg-input"
+        onClick={() => onView(skill)}
+      >
+        <div className="flex gap-4">
+          <div className="flex-shrink-0 mt-1">{getIcon()}</div>
 
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-            }}
-          >
-            <Typography.Title
-              level={5}
-              style={{ margin: 0, marginBottom: 8 }}
-              ellipsis
-            >
-              {skill.name}
-            </Typography.Title>
+          <div className="flex-1 min-w-0">
+            <div className="flex justify-between items-start">
+              <h5 className="font-semibold text-base m-0 mb-2 truncate pr-2">
+                {skill.name}
+              </h5>
 
-            <Space size="small" onClick={(e) => e.stopPropagation()}>
-              <Tooltip title="View">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<EyeOutlined />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onView(skill);
-                  }}
-                />
-              </Tooltip>
-              <Popconfirm
-                title="Delete Skill"
-                description="Are you sure you want to delete this skill?"
-                onConfirm={(e) => {
-                  e?.stopPropagation();
-                  onDelete(skill.id);
-                }}
-                okText="Delete"
-                cancelText="Cancel"
-                okButtonProps={{ danger: true }}
+              <div
+                className="flex items-center gap-1"
+                onClick={(e) => e.stopPropagation()}
               >
-                <Tooltip title="Delete">
-                  <Button
-                    type="text"
-                    size="small"
-                    danger
-                    icon={<DeleteOutlined />}
-                    onClick={(e) => e.stopPropagation()}
-                  />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        onView(skill);
+                      }}
+                    >
+                      <Eye className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>View</TooltipContent>
                 </Tooltip>
-              </Popconfirm>
-            </Space>
-          </div>
 
-          {skill.description && (
-            <Paragraph
-              type="secondary"
-              style={{ marginBottom: 12, fontSize: 13 }}
-              ellipsis={{ rows: 2, expandable: false }}
-            >
-              {skill.description}
-            </Paragraph>
-          )}
+                <AlertDialog>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                        >
+                          <Trash2 className="size-4 text-state-error" />
+                        </Button>
+                      </AlertDialogTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Delete</TooltipContent>
+                  </Tooltip>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete Skill</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to delete this skill? This action
+                        cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => onDelete(skill.id)}
+                        className="bg-state-error hover:bg-state-error/90"
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </div>
 
-          <Space wrap size="small" style={{ marginBottom: 8 }}>
-            {skill.metadata?.tags?.slice(0, 4).map((tag) => (
-              <Tag key={tag} color="blue">
-                {tag}
-              </Tag>
-            ))}
-            {skill.metadata?.tags && skill.metadata.tags.length > 4 && (
-              <Tag>+{skill.metadata.tags.length - 4}</Tag>
+            {skill.description && (
+              <p className="text-text-secondary text-sm mb-3 line-clamp-2">
+                {skill.description}
+              </p>
             )}
-          </Space>
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginTop: 8,
-            }}
-          >
-            <Space size="small">
-              <Text type="secondary" style={{ fontSize: 12 }}>
+            <div className="flex flex-wrap gap-1 mb-2">
+              {skill.metadata?.tags?.slice(0, 4).map((tag) => (
+                <Badge key={tag} variant="secondary">
+                  {tag}
+                </Badge>
+              ))}
+              {skill.metadata?.tags && skill.metadata.tags.length > 4 && (
+                <Badge variant="secondary">
+                  +{skill.metadata.tags.length - 4}
+                </Badge>
+              )}
+            </div>
+
+            <div className="flex justify-between items-center mt-2">
+              <span className="text-text-secondary text-xs">
                 {fileCount} files{dirCount > 0 ? `, ${dirCount} folders` : ''}
-              </Text>
-            </Space>
+              </span>
 
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {formatRelative(skill.updated_at)}
-            </Text>
+              <span className="text-text-secondary text-xs">
+                {formatRelative(skill.updated_at)}
+              </span>
+            </div>
           </div>
         </div>
-      </div>
-    </Card>
+      </Card>
+    </TooltipProvider>
   );
 };
 

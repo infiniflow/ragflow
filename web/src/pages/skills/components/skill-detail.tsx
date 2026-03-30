@@ -1,27 +1,20 @@
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
-  ArrowLeftOutlined,
-  FileMarkdownOutlined,
-  FileOutlined,
-  FolderOutlined,
-} from '@ant-design/icons';
-import {
-  Button,
-  Drawer,
-  Empty,
-  message,
-  Space,
-  Spin,
-  Tag,
-  Tree,
-  Typography,
-} from 'antd';
-import React, { memo, useCallback, useEffect, useState } from 'react';
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { Spin } from '@/components/ui/spin';
+import { TreeDataItem, TreeView } from '@/components/ui/tree-view';
+import { ArrowLeft, FileCode, FileText, FolderOpen } from 'lucide-react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { isMarkdownFile } from '../hooks';
 import type { Skill, SkillFileEntry } from '../types';
 import CodeViewer from './code-viewer';
 import MarkdownViewer from './markdown-viewer';
-
-const { Title, Text } = Typography;
 
 interface SkillDetailProps {
   skill: Skill | null;
@@ -30,25 +23,16 @@ interface SkillDetailProps {
   getFileContent: (skillId: string, fileName: string) => Promise<string | null>;
 }
 
-interface TreeNode {
-  title: string;
-  key: string;
-  isDir: boolean;
-  children?: TreeNode[];
-  icon?: React.ReactNode;
-}
-
 const getFileIcon = (filename: string, isDir: boolean) => {
-  if (isDir) return <FolderOutlined />;
-  if (isMarkdownFile(filename))
-    return <FileMarkdownOutlined style={{ color: '#1890ff' }} />;
-  return <FileOutlined />;
+  if (isDir) return FolderOpen;
+  if (isMarkdownFile(filename)) return FileCode;
+  return FileText;
 };
 
 // Build tree from flat file list
-const buildFileTree = (files: SkillFileEntry[]): TreeNode[] => {
-  const root: TreeNode[] = [];
-  const map: Record<string, TreeNode> = {};
+const buildFileTree = (files: SkillFileEntry[]): TreeDataItem[] => {
+  const root: TreeDataItem[] = [];
+  const map: Record<string, TreeDataItem> = {};
 
   // Sort files: directories first, then alphabetically
   const sortedFiles = [...files].sort((a, b) => {
@@ -60,10 +44,9 @@ const buildFileTree = (files: SkillFileEntry[]): TreeNode[] => {
     const parts = file.path.split('/');
     const name = parts[parts.length - 1];
 
-    const node: TreeNode = {
-      title: name,
-      key: file.path,
-      isDir: file.is_dir,
+    const node: TreeDataItem = {
+      name: name,
+      id: file.path,
       icon: getFileIcon(name, file.is_dir),
     };
 
@@ -93,40 +76,32 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
   onClose,
   getFileContent,
 }) => {
+  const { t } = useTranslation();
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
 
-  const treeData = skill ? buildFileTree(skill.files) : [];
-
-  // Auto-expand first level directories
-  useEffect(() => {
-    if (skill && treeData.length > 0) {
-      const firstLevelDirs = treeData
-        .filter((node) => node.isDir)
-        .map((node) => node.key);
-      setExpandedKeys(firstLevelDirs);
-    }
-  }, [skill?.id]);
+  const treeData = useMemo(
+    () => (skill ? buildFileTree(skill.files) : []),
+    [skill],
+  );
 
   const handleSelect = useCallback(
-    async (selectedKeys: React.Key[]) => {
-      if (!skill || selectedKeys.length === 0) return;
+    async (item: TreeDataItem | undefined) => {
+      if (!skill || !item) return;
 
-      const key = selectedKeys[0] as string;
-      const file = skill.files.find((f) => f.path === key);
+      const file = skill.files.find((f) => f.path === item.id);
 
       if (!file || file.is_dir) return;
 
-      setSelectedFile(key);
+      setSelectedFile(item.id);
       setLoading(true);
 
       try {
         const content = await getFileContent(skill.id, file.path);
         setFileContent(content || '');
       } catch (error) {
-        message.error('Failed to load file content');
+        console.error('Failed to load file content');
       } finally {
         setLoading(false);
       }
@@ -134,16 +109,22 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
     [skill, getFileContent],
   );
 
-  // Auto-select README on open
+  // Auto-select SKILL.md or README on open
   useEffect(() => {
     if (skill && open) {
-      const readmeFile = skill.files.find(
-        (f) =>
-          f.name.toLowerCase() === 'readme.md' ||
-          f.name.toLowerCase() === 'index.md',
-      );
-      if (readmeFile && !readmeFile.is_dir) {
-        handleSelect([readmeFile.path]);
+      // Priority: SKILL.md > README.md > index.md
+      const priorityFiles = ['skill.md', 'readme.md', 'index.md'];
+      let targetFile: SkillFileEntry | undefined;
+
+      for (const priority of priorityFiles) {
+        targetFile = skill.files.find(
+          (f) => f.name.toLowerCase() === priority && !f.is_dir,
+        );
+        if (targetFile) break;
+      }
+
+      if (targetFile) {
+        handleSelect({ id: targetFile.path } as TreeDataItem);
       }
     }
   }, [skill?.id, open, handleSelect]);
@@ -151,13 +132,16 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
   const renderFileContent = () => {
     if (!selectedFile) {
       return (
-        <Empty description="Select a file to view" style={{ marginTop: 100 }} />
+        <div className="flex flex-col items-center justify-center py-24 text-text-secondary">
+          <FileText className="size-12 mb-4 opacity-50" />
+          <p>Select a file to view</p>
+        </div>
       );
     }
 
     if (loading) {
       return (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+        <div className="flex justify-center py-10">
           <Spin size="large" />
         </div>
       );
@@ -173,69 +157,62 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
   };
 
   return (
-    <Drawer
-      title={null}
-      open={open}
-      onClose={onClose}
-      width="90%"
-      styles={{ body: { padding: 0 } }}
-      closable={false}
-    >
-      {skill && (
-        <div style={{ display: 'flex', height: '100%' }}>
-          {/* Sidebar - File Tree */}
-          <div
-            style={{
-              width: 280,
-              borderRight: '1px solid #f0f0f0',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            <div style={{ padding: 16, borderBottom: '1px solid #f0f0f0' }}>
-              <Button
-                type="text"
-                icon={<ArrowLeftOutlined />}
-                onClick={onClose}
-                style={{ marginBottom: 8 }}
-              >
-                Back to Skills
-              </Button>
-              <Title level={4} style={{ margin: 0, marginTop: 8 }} ellipsis>
-                {skill.name}
-              </Title>
-              {skill.metadata?.description && (
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {skill.metadata.description}
-                </Text>
-              )}
-              <Space wrap size="small" style={{ marginTop: 8 }}>
-                {skill.metadata?.tags?.map((tag) => (
-                  <Tag key={tag}>{tag}</Tag>
-                ))}
-              </Space>
+    <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
+      <SheetContent side="right" className="w-[90%] sm:max-w-[90%] p-0">
+        {skill && (
+          <div className="flex h-full">
+            {/* Sidebar - File Tree */}
+            <div className="w-80 border-r border-border-secondary flex flex-col bg-bg-elevated">
+              <div className="p-4 border-b border-border-secondary bg-bg-elevated">
+                <Button variant="ghost" className="mb-2 px-0" onClick={onClose}>
+                  <ArrowLeft className="mr-2 size-4" />
+                  {t('skills.backToSkills') || 'Back to Skills'}
+                </Button>
+                <SheetHeader className="p-0 space-y-2">
+                  <SheetTitle className="text-left truncate">
+                    {skill.name}
+                  </SheetTitle>
+                </SheetHeader>
+                {skill.metadata?.description && (
+                  <p className="text-text-secondary text-xs mt-2">
+                    {skill.metadata.description}
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {skill.metadata?.tags?.map((tag) => (
+                    <Badge key={tag} variant="secondary">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-auto p-2">
+                {/* File Tree */}
+                <div>
+                  <p className="text-text-secondary text-xs pl-2 mb-2">
+                    {t('skills.files') || 'Files'}
+                  </p>
+                  <TreeView
+                    data={treeData}
+                    initialSelectedItemId={selectedFile || undefined}
+                    onSelectChange={handleSelect}
+                    expandAll
+                    defaultNodeIcon={FolderOpen}
+                    defaultLeafIcon={FileText}
+                  />
+                </div>
+              </div>
             </div>
 
-            <div style={{ flex: 1, overflow: 'auto', padding: 8 }}>
-              <Tree
-                treeData={treeData}
-                onSelect={handleSelect}
-                selectedKeys={selectedFile ? [selectedFile] : []}
-                expandedKeys={expandedKeys}
-                onExpand={(keys) => setExpandedKeys(keys as string[])}
-                showIcon
-                blockNode
-              />
+            {/* Main Content */}
+            <div className="flex-1 overflow-auto p-6 bg-bg-container">
+              {renderFileContent()}
             </div>
           </div>
-
-          {/* Main Content */}
-          <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
-            {renderFileContent()}
-          </div>
-        </div>
-      )}
-    </Drawer>
+        )}
+      </SheetContent>
+    </Sheet>
   );
 };
 

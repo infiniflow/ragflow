@@ -147,6 +147,23 @@ export default {
         'Drag and drop a skill folder here, or use the "Select Folder" button below.',
       filesSelected: '{{count}} files selected',
       uploading: 'Uploading...',
+      files: 'Files',
+      metadata: {
+        basic: 'Basic Info',
+        emoji: 'Emoji',
+        skillKey: 'Skill Key',
+        always: 'Always Active',
+        primaryEnv: 'Primary Environment Variable',
+        requires: 'Requirements',
+        requiredBins: 'Required Binaries',
+        requiredEnv: 'Required Environment Variables',
+        anyBins: 'At Least One Required',
+        install: 'Dependencies',
+        links: 'Links',
+        homepage: 'Homepage',
+        repository: 'Repository',
+        documentation: 'Documentation',
+      },
       validation: {
         missing_skill_md:
           'Invalid skill: SKILL.md not found. Please ensure your skill directory contains a valid SKILL.md file.',
@@ -154,10 +171,23 @@ export default {
           'Invalid skill: SKILL.md must have valid frontmatter (start and end with ---).',
         missing_name:
           'Invalid skill: SKILL.md frontmatter must include a "name" field.',
+        invalid_name_format:
+          'Invalid skill: "name" must be lowercase and URL-safe (letters, numbers, hyphens only).',
+        invalid_version:
+          'Invalid skill: "version" must be valid semver (e.g., 1.0.0).',
+        invalid_metadata: 'Invalid skill: metadata contains invalid fields.',
+        invalid_file_type: 'Invalid skill: Only text-based files are allowed.',
+        invalid_path: 'Invalid skill: File path contains invalid characters.',
+        file_too_large:
+          'Invalid skill: Individual file size exceeds 5MB limit.',
+        total_size_exceeded:
+          'Invalid skill: Total bundle size exceeds 50MB limit.',
+        no_files: 'No files selected. Please select a skill folder.',
         read_failed: 'Invalid skill: Failed to read SKILL.md file.',
         invalid: 'Invalid skill format.',
         valid: 'Valid skill format. Ready to upload.',
       },
+      parsedMetadata: 'Parsed from SKILL.md:',
     },
     memories: {
       llmTooltip:

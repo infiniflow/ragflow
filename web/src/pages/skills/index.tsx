@@ -1,22 +1,22 @@
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Segmented } from '@/components/ui/segmented';
+import { Spin } from '@/components/ui/spin';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { PageContainer } from '@/layouts/components/page-container';
 import {
-  AppstoreOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  SearchOutlined,
-  UnorderedListOutlined,
-} from '@ant-design/icons';
-import {
-  Button,
-  Empty,
-  Input,
-  Layout,
-  Segmented,
-  Space,
-  Spin,
-  Tooltip,
-  Typography,
-} from 'antd';
+  FolderOpen,
+  LayoutGrid,
+  List,
+  Plus,
+  RefreshCw,
+  Search,
+} from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import SkillCard from './components/skill-card';
@@ -24,9 +24,6 @@ import SkillDetail from './components/skill-detail';
 import UploadModal from './components/upload-modal';
 import { useSkills } from './hooks';
 import type { Skill } from './types';
-
-const { Title } = Typography;
-const { Content } = Layout;
 
 // Format relative time
 const formatRelative = (timestamp: number): string => {
@@ -97,64 +94,49 @@ const SkillsPage: React.FC = () => {
   }, [filteredSkills]);
 
   return (
-    <PageContainer>
-      <Layout
-        style={{ minHeight: 'calc(100vh - 200px)', background: 'transparent' }}
-      >
-        <Content>
+    <TooltipProvider>
+      <PageContainer>
+        <div className="min-h-[calc(100vh-200px)]">
           {/* Header */}
-          <div style={{ marginBottom: 24 }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 16,
-              }}
-            >
-              <Title level={2} style={{ margin: 0 }}>
-                {t('skills.title')}
-              </Title>
-              <Space>
-                <Tooltip title={t('common.refresh')}>
-                  <Button
-                    icon={<ReloadOutlined />}
-                    onClick={fetchSkills}
-                    loading={loading}
-                  />
+          <div className="mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-semibold">{t('skills.title')}</h2>
+              <div className="flex items-center gap-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={fetchSkills}
+                      disabled={loading}
+                    >
+                      <RefreshCw className={loading ? 'animate-spin' : ''} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('common.refresh')}</TooltipContent>
                 </Tooltip>
-                <Button
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={() => setUploadModalOpen(true)}
-                >
+                <Button onClick={() => setUploadModalOpen(true)}>
+                  <Plus className="mr-2" />
                   {t('skills.uploadSkill')}
                 </Button>
-              </Space>
+              </div>
             </div>
 
             {/* Search and View Controls */}
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
+            <div className="flex justify-between items-center">
               <Input
                 placeholder={t('skills.searchPlaceholder')}
-                prefix={<SearchOutlined />}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ width: 300 }}
-                allowClear
+                className="w-[300px]"
+                prefix={<Search className="size-4 text-text-secondary" />}
               />
               <Segmented
                 value={viewMode}
                 onChange={(v) => setViewMode(v as 'grid' | 'list')}
                 options={[
-                  { value: 'grid', icon: <AppstoreOutlined /> },
-                  { value: 'list', icon: <UnorderedListOutlined /> },
+                  { value: 'grid', label: <LayoutGrid className="size-4" /> },
+                  { value: 'list', label: <List className="size-4" /> },
                 ]}
               />
             </div>
@@ -162,39 +144,36 @@ const SkillsPage: React.FC = () => {
 
           {/* Skills List */}
           {loading ? (
-            <div
-              style={{ display: 'flex', justifyContent: 'center', padding: 60 }}
-            >
+            <div className="flex justify-center py-16">
               <Spin size="large" />
             </div>
           ) : sortedSkills.length === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={
-                searchQuery ? (
-                  <span>
-                    {t('skills.noSearchResults')}: "{searchQuery}"
-                  </span>
-                ) : (
-                  <span>
-                    {t('skills.noSkills')}.{' '}
-                    <a onClick={() => setUploadModalOpen(true)}>
-                      {t('skills.uploadSkill')}
-                    </a>
-                  </span>
-                )
-              }
-              style={{ marginTop: 60 }}
-            />
+            <div className="flex flex-col items-center justify-center py-16 text-text-secondary">
+              <FolderOpen className="size-16 mb-4 opacity-50" />
+              {searchQuery ? (
+                <p>
+                  {t('skills.noSearchResults')}: "{searchQuery}"
+                </p>
+              ) : (
+                <div className="text-center">
+                  <p className="mb-2">{t('skills.noSkills')}</p>
+                  <button
+                    className="text-accent-primary hover:underline"
+                    onClick={() => setUploadModalOpen(true)}
+                  >
+                    {t('skills.uploadSkill')}
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <div
+              className="grid gap-4"
               style={{
-                display: 'grid',
                 gridTemplateColumns:
                   viewMode === 'grid'
                     ? 'repeat(auto-fill, minmax(360px, 1fr))'
                     : '1fr',
-                gap: 16,
               }}
             >
               {sortedSkills.map((skill) => (
@@ -208,25 +187,25 @@ const SkillsPage: React.FC = () => {
               ))}
             </div>
           )}
-        </Content>
-      </Layout>
+        </div>
 
-      {/* Skill Detail Drawer */}
-      <SkillDetail
-        skill={selectedSkill}
-        open={detailOpen}
-        onClose={handleCloseDetail}
-        getFileContent={getSkillFileContent}
-      />
+        {/* Skill Detail Drawer */}
+        <SkillDetail
+          skill={selectedSkill}
+          open={detailOpen}
+          onClose={handleCloseDetail}
+          getFileContent={getSkillFileContent}
+        />
 
-      {/* Upload Modal */}
-      <UploadModal
-        open={uploadModalOpen}
-        onCancel={() => setUploadModalOpen(false)}
-        onUpload={handleUpload}
-        loading={loading}
-      />
-    </PageContainer>
+        {/* Upload Modal */}
+        <UploadModal
+          open={uploadModalOpen}
+          onCancel={() => setUploadModalOpen(false)}
+          onUpload={handleUpload}
+          loading={loading}
+        />
+      </PageContainer>
+    </TooltipProvider>
   );
 };
 

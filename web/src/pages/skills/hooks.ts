@@ -3,6 +3,10 @@ import { message } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Skill, SkillFileEntry, SkillMetadata } from './types';
+import {
+  parseFrontmatter,
+  validateSkillFormat as validateSkillFormatImpl,
+} from './validation';
 
 const SKILLS_FOLDER = 'skills';
 
@@ -22,131 +26,20 @@ export const isMarkdownFile = (filename: string): boolean => {
 export const parseMetadata = (
   content: string,
 ): { metadata: SkillMetadata; body: string } => {
-  const lines = content.split('\n');
-  let metadata: SkillMetadata = {};
-  let body = content;
-
-  if (lines[0]?.trim() === '---') {
-    const endIndex = lines.slice(1).findIndex((line) => line.trim() === '---');
-    if (endIndex !== -1) {
-      const metaLines = lines.slice(1, endIndex + 1);
-      body = lines.slice(endIndex + 2).join('\n');
-
-      // Simple YAML parsing
-      metaLines.forEach((line) => {
-        const match = line.match(/^([\w-]+):\s*(.+)$/);
-        if (match) {
-          const [, key, value] = match;
-          const trimmedValue = value.trim();
-          // Handle arrays
-          if (trimmedValue.startsWith('[') && trimmedValue.endsWith(']')) {
-            metadata[key] = trimmedValue
-              .slice(1, -1)
-              .split(',')
-              .map((s) => s.trim());
-          } else {
-            metadata[key] = trimmedValue;
-          }
-        }
-      });
-    }
-  }
-
+  const { metadata, body } = parseFrontmatter(content);
   return { metadata, body };
 };
 
-// Skill validation result interface
-interface SkillValidationResult {
-  valid: boolean;
-  error?: string;
-  name?: string;
-  description?: string;
-}
+// Export validation function from validation module
+export { validateSkillFormatImpl as validateSkillFormat };
 
-// Validate skill format (similar to skill-hub)
-// Rules:
-// 1. Must have SKILL.md file, OR be under .claude/skills/
-// 2. SKILL.md must have valid frontmatter (--- ... ---)
-// 3. Must have 'name' field in frontmatter
-export const validateSkillFormat = async (
-  files: File[],
-): Promise<SkillValidationResult> => {
-  // Find SKILL.md file
-  const skillMdFile = files.find(
-    (f) =>
-      f.name.toLowerCase() === 'skill.md' ||
-      f.webkitRelativePath?.toLowerCase().endsWith('/skill.md'),
-  );
-
-  // Check if it's a Claude plugin skill (under .claude/skills/)
-  const isClaudePlugin = files.some((f) =>
-    f.webkitRelativePath?.includes('.claude/skills/'),
-  );
-
-  if (!skillMdFile) {
-    if (isClaudePlugin) {
-      return { valid: true };
-    }
-    return { valid: false, error: 'missing_skill_md' };
-  }
-
-  // Read and validate SKILL.md content
-  try {
-    // Use FileReader for better browser compatibility
-    const readFileAsText = (file: File): Promise<string> => {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsText(file);
-      });
-    };
-
-    const content = await readFileAsText(skillMdFile);
-    const lines = content.split('\n');
-
-    // Check frontmatter start
-    if (lines[0]?.trim() !== '---') {
-      return { valid: false, error: 'invalid_frontmatter' };
-    }
-
-    // Parse frontmatter
-    let name: string | undefined;
-    let description: string | undefined;
-    let foundEnd = false;
-
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (line === '---') {
-        foundEnd = true;
-        break;
-      }
-      if (line.startsWith('name:')) {
-        name = line
-          .slice(5)
-          .trim()
-          .replace(/^["']|["']$/g, '');
-      } else if (line.startsWith('description:')) {
-        description = line
-          .slice(12)
-          .trim()
-          .replace(/^["']|["']$/g, '');
-      }
-    }
-
-    if (!foundEnd) {
-      return { valid: false, error: 'invalid_frontmatter' };
-    }
-
-    if (!name) {
-      return { valid: false, error: 'missing_name' };
-    }
-
-    return { valid: true, name, description };
-  } catch (error) {
-    return { valid: false, error: 'read_failed' };
-  }
-};
+// Re-export validation utilities for use in components
+export {
+  isMacJunkPath,
+  isTextFile,
+  parseFrontmatter,
+  sanitizeRelPath,
+} from './validation';
 
 // Hook to manage skills
 export const useSkills = () => {
@@ -212,10 +105,12 @@ export const useSkills = () => {
             size: f.size || 0,
           });
 
-          // Check for README.md for metadata
+          // Check for SKILL.md first, then README.md for metadata
+          const lowerName = f.name.toLowerCase();
           if (
-            f.name.toLowerCase() === 'readme.md' ||
-            f.name.toLowerCase() === 'index.md'
+            lowerName === 'skill.md' ||
+            lowerName === 'readme.md' ||
+            lowerName === 'index.md'
           ) {
             if (!readmeContent) {
               readmeContent = await fetchFileContent(f.id);
@@ -344,7 +239,7 @@ export const useSkills = () => {
         setLoading(true);
 
         // Validate skill format first
-        const validation = await validateSkillFormat(files);
+        const validation = await validateSkillFormatImpl(files);
         if (!validation.valid) {
           const errorKey = `skills.validation.${validation.error}`;
           const errorMsg = t(errorKey) || t('skills.validation.invalid');
