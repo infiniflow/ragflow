@@ -103,6 +103,7 @@ const (
 	TokenIndex
 	TokenVectorSize
 	TokenDocMeta
+	TokenName // For ALTER PROVIDER <name> NAME <new_name>
 
 	// Literals
 	TokenIdentifier

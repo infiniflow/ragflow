@@ -211,6 +211,17 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListPoolModels(cmd)
 	case "show_pool_model":
 		return c.ShowPoolModel(cmd)
+	// Provider commands
+	case "create_provider":
+		return c.CreateProvider(cmd)
+	case "list_providers":
+		return c.ListProviders(cmd)
+	case "show_provider":
+		return c.ShowProvider(cmd)
+	case "alter_provider":
+		return c.AlterProvider(cmd)
+	case "drop_provider":
+		return c.DropProvider(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)
