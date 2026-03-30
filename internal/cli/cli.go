@@ -384,6 +384,7 @@ Configuration File:
 Commands:
   SQL commands (use quotes): "LIST USERS", "CREATE USER 'email' 'password'", etc.
   Filesystem commands (no quotes): ls datasets, search "keyword", cat path, etc.
+  Skill commands: add-skill <path> [--version 1.0.0]
   If no command is provided, CLI runs in interactive mode.`)
 }
 
@@ -711,6 +712,14 @@ func (c *CLI) executeFilesystem(input string) error {
 			fmt.Println(string(content))
 		}
 		return nil
+	case "add-skill":
+		// Get the file provider from the engine
+		fileProvider, ok := c.filesystemEngine.GetProvider("files").(*filesystem.FileProvider)
+		if !ok {
+			return fmt.Errorf("file provider not available")
+		}
+		cmd := NewAddSkillCommand(c.client, fileProvider)
+		return cmd.Execute(cmdArgs)
 	default:
 		return fmt.Errorf("unknown filesystem command: %s", cmdType)
 	}

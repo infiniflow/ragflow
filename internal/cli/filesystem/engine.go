@@ -186,6 +186,16 @@ func (e *Engine) getFileProvider() Provider {
 	return nil
 }
 
+// GetProvider returns a provider by name
+func (e *Engine) GetProvider(name string) Provider {
+	for _, p := range e.providers {
+		if p.Name() == name {
+			return p
+		}
+	}
+	return nil
+}
+
 // Search searches for nodes matching the query
 func (e *Engine) Search(ctx stdctx.Context, path string, opts *SearchOptions) (*Result, error) {
 	provider, subPath, err := e.resolveProvider(path)
