@@ -78,7 +78,16 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     updateChat({
       chatId: id!,
       params: {
-        ...omit(data, 'operator_permission'),
+        ...omit(data, [
+          'operator_permission',
+          'tenant_id',
+          'created_by',
+          'create_time',
+          'create_date',
+          'update_time',
+          'update_date',
+          'id',
+        ]),
         ...nextValues,
       },
     });
