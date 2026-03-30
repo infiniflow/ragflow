@@ -194,10 +194,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// provider pool route group
 			provider := v1.Group("/providers")
 			{
-				provider.GET("/", r.providerHandler.ListPoolProviders)
-				provider.GET("/:provider_name", r.providerHandler.ShowPoolProvider)
-				provider.GET("/:provider_name/models", r.providerHandler.ListPoolModels)
-				provider.GET("/:provider_name/models/:model_name", r.providerHandler.ShowPoolModel)
+				provider.GET("/", r.providerHandler.ListProviders)
+				provider.GET("/:provider_name", r.providerHandler.ShowProvider)
+				provider.GET("/:provider_name/models", r.providerHandler.ListModels)
+				provider.GET("/:provider_name/models/:model_name", r.providerHandler.ShowModel)
 			}
 		}
 

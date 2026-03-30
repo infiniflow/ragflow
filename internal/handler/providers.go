@@ -38,7 +38,7 @@ func NewProviderHandler(userService *service.UserService) *ProviderHandler {
 	}
 }
 
-func (h *ProviderHandler) ListPoolProviders(c *gin.Context) {
+func (h *ProviderHandler) ListProviders(c *gin.Context) {
 
 	keywords := ""
 	if queryKeywords := c.Query("available"); queryKeywords != "" {
@@ -48,6 +48,7 @@ func (h *ProviderHandler) ListPoolProviders(c *gin.Context) {
 	// convert keywords to small case
 	keywords = strings.ToLower(keywords)
 	if keywords == "true" {
+		// list pool providers
 		providers, err := dao.GetModelProviderManager().ListProviders()
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
@@ -65,7 +66,7 @@ func (h *ProviderHandler) ListPoolProviders(c *gin.Context) {
 	}
 }
 
-func (h *ProviderHandler) ShowPoolProvider(c *gin.Context) {
+func (h *ProviderHandler) ShowProvider(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -90,7 +91,7 @@ func (h *ProviderHandler) ShowPoolProvider(c *gin.Context) {
 	})
 }
 
-func (h *ProviderHandler) ListPoolModels(c *gin.Context) {
+func (h *ProviderHandler) ListModels(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -114,7 +115,7 @@ func (h *ProviderHandler) ListPoolModels(c *gin.Context) {
 	})
 }
 
-func (h *ProviderHandler) ShowPoolModel(c *gin.Context) {
+func (h *ProviderHandler) ShowModel(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
