@@ -19,6 +19,7 @@ import re
 import os
 from functools import reduce
 from io import BytesIO
+from pathlib import Path
 from timeit import default_timer as timer
 from docx import Document
 from docx.opc.pkgreader import _SerializedRelationships, _SerializedRelationship
@@ -30,10 +31,11 @@ from PIL import Image
 from common.token_utils import num_tokens_from_string
 
 from common.constants import LLMType
+from common import settings
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
-from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
+from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
@@ -81,6 +83,63 @@ def _normalize_section_text_for_rtl_presentation_forms(sections):
         normalized_sections.append(normalize_arabic_presentation_forms(section))
 
     return normalized_sections
+
+
+def _get_section_text(section):
+    if isinstance(section, (tuple, list)):
+        return section[0]
+    return section
+
+
+def _replace_section_text(section, text):
+    if isinstance(section, tuple):
+        return (text, *section[1:])
+    if isinstance(section, list):
+        return [text, *section[1:]]
+    return text
+
+
+def _stringify_vision_description(description):
+    if isinstance(description, str):
+        return description.strip()
+    if isinstance(description, list):
+        return "\n".join([str(item).strip() for item in description if str(item).strip()]).strip()
+    return ""
+
+
+def enhance_markdown_sections_with_vision(sections, section_images, callback=None, **kwargs):
+    callback = callback or (lambda prog=None, msg="": None)
+
+    try:
+        vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+        vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
+        callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
+    except Exception as e:
+        logging.warning(f"Failed to detect figure extraction: {e}")
+        return sections, section_images
+
+    for idx, section in enumerate(sections):
+        if not section_images or len(section_images) <= idx or section_images[idx] is None:
+            continue
+
+        combined_image = section_images[idx]
+        markdown_vision_parser = VisionFigureParser(
+            vision_model=vision_model,
+            figures_data=[((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])],
+            **kwargs,
+        )
+        boosted_figures = markdown_vision_parser(callback=callback)
+        descriptions = []
+        for fig in boosted_figures:
+            description = _stringify_vision_description(fig[0][1])
+            if description:
+                descriptions.append(description)
+
+        if descriptions:
+            section_text = _get_section_text(section)
+            sections[idx] = _replace_section_text(section, section_text + "\n\n" + "\n\n".join(descriptions))
+
+    return sections, section_images
 
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
@@ -595,13 +654,14 @@ class Markdown(MarkdownParser):
         return []
 
     def extract_image_urls_with_lines(self, text):
-        md_img_re = re.compile(r"!\[[^\]]*\]\(([^)\s]+)")
+        md_img_re = re.compile(r'!\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|\'[^\']*\'))?\s*\)')
         html_img_re = re.compile(r'src=["\\\']([^"\\\'>\\s]+)', re.IGNORECASE)
         urls = []
         seen = set()
         lines = text.splitlines()
         for idx, line in enumerate(lines):
-            for url in md_img_re.findall(line):
+            for angle_wrapped_url, plain_url in md_img_re.findall(line):
+                url = angle_wrapped_url or plain_url
                 if (url, idx) not in seen:
                     urls.append({"url": url, "line": idx})
                     seen.add((url, idx))
@@ -671,6 +731,26 @@ class Markdown(MarkdownParser):
         return images, cache
 
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
+        self._base_dir = None
+        self._storage_bucket = None
+        self._source_location = None
+        if filename:
+            try:
+                markdown_path = Path(filename)
+                if markdown_path.exists():
+                    self._base_dir = markdown_path.resolve().parent
+                elif markdown_path.parent != Path("."):
+                    self._base_dir = markdown_path.parent.resolve()
+            except Exception as e:
+                logging.warning(f"Failed to resolve markdown base directory for {filename}: {e}")
+
+        storage_bucket = getattr(self, "_storage_bucket_hint", None) or getattr(self, "_kb_id", None)
+        source_location = getattr(self, "_source_location_hint", None)
+        if storage_bucket:
+            self._storage_bucket = str(storage_bucket)
+        if source_location:
+            self._source_location = str(source_location)
+
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
@@ -678,9 +758,7 @@ class Markdown(MarkdownParser):
             with open(filename, "r") as f:
                 txt = f.read()
 
-        remainder, tables = self.extract_tables_and_remainder(f"{txt}\n", separate_tables=separate_tables)
-        # To eliminate duplicate tables in chunking result, uncomment code below and set separate_tables to True in line 410.
-        # extractor = MarkdownElementExtractor(remainder)
+        _, tables = self.extract_tables_and_remainder(f"{txt}\n", separate_tables=separate_tables)
         extractor = MarkdownElementExtractor(txt)
         image_refs = self.extract_image_urls_with_lines(txt)
         element_sections = extractor.extract_elements(delimiter, include_meta=True)
@@ -690,6 +768,11 @@ class Markdown(MarkdownParser):
         image_cache = {}
         for element in element_sections:
             content = element["content"]
+            if separate_tables:
+                # Remove table bodies from section text while keeping original line ranges
+                # so image-to-section matching still uses the markdown source positions.
+                content, _ = self.extract_tables_and_remainder(f"{content}\n", separate_tables=True)
+                content = content.strip()
             start_line = element["start_line"]
             end_line = element["end_line"]
             urls_in_section = [ref["url"] for ref in image_refs if start_line <= ref["line"] <= end_line]
@@ -699,6 +782,8 @@ class Markdown(MarkdownParser):
             combined_image = None
             if imgs:
                 combined_image = reduce(concat_img, imgs) if len(imgs) > 1 else imgs[0]
+            if not content and combined_image is None:
+                continue
             sections.append((content, ""))
             section_images.append(combined_image)
 
@@ -896,10 +981,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     elif re.search(r"\.(md|markdown|mdx)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
+        markdown_parser._storage_bucket_hint = kwargs.get("storage_bucket") or kwargs.get("kb_id")
+        markdown_parser._source_location_hint = kwargs.get("source_location")
         sections, tables, section_images = markdown_parser(
             filename,
             binary,
-            separate_tables=False,
+            separate_tables=True,
             delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
             return_section_images=True,
         )
@@ -907,35 +994,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         is_markdown = True
 
-        try:
-            vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
-            vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
-            callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
-        except Exception as e:
-            logging.warning(f"Failed to detect figure extraction: {e}")
-            vision_model = None
-
-        if vision_model:
-            # Process images for each section
-            for idx, (section_text, _) in enumerate(sections):
-                images = []
-                if section_images and len(section_images) > idx and section_images[idx] is not None:
-                    images.append(section_images[idx])
-
-                if images and len(images) > 0:
-                    # If multiple images found, combine them using concat_img
-                    combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
-                    if section_images:
-                        section_images[idx] = combined_image
-                    else:
-                        section_images = [None] * len(sections)
-                        section_images[idx] = combined_image
-                    markdown_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=[((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])], **kwargs)
-                    boosted_figures = markdown_vision_parser(callback=callback)
-                    sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boosted_figures]), sections[idx][1])
-
-        else:
-            logging.warning("No visual model detected. Skipping figure parsing enhancement.")
+        sections, section_images = enhance_markdown_sections_with_vision(
+            sections,
+            section_images,
+            callback=callback,
+            **kwargs,
+        )
 
         if parser_config.get("hyperlink_urls", False) and is_root:
             for idx, (section_text, _) in enumerate(sections):
@@ -949,14 +1013,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         callback(0.1, "Start to parse.")
         chunk_token_num = int(parser_config.get("chunk_token_num", 128))
         sections = HtmlParser()(filename, binary, chunk_token_num)
-        sections = [(_, "") for _ in sections if _]
-        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
-        callback(0.8, "Finish parsing.")
-
-    elif re.search(r"\.epub$", filename, re.IGNORECASE):
-        callback(0.1, "Start to parse.")
-        chunk_token_num = int(parser_config.get("chunk_token_num", 128))
-        sections = EpubParser()(filename, binary, chunk_token_num)
         sections = [(_, "") for _ in sections if _]
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
         callback(0.8, "Finish parsing.")
