@@ -106,6 +106,29 @@ class TestUpdatedChunk:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
+            ({"tag_kwd": ["tag1", "tag2"]}, ""),
+            ({"tag_kwd": [""]}, ""),
+            ({"tag_kwd": [1]}, "`tag_kwd` must be a list of strings"),
+            ({"tag_kwd": ["tag", "tag"]}, ""),
+            ({"tag_kwd": "tag"}, "`tag_kwd` should be a list"),
+            ({"tag_kwd": 123}, "`tag_kwd` should be a list"),
+        ],
+    )
+    def test_tag_kwd(self, add_chunks, payload, expected_message):
+        _, _, chunks = add_chunks
+        chunk = chunks[0]
+
+        if expected_message:
+            with pytest.raises(Exception) as exception_info:
+                chunk.update(payload)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
+        else:
+            chunk.update(payload)
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "payload, expected_message",
+        [
             ({"available": True}, ""),
             pytest.param({"available": "True"}, """ValueError("invalid literal for int() with base 10: \'True\'")""", marks=pytest.mark.skip),
             ({"available": 1}, ""),

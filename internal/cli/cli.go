@@ -32,7 +32,7 @@ import (
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
-	"ragflow/internal/cli/contextengine"
+	"ragflow/internal/cli/filesystem"
 )
 
 // ConfigFile represents the rf.yml configuration file structure
@@ -60,8 +60,8 @@ type ConnectionArgs struct {
 	APIToken     string
 	UserName     string
 	Command      string   // Original command string (for SQL mode)
-	CommandArgs  []string // Split command arguments (for ContextEngine mode)
-	IsSQLMode    bool     // true=SQL mode (quoted), false=ContextEngine mode (unquoted)
+	CommandArgs  []string // Split command arguments (for Filesystem mode)
+	IsSQLMode    bool     // true=SQL mode (quoted), false=Filesystem mode (unquoted)
 	ShowHelp     bool
 	AdminMode    bool
 	OutputFormat OutputFormat // Output format: table, plain, json
@@ -306,15 +306,15 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 
 	// Get command from remaining args (non-flag arguments)
 	if len(nonFlagArgs) > 0 {
-		// Check if this is SQL mode or ContextEngine mode
+		// Check if this is SQL mode or Filesystem mode
 		// SQL mode: single argument that looks like SQL (e.g., "LIST DATASETS")
-		// ContextEngine mode: multiple arguments (e.g., "ls", "datasets")
+		// Filesystem mode: multiple arguments (e.g., "ls", "datasets")
 		if len(nonFlagArgs) == 1 && looksLikeSQL(nonFlagArgs[0]) {
 			// SQL mode: single argument that looks like SQL
 			result.IsSQLMode = true
 			result.Command = nonFlagArgs[0]
 		} else {
-			// ContextEngine mode: multiple arguments
+			// Filesystem mode: multiple arguments
 			result.IsSQLMode = false
 			result.CommandArgs = nonFlagArgs
 			// Also store joined version for backward compatibility
@@ -383,7 +383,7 @@ Configuration File:
 
 Commands:
   SQL commands (use quotes): "LIST USERS", "CREATE USER 'email' 'password'", etc.
-  Context Engine commands (no quotes): ls datasets, search "keyword", cat path, etc.
+  Filesystem commands (no quotes): ls datasets, search "keyword", cat path, etc.
   If no command is provided, CLI runs in interactive mode.`)
 }
 
@@ -396,13 +396,13 @@ const historyFileName = ".ragflow_cli_history"
 
 // CLI represents the command line interface
 type CLI struct {
-	client        *RAGFlowClient
-	contextEngine *contextengine.Engine
-	prompt        string
-	running       bool
-	line          *liner.State
-	args          *ConnectionArgs
-	outputFormat  OutputFormat // Output format
+	client           *RAGFlowClient
+	filesystemEngine *filesystem.Engine
+	prompt           string
+	running          bool
+	line             *liner.State
+	args             *ConnectionArgs
+	outputFormat     OutputFormat // Output format
 }
 
 // NewCLI creates a new CLI instance
@@ -461,15 +461,15 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 		prompt = "RAGFlow(admin)> "
 	}
 
-	// Create context engine and register providers
-	engine := contextengine.NewEngine()
-	engine.RegisterProvider(contextengine.NewDatasetProvider(&httpClientAdapter{client: client.HTTPClient}))
-	engine.RegisterProvider(contextengine.NewFileProvider(&httpClientAdapter{client: client.HTTPClient}))
+	// Create filesystem engine and register providers
+	engine := filesystem.NewEngine()
+	engine.RegisterProvider(filesystem.NewDatasetProvider(&httpClientAdapter{client: client.HTTPClient}))
+	engine.RegisterProvider(filesystem.NewFileProvider(&httpClientAdapter{client: client.HTTPClient}))
 
 	return &CLI{
 		prompt:        prompt,
 		client:        client,
-		contextEngine: engine,
+		filesystemEngine: engine,
 		line:          line,
 		args:          args,
 		outputFormat:  args.OutputFormat,
@@ -589,7 +589,7 @@ func (c *CLI) execute(input string) error {
 		}
 	}
 
-	// Check if we should use SQL mode or ContextEngine mode
+	// Check if we should use SQL mode or Filesystem mode
 	isSQLMode := false
 	if c.args != nil && len(c.args.CommandArgs) > 0 {
 		// Non-interactive mode: use pre-determined mode from args
@@ -619,12 +619,12 @@ func (c *CLI) execute(input string) error {
 		return err
 	}
 
-	// ContextEngine mode: execute context engine command
-	return c.executeContextEngine(input)
+	// Filesystem mode: execute filesystem command
+	return c.executeFilesystem(input)
 }
 
-// executeContextEngine executes a Context Engine command
-func (c *CLI) executeContextEngine(input string) error {
+// executeFilesystem executes a Filesystem command
+func (c *CLI) executeFilesystem(input string) error {
 	// Parse input into arguments
 	var args []string
 	if c.args != nil && len(c.args.CommandArgs) > 0 {
@@ -632,23 +632,23 @@ func (c *CLI) executeContextEngine(input string) error {
 		args = c.args.CommandArgs
 	} else {
 		// Interactive mode: parse input
-		args = parseContextEngineArgs(input)
+		args = parseFilesystemArgs(input)
 	}
 
 	if len(args) == 0 {
 		return fmt.Errorf("no command provided")
 	}
 
-	// Check if we have a context engine
-	if c.contextEngine == nil {
-		return fmt.Errorf("context engine not available")
+	// Check if we have a filesystem engine
+	if c.filesystemEngine == nil {
+		return fmt.Errorf("filesystem engine not available")
 	}
 
 	cmdType := args[0]
 	cmdArgs := args[1:]
 
-	// Build context engine command
-	var ceCmd *contextengine.Command
+	// Build filesystem command
+	var ceCmd *filesystem.Command
 
 	switch cmdType {
 	case "ls", "list":
@@ -661,8 +661,8 @@ func (c *CLI) executeContextEngine(input string) error {
 			// Help was printed
 			return nil
 		}
-		ceCmd = &contextengine.Command{
-			Type: contextengine.CommandList,
+		ceCmd = &filesystem.Command{
+			Type: filesystem.CommandList,
 			Path: listOpts.Path,
 			Params: map[string]interface{}{
 				"limit": listOpts.Limit,
@@ -684,8 +684,8 @@ func (c *CLI) executeContextEngine(input string) error {
 		if len(searchOpts.Dirs) > 0 {
 			searchPath = searchOpts.Dirs[0]
 		}
-		ceCmd = &contextengine.Command{
-			Type: contextengine.CommandSearch,
+		ceCmd = &filesystem.Command{
+			Type: filesystem.CommandSearch,
 			Path: searchPath,
 			Params: map[string]interface{}{
 				"query":     searchOpts.Query,
@@ -699,7 +699,7 @@ func (c *CLI) executeContextEngine(input string) error {
 			return fmt.Errorf("cat requires a path argument")
 		}
 		// Handle cat command directly since it returns []byte, not *Result
-		content, err := c.contextEngine.Cat(context.Background(), cmdArgs[0])
+		content, err := c.filesystemEngine.Cat(context.Background(), cmdArgs[0])
 		if err != nil {
 			return err
 		}
@@ -712,11 +712,11 @@ func (c *CLI) executeContextEngine(input string) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("unknown context engine command: %s", cmdType)
+		return fmt.Errorf("unknown filesystem command: %s", cmdType)
 	}
 
 	// Execute the command
-	result, err := c.contextEngine.Execute(context.Background(), ceCmd)
+	result, err := c.filesystemEngine.Execute(context.Background(), ceCmd)
 	if err != nil {
 		return err
 	}
@@ -724,23 +724,23 @@ func (c *CLI) executeContextEngine(input string) error {
 	// Print result
 	// For search command, default to JSON format if not explicitly set to plain/table
 	format := c.outputFormat
-	if ceCmd.Type == contextengine.CommandSearch && format != OutputFormatPlain && format != OutputFormatTable {
+	if ceCmd.Type == filesystem.CommandSearch && format != OutputFormatPlain && format != OutputFormatTable {
 		format = OutputFormatJSON
 	}
 	// Get limit for list command
 	limit := 0
-	if ceCmd.Type == contextengine.CommandList {
+	if ceCmd.Type == filesystem.CommandList {
 		if l, ok := ceCmd.Params["limit"].(int); ok {
 			limit = l
 		}
 	}
-	c.printContextEngineResult(result, ceCmd.Type, format, limit)
+	c.printFilesystemResult(result, ceCmd.Type, format, limit)
 	return nil
 }
 
-// parseContextEngineArgs parses Context Engine command arguments
+// parseFilesystemArgs parses Filesystem command arguments
 // Supports simple space-separated args and quoted strings
-func parseContextEngineArgs(input string) []string {
+func parseFilesystemArgs(input string) []string {
 	var args []string
 	var current strings.Builder
 	inQuote := false
@@ -782,14 +782,14 @@ func parseContextEngineArgs(input string) []string {
 	return args
 }
 
-// printContextEngineResult prints the result of a context engine command
-func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType contextengine.CommandType, format OutputFormat, limit int) {
+// printFilesystemResult prints the result of a filesystem command
+func (c *CLI) printFilesystemResult(result *filesystem.Result, cmdType filesystem.CommandType, format OutputFormat, limit int) {
 	if result == nil {
 		return
 	}
 
 	switch cmdType {
-	case contextengine.CommandList:
+	case filesystem.CommandList:
 		if len(result.Nodes) == 0 {
 			fmt.Println("(empty)")
 			return
@@ -826,7 +826,7 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 			fmt.Printf("\n... and %d more (use -n to show more)\n", result.Total-limit)
 		}
 		fmt.Printf("Total: %d\n", result.Total)
-	case contextengine.CommandSearch:
+	case filesystem.CommandSearch:
 		if len(result.Nodes) == 0 {
 			if format == OutputFormatJSON {
 				fmt.Println("[]")
@@ -923,7 +923,7 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 			fmt.Println(sep)
 			fmt.Printf("Total: %d\n", result.Total)
 		}
-	case contextengine.CommandCat:
+	case filesystem.CommandCat:
 		// Cat output is handled differently - it returns []byte, not *Result
 		// This case should not be reached in normal flow since Cat returns []byte directly
 		fmt.Println("Content retrieved")
@@ -1016,7 +1016,7 @@ Commands (User Mode):
   CREATE INDEX DOC_META;                                 - Create doc meta index
   DROP INDEX DOC_META;                                   - Drop doc meta index
 
-Context Engine Commands (no quotes):
+Filesystem Commands (no quotes):
   ls [path]                    - List resources
                                  e.g., ls                   - List root (providers and folders)
                                  e.g., ls datasets          - List all datasets
@@ -1031,7 +1031,7 @@ Context Engine Commands (no quotes):
 
 Examples:
   ragflow_cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
-  ragflow_cli -f rf.yml ls datasets            # Context Engine mode (no quotes)
+  ragflow_cli -f rf.yml ls datasets            # Filesystem mode (no quotes)
   ragflow_cli -f rf.yml ls files               # List files in root
   ragflow_cli -f rf.yml cat datasets           # Error: datasets is a directory
   ragflow_cli -f rf.yml ls files/myfolder      # List folder contents

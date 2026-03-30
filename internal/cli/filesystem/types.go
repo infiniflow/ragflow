@@ -14,11 +14,11 @@
 //  limitations under the License.
 //
 
-package contextengine
+package filesystem
 
 import "time"
 
-// NodeType represents the type of a node in the context filesystem
+// NodeType represents the type of a node in the virtual filesystem
 type NodeType string
 
 const (
@@ -52,7 +52,7 @@ const (
 	CommandCat    CommandType = "cat"
 )
 
-// Command represents a context engine command
+// Command represents a filesystem command
 type Command struct {
 	Type   CommandType            `json:"type"`
 	Path   string                 `json:"path"`

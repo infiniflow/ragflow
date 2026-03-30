@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package contextengine
+package filesystem
 
 import (
 	stdctx "context"
@@ -508,7 +508,7 @@ func (p *DatasetProvider) listDocuments(ctx stdctx.Context, datasetName string, 
 	}
 
 	var apiResp struct {
-		Code    int                      `json:"code"`
+		Code    int `json:"code"`
 		Data    struct {
 			Docs []map[string]interface{} `json:"docs"`
 		} `json:"data"`
