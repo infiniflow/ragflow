@@ -1285,6 +1285,9 @@ class MySQL(SyncBase):
             database=self.conf.get("database", ""),
             query=self.conf.get("query", ""),
             content_columns=self.conf.get("content_columns", ""),
+            metadata_columns=self.conf.get("metadata_columns", ""),
+            id_column=self.conf.get("id_column") or None,
+            timestamp_column=self.conf.get("timestamp_column") or None,
             batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
         )
 
@@ -1321,6 +1324,9 @@ class PostgreSQL(SyncBase):
             database=self.conf.get("database", ""),
             query=self.conf.get("query", ""),
             content_columns=self.conf.get("content_columns", ""),
+            metadata_columns=self.conf.get("metadata_columns", ""),
+            id_column=self.conf.get("id_column") or None,
+            timestamp_column=self.conf.get("timestamp_column") or None,
             batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
         )
 
