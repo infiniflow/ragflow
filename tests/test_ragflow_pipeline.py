@@ -28,6 +28,10 @@ Model sizes (faster-whisper / openai-whisper):
   small  : better accuracy          — ~2x slower than base
   medium : high accuracy            — requires ~5GB RAM
   large  : best accuracy            — recommended for GCP GPU (~8s/video)
+
+Dataset naming convention:
+  {Brand}_{Model}_{Year}_{Market}_{Trim}_{SourceType}_{YYYYMMDD}_{HHMM}
+  Example: Opel_Corsa_2023_UK_All_Video_20260327_2005
 """
 
 import os
@@ -57,13 +61,13 @@ def load_config() -> dict:
         raise FileNotFoundError(
             f"Missing config file: {ENV_FILE}\n"
             "Create it with:\n"
-            "  RAGFLOW_BASE_URL=http://localhost:9380\n"
+            "  RAGFLOW_BASE_URL=http://172.18.0.1:9380\n"
             "  RAGFLOW_API_KEY=your-ragflow-key\n"
             "  OPENAI_API_KEY=your-openai-key\n"
         )
     load_dotenv(ENV_FILE)
     return {
-        "base_url":        os.getenv("RAGFLOW_BASE_URL", "http://localhost:9380").rstrip("/"),
+        "base_url":        os.getenv("RAGFLOW_BASE_URL", "http://172.18.0.1:9380").rstrip("/"),
         "ragflow_api_key": os.getenv("RAGFLOW_API_KEY", ""),
         "openai_api_key":  os.getenv("OPENAI_API_KEY", ""),
     }
@@ -107,11 +111,13 @@ MARKET_ISO_CODES = {
     "Norway": "NO", "Denmark": "DK", "Finland": "FI",
 }
 
+
 def _normalize_market(market: str) -> str:
     """Convert full country name to ISO code if needed."""
     if market in MARKET_ISO_CODES.values():
         return market  # already ISO code
     return MARKET_ISO_CODES.get(market, market.upper()[:2])
+
 
 def _build_dataset_name(brand: str, car_model: str, year: str,
                          market: str, trim: str, source_type: str) -> str:
@@ -123,6 +129,7 @@ def _build_dataset_name(brand: str, car_model: str, year: str,
     from datetime import datetime
     now = datetime.now()
     return f"{brand}_{car_model}_{year}_{market}_{trim}_{source_type}_{now.strftime('%Y%m%d')}_{now.strftime('%H%M')}"
+
 
 def create_video_dataset(
     cfg: dict,
@@ -335,7 +342,7 @@ def ingest_pdf(
         cfg        : config dict from load_config()
         dataset_id : target dataset ID
         file_path  : absolute or relative path to the PDF file on disk.
-                     Example: "/home/user/docs/report.pdf"
+                     Example: "/ragflow/tests/Corsa_test.pdf"
                      To download a PDF first, use:
                        import urllib.request
                        urllib.request.urlretrieve(pdf_url, "/tmp/report.pdf")
@@ -404,8 +411,6 @@ def wait_for_completion(
     """
     MCP tool: wait_for_completion
     Poll document status until parsing is done or failed.
-    Uses container logs monitoring since the /documents API does not
-    return video URL-based documents in v0.24.0.
     Prints progress to terminal while waiting.
 
     Args:
@@ -462,19 +467,19 @@ def retrieve(
 ) -> list:
     """
     MCP tool: retrieve
-    Query a dataset and return matching chunks.
+    Query a single dataset and return matching chunks.
 
     Args:
         cfg                  : config dict from load_config()
         dataset_id           : dataset to query
         question             : natural language query
         top_n                : max number of chunks to return (default: 5)
-        similarity_threshold : minimum similarity score 0.0–1.0 (default: 0.1)
+        similarity_threshold : minimum similarity score 0.0-1.0 (default: 0.1)
 
     Returns:
         list of chunk dicts. Each chunk contains:
           - content             : transcript/document text
-          - similarity          : combined similarity score (0.0–1.0)
+          - similarity          : combined similarity score (0.0-1.0)
           - term_similarity     : keyword match score
           - vector_similarity   : semantic similarity score
           For video chunks additionally:
@@ -537,7 +542,8 @@ def display_results(chunks: list, max_content_length: int = 200) -> None:
             content = content[:max_content_length] + "..."
         print(f"  Content     : {content}")
 
-# ── Brand-model scoped dataset discovery and retrieval ──────────────────────────────────────────────────────────────────
+
+# ── Brand-model scoped dataset discovery and retrieval ─────────────────────────
 
 def get_datasets_by_brand_model(
     cfg: dict,
@@ -564,6 +570,16 @@ def get_datasets_by_brand_model(
 
     Returns:
         list of matching dataset dicts
+
+    Examples:
+        get_datasets_by_brand_model(cfg, "Opel", "Corsa")
+          → [Opel_Corsa_2023_UK_All_Video_..., Opel_Corsa_2025_IE_All_Docs_...]
+
+        get_datasets_by_brand_model(cfg, "Opel", "Corsa", year="2025")
+          → [Opel_Corsa_2025_IE_All_Docs_...]
+
+        get_datasets_by_brand_model(cfg, "Opel", "Corsa", market="UK", source_type="Video")
+          → [Opel_Corsa_2023_UK_All_Video_...]
     """
     all_datasets = list_datasets(cfg)
     prefix = f"{brand}_{model}_"
@@ -608,7 +624,7 @@ def retrieve_by_brand_model(
     """
     MCP tool: retrieve_by_brand_model
     Query all datasets for a brand+model, optionally scoped by year,
-    market, trim and/or source type.
+    market, trim and/or source type. Main retrieval entry point for The Brain.
 
     Args:
         cfg                  : config dict from load_config()
@@ -623,18 +639,19 @@ def retrieve_by_brand_model(
         similarity_threshold : min similarity 0.0-1.0 (default: 0.1)
 
     Returns:
-        list of chunk dicts with full metadata
+        list of chunk dicts with full metadata + source traceability
 
     Examples:
-        # All sources for Opel Corsa
+        # All sources for Opel Corsa (all years, all markets)
         retrieve_by_brand_model(cfg, "Opel", "Corsa", "engine performance")
 
-        # UK market only
-        retrieve_by_brand_model(cfg, "Opel", "Corsa", "engine performance", market="UK")
-
-        # 2025 IE Docs only
+        # Only 2025 IE Docs
         retrieve_by_brand_model(cfg, "Opel", "Corsa", "engine performance",
                                 year="2025", market="IE", source_type="Docs")
+
+        # Only UK Video
+        retrieve_by_brand_model(cfg, "Opel", "Corsa", "engine performance",
+                                market="UK", source_type="Video")
     """
     datasets = get_datasets_by_brand_model(cfg, brand, model, year, market, trim, source_type)
 
@@ -662,6 +679,7 @@ def retrieve_by_brand_model(
     print(f"🔍 Query: '{question}' → {len(chunks)} chunks from {len(dataset_ids)} dataset(s)")
     return chunks
 
+
 # ── Full pipeline runners ──────────────────────────────────────────────────────
 
 def run_video_pipeline(
@@ -669,6 +687,11 @@ def run_video_pipeline(
     url: str,
     title: str,
     question: str,
+    brand: str,
+    car_model: str,
+    year: str,
+    market: str,
+    trim: str = "All",
     whisper_backend: str = "youtube-transcript-api",
     whisper_model: str = "base",
     openai_api_key: str = "",
@@ -686,26 +709,26 @@ def run_video_pipeline(
         url                  : YouTube URL to ingest
         title                : human-readable video title
         question             : retrieval query to test after ingestion
+        brand                : car brand e.g. "Opel", "Peugeot"
+        car_model            : car model e.g. "Corsa", "208"
+        year                 : model year e.g. "2023", "2025"
+        market               : target market ISO code or full name e.g. "UK", "FR"
+        trim                 : trim level (default: "All")
         whisper_backend      : transcription backend (see module docstring)
         whisper_model        : model size for local Whisper backends
-        openai_api_key       : OpenAI key for "openai-api" backend (uses .env if empty)
+        openai_api_key       : OpenAI key for "openai-api" backend
         top_n                : number of chunks to retrieve
         similarity_threshold : minimum similarity score
         cleanup              : if True, delete dataset after test (default: False)
 
     Returns:
-        dict with keys: dataset_id, doc_id, chunks, elapsed_seconds
+        dict with keys: dataset_id, doc_id, chunks, elapsed_seconds, whisper_backend
     """
-    import re
-    # Generate unique dataset name from backend + timestamp
-    ts = int(time.time())
-    safe_backend = whisper_backend.replace("-", "_")
-    dataset_name = f"test_{safe_backend}_{ts}"
-
     print(f"\n{'='*60}")
     print(f"  VIDEO PIPELINE TEST")
     print(f"  Backend : {whisper_backend}")
     print(f"  Model   : {whisper_model if whisper_backend not in ('youtube-transcript-api', 'openai-api') else 'N/A'}")
+    print(f"  Brand   : {brand} {car_model} {year} {_normalize_market(market)}")
     print(f"  URL     : {url}")
     print(f"{'='*60}")
 
@@ -713,7 +736,11 @@ def run_video_pipeline(
 
     # Step 1 — Create dataset
     dataset = create_video_dataset(
-        cfg, dataset_name, whisper_backend, whisper_model, openai_api_key
+        cfg, brand, car_model, year, market,
+        whisper_backend=whisper_backend,
+        whisper_model=whisper_model,
+        trim=trim,
+        openai_api_key=openai_api_key,
     )
     dataset_id = dataset["id"]
 
@@ -753,6 +780,11 @@ def run_pdf_pipeline(
     cfg: dict,
     file_path: str,
     question: str,
+    brand: str,
+    car_model: str,
+    year: str,
+    market: str,
+    trim: str = "All",
     top_n: int = 3,
     similarity_threshold: float = 0.1,
     cleanup: bool = False,
@@ -764,12 +796,18 @@ def run_pdf_pipeline(
 
     Args:
         cfg                  : config dict from load_config()
-        file_path            : absolute path to PDF file on disk.
+        file_path            : absolute path to PDF file on disk (inside container).
+                               Example: "/ragflow/tests/Corsa_test.pdf"
                                To download a PDF first:
                                  import urllib.request
                                  urllib.request.urlretrieve(pdf_url, "/tmp/doc.pdf")
-                                 run_pdf_pipeline(cfg, "/tmp/doc.pdf", question)
+                                 run_pdf_pipeline(cfg, "/tmp/doc.pdf", question, ...)
         question             : retrieval query to test after ingestion
+        brand                : car brand e.g. "Opel", "Peugeot"
+        car_model            : car model e.g. "Corsa", "208"
+        year                 : model year e.g. "2023", "2025"
+        market               : target market ISO code or full name
+        trim                 : trim level (default: "All")
         top_n                : number of chunks to retrieve
         similarity_threshold : minimum similarity score
         cleanup              : if True, delete dataset after test (default: False)
@@ -777,18 +815,16 @@ def run_pdf_pipeline(
     Returns:
         dict with keys: dataset_id, doc_id, chunks, elapsed_seconds
     """
-    ts = int(time.time())
-    dataset_name = f"test_pdf_{ts}"
-
     print(f"\n{'='*60}")
     print(f"  PDF PIPELINE TEST")
     print(f"  File    : {file_path}")
+    print(f"  Brand   : {brand} {car_model} {year} {_normalize_market(market)}")
     print(f"{'='*60}")
 
     start = time.time()
 
     # Step 1 — Create dataset
-    dataset = create_pdf_dataset(cfg, dataset_name)
+    dataset = create_pdf_dataset(cfg, brand, car_model, year, market, trim)
     dataset_id = dataset["id"]
 
     # Step 2 — Upload PDF
@@ -826,6 +862,11 @@ def compare_backends(
     url: str,
     title: str,
     question: str,
+    brand: str,
+    car_model: str,
+    year: str,
+    market: str,
+    trim: str = "All",
     backends: Optional[list] = None,
     whisper_model: str = "tiny",
     top_n: int = 3,
@@ -840,10 +881,14 @@ def compare_backends(
         url           : YouTube URL to test
         title         : human-readable video title
         question      : retrieval query used for all backends
+        brand         : car brand e.g. "Opel"
+        car_model     : car model e.g. "Corsa"
+        year          : model year e.g. "2023"
+        market        : target market ISO code or full name e.g. "UK"
+        trim          : trim level (default: "All")
         backends      : list of backends to test, default:
                           ["youtube-transcript-api", "faster-whisper",
                            "openai-whisper", "openai-api"]
-                        Remove any backend you don't want to test.
                         Remove "openai-api" if you don't have an OpenAI key.
         whisper_model : model size for faster-whisper and openai-whisper (default: "tiny")
         top_n         : chunks to retrieve per backend
@@ -870,6 +915,11 @@ def compare_backends(
                 url=url,
                 title=title,
                 question=question,
+                brand=brand,
+                car_model=car_model,
+                year=year,
+                market=market,
+                trim=trim,
                 whisper_backend=backend,
                 whisper_model=whisper_model,
                 top_n=top_n,
@@ -909,13 +959,14 @@ def compare_backends(
 
 
 # ── Main — run all tests ───────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     # ── Config ──────────────────────────────────────────────────────────────────
     cfg = load_config()
 
-    # ── Test video details ───────────────────────────────────────────────────────
+    # ── Test details ─────────────────────────────────────────────────────────────
     VIDEO_URL   = "https://www.youtube.com/watch?v=QFzEVtY_1lQ"
-    VIDEO_TITLE = "Vauxhall Corsa 2024 review"
+    VIDEO_TITLE = "Opel Corsa 2023 review"
     QUESTION    = "engine performance and fuel economy"
 
     # ── Choose what to run — uncomment ONE block at a time ───────────────────────
@@ -923,36 +974,68 @@ if __name__ == "__main__":
     # Option A: youtube-transcript-api (fast, ~10s, captions only)
     # run_video_pipeline(
     #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
-    #     whisper_backend="youtube-transcript-api", whisper_model="base", cleanup=False,
+    #     brand="Opel", car_model="Corsa", year="2023", market="UK", trim="All",
+    #     whisper_backend="youtube-transcript-api", cleanup=False,
     # )
 
     # Option B: faster-whisper (local CPU, ~60s with tiny model)
     # run_video_pipeline(
     #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
+    #     brand="Opel", car_model="Corsa", year="2023", market="UK", trim="All",
     #     whisper_backend="faster-whisper", whisper_model="tiny", cleanup=False,
     # )
 
     # Option C: openai-whisper (local CPU, ~2-3min with tiny model)
     # run_video_pipeline(
     #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
+    #     brand="Opel", car_model="Corsa", year="2023", market="UK", trim="All",
     #     whisper_backend="openai-whisper", whisper_model="tiny", cleanup=False,
     # )
 
     # Option D: openai-api (cloud, ~30s, costs ~$0.02/video)
     # run_video_pipeline(
     #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
+    #     brand="Opel", car_model="Corsa", year="2023", market="UK", trim="All",
     #     whisper_backend="openai-api", cleanup=False,
     # )
 
     # Option E: compare multiple backends side by side
     # compare_backends(
     #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
+    #     brand="Opel", car_model="Corsa", year="2023", market="UK", trim="All",
     #     backends=["youtube-transcript-api", "faster-whisper"],
     #     whisper_model="tiny", top_n=3, cleanup=False,
     # )
 
-    # Option F: PDF pipeline test
-    run_pdf_pipeline(
-        cfg=cfg, file_path="/ragflow/tests/Corsa_test.pdf",
-        question="engine performance and fuel economy", top_n=3, cleanup=False,
+    # Option F: Opel Corsa 2025 IE PDF
+    # run_pdf_pipeline(
+    #     cfg=cfg, file_path="/ragflow/tests/Corsa_test.pdf",
+    #     question="engine performance and fuel economy",
+    #     brand="Opel", car_model="Corsa", year="2025", market="IE", trim="All",
+    #     top_n=3, cleanup=False,
+    # )
+
+    # Option G: Peugeot 208 2023 FR PDF
+    # run_pdf_pipeline(
+    #     cfg=cfg, file_path="/ragflow/tests/208_test.pdf",
+    #     question="engine performance and fuel economy",
+    #     brand="Peugeot", car_model="208", year="2023", market="FR", trim="All",
+    #     top_n=3, cleanup=False,
+    # )
+
+    # Option H: brand-scoped retrieval (query existing datasets — no ingestion)
+    # get_datasets_by_brand_model(cfg, "Opel", "Corsa")
+    # chunks = retrieve_by_brand_model(cfg, "Opel", "Corsa", QUESTION)
+    # display_results(chunks)
+
+    # Option H with filters:
+    # chunks = retrieve_by_brand_model(cfg, "Opel", "Corsa", QUESTION,
+    #                                   year="2025", market="IE", source_type="Docs")
+    # display_results(chunks)
+
+    # ── Default: run Option A (fastest smoke test) ────────────────────────────
+    run_video_pipeline(
+        cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
+        brand="Opel", car_model="Corsa", year="2023", market="UK", trim="All",
+        whisper_backend="youtube-transcript-api", cleanup=False,
     )
