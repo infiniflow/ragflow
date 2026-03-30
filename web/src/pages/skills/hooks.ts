@@ -69,13 +69,48 @@ export const useSkills = () => {
     }
   };
 
-  // Fetch details of a specific skill
+  // Fetch details of a specific skill (with version support)
   const fetchSkillDetails = async (
     folderId: string,
     folderName: string,
   ): Promise<Skill | null> => {
     try {
-      // Get all files recursively in the skill folder
+      // First, list the skill folder to find version folders
+      const { data: skillFolderData } = await fileManagerService.listFile({
+        parent_id: folderId,
+      });
+
+      if (skillFolderData.code !== 0) return null;
+
+      const skillItems = skillFolderData.data?.files || [];
+
+      // Find version folders (folders that match semver pattern like x.y.z)
+      const versionFolders = skillItems.filter(
+        (f: any) => f.type === 'folder' && /^\d+\.\d+\.\d+/.test(f.name),
+      );
+
+      if (versionFolders.length === 0) {
+        // No version folders found - fallback to legacy structure
+        return fetchSkillDetailsLegacy(folderId, folderName, skillItems);
+      }
+
+      // Use the latest version (sort by version number)
+      const sortedVersions = versionFolders.sort((a: any, b: any) => {
+        const va = a.name.split('.').map(Number);
+        const vb = b.name.split('.').map(Number);
+        for (let i = 0; i < Math.max(va.length, vb.length); i++) {
+          const na = va[i] || 0;
+          const nb = vb[i] || 0;
+          if (na !== nb) return nb - na; // Descending order
+        }
+        return 0;
+      });
+
+      const latestVersionFolder = sortedVersions[0];
+      const versionFolderId = latestVersionFolder.id;
+      const versionName = latestVersionFolder.name;
+
+      // Get all files recursively in the latest version folder
       const fileEntries: SkillFileEntry[] = [];
       let readmeContent: string | null = null;
       let firstFileDate: string | null = null;
@@ -141,7 +176,7 @@ export const useSkills = () => {
         }
       };
 
-      await fetchFilesRecursive(folderId);
+      await fetchFilesRecursive(versionFolderId);
 
       // Parse metadata from README
       let metadata: SkillMetadata = {};
@@ -160,15 +195,135 @@ export const useSkills = () => {
       return {
         id: folderId,
         name: displayName || metadata.name || folderName,
-        description,
+        description: `${description} (v${versionName})`,
         source_type: 'local',
         created_at: new Date(createDate).getTime(),
         updated_at: new Date(updateDate).getTime(),
         files: fileEntries,
-        metadata,
+        metadata: { ...metadata, version: versionName },
       };
     } catch (error) {
       console.error('Error fetching skill details:', error);
+      return null;
+    }
+  };
+
+  // Legacy fetch for skills without version structure
+  const fetchSkillDetailsLegacy = async (
+    folderId: string,
+    folderName: string,
+    skillItems: any[],
+  ): Promise<Skill | null> => {
+    try {
+      const fileEntries: SkillFileEntry[] = [];
+      let readmeContent: string | null = null;
+      let firstFileDate: string | null = null;
+      let displayName: string | null = null;
+
+      // Recursively fetch all files
+      const fetchFilesRecursive = async (
+        parentId: string,
+        basePath: string = '',
+      ) => {
+        const { data } = await fileManagerService.listFile({
+          parent_id: parentId,
+        });
+        if (data.code !== 0) return;
+
+        const files = data.data?.files || [];
+
+        if (!firstFileDate && files.length > 0) {
+          firstFileDate = files[0]?.create_date || files[0]?.update_date;
+        }
+
+        for (const f of files) {
+          const path = basePath ? `${basePath}/${f.name}` : f.name;
+
+          if (f.name === '.skill-meta.json' && !basePath) {
+            const metaContent = await fetchFileContent(f.id);
+            if (metaContent) {
+              try {
+                const meta = JSON.parse(metaContent);
+                displayName = meta.displayName;
+              } catch (e) {
+                console.error('Failed to parse skill metadata:', e);
+              }
+            }
+            continue;
+          }
+
+          fileEntries.push({
+            name: f.name,
+            path: path,
+            is_dir: f.type === 'folder',
+            size: f.size || 0,
+          });
+
+          const lowerName = f.name.toLowerCase();
+          if (
+            lowerName === 'skill.md' ||
+            lowerName === 'readme.md' ||
+            lowerName === 'index.md'
+          ) {
+            if (!readmeContent) {
+              readmeContent = await fetchFileContent(f.id);
+            }
+          }
+
+          if (f.type === 'folder') {
+            await fetchFilesRecursive(f.id, path);
+          }
+        }
+      };
+
+      // Process items from the skill folder
+      for (const f of skillItems) {
+        if (f.type === 'folder') {
+          await fetchFilesRecursive(f.id, f.name);
+        } else {
+          fileEntries.push({
+            name: f.name,
+            path: f.name,
+            is_dir: false,
+            size: f.size || 0,
+          });
+
+          const lowerName = f.name.toLowerCase();
+          if (
+            lowerName === 'skill.md' ||
+            lowerName === 'readme.md' ||
+            lowerName === 'index.md'
+          ) {
+            if (!readmeContent) {
+              readmeContent = await fetchFileContent(f.id);
+            }
+          }
+        }
+      }
+
+      let metadata: SkillMetadata = {};
+      let description = '';
+
+      if (readmeContent) {
+        const parsed = parseMetadata(readmeContent);
+        metadata = parsed.metadata;
+        description = metadata.description || parsed.body.slice(0, 200);
+      }
+
+      const createDate = firstFileDate || new Date().toISOString();
+
+      return {
+        id: folderId,
+        name: displayName || metadata.name || folderName,
+        description,
+        source_type: 'local',
+        created_at: new Date(createDate).getTime(),
+        updated_at: new Date(createDate).getTime(),
+        files: fileEntries,
+        metadata,
+      };
+    } catch (error) {
+      console.error('Error fetching legacy skill details:', error);
       return null;
     }
   };
@@ -249,9 +404,9 @@ export const useSkills = () => {
     }
   }, [t]);
 
-  // Upload a new skill with proper directory structure
+  // Upload a new skill with proper directory structure (with version support)
   const uploadSkill = useCallback(
-    async (name: string, files: File[]): Promise<boolean> => {
+    async (name: string, version: string, files: File[]): Promise<boolean> => {
       try {
         setLoading(true);
 
@@ -274,10 +429,12 @@ export const useSkills = () => {
 
         const skillNameNormalized = name.replace(/\s+/g, '-').toLowerCase();
 
-        // Check if skill with same name already exists
+        // Check if skill folder exists
         const { data: existingData } = await fileManagerService.listFile({
           parent_id: skillsFolderId,
         });
+
+        let skillFolderId: string;
 
         if (existingData.code === 0) {
           const existingSkill = existingData.data?.files?.find(
@@ -285,29 +442,65 @@ export const useSkills = () => {
           );
 
           if (existingSkill) {
-            message.error(t('skills.skillExists'));
-            return false;
+            // Skill exists, check if version already exists
+            const { data: versionData } = await fileManagerService.listFile({
+              parent_id: existingSkill.id,
+            });
+
+            if (versionData.code === 0) {
+              const existingVersion = versionData.data?.files?.find(
+                (f: any) => f.name === version && f.type === 'folder',
+              );
+
+              if (existingVersion) {
+                message.error(
+                  t('skills.versionExists') || 'This version already exists',
+                );
+                return false;
+              }
+            }
+
+            skillFolderId = existingSkill.id;
+          } else {
+            // Create skill folder
+            const folderRes = await fileManagerService.createFolder({
+              name: skillNameNormalized,
+              type: 'folder',
+              parent_id: skillsFolderId,
+            });
+
+            if (folderRes.data.code !== 0) {
+              throw new Error('Failed to create skill folder');
+            }
+
+            skillFolderId = folderRes.data.data?.id;
           }
+        } else {
+          throw new Error('Failed to list skills folder');
         }
-
-        // Create skill folder
-        const folderRes = await fileManagerService.createFolder({
-          name: skillNameNormalized,
-          type: 'folder',
-          parent_id: skillsFolderId,
-        });
-
-        if (folderRes.data.code !== 0) {
-          throw new Error('Failed to create skill folder');
-        }
-
-        const skillFolderId = folderRes.data.data?.id;
 
         if (!skillFolderId) throw new Error('Failed to get skill folder ID');
 
-        // Create a metadata file to store the original name
+        // Create version folder
+        const versionRes = await fileManagerService.createFolder({
+          name: version,
+          type: 'folder',
+          parent_id: skillFolderId,
+        });
+
+        if (versionRes.data.code !== 0) {
+          throw new Error('Failed to create version folder');
+        }
+
+        const versionFolderId = versionRes.data.data?.id;
+
+        if (!versionFolderId)
+          throw new Error('Failed to get version folder ID');
+
+        // Create a metadata file to store the original name and version
         const metadataContent = JSON.stringify({
           displayName: name,
+          version: version,
           createdAt: new Date().toISOString(),
         });
         const metadataBlob = new Blob([metadataContent], {
@@ -315,9 +508,9 @@ export const useSkills = () => {
         });
         const metadataFile = new File([metadataBlob], '.skill-meta.json');
 
-        // Upload metadata file
+        // Upload metadata file to version folder
         const metadataFormData = new FormData();
-        metadataFormData.append('parent_id', skillFolderId);
+        metadataFormData.append('parent_id', versionFolderId);
         metadataFormData.append('file', metadataFile);
 
         await fileManagerService.uploadFile(metadataFormData);
@@ -384,7 +577,7 @@ export const useSkills = () => {
 
         // Upload all files sequentially to avoid race conditions
         for (const file of filteredFiles) {
-          await uploadFileWithStructure(file, skillFolderId);
+          await uploadFileWithStructure(file, versionFolderId);
         }
 
         message.success(t('skills.uploadSuccess'));

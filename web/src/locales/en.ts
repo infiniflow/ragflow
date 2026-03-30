@@ -137,6 +137,10 @@ export default {
       skillName: 'Skill Name',
       skillNamePlaceholder: 'e.g., my-awesome-skill',
       skillNameHelp: 'Only letters, numbers, hyphens and underscores allowed',
+      skillVersion: 'Version',
+      skillVersionPlaceholder: 'e.g., 1.0.0',
+      versionFormatHelp: 'Version must be in semver format (e.g., 1.0.0)',
+      versionRequired: 'Version is required',
       selectFilesOrFolder: 'Select Files or Folder',
       uploadDescription:
         'Upload skill files. You can drag and drop files or select a folder.',
@@ -189,6 +193,8 @@ export default {
         read_failed: 'Invalid skill: Failed to read SKILL.md file.',
         invalid: 'Invalid skill format.',
         valid: 'Valid skill format. Ready to upload.',
+        versionExists:
+          'This version already exists. Please use a different version number.',
         error: 'Validation failed',
       },
       parsedMetadata: 'Parsed from SKILL.md:',

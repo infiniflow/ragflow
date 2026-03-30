@@ -76,8 +76,8 @@ const SkillsPage: React.FC = () => {
   }, []);
 
   const handleUpload = useCallback(
-    async (name: string, files: File[]) => {
-      return await uploadSkill(name, files);
+    async (name: string, version: string, files: File[]) => {
+      return await uploadSkill(name, version, files);
     },
     [uploadSkill],
   );

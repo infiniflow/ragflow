@@ -22,7 +22,7 @@ interface UploadFile {
 interface UploadModalProps {
   open: boolean;
   onCancel: () => void;
-  onUpload: (name: string, files: File[]) => Promise<boolean>;
+  onUpload: (name: string, version: string, files: File[]) => Promise<boolean>;
   loading?: boolean;
 }
 
@@ -39,6 +39,8 @@ const UploadModal: React.FC<UploadModalProps> = ({
   const { t } = useTranslation();
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState('');
+  const [version, setVersion] = useState('');
+  const [versionError, setVersionError] = useState('');
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -67,8 +69,29 @@ const UploadModal: React.FC<UploadModalProps> = ({
     return true;
   };
 
+  const validateVersion = (value: string): boolean => {
+    if (!value) {
+      setVersionError(t('skills.versionRequired') || 'Version is required');
+      return false;
+    }
+    // Semantic versioning format: x.y.z
+    if (!/^\d+\.\d+\.\d+/.test(value)) {
+      setVersionError(
+        t('skills.versionFormatHelp') ||
+          'Version must be in semver format (e.g., 1.0.0)',
+      );
+      return false;
+    }
+    setVersionError('');
+    return true;
+  };
+
   const handleOk = useCallback(async () => {
     if (!validateName(name)) {
+      return;
+    }
+
+    if (!validateVersion(version)) {
       return;
     }
 
@@ -85,10 +108,11 @@ const UploadModal: React.FC<UploadModalProps> = ({
       .filter(Boolean) as File[];
 
     try {
-      const success = await onUpload(name, files);
+      const success = await onUpload(name, version, files);
 
       if (success) {
         setName('');
+        setVersion('');
         setFileList([]);
         onCancel();
       }
@@ -98,12 +122,14 @@ const UploadModal: React.FC<UploadModalProps> = ({
       setUploading(false);
       setProgress(0);
     }
-  }, [name, fileList, onUpload, onCancel, t]);
+  }, [name, version, fileList, onUpload, onCancel, t]);
 
   const handleCancel = useCallback(() => {
     if (!uploading) {
       setName('');
       setNameError('');
+      setVersion('');
+      setVersionError('');
       setFileList([]);
       setValidationStatus(null);
       setValidationMessage('');
@@ -408,6 +434,30 @@ const UploadModal: React.FC<UploadModalProps> = ({
             }}
           />
           {nameError && <p className="text-sm text-state-error">{nameError}</p>}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="skill-version">
+            {t('skills.skillVersion') || 'Version'}
+            <span className="text-state-error ml-1">*</span>
+          </Label>
+          <Input
+            id="skill-version"
+            placeholder={t('skills.skillVersionPlaceholder') || 'e.g., 1.0.0'}
+            disabled={uploading}
+            value={version}
+            onChange={(e) => {
+              setVersion(e.target.value);
+              if (versionError) validateVersion(e.target.value);
+            }}
+          />
+          {versionError && (
+            <p className="text-sm text-state-error">{versionError}</p>
+          )}
+          <p className="text-xs text-text-secondary">
+            {t('skills.versionFormatHelp') ||
+              'Version must be in semver format (e.g., 1.0.0)'}
+          </p>
         </div>
 
         <div className="bg-bg-card border border-border-button rounded-lg p-4">
