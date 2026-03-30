@@ -118,7 +118,7 @@ const SkillsPage: React.FC = () => {
                 </Tooltip>
                 <Button onClick={() => setUploadModalOpen(true)}>
                   <Plus className="mr-2" />
-                  {t('skills.uploadSkill')}
+                  {t('skills.addSkill') || 'Add Skill'}
                 </Button>
               </div>
             </div>
@@ -162,7 +162,7 @@ const SkillsPage: React.FC = () => {
                     className="text-accent-primary hover:underline"
                     onClick={() => setUploadModalOpen(true)}
                   >
-                    {t('skills.uploadSkill')}
+                    {t('skills.addSkill') || 'Add Skill'}
                   </button>
                 </div>
               )}

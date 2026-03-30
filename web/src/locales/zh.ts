@@ -175,6 +175,22 @@ export default {
         versionExists: '该版本已存在，请使用不同的版本号。',
       },
       parsedMetadata: '从 SKILL.md 解析：',
+      addSkill: '添加技能',
+      upload: '本地上传',
+      importFromGit: '从 Git 导入',
+      gitPlatform: '平台',
+      repoUrl: '仓库地址',
+      repoUrlHelp: '支持带路径的仓库地址',
+      accessToken: '访问令牌',
+      githubTokenHelp: '用于私有仓库或更高配额（5000 次/小时）',
+      giteeTokenHelp: '用于私有仓库或更高配额（2000 次/小时）',
+      rateLimitInfo: '速率限制说明',
+      githubRateLimit:
+        '公开仓库：每小时 60 次请求/IP。使用令牌可达 5000 次/小时。',
+      giteeRateLimit:
+        '公开仓库：每小时 1000 次请求/IP。使用令牌可达 2000 次/小时。',
+      import: '导入',
+      importing: '导入中...',
     },
     memories: {
       llmTooltip: '分析对话内容，提取关键信息，并生成结构化的记忆摘要。',

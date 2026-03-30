@@ -198,6 +198,23 @@ export default {
         error: 'Validation failed',
       },
       parsedMetadata: 'Parsed from SKILL.md:',
+      addSkill: 'Add Skill',
+      upload: 'Upload',
+      importFromGit: 'Import from Git',
+      gitPlatform: 'Platform',
+      repoUrl: 'Repository URL',
+      repoUrlHelp: 'Supports repository URL with optional path',
+      accessToken: 'Access Token',
+      githubTokenHelp:
+        'For private repos or higher rate limits (5000 req/hour)',
+      giteeTokenHelp: 'For private repos or higher rate limits (2000 req/hour)',
+      rateLimitInfo: 'Rate Limit Info',
+      githubRateLimit:
+        'Public repos: 60 requests/hour per IP. Use token for 5000 req/hour.',
+      giteeRateLimit:
+        'Public repos: 1000 requests/hour per IP. Use token for 2000 req/hour.',
+      import: 'Import',
+      importing: 'Importing...',
     },
     memories: {
       llmTooltip:
