@@ -41,6 +41,12 @@ class FulltextQueryer(QueryBase):
     def question(self, txt, tbl="qa", min_match: float = 0.6):
         original_query = txt
         txt = self.add_space_between_eng_zh(txt)
+
+        # Strip Infinity ESCAPABLE characters from the query.
+        #
+        # Infinity's search_lexer.l defines ESCAPABLE characters [\x20()^"'~*?:\\]
+        # If these characters appear unescaped in a query, Infinity's lexer will
+        # interpret them as special tokens, causing parsing errors.
         txt = re.sub(
             r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>*~'\"\\]+",
             " ",
