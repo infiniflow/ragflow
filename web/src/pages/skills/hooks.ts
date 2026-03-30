@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Skill, SkillFileEntry, SkillMetadata } from './types';
 import {
+  filterUploadFiles,
   parseFrontmatter,
   validateSkillFormat as validateSkillFormatImpl,
 } from './validation';
@@ -78,6 +79,7 @@ export const useSkills = () => {
       const fileEntries: SkillFileEntry[] = [];
       let readmeContent: string | null = null;
       let firstFileDate: string | null = null;
+      let displayName: string | null = null;
 
       // Recursively fetch all files
       const fetchFilesRecursive = async (
@@ -98,6 +100,21 @@ export const useSkills = () => {
 
         for (const f of files) {
           const path = basePath ? `${basePath}/${f.name}` : f.name;
+
+          // Check for metadata file
+          if (f.name === '.skill-meta.json' && !basePath) {
+            const metaContent = await fetchFileContent(f.id);
+            if (metaContent) {
+              try {
+                const meta = JSON.parse(metaContent);
+                displayName = meta.displayName;
+              } catch (e) {
+                console.error('Failed to parse skill metadata:', e);
+              }
+            }
+            continue; // Don't include metadata file in file list
+          }
+
           fileEntries.push({
             name: f.name,
             path: path,
@@ -142,7 +159,7 @@ export const useSkills = () => {
 
       return {
         id: folderId,
-        name: metadata.name || folderName,
+        name: displayName || metadata.name || folderName,
         description,
         source_type: 'local',
         created_at: new Date(createDate).getTime(),
@@ -232,14 +249,17 @@ export const useSkills = () => {
     }
   }, [t]);
 
-  // Upload a new skill
+  // Upload a new skill with proper directory structure
   const uploadSkill = useCallback(
     async (name: string, files: File[]): Promise<boolean> => {
       try {
         setLoading(true);
 
-        // Validate skill format first
-        const validation = await validateSkillFormatImpl(files);
+        // Filter out ignored/junk files first
+        const filteredFiles = filterUploadFiles(files);
+
+        // Validate skill format
+        const validation = await validateSkillFormatImpl(filteredFiles);
         if (!validation.valid) {
           const errorKey = `skills.validation.${validation.error}`;
           const errorMsg = t(errorKey) || t('skills.validation.invalid');
@@ -285,19 +305,86 @@ export const useSkills = () => {
 
         if (!skillFolderId) throw new Error('Failed to get skill folder ID');
 
-        // Upload files using FormData with path for directory structure
-        const formData = new FormData();
-        formData.append('parent_id', skillFolderId);
-
-        files.forEach((file: any) => {
-          formData.append('file', file);
-          formData.append('path', file.webkitRelativePath || file.name);
+        // Create a metadata file to store the original name
+        const metadataContent = JSON.stringify({
+          displayName: name,
+          createdAt: new Date().toISOString(),
         });
+        const metadataBlob = new Blob([metadataContent], {
+          type: 'application/json',
+        });
+        const metadataFile = new File([metadataBlob], '.skill-meta.json');
 
-        const uploadRes = await fileManagerService.uploadFile(formData);
+        // Upload metadata file
+        const metadataFormData = new FormData();
+        metadataFormData.append('parent_id', skillFolderId);
+        metadataFormData.append('file', metadataFile);
 
-        if (uploadRes.data.code !== 0) {
-          throw new Error('Failed to upload files');
+        await fileManagerService.uploadFile(metadataFormData);
+
+        // Upload files recursively to preserve directory structure
+        const uploadFileWithStructure = async (
+          file: File,
+          parentId: string,
+        ) => {
+          const relativePath = (file as any).webkitRelativePath || file.name;
+          const pathParts = relativePath.split('/');
+
+          // If file is in root directory (no subdirectories)
+          if (pathParts.length === 1) {
+            const formData = new FormData();
+            formData.append('parent_id', parentId);
+            formData.append('file', file);
+            await fileManagerService.uploadFile(formData);
+            return;
+          }
+
+          // Navigate/create directory structure
+          let currentParentId = parentId;
+          for (let i = 0; i < pathParts.length - 1; i++) {
+            const dirName = pathParts[i];
+
+            // List current directory to check if subdirectory exists
+            const { data: listData } = await fileManagerService.listFile({
+              parent_id: currentParentId,
+            });
+
+            if (listData.code !== 0) {
+              throw new Error(`Failed to list directory: ${dirName}`);
+            }
+
+            const existingDir = listData.data?.files?.find(
+              (f: any) => f.name === dirName && f.type === 'folder',
+            );
+
+            if (existingDir) {
+              currentParentId = existingDir.id;
+            } else {
+              // Create subdirectory
+              const createRes = await fileManagerService.createFolder({
+                name: dirName,
+                type: 'folder',
+                parent_id: currentParentId,
+              });
+
+              if (createRes.data.code !== 0) {
+                throw new Error(`Failed to create directory: ${dirName}`);
+              }
+
+              currentParentId = createRes.data.data?.id;
+            }
+          }
+
+          // Upload file to the final directory
+          const formData = new FormData();
+          formData.append('parent_id', currentParentId);
+          formData.append('file', file);
+          await fileManagerService.uploadFile(formData);
+        };
+
+        // Upload all files sequentially to avoid race conditions
+        for (const file of filteredFiles) {
+          await uploadFileWithStructure(file, skillFolderId);
         }
 
         message.success(t('skills.uploadSuccess'));

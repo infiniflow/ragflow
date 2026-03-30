@@ -183,9 +183,13 @@ export default {
         total_size_exceeded:
           'Invalid skill: Total bundle size exceeds 50MB limit.',
         no_files: 'No files selected. Please select a skill folder.',
+        noValidFiles: 'No valid files found. Please check your selection.',
+        junkFilesFound:
+          'Temporary files detected (e.g., .DS_Store). Please remove them before uploading.',
         read_failed: 'Invalid skill: Failed to read SKILL.md file.',
         invalid: 'Invalid skill format.',
         valid: 'Valid skill format. Ready to upload.',
+        error: 'Validation failed',
       },
       parsedMetadata: 'Parsed from SKILL.md:',
     },

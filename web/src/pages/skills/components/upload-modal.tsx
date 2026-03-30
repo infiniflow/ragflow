@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { validateSkillFormat } from '../hooks';
 import type { ValidationError } from '../types';
+import { findJunkFiles } from '../validation';
 
 interface UploadFile {
   uid: string;
@@ -260,8 +261,25 @@ const UploadModal: React.FC<UploadModalProps> = ({
           .filter(Boolean) as File[];
 
         if (files.length === 0) {
-          setValidationStatus(null);
-          setValidationMessage('');
+          setValidationStatus('invalid');
+          setValidationMessage(
+            t('skills.validation.noValidFiles') || 'No valid files found',
+          );
+          setValidationErrors([]);
+          setParsedMetadata(null);
+          return;
+        }
+
+        // Check for junk files first
+        const junkFiles = findJunkFiles(files);
+        if (junkFiles.length > 0) {
+          setValidationStatus('invalid');
+          const fileNames = junkFiles.slice(0, 3).join(', ');
+          const more =
+            junkFiles.length > 3 ? ` (+${junkFiles.length - 3} more)` : '';
+          setValidationMessage(
+            `${t('skills.validation.junkFilesFound') || 'Please remove temporary files before uploading'}: ${fileNames}${more}`,
+          );
           setValidationErrors([]);
           setParsedMetadata(null);
           return;
@@ -301,8 +319,9 @@ const UploadModal: React.FC<UploadModalProps> = ({
       } catch (err) {
         console.error('Validation error:', err);
         setValidationStatus('invalid');
+        const errorMsg = err instanceof Error ? err.message : String(err);
         setValidationMessage(
-          t('skills.validation.invalid') || 'Invalid skill format',
+          `${t('skills.validation.error') || 'Validation failed'}: ${errorMsg}`,
         );
         setValidationErrors([]);
         setParsedMetadata(null);

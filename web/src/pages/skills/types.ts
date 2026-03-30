@@ -99,6 +99,6 @@ export interface SkillDetailProps {
 export interface UploadModalProps {
   open: boolean;
   onCancel: () => void;
-  onUpload: (name: string, files: File[]) => Promise<boolean>;
+  onUpload: (name: string, version: string, files: File[]) => Promise<boolean>;
   loading?: boolean;
 }

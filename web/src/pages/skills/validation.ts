@@ -112,12 +112,43 @@ export function sanitizeRelPath(path: string): string | null {
  */
 export function isMacJunkPath(path: string): boolean {
   const normalized = path.toLowerCase();
-  return (
-    normalized.startsWith('__macosx/') ||
-    normalized === '.ds_store' ||
-    normalized.endsWith('/.ds_store') ||
-    normalized.startsWith('._')
-  );
+  // Check for .DS_Store files (any location, any case)
+  if (normalized === '.ds_store' || normalized.endsWith('/.ds_store')) {
+    return true;
+  }
+  // Check for __MACOSX directories
+  if (normalized.startsWith('__macosx/') || normalized === '__macosx') {
+    return true;
+  }
+  // Check for resource fork files (._*)
+  if (normalized.startsWith('._') || normalized.includes('/._')) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Check if files contain any junk/temporary files
+ * Returns an array of junk file paths found
+ */
+export function findJunkFiles(files: File[]): string[] {
+  const junkFiles: string[] = [];
+  for (const file of files) {
+    const path = file.webkitRelativePath || file.name;
+    const sanitized = sanitizeRelPath(path);
+    if (sanitized && isMacJunkPath(sanitized)) {
+      junkFiles.push(path);
+    }
+  }
+  return junkFiles;
+}
+
+/**
+ * Check if files contain any junk/temporary files
+ * Returns true if any junk files are found
+ */
+export function hasJunkFiles(files: File[]): boolean {
+  return findJunkFiles(files).length > 0;
 }
 
 // ============================================================================
@@ -285,8 +316,11 @@ export async function validateSkillFormat(
       return { valid: false, error: 'invalid_path' };
     }
 
-    if (isMacJunkPath(sanitized)) {
-      continue; // Skip Mac junk files
+    if (
+      isMacJunkPath(sanitized) ||
+      shouldIgnore(sanitized, DEFAULT_IGNORE_PATTERNS)
+    ) {
+      continue; // Skip junk and ignored files
     }
 
     validFiles.push(file);
@@ -375,11 +409,12 @@ function readFileAsText(file: File): Promise<string> {
  * Supports basic glob patterns: *, ?, **
  */
 export function shouldIgnore(filePath: string, patterns: string[]): boolean {
+  const normalizedPath = filePath.toLowerCase();
   for (const pattern of patterns) {
     const trimmedPattern = pattern.trim();
     if (!trimmedPattern || trimmedPattern.startsWith('#')) continue;
 
-    if (matchPattern(filePath, trimmedPattern)) {
+    if (matchPattern(normalizedPath, trimmedPattern.toLowerCase())) {
       return true;
     }
   }
@@ -455,6 +490,8 @@ function globToRegex(pattern: string): RegExp {
 
 export const DEFAULT_IGNORE_PATTERNS = [
   '.git/',
+  '.svn/',
+  '.hg/',
   'node_modules/',
   '__MACOSX/',
   '.DS_Store',
@@ -462,8 +499,16 @@ export const DEFAULT_IGNORE_PATTERNS = [
   '*.log',
   '*.tmp',
   '*.temp',
+  '*.swp',
+  '*.swo',
+  '*~',
   '.env',
   '.env.*',
+  '.vscode/',
+  '.idea/',
+  'Thumbs.db',
+  'desktop.ini',
+  '.skill-meta.json',
 ];
 
 // ============================================================================
@@ -478,6 +523,22 @@ export function filterIgnoredFiles(
   ignorePatterns: string[] = DEFAULT_IGNORE_PATTERNS,
 ): SkillFileEntry[] {
   return files.filter((file) => !shouldIgnore(file.path, ignorePatterns));
+}
+
+/**
+ * Filter upload files (File objects) based on ignore patterns
+ * Removes junk files like .DS_Store, __MACOSX, etc.
+ */
+export function filterUploadFiles(files: File[]): File[] {
+  return files.filter((file) => {
+    const path = file.webkitRelativePath || file.name;
+    const sanitized = sanitizeRelPath(path);
+    if (!sanitized) return false;
+    return (
+      !isMacJunkPath(sanitized) &&
+      !shouldIgnore(sanitized, DEFAULT_IGNORE_PATTERNS)
+    );
+  });
 }
 
 /**
