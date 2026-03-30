@@ -41,15 +41,16 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
+from api.utils.doc_index_utils import build_docstore_rename_fields
 from api.utils.file_utils import filename_type, thumbnail
 from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers, html2pdf, is_valid_url
+from deepdoc.parser.html_parser import RAGFlowHtmlParser
+from rag.nlp import search
 from common import settings
 from common.constants import SANDBOX_ARTIFACT_BUCKET, VALID_TASK_STATUS, ParserType, RetCode, TaskStatus
 from common.file_utils import get_project_base_directory
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec
-from deepdoc.parser.html_parser import RAGFlowHtmlParser
-from rag.nlp import rag_tokenizer, search
 
 
 def _is_safe_download_filename(name: str) -> bool:
@@ -700,12 +701,7 @@ async def rename():
                 FileService.update_by_id(file.id, {"name": req["name"]})
 
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])
-            title_tks = rag_tokenizer.tokenize(req["name"])
-            es_body = {
-                "docnm_kwd": req["name"],
-                "title_tks": title_tks,
-                "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
-            }
+            es_body = build_docstore_rename_fields(req["name"])
             if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
                 settings.docStoreConn.update(
                     {"doc_id": req["doc_id"]},
