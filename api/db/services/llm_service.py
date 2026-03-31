@@ -445,8 +445,10 @@ class LLMBundle(LLM4Tenant):
                     generation.update(output={"error": str(e)})
                     generation.end()
                 raise
-            if total_tokens and not TenantLLMService.increase_usage_by_id(self.model_config["id"], total_tokens):
-                logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], total_tokens))
+            if total_tokens:
+                self.cumulated_tokens += total_tokens
+                if not TenantLLMService.increase_usage_by_id(self.model_config["id"], total_tokens):
+                    logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], total_tokens))
             if generation:
                 generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
                 generation.end()
@@ -488,8 +490,10 @@ class LLMBundle(LLM4Tenant):
                     generation.update(output={"error": str(e)})
                     generation.end()
                 raise
-            if total_tokens and not TenantLLMService.increase_usage_by_id(self.model_config["id"], total_tokens):
-                logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], total_tokens))
+            if total_tokens:
+                self.cumulated_tokens += total_tokens
+                if not TenantLLMService.increase_usage_by_id(self.model_config["id"], total_tokens):
+                    logging.error("LLMBundle.async_chat_streamly_delta can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], total_tokens))
             if generation:
                 generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
                 generation.end()

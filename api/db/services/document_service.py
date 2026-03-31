@@ -548,7 +548,7 @@ class DocumentService(CommonService):
             chunk_num=cls.model.chunk_num + chunk_num,
             process_duration=cls.model.process_duration + duration,
         )
-        if llm_token_num:
+        if llm_token_num > 0:
             update_fields["llm_token_num"] = cls.model.llm_token_num + llm_token_num
         num = (
             cls.model.update(**update_fields)
