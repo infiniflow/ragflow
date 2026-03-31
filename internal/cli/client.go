@@ -152,14 +152,14 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListAdminTokens(cmd)
 	case "drop_token":
 		return c.DropAdminToken(cmd)
-	case "list_pool_providers":
-		return c.ListPoolProviders(cmd)
-	case "show_pool_provider":
-		return c.ShowPoolProvider(cmd)
-	case "list_pool_models":
-		return c.ListPoolModels(cmd)
-	case "show_pool_model":
-		return c.ShowPoolModel(cmd)
+	case "list_available_providers":
+		return c.ListAvailableProviders(cmd)
+	case "show_provider":
+		return c.ShowProvider(cmd)
+	case "list_provider_models":
+		return c.ListModels(cmd)
+	case "show_model":
+		return c.ShowModel(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
@@ -204,13 +204,20 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "drop_doc_meta_index":
 		return c.DropDocMetaIndex(cmd)
 	case "list_pool_providers":
-		return c.ListPoolProviders(cmd)
-	case "show_pool_provider":
-		return c.ShowPoolProvider(cmd)
-	case "list_pool_models":
-		return c.ListPoolModels(cmd)
-	case "show_pool_model":
-		return c.ShowPoolModel(cmd)
+		return c.ListAvailableProviders(cmd)
+	case "show_provider":
+		return c.ShowProvider(cmd)
+	case "list_provider_models":
+		return c.ListModels(cmd)
+	case "show_model":
+		return c.ShowModel(cmd)
+	// Provider commands
+	case "create_provider":
+		return c.CreateProvider(cmd)
+	case "list_providers":
+		return c.ListProviders(cmd)
+	case "drop_provider":
+		return c.DropProvider(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)

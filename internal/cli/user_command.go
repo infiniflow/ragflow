@@ -751,6 +751,119 @@ func (c *RAGFlowClient) DropDocMetaIndex(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// CreateProvider creates a new model provider
+// CREATE PROVIDER <name>
+// CREATE PROVIDER <name> <api_key>
+func (c *RAGFlowClient) CreateProvider(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	// Get optional api_key
+	apiKey, _ := cmd.Params["api_key"].(string)
+
+	// Build payload
+	payload := map[string]interface{}{
+		"llm_factory": providerName,
+		"api_key":     apiKey,
+		"verify":      apiKey != "", // Only verify if api_key is provided
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/llm/set_api_key", true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create provider: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("create provider failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// ListProviders lists all providers
+// LIST PROVIDERS
+func (c *RAGFlowClient) ListProviders(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	resp, err := c.HTTPClient.Request("GET", "/llm/factories", true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list providers: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list providers: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list providers failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// DropProvider deletes a provider
+// DROP PROVIDER <name>
+func (c *RAGFlowClient) DropProvider(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	// Build payload
+	payload := map[string]interface{}{
+		"llm_factory": providerName,
+	}
+
+	resp, err := c.HTTPClient.Request("DELETE", "/llm/factory", true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop provider: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to drop provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("drop provider failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // Context related commands
 
 // CEList handles the ls command - lists nodes using Context Engine
