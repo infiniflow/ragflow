@@ -133,6 +133,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.POST("/license", r.handler.SetLicense)
 			protected.POST("/license/config", r.handler.UpdateLicenseConfig)
 			protected.GET("/license", r.handler.ShowLicense)
+			// Log level
+			protected.GET("/log_level", r.handler.GetLogLevel)
+			protected.PUT("/log_level", r.handler.SetLogLevel)
 		}
 	}
 
