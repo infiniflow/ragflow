@@ -218,10 +218,7 @@ class TestChatAssistantUpdate:
             updated_chat = client.list_chats(id=chat_assistant.id)[0]
             if prompt:
                 for k, v in prompt.items():
-                    if k == "keywords_similarity_weight":
-                        assert attrgetter(k)(updated_chat.prompt) == 1 - v, str(updated_chat)
-                    else:
-                        assert attrgetter(k)(updated_chat.prompt) == v, str(updated_chat)
+                    assert attrgetter(k)(updated_chat.prompt) == v, str(updated_chat)
             else:
                 excepted_value = Chat.LLM(
                     client,
