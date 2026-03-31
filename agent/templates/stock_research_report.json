@@ -1,9 +1,9 @@
 {
     "id": 26,
     "title": {
-        "en": "Stock Research Report Agent",
-        "de": "Aktienanalyse Agent",
-        "zh": "股票研究报告智能体"
+        "en": "Stock market research assistant",
+        "de": "Assistent für Börsenforschung",
+        "zh": "股市研究助手"
     },
     "description": {
         "en": "This template helps financial analysts quickly organize information — it can automatically retrieve company data, consolidate financial metrics, and integrate research report insights.",
