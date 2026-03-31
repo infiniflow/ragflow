@@ -2,7 +2,7 @@ import { MessageType } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
   useFetchChatList,
-  useFetchConversationList,
+  useFetchSessionList,
 } from '@/hooks/use-chat-request';
 import { IConversation } from '@/interfaces/database/chat';
 import { generateConversationId } from '@/utils/chat';
@@ -30,7 +30,7 @@ export const useSelectDerivedConversationList = () => {
     loading,
     handleInputChange,
     searchString,
-  } = useFetchConversationList();
+  } = useFetchSessionList();
 
   const { id: dialogId } = useParams();
   const prologue = useFindPrologueFromDialogList();
@@ -45,9 +45,9 @@ export const useSelectDerivedConversationList = () => {
           {
             id: conversationId,
             name: t('newConversation'),
-            dialog_id: dialogId,
+            chat_id: dialogId,
             is_new: true,
-            message: [
+            messages: [
               {
                 content: prologue,
                 role: MessageType.Assistant,

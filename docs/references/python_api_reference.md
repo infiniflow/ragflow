@@ -1471,12 +1471,13 @@ session.update({"name": "updated_name"})
 
 ```python
 Chat.list_sessions(
-    page: int = 1, 
-    page_size: int = 30, 
-    orderby: str = "create_time", 
+    page: int = 1,
+    page_size: int = 30,
+    orderby: str = "create_time",
     desc: bool = True,
     id: str = None,
-    name: str = None
+    name: str = None,
+    user_id: str = None
 ) -> list[Session]
 ```
 
@@ -1510,6 +1511,10 @@ The ID of the chat session to retrieve. Defaults to `None`.
 ##### name: `str`
 
 The name of the chat session to retrieve. Defaults to `None`.
+
+##### user_id: `str`
+
+The optional user-defined ID to filter sessions by. Defaults to `None`.
 
 #### Returns
 

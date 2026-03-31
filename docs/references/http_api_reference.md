@@ -3476,8 +3476,7 @@ Updates a session of a specified chat assistant.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"name`: `string`
-  - `"user_id`: `string` (optional)
+  - `"name"`: `string`
 
 ##### Request example
 
@@ -3494,14 +3493,12 @@ curl --request PUT \
 
 ##### Request Parameter
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `session_id`: (*Path parameter*)  
+- `session_id`: (*Path parameter*)
   The ID of the session to update.
-- `"name"`: (*Body Parameter*), `string`  
+- `"name"`: (*Body Parameter*), `string`
   The revised name of the session.
-- `"user_id"`: (*Body parameter*), `string`  
-  Optional user-defined ID.
 
 #### Response
 
@@ -3509,7 +3506,23 @@ Success:
 
 ```json
 {
-    "code": 0
+    "code": 0,
+    "data": {
+        "chat_id": "2ca4b22e878011ef88fe0242ac120005",
+        "create_date": "Fri, 11 Oct 2024 08:46:14 GMT",
+        "create_time": 1728636374571,
+        "id": "4606b4ec87ad11efbc4f0242ac120006",
+        "messages": [
+            {
+                "content": "Hi! I am your assistant, can I help you?",
+                "role": "assistant"
+            }
+        ],
+        "name": "updated session name",
+        "update_date": "Fri, 11 Oct 2024 08:46:14 GMT",
+        "update_time": 1728636374571,
+        "user_id": ""
+    }
 }
 ```
 
@@ -3526,7 +3539,7 @@ Failure:
 
 ### List chat assistant's sessions
 
-**GET** `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}`
+**GET** `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}&user_id={user_id}`
 
 Lists sessions associated with a specified chat assistant.
 
@@ -3541,7 +3554,7 @@ Lists sessions associated with a specified chat assistant.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id} \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}&user_id={user_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -3575,7 +3588,7 @@ Success:
     "code": 0,
     "data": [
         {
-            "chat": "2ca4b22e878011ef88fe0242ac120005",
+            "chat_id": "2ca4b22e878011ef88fe0242ac120005",
             "create_date": "Fri, 11 Oct 2024 08:46:43 GMT",
             "create_time": 1728636403974,
             "id": "578d541e87ad11ef96b90242ac120006",
@@ -3586,8 +3599,10 @@ Success:
                 }
             ],
             "name": "new session",
+            "reference": [],
             "update_date": "Fri, 11 Oct 2024 08:46:43 GMT",
-            "update_time": 1728636403974
+            "update_time": 1728636403974,
+            "user_id": ""
         }
     ]
 }
@@ -5057,9 +5072,159 @@ Failure:
 
 ---
 
+### Text-to-speech
+
+**POST** `/api/v1/chats/tts`
+
+Converts text to speech audio using the tenant's default TTS model, returning a streaming audio response.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/chats/tts`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
+- Body:
+  - `"text"`: `string` *(Required)* The text to synthesize.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/chats/tts \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
+     --output audio.mp3 \
+     --data '{"text": "Hello, how can I help you today?"}'
+```
+
+#### Response
+
+Success: binary `audio/mpeg` stream with headers `Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no`.
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "No default TTS model is set"
+}
+```
+
+---
+
+### Speech-to-text
+
+**POST** `/api/v1/chats/transcriptions`
+
+Transcribes an audio file using the tenant's default ASR (automatic speech recognition) model.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/chats/transcriptions`
+- Headers:
+  - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
+- Body (multipart/form-data):
+  - `"file"`: audio file (`.wav`, `.mp3`, `.m4a`, `.aac`, `.flac`, `.ogg`, `.webm`, `.opus`, `.wma`)
+  - `"stream"`: `string` `"true"` for SSE streaming, `"false"` (default) for a single JSON response.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/chats/transcriptions \
+     --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
+     --form file=@recording.wav \
+     --form stream=false
+```
+
+#### Response
+
+Success (non-streaming):
+
+```json
+{
+    "code": 0,
+    "data": {
+        "text": "Hello, how can I help you today?"
+    }
+}
+```
+
+Success (streaming): SSE events with `data: {"event": "partial", "text": "..."}`.
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Unsupported audio format: .mp4. Allowed: .aac, .flac, .m4a, .mp3, .ogg, .opus, .wav, .webm, .wma"
+}
+```
+
+---
+
+### Generate mind map
+
+**POST** `/api/v1/chats/mindmap`
+
+Generates a mind map from a question and a set of knowledge base IDs.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/chats/mindmap`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
+- Body:
+  - `"question"`: `string` *(Required)* The central question or topic.
+  - `"kb_ids"`: `list[string]` *(Required)* Knowledge base IDs to search.
+  - `"search_id"`: `string` *(Optional)* ID of a saved search configuration to merge additional `kb_ids` and settings.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/chats/mindmap \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
+     --data '{
+         "question": "What is retrieval-augmented generation?",
+         "kb_ids": ["kb-abc123"]
+     }'
+```
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "name": "Retrieval-Augmented Generation",
+        "children": [...]
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 500,
+    "message": "..."
+}
+```
+
+---
+
 ### Generate related questions
 
-**POST** `/api/v1/sessions/related_questions`
+**POST** `/api/v1/chats/related_questions`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
@@ -5074,25 +5239,23 @@ The chat model autonomously determines the number of questions to generate based
 #### Request
 
 - Method: POST
-- URL: `/api/v1/sessions/related_questions`
+- URL: `/api/v1/chats/related_questions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
 - Body:
-  - `"question"`: `string`
-  - `"industry"`: `string`
+  - `"question"`: `string` *(Required)* The original user question.
+  - `"search_id"`: `string` *(Optional)* ID of a saved search configuration to use custom LLM settings.
 
 ##### Request example
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/sessions/related_questions \
+     --url http://{address}/api/v1/chats/related_questions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
-     --data '
-     {
-          "question": "What are the key advantages of Neovim over Vim?",
-          "industry": "software_development"
+     --data '{
+          "question": "What are the key advantages of Neovim over Vim?"
      }'
 ```
 
@@ -5100,8 +5263,8 @@ curl --request POST \
 
 - `"question"`: (*Body Parameter*), `string`
   The original user question.
-- `"industry"`: (*Body Parameter*), `string`
-  Industry of the question.
+- `"search_id"`: (*Body Parameter*), `string`
+  ID of a saved search configuration to use custom LLM settings. If provided, the LLM model and generation settings from the search configuration will be used.
 
 #### Response
 

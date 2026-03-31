@@ -21,7 +21,7 @@ from copy import deepcopy
 from enum import Enum
 from functools import wraps
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 
 import pytest
 
