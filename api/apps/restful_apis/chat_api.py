@@ -242,11 +242,6 @@ async def create():
         if err:
             return get_data_error_result(message=err)
 
-        prompt_config = req.get("prompt_config", {})
-        kb_ids = req.get("kb_ids", [])
-        if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
-            return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
-
         req = ensure_tenant_model_id_for_params(current_user.id, req)
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
