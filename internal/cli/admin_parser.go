@@ -168,6 +168,8 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 		return p.parseAdminListDefaultModels()
 	case TokenAvailable:
 		return p.parseCommonListProviders()
+	case TokenModels:
+		return p.parseListModelsOfProvider()
 	case TokenChats:
 		p.nextToken()
 		// Semicolon is optional for SHOW TOKEN
@@ -304,7 +306,7 @@ func (p *Parser) parseCommonListProviders() (*Command, error) {
 		return nil, fmt.Errorf("expected PROVIDERS")
 	}
 
-	return NewCommand("list_pool_providers"), nil
+	return NewCommand("list_available_providers"), nil
 }
 
 func (p *Parser) parseCommonShowPoolModel() (*Command, error) {
@@ -416,6 +418,10 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 		return p.parseShowVariable()
 	case TokenService:
 		return p.parseShowService()
+	case TokenProvider:
+		return p.parseShowProvider()
+	case TokenModel:
+		return p.parseShowModel()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}

@@ -152,11 +152,11 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListAdminTokens(cmd)
 	case "drop_token":
 		return c.DropAdminToken(cmd)
-	case "list_pool_providers":
-		return c.ListPoolProviders(cmd)
+	case "list_available_providers":
+		return c.ListAvailableProviders(cmd)
 	case "show_provider":
 		return c.ShowProvider(cmd)
-	case "list_models":
+	case "list_provider_models":
 		return c.ListModels(cmd)
 	case "show_model":
 		return c.ShowModel(cmd)
@@ -204,7 +204,7 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "drop_doc_meta_index":
 		return c.DropDocMetaIndex(cmd)
 	case "list_pool_providers":
-		return c.ListPoolProviders(cmd)
+		return c.ListAvailableProviders(cmd)
 	case "show_provider":
 		return c.ShowProvider(cmd)
 	case "list_provider_models":

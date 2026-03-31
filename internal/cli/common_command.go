@@ -237,7 +237,7 @@ func (c *RAGFlowClient) Logout() (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ListPoolProviders(cmd *Command) (ResponseIf, error) {
+func (c *RAGFlowClient) ListAvailableProviders(cmd *Command) (ResponseIf, error) {
 
 	var endPoint string
 	if c.ServerType == "admin" {
