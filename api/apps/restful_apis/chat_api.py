@@ -89,7 +89,7 @@ def _validate_name(name, *, required=True):
         return None, "Chat name must be a string."
     name = name.strip()
     if not name:
-        return None, "Chat name can't be empty." if required else "`name` cannot be empty."
+        return None, "`name` is required." if required else "`name` cannot be empty."
     if len(name.encode("utf-8")) > 255:
         return None, f"Chat name length is {len(name.encode('utf-8'))} which is larger than 255."
     return name, None
@@ -281,8 +281,9 @@ def list_chats():
         keywords = ""
 
     try:
-        page_number = int(request.args.get("page", 1))
+        page_number = int(request.args.get("page", 0))
         items_per_page = int(request.args.get("page_size", 0))
+
         if owner_ids:
             chats, total = DialogService.get_by_tenant_ids(
                 owner_ids, current_user.id, 0, 0, orderby, desc, keywords, **exact_filters

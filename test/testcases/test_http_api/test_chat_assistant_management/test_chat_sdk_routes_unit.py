@@ -155,6 +155,26 @@ def test_create_chat_uses_direct_chat_fields(monkeypatch):
     assert "avatar" not in res["data"]
 
 
+@pytest.mark.p2
+def test_create_chat_blank_name_is_treated_as_missing(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+
+    _set_request_json(
+        monkeypatch,
+        module,
+        {
+            "name": "   ",
+            "dataset_ids": [],
+        },
+    )
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+
+    res = _run(module.create.__wrapped__())
+
+    assert res["code"] == 102
+    assert res["message"] == "`name` is required."
+
+
 @pytest.mark.p1
 def test_create_chat_accepts_provider_scoped_rerank_id(monkeypatch):
     module = _load_chat_module(monkeypatch)
@@ -458,3 +478,82 @@ def test_list_chats_returns_old_business_fields(monkeypatch):
     assert "llm" not in chat
 
 
+@pytest.mark.p2
+def test_list_chats_keeps_zero_pagination_semantics(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    calls = []
+
+    monkeypatch.setattr(
+        module,
+        "request",
+        SimpleNamespace(
+            args=SimpleNamespace(
+                get=lambda key, default=None: {
+                    "keywords": "",
+                    "page": 0,
+                    "page_size": 0,
+                    "orderby": "create_time",
+                    "desc": "true",
+                }.get(key, default),
+                getlist=lambda _key: [],
+            )
+        ),
+    )
+
+    def _get_by_tenant_ids(_owner_ids, _user_id, page_number, items_per_page, *_args, **_kwargs):
+        calls.append((page_number, items_per_page))
+        return ([_DummyDialogRecord().to_dict()], 1)
+
+    monkeypatch.setattr(module.DialogService, "get_by_tenant_ids", _get_by_tenant_ids)
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
+
+    res = module.list_chats.__wrapped__()
+
+    assert res["code"] == 0
+    assert calls[-1] == (0, 0)
+    assert len(res["data"]["chats"]) == 1
+
+    monkeypatch.setattr(
+        module,
+        "request",
+        SimpleNamespace(
+            args=SimpleNamespace(
+                get=lambda key, default=None: {
+                    "keywords": "",
+                    "page": 0,
+                    "page_size": 2,
+                    "orderby": "create_time",
+                    "desc": "true",
+                }.get(key, default),
+                getlist=lambda _key: [],
+            )
+        ),
+    )
+
+    res = module.list_chats.__wrapped__()
+
+    assert res["code"] == 0
+    assert calls[-1] == (0, 2)
+    assert len(res["data"]["chats"]) == 1
+
+    monkeypatch.setattr(
+        module,
+        "request",
+        SimpleNamespace(
+            args=SimpleNamespace(
+                get=lambda key, default=None: {
+                    "keywords": "",
+                    "page_size": 2,
+                    "orderby": "create_time",
+                    "desc": "true",
+                }.get(key, default),
+                getlist=lambda _key: [],
+            )
+        ),
+    )
+
+    res = module.list_chats.__wrapped__()
+
+    assert res["code"] == 0
+    assert calls[-1] == (0, 2)
+    assert len(res["data"]["chats"]) == 1

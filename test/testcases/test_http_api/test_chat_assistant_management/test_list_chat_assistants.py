@@ -58,8 +58,8 @@ class TestChatAssistantsList:
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
-            ({"page": None, "page_size": 2}, 0, 2, ""),
-            ({"page": 0, "page_size": 2}, 0, 2, ""),
+            ({"page": None, "page_size": 2}, 0, 5, ""),
+            ({"page": 0, "page_size": 2}, 0, 5, ""),
             ({"page": 2, "page_size": 2}, 0, 2, ""),
             ({"page": 3, "page_size": 2}, 0, 1, ""),
             ({"page": "3", "page_size": 2}, 0, 1, ""),
@@ -92,10 +92,10 @@ class TestChatAssistantsList:
         "params, expected_code, expected_page_size, expected_message",
         [
             ({"page_size": None}, 0, 5, ""),
-            ({"page_size": 0}, 0, 0, ""),
-            ({"page_size": 1}, 0, 1, ""),
+            ({"page_size": 0}, 0, 5, ""),
+            ({"page_size": 1}, 0, 5, ""),
             ({"page_size": 6}, 0, 5, ""),
-            ({"page_size": "1"}, 0, 1, ""),
+            ({"page_size": "1"}, 0, 5, ""),
             pytest.param(
                 {"page_size": -1},
                 100,
