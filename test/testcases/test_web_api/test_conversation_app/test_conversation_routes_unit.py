@@ -15,6 +15,7 @@
 #
 
 import asyncio
+import importlib
 import importlib.util
 import inspect
 import sys
@@ -24,6 +25,8 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+
+
 
 
 def _write_upload_test_bytes(path: str) -> None:
@@ -132,17 +135,8 @@ class _StubQuartResponse:
 def _load_conversation_module(monkeypatch):
     repo_root = Path(__file__).resolve().parents[4]
 
-    quart_mod = ModuleType("quart")
-    quart_mod.Response = _StubQuartResponse
-    quart_mod.request = SimpleNamespace()
-    quart_mod.current_app = SimpleNamespace()
-    quart_mod.g = SimpleNamespace()
-    quart_mod.session = SimpleNamespace()
-    quart_mod.jsonify = lambda d: d
-    quart_mod.has_request_context = lambda: True
-    quart_mod.has_websocket_context = lambda: False
-    quart_mod.websocket = SimpleNamespace()
-    monkeypatch.setitem(sys.modules, "quart", quart_mod)
+    quart_mod = importlib.import_module("quart")
+    monkeypatch.setattr(quart_mod, "Response", _StubQuartResponse)
 
     common_pkg = ModuleType("common")
     common_pkg.__path__ = [str(repo_root / "common")]
@@ -183,6 +177,14 @@ def _load_conversation_module(monkeypatch):
 
     deepdoc_mineru_module.MinerUParser = _StubMinerUParser
     monkeypatch.setitem(sys.modules, "deepdoc.parser.mineru_parser", deepdoc_mineru_module)
+
+    deepdoc_paddleocr_module = ModuleType("deepdoc.parser.paddleocr_parser")
+
+    class _StubPaddleOCRParser:
+        pass
+
+    deepdoc_paddleocr_module.PaddleOCRParser = _StubPaddleOCRParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.paddleocr_parser", deepdoc_paddleocr_module)
 
     monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
 
