@@ -381,12 +381,12 @@ async def update_chat(chat_id):
             # if err:
             #     return get_data_error_result(message=err)
 
-        prompt_config = req.get("prompt_config", {})
-        if not prompt_config:
-            prompt_config = current_chat.get("prompt_config", {})
-        kb_ids = req.get("kb_ids", current_chat.get("kb_ids", []))
-        if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
-            return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
+        # prompt_config = req.get("prompt_config", {})
+        # if not prompt_config:
+        #     prompt_config = current_chat.get("prompt_config", {})
+        # kb_ids = req.get("kb_ids", current_chat.get("kb_ids", []))
+        # if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
+        #     return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
 
         req = ensure_tenant_model_id_for_params(current_user.id, req)
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
@@ -476,11 +476,11 @@ async def patch_chat(chat_id):
             llm_setting.update(req["llm_setting"])
             req["llm_setting"] = llm_setting
 
-        if "prompt_config" in req or "kb_ids" in req:
-            prompt_config = req.get("prompt_config", current_chat.get("prompt_config", {}))
-            kb_ids = req.get("kb_ids", current_chat.get("kb_ids", []))
-            if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
-                return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
+        # if "prompt_config" in req or "kb_ids" in req:
+        #     prompt_config = req.get("prompt_config", current_chat.get("prompt_config", {}))
+        #     kb_ids = req.get("kb_ids", current_chat.get("kb_ids", []))
+        #     if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
+        #         return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
 
         req = ensure_tenant_model_id_for_params(current_user.id, req)
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
