@@ -203,7 +203,7 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CreateDocMetaIndex(cmd)
 	case "drop_doc_meta_index":
 		return c.DropDocMetaIndex(cmd)
-	case "list_pool_providers":
+	case "list_available_providers":
 		return c.ListAvailableProviders(cmd)
 	case "show_provider":
 		return c.ShowProvider(cmd)
@@ -212,12 +212,12 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "show_model":
 		return c.ShowModel(cmd)
 	// Provider commands
-	case "create_provider":
-		return c.CreateProvider(cmd)
+	case "add_provider":
+		return c.AddProvider(cmd)
 	case "list_providers":
 		return c.ListProviders(cmd)
-	case "drop_provider":
-		return c.DropProvider(cmd)
+	case "delete_provider":
+		return c.DeleteProvider(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)

@@ -28,13 +28,15 @@ import (
 
 // ProviderHandler provider handler
 type ProviderHandler struct {
-	userService *service.UserService
+	userService          *service.UserService
+	modelProviderService *service.ModelProviderService
 }
 
 // NewProviderHandler create provider handler
-func NewProviderHandler(userService *service.UserService) *ProviderHandler {
+func NewProviderHandler(userService *service.UserService, modelProviderService *service.ModelProviderService) *ProviderHandler {
 	return &ProviderHandler{
-		userService: userService,
+		userService:          userService,
+		modelProviderService: modelProviderService,
 	}
 }
 
@@ -64,6 +66,84 @@ func (h *ProviderHandler) ListProviders(c *gin.Context) {
 			"data":    providers,
 		})
 	}
+
+	userID := c.GetString("user_id")
+
+	// list tenant providers
+	providers, errorCode, err := h.modelProviderService.ListProvidersOfTenant(userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errorCode,
+			"message": err.Error(),
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    providers,
+	})
+	return
+}
+
+type AddProviderRequest struct {
+	ProviderName string `json:"provider_name" binding:"required,provider_name"`
+}
+
+func (h *ProviderHandler) AddProvider(c *gin.Context) {
+
+	var req AddProviderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	errorCode, err := h.modelProviderService.AddModelProvider(req.ProviderName, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errorCode,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+	})
+}
+
+func (h *ProviderHandler) DeleteProvider(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	provider, err := dao.GetModelProviderManager().GetProviderByName(providerName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    provider,
+	})
 }
 
 func (h *ProviderHandler) ShowProvider(c *gin.Context) {

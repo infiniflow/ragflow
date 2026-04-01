@@ -751,10 +751,10 @@ func (c *RAGFlowClient) DropDocMetaIndex(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// CreateProvider creates a new model provider
-// CREATE PROVIDER <name>
-// CREATE PROVIDER <name> <api_key>
-func (c *RAGFlowClient) CreateProvider(cmd *Command) (ResponseIf, error) {
+// AddProvider creates a new model provider
+// ADD PROVIDER <name>
+// ADD PROVIDER <name> <api_key>
+func (c *RAGFlowClient) AddProvider(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -764,28 +764,23 @@ func (c *RAGFlowClient) CreateProvider(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("provider name not provided")
 	}
 
-	// Get optional api_key
-	apiKey, _ := cmd.Params["api_key"].(string)
-
 	// Build payload
 	payload := map[string]interface{}{
-		"llm_factory": providerName,
-		"api_key":     apiKey,
-		"verify":      apiKey != "", // Only verify if api_key is provided
+		"provider_name": providerName,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/llm/set_api_key", true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/providers", true, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create provider: %w", err)
+		return nil, fmt.Errorf("failed to add provider: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to add provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("create provider failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("add provider failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -803,7 +798,7 @@ func (c *RAGFlowClient) ListProviders(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", "/llm/factories", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/providers", true, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
@@ -825,9 +820,9 @@ func (c *RAGFlowClient) ListProviders(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// DropProvider deletes a provider
-// DROP PROVIDER <name>
-func (c *RAGFlowClient) DropProvider(cmd *Command) (ResponseIf, error) {
+// DeleteProvider deletes a provider
+// DELETE PROVIDER <name>
+func (c *RAGFlowClient) DeleteProvider(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}

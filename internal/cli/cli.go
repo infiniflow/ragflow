@@ -332,7 +332,7 @@ func looksLikeSQL(s string) bool {
 		"LIST ", "SHOW ", "CREATE ", "DROP ", "ALTER ",
 		"LOGIN ", "REGISTER ", "PING", "GRANT ", "REVOKE ",
 		"SET ", "UNSET ", "UPDATE ", "DELETE ", "INSERT ",
-		"SELECT ", "DESCRIBE ", "EXPLAIN ",
+		"SELECT ", "DESCRIBE ", "EXPLAIN ", "ADD ",
 	}
 	for _, prefix := range sqlPrefixes {
 		if strings.HasPrefix(s, prefix) {
@@ -1008,10 +1008,10 @@ Commands (User Mode):
   LIST TOKENS;                                           - List API tokens
   LIST PROVIDERS;                                        - List available LLM providers
   CREATE TOKEN;                                          - Create new API token
-  CREATE PROVIDER 'name';                                - Create a provider without API key
-  CREATE PROVIDER 'name' 'api_key';                      - Create a provider with API key
+  ADD PROVIDER 'name';                                - Create a provider without API key
+  ADD PROVIDER 'name' 'api_key';                      - Create a provider with API key
   DROP TOKEN 'token_value';                              - Delete an API token
-  DROP PROVIDER 'name';                                  - Delete a provider
+  DELETE PROVIDER 'name';                                  - Delete a provider
   SET TOKEN 'token_value';                               - Set and validate API token
   SHOW TOKEN;                                            - Show current API token
   SHOW PROVIDER 'name';                                  - Show provider details

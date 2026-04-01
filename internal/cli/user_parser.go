@@ -509,8 +509,6 @@ func (p *Parser) parseCreateCommand() (*Command, error) {
 		return p.parseCreateRole()
 	case TokenModel:
 		return p.parseCreateModelProvider()
-	case TokenProvider:
-		return p.parseCreateProvider()
 	case TokenDataset:
 		return p.parseCreateDataset()
 	case TokenChat:
@@ -521,6 +519,16 @@ func (p *Parser) parseCreateCommand() (*Command, error) {
 		return p.parseCreateIndex()
 	default:
 		return nil, fmt.Errorf("unknown CREATE target: %s", p.curToken.Value)
+	}
+}
+
+func (p *Parser) parseAddCommand() (*Command, error) {
+	p.nextToken() // consume ADD
+	switch p.curToken.Type {
+	case TokenProvider:
+		return p.parseAddProvider()
+	default:
+		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
 	}
 }
 
@@ -674,10 +682,10 @@ func (p *Parser) parseCreateModelProvider() (*Command, error) {
 	return cmd, nil
 }
 
-// parseCreateProvider parses CREATE PROVIDER commands
-// CREATE PROVIDER <name>
-// CREATE PROVIDER <name> <api_key>
-func (p *Parser) parseCreateProvider() (*Command, error) {
+// parseAddProvider parses ADD PROVIDER commands
+// ADD PROVIDER <name>
+// ADD PROVIDER <name> <api_key>
+func (p *Parser) parseAddProvider() (*Command, error) {
 	p.nextToken() // consume PROVIDER
 
 	providerName, err := p.parseQuotedString()
@@ -685,7 +693,7 @@ func (p *Parser) parseCreateProvider() (*Command, error) {
 		return nil, fmt.Errorf("expected provider name: %w", err)
 	}
 
-	cmd := NewCommand("create_provider")
+	cmd := NewCommand("add_provider")
 	cmd.Params["provider_name"] = providerName
 
 	p.nextToken()
@@ -789,8 +797,6 @@ func (p *Parser) parseDropCommand() (*Command, error) {
 		return p.parseDropRole()
 	case TokenModel:
 		return p.parseDropModelProvider()
-	case TokenProvider:
-		return p.parseDropProvider()
 	case TokenDataset:
 		return p.parseDropDataset()
 	case TokenChat:
@@ -799,6 +805,17 @@ func (p *Parser) parseDropCommand() (*Command, error) {
 		return p.parseDropToken()
 	case TokenIndex:
 		return p.parseDropIndex()
+	default:
+		return nil, fmt.Errorf("unknown DROP target: %s", p.curToken.Value)
+	}
+}
+
+func (p *Parser) parseDeleteCommand() (*Command, error) {
+	p.nextToken() // consume DELETE
+
+	switch p.curToken.Type {
+	case TokenProvider:
+		return p.parseDeleteProvider()
 	default:
 		return nil, fmt.Errorf("unknown DROP target: %s", p.curToken.Value)
 	}
@@ -934,8 +951,8 @@ func (p *Parser) parseDropModelProvider() (*Command, error) {
 	return cmd, nil
 }
 
-// parseDropProvider parses DROP PROVIDER <name> command
-func (p *Parser) parseDropProvider() (*Command, error) {
+// parseDeleteProvider parses DELETE PROVIDER <name> command
+func (p *Parser) parseDeleteProvider() (*Command, error) {
 	p.nextToken() // consume PROVIDER
 
 	providerName, err := p.parseQuotedString()
@@ -943,7 +960,7 @@ func (p *Parser) parseDropProvider() (*Command, error) {
 		return nil, fmt.Errorf("expected provider name: %w", err)
 	}
 
-	cmd := NewCommand("drop_provider")
+	cmd := NewCommand("delete_provider")
 	cmd.Params["provider_name"] = providerName
 
 	p.nextToken()
