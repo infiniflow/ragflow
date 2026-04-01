@@ -412,10 +412,12 @@ async def thumbup():
             message="Only owner of conversation authorized for this operation.",
             code=RetCode.OPERATING_ERROR,
         )
+    authorized_tenant_id = None
     tenants = UserTenantService.query(user_id=current_user.id)
     for tenant in tenants:
         dialog = DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id)
         if dialog and len(dialog) > 0:
+            authorized_tenant_id = tenant.tenant_id
             break
     else:
         return get_json_result(
@@ -447,27 +449,24 @@ async def thumbup():
             break
 
     # Apply chunk feedback only when the vote direction actually changes (idempotent repeat votes are no-ops).
-    if message_index is not None and apply_chunk_feedback:
+    if message_index is not None and apply_chunk_feedback and authorized_tenant_id is not None:
         try:
-            # Get the dialog to find tenant_id
-            e_dia, dia = DialogService.get_by_id(conv.dialog_id)
-            if e_dia and dia:
-                # Reference list aligns with assistant turns: one entry per user/assistant pair after the first
-                # assistant message (indices 1, 3, 5, ...), matching delete_msg reference indexing for paired turns.
-                ref_index = (message_index - 1) // 2
-                if 0 <= ref_index < len(conv_dict.get("reference", [])):
-                    reference = conv_dict["reference"][ref_index]
-                    if reference:
-                        feedback_result = ChunkFeedbackService.apply_feedback(
-                            tenant_id=dia.tenant_id,
-                            reference=reference,
-                            is_positive=thumb_raw is True,
-                        )
-                        logging.debug(
-                            "Chunk feedback applied: %s succeeded, %s failed",
-                            feedback_result["success_count"],
-                            feedback_result["fail_count"],
-                        )
+            # Reference list aligns with assistant turns: one entry per user/assistant pair after the first
+            # assistant message (indices 1, 3, 5, ...), matching delete_msg reference indexing for paired turns.
+            ref_index = (message_index - 1) // 2
+            if 0 <= ref_index < len(conv_dict.get("reference", [])):
+                reference = conv_dict["reference"][ref_index]
+                if reference:
+                    feedback_result = ChunkFeedbackService.apply_feedback(
+                        tenant_id=authorized_tenant_id,
+                        reference=reference,
+                        is_positive=thumb_raw is True,
+                    )
+                    logging.debug(
+                        "Chunk feedback applied: %s succeeded, %s failed",
+                        feedback_result["success_count"],
+                        feedback_result["fail_count"],
+                    )
         except Exception as e:
             logging.warning("Failed to apply chunk feedback: %s", e)
 
