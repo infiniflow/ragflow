@@ -329,9 +329,19 @@ class OSConnection(DocStoreConnection):
             # update specific single document
             chunkId = condition["id"]
             for i in range(ATTEMPT_TIME):
+                doc_part = copy.deepcopy(doc)
+                remove_field = doc_part.pop("remove", None) if isinstance(doc_part.get("remove"), str) else None
                 try:
-                    self.os.update(index=indexName, id=chunkId, body={"doc": doc})
-                    return True
+                    if remove_field is not None:
+                        self.os.update(
+                            index=indexName,
+                            id=chunkId,
+                            body={"script": {"source": f"ctx._source.remove('{remove_field}');"}},
+                        )
+                    if doc_part:
+                        self.os.update(index=indexName, id=chunkId, body={"doc": doc_part})
+                    if remove_field is not None or doc_part:
+                        return True
                 except Exception as e:
                     logger.exception(
                         f"OSConnection.update(index={indexName}, id={id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")

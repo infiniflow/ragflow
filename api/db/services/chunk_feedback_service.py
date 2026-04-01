@@ -198,9 +198,14 @@ class ChunkFeedbackService:
             # Clamp to valid range (integer; matches doc-store column types)
             new_weight = max(MIN_PAGERANK_WEIGHT, min(MAX_PAGERANK_WEIGHT, new_weight))
 
-            # Update the chunk
+            # Elasticsearch/OpenSearch map pagerank_fea as rank_feature; zero must not be
+            # indexed — remove the field (same as kb_app / dataset_api_service).
             condition = {"id": chunk_id}
-            new_value = {PAGERANK_FLD: int(new_weight)}
+            engine = settings.DOC_ENGINE.lower()
+            if new_weight == 0 and engine in ("elasticsearch", "opensearch"):
+                new_value = {"remove": PAGERANK_FLD}
+            else:
+                new_value = {PAGERANK_FLD: int(new_weight)}
 
             success = settings.docStoreConn.update(
                 condition, new_value, idx_name, kb_id

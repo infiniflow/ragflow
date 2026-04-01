@@ -43,6 +43,8 @@ def _load_feedback_module(monkeypatch):
 
     settings_mod = ModuleType("common.settings")
     settings_mod.docStoreConn = MagicMock()
+    # Non-ES engines accept pagerank_fea=0; tests below override for elasticsearch/opensearch.
+    settings_mod.DOC_ENGINE = "infinity"
     monkeypatch.setitem(sys.modules, "common.settings", settings_mod)
     common_pkg.settings = settings_mod
 
@@ -250,6 +252,42 @@ class TestUpdateChunkWeight:
         call_args = mock_doc_store.update.call_args
         new_value = call_args[0][1]
         assert new_value["pagerank_fea"] == mod.MIN_PAGERANK_WEIGHT
+
+    def test_update_weight_zero_elasticsearch_removes_field(self, feedback_env):
+        """rank_feature cannot store 0 on ES — use remove payload (see kb_app)."""
+        mod, settings_mod = feedback_env
+        settings_mod.DOC_ENGINE = "elasticsearch"
+        mock_doc_store = MagicMock()
+        mock_doc_store.get.return_value = {"pagerank_fea": 1}
+        mock_doc_store.update.return_value = True
+        settings_mod.docStoreConn = mock_doc_store
+
+        mod.ChunkFeedbackService.update_chunk_weight(
+            tenant_id="tenant1",
+            chunk_id="chunk1",
+            kb_id="kb1",
+            delta=-1,
+        )
+
+        new_value = mock_doc_store.update.call_args[0][1]
+        assert new_value == {"remove": "pagerank_fea"}
+
+    def test_update_weight_zero_opensearch_removes_field(self, feedback_env):
+        mod, settings_mod = feedback_env
+        settings_mod.DOC_ENGINE = "opensearch"
+        mock_doc_store = MagicMock()
+        mock_doc_store.get.return_value = {"pagerank_fea": 2}
+        mock_doc_store.update.return_value = True
+        settings_mod.docStoreConn = mock_doc_store
+
+        mod.ChunkFeedbackService.update_chunk_weight(
+            tenant_id="tenant1",
+            chunk_id="chunk1",
+            kb_id="kb1",
+            delta=-2,
+        )
+
+        assert mock_doc_store.update.call_args[0][1] == {"remove": "pagerank_fea"}
 
 
 class TestApplyFeedback:
